@@ -1,0 +1,5 @@
+<div id="login">
+  <h2><%= active_admin_application.site_title(self) %> <%= title t('active_admin.devise.login.title') %></h2>
+
+  <%= link_to "Sign in with Google", admin_user_google_oauth2_omniauth_authorize_path, method: :post %>
+</div>
