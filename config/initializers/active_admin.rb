@@ -359,6 +359,6 @@ end
 
 ActiveAdmin::Views::Pages::Index.class_eval do
   def render_blank_slate
-    div(image_tag("absurd/#{sprintf('%02d', rand(1...9))}"), class: "empty_state")
+    div(image_tag("absurd/#{sprintf('%02d', rand(1...9))}.png"), class: "empty_state")
   end
 end
