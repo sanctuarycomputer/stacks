@@ -5,6 +5,17 @@ class AdminUser < ApplicationRecord
          :recoverable, :rememberable, :validatable,
          :omniauthable, omniauth_providers: %i[google_oauth2]
 
+  has_many :reviews
+  has_many :peer_reviews
+
+  def is_payroll_manager?
+    roles.include?("payroll_manager")
+  end
+
+  def display_name
+    email
+  end
+
   # Devise override to ignore the password requirement if the user is authenticated with Google
   def password_required?
     provider.present? ? false : super

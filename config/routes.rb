@@ -1,5 +1,5 @@
 Rails.application.routes.draw do
-  root 'application#root'
+  root to: redirect('/admin')
 
   devise_config = ActiveAdmin::Devise.config
   devise_config[:controllers][:omniauth_callbacks] = 'omniauth_callbacks'

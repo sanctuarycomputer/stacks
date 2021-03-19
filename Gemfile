@@ -14,9 +14,12 @@ gem 'activeadmin'
 gem 'devise', github: 'heartcombo/devise', branch: 'ca-omniauth-2'
 gem 'omniauth-google-oauth2'
 gem 'omniauth-rails_csrf_protection'
+gem 'acts_as_paranoid', '~> 0.7.0'
+gem 'sentry-ruby'
+gem 'sentry-rails'
 
 group :development, :test do
-  gem 'byebug', platforms: [:mri, :mingw, :x64_mingw]
+  gem 'pry'
 end
 
 group :development do

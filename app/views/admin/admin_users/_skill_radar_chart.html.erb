@@ -1,0 +1,19 @@
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chart.js@2.9.1/dist/Chart.min.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@2.9.1/dist/Chart.min.js"></script>
+
+<canvas id="myChart" width="500" height="500"></canvas>
+
+<script>
+var ctx = document.getElementById('myChart');
+var myChart = new Chart(ctx, {
+  type: 'radar',
+  data: <%= data.to_json.html_safe %>,
+  options: {
+    scale: {
+      ticks: {
+        beginAtZero: true
+      }
+    }
+  }
+});
+</script>

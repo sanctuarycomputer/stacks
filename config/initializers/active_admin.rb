@@ -16,7 +16,7 @@ ActiveAdmin.setup do |config|
   #
   # Note: Aim for an image that's 21px high so it fits in the header.
   #
-  # config.site_title_image = "logo.png"
+  config.site_title_image = "stacks_logo.svg"
 
   # == Default Namespace
   #
@@ -117,14 +117,14 @@ ActiveAdmin.setup do |config|
   # roots for each namespace.
   #
   # Default:
-  # config.root_to = 'dashboard#index'
+  config.root_to = 'reviews#index'
 
   # == Admin Comments
   #
   # This allows your users to comment on any resource registered with Active Admin.
   #
   # You can completely disable comments:
-  # config.comments = false
+  config.comments = false
   #
   # You can change the name under which comments are registered:
   # config.comments_registration_name = 'AdminComment'
@@ -143,7 +143,7 @@ ActiveAdmin.setup do |config|
   #
   # Enable and disable Batch Actions
   #
-  config.batch_actions = true
+  config.batch_actions = false
 
   # == Controller Filters
   #
@@ -192,7 +192,7 @@ ActiveAdmin.setup do |config|
   # Breadcrumbs are enabled by default. You can customize them for individual
   # resources or you can disable them globally from here.
   #
-  # config.breadcrumb = false
+  config.breadcrumb = false
 
   # == Create Another Checkbox
   #
@@ -332,4 +332,33 @@ ActiveAdmin.setup do |config|
   # You can switch to using Webpacker here.
   #
   # config.use_webpacker = true
+end
+
+# Nasty! This moves flash messages above the title bar :)
+ActiveAdmin::Views::Pages::Base.class_eval do
+  def build_page
+    within body(class: body_classes) do
+      div id: "wrapper" do
+        build_unsupported_browser
+        header active_admin_namespace, current_menu
+        build_flash_messages
+        title_bar title, action_items_for_action
+        build_page_content
+        footer active_admin_namespace
+      end
+    end
+  end
+
+  def build_page_content
+    div id: "active_admin_content", class: (skip_sidebar? ? "without_sidebar" : "with_sidebar") do
+      build_main_content_wrapper
+      sidebar sidebar_sections_for_action, id: "sidebar" unless skip_sidebar?
+    end
+  end
+end
+
+ActiveAdmin::Views::Pages::Index.class_eval do
+  def render_blank_slate
+    div(image_tag("absurd/#{sprintf('%02d', rand(1...9))}"), class: "empty_state")
+  end
 end

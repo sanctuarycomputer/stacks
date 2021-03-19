@@ -1,5 +1,9 @@
 <div id="login">
-  <h2><%= active_admin_application.site_title(self) %> <%= title t('active_admin.devise.login.title') %></h2>
-
-  <%= link_to "Sign in with Google", admin_user_google_oauth2_omniauth_authorize_path, method: :post %>
+  <p style="margin-top: 1.5rem">
+    <%= image_tag("stacks_logo.svg") %>
+  </p>
+  <p>
+    This is an internal tool we use at garden3d to help simplify or automate anything that's a little too clunky or not suitable for off-the-shelf tools like Google Drive, Notion or Coda. It's open source on Github <a href="http://github.com/sanctuarycomputer/stacks">here</a>.
+  <p>
+  <%= link_to "Sign in with Google →", admin_user_google_oauth2_omniauth_authorize_path, method: :post %>
 </div>

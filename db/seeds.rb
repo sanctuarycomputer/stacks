@@ -1,8 +1,35 @@
-# This file should contain all the record creation needed to seed the database with its default values.
-# The data can then be loaded with the rails db:seed command (or created alongside the database with db:setup).
-#
-# Examples:
-#
-#   movies = Movie.create([{ name: 'Star Wars' }, { name: 'Lord of the Rings' }])
-#   Character.create(name: 'Luke', movie: movies.first)
-AdminUser.create!(email: 'admin@example.com', password: 'password', password_confirmation: 'password') if Rails.env.development?
+ic = Tree.create!(name: "Individual Contributor")
+Trait.create!(name: "Knowledge & Impact", tree: ic)
+Trait.create!(name: "Problem Solving", tree: ic)
+Trait.create!(name: "Communications", tree: ic)
+Trait.create!(name: "Work Management", tree: ic)
+Trait.create!(name: "Teamwork", tree: ic)
+
+strategist = Tree.create!(name: "Strategist")
+Trait.create!(name: "Strategy & Insight", tree: strategist)
+Trait.create!(name: "Client Success", tree: strategist)
+Trait.create!(name: "Facilitation", tree: strategist)
+Trait.create!(name: "Design & Technical Sense", tree: strategist)
+Trait.create!(name: "Delivery", tree: strategist)
+
+designer = Tree.create!(name: "Designer")
+Trait.create!(name: "Concept", tree: designer)
+Trait.create!(name: "Creativity", tree: designer)
+Trait.create!(name: "Craft", tree: designer)
+Trait.create!(name: "Skills", tree: designer)
+Trait.create!(name: "Collaboration", tree: designer)
+
+dev = Tree.create!(name: "Engineer")
+Trait.create!(name: "Quality & Testing", tree: dev)
+Trait.create!(name: "Debugging & Observability", tree: dev)
+Trait.create!(name: "Software Architecture & Security", tree: dev)
+Trait.create!(name: "Deployment & Ops", tree: dev)
+Trait.create!(name: "Documentation, Git Fluency & Code Reviews", tree: dev)
+
+
+leadership = Tree.create!(name: "Leadership & Impact")
+Trait.create!(name: "Collaboration", tree: leadership)
+Trait.create!(name: "Ambiguity & Accountability", tree: leadership)
+Trait.create!(name: "People Skills", tree: leadership)
+Trait.create!(name: "Work Delivery", tree: leadership)
+Trait.create!(name: "Strategic Thinking", tree: leadership)

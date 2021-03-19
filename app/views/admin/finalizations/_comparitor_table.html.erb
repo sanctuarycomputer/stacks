@@ -1,0 +1,29 @@
+<div id="comparitor_table">
+  <ol>
+    <li class="display string input optional stringish mini" >
+      <span class="pill draft"><%= review[:reviewee?] ? "reviewee" : "peer" %></span>
+      <p><%= review[:from] %></p>
+    </li>
+    <% review[:score_trees].each do |score_tree| %>
+      <li class="has_many_container scores">
+        <% score_tree[:scores].each do |score| %>
+          <fieldset class="inline_fieldset inputs has_many_fields">
+            <ol>
+              <li class="string input optional stringish <%= score[:band_all_agree?] ? "agree" : "disagree" %>">
+                <input readonly="readonly" type="text" value="<%= score[:band].titleize.capitalize %>">
+              </li>
+              <li class="string input optional stringish <%= score[:consistency_all_agree?] ? "agree" : "disagree" %>">
+                <input readonly="readonly" type="text" value="<%= score[:consistency].titleize.capitalize %>">
+              </li>
+            </ol>
+          </fieldset>
+        <% end %>
+      </li>
+    <% end %>
+    <li class="text input optional" style="margin-top: 26px;margin-bottom: 40px;">
+      <textarea style="width:100%" readonly="readonly" rows="20" placeholder="As you fill out the skill tree, add notes that you think are relevant here." class="">
+<%= review[:notes].strip.length > 0 ? review[:notes].strip : "This reviewer did not leave any notes." %>
+      </textarea>
+    </li>
+  </ol>
+</div>
