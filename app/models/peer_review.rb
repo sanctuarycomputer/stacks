@@ -7,6 +7,8 @@ class PeerReview < ApplicationRecord
   has_one :workspace, as: :reviewable
   before_create :build_workspace
 
+  validates_uniqueness_of :admin_user, scope: :review_id
+
   def reviewee
     review.admin_user
   end

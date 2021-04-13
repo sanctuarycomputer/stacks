@@ -5,7 +5,7 @@ ActiveAdmin.register Finalization do
   scope :finalized
 
   menu if: proc{ current_admin_user.is_payroll_manager? },
-       label: 'Finalized Reviews'
+       label: 'Finalizations'
 
   actions :index, :show, :edit, :update
   permit_params workspace_attributes: [

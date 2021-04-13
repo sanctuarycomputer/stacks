@@ -20,7 +20,7 @@ class Review < ApplicationRecord
         acc[score.trait.name] = acc[score.trait.name] || {
           band: score.band,
           consistency: score.consistency,
-          sum: Score.bands[score.band] + Score.consistencies[score.consistency]
+          sum: ((Score.bands[score.band] + Score.consistencies[score.consistency] + 2) / 10) * 100
         }
       end
       acc
