@@ -39,6 +39,19 @@ $color-blue: #1F78FF;
 $color-orange: orange;
 $color-green: #26bd50;
 $color-purple: #7B4EFA;
+$color-white: white;
+$color-grey: #5E6469;
+
+.nag {
+  background-color: $color-white;
+  padding: 14px 30px;
+  font-size: 18px;
+  border-radius: 999px;
+  display: inline-block;
+  color: $color-grey;
+  box-shadow: 0 1px 20px #b7b7b7;
+}
+
 
 body.new.admin_reviews, body.create.admin_reviews, body.edit.admin_reviews {
   li.cancel {
@@ -410,6 +423,11 @@ h2 {
 }
 a.member_link {
   margin-right: 18px;
+}
+
+#header h1 {
+  font-size: 40px;
+  padding-right: 14px;
 }
 
 #header ul.tabs > li:hover > a {

@@ -4,7 +4,7 @@ ActiveAdmin.setup do |config|
   # Set the title that is displayed on the main layout
   # for each of the active admin pages.
   #
-  config.site_title = "Stacks"
+  config.site_title = "🥞"
 
   # Set the link url for the title. For example, to take
   # users to your main site. Defaults to no link.
@@ -16,7 +16,7 @@ ActiveAdmin.setup do |config|
   #
   # Note: Aim for an image that's 21px high so it fits in the header.
   #
-  config.site_title_image = "stacks_logo.svg"
+  #config.site_title_image = "stacks_logo.svg"
 
   # == Default Namespace
   #
@@ -230,12 +230,13 @@ ActiveAdmin.setup do |config|
   #
   # To change the default utility navigation to show a link to your website & a logout btn
   #
-  #   config.namespace :admin do |admin|
-  #     admin.build_menu :utility_navigation do |menu|
-  #       menu.add label: "My Great Website", url: "http://www.mygreatwebsite.com", html_options: { target: :blank }
-  #       admin.add_logout_button_to_menu menu
-  #     end
-  #   end
+  config.namespace :admin do |admin|
+    admin.build_menu :utility_navigation do |menu|
+      menu.add label: "🤔 Learn Stacks", url: "https://www.notion.so/garden3d/Using-Stacks-3bb041a0cfe84e4d899707901374a001", html_options: { target: :blank }
+      admin.add_current_user_to_menu  menu
+      admin.add_logout_button_to_menu menu
+    end
+  end
   #
   # If you wanted to add a static menu item to the default menu provided:
   #
@@ -359,6 +360,8 @@ end
 
 ActiveAdmin::Views::Pages::Index.class_eval do
   def render_blank_slate
-    div(image_tag("absurd/#{sprintf('%02d', rand(1...9))}.png"), class: "empty_state")
+    div(class: 'empty_state') do
+      render('docs_linkout')
+    end
   end
 end

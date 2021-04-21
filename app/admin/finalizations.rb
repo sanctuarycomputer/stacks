@@ -85,6 +85,8 @@ ActiveAdmin.register Finalization do
       div('When all of your peers have agreed on a final score, fill them out in the right-most column, and mark as finalized.', class: "skill_tree_hint")
     end
 
+    render(partial: 'docs_linkout')
+
     score_table = f.object.review.score_table
 
     all_reviews = [f.object.review, *f.object.review.peer_reviews]

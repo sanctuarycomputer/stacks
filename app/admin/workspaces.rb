@@ -40,6 +40,7 @@ ActiveAdmin.register Workspace do
   end
 
   form do |f|
+
     if f.object.review.archived?
       div("This review has been archived, and the reviewee's salary updated. This page is here for future reference.", class: "skill_tree_hint")
     elsif f.object.review.finalized?
@@ -47,6 +48,8 @@ ActiveAdmin.register Workspace do
     else
       div("You're editing a skill tree evaluation for #{f.object.reviewable.reviewee.email}. Take your time and work through it - you can save it as a draft if you need more time. Once you're done, mark it as complete, and schedule some time for an in-person peer review to finalize it.", class: "skill_tree_hint")
     end
+
+    render(partial: 'docs_linkout')
 
     f.has_many :score_trees, heading: false, allow_destroy: false, new_record: false do |sf|
       sf.input(:display_name, input_html: { readonly: true }, wrapper_html: { class: "display" })

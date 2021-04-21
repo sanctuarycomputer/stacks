@@ -27,6 +27,8 @@ ActiveAdmin.register Review do
   end
 
   index download_links: false do
+    render(partial: 'docs_linkout')
+
     column :created_at
     column :peer_reviewers do |resource|
       resource.peer_reviews.map do |peer_review|
@@ -69,6 +71,7 @@ ActiveAdmin.register Review do
 
   form do |f|
     div("Please select a craft for your self review, and elect at least 2x peer reviewers. Your peer review request will show up on their dashboard!", class: "skill_tree_hint")
+    render(partial: 'docs_linkout')
 
     f.object.admin_user = current_admin_user
 
