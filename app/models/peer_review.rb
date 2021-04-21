@@ -4,7 +4,7 @@ class PeerReview < ApplicationRecord
   belongs_to :admin_user
   belongs_to :review
 
-  has_one :workspace, as: :reviewable
+  has_one :workspace, as: :reviewable, dependent: :destroy
   before_create :build_workspace
 
   validates_uniqueness_of :admin_user, scope: :review_id

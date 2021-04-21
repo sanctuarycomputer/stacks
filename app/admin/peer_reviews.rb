@@ -10,6 +10,8 @@ ActiveAdmin.register PeerReview do
   end
 
   index download_links: false do
+    render(partial: 'docs_linkout')
+
     column :created_at
     column :for do |resource|
       resource.review.admin_user

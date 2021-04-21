@@ -1,7 +1,9 @@
 class Workspace < ApplicationRecord
+  acts_as_paranoid
+
   belongs_to :reviewable, polymorphic: true
   enum status: { draft: 0, complete: 1, archived: 2 }
-  has_many :score_trees, -> { order "tree_id asc" }
+  has_many :score_trees, -> { order "tree_id asc" }, dependent: :destroy
   accepts_nested_attributes_for :score_trees
   validate :status_can_not_transition_to_complete_unless_scores_inputted
 

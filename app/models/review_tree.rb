@@ -1,4 +1,6 @@
 class ReviewTree < ApplicationRecord
+  acts_as_paranoid
+
   belongs_to :review
   belongs_to :tree
 

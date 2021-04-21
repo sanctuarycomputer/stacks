@@ -2,15 +2,16 @@ class Review < ApplicationRecord
   acts_as_paranoid
 
   belongs_to :admin_user
-  has_many :peer_reviews, dependent: :delete_all
-  has_one :finalization
-  has_many :admin_users, through: :peer_reviews
-  accepts_nested_attributes_for :peer_reviews, allow_destroy: true
 
-  has_many :review_trees
+  has_many :peer_reviews, dependent: :destroy
+  has_one :finalization, dependent: :destroy
+  has_many :review_trees, dependent: :destroy
+  has_one :workspace, as: :reviewable, dependent: :destroy
+  has_many :admin_users, through: :peer_reviews
+
+  accepts_nested_attributes_for :peer_reviews, allow_destroy: true
   accepts_nested_attributes_for :review_trees, allow_destroy: true
 
-  has_one :workspace, as: :reviewable
   before_create :build_workspace
   before_create :build_finalization
 
