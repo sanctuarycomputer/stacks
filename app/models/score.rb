@@ -1,4 +1,6 @@
 class Score < ApplicationRecord
+  acts_as_paranoid
+
   belongs_to :trait
   belongs_to :score_tree
   enum band: {

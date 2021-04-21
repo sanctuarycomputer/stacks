@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2021_03_12_215410) do
+ActiveRecord::Schema.define(version: 2021_04_21_140652) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -48,6 +48,8 @@ ActiveRecord::Schema.define(version: 2021_03_12_215410) do
     t.bigint "review_id", null: false
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.datetime "deleted_at"
+    t.index ["deleted_at"], name: "index_finalizations_on_deleted_at"
     t.index ["review_id"], name: "index_finalizations_on_review_id"
   end
 
@@ -67,6 +69,8 @@ ActiveRecord::Schema.define(version: 2021_03_12_215410) do
     t.bigint "tree_id", null: false
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.datetime "deleted_at"
+    t.index ["deleted_at"], name: "index_review_trees_on_deleted_at"
     t.index ["review_id"], name: "index_review_trees_on_review_id"
     t.index ["tree_id"], name: "index_review_trees_on_tree_id"
   end
@@ -86,6 +90,8 @@ ActiveRecord::Schema.define(version: 2021_03_12_215410) do
     t.bigint "workspace_id", null: false
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.datetime "deleted_at"
+    t.index ["deleted_at"], name: "index_score_trees_on_deleted_at"
     t.index ["tree_id"], name: "index_score_trees_on_tree_id"
     t.index ["workspace_id"], name: "index_score_trees_on_workspace_id"
   end
@@ -97,6 +103,8 @@ ActiveRecord::Schema.define(version: 2021_03_12_215410) do
     t.integer "consistency"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.datetime "deleted_at"
+    t.index ["deleted_at"], name: "index_scores_on_deleted_at"
     t.index ["score_tree_id"], name: "index_scores_on_score_tree_id"
     t.index ["trait_id"], name: "index_scores_on_trait_id"
   end
@@ -122,6 +130,8 @@ ActiveRecord::Schema.define(version: 2021_03_12_215410) do
     t.datetime "updated_at", precision: 6, null: false
     t.integer "status", default: 0
     t.text "notes"
+    t.datetime "deleted_at"
+    t.index ["deleted_at"], name: "index_workspaces_on_deleted_at"
     t.index ["reviewable_type", "reviewable_id"], name: "index_workspaces_on_reviewable_type_and_reviewable_id"
   end
 

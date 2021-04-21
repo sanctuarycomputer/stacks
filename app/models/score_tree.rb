@@ -1,7 +1,9 @@
 class ScoreTree < ApplicationRecord
+  acts_as_paranoid
+
   belongs_to :tree
   belongs_to :workspace
-  has_many :scores, -> { order "trait_id asc" }
+  has_many :scores, -> { order "trait_id asc" }, dependent: :destroy
   before_create :build_scores
   accepts_nested_attributes_for :scores
 
