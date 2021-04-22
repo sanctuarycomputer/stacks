@@ -17,6 +17,11 @@ class Score < ApplicationRecord
     exceeds_expectations: 3,
     exceptional: 4
   }
+
+  def score_to_points
+    ((Score.bands[band] * 10) + 10) + (Score.consistencies[consistency] * 2)
+  end
+
   def display_name
     self.trait.name
   end

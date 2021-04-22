@@ -4,16 +4,17 @@
 <canvas id="myChart" width="500" height="500"></canvas>
 
 <script>
-var ctx = document.getElementById('myChart');
-var myChart = new Chart(ctx, {
-  type: 'radar',
-  data: <%= data.to_json.html_safe %>,
-  options: {
-    scale: {
-      ticks: {
-        beginAtZero: true
+  var ctx = document.getElementById('myChart');
+  var myChart = new Chart(ctx, {
+    type: 'radar',
+    data: <%= data.to_json.html_safe %>,
+    options: {
+      scale: {
+        ticks: {
+          beginAtZero: true,
+          max: 58
+        }
       }
     }
-  }
-});
+  });
 </script>

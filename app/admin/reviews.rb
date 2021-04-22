@@ -4,7 +4,7 @@ ActiveAdmin.register Review do
   config.sort_order = 'created_at_desc'
   config.paginate = false
   scope_to :current_admin_user
-  actions :index, :new, :create, :destroy
+  actions :index, :new, :edit, :update, :create, :destroy
 
   permit_params :admin_user_id,
     peer_reviews_attributes: [:id, :admin_user_id, :review_id, :_destroy, :_edit],

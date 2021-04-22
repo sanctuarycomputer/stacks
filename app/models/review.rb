@@ -14,6 +14,24 @@ class Review < ApplicationRecord
 
   before_create :build_workspace
   before_create :build_finalization
+  after_update :ensure_workspaces_in_sync
+
+  validate :must_be_same_craft
+
+  def must_be_same_craft
+    previous_review_tree =
+      admin_user.archived_reviews.first.try(:craft_review_tree)
+    unless previous_review_tree.nil?
+      if (previous_review_tree.tree != craft_review_tree.tree)
+        errors.add(:base, "review tree error")
+        craft_review_tree.errors.add(:tree, "must match previous reviews")
+      end
+    end
+  end
+
+  def craft_review_tree
+    review_trees.find{|rt| Tree.craft_trees.include?(rt.tree)}
+  end
 
   def finalized_score_chart
     finalization.workspace.score_trees.reduce({}) do |acc, score_tree|
@@ -21,10 +39,19 @@ class Review < ApplicationRecord
         acc[score.trait.name] = acc[score.trait.name] || {
           band: score.band,
           consistency: score.consistency,
-          sum: ((Score.bands[score.band] + Score.consistencies[score.consistency] + 2) / 10) * 100
+          sum: score.score_to_points
         }
       end
       acc
+    end
+  end
+
+  def total_points
+    finalization.workspace.score_trees.reduce(0) do |acc, score_tree|
+      points = score_tree.scores.reduce(0) do |acc, score|
+        acc + score.score_to_points
+      end
+      acc + points
     end
   end
 
@@ -67,7 +94,16 @@ class Review < ApplicationRecord
     elsif finalization.workspace.complete?
       "finalized"
     else
-      workspace.status
+      if workspace.status == "complete"
+        all_peers_complete = peer_reviews.map(&:status).all?{|s| s == "complete"}
+        if all_peers_complete
+          "ready"
+        else
+          "waiting"
+        end
+      else
+        workspace.status
+      end
     end
   end
 
@@ -79,5 +115,11 @@ class Review < ApplicationRecord
 
   def build_finalization
     self.finalization = Finalization.new
+  end
+
+  def ensure_workspaces_in_sync
+    workspace.sync!
+    peer_reviews.each{|pr| pr.workspace.sync!}
+    finalization.workspace.sync!
   end
 end

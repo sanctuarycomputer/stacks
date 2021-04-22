@@ -8,6 +8,10 @@ class AdminUser < ApplicationRecord
   has_many :reviews
   has_many :peer_reviews
 
+  def archived_reviews
+    reviews.where.not(archived_at: nil).order("archived_at DESC")
+  end
+
   def is_payroll_manager?
     roles.include?("payroll_manager")
   end

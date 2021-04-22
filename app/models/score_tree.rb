@@ -16,8 +16,20 @@ class ScoreTree < ApplicationRecord
   end
 
   def build_scores
+    latest_review = self.workspace.review.admin_user.archived_reviews.first
+    latest_scores = []
+    if latest_review.present?
+      latest_scores = latest_review.finalization.workspace.score_trees.map(&:scores).flatten
+    end
+
     self.scores = tree.traits.map do |trait|
-      Score.new({ trait: trait, score_tree: self })
+      prev_score = latest_scores.find{|s| s.trait == trait}
+      Score.new({
+        trait: trait,
+        score_tree: self,
+        band: prev_score.try(:band),
+        consistency: prev_score.try(:consistency)
+      })
     end
   end
 end

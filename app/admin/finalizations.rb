@@ -7,7 +7,7 @@ ActiveAdmin.register Finalization do
   menu if: proc{ current_admin_user.is_payroll_manager? },
        label: 'Finalizations'
 
-  actions :index, :show, :edit, :update
+  actions :index, :edit, :update
   permit_params workspace_attributes: [
     :id,
     :status,
@@ -35,12 +35,12 @@ ActiveAdmin.register Finalization do
 
   member_action :archive_finalization, method: :post do
     resource.review.update!(archived_at: DateTime.now)
-    redirect_to finalize_admin_review_path(resource), notice: "Archived!"
+    redirect_to edit_admin_finalization_path(resource), notice: "Archived!"
   end
 
   member_action :unarchive_finalization, method: :post do
     resource.review.update!(archived_at: nil)
-    redirect_to finalize_admin_review_path(resource), notice: "Archive reverted!"
+    redirect_to edit_admin_finalization_path(resource), notice: "Archive reverted!"
   end
 
 
@@ -69,9 +69,7 @@ ActiveAdmin.register Finalization do
     column :review do |resource|
       span(resource.review.status, class: "pill #{resource.review.status}")
     end
-    actions do |resource|
-      item 'Go to Finalized View →', finalize_admin_review_path(resource), class: "member_link"
-    end
+    actions
   end
 
   form do |f|

@@ -53,7 +53,7 @@ $color-grey: #5E6469;
 }
 
 
-body.new.admin_reviews, body.create.admin_reviews, body.edit.admin_reviews {
+body.new.admin_reviews, body.create.admin_reviews, body.edit.admin_reviews, body.update.admin_reviews {
   li.cancel {
     display: none;
   }
@@ -62,6 +62,8 @@ body.new.admin_reviews, body.create.admin_reviews, body.edit.admin_reviews {
       &.peer_reviews {
         fieldset.inputs.has_many_fields:nth-child(-n+2) {
           .has_many_remove { visibility: hidden; }
+        }
+        fieldset.inputs.has_many_fields:nth-child(-n+3) {
           .has_many_delete { visibility: hidden; }
         }
       }
@@ -85,6 +87,9 @@ body.new.admin_reviews, body.create.admin_reviews, body.edit.admin_reviews {
           li.select.input.required {
             flex: 1;
             display: inline-block;
+            align-items: center;
+            display: flex;
+
             label {
               font-size: 18px;
               color: black;
@@ -502,11 +507,14 @@ body.logged_in .flash {
   color: white;
   font-weight: 700;
   font-size: 72%;
-  &.draft {
+  &.draft, &.waiting {
     background-color: $color-orange;
   }
   &.complete {
     background-color: $color-green;
+  }
+  &.ready {
+    background-color: $color-purple;
   }
   &.finalized {
     background-color: $color-blue;
