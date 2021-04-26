@@ -69,6 +69,20 @@ ActiveAdmin.register Finalization do
     column :review do |resource|
       span(resource.review.status, class: "pill #{resource.review.status}")
     end
+    column :points do |resource|
+      if ["archived", "finalized"].include?(resource.review.status)
+        resource.review.total_points
+      else
+        "-"
+      end
+    end
+    column :level do |resource|
+      if ["archived", "finalized"].include?(resource.review.status)
+        "#{resource.review.level[:name]} ($#{resource.review.level[:salary]})"
+      else
+        "-"
+      end
+    end
     actions
   end
 

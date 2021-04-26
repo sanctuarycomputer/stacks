@@ -55,6 +55,98 @@ class Review < ApplicationRecord
     end
   end
 
+  LEVELS = {
+    junior_1: {
+      name: "J1",
+      min_points: 100,
+      salary: 60000
+    },
+    junior_2: {
+      name: "J2",
+      min_points: 155,
+      salary: 63500
+    },
+    junior_3: {
+      name: "J3",
+      min_points: 210,
+      salary: 67000
+    },
+    mid_level_1: {
+      name: "ML1",
+      min_points: 265,
+      salary: 70000
+    },
+    mid_level_2: {
+      name: "ML2",
+      min_points: 320,
+      salary: 73500
+    },
+    mid_level_3: {
+      name: "ML3",
+      min_points: 375,
+      salary: 77000
+    },
+    experienced_mid_level_1: {
+      name: "EML1",
+      min_points: 430,
+      salary: 80000
+    },
+    experienced_mid_level_2: {
+      name: "EML2",
+      min_points: 485,
+      salary: 85000
+    },
+    experienced_mid_level_3: {
+      name: "EML3",
+      min_points: 540,
+      salary: 90000
+    },
+    senior_1: {
+      name: "S1",
+      min_points: 595,
+      salary: 95000
+    },
+    senior_2: {
+      name: "S2",
+      min_points: 650,
+      salary: 100000
+    },
+    senior_3: {
+      name: "S3",
+      min_points: 705,
+      salary: 105000
+    },
+    senior_4: {
+      name: "S4",
+      min_points: 760,
+      salary: 110000
+    },
+    lead_1: {
+      name: "L1",
+      min_points: 815,
+      salary: 115000
+    },
+    lead_2: {
+      name: "L2",
+      min_points: 870,
+      salary: 120000
+    },
+  }
+
+  def level
+    LEVELS.keys.reduce(nil) do |acc, l|
+      if acc.nil?
+        LEVELS[:junior_1]
+      else
+        if LEVELS[l][:min_points] <= total_points
+          LEVELS[l]
+        else
+          acc
+        end
+      end
+    end
+  end
+
   def score_table
     all_reviews = [self, *self.peer_reviews]
     all_reviews.reduce({}) do |acc, review|
