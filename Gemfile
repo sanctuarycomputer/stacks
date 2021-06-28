@@ -17,6 +17,7 @@ gem 'omniauth-rails_csrf_protection'
 gem 'acts_as_paranoid', '~> 0.7.0'
 gem 'sentry-ruby'
 gem 'sentry-rails'
+gem 'httparty'
 
 group :development, :test do
   gem 'pry'
