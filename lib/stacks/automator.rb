@@ -28,7 +28,11 @@ class Stacks::Automator
           assignments = week[:assignments].filter{|a| a["person_id"] == person["id"]}
           total_allocation_in_seconds = assignments.reduce(0) do |acc, a|
             # A nil allocation is a full day of "Time Off" in Harvest Forecast
-            a["allocation"].nil? ? acc + EIGHT_HOURS_IN_SECONDS : acc + a["allocation"]
+            days = (Date.parse(a["end_date"]) - Date.parse(a["start_date"])).to_i + 1
+
+            per_day_allocation = a["allocation"].nil? ? EIGHT_HOURS_IN_SECONDS : a["allocation"]
+
+            acc + (per_day_allocation * days)
           end
           {
             monday: week[:monday],
