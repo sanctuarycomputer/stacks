@@ -4,6 +4,10 @@ class Stacks::Automator
     EIGHT_HOURS_IN_SECONDS = 28800
 
     def remind_people_to_record_hours
+      # We run this with Heroku scheduler, which doesn't do weeks
+      return unless (Date.today.strftime("%A") == "Tuesday")
+
+      # Do the thing!
       forecast = Stacks::Automator::Forecast.new
       twist = Stacks::Automator::Twist.new
       twist_users = twist.get_workspace_users.parsed_response
