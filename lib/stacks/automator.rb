@@ -78,9 +78,10 @@ class Stacks::Automator
 
       hugh = people.find{|p| p[:twist_data]["email"] == "hugh@sanctuary.computer" }
       people.each do |person|
-        if person[:reminder].present?
+        if person[:reminder].present? && person[:twist_data].present?
           conversation = twist.get_or_create_conversation("#{person[:twist_data]["id"]},#{hugh[:twist_data]["id"]}")
           twist.add_message_to_conversation(conversation["id"], person[:reminder])
+          sleep(1)
         end
       end
 
