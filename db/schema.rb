@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2021_04_21_140652) do
+ActiveRecord::Schema.define(version: 2021_07_01_162812) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -53,6 +53,15 @@ ActiveRecord::Schema.define(version: 2021_04_21_140652) do
     t.index ["review_id"], name: "index_finalizations_on_review_id"
   end
 
+  create_table "invoice_passes", force: :cascade do |t|
+    t.date "start_of_month"
+    t.datetime "completed_at"
+    t.jsonb "data"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["start_of_month"], name: "index_invoice_passes_on_start_of_month", unique: true
+  end
+
   create_table "peer_reviews", force: :cascade do |t|
     t.bigint "admin_user_id", null: false
     t.bigint "review_id", null: false
@@ -62,6 +71,13 @@ ActiveRecord::Schema.define(version: 2021_04_21_140652) do
     t.index ["admin_user_id"], name: "index_peer_reviews_on_admin_user_id"
     t.index ["deleted_at"], name: "index_peer_reviews_on_deleted_at"
     t.index ["review_id"], name: "index_peer_reviews_on_review_id"
+  end
+
+  create_table "quickbooks_tokens", force: :cascade do |t|
+    t.string "token"
+    t.string "refresh_token"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
   end
 
   create_table "review_trees", force: :cascade do |t|

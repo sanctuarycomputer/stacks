@@ -1,0 +1,2 @@
+class QuickbooksToken < ApplicationRecord
+end
