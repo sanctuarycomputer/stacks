@@ -14,10 +14,13 @@ gem 'activeadmin'
 gem 'devise', github: 'heartcombo/devise', branch: 'ca-omniauth-2'
 gem 'omniauth-google-oauth2'
 gem 'omniauth-rails_csrf_protection'
+gem 'intuit-oauth'
 gem 'acts_as_paranoid', '~> 0.7.0'
 gem 'sentry-ruby'
 gem 'sentry-rails'
 gem 'httparty'
+gem 'quickbooks-ruby'
+gem 'business_time'
 
 group :development, :test do
   gem 'pry'
