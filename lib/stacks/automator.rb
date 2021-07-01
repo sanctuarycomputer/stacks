@@ -130,7 +130,8 @@ class Stacks::Automator
       qbo_token = QuickbooksToken.order("created_at").last
       access_token = OAuth2::AccessToken.new(oauth2_client, qbo_token.token, refresh_token: qbo_token.refresh_token)
       access_token = access_token.refresh!
-      QuickbooksToken.create!(token: access_token.token, refresh_token: access_token.refresh_token)
+      new_qbo_token = QuickbooksToken.create!(token: access_token.token, refresh_token: access_token.refresh_token)
+      QuickbooksToken.where.not(id: new_qbo_token.id).delete_all
 
       access_token
     end
