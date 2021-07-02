@@ -200,7 +200,7 @@ class Stacks::Automator
                 elsif hourly_rate_tags.count > 1
                   :malformed
                 else
-                  hourly_rate_tags.first.to_i
+                  hourly_rate_tags.first.to_f
                 end
 
               person_invoice_lines_acc << {
