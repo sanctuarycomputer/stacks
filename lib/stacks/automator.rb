@@ -388,7 +388,7 @@ class Stacks::Automator
 
       people = forecast.people["people"].reject{|p| p["archived"] }.map do |person|
         twist_user = twist_users.find do |twist_user|
-          twist_user["email"].downcase == person["email"].downcase ||
+          twist_user["email"].downcase == person["email"].try(:downcase) ||
           twist_user["name"].downcase == "#{person["first_name"]} #{person["last_name"]}".downcase
         end
 
@@ -473,7 +473,7 @@ class Stacks::Automator
       # Get the full team & decorate with their assignments
       forecast.people["people"].reject{|p| p["archived"] }.map do |person|
         twist_user = twist_users.find do |twist_user|
-          twist_user["email"].downcase == person["email"].downcase ||
+          twist_user["email"].downcase == person["email"].try(:downcase) ||
           twist_user["name"].downcase == "#{person["first_name"]} #{person["last_name"]}".downcase
         end
 
