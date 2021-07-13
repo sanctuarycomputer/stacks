@@ -17,6 +17,26 @@ class Stacks::Automator
 
     QBO_NOTES_FORECAST_MAPPING_BEARER = "automator:forecast_mapping:"
     QBO_NOTES_PAYMENT_TERM_BEARER = "automator:payment_term:"
+    CUSTOMER_MEMO = <<~HEREDOC
+      EIN: 47-2941554
+      W9: https://w9.sanctuary.computer
+
+      WIRE:
+      Sanctuary Computer Inc
+      EIN: 47-2941554
+      Rou #: 021000021
+      Acc #: 685028396
+
+      Chase Bank
+      405 Lexington Ave
+      New York, NY 10174
+
+      QUICKPAY:
+      admin@sanctuarycomputer.com
+
+      BILL.COM
+      admin@sanctuarycomputer.com
+    HEREDOC
 
     def forecast
       @_forecast ||= Stacks::Forecast.new
@@ -83,8 +103,11 @@ class Stacks::Automator
       return unless (first_tuesday_of_month <= Date.today)
 
       # Ensure we have an Invoice Pass record to track this month
-      invoice_pass = InvoicePass.find_or_create_by(start_of_month: (Date.today - 1.month).beginning_of_month, data: {})
-      return if invoice_pass.complete?
+      invoice_pass = InvoicePass.find_by(start_of_month: (Date.today - 1.month).beginning_of_month)
+      unless invoice_pass.present?
+        invoice_pass = InvoicePass.create!(start_of_month: (Date.today - 1.month).beginning_of_month, data: {})
+      end
+      #return if invoice_pass.complete?
 
       attempt_invoicing_for_invoice_pass(invoice_pass)
     end
@@ -175,8 +198,24 @@ class Stacks::Automator
           acc << person_assignments.reduce([]) do |person_invoice_lines_acc, assignment|
             project = projects.find{|p| p["id"] == assignment["project_id"]}
             invoice_description = "#{project["code"]} #{project["name"]} (#{invoice_month}) #{person["first_name"]} #{person["last_name"]}"
+            assignment_start_date = Date.parse(assignment["start_date"])
+            assignment_end_date = Date.parse(assignment["end_date"])
 
-            days = (Date.parse(assignment["end_date"]) - Date.parse(assignment["start_date"])).to_i + 1
+            start_date =
+              if assignment_start_date < start_of_month.beginning_of_month
+                start_of_month.beginning_of_month
+              else
+                assignment_start_date
+              end
+
+            end_date =
+              if assignment_end_date > start_of_month.end_of_month
+                start_of_month.end_of_month
+              else
+                assignment_end_date
+              end
+
+            days = (end_date - start_date).to_i + 1
             total_allocation = (assignment["allocation"] * days)
 
             existing = person_invoice_lines_acc.find{|line| line[:description] == invoice_description}
@@ -337,6 +376,8 @@ class Stacks::Automator
 
         qbo_invoice.bill_email = invoice[:qbo_customer].primary_email_address
         qbo_invoice.sales_term_ref = Quickbooks::Model::BaseReference.new(term.name, value: term.id)
+        qbo_invoice.allow_online_ach_payment = true
+        qbo_invoice.customer_memo = CUSTOMER_MEMO
 
         invoice[:invoice_lines].each do |line|
           item = qbo_items.find{|s| s.fully_qualified_name == line[:service]} ||
@@ -481,10 +522,25 @@ class Stacks::Automator
           assignments = week[:assignments].filter{|a| a["person_id"] == person["id"]}
           total_allocation_in_seconds = assignments.reduce(0) do |acc, a|
             # A nil allocation is a full day of "Time Off" in Harvest Forecast
-            days = (Date.parse(a["end_date"]) - Date.parse(a["start_date"])).to_i + 1
+            assignment_start_date = Date.parse(a["start_date"])
+            assignment_end_date = Date.parse(a["end_date"])
 
+            start_date =
+              if assignment_start_date < start_of_month.beginning_of_month
+                start_of_month.beginning_of_month
+              else
+                assignment_start_date
+              end
+
+            end_date =
+              if assignment_end_date > start_of_month.end_of_month
+                start_of_month.end_of_month
+              else
+                assignment_end_date
+              end
+
+            days = (end_date - start_date).to_i + 1
             per_day_allocation = a["allocation"].nil? ? EIGHT_HOURS_IN_SECONDS : a["allocation"]
-
             acc + (per_day_allocation * days)
           end
           {
