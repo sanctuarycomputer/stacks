@@ -32,8 +32,8 @@ class Score < ApplicationRecord
 
   def possible_bands
     if is_finalization_workspace?
-      sorted_band_ints = score_tree.workspace.review.score_table[trait_id][:band].map{|s| Score.bands[s]}.sort
-      spread = *(sorted_band_ints.min..sorted_band_ints.max)
+      sorted_ints = score_tree.workspace.review.score_table[trait_id][:band].map{|s| Score.bands[s]}.sort
+      spread = *(sorted_ints.min..sorted_ints.max)
       spread.map{|i| Score.bands.key(i)}
     else
       Score.bands.keys
@@ -45,7 +45,9 @@ class Score < ApplicationRecord
         is_finalization_workspace? &&
         score_tree.workspace.review.score_table[trait_id][:band].uniq.length == 1
     )
-      score_tree.workspace.review.score_table[trait_id][:consistency].uniq.sort_by{|a| Score.consistencies[a] }
+      sorted_ints = score_tree.workspace.review.score_table[trait_id][:consistency].map{|s| Score.consistencies[s]}.sort
+      spread = *(sorted_ints.min..sorted_ints.max)
+      spread.map{|i| Score.consistencies.key(i)}
     else
       Score.consistencies.keys
     end
