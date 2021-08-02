@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2021_07_01_162812) do
+ActiveRecord::Schema.define(version: 2021_08_02_230823) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -71,6 +71,12 @@ ActiveRecord::Schema.define(version: 2021_07_01_162812) do
     t.index ["admin_user_id"], name: "index_peer_reviews_on_admin_user_id"
     t.index ["deleted_at"], name: "index_peer_reviews_on_deleted_at"
     t.index ["review_id"], name: "index_peer_reviews_on_review_id"
+  end
+
+  create_table "profitability_passes", force: :cascade do |t|
+    t.jsonb "data"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
   end
 
   create_table "quickbooks_tokens", force: :cascade do |t|
