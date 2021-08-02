@@ -46,6 +46,47 @@ class Stacks::Automator
       @_twist ||= Stacks::Twist.new
     end
 
+    def notion
+      @_notion ||= Stacks::Notion.new
+    end
+
+    def sync_with_finance_hub
+      response = notion.query_database("713b28db4f8a45c68126e9723c65349e")
+      block_id = response["results"][0]["id"]
+      blocks = notion.get_block_children(block_id)["results"]
+
+      # Attempt to discover the database
+      finance_hubs = (blocks.map do |block|
+        if block["type"] == "unsupported"
+          pd = notion.get_database(block["id"])
+          (pd["title"] && pd["title"][0].dig("text", "content") == "Finance Hub") ? pd : nil
+        else
+          nil
+        end
+      end).compact
+
+      finance_hub = if finance_hubs.count == 1
+        finance_hubs.first
+      elsif finance_hubs.count == 0
+        notion.create_database(
+          { page_id: block_id },
+          "Finance Hub",
+          {
+            "Name": { "title": {} },
+            "Spend": { "number": { "format": "dollar" } },
+          }
+        )
+      else
+        raise "too_many_finance_hubs"
+      end
+
+      finance_hub_children = notion.get_block_children(finance_hub["id"])
+
+      # Pull in all invoices with a note, ensure they exist
+      # Ensure the current month exists (July 2020)
+      # Update Spend: May 2021 | 37,450
+    end
+
     def message_operations_channel_thread(thread_title, message)
       channel = twist.get_channel("467805")
       thread = twist.get_all_threads(channel["id"]).find do |t|
