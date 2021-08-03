@@ -42,6 +42,15 @@ $color-purple: #7B4EFA;
 $color-white: white;
 $color-grey: #5E6469;
 
+::selection {
+  background: $color-blue; /* WebKit/Blink Browsers */
+  color: white;
+}
+::-moz-selection {
+  background: $color-blue; /* Gecko Browsers */
+  color: white;
+}
+
 .nag {
   background-color: $color-white;
   padding: 14px 30px;
