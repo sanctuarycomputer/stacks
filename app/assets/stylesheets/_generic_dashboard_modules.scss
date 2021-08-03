@@ -1,0 +1,33 @@
+.dashboard-modules {
+  display: flex;
+}
+.dashboard-module {
+  width: 100%;
+  box-shadow: 0 1px 20px #b7b7b7;
+  border-radius: 8px;
+}
+.dashboard-module:nth-child(even) {
+  margin-left: 10px;
+}
+.dashboard-module:nth-child(odd) {
+  margin-right: 10px;
+}
+.dashboard-module .module-header {
+  padding: 20px;
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px dashed #e8e8e8;
+}
+.dashboard-module .module-header p {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 0;
+  color: #5E6469;
+}
+.dashboard-module .module-body {
+  padding: 20px;
+}
+.dashboard-module .module-body p {
+  font-size: 18px;
+  margin-bottom: 0;
+}

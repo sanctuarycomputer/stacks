@@ -8,14 +8,14 @@ class Score < ApplicationRecord
     mid_level: 1,
     experienced_mid_level: 2,
     senior: 3,
-    lead: 4
+    lead: 4,
   }
   enum consistency: {
     still_learning: 0,
     mostly_meets_expectations: 1,
     meets_expectations: 2,
     exceeds_expectations: 3,
-    exceptional: 4
+    exceptional: 4,
   }
 
   def score_to_points
@@ -32,22 +32,20 @@ class Score < ApplicationRecord
 
   def possible_bands
     if is_finalization_workspace?
-      sorted_ints = score_tree.workspace.review.score_table[trait_id][:band].map{|s| Score.bands[s]}.sort
+      sorted_ints = score_tree.workspace.review.score_table[trait_id][:band].map { |s| Score.bands[s] }.sort
       spread = *(sorted_ints.min..sorted_ints.max)
-      spread.map{|i| Score.bands.key(i)}
+      spread.map { |i| Score.bands.key(i) }
     else
       Score.bands.keys
     end
   end
 
   def possible_consistencies
-    if (
-        is_finalization_workspace? &&
-        score_tree.workspace.review.score_table[trait_id][:band].uniq.length == 1
-    )
-      sorted_ints = score_tree.workspace.review.score_table[trait_id][:consistency].map{|s| Score.consistencies[s]}.sort
+    if (is_finalization_workspace? &&
+        score_tree.workspace.review.score_table[trait_id][:band].uniq.length == 1)
+      sorted_ints = score_tree.workspace.review.score_table[trait_id][:consistency].map { |s| Score.consistencies[s] }.sort
       spread = *(sorted_ints.min..sorted_ints.max)
-      spread.map{|i| Score.consistencies.key(i)}
+      spread.map { |i| Score.consistencies.key(i) }
     else
       Score.consistencies.keys
     end

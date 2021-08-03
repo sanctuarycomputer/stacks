@@ -1,19 +1,52 @@
 ActiveAdmin.register AdminUser do
+  config.current_filters = false
   menu if: proc { current_admin_user.is_payroll_manager? },
        label: "Team"
   actions :index, :show
+  scope :active, default: true
+  scope :archived
 
   config.filters = false
   config.sort_order = "created_at_desc"
   config.paginate = false
 
-  index do
-    column :email
+  action_item :archive, only: :show, if: proc { current_admin_user.is_payroll_manager? } do
+    if resource.archived_at.present?
+      link_to "Unarchive", unarchive_admin_user_admin_admin_user_path(resource), method: :post
+    else
+      link_to "Archive", archive_admin_user_admin_admin_user_path(resource), method: :post
+    end
+  end
+
+  member_action :archive_admin_user, method: :post do
+    resource.update!(archived_at: DateTime.now)
+    redirect_to admin_admin_user_path(resource), notice: "Archived!"
+  end
+
+  member_action :unarchive_admin_user, method: :post do
+    resource.update!(archived_at: nil)
+    redirect_to admin_admin_user_path(resource), notice: "Archive reverted!"
+  end
+
+  index download_links: false do
+    column :team_member do |resource|
+      resource
+    end
     column :skill_tree_level
     actions
   end
 
   show do
+    COLORS = [
+      "#1F78FF",
+      "#ffa500",
+      "#414141",
+      "#26bd50",
+      "#7B4EFA",
+      "#FF6961",
+      "5E6469",
+    ]
+
     data = {
       labels: [],
       datasets: [],
@@ -37,6 +70,7 @@ ActiveAdmin.register AdminUser do
           data[:datasets] << {
             label: review[:label],
             data: review[:chart].values.map { |v| v[:sum] },
+            borderColor: COLORS[archived_reviews.index(review)],
           }
           data
         end
