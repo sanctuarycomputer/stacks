@@ -26,8 +26,7 @@ Trait.create!(name: "Software Architecture & Security", tree: dev)
 Trait.create!(name: "Deployment & Ops", tree: dev)
 Trait.create!(name: "Documentation, Git Fluency & Code Reviews", tree: dev)
 
-
-leadership = Tree.create!(name: "Leadership & Impact")
+leadership = Tree.create!(name: "Studio Impact")
 Trait.create!(name: "Collaboration", tree: leadership)
 Trait.create!(name: "Ambiguity & Accountability", tree: leadership)
 Trait.create!(name: "People Skills", tree: leadership)

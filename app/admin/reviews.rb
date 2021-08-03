@@ -63,7 +63,7 @@ ActiveAdmin.register Review do
         tree: nil,
       })
       resource.review_trees << ReviewTree.new({
-        tree: Tree.find_by(name: "Leadership & Impact"),
+        tree: Tree.find_by(name: "Studio Impact"),
       })
       new!
     end
