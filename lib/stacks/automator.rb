@@ -7,7 +7,7 @@ class Stacks::Automator
       "XXIX": "Brand Services",
       "Manhattan Hydraulics": "UX Services",
       "Sanctuary Computer": "Development Services",
-      "garden3d": "Services"
+      "garden3d": "Services",
     }
 
     STUDIOS = STUDIO_TO_SERVICE_MAPPING.keys
@@ -66,19 +66,19 @@ class Stacks::Automator
       end).compact
 
       finance_hub = if finance_hubs.count == 1
-        finance_hubs.first
-      elsif finance_hubs.count == 0
-        notion.create_database(
-          { page_id: block_id },
-          "Finance Hub",
-          {
-            "Name": { "title": {} },
-            "Spend": { "number": { "format": "dollar" } },
-          }
-        )
-      else
-        raise "too_many_finance_hubs"
-      end
+          finance_hubs.first
+        elsif finance_hubs.count == 0
+          notion.create_database(
+            { page_id: block_id },
+            "Finance Hub",
+            {
+              "Name": { "title": {} },
+              "Spend": { "number": { "format": "dollar" } },
+            }
+          )
+        else
+          raise "too_many_finance_hubs"
+        end
 
       finance_hub_children = notion.get_block_children(finance_hub["id"])
 
@@ -111,10 +111,10 @@ class Stacks::Automator
       # Record people still missing
       new_reminder_pass = {}
       new_reminder_pass[DateTime.now.iso8601] =
-        needed_reminding.reduce({}) {|acc, p| acc[p[:forecast_data]["email"]] = { missing_allocation: p[:missing_allocation] }; acc}
+        needed_reminding.reduce({}) { |acc, p| acc[p[:forecast_data]["email"]] = { missing_allocation: p[:missing_allocation] }; acc }
       invoice_pass.update(data: (invoice_pass.data || {}).merge({
-        reminder_passes: ((invoice_pass.data || {})["reminder_passes"] || {}).merge(new_reminder_pass)
-      }))
+                            reminder_passes: ((invoice_pass.data || {})["reminder_passes"] || {}).merge(new_reminder_pass),
+                          }))
 
       return if needed_reminding.any?
 
@@ -123,8 +123,8 @@ class Stacks::Automator
       new_pass = {}
       new_pass[DateTime.now.iso8601] = run_data
       invoice_pass.update(data: (invoice_pass.data || {}).merge({
-        generator_passes: ((invoice_pass.data || {})["generator_passes"] || {}).merge(new_pass)
-      }), completed_at: DateTime.now)
+                            generator_passes: ((invoice_pass.data || {})["generator_passes"] || {}).merge(new_pass),
+                          }), completed_at: DateTime.now)
 
       message = <<~HEREDOC
         We just completed an invoice pass for work done during #{invoice_pass.start_of_month.strftime("%B %Y")}.
@@ -148,14 +148,14 @@ class Stacks::Automator
       unless invoice_pass.present?
         invoice_pass = InvoicePass.create!(start_of_month: (Date.today - 1.month).beginning_of_month, data: {})
       end
-      #return if invoice_pass.complete?
+      return if invoice_pass.complete?
 
       attempt_invoicing_for_invoice_pass(invoice_pass)
     end
 
     def remind_people_to_record_hours_prior_to_invoicing(start_of_month)
       people = discover_people_missing_hours_for_month(start_of_month)
-      hugh = people.find{|p| p[:twist_data]["email"] == "hugh@sanctuary.computer" }
+      hugh = people.find { |p| p[:twist_data]["email"] == "hugh@sanctuary.computer" }
 
       needed_reminding = people.filter do |person|
         person[:reminder].present? && person[:twist_data].present? && !person[:forecast_data]["roles"].include?("Subcontractor")
@@ -169,7 +169,7 @@ class Stacks::Automator
 
       if needed_reminding.any?
         message_body = needed_reminding.reduce("") do |acc, person|
-          acc + "**[Name](twist-mention://#{person[:twist_data]["id"]})**: `#{person[:missing_allocation] / 60 / 60} missing hrs`\n"
+          acc + "**[#{person[:twist_data]["name"]}](twist-mention://#{person[:twist_data]["id"]})**: `#{person[:missing_allocation] / 60 / 60} missing hrs`"
         end
         message = <<~HEREDOC
           👋 Hi Operations Team!
@@ -189,7 +189,7 @@ class Stacks::Automator
       oauth2_client = OAuth2::Client.new(Stacks::Utils.config[:quickbooks][:client_id], Stacks::Utils.config[:quickbooks][:client_secret], {
         site: "https://appcenter.intuit.com/connect/oauth2",
         authorize_url: "https://appcenter.intuit.com/connect/oauth2",
-        token_url: "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
+        token_url: "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer",
       })
       qbo_token = QuickbooksToken.order("created_at").last
       access_token = OAuth2::AccessToken.new(oauth2_client, qbo_token.token, refresh_token: qbo_token.refresh_token)
@@ -215,7 +215,7 @@ class Stacks::Automator
         generated: [],
         error_missing_qbo_customer: [],
         error_payment_term_malformed: [],
-        error_hourly_rate_malformed: []
+        error_hourly_rate_malformed: [],
       }
 
       invoice_month = start_of_month.strftime("%B %Y")
@@ -227,30 +227,28 @@ class Stacks::Automator
         start_of_month.end_of_month,
       )["assignments"]
 
-      invoices_to_send = (forecast.clients()["clients"].reject{|c| STUDIOS.include?(:"#{c["name"]}") }.map do |client|
-        client_projects = projects.filter{|p| p["client_id"] == client["id"]}
-        client_project_ids = client_projects.map{|p| p["id"]}
-        client_assignments = last_month_assignments.filter{|a| client_project_ids.include?(a["project_id"])}
-        client_people = client_assignments.map{|a| a["person_id"]}.uniq.map{|person_id| people.find{|p| p["id"] == person_id} }
+      invoices_to_send = (forecast.clients()["clients"].reject { |c| STUDIOS.include?(:"#{c["name"]}") }.map do |client|
+        client_projects = projects.filter { |p| p["client_id"] == client["id"] }
+        client_project_ids = client_projects.map { |p| p["id"] }
+        client_assignments = last_month_assignments.filter { |a| client_project_ids.include?(a["project_id"]) }
+        client_people = client_assignments.map { |a| a["person_id"] }.uniq.map { |person_id| people.find { |p| p["id"] == person_id } }
 
         invoice_lines = client_people.reduce([]) do |acc, person|
           person_invoice_lines = []
-          person_assignments = client_assignments.filter{|a| a["person_id"] == person["id"]}
+          person_assignments = client_assignments.filter { |a| a["person_id"] == person["id"] }
           acc << person_assignments.reduce([]) do |person_invoice_lines_acc, assignment|
-            project = projects.find{|p| p["id"] == assignment["project_id"]}
+            project = projects.find { |p| p["id"] == assignment["project_id"] }
             invoice_description = "#{project["code"]} #{project["name"]} (#{invoice_month}) #{person["first_name"]} #{person["last_name"]}"
             assignment_start_date = Date.parse(assignment["start_date"])
             assignment_end_date = Date.parse(assignment["end_date"])
 
-            start_date =
-              if assignment_start_date < start_of_month.beginning_of_month
+            start_date = if assignment_start_date < start_of_month.beginning_of_month
                 start_of_month.beginning_of_month
               else
                 assignment_start_date
               end
 
-            end_date =
-              if assignment_end_date > start_of_month.end_of_month
+            end_date = if assignment_end_date > start_of_month.end_of_month
                 start_of_month.end_of_month
               else
                 assignment_end_date
@@ -259,13 +257,12 @@ class Stacks::Automator
             days = (end_date - start_date).to_i + 1
             total_allocation = (assignment["allocation"] * days)
 
-            existing = person_invoice_lines_acc.find{|line| line[:description] == invoice_description}
+            existing = person_invoice_lines_acc.find { |line| line[:description] == invoice_description }
             if existing.present?
               existing[:allocation] = existing[:allocation] += total_allocation
             else
-              services = person["roles"].map{|r| STUDIO_TO_SERVICE_MAPPING[:"#{r}"]}.compact
-              service =
-                if services.count == 0
+              services = person["roles"].map { |r| STUDIO_TO_SERVICE_MAPPING[:"#{r}"] }.compact
+              service = if services.count == 0
                   "Services"
                 elsif services.count > 1
                   "Services"
@@ -273,9 +270,8 @@ class Stacks::Automator
                   services.first
                 end
 
-              hourly_rate_tags = project["tags"].filter{|t| t.ends_with?("p/h")}
-              hourly_rate =
-                if hourly_rate_tags.count == 0
+              hourly_rate_tags = project["tags"].filter { |t| t.ends_with?("p/h") }
+              hourly_rate = if hourly_rate_tags.count == 0
                   DEFAULT_HOURLY_RATE
                 elsif hourly_rate_tags.count > 1
                   :malformed
@@ -287,7 +283,7 @@ class Stacks::Automator
                 description: invoice_description,
                 allocation: total_allocation,
                 service: service,
-                hourly_rate: hourly_rate
+                hourly_rate: hourly_rate,
               }
             end
             person_invoice_lines_acc
@@ -296,9 +292,9 @@ class Stacks::Automator
 
         {
           client: client,
-          invoice_lines: invoice_lines.flatten.sort{|a, b| a[:description] <=> b[:description]}
+          invoice_lines: invoice_lines.flatten.sort { |a, b| a[:description] <=> b[:description] },
         }
-      end).filter{|i| i[:invoice_lines].any? }
+      end).filter { |i| i[:invoice_lines].any? }
 
       # Do Quickbooks Things
       access_token = make_and_refresh_qbo_access_token
@@ -330,10 +326,10 @@ class Stacks::Automator
       invoices_to_send.each do |invoice|
         # Find our QBO Customer
         invoice[:qbo_customer] = qbo_customers.find do |c|
-          mapping = (c.notes || "").split(" ").find{|word| word.starts_with?(QBO_NOTES_FORECAST_MAPPING_BEARER) }
+          mapping = (c.notes || "").split(" ").find { |word| word.starts_with?(QBO_NOTES_FORECAST_MAPPING_BEARER) }
           if mapping
             splat = mapping.split(QBO_NOTES_FORECAST_MAPPING_BEARER)[1]
-            splat = splat.gsub!(/_/, ' ') if splat.include?("_")
+            splat = splat.gsub!(/_/, " ") if splat.include?("_")
             splat == invoice[:client]["name"]
           else
             c.company_name == invoice[:client]["name"]
@@ -345,67 +341,67 @@ class Stacks::Automator
           run_data[:error_missing_qbo_customer] << {
             forecast_client: {
               name: invoice[:client]["name"],
-              id: invoice[:client]["id"]
-            }
+              id: invoice[:client]["id"],
+            },
           }
           next
         end
 
         # Warn if there's more than one hourly rate per project
-        if invoice[:invoice_lines].any?{|l| l[:hourly_rate] == :malformed}
+        if invoice[:invoice_lines].any? { |l| l[:hourly_rate] == :malformed }
           run_data[:error_hourly_rate_malformed] << {
             forecast_client: {
               name: invoice[:client]["name"],
-              id: invoice[:client]["id"]
+              id: invoice[:client]["id"],
             },
             qbo_customer: {
               id: invoice[:qbo_customer].id,
-              company_name: invoice[:qbo_customer].company_name
-            }
+              company_name: invoice[:qbo_customer].company_name,
+            },
           }
           next
         end
 
         # Find our Term
-        term_mapping = (invoice[:qbo_customer].notes || "").split(" ").find{|word| word.starts_with?(QBO_NOTES_PAYMENT_TERM_BEARER) }
+        term_mapping = (invoice[:qbo_customer].notes || "").split(" ").find { |word| word.starts_with?(QBO_NOTES_PAYMENT_TERM_BEARER) }
         term = if term_mapping.present?
-          term_days = term_mapping.split(QBO_NOTES_PAYMENT_TERM_BEARER)[1].to_i
-          qbo_terms.find{|t| t.due_days == term_days}
-        else
-          qbo_terms.find{|t| t.due_days == DEFAULT_PAYMENT_TERM}
-        end
+            term_days = term_mapping.split(QBO_NOTES_PAYMENT_TERM_BEARER)[1].to_i
+            qbo_terms.find { |t| t.due_days == term_days }
+          else
+            qbo_terms.find { |t| t.due_days == DEFAULT_PAYMENT_TERM }
+          end
 
         # Warn if the term is not 15, 30, 45, 90, etc
         if term.nil?
           run_data[:error_payment_term_malformed] << {
             forecast_client: {
               name: invoice[:client]["name"],
-              id: invoice[:client]["id"]
+              id: invoice[:client]["id"],
             },
             qbo_customer: {
               id: invoice[:qbo_customer].id,
-              company_name: invoice[:qbo_customer].company_name
-            }
+              company_name: invoice[:qbo_customer].company_name,
+            },
           }
           next
         end
 
         # Test there's no existing invoice for this month
-        qbo_invoices_for_customer = qbo_invoices.select{|i| i.customer_ref.value == invoice[:qbo_customer].id}
-        existing = qbo_invoices_for_customer.find{|i| i.private_note == invoice_month}
+        qbo_invoices_for_customer = qbo_invoices.select { |i| i.customer_ref.value == invoice[:qbo_customer].id }
+        existing = qbo_invoices_for_customer.find { |i| i.private_note == invoice_month }
         if existing.present?
           run_data[:existing] << {
             forecast_client: {
               name: invoice[:client]["name"],
-              id: invoice[:client]["id"]
+              id: invoice[:client]["id"],
             },
             qbo_customer: {
               id: invoice[:qbo_customer].id,
-              company_name: invoice[:qbo_customer].company_name
+              company_name: invoice[:qbo_customer].company_name,
             },
             qbo_invoice: {
-              id: existing.id
-            }
+              id: existing.id,
+            },
           }
           next
         end
@@ -421,8 +417,8 @@ class Stacks::Automator
         qbo_invoice.customer_memo = CUSTOMER_MEMO
 
         invoice[:invoice_lines].each do |line|
-          item = qbo_items.find{|s| s.fully_qualified_name == line[:service]} ||
-            qbo_items.find{|s| s.fully_qualified_name == "Services"}
+          item = qbo_items.find { |s| s.fully_qualified_name == line[:service] } ||
+                 qbo_items.find { |s| s.fully_qualified_name == "Services" }
 
           hours = (line[:allocation].to_f / 60 / 60)
           hourly_rate = line[:hourly_rate]
@@ -442,15 +438,15 @@ class Stacks::Automator
         run_data[:generated] << {
           forecast_client: {
             name: invoice[:client]["name"],
-            id: invoice[:client]["id"]
+            id: invoice[:client]["id"],
           },
           qbo_customer: {
             id: invoice[:qbo_customer].id,
-            company_name: invoice[:qbo_customer].company_name
+            company_name: invoice[:qbo_customer].company_name,
           },
           qbo_invoice: {
-            id: created_invoice.id
-          }
+            id: created_invoice.id,
+          },
         }
       end
 
@@ -463,33 +459,31 @@ class Stacks::Automator
         start_of_month.end_of_month,
       )["assignments"]
 
-      business_days_last_month = (start_of_month.beginning_of_month.business_days_until(start_of_month.end_of_month) + 1)
+      business_days_last_month = (start_of_month.beginning_of_month..start_of_month.end_of_month).select { |d| (1..5).include?(d.wday) }.size
       allocation_expected_last_month = EIGHT_HOURS_IN_SECONDS * business_days_last_month
 
       twist_users = twist.get_workspace_users.parsed_response
 
-      people = forecast.people["people"].reject{|p| p["archived"] }.map do |person|
+      people = forecast.people["people"].reject { |p| p["archived"] }.map do |person|
         twist_user = twist_users.find do |twist_user|
           twist_user["email"].downcase == person["email"].try(:downcase) ||
           twist_user["name"].downcase == "#{person["first_name"]} #{person["last_name"]}".downcase
         end
 
-        assignments = last_month_assignments.filter{|a| a["person_id"] == person["id"]}
+        assignments = last_month_assignments.filter { |a| a["person_id"] == person["id"] }
 
         total_allocation_in_seconds = assignments.reduce(0) do |acc, a|
           # A nil allocation is a full day of "Time Off" in Harvest Forecast
           assignment_start_date = Date.parse(a["start_date"])
           assignment_end_date = Date.parse(a["end_date"])
 
-          start_date =
-            if assignment_start_date < start_of_month.beginning_of_month
+          start_date = if assignment_start_date < start_of_month.beginning_of_month
               start_of_month.beginning_of_month
             else
               assignment_start_date
             end
 
-          end_date =
-            if assignment_end_date > start_of_month.end_of_month
+          end_date = if assignment_end_date > start_of_month.end_of_month
               start_of_month.end_of_month
             else
               assignment_end_date
@@ -525,7 +519,7 @@ class Stacks::Automator
             twist_data: twist_user,
             missing_allocation: missing_allocation,
             reminder: reminder,
-            studio: person["roles"].filter{|r| STUDIOS.include?(:"#{r}")}.first
+            studio: person["roles"].filter { |r| STUDIOS.include?(:"#{r}") }.first,
           }
         else
           {
@@ -533,7 +527,7 @@ class Stacks::Automator
             twist_data: twist_user,
             missing_allocation: 0,
             reminder: nil,
-            studio: person["roles"].filter{|r| STUDIOS.include?(:"#{r}")}.first
+            studio: person["roles"].filter { |r| STUDIOS.include?(:"#{r}") }.first,
           }
         end
       end
@@ -547,34 +541,32 @@ class Stacks::Automator
       relevant_weeks = find_relevant_weeks
       relevant_weeks.each do |week|
         week[:assignments] = forecast.assignments(
-          week[:monday].strftime('%Y-%m-%dT%H:%M:%S.%L%z'),
-          week[:friday].strftime('%Y-%m-%dT%H:%M:%S.%L%z')
+          week[:monday].strftime("%Y-%m-%dT%H:%M:%S.%L%z"),
+          week[:friday].strftime("%Y-%m-%dT%H:%M:%S.%L%z")
         )["assignments"]
       end
 
       # Get the full team & decorate with their assignments
-      forecast.people["people"].reject{|p| p["archived"] }.map do |person|
+      forecast.people["people"].reject { |p| p["archived"] }.map do |person|
         twist_user = twist_users.find do |twist_user|
           twist_user["email"].downcase == person["email"].try(:downcase) ||
           twist_user["name"].downcase == "#{person["first_name"]} #{person["last_name"]}".downcase
         end
 
         assignments_by_week = relevant_weeks.map do |week|
-          assignments = week[:assignments].filter{|a| a["person_id"] == person["id"]}
+          assignments = week[:assignments].filter { |a| a["person_id"] == person["id"] }
           total_allocation_in_seconds = assignments.reduce(0) do |acc, a|
             # A nil allocation is a full day of "Time Off" in Harvest Forecast
             assignment_start_date = Date.parse(a["start_date"])
             assignment_end_date = Date.parse(a["end_date"])
 
-            start_date =
-              if assignment_start_date < start_of_month.beginning_of_month
+            start_date = if assignment_start_date < start_of_month.beginning_of_month
                 start_of_month.beginning_of_month
               else
                 assignment_start_date
               end
 
-            end_date =
-              if assignment_end_date > start_of_month.end_of_month
+            end_date = if assignment_end_date > start_of_month.end_of_month
                 start_of_month.end_of_month
               else
                 assignment_end_date
@@ -593,16 +585,15 @@ class Stacks::Automator
         end
 
         # Crunch hours missing
-        weeks_missing_hours = assignments_by_week.select{|abw| abw[:total_allocation_in_seconds] < FORTY_HOURS_IN_SECONDS}
-        reminder_body =
-          if weeks_missing_hours.any?
+        weeks_missing_hours = assignments_by_week.select { |abw| abw[:total_allocation_in_seconds] < FORTY_HOURS_IN_SECONDS }
+        reminder_body = if weeks_missing_hours.any?
             weeks_missing_hours.reduce("") do |acc, week|
-              acc + "#{week[:monday].to_formatted_s(:short)} - #{week[:friday].to_formatted_s(:short)}: Missing #{(FORTY_HOURS_IN_SECONDS - week[:total_allocation_in_seconds].to_f) / 60 / 60} hours\n"
+              acc + "#{week[:monday].to_formatted_s(:short)} - #{week[:friday].to_formatted_s(:short)}: Missing #{(FORTY_HOURS_IN_SECONDS - week[:total_allocation_in_seconds].to_f) / 60 / 60} hours
+"
             end
           end
 
-        reminder =
-          if reminder_body.present?
+        reminder = if reminder_body.present?
             <<~HEREDOC
               👋 Hi #{person["first_name"]}!
 
@@ -630,7 +621,7 @@ class Stacks::Automator
           assignments_by_week: assignments_by_week,
           reminder: reminder,
           reminder_body: reminder_body,
-          studio: person["roles"].filter{|r| STUDIOS.include?(:"#{r}")}.first
+          studio: person["roles"].filter { |r| STUDIOS.include?(:"#{r}") }.first,
         }
       end
     end
@@ -640,7 +631,7 @@ class Stacks::Automator
       return unless (Date.today.strftime("%A") == "Tuesday")
       people = discover_people_missing_hours
 
-      hugh = people.find{|p| p[:twist_data]["email"] == "hugh@sanctuary.computer" }
+      hugh = people.find { |p| p[:twist_data]["email"] == "hugh@sanctuary.computer" }
       people.each do |person|
         if person[:reminder].present? && person[:twist_data].present?
           conversation = twist.get_or_create_conversation("#{person[:twist_data]["id"]},#{hugh[:twist_data]["id"]}")
@@ -649,11 +640,12 @@ class Stacks::Automator
         end
       end
 
-      needed_reminding = people.select{|p| p[:reminder].present?}
-      message =
-        if needed_reminding.any?
+      needed_reminding = people.select { |p| p[:reminder].present? }
+      message = if needed_reminding.any?
           message_body = needed_reminding.reduce("") do |acc, person|
-            acc + "**#{person[:forecast_data]["first_name"]} #{person[:forecast_data]["last_name"]} (#{person[:studio]})**\n#{person[:reminder_body]}\n"
+            acc + "**#{person[:forecast_data]["first_name"]} #{person[:forecast_data]["last_name"]} (#{person[:studio]})**
+#{person[:reminder_body]}
+"
           end
           <<~HEREDOC
             👋 Hi Operations Team!

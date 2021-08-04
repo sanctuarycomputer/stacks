@@ -20,7 +20,6 @@ gem 'sentry-ruby'
 gem 'sentry-rails'
 gem 'httparty'
 gem 'quickbooks-ruby'
-gem 'business_time'
 
 group :development, :test do
   gem 'pry'
