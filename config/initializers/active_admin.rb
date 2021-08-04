@@ -117,7 +117,7 @@ ActiveAdmin.setup do |config|
   # roots for each namespace.
   #
   # Default:
-  config.root_to = 'reviews#index'
+  config.root_to = "reviews#index"
 
   # == Admin Comments
   #
@@ -231,9 +231,11 @@ ActiveAdmin.setup do |config|
   # To change the default utility navigation to show a link to your website & a logout btn
   #
   config.namespace :admin do |admin|
+    admin.authorization_adapter = "AdminAuthorization"
+
     admin.build_menu :utility_navigation do |menu|
       menu.add label: "🤔 Learn Stacks", url: "https://www.notion.so/garden3d/Using-Stacks-3bb041a0cfe84e4d899707901374a001", html_options: { target: :blank }
-      admin.add_current_user_to_menu  menu
+      admin.add_current_user_to_menu menu
       admin.add_logout_button_to_menu menu
     end
   end
@@ -360,8 +362,8 @@ end
 
 ActiveAdmin::Views::Pages::Index.class_eval do
   def render_blank_slate
-    div(class: 'empty_state') do
-      render('docs_linkout')
+    div(class: "empty_state") do
+      render("docs_linkout")
     end
   end
 end

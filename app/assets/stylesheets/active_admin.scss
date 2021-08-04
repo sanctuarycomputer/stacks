@@ -62,8 +62,36 @@ $color-grey: #5E6469;
   box-shadow: 0 1px 20px #b7b7b7;
 }
 
+body.edit.admin_admin_users {
+  .admin_inputs {
+    ol {
+      padding: 0;
+      box-shadow: 0 1px 20px #b7b7b7;
+      border-radius: 8px;
+      li {
+        display: flex;
+        padding: 20px;
+        justify-content: space-between;
+        border-bottom: 1px dashed #e8e8e8;
+        &:last-of-type {
+          border-bottom: none;
+        }
+      }
+      li.boolean label {
+        padding-left: 0;
+        font-size: 18px;
+        font-weight: 700;
+        margin-bottom: 0;
+        color: #5E6469;
+      }
+    }
+  }
+}
 
-body.new.admin_reviews, body.create.admin_reviews, body.edit.admin_reviews, body.update.admin_reviews {
+body.new.admin_reviews,
+body.create.admin_reviews,
+body.edit.admin_reviews,
+body.update.admin_reviews {
   li.cancel {
     display: none;
   }
@@ -222,8 +250,26 @@ form fieldset > ol > li p.inline-errors {
   display: block;
 }
 
+form fieldset.actions li.cancel a {
+  margin: 10px;
+  color: white;
+  font-size: 18px;
+  padding: 14px 30px;
+  border: none;
+  background-color: $color-orange;
+  box-shadow: none;
+  &:not(.disabled):hover {
+    background-color: $color-orange;
+  }
+}
+
 form {
-  a.button, a.button:link, a.button:visited, input[type=submit], input[type=button], button {
+  a.button,
+  a.button:link,
+  a.button:visited,
+  input[type=submit],
+  input[type=button],
+  button {
     background-color: $color-black;
     margin: 10px;
     color: white;

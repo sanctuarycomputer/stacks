@@ -1,8 +1,9 @@
 ActiveAdmin.register AdminUser do
+  permit_params :show_skill_tree_data
   config.current_filters = false
   menu if: proc { current_admin_user.is_payroll_manager? },
        label: "Team"
-  actions :index, :show
+  actions :index, :show, :edit, :update
   scope :active, default: true
   scope :archived
 
@@ -32,7 +33,9 @@ ActiveAdmin.register AdminUser do
     column :team_member do |resource|
       resource
     end
-    column :skill_tree_level
+    column :skill_tree_level do |resource|
+      resource.show_skill_tree_data? ? resource.skill_tree_level : "Private"
+    end
     actions
   end
 
@@ -78,5 +81,13 @@ ActiveAdmin.register AdminUser do
     end
 
     render(partial: "skill_radar_chart", locals: { data: data })
+  end
+
+  form do |f|
+    f.semantic_errors
+    f.inputs(class: "admin_inputs") do
+      f.input :show_skill_tree_data, label: "Make my Skill Tree Data public"
+    end
+    f.actions
   end
 end

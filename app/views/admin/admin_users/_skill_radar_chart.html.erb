@@ -4,13 +4,22 @@
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
     <div class="module-header">
-      <p>Skills</p>
+      <p>Skill Tree</p>
+      <% if resource.show_skill_tree_data? %>
+        <p>Public</p>
+      <% else %>
+        <p>Private</p>
+      <% end %>
     </div>
     <div class="module-body">
-      <% if data[:datasets].any? %>
-        <canvas id="skill-chart" width="500" height="500"></canvas>
+      <% if resource == current_admin_user || resource.show_skill_tree_data? %>
+        <% if data[:datasets].any? %>
+          <canvas id="skill-chart" width="500" height="500"></canvas>
+        <% else %>
+          <p>No Reviews Yet.</p>
+        <% end %>
       <% else %>
-        <p>No Reviews Yet.</p>
+        <p>Private.</p>
       <% end %>
     </div>
   </div>
@@ -18,10 +27,14 @@
   <div class="dashboard-module">
     <div class="module-header">
       <p>Info</p>
-      <p><a>Notion →</a></p>
+      <!-- <p><a>Notion →</a></p> -->
     </div>
     <div class="module-body">
-      <p>This section coming soon.</p>
+      <% if resource == current_admin_user || resource.show_skill_tree_data? %>
+        <p><strong>Skill Tree Level:</strong> <%= resource.skill_tree_level %><%= resource.show_skill_tree_data? ? "" : " (Private)" %></p>
+      <% else %>
+        <p><strong>Skill Tree Level:</strong> Private</p>
+      <% end %>
     </div>
   </div>
 </div>
