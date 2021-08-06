@@ -38,10 +38,10 @@ class Workspace < ApplicationRecord
     add = next_tree_ids - (next_tree_ids & current_tree_ids)
 
     remove.each do |tree_id|
-      score_trees.find{|st| st.tree_id == tree_id}.destroy!
+      score_trees.find { |st| st.tree_id == tree_id }.destroy!
     end
     add.each do |tree_id|
-      prev_deleted = score_trees.with_deleted.find{|st| st.tree_id == tree_id}
+      prev_deleted = score_trees.with_deleted.find { |st| st.tree_id == tree_id }
       if prev_deleted
         # For some reason, recursive:true doesn't seem to work here. Not sure why
         # but not enough time to debug

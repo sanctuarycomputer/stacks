@@ -6,7 +6,11 @@ class ReviewTree < ApplicationRecord
 
   def possible_trees
     if (tree.nil? || Tree.craft_trees.include?(tree))
-      Tree.craft_trees
+      latest_review = self.review.admin_user.archived_reviews.first
+      previous_craft_tree = if latest_review.present?
+          latest_review.workspace.score_trees.map { |st| st.tree }.find { |t| Tree.craft_trees.include?(t) }
+        end
+      previous_craft_tree.present? ? [previous_craft_tree] : Tree.craft_trees
     else
       [tree]
     end

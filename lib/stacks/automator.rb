@@ -131,7 +131,7 @@ class Stacks::Automator
 
         Please review and send invoices [here](https://stacks.garden3d.net/admin/invoice_passes/#{invoice_pass.id}), and resolve any errors necessary.
       HEREDOC
-      message_operations_channel_thread("[#{invoice_pass.start_of_month.strftime("%B %Y")}] Invoicing", message)
+      #message_operations_channel_thread("[#{invoice_pass.start_of_month.strftime("%B %Y")}] Invoicing", message)
     end
 
     # Designed to run daily, and remind folks to update their hours
@@ -162,9 +162,9 @@ class Stacks::Automator
       end
 
       needed_reminding.each do |person|
-        conversation = twist.get_or_create_conversation("#{person[:twist_data]["id"]},#{hugh[:twist_data]["id"]}")
-        twist.add_message_to_conversation(conversation["id"], person[:reminder])
-        sleep(0.1)
+        #conversation = twist.get_or_create_conversation("#{person[:twist_data]["id"]},#{hugh[:twist_data]["id"]}")
+        #twist.add_message_to_conversation(conversation["id"], person[:reminder])
+        #sleep(0.1)
       end
 
       if needed_reminding.any?
@@ -179,7 +179,7 @@ class Stacks::Automator
 
           I've just sent out reminders to these folks. We'll retry this tomorrow.
         HEREDOC
-        message_operations_channel_thread("[#{start_of_month.strftime("%B %Y")}] Invoicing", message)
+        #message_operations_channel_thread("[#{start_of_month.strftime("%B %Y")}] Invoicing", message)
       end
 
       needed_reminding
@@ -454,6 +454,8 @@ class Stacks::Automator
     end
 
     def discover_people_missing_hours_for_month(start_of_month)
+      projects = forecast.projects()["projects"]
+
       last_month_assignments = forecast.assignments(
         start_of_month.beginning_of_month,
         start_of_month.end_of_month,
@@ -489,7 +491,15 @@ class Stacks::Automator
               assignment_end_date
             end
 
-          days = (end_date - start_date).to_i + 1
+          project = projects.find { |p| p["id"] == a["project_id"] }
+          days = if project["name"] == "Time Off" && a["allocation"].nil?
+              # If this allocation is for the "Time Off" project, filter time on weekends!
+              (start_date..end_date).select { |d| (1..5).include?(d.wday) }.size
+            else
+              # This allocation is not for "Time Off", so count work done on weekends.
+              (end_date - start_date).to_i + 1
+            end
+
           per_day_allocation = a["allocation"].nil? ? EIGHT_HOURS_IN_SECONDS : a["allocation"]
           acc + (per_day_allocation * days)
         end
