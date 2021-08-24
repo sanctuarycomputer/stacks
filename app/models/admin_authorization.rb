@@ -3,7 +3,7 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
     case subject
     when normalized(AdminUser)
       if action == :update
-        subject == user
+        subject == user || user.is_payroll_manager?
       elsif action == :read
         subject == user || user.is_payroll_manager?
       else
