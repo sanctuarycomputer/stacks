@@ -1,5 +1,5 @@
 ActiveAdmin.register AdminUser do
-  permit_params :show_skill_tree_data
+  permit_params :show_skill_tree_data, :old_skill_tree_level
   config.current_filters = false
   menu if: proc { current_admin_user.is_payroll_manager? },
        label: "Team"
@@ -34,7 +34,7 @@ ActiveAdmin.register AdminUser do
       resource
     end
     column :skill_tree_level do |resource|
-      resource.show_skill_tree_data? ? resource.skill_tree_level : "Private"
+      resource.show_skill_tree_data? ? resource.skill_tree_level_without_salary : "Private"
     end
     actions
   end
@@ -87,6 +87,12 @@ ActiveAdmin.register AdminUser do
     f.semantic_errors
     f.inputs(class: "admin_inputs") do
       f.input :show_skill_tree_data, label: "Make my Skill Tree Data public"
+    end
+
+    if current_admin_user.is_payroll_manager?
+      f.inputs(class: "admin_inputs") do
+        f.input :old_skill_tree_level, as: :select, collection: AdminUser.old_skill_tree_levels.keys
+      end
     end
     f.actions
   end

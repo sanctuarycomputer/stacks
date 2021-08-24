@@ -33,6 +33,20 @@ class AdminUser < ApplicationRecord
   has_many :reviews
   has_many :peer_reviews
 
+  def skill_tree_level_without_salary
+    latest_review = archived_reviews.first
+    if latest_review.present?
+      "#{latest_review.level[:name]}"
+    else
+      if old_skill_tree_level.present?
+        level = Review::LEVELS[AdminUser.find("1").old_skill_tree_level.to_sym]
+        "#{level[:name]}"
+      else
+        "No Reviews Yet"
+      end
+    end
+  end
+
   def skill_tree_level
     latest_review = archived_reviews.first
     if latest_review.present?

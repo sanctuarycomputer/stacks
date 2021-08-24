@@ -31,7 +31,7 @@
     </div>
     <div class="module-body">
       <% if resource == current_admin_user || resource.show_skill_tree_data? %>
-        <p><strong>Skill Tree Level:</strong> <%= resource.skill_tree_level %><%= resource.show_skill_tree_data? ? "" : " (Private)" %></p>
+        <p><strong>Skill Tree Level:</strong> <%= resource.skill_tree_level_without_salary %><%= resource.show_skill_tree_data? ? "" : " (Private)" %></p>
       <% else %>
         <p><strong>Skill Tree Level:</strong> Private</p>
       <% end %>
