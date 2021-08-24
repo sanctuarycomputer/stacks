@@ -39,7 +39,7 @@ class AdminUser < ApplicationRecord
       "#{latest_review.level[:name]}"
     else
       if old_skill_tree_level.present?
-        level = Review::LEVELS[AdminUser.find("1").old_skill_tree_level.to_sym]
+        level = Review::LEVELS[old_skill_tree_level.to_sym]
         "#{level[:name]}"
       else
         "No Reviews Yet"
@@ -53,7 +53,7 @@ class AdminUser < ApplicationRecord
       "#{latest_review.level[:name]} ($#{latest_review.level[:salary].to_s(:delimited)})"
     else
       if old_skill_tree_level.present?
-        level = Review::LEVELS[AdminUser.find("1").old_skill_tree_level.to_sym]
+        level = Review::LEVELS[old_skill_tree_level.to_sym]
         "#{level[:name]} ($#{level[:salary].to_s(:delimited)})"
       else
         "No Reviews Yet"
