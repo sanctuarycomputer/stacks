@@ -5,7 +5,7 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
       if action == :update
         subject == user || user.is_payroll_manager?
       elsif action == :read
-        subject == user || user.is_payroll_manager?
+        true
       else
         true
       end

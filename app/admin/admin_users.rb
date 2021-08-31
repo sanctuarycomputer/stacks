@@ -1,8 +1,7 @@
 ActiveAdmin.register AdminUser do
   permit_params :show_skill_tree_data, :old_skill_tree_level
   config.current_filters = false
-  menu if: proc { current_admin_user.is_payroll_manager? },
-       label: "Team"
+  menu label: "Team"
   actions :index, :show, :edit, :update
   scope :active, default: true
   scope :archived
