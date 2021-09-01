@@ -131,7 +131,7 @@ class Stacks::Automator
 
         Please review and send invoices [here](https://stacks.garden3d.net/admin/invoice_passes/#{invoice_pass.id}), and resolve any errors necessary.
       HEREDOC
-      #message_operations_channel_thread("[#{invoice_pass.start_of_month.strftime("%B %Y")}] Invoicing", message)
+      message_operations_channel_thread("[#{invoice_pass.start_of_month.strftime("%B %Y")}] Invoicing", message)
     end
 
     # Designed to run daily, and remind folks to update their hours
@@ -162,9 +162,9 @@ class Stacks::Automator
       end
 
       needed_reminding.each do |person|
-        #conversation = twist.get_or_create_conversation("#{person[:twist_data]["id"]},#{hugh[:twist_data]["id"]}")
-        #twist.add_message_to_conversation(conversation["id"], person[:reminder])
-        #sleep(0.1)
+        conversation = twist.get_or_create_conversation("#{person[:twist_data]["id"]},#{hugh[:twist_data]["id"]}")
+        twist.add_message_to_conversation(conversation["id"], person[:reminder])
+        sleep(0.1)
       end
 
       if needed_reminding.any?
@@ -179,7 +179,7 @@ class Stacks::Automator
 
           I've just sent out reminders to these folks. We'll retry this tomorrow.
         HEREDOC
-        #message_operations_channel_thread("[#{start_of_month.strftime("%B %Y")}] Invoicing", message)
+        message_operations_channel_thread("[#{start_of_month.strftime("%B %Y")}] Invoicing", message)
       end
 
       needed_reminding
