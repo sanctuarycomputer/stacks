@@ -466,7 +466,7 @@ class Stacks::Automator
 
       twist_users = twist.get_workspace_users.parsed_response
 
-      people = forecast.people["people"].map do |person|
+      people = forecast.people["people"].reject { |p| p["archived"] }.map do |person|
         twist_user = twist_users.find do |twist_user|
           twist_user["email"].downcase == person["email"].try(:downcase) ||
           twist_user["name"].downcase == "#{person["first_name"]} #{person["last_name"]}".downcase
@@ -557,7 +557,7 @@ class Stacks::Automator
       end
 
       # Get the full team & decorate with their assignments
-      forecast.people["people"].map do |person|
+      forecast.people["people"].reject { |p| p["archived"] }.map do |person|
         twist_user = twist_users.find do |twist_user|
           twist_user["email"].downcase == person["email"].try(:downcase) ||
           twist_user["name"].downcase == "#{person["first_name"]} #{person["last_name"]}".downcase
