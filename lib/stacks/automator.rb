@@ -169,7 +169,7 @@ class Stacks::Automator
 
       if needed_reminding.any?
         message_body = needed_reminding.reduce("") do |acc, person|
-          acc + "- **[#{person[:twist_data]["name"]}](twist-mention://#{person[:twist_data]["id"]})**: `#{person[:missing_allocation] / 60 / 60} missing hrs`"
+          acc + "- **[#{person[:twist_data]["name"]}](twist-mention://#{person[:twist_data]["id"]})**: `#{person[:missing_allocation] / 60 / 60} missing hrs`\n"
         end
         message = <<~HEREDOC
           👋 Hi Operations Team!

@@ -1,5 +1,5 @@
 ActiveAdmin.register AdminUser do
-  permit_params :show_skill_tree_data, :old_skill_tree_level
+  permit_params :show_skill_tree_data, :opt_out_of_dei_data_entry, :old_skill_tree_level, racial_background_ids: [], cultural_background_ids: [], gender_identity_ids: [], community_ids: []
   config.current_filters = false
   menu label: "Team"
   actions :index, :show, :edit, :update
@@ -83,16 +83,65 @@ ActiveAdmin.register AdminUser do
   end
 
   form do |f|
+    render(partial: "docs_linkout")
+
     f.semantic_errors
     f.inputs(class: "admin_inputs") do
       f.input :show_skill_tree_data, label: "Make my Skill Tree Data public"
     end
+
+    render(partial: "add_more_dei_categories")
+    f.inputs(id: "dei_admin_inputs") do
+      f.input :racial_backgrounds,
+        as: :check_boxes,
+        label: "How do you describe your racial background?",
+        collection: (RacialBackground.order(opt_out: :asc).all.map do |e|
+          [
+            "#{e.name} #{e.description.blank? ? "" : "(" + e.description + ")"}",
+            e.id,
+            { "data-opt-out" => e.opt_out, onclick: "didClickCheckbox(this)" },
+          ]
+        end)
+      f.input :cultural_backgrounds,
+        as: :check_boxes,
+        label: "How do you describe your cultural background?",
+        collection: (CulturalBackground.order(opt_out: :asc).all.map do |e|
+          [e.name, e.id, { "data-opt-out" => e.opt_out, onclick: "didClickCheckbox(this)" }]
+        end)
+      f.input :gender_identities,
+        as: :check_boxes,
+        label: "How do you describe your gender identity?",
+        collection: (GenderIdentity.order(opt_out: :asc).all.map do |gi|
+          [gi.name, gi.id, { "data-opt-out" => gi.opt_out, onclick: "didClickCheckbox(this)" }]
+        end)
+      f.input :communities,
+        as: :check_boxes,
+        label: "Are you a part of any other communities?",
+        collection: Community.all.map { |c| [c.name, c.id] }
+    end
+
+    script (<<-JS
+        function didClickCheckbox(el) {
+        window.el = el;
+          if (el.dataset.optOut === 'true') {
+            Array.from(el.parentElement.parentElement.parentElement.getElementsByTagName('input')).forEach(e => {
+              if (e !== el) e.checked = 0;
+            });
+          } else if (el.dataset.optOut === 'false') {
+            Array.from(el.parentElement.parentElement.parentElement.getElementsByTagName('input')).forEach(e => {
+              if (e.dataset.optOut === 'true') e.checked = 0;
+            });
+          }
+        }
+      JS
+).html_safe
 
     if current_admin_user.is_payroll_manager?
       f.inputs(class: "admin_inputs") do
         f.input :old_skill_tree_level, as: :select, collection: AdminUser.old_skill_tree_levels.keys
       end
     end
+
     f.actions
   end
 end

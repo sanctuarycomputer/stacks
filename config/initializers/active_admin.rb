@@ -343,6 +343,7 @@ ActiveAdmin::Views::Pages::Base.class_eval do
     within body(class: body_classes) do
       div id: "wrapper" do
         build_unsupported_browser
+        build_dei_nag if current_admin_user.should_nag_for_dei_data?
         header active_admin_namespace, current_menu
         build_flash_messages
         title_bar title, action_items_for_action
@@ -350,6 +351,13 @@ ActiveAdmin::Views::Pages::Base.class_eval do
         footer active_admin_namespace
       end
     end
+  end
+
+  def build_dei_nag
+    a("🌎 Your DEI data is missing. Please add it or opt out by clicking here.", {
+      href: "/admin/admin_users/#{current_admin_user.id}/edit",
+      class: "flash flash_error block",
+    })
   end
 
   def build_page_content

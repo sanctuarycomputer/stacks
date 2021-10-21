@@ -1,0 +1,9 @@
+# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+one:
+  racial_background: one
+  admin_user: one
+
+two:
+  racial_background: two
+  admin_user: two

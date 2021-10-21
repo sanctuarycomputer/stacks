@@ -18,6 +18,14 @@ body { font-family: 'Inter', sans-serif; }
   body { font-family: 'Inter var', sans-serif; }
 }
 
+.block {
+  display: block;
+}
+
+.hidden {
+  display: none !important;
+}
+
 .empty_state {
   text-align: center;
   img {
@@ -60,6 +68,39 @@ $color-grey: #5E6469;
   display: inline-block;
   color: $color-grey;
   box-shadow: 0 1px 20px #b7b7b7;
+}
+
+form fieldset.inputs {
+  box-shadow: 0 1px 20px #b7b7b7;
+  border-radius: 8px;
+  background: white;
+  padding: 20px;
+}
+
+#dei_admin_inputs {
+  ol {
+    display: flex;
+    flex-direction: row;
+    li {
+      legend.label {
+        padding-bottom: 20px;
+        label {
+          width: 100%;
+          padding-left: 0;
+          font-size: 18px;
+          font-weight: 700;
+          margin-bottom: 0;
+          color: #5E6469;
+        }
+      }
+      flex-basis: 0;
+      flex-grow: 1;
+      ol {
+        padding: 0px;
+        flex-direction: column;
+      }
+    }
+  }
 }
 
 body.edit.admin_admin_users {

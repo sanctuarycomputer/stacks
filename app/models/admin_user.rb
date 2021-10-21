@@ -6,6 +6,18 @@ class AdminUser < ApplicationRecord
           AdminUser.where.not(archived_at: nil)
         }
 
+  has_many :admin_user_gender_identities
+  has_many :gender_identities, through: :admin_user_gender_identities
+
+  has_many :admin_user_communities
+  has_many :communities, through: :admin_user_communities
+
+  has_many :admin_user_racial_backgrounds
+  has_many :racial_backgrounds, through: :admin_user_racial_backgrounds
+
+  has_many :admin_user_cultural_backgrounds
+  has_many :cultural_backgrounds, through: :admin_user_cultural_backgrounds
+
   enum old_skill_tree_level: {
     junior_1: 0,
     junior_2: 1,
@@ -32,6 +44,12 @@ class AdminUser < ApplicationRecord
 
   has_many :reviews
   has_many :peer_reviews
+
+  def should_nag_for_dei_data?
+    (racial_backgrounds.length === 0 ||
+     cultural_backgrounds.length === 0 ||
+     gender_identities.length === 0)
+  end
 
   def skill_tree_level_without_salary
     latest_review = archived_reviews.first
