@@ -598,16 +598,16 @@ body.logged_in .flash {
   }
 }
 
-.pill {
+.pill, .status_tag {
   padding: 6px;
   border-radius: 999px;
   color: white;
   font-weight: 700;
   font-size: 72%;
-  &.draft, &.waiting {
+  &.draft, &.waiting, &.no {
     background-color: $color-orange;
   }
-  &.complete {
+  &.complete, &.yes {
     background-color: $color-green;
   }
   &.ready {

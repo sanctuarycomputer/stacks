@@ -35,6 +35,9 @@ ActiveAdmin.register AdminUser do
     column :skill_tree_level do |resource|
       resource.show_skill_tree_data? ? resource.skill_tree_level_without_salary : "Private"
     end
+    column :has_dei_response? do |resource|
+      !resource.should_nag_for_dei_data?
+    end
     actions
   end
 
