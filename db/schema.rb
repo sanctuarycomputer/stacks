@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2021_10_21_154241) do
+ActiveRecord::Schema.define(version: 2021_11_16_211417) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -106,11 +106,30 @@ ActiveRecord::Schema.define(version: 2021_10_21_154241) do
     t.index ["review_id"], name: "index_finalizations_on_review_id"
   end
 
+  create_table "full_time_periods", force: :cascade do |t|
+    t.bigint "admin_user_id", null: false
+    t.date "started_at"
+    t.date "ended_at"
+    t.decimal "multiplier", default: "1.0"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_full_time_periods_on_admin_user_id"
+  end
+
   create_table "gender_identities", force: :cascade do |t|
     t.string "name"
     t.boolean "opt_out"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+  end
+
+  create_table "gifted_profit_shares", force: :cascade do |t|
+    t.bigint "admin_user_id", null: false
+    t.decimal "amount"
+    t.string "reason"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_gifted_profit_shares_on_admin_user_id"
   end
 
   create_table "invoice_passes", force: :cascade do |t|
@@ -234,6 +253,8 @@ ActiveRecord::Schema.define(version: 2021_10_21_154241) do
   add_foreign_key "admin_user_racial_backgrounds", "admin_users"
   add_foreign_key "admin_user_racial_backgrounds", "racial_backgrounds"
   add_foreign_key "finalizations", "reviews"
+  add_foreign_key "full_time_periods", "admin_users"
+  add_foreign_key "gifted_profit_shares", "admin_users"
   add_foreign_key "peer_reviews", "admin_users"
   add_foreign_key "peer_reviews", "reviews"
   add_foreign_key "review_trees", "reviews"

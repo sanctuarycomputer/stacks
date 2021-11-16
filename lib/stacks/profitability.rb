@@ -41,8 +41,10 @@ class Stacks::Profitability
           (report.find_row("Total [SC] Benefits, Contributions & Tax").try(:[], 1) || 0)
         data[:garden3d][year_as_sym][month_as_sym][:gross_subcontractors] =
           (report.find_row("Total [SC] Subcontractors").try(:[], 1) || 0)
-        data[:garden3d][year_as_sym][month_as_sym][:gross_expenses] =
-          (report.find_row("Total Expenses").try(:[], 1) || 0)
+        data[:garden3d][year_as_sym][month_as_sym][:gross_expenses] = (
+          (report.find_row("Total Expenses").try(:[], 1) || 0) +
+          (report.find_row("Total [SC] Supplies & Materials").try(:[], 1) || 0)
+        )
 
         STUDIO_MAPPING.keys.each do |studio|
           data[studio] = data[studio] || {}

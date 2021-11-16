@@ -1,11 +1,33 @@
 ActiveAdmin.register AdminUser do
-  permit_params :show_skill_tree_data, :opt_out_of_dei_data_entry, :old_skill_tree_level, racial_background_ids: [], cultural_background_ids: [], gender_identity_ids: [], community_ids: []
+  permit_params :show_skill_tree_data,
+    :opt_out_of_dei_data_entry,
+    :old_skill_tree_level,
+    racial_background_ids: [],
+    cultural_background_ids: [],
+    gender_identity_ids: [],
+    community_ids: [],
+    full_time_periods_attributes: [
+      :id,
+      :admin_user_id,
+      :started_at,
+      :ended_at,
+      :multiplier,
+      :_edit,
+      :_destroy
+    ],
+    gifted_profit_shares_attributes: [
+      :id,
+      :admin_user_id,
+      :reason,
+      :amount,
+      :_edit,
+      :_destroy
+    ]
   config.current_filters = false
   menu label: "Team"
   actions :index, :show, :edit, :update
   scope :active, default: true
   scope :archived
-
   config.filters = false
   config.sort_order = "created_at_desc"
   config.paginate = false
@@ -37,6 +59,9 @@ ActiveAdmin.register AdminUser do
     end
     column :has_dei_response? do |resource|
       !resource.should_nag_for_dei_data?
+    end
+    column :projected_psu_by_eoy do |resource|
+      resource.projected_psu_by_eoy
     end
     actions
   end
@@ -142,6 +167,17 @@ ActiveAdmin.register AdminUser do
     if current_admin_user.is_payroll_manager?
       f.inputs(class: "admin_inputs") do
         f.input :old_skill_tree_level, as: :select, collection: AdminUser.old_skill_tree_levels.keys
+      end
+
+      f.has_many :full_time_periods, allow_destroy: true do |a|
+        a.input :started_at
+        a.input :ended_at
+        a.input :multiplier
+      end
+
+      f.has_many :gifted_profit_shares, allow_destroy: true do |a|
+        a.input :amount
+        a.input :reason
       end
     end
 

@@ -6,6 +6,11 @@ class AdminUser < ApplicationRecord
           AdminUser.where.not(archived_at: nil)
         }
 
+  has_many :full_time_periods
+  accepts_nested_attributes_for :full_time_periods, allow_destroy: true
+  has_many :gifted_profit_shares
+  accepts_nested_attributes_for :gifted_profit_shares, allow_destroy: true
+
   has_many :admin_user_gender_identities
   has_many :gender_identities, through: :admin_user_gender_identities
 
@@ -44,6 +49,35 @@ class AdminUser < ApplicationRecord
 
   has_many :reviews
   has_many :peer_reviews
+
+  def psu_earned_by(date = Date.today)
+    return :no_data if full_time_periods.empty?
+
+    gifted = (gifted_profit_shares.map do |gps|
+      gps.amount
+    end).reduce(:+) || 0
+
+    total = ((full_time_periods.map do |ftp|
+      ended_at = (ftp.ended_at.present? ? ftp.ended_at : date)
+      psu = Stacks::Utils.full_months_between(ended_at, ftp.started_at) * ftp.multiplier
+      if psu < 0
+        0
+      else
+        psu
+      end
+    end).reduce(:+) + gifted)
+
+    if total >= 48
+      48
+    else
+      total
+    end
+  end
+
+  def projected_psu_by_eoy
+    # We calculate PSU at the 15th of december
+    psu_earned_by(Date.new(Date.today.year, 12, 15))
+  end
 
   def should_nag_for_dei_data?
     (racial_backgrounds.length === 0 ||
@@ -94,6 +128,10 @@ class AdminUser < ApplicationRecord
   # Devise override to ignore the password requirement if the user is authenticated with Google
   def password_required?
     provider.present? ? false : super
+  end
+
+  def self.total_psu_issued
+    AdminUser.all.map{|a| a.projected_psu_by_eoy }.reject{|v| v == :no_data}.reduce(:+)
   end
 
   def self.from_omniauth(auth)
