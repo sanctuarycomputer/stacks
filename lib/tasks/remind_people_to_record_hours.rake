@@ -1,9 +1,4 @@
 namespace :stacks do
-  desc "Remind people to record hours"
-  task :remind_people_to_record_hours => :environment do
-    Stacks::Automator.remind_people_to_record_hours
-  end
-
   desc "Generate Invoices"
   task :attempt_generate_invoices => :environment do
     Stacks::Automator.attempt_invoicing_for_previous_month
