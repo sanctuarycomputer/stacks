@@ -2,6 +2,7 @@ ActiveAdmin.register AdminUser do
   permit_params :show_skill_tree_data,
     :opt_out_of_dei_data_entry,
     :old_skill_tree_level,
+    :profit_share_notes,
     racial_background_ids: [],
     cultural_background_ids: [],
     gender_identity_ids: [],
@@ -168,6 +169,8 @@ ActiveAdmin.register AdminUser do
       f.inputs(class: "admin_inputs") do
         f.input :old_skill_tree_level, as: :select, collection: AdminUser.old_skill_tree_levels.keys
       end
+
+      f.input :profit_share_notes
 
       f.has_many :full_time_periods, allow_destroy: true do |a|
         a.input :started_at
