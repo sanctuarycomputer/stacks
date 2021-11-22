@@ -23,6 +23,15 @@ ActiveAdmin.register AdminUser do
       :amount,
       :_edit,
       :_destroy
+    ],
+    pre_profit_share_purchases_attributes: [
+      :id,
+      :admin_user_id,
+      :note,
+      :amount,
+      :purchased_at,
+      :_edit,
+      :_destroy
     ]
   config.current_filters = false
   menu label: "Team"
@@ -181,6 +190,12 @@ ActiveAdmin.register AdminUser do
       f.has_many :gifted_profit_shares, allow_destroy: true do |a|
         a.input :amount
         a.input :reason
+      end
+
+      f.has_many :pre_profit_share_purchases, allow_destroy: true do |a|
+        a.input :amount
+        a.input :note
+        a.input :purchased_at
       end
     end
 

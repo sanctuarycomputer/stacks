@@ -6,7 +6,7 @@ class Stacks::ProfitShare
 
       Stacks::ProfitShare::Scenario.new(
         Stacks::ProfitShare.make_actuals_projections(latest_pass),
-        AdminUser.total_psu_issued,
+        AdminUser.total_projected_psu_issued_by_eoy,
       )
     end
 

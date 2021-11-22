@@ -8,8 +8,12 @@ class AdminUser < ApplicationRecord
 
   has_many :full_time_periods
   accepts_nested_attributes_for :full_time_periods, allow_destroy: true
+
   has_many :gifted_profit_shares
   accepts_nested_attributes_for :gifted_profit_shares, allow_destroy: true
+
+  has_many :pre_profit_share_purchases
+  accepts_nested_attributes_for :pre_profit_share_purchases, allow_destroy: true
 
   has_many :admin_user_gender_identities
   has_many :gender_identities, through: :admin_user_gender_identities
@@ -61,14 +65,14 @@ class AdminUser < ApplicationRecord
       ended_at = (ftp.ended_at.present? ? ftp.ended_at : date)
       psu = Stacks::Utils.full_months_between(ended_at, ftp.started_at) * ftp.multiplier
       if psu < 0
-        0
+        0.0
       else
         psu
       end
     end).reduce(:+) + gifted)
 
     if total >= 48
-      48
+      48.0
     else
       total
     end
@@ -130,8 +134,8 @@ class AdminUser < ApplicationRecord
     provider.present? ? false : super
   end
 
-  def self.total_psu_issued
-    AdminUser.all.map{|a| a.projected_psu_by_eoy }.reject{|v| v == :no_data}.reduce(:+)
+  def self.total_projected_psu_issued_by_eoy
+    AdminUser.active.map{|a| a.projected_psu_by_eoy }.reject{|v| v == :no_data}.reduce(:+)
   end
 
   def self.from_omniauth(auth)

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2021_11_17_170734) do
+ActiveRecord::Schema.define(version: 2021_11_22_224831) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -153,6 +153,16 @@ ActiveRecord::Schema.define(version: 2021_11_17_170734) do
     t.index ["review_id"], name: "index_peer_reviews_on_review_id"
   end
 
+  create_table "pre_profit_share_purchases", force: :cascade do |t|
+    t.bigint "admin_user_id", null: false
+    t.decimal "amount"
+    t.string "note"
+    t.date "purchased_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_pre_profit_share_purchases_on_admin_user_id"
+  end
+
   create_table "profitability_passes", force: :cascade do |t|
     t.jsonb "data"
     t.datetime "created_at", precision: 6, null: false
@@ -258,6 +268,7 @@ ActiveRecord::Schema.define(version: 2021_11_17_170734) do
   add_foreign_key "gifted_profit_shares", "admin_users"
   add_foreign_key "peer_reviews", "admin_users"
   add_foreign_key "peer_reviews", "reviews"
+  add_foreign_key "pre_profit_share_purchases", "admin_users"
   add_foreign_key "review_trees", "reviews"
   add_foreign_key "review_trees", "trees"
   add_foreign_key "reviews", "admin_users"

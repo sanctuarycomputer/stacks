@@ -1,0 +1,13 @@
+# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+one:
+  admin_user: one
+  amount: 9.99
+  note: MyString
+  purchased_at: 2021-11-22
+
+two:
+  admin_user: two
+  amount: 9.99
+  note: MyString
+  purchased_at: 2021-11-22
