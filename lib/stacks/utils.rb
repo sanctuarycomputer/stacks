@@ -1,4 +1,22 @@
 class Stacks::Utils
+  COLORS = [
+    "#1F78FF",
+    "#ffa500",
+    "#7B4EFA",
+    "#26bd50",
+    "#FF6961",
+    "#5C9DFF",
+    "#FFBF47",
+    "#55DD7B",
+    "#A788FC",
+    "#FF9E99",
+    "#0052CC",
+    "#B87700",
+    "#1B883A",
+    "#4406EF",
+    "#FF160A",
+  ]
+
   class << self
     def config
       Rails.application.credentials[:"#{ENV["BASE_HOST"] || "localhost:3000"}"]

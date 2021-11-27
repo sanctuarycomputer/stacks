@@ -13,4 +13,9 @@ namespace :stacks do
   task :run_profitability_rollup => :environment do
     Stacks::Profitability.calculate
   end
+
+  desc "Daily Tasks"
+  task :daily_tasks => :environment do
+    Stacks::Dei.make_rollup
+  end
 end

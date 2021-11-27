@@ -1,0 +1,141 @@
+<a href="https://www.census.gov/quickfacts/fact/table/US/PST045219" target="_blank">
+  <p class="nag" style="margin-bottom: 20px;margin-right:10px;">
+    🤔 US Census Quick Facts ↗
+  </p>
+</a>
+<a href="https://www.eeoc.gov/special-report/diversity-high-tech" target="_blank">
+  <p class="nag" style="margin-bottom: 20px;">
+    🤔 US EEOC Special Report on Diversity in Tech ↗
+  </p>
+</a>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Cultural Backgrounds</p>
+    </div>
+    <div class="module-body">
+      <canvas id="cultural-backgrounds"></canvas>
+    </div>
+  </div>
+
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Racial Backgrounds</p>
+    </div>
+    <div class="module-body">
+      <canvas id="racial-backgrounds"></canvas>
+    </div>
+  </div>
+
+</div>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Gender Identities</p>
+    </div>
+    <div class="module-body">
+      <canvas id="gender-identities"></canvas>
+    </div>
+  </div>
+
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Communities</p>
+    </div>
+    <div class="module-body">
+      <canvas id="communities"></canvas>
+    </div>
+  </div>
+</div>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Skill Levels</p>
+
+      <p>
+        <a href="?skill-levels=by-cultural-background" class="<%= (params["skill-levels"] == "by-cultural-background" || params["skill-levels"] == nil) ? "underline" : "" %>">
+          by Cultural Background
+        </a>
+      </p>
+      <p>
+        <a href="?skill-levels=by-racial-background" class="<%= params["skill-levels"] == "by-racial-background" ? "underline" : "" %>">
+          by Racial Background
+        </a>
+      </p>
+      <p>
+        <a href="?skill-levels=by-gender-identity" class="<%= params["skill-levels"] == "by-gender-identity" ? "underline" : "" %>">
+          by Gender Identity
+        </a>
+      </p>
+      <p>
+        <a href="?skill-levels=by-community" class="<%= params["skill-levels"] == "by-community" ? "underline" : "" %>">
+          by Community
+        </a>
+      </p>
+    </div>
+    <div class="module-body">
+      <canvas id="skill-level-distributions"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+  var plugins = {
+    datalabels: {
+      color: '#fff',
+      formatter: function (value, ctx) {
+        var sum = 0;
+        var dataArr = ctx.chart.data.datasets[0].data;
+        dataArr.map(function(data) { sum += data; });
+        var percentage = (value*100 / sum).toFixed(2)+"%";
+        return percentage;
+      },
+    }
+  };
+  new Chart(document.getElementById('racial-backgrounds'), {
+    plugins: [ChartDataLabels],
+    type: 'pie',
+    data: <%= racial_background_data.to_json.html_safe %>,
+    options: {
+      aspectRatio: 1,
+      plugins: plugins
+    }
+  });
+  new Chart(document.getElementById('cultural-backgrounds'), {
+    plugins: [ChartDataLabels],
+    type: 'pie',
+    data: <%= cultural_background_data.to_json.html_safe %>,
+    options: {
+      aspectRatio: 1,
+      plugins: plugins
+    }
+  });
+  new Chart(document.getElementById('gender-identities'), {
+    plugins: [ChartDataLabels],
+    type: 'pie',
+    data: <%= gender_identity_data.to_json.html_safe %>,
+    options: {
+      aspectRatio: 1,
+      plugins: plugins
+    }
+  });
+  new Chart(document.getElementById('communities'), {
+    type: 'bar',
+    data: <%= community_data.to_json.html_safe %>,
+    options: {
+      aspectRatio: 1,
+      plugins: {
+        legend: {
+          display: false
+        }
+      }
+    }
+  });
+  new Chart(document.getElementById('skill-level-distributions'), {
+    type: 'bar',
+    data: <%= skill_level_distribution_data.to_json.html_safe %>,
+  });
+</script>

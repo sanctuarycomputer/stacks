@@ -1,16 +1,8 @@
-ActiveAdmin.register_page "Dashboard" do
-  menu label: "Dashboard", priority: 1
+ActiveAdmin.register_page "Profit Dashboard" do
+  menu label: "Profit Dashboard", priority: 1
 
   content title: proc { I18n.t("active_admin.dashboard") } do
-    COLORS = [
-      "#1F78FF",
-      "#ffa500",
-      "#414141",
-      "#26bd50",
-      "#7B4EFA",
-      "#FF6961",
-      "5E6469",
-    ]
+    COLORS = Stacks::Utils::COLORS
 
     pp = ProfitabilityPass.first
     if pp.present?
@@ -72,9 +64,9 @@ ActiveAdmin.register_page "Dashboard" do
       end
 
       render(partial: "profitability_chart", locals: {
-               data: data,
-               profitability_time_span: profitability_time_span,
-             })
+        data: data,
+        profitability_time_span: profitability_time_span,
+      })
     end
   end
 end
