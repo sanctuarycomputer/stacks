@@ -4,7 +4,7 @@ ActiveAdmin.register_page "Profit Dashboard" do
   content title: proc { I18n.t("active_admin.dashboard") } do
     COLORS = Stacks::Utils::COLORS
 
-    pp = ProfitabilityPass.first
+    pp = ProfitabilityPass.order(created_at: :desc).first
     if pp.present?
       profitability_time_span = if params["profitability-time-span"].nil?
           6

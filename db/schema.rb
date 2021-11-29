@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2021_11_27_160546) do
+ActiveRecord::Schema.define(version: 2021_11_28_144247) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -167,6 +167,14 @@ ActiveRecord::Schema.define(version: 2021_11_27_160546) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.index ["admin_user_id"], name: "index_pre_profit_share_purchases_on_admin_user_id"
+  end
+
+  create_table "profit_share_passes", force: :cascade do |t|
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.datetime "finalized_at"
+    t.decimal "payroll_buffer_months", default: "2.0"
+    t.decimal "efficiency_cap", default: "1.65"
   end
 
   create_table "profitability_passes", force: :cascade do |t|

@@ -16,6 +16,7 @@ namespace :stacks do
 
   desc "Daily Tasks"
   task :daily_tasks => :environment do
+    ProfitSharePass.ensure_exists!
     Stacks::Dei.make_rollup
   end
 
