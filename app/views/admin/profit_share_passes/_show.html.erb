@@ -1,0 +1,190 @@
+<% scenario = profit_share_pass.make_scenario %>
+<% is_projection = profit_share_pass.is_projection? %>
+
+<% if is_projection %>
+  <p class="nag warning sticky" style="margin-bottom: 20px;margin-right:10px;">
+    ⚠️ <strong>This is a projection. Please expect these numbers to fluctuate (wildly).</strong>
+  </p>
+<% else %>
+  <p class="nag" style="margin-bottom: 20px;margin-right:10px;">
+    ✅ This profit share pass was finalized <%= profit_share_pass.finalized_at.strftime("#{profit_share_pass.finalized_at.day.ordinalize} %B %Y") %>.
+  </p>
+<% end %>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p><%= is_projection ? "(Projected) " : "" %>Yearly Actuals</p>
+    </div>
+
+    <div class="module-body">
+      <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+        <tbody>
+          <tr class="odd">
+            <td class="col">Gross Revenue</td>
+            <td class="col">
+              <%= number_to_currency(scenario.actuals[:gross_revenue]) %>
+            </td>
+          </tr>
+          <tr class="even">
+            <td class="col">Gross Payroll</td>
+            <td class="col">
+              <%= number_to_currency(scenario.actuals[:gross_payroll]) %>
+            </td>
+          </tr>
+          <tr class="odd">
+            <td class="col">Gross Benefits & Taxes</td>
+            <td class="col">
+              <%= number_to_currency(scenario.actuals[:gross_benefits]) %>
+            </td>
+          </tr>
+          <tr class="even">
+            <td class="col">Gross Expenses</td>
+            <td class="col">
+              <%= number_to_currency(scenario.actuals[:gross_expenses]) %>
+            </td>
+          </tr>
+          <tr class="odd">
+            <td class="col">Gross Subcontractors</td>
+            <td class="col">
+              <%= number_to_currency(scenario.actuals[:gross_subcontractors]) %>
+            </td>
+          </tr>
+          <tr class="even">
+            <td class="col"><strong>Total Profit</strong></td>
+            <td class="col">
+              <%= number_to_currency(scenario.total_profit) %>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+    </div>
+  </div>
+</div>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Inputs</p>
+    </div>
+
+    <div class="module-body">
+      <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+        <tbody>
+          <tr class="odd">
+            <td class="col">Latest Monthly Cost of Doing Business</td>
+            <td class="col">
+              <%= number_to_currency(scenario.projected_monthly_cost_of_doing_business) %>
+            </td>
+          </tr>
+          <tr class="even">
+            <td class="col">Pre Spent Profit Share</td>
+            <td class="col">
+              <%= number_to_currency(scenario.pre_spent) %>
+            </td>
+          </tr>
+          <tr class="odd">
+            <td class="col">Payroll Buffer Months</td>
+            <td class="col">
+              <%= scenario.desired_buffer_months %>
+            </td>
+          </tr>
+          <tr class="even">
+            <td class="col">Efficiency Cap</td>
+            <td class="col">
+              <%= scenario.efficiency_cap %>
+            </td>
+          </tr>
+          <tr class="odd">
+            <td class="col">Corporate Tax Rate</td>
+            <td class="col">
+              <%= Stacks::ProfitShare::Scenario::TAX_RATE %>
+            </td>
+          </tr>
+          <tr class="even">
+            <td class="col">FICA Tax Rate</td>
+            <td class="col">
+              <%= scenario.fica_tax_rate %>
+            </td>
+          </tr>
+          <tr class="odd">
+            <td class="col">Internals Budget Multiplier</td>
+            <td class="col">
+              <%= scenario.internals_budget_multiplier %>
+            </td>
+          </tr>
+          <tr class="even">
+            <td class="col">Total PSU Issued</td>
+            <td class="col">
+              <%= scenario.total_psu_issued %>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p><%= is_projection ? "(Projected) " : "" %>Allowances & Calculated Metrics</p>
+    </div>
+
+    <div class="module-body">
+      <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+        <tbody>
+          <tr class="odd">
+            <td class="col">Studio Efficiency</td>
+            <td class="col">
+              <%= "#{scenario.efficiency.round(4) * 100}%" %>
+            </td>
+          </tr>
+          <tr class="even">
+            <td class="col">Payroll Buffer (with Tax) for New Year</td>
+            <td class="col">
+              <%= number_to_currency(scenario.allowances[:buffer]) %>
+            </td>
+          </tr>
+          <tr class="odd">
+            <td class="col">Internals Budget</td>
+            <td class="col">
+              <%= number_to_currency(scenario.allowances[:internals_budget]) %>
+            </td>
+          </tr>
+          <tr class="even">
+            <td class="col">Reinvestment Fund</td>
+            <td class="col">
+              <%= number_to_currency(scenario.allowances[:reinvestment_budget]) %>
+            </td>
+          </tr>
+          <tr class="odd">
+            <td class="col">Gross Profit Share Pool</td>
+            <td class="col">
+              <%= number_to_currency(scenario.allowances[:pool]) %>
+            </td>
+          </tr>
+          <tr class="even">
+            <td class="col">FICA Withholding</td>
+            <td class="col">
+              <%= number_to_currency(scenario.allowances[:fica_withholding]) %>
+            </td>
+          </tr>
+          <tr class="odd">
+            <td class="col">Profit Share Pool after FICA</td>
+            <td class="col">
+              <%= number_to_currency(scenario.allowances[:pool_after_fica_withholding]) %>
+            </td>
+          </tr>
+          <tr class="even">
+            <td class="col"><strong>Value per PSU</strong></td>
+            <td class="col">
+              <%= number_to_currency(scenario.actual_value_per_psu) %>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

@@ -4,7 +4,7 @@ ActiveAdmin.register_page "Profit Dashboard" do
   content title: proc { I18n.t("active_admin.dashboard") } do
     COLORS = Stacks::Utils::COLORS
 
-    pp = ProfitabilityPass.first
+    pp = ProfitabilityPass.order(created_at: :desc).first
     if pp.present?
       profitability_time_span = if params["profitability-time-span"].nil?
           6
@@ -63,8 +63,51 @@ ActiveAdmin.register_page "Profit Dashboard" do
         end
       end
 
+      all_psp = ProfitSharePass.finalized.order(created_at: :asc).all
+      g3d_over_time_data = {
+        labels: all_psp.map{|psp| psp.created_at.year.to_s},
+        datasets: []
+      }
+
+      case params["g3d"]
+      when nil, "psu"
+        g3d_over_time_data[:datasets] << {
+          label: 'PSU Value (USD)',
+          backgroundColor: Stacks::Utils::COLORS,
+          data: (all_psp.map do |psp|
+            psp.make_scenario.actual_value_per_psu
+          end)
+        }
+      when "psp"
+        g3d_over_time_data[:datasets] << {
+          label: 'Profit Share Pool (USD)',
+          backgroundColor: Stacks::Utils::COLORS,
+          data: (all_psp.map do |psp|
+            psp.make_scenario.allowances[:pool_after_fica_withholding]
+          end)
+        }
+      when "revenue"
+        g3d_over_time_data[:datasets] << {
+          label: 'Revenue',
+          backgroundColor: Stacks::Utils::COLORS,
+          data: (all_psp.map do |psp|
+            psp.make_scenario.actuals[:gross_revenue]
+          end)
+        }
+      when "margin"
+        g3d_over_time_data[:datasets] << {
+          label: 'Profit Margin (%)',
+          backgroundColor: Stacks::Utils::COLORS,
+          data: (all_psp.map do |psp|
+            (psp.make_scenario.raw_efficiency * 100) - 100
+          end)
+        }
+      else
+      end
+
       render(partial: "profitability_chart", locals: {
         data: data,
+        g3d_over_time_data: g3d_over_time_data,
         profitability_time_span: profitability_time_span,
       })
     end

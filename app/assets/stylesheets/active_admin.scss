@@ -72,6 +72,16 @@ $color-grey: #5E6469;
   display: inline-block;
   color: $color-grey;
   box-shadow: 0 1px 20px #b7b7b7;
+  &.warning {
+    background-color: orange;
+    color: white;
+  }
+  &.sticky {
+    position: sticky;
+    top: 20px;
+    width: 100%;
+    text-align: center;
+  }
 }
 
 form fieldset.inputs {

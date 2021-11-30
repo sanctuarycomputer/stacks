@@ -1,5 +1,14 @@
 ActiveAdmin.register_page "DEI Explorer" do
-  menu if: proc { current_admin_user.email == "hugh@sanctuary.computer" },
+  menu if: proc {
+        [
+          "hugh@sanctuary.computer",
+          "nicole@sanctuary.computer",
+          "isabel@sanctuary.computer",
+          "lucy-jane@sanctuary.computer",
+          "winnie@sanctuary.computer",
+          "tim@sanctuary.computer"
+        ].include?(current_admin_user.email)
+      },
        label: "DEI Explorer",
        priority: 2
 

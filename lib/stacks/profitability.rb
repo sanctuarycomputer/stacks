@@ -8,6 +8,54 @@ class Stacks::Profitability
       support: "Operations",
     }
 
+    def pull_actuals_for_year(year)
+      qbo_access_token = Stacks::Automator.make_and_refresh_qbo_access_token
+      report_service = Quickbooks::Service::Reports.new
+      report_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
+      report_service.access_token = qbo_access_token
+
+      time = DateTime.parse("1st Jan #{year}")
+      report = report_service.query("ProfitAndLoss", nil, {
+        start_date: time.strftime("%Y-%m-%d"),
+        end_date: time.end_of_year.strftime("%Y-%m-%d"),
+      })
+
+      {
+        gross_revenue: (report.find_row("Total Income").try(:[], 1) || 0),
+        gross_payroll: (report.find_row("Total [SC] Payroll").try(:[], 1) || 0),
+        gross_benefits: (report.find_row("Total [SC] Benefits, Contributions & Tax").try(:[], 1) || 0),
+        gross_subcontractors: (report.find_row("Total [SC] Subcontractors").try(:[], 1) || 0),
+        gross_expenses: (
+          (report.find_row("Total Expenses").try(:[], 1) || 0) +
+          (report.find_row("Total [SC] Supplies & Materials").try(:[], 1) || 0)
+        )
+      }
+    end
+
+    def pull_actuals_for_latest_month
+      qbo_access_token = Stacks::Automator.make_and_refresh_qbo_access_token
+      report_service = Quickbooks::Service::Reports.new
+      report_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
+      report_service.access_token = qbo_access_token
+
+      latest_full_month = Date.new(Date.today.year, Date.today.month - 1, 1)
+      report = report_service.query("ProfitAndLoss", nil, {
+        start_date: latest_full_month.beginning_of_month.strftime("%Y-%m-%d"),
+        end_date: latest_full_month.end_of_month.strftime("%Y-%m-%d"),
+      })
+
+      {
+        gross_revenue: (report.find_row("Total Income").try(:[], 1) || 0),
+        gross_payroll: (report.find_row("Total [SC] Payroll").try(:[], 1) || 0),
+        gross_benefits: (report.find_row("Total [SC] Benefits, Contributions & Tax").try(:[], 1) || 0),
+        gross_subcontractors: (report.find_row("Total [SC] Subcontractors").try(:[], 1) || 0),
+        gross_expenses: (
+          (report.find_row("Total Expenses").try(:[], 1) || 0) +
+          (report.find_row("Total [SC] Supplies & Materials").try(:[], 1) || 0)
+        )
+      }
+    end
+
     def calculate
       qbo_access_token = Stacks::Automator.make_and_refresh_qbo_access_token
       report_service = Quickbooks::Service::Reports.new

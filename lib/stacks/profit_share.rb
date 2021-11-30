@@ -1,78 +1,55 @@
 class Stacks::ProfitShare
-  class << self
-    def latest_scenario
-      latest_pass =
-        ProfitabilityPass.order(created_at: :desc).first
-
-      Stacks::ProfitShare::Scenario.new(
-        Stacks::ProfitShare.make_actuals_projections(latest_pass),
-        AdminUser.total_projected_psu_issued_by_eoy,
-      )
-    end
-
-    def make_actuals_projections(profitability_pass)
-      latest_data =
-        profitability_pass.data["garden3d"][Time.now.year.to_s]
-      ytd = latest_data.values.reduce({}) do |acc, v|
-        acc["gross_payroll"] =
-          (acc["gross_payroll"] || 0.0) + (v["gross_payroll"].to_f || 0.0)
-        acc["gross_revenue"] =
-          (acc["gross_revenue"] || 0.0) + (v["gross_revenue"].to_f || 0.0)
-        acc["gross_benefits"] =
-          (acc["gross_benefits"] || 0.0) + (v["gross_benefits"].to_f || 0.0)
-        acc["gross_expenses"] =
-          (acc["gross_expenses"] || 0.0) + (v["gross_expenses"].to_f || 0.0)
-        acc["gross_subcontractors"] =
-          (acc["gross_subcontractors"] || 0.9) + (v["gross_subcontractors"].to_f || 0.0)
-        acc
-      end
-
-      months_passed = latest_data.keys.length
-      projection = {
-        "gross_payroll": (ytd["gross_payroll"] / months_passed) * 12,
-        "gross_revenue": (ytd["gross_revenue"] / months_passed) * 12,
-        "gross_benefits": (ytd["gross_benefits"] / months_passed) * 12,
-        "gross_expenses": (ytd["gross_expenses"] / months_passed) * 12,
-        "gross_subcontractors": (ytd["gross_subcontractors"] / months_passed) * 12,
-      }
-    end
-  end
-
   class Scenario
     TAX_RATE = 0.36
     FICA_TAX_RATE = 0.0765
-    INTERNALS_BUDGET_MULTIPLIER = 0.5
 
     attr_accessor :actuals
     attr_accessor :total_psu_issued
     attr_accessor :desired_buffer_months
     attr_accessor :efficiency_cap
+    attr_accessor :pre_spent
+    attr_accessor :internals_budget_multiplier
+    attr_accessor :projected_monthly_cost_of_doing_business
+    attr_accessor :fica_tax_rate
 
+    # What does 1.6 efficiency_cap mean? Well, it means that for
+    # every dollar we spend, we strive to make 1.6 dollars back.
+    # That is a margin of 60%, at which a PSU is worth $1000!
     def initialize(
       actuals,
       total_psu_issued,
-      desired_buffer_months = 2,
-      efficiency_cap = 1.75
+      pre_spent = 0,
+      desired_buffer_months = 1.5,
+      efficiency_cap = 1.6,
+      internals_budget_multiplier = 0.5,
+      projected_monthly_cost_of_doing_business = nil,
+      fica_tax_rate = Stacks::ProfitShare::Scenario::FICA_TAX_RATE
     )
       @actuals = actuals
       @total_psu_issued = total_psu_issued
+      @pre_spent = pre_spent
       @desired_buffer_months = desired_buffer_months
       @efficiency_cap = efficiency_cap
+      @internals_budget_multiplier = internals_budget_multiplier
+      @projected_monthly_cost_of_doing_business = projected_monthly_cost_of_doing_business
+      @fica_tax_rate = fica_tax_rate
     end
 
     def total_cost_of_doing_business
-      @actuals[:gross_payroll] +
-      @actuals[:gross_expenses] +
-      @actuals[:gross_benefits] +
-      @actuals[:gross_subcontractors]
+      @actuals[:gross_payroll].to_f +
+      @actuals[:gross_expenses].to_f +
+      @actuals[:gross_benefits].to_f +
+      @actuals[:gross_subcontractors].to_f -
+      @pre_spent # Don't count prespent profit share against this
     end
 
-    def monthly_cost_of_doing_business
+    def projected_monthly_cost_of_doing_business
+      return @projected_monthly_cost_of_doing_business if @projected_monthly_cost_of_doing_business.present?
       total_cost_of_doing_business / 12
     end
 
     def raw_efficiency
-      @actuals[:gross_revenue] / total_cost_of_doing_business
+      @actuals[:gross_revenue].to_f / total_cost_of_doing_business
     end
 
     def efficiency
@@ -86,7 +63,7 @@ class Stacks::ProfitShare
     end
 
     def total_profit
-      @actuals[:gross_revenue] - total_cost_of_doing_business
+      @actuals[:gross_revenue].to_f - total_cost_of_doing_business
     end
 
     def max_value_per_psu
@@ -99,13 +76,13 @@ class Stacks::ProfitShare
 
     def allowances
       desired_buffer = (
-        monthly_cost_of_doing_business *
+        projected_monthly_cost_of_doing_business *
         @desired_buffer_months *
         (1 + TAX_RATE)
       )
 
       desired_internals_budget =
-        monthly_cost_of_doing_business * INTERNALS_BUDGET_MULTIPLIER;
+        projected_monthly_cost_of_doing_business * internals_budget_multiplier;
       max_pool_before_reinvestment =
         @total_psu_issued * max_value_per_psu
 
@@ -121,7 +98,7 @@ class Stacks::ProfitShare
             pool = max_pool_before_reinvestment
           end
 
-          pool_after_fica_withholding = pool / (1 + FICA_TAX_RATE)
+          pool_after_fica_withholding = pool / (1 + fica_tax_rate)
 
           return {
             buffer: desired_buffer,

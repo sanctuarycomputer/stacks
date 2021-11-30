@@ -4,8 +4,12 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
     when normalized(AdminUser)
       if action == :update
         subject == user || user.is_payroll_manager?
-      elsif action == :read
+      else
         true
+      end
+    when normalized(ProfitSharePass)
+      if action == :update
+        user.is_profit_share_manager?
       else
         true
       end

@@ -134,6 +134,10 @@ class AdminUser < ApplicationRecord
     roles.include?("payroll_manager")
   end
 
+  def is_profit_share_manager?
+    roles.include?("profit_share_manager")
+  end
+
   def display_name
     email
   end
