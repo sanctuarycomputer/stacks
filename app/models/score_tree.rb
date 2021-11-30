@@ -1,4 +1,5 @@
 class ScoreTree < ApplicationRecord
+  extend OrderAsSpecified
   acts_as_paranoid
 
   belongs_to :tree

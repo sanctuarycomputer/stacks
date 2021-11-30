@@ -16,19 +16,6 @@ class Review < ApplicationRecord
   before_create :build_finalization
   after_update :ensure_workspaces_in_sync
 
-  validate :must_be_same_craft
-
-  def must_be_same_craft
-    previous_review_tree =
-      admin_user.archived_reviews.first.try(:craft_review_tree)
-    unless previous_review_tree.nil?
-      if (previous_review_tree.tree != craft_review_tree.tree)
-        errors.add(:base, "review tree error")
-        craft_review_tree.errors.add(:tree, "must match previous reviews")
-      end
-    end
-  end
-
   def craft_review_tree
     review_trees.find{|rt| Tree.craft_trees.include?(rt.tree)}
   end

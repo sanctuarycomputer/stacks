@@ -121,6 +121,15 @@ class AdminUser < ApplicationRecord
     reviews.where.not(archived_at: nil).order("archived_at DESC")
   end
 
+  def previous_tree_used
+    latest_review = archived_reviews.first
+    return nil unless latest_review.present?
+
+    latest_review.workspace.score_trees.map(&:tree).find do |t|
+      Tree.craft_trees.include?(t)
+    end
+  end
+
   def is_payroll_manager?
     roles.include?("payroll_manager")
   end

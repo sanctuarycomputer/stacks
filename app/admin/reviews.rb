@@ -60,7 +60,7 @@ ActiveAdmin.register Review do
         tree: Tree.find_by(name: "Individual Contributor"),
       })
       resource.review_trees << ReviewTree.new({
-        tree: nil,
+        tree: resource.admin_user.previous_tree_used,
       })
       resource.review_trees << ReviewTree.new({
         tree: Tree.find_by(name: "Studio Impact"),
@@ -79,7 +79,7 @@ ActiveAdmin.register Review do
       h1 "Peers"
       f.has_many :peer_reviews, heading: false, allow_destroy: true do |a|
         a.object.review = f.object
-        a.input :admin_user, label: "Request a peer review from:", prompt: "Select a Peer", collection: AdminUser.where.not(id: current_admin_user.id)
+        a.input :admin_user, label: "Request a peer review from:", prompt: "Select a Peer", collection: AdminUser.active.where.not(id: current_admin_user.id)
       end
     end
 

@@ -101,19 +101,15 @@ ActiveAdmin.register AdminUser do
       end
 
     if archived_reviews.any?
-      sample = archived_reviews[0][:chart].keys
-      label_mismatch = archived_reviews.any? { |r| r[:chart].keys != sample }
-      if label_mismatch
-        raise "Label mismatch. Please contact an admin."
-      else
-        data = archived_reviews.reduce({ labels: sample, datasets: [] }) do |data, review|
-          data[:datasets] << {
-            label: review[:label],
-            data: review[:chart].values.map { |v| v[:sum] },
-            borderColor: COLORS[archived_reviews.index(review)],
-          }
-          data
-        end
+      labels =
+        archived_reviews.reduce([]) {|acc, r| [*acc, *r[:chart].keys] }.uniq
+      data = archived_reviews.reduce({ labels: labels, datasets: [] }) do |data, review|
+        data[:datasets] << {
+          label: review[:label],
+          data: data[:labels].map{|l| review[:chart][l] && review[:chart][l][:sum] || 0 },
+          borderColor: COLORS[archived_reviews.index(review)],
+        }
+        data
       end
     end
 

@@ -200,6 +200,8 @@ GEM
     omniauth-rails_csrf_protection (1.0.0)
       actionpack (>= 4.2)
       omniauth (~> 2.0)
+    order_as_specified (1.7)
+      activerecord (>= 5.0.0)
     orm_adapter (0.5.0)
     pg (1.2.3)
     pry (0.14.0)
@@ -345,6 +347,7 @@ DEPENDENCIES
   listen (~> 3.2)
   omniauth-google-oauth2
   omniauth-rails_csrf_protection
+  order_as_specified
   pg (>= 0.18, < 2.0)
   pry
   puma (~> 4.1)

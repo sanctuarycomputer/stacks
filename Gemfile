@@ -20,6 +20,7 @@ gem 'sentry-ruby'
 gem 'sentry-rails'
 gem 'httparty'
 gem 'quickbooks-ruby'
+gem 'order_as_specified'
 
 group :development, :test do
   gem 'pry'
