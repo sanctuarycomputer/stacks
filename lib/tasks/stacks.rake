@@ -18,4 +18,14 @@ namespace :stacks do
   task :daily_tasks => :environment do
     Stacks::Dei.make_rollup
   end
+
+  desc "Seed Operations"
+  task :seed_operations => :environment do
+    o = Tree.create!(name: "Operations")
+    Trait.create!(name: "People", tree: o)
+    Trait.create!(name: "Process", tree: o)
+    Trait.create!(name: "Finances", tree: o)
+    Trait.create!(name: "Offering Knowledge", tree: o)
+    Trait.create!(name: "Business Development", tree: o)
+  end
 end
