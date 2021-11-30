@@ -15,10 +15,30 @@
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
     <div class="module-header">
-      <p>Profit Share Unit Value (USD)</p>
+      <p>Garden3d over Time</p>
+      <p>
+        <a href="?g3d=psu" class="<%= (params["g3d"] == "psu" || params["g3d"] == nil) ? "underline" : "" %>">
+          PSU Value
+        </a>
+      </p>
+      <p>
+        <a href="?g3d=psp" class="<%= params["g3d"] == "psp" ? "underline" : "" %>">
+          Profit Share Pool
+        </a>
+      </p>
+      <p>
+        <a href="?g3d=revenue" class="<%= params["g3d"] == "revenue" ? "underline" : "" %>">
+          Revenue
+        </a>
+      </p>
+      <p>
+        <a href="?g3d=margin" class="<%= params["g3d"] == "margin" ? "underline" : "" %>">
+          Profit Margin
+        </a>
+      </p>
     </div>
     <div class="module-body">
-      <canvas id="psu-value"></canvas>
+      <canvas id="g3d-over-time"></canvas>
     </div>
   </div>
 </div>
@@ -51,4 +71,8 @@
       maintainAspectRatio: false,
     }
   });
+  new Chart(document.getElementById('g3d-over-time'), {
+    type: 'bar',
+    data: <%= g3d_over_time_data.to_json.html_safe %>,
+  })
 </script>

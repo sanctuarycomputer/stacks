@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2021_11_28_144247) do
+ActiveRecord::Schema.define(version: 2021_11_30_190645) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -172,9 +172,10 @@ ActiveRecord::Schema.define(version: 2021_11_28_144247) do
   create_table "profit_share_passes", force: :cascade do |t|
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
-    t.datetime "finalized_at"
-    t.decimal "payroll_buffer_months", default: "2.0"
-    t.decimal "efficiency_cap", default: "1.65"
+    t.decimal "payroll_buffer_months", default: "1.5"
+    t.decimal "efficiency_cap", default: "1.6"
+    t.jsonb "snapshot"
+    t.decimal "internals_budget_multiplier", default: "0.5"
   end
 
   create_table "profitability_passes", force: :cascade do |t|

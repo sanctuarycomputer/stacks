@@ -1,19 +1,20 @@
 <% scenario = profit_share_pass.make_scenario %>
+<% is_projection = profit_share_pass.is_projection? %>
 
-<% if profit_share_pass.is_projection? %>
-  <p class="nag warning" style="margin-bottom: 20px;margin-right:10px;">
-    ⚠️ <strong>This is a projection.</strong> Please expect these numbers to flucuate.
+<% if is_projection %>
+  <p class="nag warning sticky" style="margin-bottom: 20px;margin-right:10px;">
+    ⚠️ <strong>This is a projection. Please expect these numbers to fluctuate (wildly).</strong>
   </p>
 <% else %>
   <p class="nag" style="margin-bottom: 20px;margin-right:10px;">
-    This profit share pass was finalized <%= profit_share_pass.finalized_at.strftime("#{profit_share_pass.finalized_at.day.ordinalize} %B %Y") %>.
+    ✅ This profit share pass was finalized <%= profit_share_pass.finalized_at.strftime("#{profit_share_pass.finalized_at.day.ordinalize} %B %Y") %>.
   </p>
 <% end %>
 
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
     <div class="module-header">
-      <p>Performance Metrics</p>
+      <p><%= is_projection ? "(Projected) " : "" %>Yearly Actuals</p>
     </div>
 
     <div class="module-body">
@@ -65,12 +66,24 @@
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
     <div class="module-header">
-      <p>Controls</p>
+      <p>Inputs</p>
     </div>
 
     <div class="module-body">
       <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
         <tbody>
+          <tr class="odd">
+            <td class="col">Latest Monthly Cost of Doing Business</td>
+            <td class="col">
+              <%= number_to_currency(scenario.projected_monthly_cost_of_doing_business) %>
+            </td>
+          </tr>
+          <tr class="even">
+            <td class="col">Pre Spent Profit Share</td>
+            <td class="col">
+              <%= number_to_currency(scenario.pre_spent) %>
+            </td>
+          </tr>
           <tr class="odd">
             <td class="col">Payroll Buffer Months</td>
             <td class="col">
@@ -92,13 +105,19 @@
           <tr class="even">
             <td class="col">FICA Tax Rate</td>
             <td class="col">
-              <%= Stacks::ProfitShare::Scenario::FICA_TAX_RATE %>
+              <%= scenario.fica_tax_rate %>
             </td>
           </tr>
           <tr class="odd">
             <td class="col">Internals Budget Multiplier</td>
             <td class="col">
-              <%= Stacks::ProfitShare::Scenario::INTERNALS_BUDGET_MULTIPLIER %>
+              <%= scenario.internals_budget_multiplier %>
+            </td>
+          </tr>
+          <tr class="even">
+            <td class="col">Total PSU Issued</td>
+            <td class="col">
+              <%= scenario.total_psu_issued %>
             </td>
           </tr>
         </tbody>
@@ -110,18 +129,12 @@
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
     <div class="module-header">
-      <p>Allowances & Calculated Metrics</p>
+      <p><%= is_projection ? "(Projected) " : "" %>Allowances & Calculated Metrics</p>
     </div>
 
     <div class="module-body">
       <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
         <tbody>
-          <tr class="even">
-            <td class="col">Pre Spent from this year's Budgets</td>
-            <td class="col">
-              <%= number_to_currency(scenario.pre_spent) %>
-            </td>
-          </tr>
           <tr class="odd">
             <td class="col">Studio Efficiency</td>
             <td class="col">
@@ -129,7 +142,7 @@
             </td>
           </tr>
           <tr class="even">
-            <td class="col">Payroll Buffer</td>
+            <td class="col">Payroll Buffer (with Tax) for New Year</td>
             <td class="col">
               <%= number_to_currency(scenario.allowances[:buffer]) %>
             </td>
@@ -165,12 +178,6 @@
             </td>
           </tr>
           <tr class="even">
-            <td class="col">Total PSU Issued</td>
-            <td class="col">
-              <%= scenario.total_psu_issued %>
-            </td>
-          </tr>
-          <tr class="odd">
             <td class="col"><strong>Value per PSU</strong></td>
             <td class="col">
               <%= number_to_currency(scenario.actual_value_per_psu) %>

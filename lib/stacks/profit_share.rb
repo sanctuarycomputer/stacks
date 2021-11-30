@@ -9,21 +9,21 @@ class Stacks::ProfitShare
     attr_accessor :efficiency_cap
     attr_accessor :pre_spent
     attr_accessor :internals_budget_multiplier
+    attr_accessor :projected_monthly_cost_of_doing_business
+    attr_accessor :fica_tax_rate
 
-    # What does 1.65 efficiency_cap mean? Well, it means that for
-    # every dollar we spend, we strive to make 1.65 dollars back.
-    # That is a margin of 65%. In a 5 day work week, taking into
-    # account non-billable team members, and expenses like software,
-    # healthcare and employer taxes, a person costs us roughly $95
-    # per billable hour. In a 4 day work week, that same person will
-    # cost us around $126 per billable hour.
+    # What does 1.6 efficiency_cap mean? Well, it means that for
+    # every dollar we spend, we strive to make 1.6 dollars back.
+    # That is a margin of 60%, at which a PSU is worth $1000!
     def initialize(
       actuals,
       total_psu_issued,
       pre_spent = 0,
       desired_buffer_months = 1.5,
-      efficiency_cap = 1.65,
-      internals_budget_multiplier = 0.5
+      efficiency_cap = 1.6,
+      internals_budget_multiplier = 0.5,
+      projected_monthly_cost_of_doing_business = nil,
+      fica_tax_rate = Stacks::ProfitShare::Scenario::FICA_TAX_RATE
     )
       @actuals = actuals
       @total_psu_issued = total_psu_issued
@@ -31,22 +31,25 @@ class Stacks::ProfitShare
       @desired_buffer_months = desired_buffer_months
       @efficiency_cap = efficiency_cap
       @internals_budget_multiplier = internals_budget_multiplier
+      @projected_monthly_cost_of_doing_business = projected_monthly_cost_of_doing_business
+      @fica_tax_rate = fica_tax_rate
     end
 
     def total_cost_of_doing_business
-      @actuals[:gross_payroll] +
-      @actuals[:gross_expenses] +
-      @actuals[:gross_benefits] +
-      @actuals[:gross_subcontractors] -
+      @actuals[:gross_payroll].to_f +
+      @actuals[:gross_expenses].to_f +
+      @actuals[:gross_benefits].to_f +
+      @actuals[:gross_subcontractors].to_f -
       @pre_spent # Don't count prespent profit share against this
     end
 
-    def monthly_cost_of_doing_business
+    def projected_monthly_cost_of_doing_business
+      return @projected_monthly_cost_of_doing_business if @projected_monthly_cost_of_doing_business.present?
       total_cost_of_doing_business / 12
     end
 
     def raw_efficiency
-      @actuals[:gross_revenue] / total_cost_of_doing_business
+      @actuals[:gross_revenue].to_f / total_cost_of_doing_business
     end
 
     def efficiency
@@ -60,7 +63,7 @@ class Stacks::ProfitShare
     end
 
     def total_profit
-      @actuals[:gross_revenue] - total_cost_of_doing_business
+      @actuals[:gross_revenue].to_f - total_cost_of_doing_business
     end
 
     def max_value_per_psu
@@ -73,13 +76,13 @@ class Stacks::ProfitShare
 
     def allowances
       desired_buffer = (
-        monthly_cost_of_doing_business *
+        projected_monthly_cost_of_doing_business *
         @desired_buffer_months *
         (1 + TAX_RATE)
       )
 
       desired_internals_budget =
-        monthly_cost_of_doing_business * internals_budget_multiplier;
+        projected_monthly_cost_of_doing_business * internals_budget_multiplier;
       max_pool_before_reinvestment =
         @total_psu_issued * max_value_per_psu
 
@@ -95,7 +98,7 @@ class Stacks::ProfitShare
             pool = max_pool_before_reinvestment
           end
 
-          pool_after_fica_withholding = pool / (1 + FICA_TAX_RATE)
+          pool_after_fica_withholding = pool / (1 + fica_tax_rate)
 
           return {
             buffer: desired_buffer,
