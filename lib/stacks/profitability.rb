@@ -56,33 +56,6 @@ class Stacks::Profitability
       }
     end
 
-    def make_actuals_projections(profitability_pass, year = Time.now.year)
-      latest_data =
-        profitability_pass.data["garden3d"][year.to_s]
-      ytd = latest_data.values.reduce({}) do |acc, v|
-        acc["gross_payroll"] =
-          (acc["gross_payroll"] || 0.0) + (v["gross_payroll"].to_f || 0.0)
-        acc["gross_revenue"] =
-          (acc["gross_revenue"] || 0.0) + (v["gross_revenue"].to_f || 0.0)
-        acc["gross_benefits"] =
-          (acc["gross_benefits"] || 0.0) + (v["gross_benefits"].to_f || 0.0)
-        acc["gross_expenses"] =
-          (acc["gross_expenses"] || 0.0) + (v["gross_expenses"].to_f || 0.0)
-        acc["gross_subcontractors"] =
-          (acc["gross_subcontractors"] || 0.9) + (v["gross_subcontractors"].to_f || 0.0)
-        acc
-      end
-
-      months_passed = latest_data.keys.length
-      {
-        "gross_payroll": (ytd["gross_payroll"] / months_passed) * 12,
-        "gross_revenue": (ytd["gross_revenue"] / months_passed) * 12,
-        "gross_benefits": (ytd["gross_benefits"] / months_passed) * 12,
-        "gross_expenses": (ytd["gross_expenses"] / months_passed) * 12,
-        "gross_subcontractors": (ytd["gross_subcontractors"] / months_passed) * 12,
-      }
-    end
-
     def calculate
       qbo_access_token = Stacks::Automator.make_and_refresh_qbo_access_token
       report_service = Quickbooks::Service::Reports.new

@@ -78,23 +78,6 @@ class AdminUser < ApplicationRecord
     end
   end
 
-  def sellable_days_between(period_start, period_end)
-    total = (full_time_periods.map do |ftp|
-      next 0 if ftp.ended_at.present? && ftp.ended_at < period_start
-      started =
-        period_start >= ftp.started_at ? period_start : ftp.started_at
-      ended =
-        ftp.ended_at.nil? ? period_end : ftp.ended_at
-      ((started..ended).select do |d|
-        (1..4).include?(d.wday)
-      end).size
-    end).compact.reduce(:+) || 0
-
-    # We give roughly 40 days PTO a year
-    # Plus 7 mental health days
-    (total - 37 - 7)
-  end
-
   def projected_psu_by_eoy
     # We calculate PSU at the 15th of december
     psu_earned_by(Date.new(Date.today.year, 12, 15))
@@ -165,10 +148,6 @@ class AdminUser < ApplicationRecord
   end
 
   def self.total_projected_psu_issued_by_eoy
-    AdminUser.active.map{|a| a.projected_psu_by_eoy }.reject{|v| v == :no_data}.reduce(:+)
-  end
-
-  def self.total_projected_business_days_by_eoy
     AdminUser.active.map{|a| a.projected_psu_by_eoy }.reject{|v| v == :no_data}.reduce(:+)
   end
 
