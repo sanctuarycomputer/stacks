@@ -5,6 +5,7 @@ ActiveAdmin.register_page "Profit Dashboard" do
     COLORS = Stacks::Utils::COLORS
 
     pp = ProfitabilityPass.order(created_at: :desc).first
+
     if pp.present?
       profitability_time_span = if params["profitability-time-span"].nil?
           6
@@ -63,6 +64,7 @@ ActiveAdmin.register_page "Profit Dashboard" do
         end
       end
 
+      #
       all_psp = ProfitSharePass.finalized.order(created_at: :asc).all
       g3d_over_time_data = {
         labels: all_psp.map{|psp| psp.created_at.year.to_s},

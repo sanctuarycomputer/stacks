@@ -1,0 +1,20 @@
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Hourly Rate Data (USD)</p>
+    </div>
+    <div class="module-body">
+      <canvas id="hourly-data"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+  new Chart(document.getElementById('hourly-data'), {
+    type: 'line',
+    data: <%= hourly_data.to_json.html_safe %>,
+    options: {
+      tension: 0.3,
+    }
+  })
+</script>

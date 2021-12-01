@@ -18,6 +18,7 @@ namespace :stacks do
   task :daily_tasks => :environment do
     ProfitSharePass.ensure_exists!
     Stacks::Dei.make_rollup
+    Stacks::Utilization.calculate
   end
 
   desc "Seed Operations"
