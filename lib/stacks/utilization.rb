@@ -75,6 +75,9 @@ class Stacks::Utilization
 
       assignments.reduce({}) do |acc, a|
         person = people.find {|p| p["id"] == a["person_id"]}
+        user = AdminUser.find_by(email: person["email"])
+        next acc unless user.present?
+
         project = projects.find {|p| p["id"] == a["project_id"]}
         client = clients.find {|c| c["id"] == project["client_id"]}
 
@@ -88,10 +91,12 @@ class Stacks::Utilization
           time_off: 0,
           non_billable: 0,
           billable: [],
-          total: 0
+          expected: (user.working_days_between(
+            start_of_month.beginning_of_month,
+            start_of_month.end_of_month
+          ).count * user.expected_utilization * 8)
         }
 
-        acc[person["email"]][:total] += allocation
         if is_time_off
           acc[person["email"]][:time_off] += allocation
         elsif is_non_billable

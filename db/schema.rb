@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2021_12_01_143954) do
+ActiveRecord::Schema.define(version: 2021_12_02_184743) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -80,6 +80,7 @@ ActiveRecord::Schema.define(version: 2021_12_01_143954) do
     t.boolean "show_skill_tree_data", default: true
     t.integer "old_skill_tree_level"
     t.text "profit_share_notes"
+    t.decimal "expected_utilization", default: "0.85"
     t.index ["email"], name: "index_admin_users_on_email", unique: true
     t.index ["reset_password_token"], name: "index_admin_users_on_reset_password_token", unique: true
   end

@@ -1,5 +1,6 @@
 ActiveAdmin.register AdminUser do
   permit_params :show_skill_tree_data,
+    :expected_utilization,
     :opt_out_of_dei_data_entry,
     :old_skill_tree_level,
     :profit_share_notes,
@@ -72,6 +73,14 @@ ActiveAdmin.register AdminUser do
     end
     column :projected_psu_by_eoy do |resource|
       resource.projected_psu_by_eoy
+    end
+    if current_admin_user.is_utilization_manager?
+      column :expected_utilization do |resource|
+        "#{(resource.expected_utilization * 100)}%"
+      end
+      column :average_utilization do |resource|
+        "#{(resource.average_utilization * 100).round(2)}%"
+      end
     end
     actions
   end
@@ -176,6 +185,7 @@ ActiveAdmin.register AdminUser do
       end
 
       f.input :profit_share_notes
+      f.input :expected_utilization
 
       f.has_many :full_time_periods, allow_destroy: true do |a|
         a.input :started_at

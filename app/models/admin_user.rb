@@ -54,6 +54,60 @@ class AdminUser < ApplicationRecord
   has_many :reviews
   has_many :peer_reviews
 
+  def working_days_between(period_start, period_end)
+    period_stop = period_end > Date.today ? period_end : Date.today
+
+    period_range = (period_start..period_end)
+    full_time_ranges = full_time_periods.reduce([]) do |acc, ftp|
+      acc << (ftp.started_at..(ftp.ended_at || period_stop))
+      acc
+    end
+
+    overlaps =
+      full_time_ranges.reduce([]){|acc, r| [*acc, *(r.to_a & period_range.to_a)]}
+
+    overlaps.select do |d|
+      last_friday_of_month = Date.new(d.year, d.month, -1)
+      last_friday_of_month -= (last_friday_of_month.wday - 5) % 7
+      next false if d == last_friday_of_month
+
+      ftp = full_time_periods.find{|ftp| (ftp.started_at <= d) && (ftp.ended_at == nil || ftp.ended_at >= d)}
+      if ftp.multiplier == 0.8
+        (1..4).include?(d.wday)
+      else
+        (1..5).include?(d.wday)
+      end
+    end
+  end
+
+  def average_utilization
+    utilization_pass = UtilizationPass.first
+    data = utilization_pass.data.keys.reduce([]) do |acc, year|
+      months = utilization_pass.data[year].keys.sort do |a, b|
+        Date::MONTHNAMES.index(a.capitalize) <=> Date::MONTHNAMES.index(b.capitalize)
+      end
+      month_utilizations = [*acc, *months.reduce([]) do |agr, month|
+        data = utilization_pass.data[year][month][email]
+        next agr unless data.present?
+
+        start_of_month = Date.new(year.to_i, Date::MONTHNAMES.index(month.capitalize), 1)
+        next agr if Date.today.beginning_of_month == start_of_month
+        next agr if start_of_month < Date.new(2021, 6, 1)
+
+        working_days = working_days_between(start_of_month, start_of_month.end_of_month)
+        max_possible_hours = (working_days.count * 8)
+        next agr unless max_possible_hours > 0
+
+        billable_hours = data["billable"].reduce(0){|acc, r| acc += r["allocation"]}
+        agr << (billable_hours / max_possible_hours)
+        agr
+      end]
+    end
+
+    return 0.0 unless data.any?
+    data.reduce(:+) / data.length
+  end
+
   def psu_earned_by(date = Date.today)
     return :no_data if full_time_periods.empty?
 
@@ -132,6 +186,10 @@ class AdminUser < ApplicationRecord
 
   def is_payroll_manager?
     roles.include?("payroll_manager")
+  end
+
+  def is_utilization_manager?
+    roles.include?("utilization_manager")
   end
 
   def is_profit_share_manager?
