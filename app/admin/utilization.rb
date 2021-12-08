@@ -47,6 +47,8 @@ ActiveAdmin.register_page "Utilization" do
         acc[label]["expected_hours_sold"] = utilization_pass.data[year][month].values.map do |v|
           v["expected"].to_f
         end.reduce(:+)
+        acc[label]["cost_per_sellable_hour"] =
+          acc[label]["cogs"] / acc[label]["expected_hours_sold"]
       end
 
       acc
@@ -56,7 +58,12 @@ ActiveAdmin.register_page "Utilization" do
     hourly_data = {
       labels: aggregated_data.keys,
       datasets: [{
-        label: 'Internal Cost per Billable Hour',
+        label: 'Internal Cost per Sellable Hour',
+        borderColor: COLORS[3],
+        data: aggregated_data.values.map{|v| v["cost_per_sellable_hour"]},
+        yAxisID: 'y',
+      }, {
+        label: 'Internal Cost per Hour Actually Sold',
         borderColor: COLORS[4],
         data: aggregated_data.values.map{|v| v["cost_per_billable_hour"]},
         yAxisID: 'y',
@@ -72,7 +79,7 @@ ActiveAdmin.register_page "Utilization" do
         yAxisID: 'y1',
         type: 'bar'
       }, {
-        label: 'Expected Hours Sold',
+        label: 'Sellable Hours',
         backgroundColor: COLORS[2],
         data: aggregated_data.values.map{|v| v["expected_hours_sold"]},
         yAxisID: 'y1',
