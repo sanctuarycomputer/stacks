@@ -46,77 +46,77 @@ class Review < ApplicationRecord
     junior_1: {
       name: "J1",
       min_points: 100,
-      salary: 60000
+      salary: 63000
     },
     junior_2: {
       name: "J2",
       min_points: 155,
-      salary: 63500
+      salary: 66675
     },
     junior_3: {
       name: "J3",
       min_points: 210,
-      salary: 67000
+      salary: 70350
     },
     mid_level_1: {
       name: "ML1",
       min_points: 265,
-      salary: 70000
+      salary: 73500
     },
     mid_level_2: {
       name: "ML2",
       min_points: 320,
-      salary: 73500
+      salary: 77175
     },
     mid_level_3: {
       name: "ML3",
       min_points: 375,
-      salary: 77000
+      salary: 80850
     },
     experienced_mid_level_1: {
       name: "EML1",
       min_points: 430,
-      salary: 80000
+      salary: 84000
     },
     experienced_mid_level_2: {
       name: "EML2",
       min_points: 485,
-      salary: 85000
+      salary: 89250
     },
     experienced_mid_level_3: {
       name: "EML3",
       min_points: 540,
-      salary: 90000
+      salary: 94500
     },
     senior_1: {
       name: "S1",
       min_points: 595,
-      salary: 95000
+      salary: 99750
     },
     senior_2: {
       name: "S2",
       min_points: 650,
-      salary: 100000
+      salary: 105000
     },
     senior_3: {
       name: "S3",
-      min_points: 705,
-      salary: 105000
+      min_points: 690,
+      salary: 110250
     },
     senior_4: {
       name: "S4",
-      min_points: 760,
-      salary: 110000
+      min_points: 720,
+      salary: 115500
     },
     lead_1: {
       name: "L1",
-      min_points: 815,
-      salary: 115000
+      min_points: 750,
+      salary: 120750
     },
     lead_2: {
       name: "L2",
-      min_points: 870,
-      salary: 120000
+      min_points: 810,
+      salary: 126000
     },
   }
 
