@@ -1,5 +1,6 @@
 class Stacks::Utilization
   # TODO: DRY these up
+  START_AT = Date.new(2021, 6, 1)
   EIGHT_HOURS_IN_SECONDS = 28800
   DEFAULT_HOURLY_RATE = 145
   STUDIO_TO_SERVICE_MAPPING = {
@@ -17,8 +18,8 @@ class Stacks::Utilization
 
     def calculate
       data = {}
-      time_start = Date.new(2021, 1, 1)
-      time_end = 0.seconds.ago
+      time_start = START_AT
+      time_end = Date.today.last_month.end_of_month
       time = time_start
       while time < time_end
         year_as_sym = time.strftime("%Y").to_sym
@@ -64,6 +65,12 @@ class Stacks::Utilization
       (per_day_allocation * days).to_f
     end
 
+    def studio_for_forecast_person(person)
+      studios = (STUDIOS.map(&:to_s) & person["roles"])
+      return studios.first if studios.length >= 1
+      "None"
+    end
+
     def make_utilizations_for_month(start_of_month)
       people = forecast.people()["people"]
       projects = forecast.projects()["projects"]
@@ -78,6 +85,7 @@ class Stacks::Utilization
         user = AdminUser.find_by(email: person["email"])
         next acc unless user.present?
 
+        studio = studio_for_forecast_person(person)
         project = projects.find {|p| p["id"] == a["project_id"]}
         client = clients.find {|c| c["id"] == project["client_id"]}
 
@@ -87,20 +95,21 @@ class Stacks::Utilization
         is_time_off = project["name"] == "Time Off" && project["harvest_id"].nil?
         is_non_billable = client && STUDIOS.include?(:"#{client["name"]}")
 
-        acc[person["email"]] = acc[person["email"]] || {
+        acc[studio] = acc[studio] || {}
+        acc[studio][person["email"]] = acc[studio][person["email"]] || {
           time_off: 0,
           non_billable: 0,
           billable: [],
-          expected: (user.working_days_between(
+          sellable: (user.working_days_between(
             start_of_month.beginning_of_month,
             start_of_month.end_of_month
-          ).count * user.expected_utilization * 8)
+          ).count * user.expected_utilization * 8),
         }
 
         if is_time_off
-          acc[person["email"]][:time_off] += allocation
+          acc[studio][person["email"]][:time_off] += allocation
         elsif is_non_billable
-          acc[person["email"]][:non_billable] += allocation
+          acc[studio][person["email"]][:non_billable] += allocation
         else
           hourly_rate_tags = project["tags"].filter { |t| t.ends_with?("p/h") }
           hourly_rate = if hourly_rate_tags.count == 0
@@ -112,13 +121,14 @@ class Stacks::Utilization
             end
 
           existing =
-            acc[person["email"]][:billable].find {|u| u[:hourly_rate] == hourly_rate}
+            acc[studio][person["email"]][:billable].find {|u| u[:project_id] == project["id"]}
           if existing
             existing[:allocation] += allocation
           else
-            acc[person["email"]][:billable] << {
+            acc[studio][person["email"]][:billable] << {
               hourly_rate: hourly_rate,
-              allocation: allocation
+              allocation: allocation,
+              project_id: project["id"]
             }
           end
         end

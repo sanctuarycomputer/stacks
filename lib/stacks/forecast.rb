@@ -26,10 +26,11 @@ class Stacks::Forecast
     self.class.get("/projects", headers: @headers)
   end
 
-  def assignments(start_date, end_date)
+  def assignments(start_date, end_date, project_id = nil)
     query = {}
     query["start_date"] = start_date if start_date.present?
     query["end_date"] = end_date if end_date.present?
+    query["project_id"] = project_id if project_id.present?
     self.class.get("/assignments", headers: @headers, query: query)
   end
 

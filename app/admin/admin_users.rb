@@ -78,9 +78,6 @@ ActiveAdmin.register AdminUser do
       column :expected_utilization do |resource|
         "#{(resource.expected_utilization * 100)}%"
       end
-      column :average_utilization do |resource|
-        "#{(resource.average_utilization * 100).round(2)}%"
-      end
     end
     actions
   end

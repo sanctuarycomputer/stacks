@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2021_12_02_184743) do
+ActiveRecord::Schema.define(version: 2021_12_13_220218) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -80,7 +80,7 @@ ActiveRecord::Schema.define(version: 2021_12_02_184743) do
     t.boolean "show_skill_tree_data", default: true
     t.integer "old_skill_tree_level"
     t.text "profit_share_notes"
-    t.decimal "expected_utilization", default: "0.85"
+    t.decimal "expected_utilization", default: "0.8"
     t.index ["email"], name: "index_admin_users_on_email", unique: true
     t.index ["reset_password_token"], name: "index_admin_users_on_reset_password_token", unique: true
   end
@@ -112,6 +112,12 @@ ActiveRecord::Schema.define(version: 2021_12_02_184743) do
     t.datetime "deleted_at"
     t.index ["deleted_at"], name: "index_finalizations_on_deleted_at"
     t.index ["review_id"], name: "index_finalizations_on_review_id"
+  end
+
+  create_table "forecast_projects", force: :cascade do |t|
+    t.string "forecast_id"
+    t.jsonb "data"
+    t.index ["forecast_id"], name: "index_forecast_projects_on_forecast_id", unique: true
   end
 
   create_table "full_time_periods", force: :cascade do |t|
@@ -181,6 +187,25 @@ ActiveRecord::Schema.define(version: 2021_12_02_184743) do
 
   create_table "profitability_passes", force: :cascade do |t|
     t.jsonb "data"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+  end
+
+  create_table "project_tracker_forecast_projects", force: :cascade do |t|
+    t.bigint "project_tracker_id", null: false
+    t.bigint "forecast_project_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["forecast_project_id"], name: "index_project_tracker_forecast_projects_on_forecast_project_id"
+    t.index ["project_tracker_id"], name: "index_project_tracker_forecast_projects_on_project_tracker_id"
+  end
+
+  create_table "project_trackers", force: :cascade do |t|
+    t.string "name"
+    t.decimal "budget_low_end"
+    t.decimal "budget_high_end"
+    t.string "notion_project_url"
+    t.text "notes"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
   end
@@ -291,6 +316,8 @@ ActiveRecord::Schema.define(version: 2021_12_02_184743) do
   add_foreign_key "peer_reviews", "admin_users"
   add_foreign_key "peer_reviews", "reviews"
   add_foreign_key "pre_profit_share_purchases", "admin_users"
+  add_foreign_key "project_tracker_forecast_projects", "forecast_projects"
+  add_foreign_key "project_tracker_forecast_projects", "project_trackers"
   add_foreign_key "review_trees", "reviews"
   add_foreign_key "review_trees", "trees"
   add_foreign_key "reviews", "admin_users"

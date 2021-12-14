@@ -80,33 +80,34 @@ class AdminUser < ApplicationRecord
     end
   end
 
-  def average_utilization
-    utilization_pass = UtilizationPass.first
-    data = utilization_pass.data.keys.reduce([]) do |acc, year|
-      months = utilization_pass.data[year].keys.sort do |a, b|
-        Date::MONTHNAMES.index(a.capitalize) <=> Date::MONTHNAMES.index(b.capitalize)
-      end
-      month_utilizations = [*acc, *months.reduce([]) do |agr, month|
-        data = utilization_pass.data[year][month][email]
-        next agr unless data.present?
+  #def average_utilization
+  #  utilization_pass = UtilizationPass.first
 
-        start_of_month = Date.new(year.to_i, Date::MONTHNAMES.index(month.capitalize), 1)
-        next agr if Date.today.beginning_of_month == start_of_month
-        next agr if start_of_month < Date.new(2021, 6, 1)
+  #  data = utilization_pass.data.keys.reduce([]) do |acc, year|
+  #    months = utilization_pass.data[year].keys.sort do |a, b|
+  #      Date::MONTHNAMES.index(a.capitalize) <=> Date::MONTHNAMES.index(b.capitalize)
+  #    end
+  #    month_utilizations = [*acc, *months.reduce([]) do |agr, month|
+  #      data = utilization_pass.data[year][month][email]
+  #      next agr unless data.present?
 
-        working_days = working_days_between(start_of_month, start_of_month.end_of_month)
-        max_possible_hours = (working_days.count * 8)
-        next agr unless max_possible_hours > 0
+  #      start_of_month = Date.new(year.to_i, Date::MONTHNAMES.index(month.capitalize), 1)
+  #      next agr if Date.today.beginning_of_month == start_of_month
+  #      next agr if start_of_month < Date.new(2021, 6, 1)
 
-        billable_hours = data["billable"].reduce(0){|acc, r| acc += r["allocation"]}
-        agr << (billable_hours / max_possible_hours)
-        agr
-      end]
-    end
+  #      working_days = working_days_between(start_of_month, start_of_month.end_of_month)
+  #      max_possible_hours = (working_days.count * 8)
+  #      next agr unless max_possible_hours > 0
 
-    return 0.0 unless data.any?
-    data.reduce(:+) / data.length
-  end
+  #      billable_hours = data["billable"].reduce(0){|acc, r| acc += r["allocation"]}
+  #      agr << (billable_hours / max_possible_hours)
+  #      agr
+  #    end]
+  #  end
+
+  #  return 0.0 unless data.any?
+  #  data.reduce(:+) / data.length
+  #end
 
   def psu_earned_by(date = Date.today)
     return :no_data if full_time_periods.empty?
