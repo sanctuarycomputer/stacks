@@ -1,17 +1,67 @@
-hi <%= @project_tracker.hours_billed %>
+<span class="pill <%= @project_tracker.status %>">
+  <%= @project_tracker.status.to_s.humanize %>
+</span>
 
-Estimated End Date
-Actual End Date
+<hr />
 
-Estimated weeks: 320 hours or 8 weeks
-Actual weeks spent: 629 hours or 15.725 weeks
+Invoiced Spend: <%= number_to_currency(@project_tracker.invoiced_spend) %>
+<hr />
+Running Spend: <%= number_to_currency(@project_tracker.running_spend) %>
+<hr />
+Low End Budget: <%= number_to_currency(@project_tracker.budget_low_end) %>
+<hr />
+High End Budget: <%= number_to_currency(@project_tracker.budget_high_end) %>
+<hr />
 
-Revenue: $37,440.5 (mentioned in our SOW as cost not to exceed)
+<% running_spend = @project_tracker.running_spend %>
+<% limit = [
+  @project_tracker.invoiced_spend,
+  @project_tracker.invoiced_spend + running_spend,
+  @project_tracker.budget_low_end,
+  @project_tracker.budget_high_end
+].compact.max %>
 
-Expenses: $44,030
-Profit: -$6,589.5
-Profit margin: -17.59%
-In the scenario it was under our new billing structure:
+<div class="budget_progress">
+  <div
+     class="node invoiced"
+     style="width:calc(<%= ((@project_tracker.invoiced_spend / limit) * 100).round(2) %>%)">
+     <span class="tooltip">
+       Invoiced:
+       <br />
+       <%= number_to_currency(@project_tracker.invoiced_spend) %>
+     </span>
+  </div>
+  <div
+     class="node running"
+     style="width:<%= (((@project_tracker.invoiced_spend + running_spend) / limit) * 100).round(2) %>%">
+     <span class="tooltip">
+       This Month:
+       <br />
+       <%= number_to_currency(running_spend) %>
+     </span>
+  </div>
 
-Profit = $29,563 (=$73,593-$44,030)
-Profit margin = 40.17%
+  <% if @project_tracker.budget_low_end.present? %>
+    <div
+      class="node budget_low_end"
+      style="left:calc(<%= (((@project_tracker.budget_low_end) / limit) * 100).round(2) %>% - 10px)">
+      <span class="tooltip">
+        Budget Low End:
+        <br />
+        <%= number_to_currency(@project_tracker.budget_low_end) %>
+      </span>
+    </div>
+  <% end %>
+
+  <% if @project_tracker.budget_high_end.present? %>
+    <div
+      class="node budget_high_end"
+      style="left:calc(<%= (((@project_tracker.budget_high_end) / limit) * 100).round(2) %>% - 10px)">
+      <span class="tooltip">
+        Budget High End:
+        <br />
+        <%= number_to_currency(@project_tracker.budget_high_end) %>
+      </span>
+    </div>
+  <% end %>
+</div>

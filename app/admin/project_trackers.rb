@@ -8,16 +8,23 @@ ActiveAdmin.register ProjectTracker do
   permit_params :name,
     :budget_low_end,
     :budget_high_end,
-    :notion_project_url,
+    :notion_proposal_url,
     :notes,
     project_tracker_forecast_projects_attributes: [:id, :forecast_project_id, :_destroy, :_edit]
 
   index download_links: false do
     column :name
-    column :budget_low_end
-    column :budget_high_end
+    column :budget_low_end do |resource|
+      number_to_currency(resource.budget_low_end)
+    end
+    column :budget_high_end do |resource|
+      number_to_currency(resource.budget_high_end)
+    end
+    column :status do |resource|
+      span(resource.status.to_s.humanize.capitalize, class: "pill #{resource.status}")
+    end
     actions do |resource|
-      link_to "Notion ↗", resource.notion_project_url if resource.notion_project_url.present?
+      link_to "Proposal ↗", resource.notion_proposal_url if resource.notion_proposal_url.present?
     end
   end
 
@@ -39,7 +46,7 @@ ActiveAdmin.register ProjectTracker do
       f.input :name
       f.input :budget_low_end
       f.input :budget_high_end
-      f.input :notion_project_url
+      f.input :notion_proposal_url
 
       f.has_many :project_tracker_forecast_projects, heading: false, allow_destroy: true, new_record: 'Connect a Forecast Project' do |a|
         a.input(:forecast_project, {

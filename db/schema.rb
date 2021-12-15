@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2021_12_13_220218) do
+ActiveRecord::Schema.define(version: 2021_12_15_003317) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -204,7 +204,7 @@ ActiveRecord::Schema.define(version: 2021_12_13_220218) do
     t.string "name"
     t.decimal "budget_low_end"
     t.decimal "budget_high_end"
-    t.string "notion_project_url"
+    t.string "notion_proposal_url"
     t.text "notes"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
