@@ -138,16 +138,40 @@ class AdminUser < ApplicationRecord
     psu_earned_by(Date.new(Date.today.year, 12, 15))
   end
 
+  def pre_profit_share_spent_during(year)
+    pre_profit_share_purchases
+      .where(purchased_at: Date.new(year, 1, 1).beginning_of_year..Date.new(year, 1, 1).end_of_year)
+      .map(&:amount)
+      .reduce(:+) || 0
+  end
+
   def profit_shares
-    finalization_date = Date.new(2021, 12, 15)
-    #binding.pry
-    [{
-      year: 2021,
-      psu_value: 505.50,
-      psu_earnt: 48,
-      pre_spent_profit_share: 123,
-      total_payout: 1234
-    }]
+    year = 2021
+    data = []
+
+    while year <= Date.today.year
+      profit_share_pass =
+        ProfitSharePass
+          .finalized
+          .find { |psp|
+            (Date.parse(psp.snapshot["finalized_at"]).year == 2021)
+          }
+      psu_value = profit_share_pass.make_scenario.actual_value_per_psu
+      psu_earnt = psu_earned_by(Date.new(year, 12, 15))
+      pre_spent_profit_share = pre_profit_share_spent_during(year)
+
+      data << {
+        year: year,
+        psu_value: psu_value,
+        psu_earnt: psu_earnt,
+        pre_spent_profit_share: pre_spent_profit_share,
+        total_payout: (psu_value * psu_earnt) - pre_spent_profit_share
+      }
+
+      year += 1
+    end
+
+    data
   end
 
   def should_nag_for_dei_data?

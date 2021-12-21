@@ -1,11 +1,8 @@
 ActiveAdmin.register ProfitSharePass do
+  menu label: "Profit Share"
   config.filters = false
   config.sort_order = "created_at_desc"
   config.paginate = false
-
-  menu if: proc { current_admin_user.is_profit_share_manager? },
-       label: "Profit Share",
-       priority: 2
 
   actions :index, :show, :edit, :update
   permit_params :payroll_buffer_months, :efficiency_cap, :internals_budget_multiplier
