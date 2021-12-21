@@ -8,6 +8,15 @@ class Stacks::Profitability
       support: "Operations",
     }
 
+    def pull_outstanding_invoices
+      access_token = Stacks::Automator.make_and_refresh_qbo_access_token
+
+      invoice_service = Quickbooks::Service::Invoice.new
+      invoice_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
+      invoice_service.access_token = access_token
+      invoice_service.query("Select * From Invoice Where Balance > '0.0'")
+    end
+
     def pull_actuals_for_year(year)
       qbo_access_token = Stacks::Automator.make_and_refresh_qbo_access_token
       report_service = Quickbooks::Service::Reports.new

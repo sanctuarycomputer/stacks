@@ -77,13 +77,23 @@ class ProfitSharePass < ApplicationRecord
 
       days_elapsed = Date.today.yday
       days_this_year = finalization_day.yday
-      actuals = DateTime.now >= finalization_day ? ytd : {
-        gross_payroll: (ytd[:gross_payroll] / days_elapsed) * days_this_year,
-        gross_revenue: (ytd[:gross_revenue] / days_elapsed) * days_this_year,
-        gross_benefits: (ytd[:gross_benefits] / days_elapsed) * days_this_year,
-        gross_expenses: (ytd[:gross_expenses] / days_elapsed) * days_this_year,
-        gross_subcontractors: (ytd[:gross_subcontractors] / days_elapsed) * days_this_year,
-      }
+
+      actuals =
+        if Date.today >= finalization_day
+          outstanding = Stacks::Profitability.pull_outstanding_invoices
+          remaining_revenue_due_this_year =
+            outstanding.filter{|iv| iv.due_date <= Date.today.end_of_year && iv.due_date >= Date.today.beginning_of_year}.map(&:balance).reduce(:+)
+          ytd[:gross_revenue] += remaining_revenue_due_this_year
+          ytd
+        else
+          {
+            gross_payroll: (ytd[:gross_payroll] / days_elapsed) * days_this_year,
+            gross_revenue: (ytd[:gross_revenue] / days_elapsed) * days_this_year,
+            gross_benefits: (ytd[:gross_benefits] / days_elapsed) * days_this_year,
+            gross_expenses: (ytd[:gross_expenses] / days_elapsed) * days_this_year,
+            gross_subcontractors: (ytd[:gross_subcontractors] / days_elapsed) * days_this_year,
+          }
+        end
 
       Stacks::ProfitShare::Scenario.new(
         actuals,

@@ -138,6 +138,18 @@ class AdminUser < ApplicationRecord
     psu_earned_by(Date.new(Date.today.year, 12, 15))
   end
 
+  def profit_shares
+    finalization_date = Date.new(2021, 12, 15)
+    #binding.pry
+    [{
+      year: 2021,
+      psu_value: 505.50,
+      psu_earnt: 48,
+      pre_spent_profit_share: 123,
+      total_payout: 1234
+    }]
+  end
+
   def should_nag_for_dei_data?
     (racial_backgrounds.length === 0 ||
      cultural_backgrounds.length === 0 ||

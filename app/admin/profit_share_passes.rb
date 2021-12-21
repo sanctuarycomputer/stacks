@@ -8,7 +8,7 @@ ActiveAdmin.register ProfitSharePass do
        priority: 2
 
   actions :index, :show, :edit, :update
-  permit_params :payroll_buffer_months, :efficiency_cap
+  permit_params :payroll_buffer_months, :efficiency_cap, :internals_budget_multiplier
 
   action_item :finalize, only: :edit, if: proc { current_admin_user.is_profit_share_manager? } do
     if resource.finalized?

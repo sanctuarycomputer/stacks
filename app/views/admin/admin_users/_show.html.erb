@@ -36,6 +36,46 @@
   </div>
 </div>
 
+<!-- Profit Share -->
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Profit Share 2021</p>
+    </div>
+    <div class="module-body">
+
+      <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+        <tbody>
+          <% resource.profit_shares.each_with_index do |share, index| %>
+            <%= share %>
+            <tr class="odd">
+              <td class="col">PSU Earned</td>
+              <td class="col"><%= share[:psu_earnt] %></td>
+            </tr>
+            <tr class="even">
+              <td class="col">PSU Value</td>
+              <td class="col">
+                <%= number_to_currency(share[:psu_value]) %>
+              </td>
+            </tr>
+            <tr class="odd">
+              <td class="col">Pre-Spent Profit Share</td>
+              <td class="col">
+                <%= number_to_currency(share[:pre_spent_profit_share]) %>
+              </td>
+            </tr>
+            <tr class="even">
+              <td class="col"><strong>Total Payout</strong></td>
+              <td class="col"><%= number_to_currency(share[:total_payout]) %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+
+    </div>
+  </div>
+</div>
+
 <script>
   var ctx = document.getElementById('skill-chart');
   if (ctx) {

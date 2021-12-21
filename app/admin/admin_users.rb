@@ -119,7 +119,7 @@ ActiveAdmin.register AdminUser do
       end
     end
 
-    render(partial: "skill_radar_chart", locals: { data: data })
+    render(partial: "show", locals: { data: data })
   end
 
   form do |f|
