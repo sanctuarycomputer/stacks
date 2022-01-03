@@ -158,6 +158,7 @@ class AdminUser < ApplicationRecord
           }
       psu_value = profit_share_pass.make_scenario.actual_value_per_psu
       psu_earnt = psu_earned_by(Date.new(year, 12, 15))
+      psu_earnt = 0 if psu_earnt == :no_data
       pre_spent_profit_share = pre_profit_share_spent_during(year)
 
       data << {
@@ -243,7 +244,7 @@ class AdminUser < ApplicationRecord
   end
 
   def self.total_projected_psu_issued_by_eoy
-    AdminUser.active.map{|a| a.projected_psu_by_eoy }.reject{|v| v == :no_data}.reduce(:+)
+    AdminUser.active.map{|a| a.projected_psu_by_eoy }.reject{|v| v == :no_data}.reduce(:+) || 0
   end
 
   def self.from_omniauth(auth)
