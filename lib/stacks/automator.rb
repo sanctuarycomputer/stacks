@@ -155,16 +155,18 @@ class Stacks::Automator
 
     def remind_people_to_record_hours_prior_to_invoicing(start_of_month)
       people = discover_people_missing_hours_for_month(start_of_month)
+
       hugh = people.find { |p| p[:twist_data]["email"] == "hugh@sanctuary.computer" }
       nicole = people.find { |p| p[:twist_data]["email"] == "nicole@sanctuary.computer" }
       iz = people.find { |p| p[:twist_data]["email"] == "isabel@sanctuary.computer" }
+      michael = people.find { |p| p[:twist_data]["email"] == "michael@sanctuary.computer" }
 
       needed_reminding = people.filter do |person|
         person[:reminder].present? && person[:twist_data].present? && !person[:forecast_data]["roles"].include?("Subcontractor")
       end
 
       needed_reminding.each do |person|
-        participant_ids = ([person, hugh, nicole, iz].compact.map do |p|
+        participant_ids = ([person, hugh, nicole, iz, michael].compact.map do |p|
           p[:twist_data]["id"]
         end).join(",")
         conversation = twist.get_or_create_conversation(participant_ids)
