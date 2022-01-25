@@ -1,0 +1,7 @@
+# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+one:
+  accounting_prefix: MyString
+
+two:
+  accounting_prefix: MyString

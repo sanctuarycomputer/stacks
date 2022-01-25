@@ -32,6 +32,11 @@
       <% else %>
         <p><strong>Skill Tree Level:</strong> Private</p>
       <% end %>
+      <% if resource.roles.any? %>
+        <p><strong>Stacks System Roles:</strong> <%= resource.roles.map(&:humanize).join(", ") %></p>
+      <% else %>
+        <p><strong>Stacks System Roles:</strong> None</p>
+      <% end %>
     </div>
   </div>
 </div>

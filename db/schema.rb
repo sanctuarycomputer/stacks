@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2021_12_15_003317) do
+ActiveRecord::Schema.define(version: 2022_01_25_233934) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -268,6 +268,14 @@ ActiveRecord::Schema.define(version: 2021_12_15_003317) do
     t.index ["deleted_at"], name: "index_scores_on_deleted_at"
     t.index ["score_tree_id"], name: "index_scores_on_score_tree_id"
     t.index ["trait_id"], name: "index_scores_on_trait_id"
+  end
+
+  create_table "studios", force: :cascade do |t|
+    t.string "accounting_prefix"
+    t.string "name"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.string "mini_name"
   end
 
   create_table "traits", force: :cascade do |t|

@@ -1,5 +1,5 @@
 ActiveAdmin.register_page "Profit Dashboard" do
-  menu label: "Profit Dashboard", priority: 1
+  menu label: "g3d Profitability", priority: 1
 
   content title: proc { I18n.t("active_admin.dashboard") } do
     COLORS = Stacks::Utils::COLORS
@@ -19,7 +19,7 @@ ActiveAdmin.register_page "Profit Dashboard" do
           end
         end
 
-      studios = pp.data.keys
+      studios = ["garden3d"]
       years = pp.data["garden3d"].keys
       data = { labels: [], datasets: [] }
 

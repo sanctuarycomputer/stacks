@@ -31,6 +31,14 @@ namespace :stacks do
     Trait.create!(name: "Business Development", tree: o)
   end
 
+  desc "Seed Studios"
+  task :seed_studios => :environment do
+    Studio.create!(name: "XXIX", accounting_prefix: "Brand Services", mini_name: "xxix")
+    Studio.create!(name: "Manhattan Hydraulics", accounting_prefix: "UX Services", mini_name: "hydro")
+    Studio.create!(name: "Sanctuary Computer", accounting_prefix: "Development Services", mini_name: "sanctu")
+    Studio.create!(name: "Index", accounting_prefix: "Community Services", mini_name: "index")
+  end
+
   desc "Seed Previous Profit Shares"
   task :seed_profit_shares => :environment do
     h = AdminUser.where(email: "hugh@sanctuary.computer").first

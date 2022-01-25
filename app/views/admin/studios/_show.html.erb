@@ -1,0 +1,72 @@
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>By Year</p>
+    </div>
+    <div class="module-body">
+      <canvas id="by-year"></canvas>
+    </div>
+  </div>
+</div>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>By Month</p>
+    </div>
+    <div class="module-body">
+      <canvas id="by-month"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+  new Chart(document.getElementById('by-year'), {
+    type: 'bar',
+    data: <%= studio_yearly_data.to_json.html_safe %>,
+    options: {
+      scales: {
+        y: {
+          type: 'linear',
+          display: true,
+          position: 'left',
+          beginAtZero: true
+        },
+        y1: {
+          type: 'linear',
+          display: true,
+          position: 'right',
+          beginAtZero: true,
+          stacked: true,
+          grid: {
+            drawOnChartArea: false, // only want the grid lines for one axis to show up
+          },
+        }
+      }
+    }
+  });
+  new Chart(document.getElementById('by-month'), {
+    type: 'bar',
+    data: <%= studio_monthly_data.to_json.html_safe %>,
+    options: {
+      scales: {
+        y: {
+          type: 'linear',
+          display: true,
+          position: 'left',
+          beginAtZero: true
+        },
+        y1: {
+          type: 'linear',
+          display: true,
+          position: 'right',
+          beginAtZero: true,
+          stacked: true,
+          grid: {
+            drawOnChartArea: false, // only want the grid lines for one axis to show up
+          },
+        }
+      }
+    }
+  });
+</script>
