@@ -1,6 +1,7 @@
 ActiveAdmin.register_page "DEI Explorer" do
   menu if: proc {
         [
+          "michael@sanctuary.computer",
           "hugh@sanctuary.computer",
           "nicole@sanctuary.computer",
           "isabel@sanctuary.computer",
