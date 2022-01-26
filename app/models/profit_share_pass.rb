@@ -1,7 +1,8 @@
 class ProfitSharePass < ApplicationRecord
-  scope :this_year, -> {
-    where(created_at: Time.now.beginning_of_year..Time.now.end_of_year)
-  }
+  def self.this_year
+    ProfitSharePass.all.find{|p| p.created_at.year == Time.now.year}
+  end
+
   scope :finalized , -> {
     ProfitSharePass.where.not(snapshot: nil)
   }

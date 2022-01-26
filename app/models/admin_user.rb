@@ -154,8 +154,12 @@ class AdminUser < ApplicationRecord
         ProfitSharePass
           .finalized
           .find { |psp|
-            (Date.parse(psp.snapshot["finalized_at"]).year == 2021)
+            (Date.parse(psp.snapshot["finalized_at"]).year == year)
           }
+      unless profit_share_pass.present?
+        year += 1
+        next
+      end
       psu_value = profit_share_pass.make_scenario.actual_value_per_psu
       psu_earnt = psu_earned_by(Date.new(year, 12, 15))
       psu_earnt = 0 if psu_earnt == :no_data
