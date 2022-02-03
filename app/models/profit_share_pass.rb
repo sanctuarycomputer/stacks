@@ -1,6 +1,6 @@
 class ProfitSharePass < ApplicationRecord
   def self.this_year
-    ProfitSharePass.all.find{|p| p.created_at.year == Time.now.year}
+    ProfitSharePass.all.select{|p| p.created_at.year == Time.now.year}
   end
 
   scope :finalized , -> {

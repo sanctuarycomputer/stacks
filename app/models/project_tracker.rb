@@ -98,8 +98,11 @@ class ProjectTracker < ApplicationRecord
 
   def tracker_allocations_for_month(year_as_sym, month_as_sym, forecast_project_ids)
     utilization_pass = UtilizationPass.first
+
     monthly_data =
-      utilization_pass.data[year_as_sym.to_s][month_as_sym.to_s]
+      utilization_pass.data.dig(year_as_sym.to_s, month_as_sym.to_s)
+    return [] if monthly_data.nil?
+
     monthly_data.values.reduce([]) do |acc, u|
       allocations = (u.values.map do |v|
         allocation = v["billable"].find do |r|
