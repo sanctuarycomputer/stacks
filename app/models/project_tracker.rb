@@ -74,7 +74,7 @@ class ProjectTracker < ApplicationRecord
     )["assignments"]
 
     assignments.reduce(0) do |acc, a|
-      next acc unless forecast_project_ids.include?(a["project_id"].to_s)
+      next acc unless forecast_project_ids.include?(a["project_id"])
 
       project = projects.find {|p| p["id"] == a["project_id"]}
       hourly_rate_tags = project["tags"].filter { |t| t.ends_with?("p/h") }
@@ -106,7 +106,7 @@ class ProjectTracker < ApplicationRecord
     monthly_data.values.reduce([]) do |acc, u|
       allocations = (u.values.map do |v|
         allocation = v["billable"].find do |r|
-          forecast_project_ids.include?(r["project_id"].to_s)
+          forecast_project_ids.include?(r["project_id"])
         end
       end).compact
       [*acc, *allocations]
