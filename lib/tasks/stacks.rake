@@ -19,6 +19,7 @@ namespace :stacks do
     ProfitSharePass.ensure_exists!
     Stacks::Dei.make_rollup
     Stacks::Utilization.calculate
+    Stacks::Forecast.new.sync_all!
   end
 
   desc "Seed Operations"

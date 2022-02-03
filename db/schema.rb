@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2022_01_25_233934) do
+ActiveRecord::Schema.define(version: 2022_02_03_031748) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -114,9 +114,64 @@ ActiveRecord::Schema.define(version: 2022_01_25_233934) do
     t.index ["review_id"], name: "index_finalizations_on_review_id"
   end
 
+  create_table "forecast_assignments", force: :cascade do |t|
+    t.string "forecast_id"
+    t.datetime "updated_at"
+    t.string "updated_by_id"
+    t.integer "allocation"
+    t.date "start_date"
+    t.date "end_date"
+    t.text "notes"
+    t.string "project_id"
+    t.string "person_id"
+    t.string "placeholder_id"
+    t.string "repeated_assignment_set_id"
+    t.boolean "active_on_days_off"
+    t.jsonb "data"
+    t.index ["forecast_id"], name: "index_forecast_assignments_on_forecast_id", unique: true
+    t.index ["person_id"], name: "index_forecast_assignments_on_person_id"
+    t.index ["project_id"], name: "index_forecast_assignments_on_project_id"
+  end
+
+  create_table "forecast_clients", force: :cascade do |t|
+    t.string "forecast_id"
+    t.string "name"
+    t.string "harvest_id"
+    t.boolean "archived"
+    t.datetime "updated_at"
+    t.string "updated_by_id"
+    t.jsonb "data"
+    t.index ["forecast_id"], name: "index_forecast_clients_on_forecast_id", unique: true
+  end
+
+  create_table "forecast_people", force: :cascade do |t|
+    t.string "forecast_id"
+    t.string "first_name"
+    t.string "last_name"
+    t.string "email"
+    t.text "roles", default: [], array: true
+    t.boolean "archived"
+    t.datetime "updated_at"
+    t.string "updated_by_id"
+    t.jsonb "data"
+    t.index ["forecast_id"], name: "index_forecast_people_on_forecast_id", unique: true
+  end
+
   create_table "forecast_projects", force: :cascade do |t|
     t.string "forecast_id"
     t.jsonb "data"
+    t.string "name"
+    t.string "code"
+    t.text "notes"
+    t.date "start_date"
+    t.date "end_date"
+    t.string "harvest_id"
+    t.boolean "archived"
+    t.string "client_id"
+    t.text "tags", default: [], array: true
+    t.datetime "updated_at"
+    t.string "updated_by_id"
+    t.index ["client_id"], name: "index_forecast_projects_on_client_id"
     t.index ["forecast_id"], name: "index_forecast_projects_on_forecast_id", unique: true
   end
 

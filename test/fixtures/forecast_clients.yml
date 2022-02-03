@@ -1,0 +1,17 @@
+# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+one:
+  forecast_id: MyString
+  name: MyString
+  harvest_id: MyString
+  archived: false
+  updated_at: 2022-02-02 19:32:20
+  updated_by_id: MyString
+
+two:
+  forecast_id: MyString
+  name: MyString
+  harvest_id: MyString
+  archived: false
+  updated_at: 2022-02-02 19:32:20
+  updated_by_id: MyString

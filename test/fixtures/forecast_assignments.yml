@@ -1,0 +1,31 @@
+# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+one:
+  forecast_id: MyString
+  updated_at: 2022-02-02 19:53:10
+  updated_by_id: MyString
+  allocation: 1
+  start_date: 2022-02-02
+  end_date: 2022-02-02
+  notes: MyText
+  project_id: MyString
+  person_id: MyString
+  placeholder_id: MyString
+  repeated_assignment_set_id: MyString
+  active_on_days_off: false
+  data: 
+
+two:
+  forecast_id: MyString
+  updated_at: 2022-02-02 19:53:10
+  updated_by_id: MyString
+  allocation: 1
+  start_date: 2022-02-02
+  end_date: 2022-02-02
+  notes: MyText
+  project_id: MyString
+  person_id: MyString
+  placeholder_id: MyString
+  repeated_assignment_set_id: MyString
+  active_on_days_off: false
+  data: 

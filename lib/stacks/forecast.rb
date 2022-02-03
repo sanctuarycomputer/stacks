@@ -10,6 +10,97 @@ class Stacks::Forecast
     }
   end
 
+  def sync_all!
+    sync_clients!
+    sync_people!
+    sync_projects!
+    sync_all_assignments!
+  end
+
+  def sync_clients!
+    data = clients()["clients"].map do |c|
+      {
+        forecast_id: c["id"],
+        name: c["name"],
+        harvest_id: c["harvest_id"],
+        archived: c["archived"],
+        updated_at: c["updated_at"],
+        updated_by_id: c["updated_by_id"],
+        data: c,
+      }
+    end
+    ForecastClient.upsert_all(data, unique_by: :forecast_id)
+  end
+
+  def sync_people!
+    data = people()["people"].map do |c|
+      {
+        forecast_id: c["id"],
+        first_name: c["first_name"],
+        last_name: c["last_name"],
+        email: c["email"],
+        archived: c["archived"],
+        roles: c["roles"],
+        updated_at: c["updated_at"],
+        updated_by_id: c["updated_by_id"],
+        data: c,
+      }
+    end
+    ForecastPerson.upsert_all(data, unique_by: :forecast_id)
+  end
+
+  def sync_projects!
+    data = projects()["projects"].map do |c|
+      {
+        forecast_id: c["id"],
+        name: c["name"],
+        code: c["code"],
+        notes: c["notes"],
+        start_date: c["start_date"],
+        end_date: c["end_date"],
+        harvest_id: c["harvest_id"],
+        archived: c["archived"],
+        client_id: c["client_id"],
+        tags: c["tags"],
+        updated_at: c["updated_at"],
+        updated_by_id: c["updated_by_id"],
+        data: c,
+      }
+    end
+    ForecastProject.upsert_all(data, unique_by: :forecast_id)
+  end
+
+  def sync_assignments!(start_date = Date.today, end_date = Date.today)
+    data = assignments(start_date, end_date)["assignments"].map do |c|
+      {
+        forecast_id: c["id"],
+        start_date: c["start_date"],
+        end_date: c["end_date"],
+        allocation: c["allocation"],
+        notes: c["notes"],
+        updated_at: c["updated_at"],
+        updated_by_id: c["updated_by_id"],
+        project_id: c["project_id"],
+        person_id: c["person_id"],
+        placeholder_id: c["placeholder_id"],
+        repeated_assignment_set_id: c["repeated_assignment_set_id"],
+        active_on_days_off: c["active_on_days_off"],
+        data: c,
+      }
+    end
+    ForecastAssignment.upsert_all(data, unique_by: :forecast_id)
+  end
+
+  def sync_all_assignments!
+    time_start = DateTime.parse("1st Jan 2020")
+    time_end = 0.seconds.ago
+    time = time_start
+    while time < time_end
+      sync_assignments!(time.beginning_of_month, time.end_of_month)
+      time = time.advance(months: 1)
+    end
+  end
+
   def current_user
     self.class.get("/current_user", headers: @headers)
   end
