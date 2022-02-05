@@ -33,6 +33,7 @@ class Stacks::Expenses
           matchers
             .select{|m| m.match(e.description)}
             .map{|m| groups[matchers.index(m)]}
+
         if matching_groups.length == 1
           e.update!(
             expense_group: matching_groups.first,

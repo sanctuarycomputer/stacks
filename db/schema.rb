@@ -110,6 +110,8 @@ ActiveRecord::Schema.define(version: 2022_02_05_171631) do
     t.string "matcher"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.index ["matcher"], name: "index_expense_groups_on_matcher", unique: true
+    t.index ["name"], name: "index_expense_groups_on_name", unique: true
   end
 
   create_table "finalizations", force: :cascade do |t|

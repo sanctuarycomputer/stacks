@@ -18,6 +18,9 @@ ActiveAdmin.register ExpenseGroup do
     column :spent_last_year do |resource|
       number_to_currency(resource.spent_last_year)
     end
+    column :spent_all_time do |resource|
+      number_to_currency(resource.spent_all_time)
+    end
     actions
   end
 end

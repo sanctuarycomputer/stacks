@@ -20,4 +20,8 @@ class ExpenseGroup < ApplicationRecord
       txn_date: (Date.today - 1.year).beginning_of_year...(Date.today - 1.year).end_of_year
     ).map(&:amount).reduce(&:+)
   end
+
+  def spent_all_time
+    qbo_purchase_line_items.map(&:amount).reduce(&:+)
+  end
 end
