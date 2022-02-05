@@ -1,5 +1,5 @@
 class ExpenseGroup < ApplicationRecord
-  has_many :qbo_purchase_line_items
+  has_many :qbo_purchase_line_items, dependent: :nullify
 
   after_create :do_matching
   after_update :do_matching

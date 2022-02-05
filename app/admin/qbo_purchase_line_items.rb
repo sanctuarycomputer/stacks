@@ -1,7 +1,9 @@
 ActiveAdmin.register QboPurchaseLineItem do
+  filter :expense_group
+  config.sort_order = "txn_date_desc"
   config.current_filters = false
   config.filters = false
-  config.paginate = false
+  config.paginate = true
   actions :index
   scope :unmatched, default: true
   scope :matched
