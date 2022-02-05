@@ -20,6 +20,8 @@ namespace :stacks do
     Stacks::Dei.make_rollup
     Stacks::Utilization.calculate
     Stacks::Forecast.new.sync_all!
+    Stacks::Expenses.sync_all!
+    Stacks::Expenses.match_all!
   end
 
   desc "Seed Operations"

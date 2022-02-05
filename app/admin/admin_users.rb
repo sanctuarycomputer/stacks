@@ -39,16 +39,35 @@ ActiveAdmin.register AdminUser do
   actions :index, :show, :edit, :update
   scope :active, default: true
   scope :archived
+  scope :admin
   config.filters = false
   config.sort_order = "created_at_desc"
   config.paginate = false
 
-  action_item :archive, only: :show, if: proc { current_admin_user.is_payroll_manager? } do
+  action_item :archive, only: :show, if: proc { current_admin_user.is_admin? } do
     if resource.archived_at.present?
       link_to "Unarchive", unarchive_admin_user_admin_admin_user_path(resource), method: :post
     else
       link_to "Archive", archive_admin_user_admin_admin_user_path(resource), method: :post
     end
+  end
+
+  action_item :toggle_admin, only: :show, if: proc { current_admin_user.is_admin? } do
+    if resource.is_admin?
+      link_to "Demote as Admin", demote_admin_user_admin_admin_user_path(resource), method: :post
+    else
+      link_to "Promote to Admin", promote_admin_user_admin_admin_user_path(resource), method: :post
+    end
+  end
+
+  member_action :demote_admin_user, method: :post do
+    resource.update!(roles: [])
+    redirect_to admin_admin_user_path(resource), notice: "Success!"
+  end
+
+  member_action :promote_admin_user, method: :post do
+    resource.update!(roles: ["admin"])
+    redirect_to admin_admin_user_path(resource), notice: "Success!"
   end
 
   member_action :archive_admin_user, method: :post do
@@ -68,13 +87,16 @@ ActiveAdmin.register AdminUser do
     column :skill_tree_level do |resource|
       resource.show_skill_tree_data? ? resource.skill_tree_level_without_salary : "Private"
     end
+    column :is_admin? do |resource|
+      resource.is_admin?
+    end
     column :has_dei_response? do |resource|
       !resource.should_nag_for_dei_data?
     end
     column :projected_psu_by_eoy do |resource|
       resource.projected_psu_by_eoy
     end
-    if current_admin_user.is_utilization_manager?
+    if current_admin_user.is_admin?
       column :expected_utilization do |resource|
         "#{(resource.expected_utilization * 100)}%"
       end
@@ -176,7 +198,7 @@ ActiveAdmin.register AdminUser do
       JS
 ).html_safe
 
-    if current_admin_user.is_payroll_manager?
+    if current_admin_user.is_admin?
       f.inputs(class: "admin_inputs") do
         f.input :old_skill_tree_level, as: :select, collection: AdminUser.old_skill_tree_levels.keys
       end

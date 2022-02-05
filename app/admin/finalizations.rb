@@ -4,7 +4,7 @@ ActiveAdmin.register Finalization do
   config.paginate = false
   scope :finalized
 
-  menu if: proc { current_admin_user.is_payroll_manager? },
+  menu if: proc { current_admin_user.is_admin? },
        label: "Finalizations"
 
   actions :index, :edit, :update
@@ -25,7 +25,7 @@ ActiveAdmin.register Finalization do
     ],
   ]
 
-  action_item :archive, only: :edit, if: proc { current_admin_user.is_payroll_manager? } do
+  action_item :archive, only: :edit, if: proc { current_admin_user.is_admin? } do
     if resource.review.archived?
       link_to "Unarchive", unarchive_finalization_admin_finalization_path(resource), method: :post
     else

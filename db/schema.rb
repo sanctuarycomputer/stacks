@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2022_02_03_050600) do
+ActiveRecord::Schema.define(version: 2022_02_05_171631) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -101,6 +101,13 @@ ActiveRecord::Schema.define(version: 2022_02_03_050600) do
 
   create_table "dei_rollups", force: :cascade do |t|
     t.jsonb "data"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+  end
+
+  create_table "expense_groups", force: :cascade do |t|
+    t.string "name"
+    t.string "matcher"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
   end
@@ -265,6 +272,17 @@ ActiveRecord::Schema.define(version: 2022_02_03_050600) do
     t.datetime "updated_at", precision: 6, null: false
   end
 
+  create_table "qbo_purchase_line_items", id: :string, force: :cascade do |t|
+    t.date "txn_date"
+    t.string "qbo_purchase_id"
+    t.string "description"
+    t.float "amount"
+    t.bigint "expense_group_id"
+    t.jsonb "data", default: {}
+    t.index ["expense_group_id"], name: "index_qbo_purchase_line_items_on_expense_group_id"
+    t.index ["id"], name: "index_qbo_purchase_line_items_on_id", unique: true
+  end
+
   create_table "quickbooks_tokens", force: :cascade do |t|
     t.string "token"
     t.string "refresh_token"
@@ -379,8 +397,8 @@ ActiveRecord::Schema.define(version: 2022_02_03_050600) do
   add_foreign_key "peer_reviews", "admin_users"
   add_foreign_key "peer_reviews", "reviews"
   add_foreign_key "pre_profit_share_purchases", "admin_users"
-  add_foreign_key "project_tracker_forecast_projects", "forecast_projects", primary_key: "forecast_id"
   add_foreign_key "project_tracker_forecast_projects", "project_trackers"
+  add_foreign_key "qbo_purchase_line_items", "expense_groups"
   add_foreign_key "review_trees", "reviews"
   add_foreign_key "review_trees", "trees"
   add_foreign_key "reviews", "admin_users"

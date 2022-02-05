@@ -11,11 +11,55 @@ class Stacks::Forecast
   end
 
   def sync_all!
-    sync_clients!
-    sync_people!
-    sync_projects!
-    sync_all_assignments!
+    ActiveRecord::Base.transaction do
+      ForecastAssignment.delete_all
+      ForecastProject.delete_all
+      ForecastPerson.delete_all
+      ForecastClient.delete_all
+      sync_clients!
+      sync_people!
+      sync_projects!
+      sync_all_assignments!
+    end
   end
+
+  def current_user
+    self.class.get("/current_user", headers: @headers)
+  end
+
+  def clients
+    self.class.get("/clients", headers: @headers)
+  end
+
+  def people
+    self.class.get("/people", headers: @headers)
+  end
+
+  def projects
+    self.class.get("/projects", headers: @headers)
+  end
+
+  def assignments(start_date, end_date, project_id = nil)
+    query = {}
+    query["start_date"] = start_date if start_date.present?
+    query["end_date"] = end_date if end_date.present?
+    query["project_id"] = project_id if project_id.present?
+    self.class.get("/assignments", headers: @headers, query: query)
+  end
+
+  # Date.new(2001,2,25)
+  def milestones(start_date, end_date)
+    query = {}
+    query["start_date"] = start_date if start_date.present?
+    query["end_date"] = end_date if end_date.present?
+    self.class.get("/milestones", headers: @headers, query: query)
+  end
+
+  def roles
+    self.class.get("/roles", headers: @headers)
+  end
+
+  private
 
   def sync_clients!
     data = clients()["clients"].map do |c|
@@ -99,41 +143,5 @@ class Stacks::Forecast
       sync_assignments!(time.beginning_of_month, time.end_of_month)
       time = time.advance(months: 1)
     end
-  end
-
-  def current_user
-    self.class.get("/current_user", headers: @headers)
-  end
-
-  def clients
-    self.class.get("/clients", headers: @headers)
-  end
-
-  def people
-    self.class.get("/people", headers: @headers)
-  end
-
-  def projects
-    self.class.get("/projects", headers: @headers)
-  end
-
-  def assignments(start_date, end_date, project_id = nil)
-    query = {}
-    query["start_date"] = start_date if start_date.present?
-    query["end_date"] = end_date if end_date.present?
-    query["project_id"] = project_id if project_id.present?
-    self.class.get("/assignments", headers: @headers, query: query)
-  end
-
-  # Date.new(2001,2,25)
-  def milestones(start_date, end_date)
-    query = {}
-    query["start_date"] = start_date if start_date.present?
-    query["end_date"] = end_date if end_date.present?
-    self.class.get("/milestones", headers: @headers, query: query)
-  end
-
-  def roles
-    self.class.get("/roles", headers: @headers)
   end
 end

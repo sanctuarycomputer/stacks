@@ -7,7 +7,7 @@ ActiveAdmin.register ProfitSharePass do
   actions :index, :show, :edit, :update
   permit_params :payroll_buffer_months, :efficiency_cap, :internals_budget_multiplier
 
-  action_item :finalize, only: :edit, if: proc { current_admin_user.is_profit_share_manager? } do
+  action_item :finalize, only: :edit, if: proc { current_admin_user.is_admin? } do
     if resource.finalized?
       link_to "Undo Finalize", unfinalize_admin_profit_share_pass_path(resource), method: :post
     else

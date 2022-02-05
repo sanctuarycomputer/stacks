@@ -3,13 +3,13 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
     case subject
     when normalized(AdminUser)
       if action == :update
-        subject == user || user.is_payroll_manager?
+        subject == user || user.is_admin?
       else
         true
       end
     when normalized(ProfitSharePass)
       if action == :update
-        user.is_profit_share_manager?
+        user.is_admin?
       else
         true
       end

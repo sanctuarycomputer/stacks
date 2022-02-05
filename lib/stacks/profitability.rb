@@ -41,6 +41,29 @@ class Stacks::Profitability
       }
     end
 
+    def pull_actuals_for_month(date = Date.today)
+      qbo_access_token = Stacks::Automator.make_and_refresh_qbo_access_token
+      report_service = Quickbooks::Service::Reports.new
+      report_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
+      report_service.access_token = qbo_access_token
+
+      report = report_service.query("ProfitAndLoss", nil, {
+        start_date: date.beginning_of_month.strftime("%Y-%m-%d"),
+        end_date: date.end_of_month.strftime("%Y-%m-%d"),
+      })
+
+      {
+        gross_revenue: (report.find_row("Total Income").try(:[], 1) || 0),
+        gross_payroll: (report.find_row("Total [SC] Payroll").try(:[], 1) || 0),
+        gross_benefits: (report.find_row("Total [SC] Benefits, Contributions & Tax").try(:[], 1) || 0),
+        gross_subcontractors: (report.find_row("Total [SC] Subcontractors").try(:[], 1) || 0),
+        gross_expenses: (
+          (report.find_row("Total Expenses").try(:[], 1) || 0) +
+          (report.find_row("Total [SC] Supplies & Materials").try(:[], 1) || 0)
+        )
+      }
+    end
+
     def pull_actuals_for_latest_month
       if Date.today.month == 1
         return {

@@ -4,7 +4,7 @@
   </p>
 </a>
 
-<% if (invoice_pass.data || {})["reminder_passes"].present? %>
+<% if (invoice_pass.data || {})["reminder_passes"].present? && invoice_pass.latest_reminder_pass.any? %>
   <h3>🚫 The following people are missing hours:</h3>
 
   <table border="0" cellspacing="0" cellpadding="0" id="index_table_invoice_passes" class="index_table index" paginator="true">
@@ -115,7 +115,9 @@
             <td class="col"><%= qbo_invoice.present? ? qbo_invoice.email_status : "Deleted" %></td>
             <td class="col col-actions">
               <% if qbo_invoice.present? %>
-                <div class="table_actions"><a class="view_link member_link" title="View" href="https://app.qbo.intuit.com/app/invoice?txnId=<%= invoice["qbo_invoice"]["id"] %>" target="_blank">View invoice in Quickbooks</a></div>
+                <div class="table_actions">
+                  <a class="view_link member_link" href="https://app.qbo.intuit.com/app/invoice?txnId=<%= invoice["qbo_invoice"]["id"] %>" target="_blank">QBO Invoice ↗</a></div>
+                  <a class="view_link member_link" href="https://app.qbo.intuit.com/app/customerdetail?nameId=<%= invoice["qbo_customer"]["id"] %>" target="_blank">QBO Customer ↗</a>
               <% end %>
             </td>
           </tr>

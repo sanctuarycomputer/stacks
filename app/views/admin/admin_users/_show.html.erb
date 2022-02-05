@@ -42,7 +42,7 @@
 </div>
 
 <!-- Profit Share -->
-<% if resource == current_admin_user || current_admin_user.is_profit_share_manager? %>
+<% if resource == current_admin_user || current_admin_user.is_admin? %>
   <div class="dashboard-modules table index_table index">
     <div class="dashboard-module">
       <div class="module-header">

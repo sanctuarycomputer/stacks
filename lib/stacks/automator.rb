@@ -12,7 +12,7 @@ class Stacks::Automator
 
     STUDIOS = STUDIO_TO_SERVICE_MAPPING.keys
 
-    DEFAULT_HOURLY_RATE = 145 # Override on the project level Forecast
+    DEFAULT_HOURLY_RATE = 175 # Override on the project level Forecast
     DEFAULT_PAYMENT_TERM = 15 # Net 15, override in QBO
 
     QBO_NOTES_FORECAST_MAPPING_BEARER = "automator:forecast_mapping:"
@@ -27,14 +27,14 @@ class Stacks::Automator
       Rou #: 021000021
       Acc #: 685028396
 
-      Chase Bank
+      Chase Bank:
       405 Lexington Ave
       New York, NY 10174
 
       QUICKPAY:
       admin@sanctuarycomputer.com
 
-      BILL.COM
+      BILL.COM:
       admin@sanctuarycomputer.com
     HEREDOC
 
@@ -44,47 +44,6 @@ class Stacks::Automator
 
     def twist
       @_twist ||= Stacks::Twist.new
-    end
-
-    def notion
-      @_notion ||= Stacks::Notion.new
-    end
-
-    def sync_with_finance_hub
-      response = notion.query_database("713b28db4f8a45c68126e9723c65349e")
-      block_id = response["results"][0]["id"]
-      blocks = notion.get_block_children(block_id)["results"]
-
-      # Attempt to discover the database
-      finance_hubs = (blocks.map do |block|
-        if block["type"] == "unsupported"
-          pd = notion.get_database(block["id"])
-          (pd["title"] && pd["title"][0].dig("text", "content") == "Finance Hub") ? pd : nil
-        else
-          nil
-        end
-      end).compact
-
-      finance_hub = if finance_hubs.count == 1
-          finance_hubs.first
-        elsif finance_hubs.count == 0
-          notion.create_database(
-            { page_id: block_id },
-            "Finance Hub",
-            {
-              "Name": { "title": {} },
-              "Spend": { "number": { "format": "dollar" } },
-            }
-          )
-        else
-          raise "too_many_finance_hubs"
-        end
-
-      finance_hub_children = notion.get_block_children(finance_hub["id"])
-
-      # Pull in all invoices with a note, ensure they exist
-      # Ensure the current month exists (July 2020)
-      # Update Spend: May 2021 | 37,450
     end
 
     def message_operations_channel_thread(thread_title, message)
@@ -99,14 +58,13 @@ class Stacks::Automator
       end
     end
 
-    def message_operations_team(message)
-      conversation = twist.get_conversation("1165647")
-      twist.add_message_to_conversation(conversation["id"], message)
-    end
-
-    def attempt_invoicing_for_invoice_pass(invoice_pass)
-      # Bug people, and record the folks who needed reminding, so we can change the reminder message each time.
-      needed_reminding = remind_people_to_record_hours_prior_to_invoicing(invoice_pass.start_of_month)
+    def attempt_invoicing_for_invoice_pass(invoice_pass, send_twist_reminders = true)
+      # Bug people, and record the folks who needed reminding,
+      # so we can change the reminder message each time.
+      needed_reminding = remind_people_to_record_hours_prior_to_invoicing(
+        invoice_pass.start_of_month,
+        send_twist_reminders
+      )
 
       # Record people still missing
       new_reminder_pass = {}
@@ -153,40 +111,45 @@ class Stacks::Automator
       attempt_invoicing_for_invoice_pass(invoice_pass)
     end
 
-    def remind_people_to_record_hours_prior_to_invoicing(start_of_month)
+    def remind_people_to_record_hours_prior_to_invoicing(start_of_month, send_twist_reminders)
       people = discover_people_missing_hours_for_month(start_of_month)
 
-      hugh = people.find { |p| p[:twist_data]["email"] == "hugh@sanctuary.computer" }
-      nicole = people.find { |p| p[:twist_data]["email"] == "nicole@sanctuary.computer" }
-      iz = people.find { |p| p[:twist_data]["email"] == "isabel@sanctuary.computer" }
-      michael = people.find { |p| p[:twist_data]["email"] == "michael@sanctuary.computer" }
+      admin_twist_users = (AdminUser.admin.map do |a|
+        people.find{ |p| p[:twist_data]["email"] == a.email }
+      end).compact
 
       needed_reminding = people.filter do |person|
-        person[:reminder].present? && person[:twist_data].present? && !person[:forecast_data]["roles"].include?("Subcontractor")
+        person[:reminder].present? &&
+        person[:twist_data].present? &&
+        !person[:forecast_data]["roles"].include?("Subcontractor")
       end
 
-      needed_reminding.each do |person|
-        participant_ids = ([person, hugh, nicole, iz, michael].compact.map do |p|
-          p[:twist_data]["id"]
-        end).join(",")
-        conversation = twist.get_or_create_conversation(participant_ids)
-        twist.add_message_to_conversation(conversation["id"], person[:reminder])
-        sleep(0.1)
-      end
-
-      if needed_reminding.any?
-        message_body = needed_reminding.reduce("") do |acc, person|
-          acc + "- **[#{person[:twist_data]["name"]}](twist-mention://#{person[:twist_data]["id"]})**: `#{person[:missing_allocation] / 60 / 60} missing hrs`\n"
+      if send_twist_reminders
+        needed_reminding.each do |person|
+          participant_ids = admin_twist_users.map{|p| p[:twist_data]["id"]}.join(",")
+          conversation = twist.get_or_create_conversation(participant_ids)
+          twist.add_message_to_conversation(conversation["id"], person[:reminder])
+          sleep(0.1)
         end
-        message = <<~HEREDOC
-          👋 Hi Operations Team!
 
-          We're blocked on invoicing until the following people fill out their missing hours for the entirety of the calendar month:
-          #{message_body}
+        if needed_reminding.any?
+          message_body = needed_reminding.reduce("") do |acc, person|
+            acc + "- **[#{person[:twist_data]["name"]}](twist-mention://#{person[:twist_data]["id"]})**: `#{person[:missing_allocation] / 60 / 60} missing hrs`\n"
+          end
 
-          I've just sent out reminders to these folks. We'll retry this tomorrow.
-        HEREDOC
-        message_operations_channel_thread("[#{start_of_month.strftime("%B %Y")}] Invoicing", message)
+          message = <<~HEREDOC
+            👋 Hi Operations Team!
+
+            We're blocked on invoicing until the following people fill out their missing hours for the entirety of the calendar month:
+            #{message_body}
+
+            I've just sent out reminders to these folks. We'll retry this tomorrow.
+          HEREDOC
+          message_operations_channel_thread(
+            "[#{start_of_month.strftime("%B %Y")}] Invoicing",
+            message
+          )
+        end
       end
 
       needed_reminding
@@ -207,13 +170,17 @@ class Stacks::Automator
       access_token
     end
 
-    def fetch_all_invoices
+    def fetch_invoices_by_ids(ids = [])
       access_token = make_and_refresh_qbo_access_token
 
       invoice_service = Quickbooks::Service::Invoice.new
       invoice_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
       invoice_service.access_token = access_token
-      invoice_service.all
+
+      invoice_service.query(
+        "SELECT * FROM Invoice WHERE id in ('#{ids.join("','")}')",
+        per_page: 1000
+      )
     end
 
     def generate_invoices(start_of_month)
@@ -468,7 +435,10 @@ class Stacks::Automator
         start_of_month.end_of_month,
       )["assignments"]
 
-      business_days_last_month = (start_of_month.beginning_of_month..start_of_month.end_of_month).select { |d| (1..5).include?(d.wday) }.size
+      business_days_last_month = (
+        start_of_month.beginning_of_month..start_of_month.end_of_month
+      ).select { |d| (1..5).include?(d.wday) }.size
+
       allocation_expected_last_month = EIGHT_HOURS_IN_SECONDS * business_days_last_month
 
       twist_users = twist.get_workspace_users.parsed_response
@@ -548,24 +518,6 @@ class Stacks::Automator
           }
         end
       end
-    end
-
-    def find_relevant_weeks
-      today = Date.today
-      ranges = []
-      working_day = today
-      discovered_all_ranges = false
-      looked_back_an_extra_week = false
-      loop do
-        prev_week_monday = (working_day.beginning_of_week.last_week)
-        prev_week_friday = (working_day.beginning_of_week.last_week + 4)
-        ranges.push({ monday: prev_week_monday, friday: prev_week_friday, assignments: nil })
-        working_day = working_day - 1.week
-
-        discovered_all_ranges = prev_week_friday.month < today.month
-        break if discovered_all_ranges
-      end
-      ranges.reverse
     end
   end
 end

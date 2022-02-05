@@ -5,6 +5,9 @@ class AdminUser < ApplicationRecord
   scope :archived, -> {
           AdminUser.where.not(archived_at: nil)
         }
+  scope :admin , -> {
+          AdminUser.where(roles: ["admin"])
+        }
 
   has_many :full_time_periods
   accepts_nested_attributes_for :full_time_periods, allow_destroy: true
@@ -226,16 +229,8 @@ class AdminUser < ApplicationRecord
     end
   end
 
-  def is_payroll_manager?
-    roles.include?("payroll_manager")
-  end
-
-  def is_utilization_manager?
-    roles.include?("utilization_manager")
-  end
-
-  def is_profit_share_manager?
-    roles.include?("profit_share_manager")
+  def is_admin?
+    roles.include?("admin")
   end
 
   def display_name
