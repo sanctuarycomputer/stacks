@@ -1,7 +1,8 @@
 class ExpenseGroup < ApplicationRecord
   has_many :qbo_purchase_line_items
 
-  after_save :do_matching
+  after_create :do_matching
+  after_update :do_matching
   after_destroy :do_matching
 
   def do_matching
