@@ -104,6 +104,7 @@
         <tr>
           <th class="sortable sorted-desc col col-start_of_month"><a href="/admin/invoice_passes?order=start_of_month_asc">Client</a></th>
           <th class="col">Status</th>
+          <th class="col">Amount</th>
           <th class="col col-actions"></th>
         </tr>
       </thead>
@@ -113,6 +114,7 @@
           <tr class="<%= index.even? ? "even" : "odd" %>" id="invoice_pass_1">
             <td class="col"><%= invoice["forecast_client"]["name"] %></td>
             <td class="col"><%= qbo_invoice.present? ? qbo_invoice.email_status : "Deleted" %></td>
+            <td class="col"><%= qbo_invoice.present? ? number_to_currency(qbo_invoice.total) : "-" %></td>
             <td class="col col-actions">
               <% if qbo_invoice.present? %>
                 <div class="table_actions">
