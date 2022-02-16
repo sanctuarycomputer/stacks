@@ -1,3 +1,8 @@
+<div class="skill_tree_hint">
+  <p>As a group, we care deeply about making great things for a diverse set of users, and to do that well, we need our people who think through a wide lens of different experiences.</p>
+  <p>garden3d is committed to holding space for folks who are underrepresented in our industry. Our DEI explorer (updated monthly!) helps us set goals, and hold us accountable in meeting them.</p>
+</div>
+
 <a href="https://www.census.gov/quickfacts/fact/table/US/PST045219" target="_blank">
   <p class="nag" style="margin-bottom: 20px;margin-right:10px;">
     🤔 US Census Quick Facts ↗
@@ -9,119 +14,274 @@
   </p>
 </a>
 
+<!-- Racial Backgrounds -->
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">Racial Backgrounds</h2>
+  </div>
+  <div id="titlebar_right">
+    <div class="action_items">
+      <%= link_to "See All ↗", admin_racial_backgrounds_path %>
+    </div>
+  </div>
+</div>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-body factoid-parent">
+      <div class="factoid">
+        <h1><%= ((considered_bipoc / total.to_f) * 100).round(2) %>%</h1>
+        <p><%= considered_bipoc %> out of <%= total %> people on our team identify as Black, Indigenous or as a Person of Color.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-module">
+    <div class="module-body">
+      <canvas id="racial-backgrounds"></canvas>
+    </div>
+  </div>
+</div>
+
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom: 20px">
+  <thead>
+    <tr>
+      <th class="col">Racial Background</th>
+      <th class="col">People</th>
+      <th class="col">Percentage in Group</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% racial_background_raw_data.each_with_index do |d, idx| %>
+      <tr class="<%= idx.even? ? "even" : "odd" %>">
+        <td class="col"><%= d["name"] %></td>
+        <td class="col"><%= d["skill_bands"].count %></td>
+        <td class="col"><%= ((d["skill_bands"].count / total.to_f) * 100).round(2) %>%</td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
+
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
     <div class="module-header">
-      <p>Cultural Backgrounds</p>
+      <p>Skill Levels by Racial Background</p>
     </div>
+    <div class="module-body">
+      <canvas id="skill-level-by-racial-background"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Cultural Backgrounds -->
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">Cultural Backgrounds</h2>
+  </div>
+  <div id="titlebar_right">
+    <div class="action_items">
+      <%= link_to "See All ↗", admin_cultural_backgrounds_path %>
+    </div>
+  </div>
+</div>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
     <div class="module-body">
       <canvas id="cultural-backgrounds"></canvas>
     </div>
   </div>
 
   <div class="dashboard-module">
-    <div class="module-header">
-      <p>Racial Backgrounds</p>
-    </div>
-    <div class="module-body">
-      <canvas id="racial-backgrounds"></canvas>
+    <div class="module-body factoid-parent">
+      <div class="factoid">
+        <h1><%= ((considered_non_us / total.to_f) * 100).round(2) %>%</h1>
+        <p><%= considered_non_us %> out of <%= total %> people on our team report a cultural background that's different to US American.</p>
+      </div>
     </div>
   </div>
-
 </div>
+
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom: 20px">
+  <thead>
+    <tr>
+      <th class="col">Cultural Background</th>
+      <th class="col">People</th>
+      <th class="col">Percentage in Group</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% cultural_background_raw_data.each_with_index do |d, idx| %>
+      <tr class="<%= idx.even? ? "even" : "odd" %>">
+        <td class="col"><%= d["name"] %></td>
+        <td class="col"><%= d["skill_bands"].count %></td>
+        <td class="col"><%= ((d["skill_bands"].count / total.to_f) * 100).round(2) %>%</td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
 
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
     <div class="module-header">
-      <p>Gender Identities</p>
+      <p>Skill Levels by Cultural Background</p>
     </div>
+    <div class="module-body">
+      <canvas id="skill-level-by-cultural-background"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Gender Identities -->
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">Gender Identities</h2>
+  </div>
+  <div id="titlebar_right">
+    <div class="action_items">
+      <%= link_to "See All ↗", admin_gender_identities_path %>
+    </div>
+  </div>
+</div>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-body factoid-parent">
+      <div class="factoid" style="margin-bottom: 40px">
+        <h1><%= ((considered_female / total.to_f) * 100).round(2) %>%</h1>
+        <p><%= considered_female %> out of <%= total %> people on our team identify as Female.</p>
+      </div>
+      <div class="factoid">
+        <h1><%= ((considered_gender_nonconforming / total.to_f) * 100).round(2) %>%</h1>
+        <p><%= considered_gender_nonconforming %> out of <%= total %> people on our team identify as <%= gender_nonconforming_names.join(", ") %>.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-module">
     <div class="module-body">
       <canvas id="gender-identities"></canvas>
     </div>
   </div>
+</div>
 
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom: 20px">
+  <thead>
+    <tr>
+      <th class="col">Gender Identity</th>
+      <th class="col">People</th>
+      <th class="col">Percentage in Group</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% gender_identity_raw_data.each_with_index do |d, idx| %>
+      <tr class="<%= idx.even? ? "even" : "odd" %>">
+        <td class="col"><%= d["name"] %></td>
+        <td class="col"><%= d["skill_bands"].count %></td>
+        <td class="col"><%= ((d["skill_bands"].count / total.to_f) * 100).round(2) %>%</td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
+
+<div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
     <div class="module-header">
-      <p>Communities</p>
+      <p>Skill Levels by Gender Identity</p>
     </div>
     <div class="module-body">
-      <canvas id="communities"></canvas>
+      <canvas id="skill-level-by-gender-identity"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Communities -->
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">Communities</h2>
+  </div>
+  <div id="titlebar_right">
+    <div class="action_items">
+      <%= link_to "See All ↗", admin_communities_path %>
     </div>
   </div>
 </div>
 
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
-    <div class="module-header">
-      <p>Skill Levels</p>
+    <div class="module-body">
+      <canvas id="communities"></canvas>
+    </div>
+  </div>
 
-      <p>
-        <a href="?skill-levels=by-cultural-background" class="<%= (params["skill-levels"] == "by-cultural-background" || params["skill-levels"] == nil) ? "underline" : "" %>">
-          by Cultural Background
-        </a>
-      </p>
-      <p>
-        <a href="?skill-levels=by-racial-background" class="<%= params["skill-levels"] == "by-racial-background" ? "underline" : "" %>">
-          by Racial Background
-        </a>
-      </p>
-      <p>
-        <a href="?skill-levels=by-gender-identity" class="<%= params["skill-levels"] == "by-gender-identity" ? "underline" : "" %>">
-          by Gender Identity
-        </a>
-      </p>
-      <p>
-        <a href="?skill-levels=by-community" class="<%= params["skill-levels"] == "by-community" ? "underline" : "" %>">
-          by Community
-        </a>
-      </p>
+  <div class="dashboard-module">
+    <div class="module-body factoid-parent">
+      <div class="factoid">
+        <h1><%= ((considered_neurodiverse / total.to_f) * 100).round(2) %>%</h1>
+        <p><%= considered_neurodiverse %> out of <%= total %> people on our team identify as Neurodiverse.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom: 20px">
+  <thead>
+    <tr>
+      <th class="col">Community</th>
+      <th class="col">People</th>
+      <th class="col">Percentage in Group</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% community_raw_data.each_with_index do |d, idx| %>
+      <tr class="<%= idx.even? ? "even" : "odd" %>">
+        <td class="col"><%= d["name"] %></td>
+        <td class="col"><%= d["skill_bands"].count %></td>
+        <td class="col"><%= ((d["skill_bands"].count / total.to_f) * 100).round(2) %>%</td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Skill Levels by Community</p>
     </div>
     <div class="module-body">
-      <canvas id="skill-level-distributions"></canvas>
+      <canvas id="skill-level-by-community"></canvas>
     </div>
   </div>
 </div>
 
 <script>
-  var plugins = {
-    datalabels: {
-      color: '#fff',
-      formatter: function (value, ctx) {
-        var sum = 0;
-        var dataArr = ctx.chart.data.datasets[0].data;
-        dataArr.map(function(data) { sum += data; });
-        var percentage = (value*100 / sum).toFixed(2)+"%";
-        return percentage;
-      },
-    }
-  };
   new Chart(document.getElementById('racial-backgrounds'), {
-    plugins: [ChartDataLabels],
-    type: 'pie',
+    type: 'polarArea',
     data: <%= racial_background_data.to_json.html_safe %>,
-    options: {
-      aspectRatio: 1,
-      plugins: plugins
-    }
   });
+  new Chart(document.getElementById('skill-level-by-racial-background'), {
+    type: 'bar',
+    data: <%= skill_level_by_racial_background.to_json.html_safe %>,
+  });
+
   new Chart(document.getElementById('cultural-backgrounds'), {
-    plugins: [ChartDataLabels],
-    type: 'pie',
+    type: 'polarArea',
     data: <%= cultural_background_data.to_json.html_safe %>,
-    options: {
-      aspectRatio: 1,
-      plugins: plugins
-    }
   });
+  new Chart(document.getElementById('skill-level-by-cultural-background'), {
+    type: 'bar',
+    data: <%= skill_level_by_cultural_background.to_json.html_safe %>,
+  });
+
   new Chart(document.getElementById('gender-identities'), {
-    plugins: [ChartDataLabels],
-    type: 'pie',
+    type: 'polarArea',
     data: <%= gender_identity_data.to_json.html_safe %>,
-    options: {
-      aspectRatio: 1,
-      plugins: plugins
-    }
   });
+  new Chart(document.getElementById('skill-level-by-gender-identity'), {
+    type: 'bar',
+    data: <%= skill_level_by_gender_identity.to_json.html_safe %>,
+    });
+
   new Chart(document.getElementById('communities'), {
     type: 'bar',
     data: <%= community_data.to_json.html_safe %>,
@@ -134,8 +294,8 @@
       }
     }
   });
-  new Chart(document.getElementById('skill-level-distributions'), {
+  new Chart(document.getElementById('skill-level-by-community'), {
     type: 'bar',
-    data: <%= skill_level_distribution_data.to_json.html_safe %>,
+    data: <%= skill_level_by_community.to_json.html_safe %>,
   });
 </script>

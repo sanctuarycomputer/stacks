@@ -1,21 +1,11 @@
 ActiveAdmin.register_page "DEI Explorer" do
-  menu if: proc {
-        [
-          "michael@sanctuary.computer",
-          "hugh@sanctuary.computer",
-          "nicole@sanctuary.computer",
-          "isabel@sanctuary.computer",
-          "lucy-jane@sanctuary.computer",
-          "winnie@sanctuary.computer",
-          "tim@sanctuary.computer"
-        ].include?(current_admin_user.email)
-      },
-       label: "DEI Explorer",
-       priority: 2
+  menu label: "DEI Explorer", priority: 2
 
   content title: proc { I18n.t("active_admin.dei_explorer") } do
+    BROAD_BANDS = ["J", "ML", "EML", "S", "L"]
     COLORS = Stacks::Utils::COLORS
     dei_rollup = DeiRollup.order(created_at: :desc).first
+    total = dei_rollup.data.dig("meta", "total")
 
     cultural_background_raw_data = dei_rollup.data["cultural_background"]
       .filter{|d| d["skill_bands"].length > 0}
@@ -26,6 +16,9 @@ ActiveAdmin.register_page "DEI Explorer" do
         backgroundColor: [*COLORS, *COLORS],
       }]
     };
+    considered_non_us = cultural_background_raw_data.reduce(0) do |acc, d|
+      d["name"] == "US American" ? acc : acc + d["skill_bands"].count
+    end
 
     racial_background_raw_data = dei_rollup.data["racial_background"]
       .filter{|d| d["skill_bands"].length > 0}
@@ -36,6 +29,9 @@ ActiveAdmin.register_page "DEI Explorer" do
         backgroundColor: COLORS,
       }]
     };
+    considered_bipoc = racial_background_raw_data.reduce(0) do |acc, d|
+      d["name"] == "White" ? acc : acc + d["skill_bands"].count
+    end
 
     gender_identity_raw_data = dei_rollup.data["gender_identity"]
       .filter{|d| d["skill_bands"].length > 0}
@@ -46,6 +42,24 @@ ActiveAdmin.register_page "DEI Explorer" do
         backgroundColor: [*COLORS, *COLORS],
       }]
     };
+    considered_female = gender_identity_raw_data.reduce(0) do |acc, d|
+      d["name"] == "Female" ? acc + d["skill_bands"].count : acc
+    end
+    # Would love a better suggestion for these variable names
+    considered_gender_nonconforming = gender_identity_raw_data.reduce(0) do |acc, d|
+      if ["Female", "Male", "Cisgender"].include?(d["name"])
+        acc
+      else
+        acc + d["skill_bands"].count
+      end
+    end
+    gender_nonconforming_names = gender_identity_raw_data.reduce([]) do |acc, d|
+      if ["Female", "Male", "Cisgender"].include?(d["name"])
+        acc
+      else
+        acc << d["name"]
+      end
+    end
 
     community_raw_data = dei_rollup.data["community"]
       .filter{|d| d["skill_bands"].length > 0}
@@ -56,45 +70,62 @@ ActiveAdmin.register_page "DEI Explorer" do
         backgroundColor: [*COLORS, *COLORS],
       }]
     };
+    considered_neurodiverse = community_raw_data.reduce(0) do |acc, d|
+      d["name"] == "Neurodiverse" ? acc + d["skill_bands"].count : acc
+    end
 
-    distribution_by =
-      case params["skill-levels"]
-      when nil
-        cultural_background_raw_data
-      when "by-cultural-background"
-        cultural_background_raw_data
-      when "by-racial-background"
-        racial_background_raw_data
-      when "by-gender-identity"
-        gender_identity_raw_data
-      when "by-community"
-        community_raw_data
-      else
-        cultural_background_raw_data
-      end
-
-    broad_bands = ["J", "ML", "EML", "S", "L"]
-    set = distribution_by.map do |rbd|
+    skill_level_by_racial_background,
+    skill_level_by_cultural_background,
+    skill_level_by_gender_identity,
+    skill_level_by_community = [
+      racial_background_raw_data,
+      cultural_background_raw_data,
+      gender_identity_raw_data,
+      community_raw_data
+    ].map do |set|
       {
-        label: rbd["name"],
-        backgroundColor: COLORS[distribution_by.index(rbd)],
-        data: (broad_bands.map do |bb|
-          rbd["skill_bands"].filter{|b| b.starts_with?(bb)}.count
+        labels: BROAD_BANDS,
+        datasets: (set.map do |d|
+          {
+            label: d["name"],
+            backgroundColor: COLORS[set.index(d)],
+            data: (BROAD_BANDS.map do |bb|
+              d["skill_bands"].filter{|b| b.starts_with?(bb)}.count
+            end)
+          }
         end)
       }
     end
 
-    skill_level_distribution_data = {
-      labels: broad_bands,
-      datasets: set
-    };
-
     render(partial: "dei_data", locals: {
-      cultural_background_data: cultural_background_data,
+      # Meta
+      total: total,
+
+      # Racial Backgrounds
+      skill_level_by_racial_background: skill_level_by_racial_background,
       racial_background_data: racial_background_data,
+      racial_background_raw_data: racial_background_raw_data,
+      considered_bipoc: considered_bipoc,
+
+      # Cultural Backgrounds
+      skill_level_by_cultural_background: skill_level_by_cultural_background,
+      cultural_background_data: cultural_background_data,
+      cultural_background_raw_data: cultural_background_raw_data,
+      considered_non_us: considered_non_us,
+
+      # Gender Identities
+      skill_level_by_gender_identity: skill_level_by_gender_identity,
       gender_identity_data: gender_identity_data,
+      gender_identity_raw_data: gender_identity_raw_data,
+      considered_female: considered_female,
+      considered_gender_nonconforming: considered_gender_nonconforming,
+      gender_nonconforming_names: gender_nonconforming_names,
+
+      # Communities
+      skill_level_by_community: skill_level_by_community,
       community_data: community_data,
-      skill_level_distribution_data: skill_level_distribution_data
+      community_raw_data: community_raw_data,
+      considered_neurodiverse: considered_neurodiverse
     })
   end
 end

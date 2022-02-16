@@ -7,9 +7,6 @@ ActiveAdmin.register CulturalBackground do
 
   index download_links: false do
     column :name
-    column :members do |resource|
-      AdminUserCulturalBackground.where(cultural_background: resource).count
-    end
     actions
   end
 end

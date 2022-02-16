@@ -7,9 +7,6 @@ ActiveAdmin.register GenderIdentity do
 
   index download_links: false do
     column :name
-    column :members do |resource|
-      AdminUserGenderIdentity.where(gender_identity: resource).count
-    end
     actions
   end
 end

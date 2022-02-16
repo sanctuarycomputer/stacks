@@ -33,15 +33,6 @@ ActiveAdmin.register ProjectTracker do
   end
 
   form do |f|
-    forecast = Stacks::Forecast.new
-    projects = forecast.projects()["projects"].map do |p|
-      {
-        forecast_id: p["id"],
-        data: p,
-      }
-    end
-    ForecastProject.upsert_all(projects, unique_by: :forecast_id)
-
     f.inputs(class: "admin_inputs") do
       f.input :name
       f.input :budget_low_end
@@ -58,7 +49,6 @@ ActiveAdmin.register ProjectTracker do
 
       f.input :notes
     end
-
 
     f.actions
   end
