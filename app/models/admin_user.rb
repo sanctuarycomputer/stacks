@@ -57,6 +57,25 @@ class AdminUser < ApplicationRecord
   has_many :reviews
   has_many :peer_reviews
 
+  def expected_utilization
+    latest_full_time_period.try(:expected_utilization) || 0.8
+  end
+
+  def latest_full_time_period
+    return full_time_periods.first if full_time_periods.length < 2
+    full_time_periods.reduce(nil) do |acc, ftp|
+      if acc.present?
+        if (ftp.ended_at || Date.today) > (acc.ended_at || Date.today)
+          ftp
+        else
+          acc
+        end
+      else
+        ftp
+      end
+    end
+  end
+
   def working_days_between(period_start, period_end)
     period_stop = period_end > Date.today ? period_end : Date.today
 

@@ -104,6 +104,10 @@ class Stacks::Utilization
             start_of_month.beginning_of_month,
             start_of_month.end_of_month
           ).count * user.expected_utilization * 8),
+          non_sellable: (user.working_days_between(
+            start_of_month.beginning_of_month,
+            start_of_month.end_of_month
+          ).count * (1 - user.expected_utilization) * 8),
         }
 
         if is_time_off

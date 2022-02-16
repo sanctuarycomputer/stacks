@@ -1,6 +1,5 @@
 ActiveAdmin.register AdminUser do
   permit_params :show_skill_tree_data,
-    :expected_utilization,
     :opt_out_of_dei_data_entry,
     :old_skill_tree_level,
     :profit_share_notes,
@@ -14,6 +13,7 @@ ActiveAdmin.register AdminUser do
       :started_at,
       :ended_at,
       :multiplier,
+      :expected_utilization,
       :_edit,
       :_destroy
     ],
@@ -204,12 +204,12 @@ ActiveAdmin.register AdminUser do
       end
 
       f.input :profit_share_notes
-      f.input :expected_utilization
 
       f.has_many :full_time_periods, allow_destroy: true do |a|
         a.input :started_at
         a.input :ended_at
         a.input :multiplier
+        a.input :expected_utilization
       end
 
       f.has_many :gifted_profit_shares, allow_destroy: true do |a|

@@ -178,7 +178,8 @@ ActiveAdmin.register_page "Utilization" do
       backgroundColor: COLORS[2],
       data: aggregated_data.values.map{|v| v["sellable"]},
       yAxisID: 'y1',
-      type: 'bar'
+      type: 'bar',
+      stack: 'Stack 1',
     }])
 
     render(partial: "utilization", locals: {
