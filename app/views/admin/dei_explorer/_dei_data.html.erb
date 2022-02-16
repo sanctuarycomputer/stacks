@@ -26,6 +26,10 @@
   </div>
 </div>
 
+<p class="nag" style="margin-bottom: 20px;margin-right:10px;">
+💡<%= multiple_racial_backgrounds_count %> people recorded more than one Racial Background.
+</p>
+
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
     <div class="module-body factoid-parent">
@@ -84,6 +88,9 @@
     </div>
   </div>
 </div>
+<p class="nag" style="margin-bottom: 20px;margin-right:10px;">
+💡<%= multiple_cultural_backgrounds_count %> people recorded more than one Cultural Background.
+</p>
 
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
@@ -96,7 +103,7 @@
     <div class="module-body factoid-parent">
       <div class="factoid">
         <h1><%= ((considered_non_us / total.to_f) * 100).round(2) %>%</h1>
-        <p><%= considered_non_us %> out of <%= total %> people on our team report a cultural background that's different to US American.</p>
+        <p><%= considered_non_us %> out of <%= total %> people on our team report at least one cultural background that's different to US American.</p>
       </div>
     </div>
   </div>
@@ -143,6 +150,9 @@
     </div>
   </div>
 </div>
+<p class="nag" style="margin-bottom: 20px;margin-right:10px;">
+💡<%= multiple_gender_identities_count %> people recorded more than one Gender Identity.
+</p>
 
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
@@ -153,7 +163,7 @@
       </div>
       <div class="factoid">
         <h1><%= ((considered_gender_nonconforming / total.to_f) * 100).round(2) %>%</h1>
-        <p><%= considered_gender_nonconforming %> out of <%= total %> people on our team identify as <%= gender_nonconforming_names.join(", ") %>.</p>
+        <p><%= considered_gender_nonconforming %> out of <%= total %> people on our team identify as at least one of <%= gender_nonconforming_names.join(", ") %>.</p>
       </div>
     </div>
   </div>
@@ -206,6 +216,9 @@
     </div>
   </div>
 </div>
+<p class="nag" style="margin-bottom: 20px;margin-right:10px;">
+💡<%= multiple_communities_count %> people recorded more than one Community.
+</p>
 
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">

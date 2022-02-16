@@ -16,9 +16,13 @@ ActiveAdmin.register_page "DEI Explorer" do
         backgroundColor: [*COLORS, *COLORS],
       }]
     };
-    considered_non_us = cultural_background_raw_data.reduce(0) do |acc, d|
-      d["name"] == "US American" ? acc : acc + d["skill_bands"].count
-    end
+    considered_non_us = (cultural_background_raw_data.reduce(0) do |acc, d|
+      d["name"] == "US American" ? acc : [*acc, *d["admin_user_ids"]]
+    end).uniq.count
+    cultural_background_admin_ids =
+      cultural_background_raw_data.reduce([]){|acc, d| [*acc, *d["admin_user_ids"]]}
+    multiple_cultural_backgrounds_count =
+      cultural_background_admin_ids.select{|e| cultural_background_admin_ids.count(e) > 1}.count
 
     racial_background_raw_data = dei_rollup.data["racial_background"]
       .filter{|d| d["skill_bands"].length > 0}
@@ -29,9 +33,13 @@ ActiveAdmin.register_page "DEI Explorer" do
         backgroundColor: COLORS,
       }]
     };
-    considered_bipoc = racial_background_raw_data.reduce(0) do |acc, d|
-      d["name"] == "White" ? acc : acc + d["skill_bands"].count
-    end
+    considered_bipoc = (racial_background_raw_data.reduce([]) do |acc, d|
+      d["name"] == "White" ? acc : [*acc, *d["admin_user_ids"]]
+    end).uniq.count
+    racial_background_admin_ids =
+      racial_background_raw_data.reduce([]){|acc, d| [*acc, *d["admin_user_ids"]]}
+    multiple_racial_backgrounds_count =
+      racial_background_admin_ids.select{|e| racial_background_admin_ids.count(e) > 1}.count
 
     gender_identity_raw_data = dei_rollup.data["gender_identity"]
       .filter{|d| d["skill_bands"].length > 0}
@@ -46,13 +54,13 @@ ActiveAdmin.register_page "DEI Explorer" do
       d["name"] == "Female" ? acc + d["skill_bands"].count : acc
     end
     # Would love a better suggestion for these variable names
-    considered_gender_nonconforming = gender_identity_raw_data.reduce(0) do |acc, d|
+    considered_gender_nonconforming = (gender_identity_raw_data.reduce(0) do |acc, d|
       if ["Female", "Male", "Cisgender"].include?(d["name"])
         acc
       else
-        acc + d["skill_bands"].count
+        [*acc, *d["admin_user_ids"]]
       end
-    end
+    end).uniq.count
     gender_nonconforming_names = gender_identity_raw_data.reduce([]) do |acc, d|
       if ["Female", "Male", "Cisgender"].include?(d["name"])
         acc
@@ -60,6 +68,10 @@ ActiveAdmin.register_page "DEI Explorer" do
         acc << d["name"]
       end
     end
+    gender_identity_admin_ids =
+      gender_identity_raw_data.reduce([]){|acc, d| [*acc, *d["admin_user_ids"]]}
+    multiple_gender_identities_count =
+      gender_identity_admin_ids.select{|e| gender_identity_admin_ids.count(e) > 1}.count
 
     community_raw_data = dei_rollup.data["community"]
       .filter{|d| d["skill_bands"].length > 0}
@@ -73,6 +85,10 @@ ActiveAdmin.register_page "DEI Explorer" do
     considered_neurodiverse = community_raw_data.reduce(0) do |acc, d|
       d["name"] == "Neurodiverse" ? acc + d["skill_bands"].count : acc
     end
+    community_admin_ids =
+      community_raw_data.reduce([]){|acc, d| [*acc, *d["admin_user_ids"]]}
+    multiple_communities_count =
+      community_admin_ids.select{|e| community_admin_ids.count(e) > 1}.count
 
     skill_level_by_racial_background,
     skill_level_by_cultural_background,
@@ -106,12 +122,14 @@ ActiveAdmin.register_page "DEI Explorer" do
       racial_background_data: racial_background_data,
       racial_background_raw_data: racial_background_raw_data,
       considered_bipoc: considered_bipoc,
+      multiple_racial_backgrounds_count: multiple_racial_backgrounds_count,
 
       # Cultural Backgrounds
       skill_level_by_cultural_background: skill_level_by_cultural_background,
       cultural_background_data: cultural_background_data,
       cultural_background_raw_data: cultural_background_raw_data,
       considered_non_us: considered_non_us,
+      multiple_cultural_backgrounds_count: multiple_cultural_backgrounds_count,
 
       # Gender Identities
       skill_level_by_gender_identity: skill_level_by_gender_identity,
@@ -120,12 +138,14 @@ ActiveAdmin.register_page "DEI Explorer" do
       considered_female: considered_female,
       considered_gender_nonconforming: considered_gender_nonconforming,
       gender_nonconforming_names: gender_nonconforming_names,
+      multiple_gender_identities_count: multiple_gender_identities_count,
 
       # Communities
       skill_level_by_community: skill_level_by_community,
       community_data: community_data,
       community_raw_data: community_raw_data,
-      considered_neurodiverse: considered_neurodiverse
+      considered_neurodiverse: considered_neurodiverse,
+      multiple_communities_count: multiple_communities_count
     })
   end
 end

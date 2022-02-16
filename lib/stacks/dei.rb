@@ -15,11 +15,15 @@ class Stacks::Dei
         acc[klass.to_s.underscore] = klass.all.map do |o|
           getter = {}
           getter[klass.to_s.underscore] = o
+          joins = join_klass.preload(:admin_user).where(getter)
           {
             id: o.id,
             name: o.name,
-            skill_bands: (join_klass.preload(:admin_user).where(getter).map do |a|
+            skill_bands: (joins.map do |a|
               a.admin_user.archived_at.present? ? nil : a.admin_user.skill_tree_level_without_salary
+            end).compact,
+            admin_user_ids: (joins.map do |a|
+              a.admin_user.archived_at.present? ? nil : a.admin_user.id
             end).compact
           }
         end
