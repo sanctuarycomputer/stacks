@@ -65,6 +65,7 @@ class Stacks::Utilization
       (per_day_allocation * days).to_f
     end
 
+    # TODO: Use Stacks::Utils.studios_for_email
     def studio_for_forecast_person(person)
       studios = (STUDIOS.map(&:to_s) & person["roles"])
       return studios.first if studios.length >= 1

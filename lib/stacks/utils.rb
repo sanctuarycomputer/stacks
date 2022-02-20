@@ -22,6 +22,18 @@ class Stacks::Utils
       Rails.application.credentials[:"#{ENV["BASE_HOST"] || "localhost:3000"}"]
     end
 
+    def studios_for_email(email)
+      fp = ForecastPerson.find_by(email: email)
+      return [] if fp.nil?
+      Studio.all.select{|s| (fp.roles).include?(s[:name])} || []
+    end
+
+    def hash_diff(a, b)
+      a
+        .reject { |k, v| b[k] == v }
+        .merge!(b.reject { |k, _v| a.key?(k) })
+    end
+
     def clamp(x, in_min, in_max, out_min, out_max)
       (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
     end

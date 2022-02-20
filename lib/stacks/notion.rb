@@ -61,12 +61,16 @@ class Stacks::Notion
     JSON.parse(response.body)
   end
 
-  def query_database(database_id)
+  def query_database(database_id, start_cursor = nil)
     # Not sure why HTTParty didn't work
     uri = URI("#{self.class.base_uri}/databases/#{database_id}/query")
     https = Net::HTTP.new(uri.host, uri.port)
     https.use_ssl = true
-    response = https.post(uri.path, "", @headers)
+    req = Net::HTTP::Post.new(uri.path, @headers)
+    if start_cursor.present?
+      req.body = {start_cursor: start_cursor}.to_json
+    end
+    response = https.request(req)
     JSON.parse(response.body)
   end
 end

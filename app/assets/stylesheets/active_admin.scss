@@ -22,6 +22,10 @@ body { font-family: 'Inter', sans-serif; }
   text-decoration: underline !important;
 }
 
+.text-right {
+  text-align: right;
+}
+
 .block {
   display: block;
 }
@@ -79,6 +83,28 @@ $color-purple: #7B4EFA;
 $color-white: white;
 $color-grey: #5E6469;
 $color-red: #ff6961;
+
+body.admin_availability {
+  span.over-resourced {
+    font-weight: 600;
+    color: $color-red !important;
+  }
+  span.under-resourced {
+    font-weight: 600;
+    color: $color-green !important;
+  }
+  span.fully-resourced {
+    color: $color-grey !important;
+  }
+  span.increase {
+    font-weight: 600;
+    color: $color-green;
+  }
+  span.decrease {
+    color: $color-grey;
+  }
+}
+
 
 .budget_progress {
   width: 100%;
@@ -705,16 +731,16 @@ body.logged_in .flash {
   &.complete, &.yes, &.under_budget {
     background-color: $color-green;
   }
-  &.over_budget {
+  &.over_budget, &.error {
     background-color: $color-red;
   }
-  &.ready, &.no_budget {
+  &.ready, &.no_budget, &.hydro {
     background-color: $color-purple;
   }
-  &.finalized {
+  &.finalized, &.sanctu {
     background-color: $color-blue;
   }
-  &.archived {
+  &.archived, &.xxix {
     background-color: $color-black;
   }
 }
