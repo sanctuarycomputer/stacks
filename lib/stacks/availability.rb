@@ -52,6 +52,11 @@ class Stacks::Availability
         acc
       end
 
+      # Ensure all AdminUser are included
+      AdminUser.active.each do |a|
+        allocations[a.email] = allocations[a.email] || []
+      end
+
       [allocations, errors]
     end
 

@@ -58,6 +58,16 @@
             <%= c[0] %> is at <%= (c[1] * 100).round(0) %>%
           </span>
         </td>
+        <td class="col text-right">
+          <% studios = Stacks::Utils.studios_for_email(c[0]) %>
+          <% if studios.any? %>
+            <% studios.map do |s| %>
+              <span class="pill <%= s[:mini_name] %>"><%= s[:mini_name] %></span>
+            <% end %>
+          <% else %>
+            <span class="pill error">no studio in forecast</span>
+          <% end %>
+        </td>
       </tr>
     <% end %>
   </tbody>
