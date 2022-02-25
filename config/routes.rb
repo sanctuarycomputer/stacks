@@ -5,4 +5,6 @@ Rails.application.routes.draw do
   devise_config[:controllers][:omniauth_callbacks] = 'omniauth_callbacks'
   devise_for :admin_users, devise_config
   ActiveAdmin.routes(self)
+
+  get "/:page" => "pages#show"
 end
