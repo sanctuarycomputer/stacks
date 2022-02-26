@@ -11,6 +11,7 @@ gem 'webpacker', '~> 4.0'
 gem 'turbolinks', '~> 5'
 gem 'bootsnap', '>= 1.4.2', require: false
 gem 'activeadmin'
+gem 'active_admin-subnav'
 gem 'devise', github: 'heartcombo/devise', branch: 'ca-omniauth-2'
 gem 'omniauth-google-oauth2'
 gem 'omniauth-rails_csrf_protection'

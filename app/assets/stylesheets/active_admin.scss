@@ -10,18 +10,15 @@
 // Active Admin's got SASS!
 @import "active_admin/mixins";
 @import "active_admin/base";
+@import "active_admin/subnav";
 
-$color-black: #414141;
-$color-blue: #1F78FF;
-$color-orange: orange;
-$color-green: #26bd50;
-$color-purple: #7B4EFA;
-$color-white: white;
-$color-grey: #5E6469;
-$color-red: #ff6961;
-
+@import "colors";
 @import "generic_dashboard_modules";
 @import "budget_progress";
+
+#header div.subnav {
+  padding-left: 8.333em;
+}
 
 @import url('https://rsms.me/inter/inter.css');
 body { font-family: 'Inter', sans-serif; }

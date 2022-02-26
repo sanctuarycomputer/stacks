@@ -13,3 +13,7 @@
  *= require_tree .
  *= require_self
  */
+
+#header div.subnav {
+  padding-left: 8.333em;
+}
