@@ -10,7 +10,18 @@
 // Active Admin's got SASS!
 @import "active_admin/mixins";
 @import "active_admin/base";
+
+$color-black: #414141;
+$color-blue: #1F78FF;
+$color-orange: orange;
+$color-green: #26bd50;
+$color-purple: #7B4EFA;
+$color-white: white;
+$color-grey: #5E6469;
+$color-red: #ff6961;
+
 @import "generic_dashboard_modules";
+@import "budget_progress";
 
 @import url('https://rsms.me/inter/inter.css');
 body { font-family: 'Inter', sans-serif; }
@@ -75,15 +86,6 @@ select {
   background-color: #e8e8e8;
 }
 
-$color-black: #414141;
-$color-blue: #1F78FF;
-$color-orange: orange;
-$color-green: #26bd50;
-$color-purple: #7B4EFA;
-$color-white: white;
-$color-grey: #5E6469;
-$color-red: #ff6961;
-
 body.admin_availability {
   span.over-resourced {
     font-weight: 600;
@@ -105,62 +107,6 @@ body.admin_availability {
   }
 }
 
-
-.budget_progress {
-  width: 100%;
-  height: 20px;
-  border-radius: 999px;
-  background-color: $color-purple;
-  position: relative;
-
-  .node {
-    &:hover {
-      .tooltip {
-        visibility: visible;
-      }
-    }
-    &.invoiced {
-      z-index: 2;
-      background-color: $color-blue;
-    }
-    &.running {
-      z-index: 1;
-      background-color: $color-green;
-    }
-    &.budget_low_end {
-      z-index: 3;
-      background-color: $color-orange;
-    }
-    &.budget_high_end {
-      z-index: 4;
-      background-color: $color-red;
-    }
-    height: 20px;
-    width: 20px;
-    background-color: red;
-    position: absolute;
-    left: 0;
-    top: -0px;
-    border-radius: 999px;
-
-    .tooltip {
-      visibility: hidden;
-      width: 100px;
-      background-color: black;
-      color: #fff;
-      text-align: center;
-      padding: 5px 0;
-      border-radius: 6px;
-      bottom: 105%;
-      left: 50%;
-      margin-left: -50px;
-
-      /* Position the tooltip text - see examples below! */
-      position: absolute;
-      z-index: 1;
-    }
-  }
-}
 
 ::selection {
   background: $color-blue; /* WebKit/Blink Browsers */

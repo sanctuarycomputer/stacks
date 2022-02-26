@@ -1,67 +1,167 @@
-<span class="pill <%= @project_tracker.status %>">
-  <%= @project_tracker.status.to_s.humanize %>
-</span>
 
-<hr />
-
-Invoiced Spend: <%= number_to_currency(@project_tracker.invoiced_spend) %>
-<hr />
-Running Spend: <%= number_to_currency(@project_tracker.running_spend) %>
-<hr />
-Low End Budget: <%= number_to_currency(@project_tracker.budget_low_end) %>
-<hr />
-High End Budget: <%= number_to_currency(@project_tracker.budget_high_end) %>
-<hr />
-
+<% invoiced_spend = @project_tracker.invoiced_spend %>
 <% running_spend = @project_tracker.running_spend %>
+<% budget_low_end = @project_tracker.budget_low_end %>
+<% budget_high_end = @project_tracker.budget_high_end %>
+<% current_spend = invoiced_spend + running_spend %>
+
+<% inbudget_overage = (
+  budget_low_end.present? ?
+  [current_spend - budget_low_end, 0].max :
+  0
+)%>
+<% overbudget_overage = (
+  budget_high_end.present? ?
+  [current_spend - budget_high_end, 0].max :
+  0
+)%>
+
 <% limit = [
-  @project_tracker.invoiced_spend,
-  @project_tracker.invoiced_spend + running_spend,
-  @project_tracker.budget_low_end,
-  @project_tracker.budget_high_end
+  invoiced_spend,
+  current_spend,
+  budget_low_end,
+  budget_high_end
 ].compact.max %>
 
-<div class="budget_progress">
-  <div
-     class="node invoiced"
-     style="width:calc(<%= ((@project_tracker.invoiced_spend / limit) * 100).round(2) %>%)">
-     <span class="tooltip">
-       Invoiced:
-       <br />
-       <%= number_to_currency(@project_tracker.invoiced_spend) %>
-     </span>
-  </div>
-  <div
-     class="node running"
-     style="width:<%= (((@project_tracker.invoiced_spend + running_spend) / limit) * 100).round(2) %>%">
-     <span class="tooltip">
-       This Month:
-       <br />
-       <%= number_to_currency(running_spend) %>
-     </span>
-  </div>
-
-  <% if @project_tracker.budget_low_end.present? %>
-    <div
-      class="node budget_low_end"
-      style="left:calc(<%= (((@project_tracker.budget_low_end) / limit) * 100).round(2) %>% - 10px)">
-      <span class="tooltip">
-        Budget Low End:
-        <br />
-        <%= number_to_currency(@project_tracker.budget_low_end) %>
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Budget Progress</p>
+      <span class="pill <%= @project_tracker.status %>">
+        <%= @project_tracker.status.to_s.humanize %>
       </span>
     </div>
-  <% end %>
+    <div class="module-body">
+      <div class="budget_progress_bars">
+        <% if inbudget_overage > 0 %>
+          <div
+            class="bar invoiced"
+            style="width:calc(<%= (([invoiced_spend, budget_low_end].min / limit) * 100).round(2) %>%)">
+          </div>
 
-  <% if @project_tracker.budget_high_end.present? %>
-    <div
-      class="node budget_high_end"
-      style="left:calc(<%= (((@project_tracker.budget_high_end) / limit) * 100).round(2) %>% - 10px)">
-      <span class="tooltip">
-        Budget High End:
-        <br />
-        <%= number_to_currency(@project_tracker.budget_high_end) %>
-      </span>
+          <div class="multibar">
+            <div
+              class="bar running"
+              style="width:<%= (((running_spend - inbudget_overage) / limit) * 100).round(2) %>%;left:<%= ((invoiced_spend / limit) * 100).round(2) %>%">
+            </div>
+
+            <% if overbudget_overage > 0 %>
+              <div
+                class="bar budget_low_end"
+                style="width:<%= (((inbudget_overage - overbudget_overage) / limit) * 100).round(2) %>%;left:<%= (((invoiced_spend + (running_spend - inbudget_overage)) / limit) * 100).round(2) %>%">
+              </div>
+              <div
+                class="bar budget_high_end"
+                style="width:<%= (((overbudget_overage) / limit) * 100).round(2) %>%;left:<%= (((invoiced_spend + (running_spend - inbudget_overage) + (inbudget_overage - overbudget_overage)) / limit) * 100).round(2) %>%">
+              </div>
+            <% else %>
+              <div
+                class="bar budget_low_end"
+                style="width:<%= (((inbudget_overage) / limit) * 100).round(2) %>%;left:<%= (((invoiced_spend +(running_spend - inbudget_overage)) / limit) * 100).round(2) %>%">
+              </div>
+            <% end %>
+          </div>
+        <% else %>
+          <div
+            class="bar invoiced"
+            style="width:calc(<%= ((invoiced_spend / limit) * 100).round(2) %>%)">
+          </div>
+          <div
+            class="bar running"
+            style="width:<%= (((running_spend) / limit) * 100).round(2) %>%;left:<%= ((invoiced_spend / limit) * 100).round(2) %>%">
+          </div>
+        <% end %>
+
+        <% if budget_low_end.present? %>
+          <div
+            class="cursor budget_low_end"
+            style="left:calc(<%= (((budget_low_end) / limit) * 100).round(2) %>% - 6px)">
+          </div>
+        <% end %>
+
+        <% if budget_high_end.present? %>
+          <div
+            class="cursor budget_high_end"
+            style="left:calc(<%= (((budget_high_end) / limit) * 100).round(2) %>% - 6px)">
+          </div>
+        <% end %>
+      </div>
+
+      <div class="budget_progress_legend">
+        <span class="legend_item">
+          <div class="legend_item_dot invoiced"></div>
+          <p>Invoiced Spend</p>
+        </span>
+        <span class="legend_item">
+          <div class="legend_item_dot running"></div>
+          <p>Under Budget Spend</p>
+        </span>
+        <span class="legend_item">
+          <div class="legend_item_dot budget_low_end"></div>
+          <p>At Budget Spend</p>
+        </span>
+        <span class="legend_item">
+          <div class="legend_item_dot budget_high_end"></div>
+          <p>Over Budget Spend</p>
+        </span>
+      </div>
+
     </div>
-  <% end %>
+  </div>
 </div>
+
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+  <tbody>
+    <tr class="odd">
+      <td class="col">Invoiced Spend (Previous Months)</td>
+      <td class="col">
+        <%= number_to_currency(invoiced_spend) %>
+      </td>
+    </tr>
+    <tr class="even">
+      <td class="col">Running Spend (This Month)</td>
+      <td class="col">
+        <%= number_to_currency(running_spend) %>
+      </td>
+    </tr>
+    <tr class="odd">
+      <td class="col">Total Spend to Date (Invoiced & Running Spends)</td>
+      <td class="col">
+        <%= number_to_currency(current_spend) %>
+      </td>
+    </tr>
+
+    <% if budget_low_end.present? %>
+      <tr class="even">
+        <td class="col">Budget Low End</td>
+        <td class="col">
+          <%= number_to_currency(budget_low_end) %>
+        </td>
+      </tr>
+      <tr class="odd">
+        <td class="col">Budget High End</td>
+        <td class="col">
+          <%= number_to_currency(budget_high_end) %>
+        </td>
+      </tr>
+      <% if inbudget_overage > 0 %>
+        <tr class="even">
+          <td class="col">At Budget Spend</td>
+          <td class="col">
+            <span class=""><%= number_to_currency(inbudget_overage) %></span>
+          </td>
+        </tr>
+      <% end %>
+      <% if overbudget_overage > 0 %>
+        <tr class="odd">
+          <td class="col">Over Budget Spend</td>
+          <td class="col">
+            <%= number_to_currency(over_budget_spend) %>
+          </td>
+        </tr>
+      <% end %>
+
+    <% end %>
+  </tbody>
+</table>
+
