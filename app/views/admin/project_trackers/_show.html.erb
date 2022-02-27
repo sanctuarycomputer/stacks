@@ -1,4 +1,3 @@
-
 <% invoiced_spend = @project_tracker.invoiced_spend %>
 <% running_spend = @project_tracker.running_spend %>
 <% budget_low_end = @project_tracker.budget_low_end %>
@@ -105,12 +104,11 @@
           <p>Over Budget Spend</p>
         </span>
       </div>
-
     </div>
   </div>
 </div>
 
-<table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom:20px;">
   <tbody>
     <tr class="odd">
       <td class="col">Invoiced Spend (Previous Months)</td>
@@ -156,12 +154,117 @@
         <tr class="odd">
           <td class="col">Over Budget Spend</td>
           <td class="col">
-            <%= number_to_currency(over_budget_spend) %>
+            <%= number_to_currency(overbudget_overage) %>
           </td>
         </tr>
       <% end %>
-
     <% end %>
   </tbody>
 </table>
 
+<% if @project_tracker.last_month_value > 0 %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <div class="factoid">
+          <h2><%= number_to_currency(@project_tracker.last_month_value) %></h2>
+          <p>Last month's spend</p>
+        </div>
+      </div>
+    </div>
+
+    <% if budget_low_end %>
+      <div class="dashboard-module">
+        <div class="module-body factoid-parent">
+          <div class="factoid">
+              <% if inbudget_overage == 0 %>
+                <h2>
+                  <%= ((budget_low_end - current_spend) / @project_tracker.last_month_value).round(1) %> months
+                </h2>
+                <% if budget_low_end == budget_high_end %>
+                  <p>Remaining in <strong class="color-red">Budget High End</strong> (based on last month's spend)</p>
+                <% else %>
+                  <p>Remaining in <strong class="color-orange">Budget Low End</strong> (based on last month's spend)</p>
+                <% end %>
+              <% elsif overbudget_overage > 0 %>
+                <h2 class="color-red">
+                  -<%= number_to_currency(overbudget_overage) %>
+                </h2>
+                <p>Overbudget</p>
+              <% else %>
+                <h2>
+                  <%= ((budget_high_end - current_spend) / @project_tracker.last_month_value).round(1) %> months
+                </h2>
+                <p>Remaining in <strong class="color-red">Budget High End</strong> (based on last month's spend)</p>
+              <% end %>
+          </div>
+        </div>
+      </div>
+    <% end %>
+  </div>
+<% end %>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-body factoid-parent">
+      <p style="margin-bottom: 6px;">🤔 <strong>Remember!</strong> Don’t adjust your hours to meet a budget, or we won't get the data to improve.</p>
+      <a href="https://www.notion.so/garden3d/How-to-Record-your-Hours-ff971848f66d40cf818b930f05cfc533" target="_blank">
+        How to Record your Hours ↗
+      </a>
+    </div>
+  </div>
+</div>
+
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+  <thead>
+    <tr>
+      <th class="col">
+        <div class="icon-and-text">
+          <%= image_tag("forecast-logo-icon.webp") %>
+          Hours
+        </div>
+      </th>
+      <th class="col">Rate</th>
+      <th class="col">Hours (Last Month)</th>
+      <th class="col">Hours (Total)</th>
+      <th class="col">Spend (Total)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% @project_tracker.forecast_projects.each_with_index do |fp, index| %>
+      <tr class="<%= index.even? ? "even" : "odd" %>">
+        <td class="col">
+          <a href="<%= fp.link %>" target="_blank">
+            <%= fp.display_name %>
+          </a>
+        </td>
+        <td class="col">
+          <%= number_to_currency(fp.hourly_rate) %>
+        </td>
+        <td class="col">
+          <%= fp.total_hours_during_range(Date.today.last_month.beginning_of_month, Date.today.last_month.end_of_month) %>
+        </td>
+        <td class="col">
+          <%= fp.total_hours %>
+        </td>
+        <td class="col">
+          <%= number_to_currency(fp.total_hours * fp.hourly_rate) %>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
+
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">Project Capsule</h2>
+  </div>
+</div>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-body factoid-parent">
+      <p style="margin-bottom: 6px;">🚧 This section is coming soon.</p>
+    </div>
+  </div>
+</div>

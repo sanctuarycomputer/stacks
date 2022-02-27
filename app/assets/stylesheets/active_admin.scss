@@ -20,6 +20,16 @@
   padding-left: 8.333em;
 }
 
+.icon-and-text {
+  display: flex;
+  align-items: center;
+  img {
+    width: 14px;
+    height: 14px;
+    margin-right: 6px;
+  }
+}
+
 @import url('https://rsms.me/inter/inter.css');
 body { font-family: 'Inter', sans-serif; }
 @supports (font-variation-settings: normal) {

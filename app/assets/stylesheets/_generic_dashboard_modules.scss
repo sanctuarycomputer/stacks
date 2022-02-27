@@ -38,6 +38,7 @@
   justify-content: center;
   height: 100%;
   flex-direction: column;
+  text-align: center;
 }
 .dashboard-module .module-body.factoid-parent .factoid {
     text-align: center;
@@ -47,6 +48,11 @@
   font-size: 60px;
   margin-top: 0px;
   margin-bottom: 10px;
+}
+.dashboard-module .module-body.factoid-parent .factoid h2 {
+  font-size: 40px;
+  margin-top: 0px;
+  margin-bottom: 0px;
 }
 .dashboard-module .module-body p {
   font-size: 18px;
