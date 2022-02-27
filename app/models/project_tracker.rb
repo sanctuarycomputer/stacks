@@ -1,6 +1,5 @@
 # Ensure that deletes are cascading
 class ProjectTracker < ApplicationRecord
-  validates :notion_proposal_url, url: true, allow_blank: true
   validates :name, presence: :true
   validates_numericality_of :budget_low_end,
     if: :validate_budgets?

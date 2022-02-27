@@ -47,7 +47,6 @@ ActiveAdmin.register ProjectTracker do
       f.input :name
       f.input :budget_low_end
       f.input :budget_high_end
-      f.input :notion_proposal_url
 
       f.has_many :project_tracker_links, heading: false, allow_destroy: true, new_record: 'Create a Project Link' do |a|
         a.input(:name, {
