@@ -9,6 +9,8 @@ class AdminUser < ApplicationRecord
           AdminUser.where(roles: ["admin"])
         }
 
+  has_one :forecast_person, class_name: "ForecastPerson", foreign_key: "email", primary_key: "email"
+
   has_many :full_time_periods
   accepts_nested_attributes_for :full_time_periods, allow_destroy: true
 

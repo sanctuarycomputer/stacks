@@ -22,6 +22,7 @@ namespace :stacks do
     Stacks::Forecast.new.sync_all!
     Stacks::Expenses.sync_all!
     Stacks::Expenses.match_all!
+    Stacks::Team.discover!
   end
 
   desc "Seed Operations"
