@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2022_02_16_220317) do
+ActiveRecord::Schema.define(version: 2022_02_27_170816) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -264,11 +264,20 @@ ActiveRecord::Schema.define(version: 2022_02_16_220317) do
     t.index ["project_tracker_id"], name: "index_project_tracker_forecast_projects_on_project_tracker_id"
   end
 
+  create_table "project_tracker_links", force: :cascade do |t|
+    t.string "name", null: false
+    t.string "url", null: false
+    t.integer "link_type", default: 0
+    t.bigint "project_tracker_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["project_tracker_id"], name: "index_project_tracker_links_on_project_tracker_id"
+  end
+
   create_table "project_trackers", force: :cascade do |t|
     t.string "name"
     t.decimal "budget_low_end"
     t.decimal "budget_high_end"
-    t.string "notion_proposal_url"
     t.text "notes"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
@@ -400,6 +409,7 @@ ActiveRecord::Schema.define(version: 2022_02_16_220317) do
   add_foreign_key "peer_reviews", "reviews"
   add_foreign_key "pre_profit_share_purchases", "admin_users"
   add_foreign_key "project_tracker_forecast_projects", "project_trackers"
+  add_foreign_key "project_tracker_links", "project_trackers"
   add_foreign_key "qbo_purchase_line_items", "expense_groups"
   add_foreign_key "review_trees", "reviews"
   add_foreign_key "review_trees", "trees"

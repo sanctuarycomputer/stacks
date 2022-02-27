@@ -126,8 +126,8 @@ body.admin_availability {
 
 .nag {
   background-color: $color-white;
-  padding: 14px 30px;
-  font-size: 18px;
+  padding: 14px 30px !important;
+  font-size: 18px !important;
   border-radius: 999px;
   display: inline-block;
   color: $color-grey;

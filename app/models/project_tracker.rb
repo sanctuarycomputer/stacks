@@ -7,6 +7,9 @@ class ProjectTracker < ApplicationRecord
   validates_numericality_of :budget_high_end,
     greater_than_or_equal_to: :budget_low_end, if: :validate_budgets?
 
+  has_many :project_tracker_links
+  accepts_nested_attributes_for :project_tracker_links, allow_destroy: true
+
   has_many :project_tracker_forecast_projects
   has_many :forecast_projects, through: :project_tracker_forecast_projects
   accepts_nested_attributes_for :project_tracker_forecast_projects, allow_destroy: true
