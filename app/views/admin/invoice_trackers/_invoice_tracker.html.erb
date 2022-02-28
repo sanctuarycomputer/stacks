@@ -1,0 +1,79 @@
+<% qbo_invoice = invoice_tracker.qbo_invoice %>
+<% status = qbo_invoice.present? ? qbo_invoice.email_status : "Deleted" %>
+<% blueprint = (invoice_tracker.blueprint || {"lines" => {}, "generated_at" => nil}) %>
+
+<p class="pill nag <%= status %>" style="margin-right: 6px">
+  <%= status %>
+</p>
+<% if qbo_invoice.present? %>
+  <a href="https://app.qbo.intuit.com/app/invoice?txnId=<%= qbo_invoice.id %>" target="_blank" style="margin-right: 6px">
+    <p class="nag" style="margin-bottom: 0px;margin-right: 6px;">
+      QBO Invoice ↗
+    </p>
+  </a>
+  <a href="https://app.qbo.intuit.com/app/customerdetail?nameId=<%= qbo_invoice.customer_ref.value%>" target="_blank" style="margin-right: 6px">
+    <p class="nag" style="margin-bottom: 0px;margin-right: 6px;">
+      QBO Customer ↗
+    </p>
+  </a>
+<% end %>
+
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+  <thead>
+    <tr>
+      <th class="col">
+        <div class="icon-and-text">
+          Invoice Blueprint
+        </div>
+      </th>
+      <th class="col">Service</th>
+      <th class="col">Hours</th>
+      <th class="col">Rate</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% blueprint["lines"].keys.each_with_index do |line, index| %>
+      <tr class="<%= index.even? ? "even" : "odd" %>">
+        <td class="col">
+          <%= line %>
+        </td>
+        <td class="col">
+          <%= blueprint.dig("lines", line, "service") %>
+        </td>
+        <td class="col">
+          <%= blueprint.dig("lines", line, "allocation") %>
+        </td>
+        <td class="col">
+          <%= blueprint.dig("lines", line, "hourly_rate") %>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
+
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+  <thead>
+    <tr>
+      <th class="col">
+        <div class="icon-and-text">
+          Project Trackers
+        </div>
+      </th>
+      <th class="col">Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% invoice_tracker.project_trackers.each_with_index do |pt, index| %>
+      <tr class="<%= index.even? ? "even" : "odd" %>">
+        <td class="col">
+          <%= link_to pt.name, admin_project_tracker_path(pt) %>
+        </td>
+        <td class="col">
+          <p class="pill <%= pt.status %>" style="margin-bottom: 0px;margin-right: 6px;">
+            <%= pt.status.to_s.humanize %>
+          </p>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>

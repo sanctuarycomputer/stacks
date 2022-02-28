@@ -232,7 +232,7 @@
   </div>
 </div>
 
-<table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom:20px;">
   <thead>
     <tr>
       <th class="col">
@@ -266,6 +266,36 @@
         </td>
         <td class="col">
           <%= number_to_currency(fp.total_hours * fp.hourly_rate) %>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
+
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+  <thead>
+    <tr>
+      <th class="col">
+        <div class="icon-and-text">
+          <%= image_tag("qbo-logo-icon") %>
+          Invoices
+        </div>
+      </th>
+      <th class="col">Status</th>
+      <th class="col">Total (For this Project Tracker)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% @project_tracker.invoice_trackers.each_with_index do |it, index| %>
+      <tr class="<%= index.even? ? "even" : "odd" %>">
+        <td class="col">
+          <%= link_to it.display_name, admin_invoice_pass_invoice_tracker_path(it.invoice_pass, it) %>
+        </td>
+        <td class="col">
+          TODO
+        </td>
+        <td class="col">
+          TODO
         </td>
       </tr>
     <% end %>

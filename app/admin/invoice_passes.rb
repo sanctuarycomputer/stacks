@@ -1,4 +1,5 @@
 ActiveAdmin.register InvoicePass do
+  menu label: "Monthly Invoicing"
   config.filters = false
   config.sort_order = 'start_of_month_desc'
   config.paginate = false
@@ -24,8 +25,11 @@ ActiveAdmin.register InvoicePass do
     redirect_to admin_invoice_pass_path(resource), notice: "Done!"
   end
 
-  index download_links: false do
+  index download_links: false, title: "Monthly Invoicing" do
     column :start_of_month
+    column :invoices do |resource|
+      link_to "View Invoices", admin_invoice_pass_invoice_trackers_path(resource)
+    end
     actions
   end
 

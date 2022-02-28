@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2022_02_27_170816) do
+ActiveRecord::Schema.define(version: 2022_02_28_005307) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -219,6 +219,18 @@ ActiveRecord::Schema.define(version: 2022_02_27_170816) do
     t.index ["start_of_month"], name: "index_invoice_passes_on_start_of_month", unique: true
   end
 
+  create_table "invoice_trackers", force: :cascade do |t|
+    t.bigint "forecast_client_id", null: false
+    t.bigint "invoice_pass_id", null: false
+    t.string "qbo_invoice_id"
+    t.jsonb "blueprint"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["forecast_client_id", "invoice_pass_id"], name: "idx_invoice_trackers_on_forecast_client_id_and_invoice_pass_id", unique: true
+    t.index ["forecast_client_id"], name: "index_invoice_trackers_on_forecast_client_id"
+    t.index ["invoice_pass_id"], name: "index_invoice_trackers_on_invoice_pass_id"
+  end
+
   create_table "peer_reviews", force: :cascade do |t|
     t.bigint "admin_user_id", null: false
     t.bigint "review_id", null: false
@@ -405,6 +417,7 @@ ActiveRecord::Schema.define(version: 2022_02_27_170816) do
   add_foreign_key "finalizations", "reviews"
   add_foreign_key "full_time_periods", "admin_users"
   add_foreign_key "gifted_profit_shares", "admin_users"
+  add_foreign_key "invoice_trackers", "invoice_passes"
   add_foreign_key "peer_reviews", "admin_users"
   add_foreign_key "peer_reviews", "reviews"
   add_foreign_key "pre_profit_share_purchases", "admin_users"

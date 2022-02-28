@@ -17,6 +17,12 @@ class ProjectTracker < ApplicationRecord
     budget_low_end.present? || budget_high_end.present?
   end
 
+  def invoice_trackers
+    InvoiceTracker
+      .all
+      .select{|it| (it.forecast_project_ids & forecast_projects.map(&:forecast_id)).any?}
+  end
+
   def last_month_hours
     forecast_projects.reduce(0) do |acc, fp|
       acc += fp.total_hours_during_range(Date.today.last_month.beginning_of_month, Date.today.last_month.end_of_month)
