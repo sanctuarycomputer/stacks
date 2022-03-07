@@ -157,6 +157,33 @@ class InvoiceTracker < ApplicationRecord
     err
   end
 
+  def backfill_blueprint!
+    snapshot =
+      assignments.reduce({
+        generated_at: DateTime.now,
+        lines: {}
+      }) do |acc, a|
+        person = a.forecast_person
+        project = a.forecast_project
+        hours = a.allocation_during_range_in_hours(
+          invoice_pass.start_of_month,
+          invoice_pass.start_of_month.end_of_month
+        )
+        description =
+          "#{project.code} #{project.name} (#{invoice_pass.invoice_month}) #{person.first_name} #{person.last_name}".strip
+        acc[:lines][description] = acc[:lines][description] || {
+          id: nil,
+          forecast_project: project.forecast_id,
+          forecast_person: person.forecast_id,
+          quantity: 0,
+          unit_price: project.hourly_rate,
+        }
+        acc[:lines][description][:quantity] += hours
+        acc
+      end
+    update!(blueprint: snapshot)
+  end
+
   def make_invoice!
     return if configuration_errors.any?
     return if qbo_invoice.present?
@@ -240,84 +267,5 @@ class InvoiceTracker < ApplicationRecord
 
     update!(qbo_invoice_id: created_qbo_inv.id, blueprint: snapshot)
     created_qbo_inv
-  end
-
-  # TODO: Remove me and associatged code
-  def recover!(
-    qbo_invoice_candidates = Stacks::Quickbooks.fetch_invoices_by_memo(invoice_pass.invoice_month)
-  )
-    return false if qbo_invoice_id.present?
-
-    qbo_customer = forecast_client.qbo_customer
-    return :missing_qbo_customer if qbo_customer.nil?
-
-    qbo_invoice_candidate =
-      qbo_invoice_candidates.find{|i| i.customer_ref.value == qbo_customer.id}
-    # Invoice may have been deleted.
-    return :no_candidate if qbo_invoice_candidate.nil?
-
-    all_projects = ForecastProject.all
-    all_people = ForecastPerson.all
-
-    rebuilt_snapshot =
-      qbo_invoice_candidate.line_items.reduce({
-        generated_at: DateTime.now,
-        lines: {}
-      }) do |acc, qbo_li|
-        next acc if qbo_li.id.nil?
-
-        line = qbo_li.description
-        project_code, person_full_name = line.split("(#{invoice_pass.invoice_month})")
-
-        # Find Project
-        project_code = project_code.gsub('[', '').gsub(']', '').strip
-
-        # Handle case where these project names changed
-        project_code = "APOL-1 Apollo Design" if project_code == "APOL-1 Apollo"
-        project_code = "AIR-1 Air (Production)" if project_code == "AIR-1 Air Production"
-        project_code = "AIR-1 Air" if project_code == "AIR-1 Air Design"
-
-        project =
-          all_projects.find do |p|
-            "#{p.code} #{p.name}".gsub('[', '').gsub(']', '').strip == project_code.strip
-          end
-
-        # Ignore Shares Conversion from Light Phone projects
-        next acc if project_code == "Shares Conversion"
-        # Ignore Tablet Budget Cap
-        next acc if project_code == "$15,600 Budget Cap"
-        # Ignore Dims Font Purchase
-        next acc if project_code == "Project Expense - Font Purchase"
-        # Ignore these extra lines from the previous month
-        if invoice_pass.invoice_month == "December 2021"
-          next acc if project_code == "STRP-2 Charts (November 2021) Jake Hobart"
-          next acc if project_code == "STRP-2 Charts (November 2021) James Musgrave"
-        end
-
-        binding.pry if project.nil?
-        raise "No Project Found, Tracker: #{self.id}" if project.nil?
-
-        acc[:lines][line] = {
-          id: qbo_li.id,
-          forecast_project: project.forecast_id,
-          forecast_person: nil,
-          quantity: qbo_li.sales_line_item_detail.quantity.to_f,
-          unit_price: qbo_li.sales_line_item_detail.unit_price.to_f
-        }
-
-        # Attempt Find Person
-        person =
-          person_full_name && all_people.find do |p|
-            "#{p.first_name} #{p.last_name}".strip == person_full_name.strip
-          end
-        acc[:lines][line][:forecast_person] = person.forecast_id if person.present?
-
-        acc
-      end
-
-    update!(
-      qbo_invoice_id: qbo_invoice_candidate.id,
-      blueprint: rebuilt_snapshot
-    )
   end
 end

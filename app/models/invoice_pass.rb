@@ -28,14 +28,6 @@ class InvoicePass < ApplicationRecord
     end
   end
 
-  def recover_all_trackers!
-    qbo_invoice_candidates =
-      Stacks::Quickbooks.fetch_invoices_by_memo(invoice_month)
-    invoice_trackers.each do |it|
-      it.recover!(qbo_invoice_candidates)
-    end
-  end
-
   def clients_served
     assignments =
       ForecastAssignment
@@ -64,7 +56,7 @@ class InvoicePass < ApplicationRecord
     (data || {})["reminder_passes"][latest_reminder_pass_date.iso8601]
   end
 
-  ## TODO: Assess the below?
+  ## TODO: Remove the below when we move away from automator
   def latest_generator_pass_date
     (data || {})["generator_passes"].keys.map{|ds| DateTime.parse(ds)}.max
   end
