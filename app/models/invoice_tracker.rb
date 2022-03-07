@@ -1,9 +1,6 @@
 # TODO: Malformed hourly rate?
-# TODO: surface system errors
-# TODO:
-# I should be able to attach an invoice to a Project Tracker that's non-generated
-# Deprecate old Automator stuff
-# Ensure Automator flow is working with the new style
+# TODO: Surface system errors
+# TODO: I should be able to attach an invoice to a Project Tracker that's non-generated
 
 class InvoiceTracker < ApplicationRecord
   belongs_to :invoice_pass
