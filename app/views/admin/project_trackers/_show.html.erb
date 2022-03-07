@@ -56,11 +56,6 @@
           </div>
 
           <div class="multibar">
-            <div
-              class="bar running"
-              style="width:<%= (((running_spend - inbudget_overage) / limit) * 100).round(2) %>%;left:<%= ((invoiced_spend / limit) * 100).round(2) %>%">
-            </div>
-
             <% if overbudget_overage > 0 %>
               <div
                 class="bar budget_low_end"
@@ -292,10 +287,12 @@
           <%= link_to it.display_name, admin_invoice_pass_invoice_tracker_path(it.invoice_pass, it) %>
         </td>
         <td class="col">
-          TODO
+          <span class="pill <%= it.status %>">
+            <%= it.status.to_s.humanize %>
+          </span>
         </td>
         <td class="col">
-          TODO
+          <%= number_to_currency(it.qbo_line_items_relating_to_forecast_projects(@project_tracker.forecast_projects).map(&:amount).reduce(&:+)) %>
         </td>
       </tr>
     <% end %>

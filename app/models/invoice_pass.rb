@@ -5,7 +5,21 @@ class InvoicePass < ApplicationRecord
     completed_at.present?
   end
 
+  def statuses
+    if (data || {})["reminder_passes"].present? && latest_reminder_pass.any?
+      :missing_hours
+    else
+      status = invoice_trackers.map(&:status)
+      status.inject(Hash.new(0)) { |h, e| h[e] += 1 ; h }
+    end
+  end
+
+  def value
+    invoice_trackers.map(&:value).compact.reduce(&:+)
+  end
+
   def make_trackers!
+    return if statuses == :missing_hours
     clients_served.each do |c|
       InvoiceTracker.find_or_create_by!(
         forecast_client_id: c.forecast_id,
@@ -41,6 +55,16 @@ class InvoicePass < ApplicationRecord
     start_of_month.strftime("%B %Y")
   end
 
+  def latest_reminder_pass_date
+    (data || {})["reminder_passes"].keys.map{|ds| DateTime.parse(ds)}.max
+  end
+
+  def latest_reminder_pass
+    return nil if latest_reminder_pass_date.nil?
+    (data || {})["reminder_passes"][latest_reminder_pass_date.iso8601]
+  end
+
+  ## TODO: Assess the below?
   def latest_generator_pass_date
     (data || {})["generator_passes"].keys.map{|ds| DateTime.parse(ds)}.max
   end
@@ -55,14 +79,5 @@ class InvoicePass < ApplicationRecord
       latest_generator_pass["existing"] +
       latest_generator_pass["generated"]
     ).map{|i| i.dig("qbo_invoice", "id")}
-  end
-
-  def latest_reminder_pass_date
-    (data || {})["reminder_passes"].keys.map{|ds| DateTime.parse(ds)}.max
-  end
-
-  def latest_reminder_pass
-    return nil if latest_reminder_pass_date.nil?
-    (data || {})["reminder_passes"][latest_reminder_pass_date.iso8601]
   end
 end

@@ -678,19 +678,19 @@ body.logged_in .flash {
   color: white;
   font-weight: 700;
   font-size: 72%;
-  &.draft, &.waiting, &.no, &.at_budget {
+  &.draft, &.waiting, &.no, &.at_budget, &.not_sent, &.not_made, &.unpaid, &.partially_paid, &.changed {
     background-color: $color-orange;
   }
-  &.complete, &.yes, &.under_budget {
+  &.complete, &.yes, &.under_budget, &.paid, &.added {
     background-color: $color-green;
   }
-  &.over_budget, &.error {
+  &.over_budget, &.error, &.impossible, &.unpaid_overdue, &.partially_paid_overdue, &.removed {
     background-color: $color-red;
   }
-  &.ready, &.no_budget, &.hydro {
+  &.ready, &.no_budget, &.hydro, &.deleted, &.missing_hours {
     background-color: $color-purple;
   }
-  &.finalized, &.sanctu {
+  &.finalized, &.sanctu, &.unchanged {
     background-color: $color-blue;
   }
   &.archived, &.xxix {

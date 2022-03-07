@@ -1,79 +1,114 @@
 <% qbo_invoice = invoice_tracker.qbo_invoice %>
-<% status = qbo_invoice.present? ? qbo_invoice.email_status : "Deleted" %>
-<% blueprint = (invoice_tracker.blueprint || {"lines" => {}, "generated_at" => nil}) %>
+<% status = invoice_tracker.status %>
 
 <p class="pill nag <%= status %>" style="margin-right: 6px">
-  <%= status %>
+  <%= status.to_s.humanize %>
 </p>
 <% if qbo_invoice.present? %>
-  <a href="https://app.qbo.intuit.com/app/invoice?txnId=<%= qbo_invoice.id %>" target="_blank" style="margin-right: 6px">
+  <a href="https://app.qbo.intuit.com/app/invoice?txnId=<%= qbo_invoice.id %>" target="_blank">
     <p class="nag" style="margin-bottom: 0px;margin-right: 6px;">
       QBO Invoice ↗
     </p>
   </a>
-  <a href="https://app.qbo.intuit.com/app/customerdetail?nameId=<%= qbo_invoice.customer_ref.value%>" target="_blank" style="margin-right: 6px">
+  <a href="https://app.qbo.intuit.com/app/customerdetail?nameId=<%= qbo_invoice.customer_ref.value%>" target="_blank">
     <p class="nag" style="margin-bottom: 0px;margin-right: 6px;">
       QBO Customer ↗
     </p>
   </a>
 <% end %>
 
-<table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom:20px;">
   <thead>
     <tr>
-      <th class="col">
-        <div class="icon-and-text">
-          Invoice Blueprint
-        </div>
-      </th>
-      <th class="col">Service</th>
+      <th class="col"></th>
+      <th class="col">Item</th>
       <th class="col">Hours</th>
       <th class="col">Rate</th>
     </tr>
   </thead>
   <tbody>
-    <% blueprint["lines"].keys.each_with_index do |line, index| %>
+    <% blueprint_diff = invoice_tracker.blueprint_diff %>
+    <% blueprint_diff["lines"].keys.each_with_index do |line, index| %>
+      <% diff_state = blueprint_diff.dig("lines", line, "diff_state") %>
+
       <tr class="<%= index.even? ? "even" : "odd" %>">
         <td class="col">
-          <%= line %>
+          <span class="pill <%= diff_state %>">
+            <%= diff_state.humanize %>
+          </span>
         </td>
         <td class="col">
-          <%= blueprint.dig("lines", line, "service") %>
+          <% if diff_state == "removed" %>
+            <del><%= line %></del>
+          <% else %>
+            <%= line %>
+          <% end %>
         </td>
         <td class="col">
-          <%= blueprint.dig("lines", line, "allocation") %>
+          <% quantity = blueprint_diff.dig("lines", line, "quantity") %>
+          <% if quantity.kind_of?(Array) %>
+            <del><%= quantity[0] %></del>
+            <%= quantity[1] %>
+          <% else %>
+            <% if diff_state == "removed" %>
+              <del><%= quantity %></del>
+            <% else %>
+              <%= quantity %>
+            <% end %>
+          <% end %>
         </td>
         <td class="col">
-          <%= blueprint.dig("lines", line, "hourly_rate") %>
+          <% unit_price = blueprint_diff.dig("lines", line, "unit_price") %>
+          <% if unit_price.kind_of?(Array) %>
+            <del><%= number_to_currency(unit_price[0]) %></del>
+            <%= number_to_currency(unit_price[1]) %>
+          <% else %>
+            <% if diff_state == "removed" %>
+              <del><%= number_to_currency(unit_price) %></del>
+            <% else %>
+              <%= number_to_currency(unit_price) %>
+            <% end %>
+          <% end %>
         </td>
       </tr>
     <% end %>
   </tbody>
 </table>
 
-<table border="0" cellspacing="0" cellpadding="0" class="index_table index">
-  <thead>
-    <tr>
-      <th class="col">
-        <div class="icon-and-text">
-          Project Trackers
-        </div>
-      </th>
-      <th class="col">Status</th>
-    </tr>
-  </thead>
-  <tbody>
-    <% invoice_tracker.project_trackers.each_with_index do |pt, index| %>
-      <tr class="<%= index.even? ? "even" : "odd" %>">
-        <td class="col">
-          <%= link_to pt.name, admin_project_tracker_path(pt) %>
-        </td>
-        <td class="col">
-          <p class="pill <%= pt.status %>" style="margin-bottom: 0px;margin-right: 6px;">
-            <%= pt.status.to_s.humanize %>
-          </p>
-        </td>
+<% if invoice_tracker.project_trackers.any? %>
+  <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+    <thead>
+      <tr>
+        <th class="col">
+          <div class="icon-and-text">
+            Project Trackers
+          </div>
+        </th>
+        <th class="col">Status</th>
       </tr>
-    <% end %>
-  </tbody>
-</table>
+    </thead>
+    <tbody>
+      <% invoice_tracker.project_trackers.each_with_index do |pt, index| %>
+        <tr class="<%= index.even? ? "even" : "odd" %>">
+          <td class="col">
+            <%= link_to pt.name, admin_project_tracker_path(pt) %>
+          </td>
+          <td class="col">
+            <span class="pill <%= pt.status %>">
+              <%= pt.status.to_s.humanize %>
+            </span>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+<% else %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <p>🤔 <strong>Hmmm...</strong> This project doesn't have a Project Tracker. Are we sure the ATC managing the client's budget properly?</p>
+      </div>
+    </div>
+  </div>
+<% end %>
+
