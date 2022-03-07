@@ -186,6 +186,8 @@ class Stacks::Automator
 
     # TODO: move me to Stacks::Quickbooks
     def fetch_invoices_by_ids(ids = [])
+      return [] unless ids.any?
+
       access_token = make_and_refresh_qbo_access_token
 
       invoice_service = Quickbooks::Service::Invoice.new
