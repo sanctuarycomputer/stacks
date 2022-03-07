@@ -3,6 +3,18 @@ class ForecastAssignment < ApplicationRecord
   belongs_to :forecast_person, class_name: "ForecastPerson", foreign_key: "person_id"
   belongs_to :forecast_project, class_name: "ForecastProject", foreign_key: "project_id"
 
+  attr_accessor :_qbo_service_item
+
+  def qbo_service_item
+    @_qbo_service_item ||= (
+      service_name = forecast_person.studio.try(:accounting_prefix)
+      qbo_items, default_service_item = Stacks::Quickbooks.fetch_all_items
+      qbo_items.find do |s|
+        s.fully_qualified_name == service_name
+      end || default_service_item
+    )
+  end
+
   def value_during_range_in_usd(start_of_range, end_of_range)
     hours =
       (allocation_during_range_in_seconds(

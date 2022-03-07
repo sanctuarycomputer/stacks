@@ -17,6 +17,24 @@ class ProjectTracker < ApplicationRecord
     budget_low_end.present? || budget_high_end.present?
   end
 
+  def invoice_trackers
+    its =
+      InvoiceTracker
+        .all
+        .select{|it| (it.forecast_project_ids & forecast_projects.map(&:forecast_id)).any?}
+    qbo_invoice_ids =
+      its.map(&:qbo_invoice_id).compact
+    qbo_invoices =
+      Stacks::Automator.fetch_invoices_by_ids(qbo_invoice_ids).reduce({}) do |acc, qbo_inv|
+        acc[qbo_inv.id] = qbo_inv
+        acc
+      end
+    its.each do |it|
+      it._qbo_invoice = qbo_invoices[it.qbo_invoice_id] if it.qbo_invoice_id.present?
+    end
+    its
+  end
+
   def last_month_hours
     forecast_projects.reduce(0) do |acc, fp|
       acc += fp.total_hours_during_range(Date.today.last_month.beginning_of_month, Date.today.last_month.end_of_month)

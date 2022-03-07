@@ -30,6 +30,7 @@ ActiveAdmin.register ProjectTracker do
     column :status do |resource|
       span(resource.status.to_s.humanize.capitalize, class: "pill #{resource.status}")
     end
+    column :forecast_projects
     actions do |resource|
       proposal_link = resource.project_tracker_links.find do |ptl|
         ptl.link_type == "proposal"

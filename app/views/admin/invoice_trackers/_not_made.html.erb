@@ -1,0 +1,11 @@
+<% configuration_errors = invoice_tracker.configuration_errors %>
+<div class="empty_state">
+  <% if configuration_errors.any? %>
+    <p>This invoice has configuration errors:</p>
+    <% configuration_errors.each do |ce| %>
+      <%= ce %>
+    <% end %>
+  <% else %>
+    <p>This invoice has not been generated or recovered. Click "Edit Invoice Tracker" to continue.</p>
+  <% end %>
+</div>
