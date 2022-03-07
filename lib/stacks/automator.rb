@@ -1,6 +1,5 @@
 class Stacks::Automator
   class << self
-    FORTY_HOURS_IN_SECONDS = 144000
     EIGHT_HOURS_IN_SECONDS = 28800
 
     STUDIO_TO_SERVICE_MAPPING = {
@@ -11,32 +10,6 @@ class Stacks::Automator
     }
 
     STUDIOS = STUDIO_TO_SERVICE_MAPPING.keys
-
-    DEFAULT_HOURLY_RATE = 175 # Override on the project level Forecast
-    DEFAULT_PAYMENT_TERM = 15 # Net 15, override in QBO
-
-    QBO_NOTES_FORECAST_MAPPING_BEARER = "automator:forecast_mapping:"
-    QBO_NOTES_PAYMENT_TERM_BEARER = "automator:payment_term:"
-    CUSTOMER_MEMO = <<~HEREDOC
-      EIN: 47-2941554
-      W9: https://w9.sanctuary.computer
-
-      WIRE:
-      Sanctuary Computer Inc
-      EIN: 47-2941554
-      Rou #: 021000021
-      Acc #: 685028396
-
-      Chase Bank:
-      405 Lexington Ave
-      New York, NY 10174
-
-      QUICKPAY:
-      admin@sanctuarycomputer.com
-
-      BILL.COM:
-      admin@sanctuarycomputer.com
-    HEREDOC
 
     def forecast
       @_forecast ||= Stacks::Forecast.new
@@ -59,30 +32,31 @@ class Stacks::Automator
     end
 
     def attempt_invoicing_for_invoice_pass(invoice_pass, send_twist_reminders = true)
-      # Bug people, and record the folks who needed reminding,
-      # so we can change the reminder message each time.
       needed_reminding = remind_people_to_record_hours_prior_to_invoicing(
         invoice_pass.start_of_month,
         send_twist_reminders
       )
-
-      # Record people still missing
       new_reminder_pass = {}
-      new_reminder_pass[DateTime.now.iso8601] =
-        needed_reminding.reduce({}) { |acc, p| acc[p[:forecast_data]["email"]] = { missing_allocation: p[:missing_allocation] }; acc }
-      invoice_pass.update(data: (invoice_pass.data || {}).merge({
-                            reminder_passes: ((invoice_pass.data || {})["reminder_passes"] || {}).merge(new_reminder_pass),
-                          }))
+      new_reminder_pass[DateTime.now.iso8601] = needed_reminding.reduce({}) do |acc, p|
+        acc[p[:forecast_data]["email"]] = {
+          missing_allocation: p[:missing_allocation]
+        }
+        acc
+      end
+      invoice_pass.update(
+        data: (invoice_pass.data || {}).merge({
+          reminder_passes:
+            ((invoice_pass.data || {})["reminder_passes"] || {}).merge(new_reminder_pass),
+        })
+      )
 
       return if needed_reminding.any?
 
-      # Everyone's entered their hours, so let's generate invoices!
-      run_data = generate_invoices(invoice_pass.start_of_month)
-      new_pass = {}
-      new_pass[DateTime.now.iso8601] = run_data
-      invoice_pass.update(data: (invoice_pass.data || {}).merge({
-                            generator_passes: ((invoice_pass.data || {})["generator_passes"] || {}).merge(new_pass),
-                          }), completed_at: DateTime.now)
+      invoice_pass.make_trackers!
+      invoice_pass.invoice_trackers.each do |it|
+        it.make_invoice!
+      end
+      invoice_pass.update!(completed_at: DateTime.now)
 
       message = <<~HEREDOC
         We just completed an invoice pass for work done during #{invoice_pass.start_of_month.strftime("%B %Y")}.
@@ -97,18 +71,19 @@ class Stacks::Automator
     # given month.
     def attempt_invoicing_for_previous_month
       # Check if it's the first wednesday of the month (or after)
-      first_tuesday_of_month = Date.today.beginning_of_month
-      first_tuesday_of_month += 1.days until first_tuesday_of_month.wday == 3
-      return unless (first_tuesday_of_month <= Date.today)
+      first_wednesday_of_month = Date.today.beginning_of_month
+      first_wednesday_of_month += 1.days until first_wednesday_of_month.wday == 3
+      return unless (first_wednesday_of_month <= Date.today)
 
       # Ensure we have an Invoice Pass record to track this month
       invoice_pass = InvoicePass.find_by(start_of_month: (Date.today - 1.month).beginning_of_month)
       unless invoice_pass.present?
-        invoice_pass = InvoicePass.create!(start_of_month: (Date.today - 1.month).beginning_of_month, data: {})
+        invoice_pass = InvoicePass.create!(
+          start_of_month: (Date.today - 1.month).beginning_of_month,
+          data: {}
+        )
       end
-      invoice_pass.make_trackers!
       return if invoice_pass.complete?
-
       attempt_invoicing_for_invoice_pass(invoice_pass)
     end
 
@@ -198,250 +173,6 @@ class Stacks::Automator
         "SELECT * FROM Invoice WHERE id in ('#{ids.join("','")}')",
         per_page: 1000
       )
-    end
-
-    def generate_invoices(start_of_month)
-      run_data = {
-        existing: [],
-        generated: [],
-        error_missing_qbo_customer: [],
-        error_payment_term_malformed: [],
-        error_hourly_rate_malformed: [],
-      }
-
-      invoice_month = start_of_month.strftime("%B %Y")
-      people = forecast.people()["people"]
-      projects = forecast.projects()["projects"]
-
-      last_month_assignments = forecast.assignments(
-        start_of_month.beginning_of_month,
-        start_of_month.end_of_month,
-      )["assignments"]
-
-      invoices_to_send = (forecast.clients()["clients"].reject { |c| STUDIOS.include?(:"#{c["name"]}") }.map do |client|
-        client_projects = projects.filter { |p| p["client_id"] == client["id"] }
-        client_project_ids = client_projects.map { |p| p["id"] }
-        client_assignments = last_month_assignments.filter { |a| client_project_ids.include?(a["project_id"]) }
-        client_people = client_assignments.map { |a| a["person_id"] }.uniq.map { |person_id| people.find { |p| p["id"] == person_id } }
-
-        invoice_lines = client_people.reduce([]) do |acc, person|
-          person_invoice_lines = []
-          person_assignments = client_assignments.filter { |a| a["person_id"] == person["id"] }
-          acc << person_assignments.reduce([]) do |person_invoice_lines_acc, assignment|
-            project = projects.find { |p| p["id"] == assignment["project_id"] }
-            invoice_description = "#{project["code"]} #{project["name"]} (#{invoice_month}) #{person["first_name"]} #{person["last_name"]}"
-            assignment_start_date = Date.parse(assignment["start_date"])
-            assignment_end_date = Date.parse(assignment["end_date"])
-
-            start_date = if assignment_start_date < start_of_month.beginning_of_month
-                start_of_month.beginning_of_month
-              else
-                assignment_start_date
-              end
-
-            end_date = if assignment_end_date > start_of_month.end_of_month
-                start_of_month.end_of_month
-              else
-                assignment_end_date
-              end
-
-            days = (end_date - start_date).to_i + 1
-            total_allocation = (assignment["allocation"] * days)
-
-            existing = person_invoice_lines_acc.find { |line| line[:description] == invoice_description }
-            if existing.present?
-              existing[:allocation] = existing[:allocation] += total_allocation
-            else
-              services = person["roles"].map { |r| STUDIO_TO_SERVICE_MAPPING[:"#{r}"] }.compact
-              service = if services.count == 0
-                  "Services"
-                elsif services.count > 1
-                  "Services"
-                else
-                  services.first
-                end
-
-              hourly_rate_tags = project["tags"].filter { |t| t.ends_with?("p/h") }
-              hourly_rate = if hourly_rate_tags.count == 0
-                  DEFAULT_HOURLY_RATE
-                elsif hourly_rate_tags.count > 1
-                  :malformed
-                else
-                  hourly_rate_tags.first.to_f
-                end
-
-              person_invoice_lines_acc << {
-                description: invoice_description,
-                allocation: total_allocation,
-                service: service,
-                hourly_rate: hourly_rate,
-              }
-            end
-            person_invoice_lines_acc
-          end
-        end
-
-        {
-          client: client,
-          invoice_lines: invoice_lines.flatten.sort { |a, b| a[:description] <=> b[:description] },
-        }
-      end).filter { |i| i[:invoice_lines].any? }
-
-      # Do Quickbooks Things
-      access_token = make_and_refresh_qbo_access_token
-
-      # Get all Customers
-      service = Quickbooks::Service::Customer.new
-      service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
-      service.access_token = access_token
-      qbo_customers = service.all
-
-      # Get all Items (ie, "Development Services")
-      items_service = Quickbooks::Service::Item.new
-      items_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
-      items_service.access_token = access_token
-      qbo_items = items_service.all
-
-      # Get all terms (ie, "Net 15")
-      terms_service = Quickbooks::Service::Term.new
-      terms_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
-      terms_service.access_token = access_token
-      qbo_terms = terms_service.all
-
-      # Get all Invoices
-      invoice_service = Quickbooks::Service::Invoice.new
-      invoice_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
-      invoice_service.access_token = access_token
-      qbo_invoices = invoice_service.all
-
-      invoices_to_send.each do |invoice|
-        # Find our QBO Customer
-        invoice[:qbo_customer] = qbo_customers.find do |c|
-          mapping = (c.notes || "").split(" ").find { |word| word.starts_with?(QBO_NOTES_FORECAST_MAPPING_BEARER) }
-          if mapping
-            splat = mapping.split(QBO_NOTES_FORECAST_MAPPING_BEARER)[1]
-            splat = splat.gsub!(/_/, " ") if splat.include?("_")
-            splat == invoice[:client]["name"]
-          else
-            c.company_name == invoice[:client]["name"]
-          end
-        end
-
-        # Warn if we're missing QBO Customer
-        if invoice[:qbo_customer].nil?
-          run_data[:error_missing_qbo_customer] << {
-            forecast_client: {
-              name: invoice[:client]["name"],
-              id: invoice[:client]["id"],
-            },
-          }
-          next
-        end
-
-        # Warn if there's more than one hourly rate per project
-        if invoice[:invoice_lines].any? { |l| l[:hourly_rate] == :malformed }
-          run_data[:error_hourly_rate_malformed] << {
-            forecast_client: {
-              name: invoice[:client]["name"],
-              id: invoice[:client]["id"],
-            },
-            qbo_customer: {
-              id: invoice[:qbo_customer].id,
-              company_name: invoice[:qbo_customer].company_name,
-            },
-          }
-          next
-        end
-
-        # Find our Term
-        term_mapping = (invoice[:qbo_customer].notes || "").split(" ").find { |word| word.starts_with?(QBO_NOTES_PAYMENT_TERM_BEARER) }
-        term = if term_mapping.present?
-            term_days = term_mapping.split(QBO_NOTES_PAYMENT_TERM_BEARER)[1].to_i
-            qbo_terms.find { |t| t.due_days == term_days }
-          else
-            qbo_terms.find { |t| t.due_days == DEFAULT_PAYMENT_TERM }
-          end
-
-        # Warn if the term is not 15, 30, 45, 90, etc
-        if term.nil?
-          run_data[:error_payment_term_malformed] << {
-            forecast_client: {
-              name: invoice[:client]["name"],
-              id: invoice[:client]["id"],
-            },
-            qbo_customer: {
-              id: invoice[:qbo_customer].id,
-              company_name: invoice[:qbo_customer].company_name,
-            },
-          }
-          next
-        end
-
-        # Test there's no existing invoice for this month
-        qbo_invoices_for_customer = qbo_invoices.select { |i| i.customer_ref.value == invoice[:qbo_customer].id }
-        existing = qbo_invoices_for_customer.find { |i| i.private_note == invoice_month }
-        if existing.present?
-          run_data[:existing] << {
-            forecast_client: {
-              name: invoice[:client]["name"],
-              id: invoice[:client]["id"],
-            },
-            qbo_customer: {
-              id: invoice[:qbo_customer].id,
-              company_name: invoice[:qbo_customer].company_name,
-            },
-            qbo_invoice: {
-              id: existing.id,
-            },
-          }
-          next
-        end
-
-        # OK! We're good to go!
-        qbo_invoice = Quickbooks::Model::Invoice.new
-        qbo_invoice.customer_id = invoice[:qbo_customer].id
-        qbo_invoice.private_note = invoice_month
-
-        qbo_invoice.bill_email = invoice[:qbo_customer].primary_email_address
-        qbo_invoice.sales_term_ref = Quickbooks::Model::BaseReference.new(term.name, value: term.id)
-        qbo_invoice.allow_online_ach_payment = true
-        qbo_invoice.customer_memo = CUSTOMER_MEMO
-
-        invoice[:invoice_lines].each do |line|
-          item = qbo_items.find { |s| s.fully_qualified_name == line[:service] } ||
-                 qbo_items.find { |s| s.fully_qualified_name == "Services" }
-
-          hours = (line[:allocation].to_f / 60 / 60)
-          hourly_rate = line[:hourly_rate]
-
-          line_item = Quickbooks::Model::InvoiceLineItem.new
-          line_item.amount = hours * hourly_rate
-          line_item.description = line[:description]
-          line_item.sales_item! do |detail|
-            detail.unit_price = hourly_rate
-            detail.quantity = hours
-            detail.item_id = item.id
-          end
-          qbo_invoice.line_items << line_item
-        end
-        created_invoice = invoice_service.create(qbo_invoice)
-
-        run_data[:generated] << {
-          forecast_client: {
-            name: invoice[:client]["name"],
-            id: invoice[:client]["id"],
-          },
-          qbo_customer: {
-            id: invoice[:qbo_customer].id,
-            company_name: invoice[:qbo_customer].company_name,
-          },
-          qbo_invoice: {
-            id: created_invoice.id,
-          },
-        }
-      end
-
-      run_data
     end
 
     def discover_people_missing_hours_for_month(start_of_month)

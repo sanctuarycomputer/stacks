@@ -20,8 +20,11 @@ class ProjectTracker < ApplicationRecord
   def invoice_trackers
     its =
       InvoiceTracker
+        .includes(:invoice_pass)
         .all
         .select{|it| (it.forecast_project_ids & forecast_projects.map(&:forecast_id)).any?}
+        .sort{|a, b| a.invoice_pass.start_of_month <=> b.invoice_pass.start_of_month}
+        .reverse
     qbo_invoice_ids =
       its.map(&:qbo_invoice_id).compact
     qbo_invoices =

@@ -1,5 +1,5 @@
 ActiveAdmin.register InvoicePass do
-  menu label: "Monthly Invoicing"
+  menu label: "Invoicing"
   config.filters = false
   config.sort_order = 'start_of_month_desc'
   config.paginate = false
