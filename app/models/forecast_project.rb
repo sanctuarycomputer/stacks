@@ -15,10 +15,18 @@ class ForecastProject < ApplicationRecord
     "[#{data['code']}] #{data['name']}"
   end
 
+  def edit_link
+    "https://forecastapp.com/864444/projects/#{forecast_id}/edit"
+  end
+
   def link
     date = Date.today.strftime('%Y-%m-%d')
     encoded = ERB::Util.url_encode("#{data['code']} #{data['name']}")
     "https://forecastapp.com/#{Stacks::Utils.config[:forecast][:account_id]}/schedule/projects?filter=#{encoded}&startDate=#{date}"
+  end
+
+  def has_multiple_hourly_rates?
+    tags.filter { |t| t.ends_with?("p/h") }.length > 1
   end
 
   def hourly_rate

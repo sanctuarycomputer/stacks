@@ -1,5 +1,5 @@
-ActiveAdmin.register_page "Profit Dashboard" do
-  menu label: "g3d Profitability", priority: 1
+ActiveAdmin.register_page "Dashboard" do
+  menu label: "Dashboard", priority: 1
 
   content title: proc { I18n.t("active_admin.dashboard") } do
     COLORS = Stacks::Utils::COLORS
@@ -107,7 +107,7 @@ ActiveAdmin.register_page "Profit Dashboard" do
       else
       end
 
-      render(partial: "profitability_chart", locals: {
+      render(partial: "dashboard", locals: {
         data: data,
         g3d_over_time_data: g3d_over_time_data,
         profitability_time_span: profitability_time_span,

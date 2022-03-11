@@ -5,6 +5,10 @@ class ForecastClient < ApplicationRecord
   attr_accessor :_qbo_customer
   attr_accessor :_qbo_term
 
+  def edit_link
+    "https://forecastapp.com/864444/clients/#{forecast_id}/edit"
+  end
+
   def qbo_term
     @_qbo_term ||= (
       bearer =
@@ -28,10 +32,9 @@ class ForecastClient < ApplicationRecord
   end
 
   # TODO: Sync qbo_customer and join?
-  def qbo_customer
+  def qbo_customer(qbo_customers = nil)
     @_qbo_customer ||= (
-      qbo_customers =
-        Stacks::Quickbooks.fetch_all_customers
+      qbo_customers = qbo_customers || Stacks::Quickbooks.fetch_all_customers
       bearer =
         Stacks::System.singleton_class::QBO_NOTES_FORECAST_MAPPING_BEARER
       qbo_customers.find do |c|

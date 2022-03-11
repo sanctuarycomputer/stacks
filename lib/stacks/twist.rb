@@ -30,24 +30,28 @@ class Stacks::Twist
     })
   end
 
-  def add_thread(channel_id, thread_title, thread_content)
+  def add_thread(channel_id, thread_title, thread_content, recipients = nil)
+    body = {
+      channel_id: channel_id,
+      title: thread_title,
+      content: thread_content,
+    }
+    body[:recipients] = recipients if recipients.present?
     self.class.post("/threads/add", {
       headers: @headers,
-      body: {
-        channel_id: channel_id,
-        title: thread_title,
-        content: thread_content,
-      }
+      body: body
     })
   end
 
-  def add_comment_to_thread(thread_id, thread_content)
+  def add_comment_to_thread(thread_id, thread_content, recipients = nil)
+    body = {
+      thread_id: thread_id,
+      content: thread_content,
+    }
+    body[:recipients] = recipients if recipients.present?
     self.class.post("/comments/add", {
       headers: @headers,
-      body: {
-        thread_id: thread_id,
-        content: thread_content
-      }
+      body: body
     })
   end
 

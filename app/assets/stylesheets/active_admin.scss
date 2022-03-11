@@ -647,6 +647,45 @@ table.index_table td {
 #header a, #header a:link {
   color: $color-black;
 }
+#header ul.tabs > li ul {
+  box-shadow: none;
+  width: auto;
+  min-width: unset;
+  max-width: unset;
+  padding: 0px 0px 0px 0px;
+  border-top-right-radius: 16px;
+  border-bottom-right-radius: 16px;
+  border-bottom-left-radius: 16px;
+  margin-top: unset;
+  background: $color-grey;
+}
+#header ul.tabs > li ul li a {
+  color: $color-white;
+  padding: 4px 10px 4px 10px;
+  border-radius: 16px;
+}
+#header ul.tabs > li ul li a:hover {
+  background-color: $color-black;
+  border-radius: 16px;
+}
+#header ul.tabs > li ul li.current a {
+  background-color: $color-blue;
+  border-radius: 16px;
+}
+#header ul.tabs > li.has_nested > a {
+  padding-right: 10px !important;
+}
+#header ul.tabs > li.has_nested.current > a {
+  background: $color-blue;
+}
+#header ul.tabs > li.has_nested:hover > a {
+  border-radius: 0;
+  border-top-right-radius: 16px;
+  border-top-left-radius: 16px;
+  background: $color-black;
+  border-bottom: none;
+  z-index: 1020;
+}
 #header ul.tabs > li.current > a {
   background-color: $color-blue;
   border-radius: 999px;

@@ -29,18 +29,7 @@ class InvoicePass < ApplicationRecord
   end
 
   def clients_served
-    assignments =
-      ForecastAssignment
-        .includes(forecast_project: :forecast_client)
-      .where('end_date >= ? AND start_date <= ?', start_of_month, start_of_month.end_of_month)
-
-    internal_client_names =
-      [*Studio.all.map(&:name), 'garden3d']
-
-    clients =
-      assignments
-        .map{|a| a.forecast_project.forecast_client}.compact.uniq
-        .reject{|c| internal_client_names.include?(c.name)}
+    Stacks::System.clients_served_since(start_of_month, start_of_month.end_of_month)
   end
 
   def invoice_month

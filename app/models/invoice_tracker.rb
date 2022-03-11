@@ -100,13 +100,18 @@ class InvoiceTracker < ApplicationRecord
     end
   end
 
-  def qbo_invoice
+  def qbo_invoice(preloaded_qbo_invoices = [])
     if qbo_invoice_id.nil?
       @_qbo_invoice = nil
       return nil
     end
     begin
-      @_qbo_invoice ||= Stacks::Quickbooks.fetch_invoice_by_id(qbo_invoice_id)
+      @_qbo_invoice ||= (
+        preloaded = preloaded_qbo_invoices.find do |qbo_invoice|
+          qbo_invoice.id == qbo_invoice_id
+        end
+        preloaded || Stacks::Quickbooks.fetch_invoice_by_id(qbo_invoice_id)
+      )
     rescue Quickbooks::IntuitRequestException => e
       @_qbo_invoice = nil
       if e.code == "610"

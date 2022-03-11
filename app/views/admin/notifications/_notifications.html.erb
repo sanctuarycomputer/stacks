@@ -1,0 +1,60 @@
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom: 20px">
+  <tbody>
+    <% if notifications.any? %>
+      <% notifications.each_with_index do |n, idx| %>
+        <tr class="<%= idx.even? ? "even" : "odd" %>">
+          <td class="col">
+            <% case (n[:priority] || 0)
+              when 0 %>
+              🔴
+            <% when 1 %>
+              🟠
+            <% when 2 %>
+              🟡
+            <% else %>
+              🟣
+            <% end %>
+          </td>
+          <td class="col">
+            <% case n[:type]
+              when :assignment %>
+
+              <% case n[:error]
+                when :over_assigned %>
+                <strong><%= n[:subject] %></strong> is currently overassigned.
+              <% else %>
+                An assignment for <strong><%= n[:subject] || "(No User)" %></strong> is missing <%= n[:error] %>.
+              <% end %>
+
+            <% when :finalization %>
+              A Skill Tree Review is ready to review and archive.
+            <% when :forecast_project %>
+              A Forecast Project has multiple hourly rates (the first will be used).
+            <% when :forecast_client %>
+              A Forecast Client called <strong><%= n[:subject].name %></strong> does not have a Quickbooks Customer record.
+            <% when :forecast_person %>
+              <strong><%= n[:subject].email %></strong> does not have an assigned studio in Forecast.
+            <% when :invoice_tracker %>
+              The following invoice statuses need action:
+              <% n[:subject].each do |status, count| %>
+                <span class="pill <%= status %>" style="margin-right: 6px;">
+                  <%= count %>x <%= status.to_s.humanize %>
+                </span>
+              <% end %>
+            <% else %>
+                hi
+            <% end %>
+          </td>
+
+          <td class="col text-right">
+            <% if n[:link].present? %>
+              <a href="<%= n[:link] %>" target="_blank">Fix ↗</a>
+            <% end %>
+          </td>
+        </tr>
+      <% end %>
+    <% else %>
+      <tr><td class="col"><span class="fully-resourced">No Notifications.</span></td></tr>
+    <% end %>
+  </tbody>
+</table>
