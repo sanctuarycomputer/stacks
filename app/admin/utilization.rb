@@ -148,6 +148,11 @@ ActiveAdmin.register_page "Utilization" do
     end
 
     hourly_data[:datasets].concat([{
+      label: 'Utilization Rate (%)',
+      borderColor: COLORS[4],
+      data: aggregated_data.values.map{|v| (v["billable"] / v["sellable"]) * 100},
+      yAxisID: 'y2',
+    },{
       label: 'Average Hourly Rate Billed',
       borderColor: COLORS[1],
       data: aggregated_data.values.map{|v| v["average_hourly_rate"]},
