@@ -15,6 +15,7 @@
 @import "colors";
 @import "generic_dashboard_modules";
 @import "budget_progress";
+@import "markdown";
 
 #header div.subnav {
   padding: 4px 20px 4px 84px;
@@ -717,7 +718,7 @@ body.logged_in .flash {
   color: white;
   font-weight: 700;
   font-size: 72%;
-  &.draft, &.waiting, &.no, &.at_budget, &.not_sent, &.not_made, &.unpaid, &.partially_paid, &.changed {
+  &.draft, &.waiting, &.no, &.at_budget, &.not_sent, &.not_made, &.unpaid, &.partially_paid, &.changed, &.project_capsule_pending {
     background-color: $color-orange;
   }
   &.complete, &.yes, &.under_budget, &.paid, &.added {
@@ -726,10 +727,10 @@ body.logged_in .flash {
   &.over_budget, &.error, &.impossible, &.unpaid_overdue, &.partially_paid_overdue, &.removed {
     background-color: $color-red;
   }
-  &.ready, &.no_budget, &.hydro, &.deleted, &.missing_hours {
+  &.ready, &.no_budget, &.hydro, &.deleted, &.missing_hours, &.complete {
     background-color: $color-purple;
   }
-  &.finalized, &.sanctu, &.unchanged {
+  &.finalized, &.sanctu, &.unchanged, &.in_progress {
     background-color: $color-blue;
   }
   &.archived, &.xxix {

@@ -7,7 +7,8 @@ class Stacks::Notifications
     end
 
     def notifications
-      # Forecast Client with malformed term?
+      # TODO Forecast Client with malformed term?
+      # TODO Users without Full Time Periods or salary
       notifications = []
 
       finalizations = Finalization.all

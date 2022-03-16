@@ -27,8 +27,17 @@ ActiveAdmin.register ProjectTracker do
 
   index download_links: false do
     column :name
-    column :status do |resource|
+    column :budget_status do |resource|
       span(resource.status.to_s.humanize.capitalize, class: "pill #{resource.status}")
+    end
+    column :work_status do |resource|
+      span(resource.work_status.to_s.humanize.capitalize, class: "pill #{resource.work_status}")
+    end
+    if current_admin_user.is_admin?
+      column :profit_margin do |resource|
+        estimated_cost = resource.estimated_cost
+        "#{(((resource.revenue - estimated_cost) / estimated_cost) * 100).round(2)}%"
+      end
     end
     column :forecast_projects
     actions do |resource|
@@ -37,6 +46,26 @@ ActiveAdmin.register ProjectTracker do
       end
       link_to "Proposal ↗", proposal_link.url, target: "_blank" if proposal_link.present?
     end
+  end
+
+  action_item :mark_as_complete, only: :show do
+    if resource.work_completed_at.present?
+      link_to "Unmark as Work Complete", uncomplete_work_admin_project_tracker_path(resource), method: :post
+    else
+      link_to "Mark as Work Complete", complete_work_admin_project_tracker_path(resource), method: :post
+    end
+  end
+
+  member_action :complete_work, method: :post do
+    resource.update!(work_completed_at: DateTime.now)
+    resource.ensure_project_capsule_exists!
+    redirect_to admin_project_tracker_path(resource), notice: "Project marked as complete."
+  end
+
+  member_action :uncomplete_work, method: :post do
+    resource.update!(work_completed_at: nil)
+    resource.ensure_project_capsule_exists!
+    redirect_to admin_project_tracker_path(resource), notice: "Project unmarked as complete."
   end
 
   show do

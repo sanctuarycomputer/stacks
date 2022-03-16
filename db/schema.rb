@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2022_02_28_005307) do
+ActiveRecord::Schema.define(version: 2022_03_16_135944) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -267,6 +267,18 @@ ActiveRecord::Schema.define(version: 2022_02_28_005307) do
     t.datetime "updated_at", precision: 6, null: false
   end
 
+  create_table "project_capsules", force: :cascade do |t|
+    t.bigint "project_tracker_id", null: false
+    t.text "postpartum_notes"
+    t.integer "client_feedback_survey_status"
+    t.string "client_feedback_survey_url"
+    t.integer "internal_marketing_status"
+    t.integer "capsule_status"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["project_tracker_id"], name: "index_project_capsules_on_project_tracker_id"
+  end
+
   create_table "project_tracker_forecast_projects", force: :cascade do |t|
     t.bigint "project_tracker_id", null: false
     t.bigint "forecast_project_id", null: false
@@ -293,6 +305,7 @@ ActiveRecord::Schema.define(version: 2022_02_28_005307) do
     t.text "notes"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.datetime "work_completed_at"
   end
 
   create_table "qbo_purchase_line_items", id: :string, force: :cascade do |t|
@@ -421,6 +434,7 @@ ActiveRecord::Schema.define(version: 2022_02_28_005307) do
   add_foreign_key "peer_reviews", "admin_users"
   add_foreign_key "peer_reviews", "reviews"
   add_foreign_key "pre_profit_share_purchases", "admin_users"
+  add_foreign_key "project_capsules", "project_trackers"
   add_foreign_key "project_tracker_forecast_projects", "project_trackers"
   add_foreign_key "project_tracker_links", "project_trackers"
   add_foreign_key "qbo_purchase_line_items", "expense_groups"

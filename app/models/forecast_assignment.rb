@@ -15,6 +15,43 @@ class ForecastAssignment < ApplicationRecord
     )
   end
 
+  def raw_resourcing_cost_during_range_in_usd(start_of_range, end_of_range)
+    cost = 0
+    admin_user = self.forecast_person.try(:admin_user)
+
+    start_of_range.upto(end_of_range) do |date|
+      next if date < self.start_date
+      next if date > self.end_date
+
+      daily_cost = admin_user ?
+        admin_user.cost_of_employment_on_date(date) :
+        AdminUser.default_cost_of_employment_on_date(date)
+
+      allocation_hrs = allocation_during_range_in_hours(date, date)
+      if allocation_hrs >= 8
+        cost += daily_cost
+      else
+        # Test if there's other billable hours on this day for this person
+        # and assign cost proportionally
+        other_assignments =
+          self.forecast_person.forecast_assignments.where(
+            'end_date >= ? AND start_date <= ?', date, date
+          ).where.not(forecast_id: self.forecast_id)
+        other_billable_assignments =
+          other_assignments.reject do |fa|
+            fa.forecast_project.forecast_client.nil? || fa.forecast_project.forecast_client.is_internal?
+          end
+        other_billable_assignments_hrs =
+          other_assignments.reduce(0) do |acc, fa|
+            acc += fa.allocation_during_range_in_hours(date, date)
+            acc
+          end
+        cost += (daily_cost * (allocation_hrs.to_f / (allocation_hrs + other_billable_assignments_hrs)))
+      end
+    end
+    cost
+  end
+
   def value_during_range_in_usd(start_of_range, end_of_range)
     hours =
       (allocation_during_range_in_seconds(

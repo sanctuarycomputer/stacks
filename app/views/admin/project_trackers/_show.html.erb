@@ -3,6 +3,8 @@
 <% budget_low_end = @project_tracker.budget_low_end %>
 <% budget_high_end = @project_tracker.budget_high_end %>
 <% current_spend = invoiced_spend + running_spend %>
+<% estimated_cost = @project_tracker.estimated_cost %>
+<% revenue = @project_tracker.revenue %>
 
 <% inbudget_overage = (
   budget_low_end.present? ?
@@ -21,6 +23,129 @@
   budget_low_end,
   budget_high_end
 ].compact.max %>
+
+<% if @project_tracker.project_capsule.present? && @project_tracker.work_completed_at.present? %>
+  <% project_capsule = @project_tracker.project_capsule %>
+
+  <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+    <div id="titlebar_left">
+      <h2 id="page_title">💊 Project Capsule</h2>
+    </div>
+    <div id="titlebar_right">
+      <%= link_to "Edit Project Capsule ↗", edit_admin_project_capsule_path(@project_tracker.project_capsule.id) %>
+    </div>
+  </div>
+
+  <% if project_capsule.complete? %>
+    <div class="dashboard-modules table index_table index">
+      <div class="dashboard-module">
+        <div class="module-header">
+          <p>Wrapup Status</p>
+          <% if project_capsule.client_feedback_survey_url.present? %>
+            <%= link_to "Client Survey URL ↗", project_capsule.client_feedback_survey_url %>
+          <% end %>
+        </div>
+        <div class="module-body">
+
+          <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+            <tbody>
+              <tr class="odd">
+                <td class="col"><strong>Client Feedback</strong></td>
+                <td class="col text-right">
+                  <%= project_capsule.client_feedback_survey_status.humanize %>
+                </td>
+              </tr>
+              <tr class="even">
+                <td class="col"><strong>Marketing</strong></td>
+                <td class="col text-right">
+                  <%= project_capsule.internal_marketing_status.humanize %>
+                </td>
+              </tr>
+              <tr class="odd">
+                <td class="col"><strong>Internal Sharing</strong></td>
+                <td class="col text-right">
+                  <%= project_capsule.capsule_status.humanize %>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+        </div>
+      </div>
+      <div class="dashboard-module">
+        <div class="module-header">
+          <p>Profitability Study</p>
+        </div>
+        <div class="module-body">
+          <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+            <tbody>
+              <tr class="odd">
+                <td class="col"><strong>Raw Resourcing Cost</strong></td>
+                <td class="col text-right">
+                  <%= number_to_currency(@project_tracker.raw_resourcing_cost) %>
+                </td>
+              </tr>
+              <tr class="even">
+                <td class="col"><strong>Estimated COGS</strong></td>
+                <td class="col text-right">
+                  <%= number_to_currency(estimated_cost) %>
+                </td>
+              </tr>
+              <tr class="odd">
+                <td class="col"><strong>Total Revenue</strong></td>
+                <td class="col text-right">
+                  <%= number_to_currency(revenue) %>
+                </td>
+              </tr>
+              <tr class="even">
+                <td class="col"><strong>Total Profit</strong></td>
+                <td class="col text-right">
+                  <%= number_to_currency(revenue - estimated_cost) %>
+                </td>
+              </tr>
+              <tr class="odd">
+                <td class="col"><strong>Profit Margin</strong></td>
+                <td class="col text-right">
+                  <%= (((revenue - estimated_cost) / estimated_cost) * 100).round(2) %>%
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="dashboard-modules table index_table index">
+      <div class="dashboard-module">
+        <div class="module-header">
+          <p>Postpartum Meeting Notes</p>
+        </div>
+        <div class="module-body markdown-body">
+          <%= sanitize RDiscount.new(project_capsule.postpartum_notes).to_html %>
+        </div>
+      </div>
+    </div>
+  <% else %>
+    <div class="dashboard-modules table index_table index">
+      <div class="dashboard-module">
+        <div class="module-body factoid-parent">
+          <p style="margin-bottom: 6px;">🚧 This project is complete, but the project team have not yet completed their Project Capsule.</p>
+        <a href="https://www.notion.so/garden3d/TODO-How-to-Wrap-a-Project-a249d0340d21447897c7a261e2b40ab3" target="_blank">
+          Learn how to Wrap a Project ↗
+        </a>
+        </div>
+      </div>
+    </div>
+
+  <% end %>
+
+  <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+    <div id="titlebar_left">
+      <h2 id="page_title">Project Details</h2>
+    </div>
+  </div>
+<% end %>
+
 
 <p class="pill nag <%= @project_tracker.status %>" style="margin-bottom: 0px;margin-right: 6px;">
   <%= @project_tracker.status.to_s.humanize %>
@@ -298,17 +423,3 @@
     <% end %>
   </tbody>
 </table>
-
-<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
-  <div id="titlebar_left">
-    <h2 id="page_title">Project Capsule</h2>
-  </div>
-</div>
-
-<div class="dashboard-modules table index_table index">
-  <div class="dashboard-module">
-    <div class="module-body factoid-parent">
-      <p style="margin-bottom: 6px;">🚧 This section is coming soon.</p>
-    </div>
-  </div>
-</div>

@@ -237,6 +237,42 @@ class AdminUser < ApplicationRecord
     end
   end
 
+  def skill_tree_level_on_date(date)
+    latest_review_before_date =
+      archived_reviews
+        .order(archived_at: :desc)
+        .where("archived_at <= ?", date)
+        .first
+
+    if latest_review_before_date.present?
+      latest_review_before_date.level
+    elsif old_skill_tree_level.present?
+      Review::LEVELS[old_skill_tree_level.to_sym]
+    else
+      AdminUser.default_skill_level
+    end
+  end
+
+  def self.default_skill_level
+    Review::LEVELS[:senior_1]
+  end
+
+  def self.default_cost_of_employment_on_date(date)
+    yearly_cost =
+      AdminUser.default_skill_level[:salary]
+    business_days =
+      Stacks::Utils.business_days_between(date.beginning_of_year, date.end_of_year)
+    (yearly_cost / business_days) * 1.2 # employment taxes & healthcare
+  end
+
+  def cost_of_employment_on_date(date)
+    yearly_cost =
+      skill_tree_level_on_date(date)[:salary]
+    business_days =
+      Stacks::Utils.business_days_between(date.beginning_of_year, date.end_of_year)
+    (yearly_cost / business_days) * 1.2 # employment taxes & healthcare
+  end
+
   def archived_reviews
     reviews.where.not(archived_at: nil).order("archived_at DESC")
   end
