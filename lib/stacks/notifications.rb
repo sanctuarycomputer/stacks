@@ -9,6 +9,8 @@ class Stacks::Notifications
     def notifications
       # TODO Forecast Client with malformed term?
       # TODO Users without Full Time Periods or salary
+      # TODO Unsent or Unmade Invoices that are unclaimed
+      # TODO Projects that don't have an ATC
       notifications = []
 
       finalizations = Finalization.all

@@ -9,6 +9,7 @@ ActiveAdmin.register ProjectTracker do
     :budget_low_end,
     :budget_high_end,
     :notes,
+    :atc_id,
     project_tracker_links_attributes: [
       :id,
       :name,
@@ -34,6 +35,13 @@ ActiveAdmin.register ProjectTracker do
       span(resource.work_status.to_s.humanize.capitalize, class: "pill #{resource.work_status}")
     end
     column :forecast_projects
+    column :ATC do |resource|
+      if resource.atc.present?
+        resource.atc
+      else
+        span("No ATC", class: "pill error")
+      end
+    end
     actions do |resource|
       proposal_link = resource.project_tracker_links.find do |ptl|
         ptl.link_type == "proposal"
@@ -71,6 +79,7 @@ ActiveAdmin.register ProjectTracker do
       f.input :name
       f.input :budget_low_end
       f.input :budget_high_end
+      f.input :atc
 
       f.has_many :project_tracker_links, heading: false, allow_destroy: true, new_record: 'Create a Project Link' do |a|
         a.input(:name, {

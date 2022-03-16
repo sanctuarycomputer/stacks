@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2022_03_16_223524) do
+ActiveRecord::Schema.define(version: 2022_03_16_225718) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -308,6 +308,8 @@ ActiveRecord::Schema.define(version: 2022_03_16_223524) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.datetime "work_completed_at"
+    t.bigint "atc_id"
+    t.index ["atc_id"], name: "index_project_trackers_on_atc_id"
   end
 
   create_table "qbo_purchase_line_items", id: :string, force: :cascade do |t|
@@ -440,6 +442,7 @@ ActiveRecord::Schema.define(version: 2022_03_16_223524) do
   add_foreign_key "project_capsules", "project_trackers"
   add_foreign_key "project_tracker_forecast_projects", "project_trackers"
   add_foreign_key "project_tracker_links", "project_trackers"
+  add_foreign_key "project_trackers", "admin_users", column: "atc_id"
   add_foreign_key "qbo_purchase_line_items", "expense_groups"
   add_foreign_key "review_trees", "reviews"
   add_foreign_key "review_trees", "trees"

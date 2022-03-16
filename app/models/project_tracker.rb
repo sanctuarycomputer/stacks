@@ -6,6 +6,7 @@ class ProjectTracker < ApplicationRecord
   validates_numericality_of :budget_high_end,
     greater_than_or_equal_to: :budget_low_end, if: :validate_budgets?
 
+  belongs_to :atc, class_name: "AdminUser", optional: true
   has_one :project_capsule
   has_many :project_tracker_links
   accepts_nested_attributes_for :project_tracker_links, allow_destroy: true
