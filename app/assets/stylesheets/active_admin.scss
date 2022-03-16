@@ -713,6 +713,7 @@ body.logged_in .flash {
 }
 
 .pill, .status_tag {
+  white-space: nowrap;
   padding: 6px;
   border-radius: 999px;
   color: white;
