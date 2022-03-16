@@ -33,12 +33,6 @@ ActiveAdmin.register ProjectTracker do
     column :work_status do |resource|
       span(resource.work_status.to_s.humanize.capitalize, class: "pill #{resource.work_status}")
     end
-    if current_admin_user.is_admin?
-      column :profit_margin do |resource|
-        estimated_cost = resource.estimated_cost
-        "#{(((resource.revenue - estimated_cost) / estimated_cost) * 100).round(2)}%"
-      end
-    end
     column :forecast_projects
     actions do |resource|
       proposal_link = resource.project_tracker_links.find do |ptl|
