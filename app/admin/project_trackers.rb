@@ -104,7 +104,7 @@ ActiveAdmin.register ProjectTracker do
         })
       end
 
-      f.input :notes
+      f.input :notes, label: "Notes (accepts markdown)"
     end
 
     f.actions

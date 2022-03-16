@@ -18,6 +18,7 @@
 )%>
 
 <% limit = [
+  1, # Ensures we don't divide by zero
   invoiced_spend,
   current_spend,
   budget_low_end,
@@ -158,10 +159,12 @@
   </a>
 <% end %>
 
-<div class="skill_tree_hint">
-  <p>
-    <%= simple_format(@project_tracker.notes.html_safe) %>
-  </p>
+<div class="skill_tree_hint markdown-body" style="margin-top: 40px; margin-bottom:40px;">
+  <%= sanitize RDiscount.new(@project_tracker.notes).to_html %>
+
+  <% if @project_tracker.atc.present? %>
+    <p style="margin-top:80px;"><strong>Project ATC: </strong><%= link_to @project_tracker.atc.email, admin_admin_user_path(@project_tracker.atc) %></p>
+  <% end %>
 </div>
 
 <div class="dashboard-modules table index_table index">

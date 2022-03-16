@@ -27,7 +27,7 @@ ActiveAdmin.register ProjectCapsule do
       f.input :client_feedback_survey_url
       f.input :internal_marketing_status
       f.input :capsule_status
-      f.input :postpartum_notes
+      f.input :postpartum_notes, label: "Postpartum Meeting Notes (accepts markdown)"
    end
 
     f.actions
