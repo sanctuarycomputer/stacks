@@ -3,6 +3,7 @@
 # TODO: I should be able to attach an invoice to a Project Tracker that's non-generated
 
 class InvoiceTracker < ApplicationRecord
+  belongs_to :admin_user, optional: true
   belongs_to :invoice_pass
   belongs_to :forecast_client, class_name: "ForecastClient", foreign_key: "forecast_client_id", primary_key: "forecast_id"
 

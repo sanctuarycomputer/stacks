@@ -9,6 +9,7 @@ class AdminUser < ApplicationRecord
           AdminUser.where(roles: ["admin"])
         }
 
+  has_many :invoice_trackers
   has_one :forecast_person, class_name: "ForecastPerson", foreign_key: "email", primary_key: "email"
 
   has_many :full_time_periods

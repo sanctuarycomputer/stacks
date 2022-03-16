@@ -13,6 +13,22 @@ ActiveAdmin.register InvoiceTracker do
     )
   end
 
+  member_action :toggle_ownership, method: :post do
+    if resource.admin_user.present? && resource.admin_user == current_admin_user
+      resource.update!(admin_user: nil)
+      return redirect_to(
+        admin_invoice_pass_invoice_trackers_path(resource.invoice_pass, resource, format: :html),
+        notice: "Unclaimed invoice.",
+      )
+    else
+      resource.update!(admin_user: current_admin_user)
+      return redirect_to(
+        admin_invoice_pass_invoice_trackers_path(resource.invoice_pass, resource, format: :html),
+        notice: "Claimed!",
+      )
+    end
+  end
+
   member_action :attempt_generate, method: :post do
     if resource.qbo_invoice_id.present?
       return redirect_to(
@@ -72,7 +88,28 @@ ActiveAdmin.register InvoiceTracker do
     column :status do |resource|
       span(resource.status.to_s.humanize, class: "pill #{resource.status}")
     end
-    actions
+    column :owner do |resource|
+      if resource.admin_user.present?
+        resource.admin_user
+      else
+      span("Unclaimed", class: "pill error")
+      end
+    end
+    actions do |resource|
+      if resource.admin_user.nil?
+        link_to(
+          "Claim ↗",
+          toggle_ownership_admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource),
+          method: :post
+        )
+      elsif resource.admin_user == current_admin_user
+        link_to(
+          "Unclaim ↗",
+          toggle_ownership_admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource),
+          method: :post
+        )
+      end
+    end
   end
 
   show do

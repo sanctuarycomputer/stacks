@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2022_03_16_135944) do
+ActiveRecord::Schema.define(version: 2022_03_16_223524) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -226,6 +226,8 @@ ActiveRecord::Schema.define(version: 2022_03_16_135944) do
     t.jsonb "blueprint"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.bigint "admin_user_id"
+    t.index ["admin_user_id"], name: "index_invoice_trackers_on_admin_user_id"
     t.index ["forecast_client_id", "invoice_pass_id"], name: "idx_invoice_trackers_on_forecast_client_id_and_invoice_pass_id", unique: true
     t.index ["forecast_client_id"], name: "index_invoice_trackers_on_forecast_client_id"
     t.index ["invoice_pass_id"], name: "index_invoice_trackers_on_invoice_pass_id"
@@ -430,6 +432,7 @@ ActiveRecord::Schema.define(version: 2022_03_16_135944) do
   add_foreign_key "finalizations", "reviews"
   add_foreign_key "full_time_periods", "admin_users"
   add_foreign_key "gifted_profit_shares", "admin_users"
+  add_foreign_key "invoice_trackers", "admin_users"
   add_foreign_key "invoice_trackers", "invoice_passes"
   add_foreign_key "peer_reviews", "admin_users"
   add_foreign_key "peer_reviews", "reviews"
