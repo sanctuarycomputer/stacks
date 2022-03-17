@@ -17,21 +17,10 @@
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
     <div class="module-header">
-      <p>By Year</p>
+      <p>Studio Profitability</p>
     </div>
     <div class="module-body">
-      <canvas id="by-year"></canvas>
-    </div>
-  </div>
-</div>
-
-<div class="dashboard-modules table index_table index">
-  <div class="dashboard-module">
-    <div class="module-header">
-      <p>By Month</p>
-    </div>
-    <div class="module-body">
-      <canvas id="by-month"></canvas>
+      <canvas id="studio-profitability"></canvas>
     </div>
   </div>
 </div>
@@ -63,7 +52,15 @@
   <tbody>
     <% studio_people.each_with_index do |tuple, index| %>
       <tr class="<%= index.even? ? "even" : "odd" %>">
-        <td class="col"><%= link_to tuple[0].email, admin_admin_user_path(tuple[0].admin_user) %></td>
+        <% if tuple[0].admin_user.present? %>
+          <td class="col">
+            <%= link_to tuple[0].email, admin_admin_user_path(tuple[0].admin_user) %>
+          </td>
+        <% else %>
+          <td class="col">
+            <%= tuple[0].email %>
+          </td>
+        <% end %>
         <td class="col"><%= tuple[1].to_json %></td>
       </tr>
     <% end %>
@@ -71,34 +68,11 @@
 </table>
 
 <script>
-  new Chart(document.getElementById('by-year'), {
+  new Chart(document.getElementById('studio-profitability'), {
     type: 'bar',
-    data: <%= studio_yearly_data.to_json.html_safe %>,
+    data: <%= studio_profitability_data.to_json.html_safe %>,
     options: {
-      scales: {
-        y: {
-          type: 'linear',
-          display: true,
-          position: 'left',
-          beginAtZero: true
-        },
-        y1: {
-          type: 'linear',
-          display: true,
-          position: 'right',
-          beginAtZero: true,
-          stacked: true,
-          grid: {
-            drawOnChartArea: false, // only want the grid lines for one axis to show up
-          },
-        }
-      }
-    }
-  });
-  new Chart(document.getElementById('by-month'), {
-    type: 'bar',
-    data: <%= studio_monthly_data.to_json.html_safe %>,
-    options: {
+      tension: 0.3,
       scales: {
         y: {
           type: 'linear',

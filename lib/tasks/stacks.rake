@@ -1,13 +1,14 @@
 namespace :stacks do
   desc "Freshen Qbo Token"
   task :refresh_qbo_token => :environment do
-    Stacks::Automator.make_and_refresh_qbo_access_token
+    Stacks::Quickbooks.make_and_refresh_qbo_access_token
   end
 
   desc "Daily Tasks"
   task :daily_tasks => :environment do
     Stacks::Team.discover!
     Stacks::Forecast.new.sync_all!
+    Stacks::Quickbooks.sync_all!
     Stacks::Expenses.sync_all!
     Stacks::Expenses.match_all!
 

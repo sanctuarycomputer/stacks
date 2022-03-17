@@ -1,145 +1,30 @@
 ActiveAdmin.register Studio do
   config.filters = false
   config.paginate = false
-  actions :index, :show
+  actions :index, :show, :edit, :update
+
+  permit_params :name, :accounting_prefix, :mini_name
+
+  form do |f|
+    f.inputs(class: "admin_inputs") do
+      f.input :name
+      f.input :accounting_prefix
+      f.input :mini_name
+    end
+    f.actions
+  end
 
   index download_links: false do
     column :name
+    column :accounting_prefix
+    column :mini_name
     actions
   end
 
   show do
     COLORS = Stacks::Utils::COLORS
 
-    pp = ProfitabilityPass.order(created_at: :desc).first
-    studio_data = pp.data[resource.mini_name]
-
-    studio_yearly_data = studio_data.keys.reduce({
-      labels: [],
-      datasets: []
-    }) do |acc, year|
-      acc[:labels] << year
-
-      dataset = {
-        gross_payroll: studio_data[year].values.map{|v| v["gross_payroll"].to_f}.reduce(:+),
-        gross_revenue: studio_data[year].values.map{|v| v["gross_revenue"].to_f}.reduce(:+),
-        gross_benefits: studio_data[year].values.map{|v| v["gross_benefits"].to_f}.reduce(:+),
-        gross_expenses: studio_data[year].values.map{|v| v["gross_expenses"].to_f}.reduce(:+),
-        gross_subcontractors: studio_data[year].values.map{|v| v["gross_subcontractors"].to_f}.reduce(:+),
-      }
-      dataset[:net_revenue] = (
-        dataset[:gross_revenue] - (
-          dataset[:gross_payroll] +
-          dataset[:gross_benefits] +
-          dataset[:gross_expenses] +
-          dataset[:gross_subcontractors]
-        )
-      )
-      dataset[:margin] = (dataset[:net_revenue] / dataset[:gross_revenue]) * 100
-
-      # COGS
-      [
-        "gross_payroll",
-        "gross_benefits",
-        "gross_expenses",
-        "gross_subcontractors",
-      ].each_with_index do |dp, idx|
-        ds = acc[:datasets].find{|d| d[:label] == dp.humanize}
-        unless ds.present?
-          ds = { label: dp.humanize, data: [], stack: 'cogs', backgroundColor: COLORS[idx + 1], order: 1 }
-          acc[:datasets] << ds
-        end
-        ds[:data] << dataset[dp.to_sym]
-      end
-
-      # Gross Revenue
-      ds = acc[:datasets].find{|d| d[:label] == "Gross revenue"}
-      unless ds.present?
-        ds = { label: "Gross revenue", data: [], backgroundColor: COLORS[0], order: 1 }
-        acc[:datasets] << ds
-      end
-      ds[:data] << dataset[:gross_revenue]
-
-      # Margin
-      ds = acc[:datasets].find{|d| d[:label] == "Profit margin"}
-      unless ds.present?
-        ds = {
-          label: "Profit margin",
-          data: [],
-          yAxisID: 'y1',
-          type: 'line',
-        }
-        acc[:datasets] << ds
-      end
-      ds[:data] << dataset[:margin]
-
-      acc
-    end
-
-    studio_monthly_data = studio_data.keys.reduce({
-      labels: [],
-      datasets: []
-    }) do |acc, year|
-      months = studio_data[year].keys.sort do |a, b|
-        Date::MONTHNAMES.index(a.capitalize) <=> Date::MONTHNAMES.index(b.capitalize)
-      end
-
-      months.each do |month|
-        acc[:labels] << "#{month.capitalize}, #{year}"
-        dataset = studio_data[year][month].clone.symbolize_keys
-        dataset.update(dataset) {|k, v| v.to_f}
-        dataset[:net_revenue] = (
-          dataset[:gross_revenue] - (
-            dataset[:gross_payroll] +
-            dataset[:gross_benefits] +
-            dataset[:gross_expenses] +
-            dataset[:gross_subcontractors]
-          )
-        )
-        dataset[:margin] = (dataset[:net_revenue] / dataset[:gross_revenue]) * 100
-
-        [
-          "gross_payroll",
-          "gross_benefits",
-          "gross_expenses",
-          "gross_subcontractors",
-        ].each_with_index do |dp, idx|
-          ds = acc[:datasets].find{|d| d[:label] == dp.humanize}
-          unless ds.present?
-            ds = { label: dp.humanize, data: [], stack: 'cogs', backgroundColor: COLORS[idx + 1], order: 1 }
-            acc[:datasets] << ds
-          end
-          ds[:data] << dataset[dp.to_sym]
-        end
-
-        # Gross Revenue
-        ds = acc[:datasets].find{|d| d[:label] == "Gross revenue"}
-        unless ds.present?
-          ds = { label: "Gross revenue", data: [], backgroundColor: COLORS[0], order: 1 }
-          acc[:datasets] << ds
-        end
-        ds[:data] << dataset[:gross_revenue]
-
-        # Margin
-        ds = acc[:datasets].find{|d| d[:label] == "Profit margin"}
-        unless ds.present?
-          ds = {
-            label: "Profit margin",
-            data: [],
-            yAxisID: 'y1',
-            type: 'line',
-          }
-          acc[:datasets] << ds
-        end
-        ds[:data] << dataset[:margin]
-
-      end
-
-      acc
-    end
-
-    # Start New Code
-    all_gradations = ["month", "quarter"]
+    all_gradations = ["month", "quarter", "year"]
     default_gradation = "month"
     current_gradation =
       params["gradation"] || default_gradation
@@ -147,10 +32,10 @@ ActiveAdmin.register Studio do
       default_gradation unless all_gradations.include?(current_gradation)
 
     periods = []
+    time = Date.new(2020, 1, 1)
     case current_gradation
     when nil
     when "month"
-      time = Stacks::System.singleton_class::UTILIZATION_START_AT
       while time < Date.today.last_month.end_of_month
         periods << {
           label: time.strftime("%B, %Y"),
@@ -160,7 +45,6 @@ ActiveAdmin.register Studio do
         time = time.advance(months: 1)
       end
     when "quarter"
-      time = Stacks::System.singleton_class::UTILIZATION_START_AT.next_quarter
       while time < Date.today.last_quarter.end_of_quarter
         periods << {
           label: "Q#{(time.beginning_of_quarter.month / 3) + 1}, #{time.beginning_of_quarter.year}",
@@ -169,13 +53,85 @@ ActiveAdmin.register Studio do
         }
         time = time.advance(months: 3)
       end
+    when "year"
+      while time < Date.today.last_year.end_of_year
+        periods << {
+          label: "#{time.beginning_of_quarter.year}",
+          starts_at: time.beginning_of_year,
+          ends_at: time.end_of_year
+        }
+        time = time.advance(years: 1)
+      end
     end
 
+    studio_profitability_data = {
+      labels: periods.map{|p| p[:label]},
+      datasets: [
+        { label: "Profit Margin (%)", data: [], yAxisID: 'y1', type: 'line'},
+        { label: "Payroll", data: [], backgroundColor: COLORS[1], stack: 'cogs' },
+        { label: "Benefits", data: [], backgroundColor: COLORS[2], stack: 'cogs' },
+        { label: "Expenses", data: [], backgroundColor: COLORS[3], stack: 'cogs' },
+        { label: "Subcontractors", data: [], backgroundColor: COLORS[4], stack: 'cogs' },
+        { label: "Revenue", data: [], backgroundColor: COLORS[0] },
+      ]
+    }
+
+    periods.each do |p|
+      report =
+        QboProfitAndLossReport.find_or_fetch_for_range(p[:starts_at], p[:ends_at])
+
+      gross_revenue =
+        report.find_row(resource.qbo_sales_category)[1].to_f
+      g3d_gross_revenue =
+        report.find_row("Total Income")[1].to_f
+      proportional_expenses = 0
+      if g3d_gross_revenue > 0
+        proportional_expenses =
+          (gross_revenue / g3d_gross_revenue) * report.find_row("Total Expenses")[1].to_f
+      end
+
+      # Revenue
+      ds = studio_profitability_data[:datasets].find{|d| d[:label] == "Revenue"}
+      ds[:data] << gross_revenue
+
+      # Payroll
+      ds = studio_profitability_data[:datasets].find{|d| d[:label] == "Payroll"}
+      ds[:data] << report.find_row(resource.qbo_payroll_category)[1].to_f
+
+      # Benefits
+      ds = studio_profitability_data[:datasets].find{|d| d[:label] == "Benefits"}
+      ds[:data] << report.find_row(resource.qbo_benefits_category)[1].to_f
+
+      # Expenses
+      ds = studio_profitability_data[:datasets].find{|d| d[:label] == "Expenses"}
+      ds[:data] << proportional_expenses
+
+      # Subcontractors
+      ds = studio_profitability_data[:datasets].find{|d| d[:label] == "Subcontractors"}
+      ds[:data] << report.find_row(resource.qbo_subcontractors_category)[1].to_f
+
+      # Margin
+      ds = studio_profitability_data[:datasets].find{|d| d[:label] == "Profit Margin (%)"}
+      net_revenue =
+        gross_revenue - (
+          report.find_row(resource.qbo_payroll_category)[1].to_f +
+          report.find_row(resource.qbo_benefits_category)[1].to_f +
+          proportional_expenses +
+          report.find_row(resource.qbo_subcontractors_category)[1].to_f
+        )
+      ds[:data] <<
+        (net_revenue / gross_revenue) * 100
+    end
+
+    all_studios = Studio.all
     studio_people =
       ForecastPerson.includes(:admin_user).all.select do |fp|
-        fp.studio == resource
+        fp.studio(all_studios) == resource
       end.reduce({}) do |acc, fp|
         acc[fp] = periods.reduce({}) do |agr, period|
+          next agr if (
+            period[:starts_at] < Stacks::System.singleton_class::UTILIZATION_START_AT
+          )
           agr[period[:label]] = fp.utilization_during_range(
             period[:starts_at],
             period[:ends_at]
@@ -222,6 +178,7 @@ ActiveAdmin.register Studio do
       borderColor: COLORS[4],
       data: (aggregated_data.values.map do |v|
         total_billable = v[:billable].values.reduce(&:+)
+        next 0 if total_billable.nil? || v[:sellable].nil?
         (total_billable / v[:sellable]) * 100
       end),
       yAxisID: 'y2',
@@ -265,8 +222,7 @@ ActiveAdmin.register Studio do
     }])
 
     render(partial: "show", locals: {
-      studio_yearly_data: studio_yearly_data,
-      studio_monthly_data: studio_monthly_data,
+      studio_profitability_data: studio_profitability_data,
       studio_utilization_data: studio_utilization_data,
       studio_people: studio_people,
       all_gradations: all_gradations,

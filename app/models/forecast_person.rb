@@ -41,11 +41,11 @@ class ForecastPerson < ApplicationRecord
     end
   end
 
-  def studios
-    Studio.all.select{|s| roles.include?(s.name)}
+  def studios(preloaded_studios = Studio.all)
+    preloaded_studios.select{|s| roles.include?(s.name)}
   end
 
-  def studio
-    studios.first
+  def studio(preloaded_studios = Studio.all)
+    studios(preloaded_studios).first
   end
 end

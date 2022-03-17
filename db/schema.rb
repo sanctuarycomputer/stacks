@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2022_03_16_225718) do
+ActiveRecord::Schema.define(version: 2022_03_17_204349) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -310,6 +310,14 @@ ActiveRecord::Schema.define(version: 2022_03_16_225718) do
     t.datetime "work_completed_at"
     t.bigint "atc_id"
     t.index ["atc_id"], name: "index_project_trackers_on_atc_id"
+  end
+
+  create_table "qbo_profit_and_loss_reports", force: :cascade do |t|
+    t.date "starts_at", null: false
+    t.date "ends_at", null: false
+    t.jsonb "data", default: "{}"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
   end
 
   create_table "qbo_purchase_line_items", id: :string, force: :cascade do |t|

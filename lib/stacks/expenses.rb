@@ -3,7 +3,7 @@ class Stacks::Expenses
     def fetch_all
       service = Quickbooks::Service::Purchase.new
       service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
-      service.access_token = Stacks::Automator.make_and_refresh_qbo_access_token
+      service.access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
       service.all
     end
 

@@ -9,7 +9,7 @@ class Stacks::Profitability
     }
 
     def pull_outstanding_invoices
-      access_token = Stacks::Automator.make_and_refresh_qbo_access_token
+      access_token = Stacks::Quckbooks.make_and_refresh_qbo_access_token
 
       invoice_service = Quickbooks::Service::Invoice.new
       invoice_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
@@ -18,7 +18,7 @@ class Stacks::Profitability
     end
 
     def pull_actuals_for_year(year)
-      qbo_access_token = Stacks::Automator.make_and_refresh_qbo_access_token
+      qbo_access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
       report_service = Quickbooks::Service::Reports.new
       report_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
       report_service.access_token = qbo_access_token
@@ -42,7 +42,7 @@ class Stacks::Profitability
     end
 
     def pull_actuals_for_month(date = Date.today)
-      qbo_access_token = Stacks::Automator.make_and_refresh_qbo_access_token
+      qbo_access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
       report_service = Quickbooks::Service::Reports.new
       report_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
       report_service.access_token = qbo_access_token
@@ -75,7 +75,7 @@ class Stacks::Profitability
         }
       end
 
-      qbo_access_token = Stacks::Automator.make_and_refresh_qbo_access_token
+      qbo_access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
       report_service = Quickbooks::Service::Reports.new
       report_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
       report_service.access_token = qbo_access_token
@@ -99,7 +99,7 @@ class Stacks::Profitability
     end
 
     def calculate
-      qbo_access_token = Stacks::Automator.make_and_refresh_qbo_access_token
+      qbo_access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
       report_service = Quickbooks::Service::Reports.new
       report_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
       report_service.access_token = qbo_access_token

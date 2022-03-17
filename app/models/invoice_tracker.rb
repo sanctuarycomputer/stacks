@@ -258,7 +258,7 @@ class InvoiceTracker < ApplicationRecord
 
     invoice_service = Quickbooks::Service::Invoice.new
     invoice_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
-    invoice_service.access_token = Stacks::Automator.make_and_refresh_qbo_access_token
+    invoice_service.access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
     created_qbo_inv = invoice_service.create(qbo_inv)
 
     # Assign Quickbooks Ids to our Internal Snapshot

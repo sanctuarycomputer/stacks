@@ -132,38 +132,10 @@ class Stacks::Automator
     end
 
     # TODO: move me to Stacks::Quickbooks
-    def make_and_refresh_qbo_access_token
-      oauth2_client = OAuth2::Client.new(Stacks::Utils.config[:quickbooks][:client_id], Stacks::Utils.config[:quickbooks][:client_secret], {
-        site: "https://appcenter.intuit.com/connect/oauth2",
-        authorize_url: "https://appcenter.intuit.com/connect/oauth2",
-        token_url: "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer",
-      })
-      qbo_token = QuickbooksToken.order("created_at").last
-      access_token = OAuth2::AccessToken.new(
-        oauth2_client,
-        qbo_token.token,
-        refresh_token: qbo_token.refresh_token
-      )
-
-      # Refresh the token if it's been longer than 45 minutes
-      if ((DateTime.now.to_i - qbo_token.created_at.to_i) / 60) > 45
-        access_token = access_token.refresh!
-        new_qbo_token =
-          QuickbooksToken.create!(
-            token: access_token.token,
-            refresh_token: access_token.refresh_token
-          )
-        QuickbooksToken.where.not(id: new_qbo_token.id).delete_all
-      end
-
-      access_token
-    end
-
-    # TODO: move me to Stacks::Quickbooks
     def fetch_invoices_by_ids(ids = [])
       return [] unless ids.any?
 
-      access_token = make_and_refresh_qbo_access_token
+      access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
 
       invoice_service = Quickbooks::Service::Invoice.new
       invoice_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
