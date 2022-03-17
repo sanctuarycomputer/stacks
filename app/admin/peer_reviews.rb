@@ -11,7 +11,7 @@ ActiveAdmin.register PeerReview do
     link_to "Go to Workspace →", edit_admin_workspace_path(resource.workspace)
   end
 
-  index download_links: false do
+  index download_links: false, title: "Review Requests" do
     render(partial: "docs_linkout")
 
     column :created_at

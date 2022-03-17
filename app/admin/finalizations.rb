@@ -5,7 +5,7 @@ ActiveAdmin.register Finalization do
   scope :finalized
 
   menu if: proc { current_admin_user.is_admin? },
-       label: "Finalizations",
+       label: "Workspaces (Admin Only)",
        parent: "Skill Trees",
        priority: 3
 
@@ -62,7 +62,7 @@ ActiveAdmin.register Finalization do
     end
   end
 
-  index download_links: false do
+  index download_links: false, title: "Workspaces" do
     column :created_at
     column :for do |resource|
       resource.review.admin_user

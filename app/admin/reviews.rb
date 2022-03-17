@@ -26,7 +26,7 @@ ActiveAdmin.register Review do
     end
   end
 
-  index download_links: false do
+  index download_links: false, title: "My Reviews" do
     render(partial: "docs_linkout")
 
     column :created_at

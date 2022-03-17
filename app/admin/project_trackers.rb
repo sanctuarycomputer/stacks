@@ -1,5 +1,5 @@
 ActiveAdmin.register ProjectTracker do
-  menu label: "Projects"
+  menu label: "Projects", priority: 2
   config.filters = false
   config.sort_order = "created_at_desc"
   config.paginate = false
@@ -26,7 +26,7 @@ ActiveAdmin.register ProjectTracker do
       :_edit
     ]
 
-  index download_links: false do
+  index download_links: false, title: "Projects" do
     column :name
     column :budget_status do |resource|
       span(resource.status.to_s.humanize.capitalize, class: "pill #{resource.status}")
