@@ -138,20 +138,36 @@ ActiveAdmin.register Studio do
       acc
     end
 
-    # Start Utilization
+    # Start New Code
+    all_gradations = ["month", "quarter"]
+    default_gradation = "month"
+    current_gradation =
+      params["gradation"] || default_gradation
+    current_gradation =
+      default_gradation unless all_gradations.include?(current_gradation)
+
     periods = []
-    graduated_by = "month"
-    case graduated_by
+    case current_gradation
     when nil
     when "month"
       time = Stacks::System.singleton_class::UTILIZATION_START_AT
       while time < Date.today.last_month.end_of_month
         periods << {
-          label: time.to_s,
+          label: time.strftime("%B, %Y"),
           starts_at: time.beginning_of_month,
           ends_at: time.end_of_month
         }
         time = time.advance(months: 1)
+      end
+    when "quarter"
+      time = Stacks::System.singleton_class::UTILIZATION_START_AT.next_quarter
+      while time < Date.today.last_quarter.end_of_quarter
+        periods << {
+          label: "Q#{(time.beginning_of_quarter.month / 3) + 1}, #{time.beginning_of_quarter.year}",
+          starts_at: time.beginning_of_quarter,
+          ends_at: time.end_of_quarter
+        }
+        time = time.advance(months: 3)
       end
     end
 
@@ -252,7 +268,9 @@ ActiveAdmin.register Studio do
       studio_yearly_data: studio_yearly_data,
       studio_monthly_data: studio_monthly_data,
       studio_utilization_data: studio_utilization_data,
-      studio_people: studio_people
+      studio_people: studio_people,
+      all_gradations: all_gradations,
+      default_gradation: default_gradation
     })
   end
 end

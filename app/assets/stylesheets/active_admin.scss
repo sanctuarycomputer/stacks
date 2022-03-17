@@ -717,26 +717,32 @@ body.logged_in .flash {
   white-space: nowrap;
   padding: 6px;
   border-radius: 999px;
-  color: white;
   font-weight: 700;
   font-size: 72%;
+  color: $color-black;
   &.draft, &.waiting, &.no, &.at_budget, &.not_sent, &.not_made, &.unpaid, &.partially_paid, &.changed, &.project_capsule_pending {
     background-color: $color-orange;
+    color: white;
   }
   &.complete, &.yes, &.under_budget, &.paid, &.added {
     background-color: $color-green;
+    color: white;
   }
   &.over_budget, &.error, &.impossible, &.unpaid_overdue, &.partially_paid_overdue, &.removed {
     background-color: $color-red;
+    color: white;
   }
   &.ready, &.no_budget, &.hydro, &.deleted, &.missing_hours, &.complete {
     background-color: $color-purple;
+    color: white;
   }
   &.finalized, &.sanctu, &.unchanged, &.in_progress {
     background-color: $color-blue;
+    color: white;
   }
   &.archived, &.xxix {
     background-color: $color-black;
+    color: white;
   }
 }
 
