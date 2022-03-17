@@ -7,8 +7,10 @@ class Stacks::Notifications
     end
 
     def notifications
+      # TODO Pending
+      # TODO Unfinalized Skill Trees
       # TODO Forecast Client with malformed term?
-      # TODO Users without Full Time Periods or salary
+      # TODO Users without Full Time Periods or base salary
       # TODO Unsent or Unmade Invoices that are unclaimed
       # TODO Projects that don't have an ATC
       notifications = []

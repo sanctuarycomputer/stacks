@@ -1,5 +1,5 @@
 ActiveAdmin.register Review do
-  menu priority: 2, label: "My Reviews"
+  menu label: "My Reviews", parent: "Skill Trees", priority: 1
   config.filters = false
   config.sort_order = "created_at_desc"
   config.paginate = false

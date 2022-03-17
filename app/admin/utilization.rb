@@ -1,4 +1,6 @@
 ActiveAdmin.register_page "Utilization" do
+  menu parent: "Money"
+
   content title: "Utilization" do
 
     # TODO: Per-studio Utilization

@@ -1,5 +1,5 @@
 ActiveAdmin.register ProfitSharePass do
-  menu label: "Profit Share"
+  menu label: "Profit Share", parent: "Money"
   config.filters = false
   config.sort_order = "created_at_desc"
   config.paginate = false

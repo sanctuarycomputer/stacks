@@ -1,5 +1,5 @@
 ActiveAdmin.register PeerReview do
-  menu label: "Review Requests", priority: 3
+  menu label: "Review Requests", parent: "Skill Trees", priority: 2
 
   config.filters = false
   config.sort_order = "created_at_desc"

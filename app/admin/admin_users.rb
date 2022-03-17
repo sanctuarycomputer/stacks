@@ -35,7 +35,7 @@ ActiveAdmin.register AdminUser do
       :_destroy
     ]
   config.current_filters = false
-  menu label: "Team"
+  menu label: "Everybody", parent: "Team", priority: 1
   actions :index, :show, :edit, :update
   scope :active, default: true
   scope :archived

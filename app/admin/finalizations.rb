@@ -5,7 +5,9 @@ ActiveAdmin.register Finalization do
   scope :finalized
 
   menu if: proc { current_admin_user.is_admin? },
-       label: "Finalizations"
+       label: "Finalizations",
+       parent: "Skill Trees",
+       priority: 3
 
   actions :index, :edit, :update
   permit_params workspace_attributes: [

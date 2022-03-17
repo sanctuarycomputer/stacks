@@ -636,7 +636,7 @@ table.index_table td {
 }
 
 #header {
-  height: 80px;
+  //height: 80px;
   background-image: none;
   background-color: white;
   border-bottom: none;
@@ -661,6 +661,7 @@ table.index_table td {
   background: $color-grey;
 }
 #header ul.tabs > li ul li a {
+  white-space: nowrap;
   color: $color-white;
   padding: 4px 10px 4px 10px;
   border-radius: 16px;

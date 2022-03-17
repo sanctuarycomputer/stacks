@@ -1,5 +1,5 @@
 ActiveAdmin.register_page "DEI Explorer" do
-  menu label: "DEI Explorer", priority: 2
+  menu label: "DEI Explorer", parent: "Team"
 
   content title: proc { I18n.t("active_admin.dei_explorer") } do
     BROAD_BANDS = ["J", "ML", "EML", "S", "L"]
