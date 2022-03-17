@@ -1,4 +1,3 @@
-# Ensure that deletes are cascading
 class ProjectTracker < ApplicationRecord
   validates :name, presence: :true
   validates_numericality_of :budget_low_end,
@@ -7,11 +6,11 @@ class ProjectTracker < ApplicationRecord
     greater_than_or_equal_to: :budget_low_end, if: :validate_budgets?
 
   belongs_to :atc, class_name: "AdminUser", optional: true
-  has_one :project_capsule
-  has_many :project_tracker_links
+  has_one :project_capsule, dependent: :delete
+  has_many :project_tracker_links, dependent: :delete_all
   accepts_nested_attributes_for :project_tracker_links, allow_destroy: true
 
-  has_many :project_tracker_forecast_projects
+  has_many :project_tracker_forecast_projects, dependent: :delete_all
   has_many :forecast_projects, through: :project_tracker_forecast_projects
   accepts_nested_attributes_for :project_tracker_forecast_projects, allow_destroy: true
 
