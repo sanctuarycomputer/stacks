@@ -61,6 +61,14 @@ class ForecastAssignment < ApplicationRecord
     hours * forecast_project.hourly_rate
   end
 
+  def is_time_off?
+    forecast_project.name == "Time Off" && forecast_project.forecast_client.nil?
+  end
+
+  def is_non_billable?
+    is_time_off? || forecast_project.forecast_client.try(:is_internal?)
+  end
+
   def allocation_in_seconds
     days = if forecast_project.name == "Time Off" && allocation.nil?
         # If this allocation is for the "Time Off" project, filter time on weekends!

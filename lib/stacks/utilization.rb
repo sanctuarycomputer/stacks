@@ -93,6 +93,9 @@ class Stacks::Utilization
         allocation =
           (allocation_in_seconds_for_assignment(start_of_month, project, a) / 60 / 60)
 
+        #fa = ForecastAssignment.find(a["id"])
+        #binding.pry if fa.allocation_in_hours != allocation
+
         is_time_off = project["name"] == "Time Off" && project["harvest_id"].nil?
         is_non_billable = client && STUDIOS.include?(:"#{client["name"]}")
 

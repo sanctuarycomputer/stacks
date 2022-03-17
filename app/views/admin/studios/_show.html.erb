@@ -1,3 +1,9 @@
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">💸 Profitability</h2>
+  </div>
+</div>
+
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
     <div class="module-header">
@@ -19,6 +25,40 @@
     </div>
   </div>
 </div>
+
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">⌛ Utilization</h2>
+  </div>
+</div>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>By Year</p>
+    </div>
+    <div class="module-body">
+      <canvas id="studio-utilization"></canvas>
+    </div>
+  </div>
+</div>
+
+<table border="0" cellspacing="0" cellpadding="0" id="index_table_invoice_passes" class="index_table index" paginator="true">
+  <thead>
+    <tr>
+      <th class="col">Person</th>
+      <th class="col">Utilization</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% studio_people.each_with_index do |tuple, index| %>
+      <tr class="<%= index.even? ? "even" : "odd" %>" id="invoice_pass_1">
+        <td class="col"><%= link_to tuple[0].email, admin_admin_user_path(tuple[0].admin_user) %></td>
+        <td class="col"><%= tuple[1].to_json %></td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
 
 <script>
   new Chart(document.getElementById('by-year'), {
@@ -69,4 +109,40 @@
       }
     }
   });
+
+  new Chart(document.getElementById('studio-utilization'), {
+    type: 'line',
+    data: <%= studio_utilization_data.to_json.html_safe %>,
+    options: {
+      tension: 0.3,
+      scales: {
+        y: {
+          type: 'linear',
+          display: true,
+          position: 'left',
+          beginAtZero: true
+        },
+        y1: {
+          type: 'linear',
+          display: true,
+          position: 'right',
+          beginAtZero: true,
+          stacked: true,
+          grid: {
+            drawOnChartArea: false, // only want the grid lines for one axis to show up
+          },
+        },
+        y2: {
+          type: 'linear',
+          display: true,
+          position: 'right',
+          beginAtZero: true,
+          stacked: true,
+          grid: {
+            drawOnChartArea: false, // only want the grid lines for one axis to show up
+          },
+        }
+      }
+    }
+  })
 </script>

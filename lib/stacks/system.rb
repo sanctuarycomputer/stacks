@@ -1,5 +1,9 @@
 class Stacks::System
   class << self
+    # This is the first date that every fulltimer at
+    # garden3d was required to start accounting for
+    # all of their hours in Harvest Forecast
+    UTILIZATION_START_AT = Date.new(2021, 6, 1)
 
     INVOICE_STATUSES_NEED_ACTION = [
       :not_made,
