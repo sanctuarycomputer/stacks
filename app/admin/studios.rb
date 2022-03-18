@@ -40,7 +40,11 @@ ActiveAdmin.register Studio do
         periods << {
           label: time.strftime("%B, %Y"),
           starts_at: time.beginning_of_month,
-          ends_at: time.end_of_month
+          ends_at: time.end_of_month,
+          report: QboProfitAndLossReport.find_or_fetch_for_range(
+            time.beginning_of_month,
+            time.end_of_month
+          )
         }
         time = time.advance(months: 1)
       end
@@ -49,7 +53,11 @@ ActiveAdmin.register Studio do
         periods << {
           label: "Q#{(time.beginning_of_quarter.month / 3) + 1}, #{time.beginning_of_quarter.year}",
           starts_at: time.beginning_of_quarter,
-          ends_at: time.end_of_quarter
+          ends_at: time.end_of_quarter,
+          report: QboProfitAndLossReport.find_or_fetch_for_range(
+            time.beginning_of_quarter,
+            time.end_of_quarter
+          )
         }
         time = time.advance(months: 3)
       end
@@ -58,84 +66,34 @@ ActiveAdmin.register Studio do
         periods << {
           label: "#{time.beginning_of_quarter.year}",
           starts_at: time.beginning_of_year,
-          ends_at: time.end_of_year
+          ends_at: time.end_of_year,
+          report: QboProfitAndLossReport.find_or_fetch_for_range(
+            time.beginning_of_year,
+            time.end_of_year,
+          )
         }
         time = time.advance(years: 1)
       end
     end
 
-    studio_profitability_data = {
-      labels: periods.map{|p| p[:label]},
-      datasets: [
-        { label: "Profit Margin (%)", data: [], yAxisID: 'y1', type: 'line'},
-        { label: "Payroll", data: [], backgroundColor: COLORS[1], stack: 'cogs' },
-        { label: "Benefits", data: [], backgroundColor: COLORS[2], stack: 'cogs' },
-        { label: "Expenses", data: [], backgroundColor: COLORS[3], stack: 'cogs' },
-        { label: "Subcontractors", data: [], backgroundColor: COLORS[4], stack: 'cogs' },
-        { label: "Revenue", data: [], backgroundColor: COLORS[0] },
-      ]
-    }
-
-    periods.each do |p|
-      report =
-        QboProfitAndLossReport.find_or_fetch_for_range(p[:starts_at], p[:ends_at])
-
-      gross_revenue =
-        report.find_row(resource.qbo_sales_category)[1].to_f
-      g3d_gross_revenue =
-        report.find_row("Total Income")[1].to_f
-      proportional_expenses = 0
-      if g3d_gross_revenue > 0
-        proportional_expenses =
-          (gross_revenue / g3d_gross_revenue) * report.find_row("Total Expenses")[1].to_f
-      end
-
-      # Revenue
-      ds = studio_profitability_data[:datasets].find{|d| d[:label] == "Revenue"}
-      ds[:data] << gross_revenue
-
-      # Payroll
-      ds = studio_profitability_data[:datasets].find{|d| d[:label] == "Payroll"}
-      ds[:data] << report.find_row(resource.qbo_payroll_category)[1].to_f
-
-      # Benefits
-      ds = studio_profitability_data[:datasets].find{|d| d[:label] == "Benefits"}
-      ds[:data] << report.find_row(resource.qbo_benefits_category)[1].to_f
-
-      # Expenses
-      ds = studio_profitability_data[:datasets].find{|d| d[:label] == "Expenses"}
-      ds[:data] << proportional_expenses
-
-      # Subcontractors
-      ds = studio_profitability_data[:datasets].find{|d| d[:label] == "Subcontractors"}
-      ds[:data] << report.find_row(resource.qbo_subcontractors_category)[1].to_f
-
-      # Margin
-      ds = studio_profitability_data[:datasets].find{|d| d[:label] == "Profit Margin (%)"}
-      net_revenue =
-        gross_revenue - (
-          report.find_row(resource.qbo_payroll_category)[1].to_f +
-          report.find_row(resource.qbo_benefits_category)[1].to_f +
-          proportional_expenses +
-          report.find_row(resource.qbo_subcontractors_category)[1].to_f
-        )
-      ds[:data] <<
-        (net_revenue / gross_revenue) * 100
-    end
-
-    all_studios = Studio.all
+    preloaded_studios = Studio.all
     studio_people =
-      ForecastPerson.includes(:admin_user).all.select do |fp|
-        fp.studio(all_studios) == resource
+      ForecastPerson.includes(admin_user: :studios).all.select do |fp|
+        next true if resource.is_garden3d? && fp.admin_user.present?
+        (fp.try(:admin_user).try(:studios) || []).include?(resource)
       end.reduce({}) do |acc, fp|
         acc[fp] = periods.reduce({}) do |agr, period|
           next agr if (
             period[:starts_at] < Stacks::System.singleton_class::UTILIZATION_START_AT
           )
+
           agr[period[:label]] = fp.utilization_during_range(
             period[:starts_at],
-            period[:ends_at]
+            period[:ends_at],
+            Studio.all
           )
+
+          agr[period[:label]][:report] = period[:report]
 
           if fp.admin_user.present?
             working_days = fp.admin_user.working_days_between(
@@ -162,11 +120,89 @@ ActiveAdmin.register Studio do
         periods.each do |label, data|
           next acc[label] = data unless acc[label].present?
           acc[label] = acc[label].merge(data) do |k, old, new|
-            old.is_a?(Hash) ? old.merge(new) {|k, o, n| o+n} : old + new
+            if old.is_a?(Hash)
+              old.merge(new) {|k, o, n| o+n}
+            elsif old.is_a?(QboProfitAndLossReport)
+              old
+            else
+              old + new
+            end
           end
         end
         acc
       end
+
+    studio_profitability_data = {
+      labels: periods.map{|p| p[:label]},
+      datasets: [
+        { label: "Profit Margin (%)", data: [], yAxisID: 'y1', type: 'line'},
+        { label: "Payroll", data: [], backgroundColor: COLORS[1], stack: 'cogs' },
+        { label: "Benefits", data: [], backgroundColor: COLORS[2], stack: 'cogs' },
+        { label: "Expenses", data: [], backgroundColor: COLORS[3], stack: 'cogs' },
+        { label: "Subcontractors", data: [], backgroundColor: COLORS[4], stack: 'cogs' },
+        { label: "Revenue", data: [], backgroundColor: COLORS[0] },
+      ]
+    }
+
+    periods.each do |p|
+      report = p[:report]
+      cogs = report.cogs_for_studio(resource)
+
+      # Revenue
+      ds = studio_profitability_data[:datasets].find{|d| d[:label] == "Revenue"}
+      ds[:data] << cogs[:revenue]
+
+      # Payroll
+      ds = studio_profitability_data[:datasets].find{|d| d[:label] == "Payroll"}
+      ds[:data] << cogs[:payroll]
+
+      # Benefits
+      ds = studio_profitability_data[:datasets].find{|d| d[:label] == "Benefits"}
+      ds[:data] << cogs[:benefits]
+
+      # Expenses
+      ds = studio_profitability_data[:datasets].find{|d| d[:label] == "Expenses"}
+      ds[:data] << cogs[:expenses]
+
+      # Subcontractors
+      ds = studio_profitability_data[:datasets].find{|d| d[:label] == "Subcontractors"}
+      ds[:data] << cogs[:subcontractors]
+
+      # Margin
+      ds = studio_profitability_data[:datasets].find{|d| d[:label] == "Profit Margin (%)"}
+      ds[:data] << cogs[:profit_margin]
+    end
+
+    studio_economics_data = {
+      labels: aggregated_data.keys,
+      datasets: []
+    }
+
+    studio_economics_data[:datasets].concat([{
+      label: 'Average Hourly Rate Billed',
+      borderColor: COLORS[0],
+      type: 'line',
+      data: (aggregated_data.values.map do |v|
+        Stacks::Utils.weighted_average(v[:billable].map{|k, v| [k.to_f, v]})
+      end)
+    }, {
+      label: 'Cost per Sellable Hour',
+      borderColor: COLORS[1],
+      type: 'line',
+      data: (aggregated_data.map do |k, v|
+        cogs = v[:report].cogs_for_studio(resource)
+        cogs[:cogs] / v[:sellable].to_f
+      end)
+    }, {
+      label: 'Actual Cost per Hour Sold',
+      borderColor: COLORS[2],
+      type: 'line',
+      data: (aggregated_data.values.map do |v|
+        cogs = v[:report].cogs_for_studio(resource)
+        total_billable = v[:billable].values.reduce(&:+) || 0
+        cogs[:cogs] / total_billable
+      end)
+    }])
 
     studio_utilization_data = {
       labels: aggregated_data.keys,
@@ -223,6 +259,7 @@ ActiveAdmin.register Studio do
 
     render(partial: "show", locals: {
       studio_profitability_data: studio_profitability_data,
+      studio_economics_data: studio_economics_data,
       studio_utilization_data: studio_utilization_data,
       studio_people: studio_people,
       all_gradations: all_gradations,

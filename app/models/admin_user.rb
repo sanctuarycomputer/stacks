@@ -9,28 +9,35 @@ class AdminUser < ApplicationRecord
           AdminUser.where(roles: ["admin"])
         }
 
-  has_many :invoice_trackers
+  def active?
+    archived_at.nil?
+  end
+
+  has_many :invoice_trackers, dependent: :nullify
   has_one :forecast_person, class_name: "ForecastPerson", foreign_key: "email", primary_key: "email"
 
-  has_many :full_time_periods
+  has_many :full_time_periods, dependent: :delete_all
   accepts_nested_attributes_for :full_time_periods, allow_destroy: true
 
-  has_many :gifted_profit_shares
+  has_many :gifted_profit_shares, dependent: :delete_all
   accepts_nested_attributes_for :gifted_profit_shares, allow_destroy: true
 
-  has_many :pre_profit_share_purchases
+  has_many :pre_profit_share_purchases, dependent: :delete_all
   accepts_nested_attributes_for :pre_profit_share_purchases, allow_destroy: true
 
-  has_many :admin_user_gender_identities
+  has_many :studio_memberships, dependent: :delete_all
+  has_many :studios, through: :studio_memberships
+
+  has_many :admin_user_gender_identities, dependent: :delete_all
   has_many :gender_identities, through: :admin_user_gender_identities
 
-  has_many :admin_user_communities
+  has_many :admin_user_communities, dependent: :delete_all
   has_many :communities, through: :admin_user_communities
 
-  has_many :admin_user_racial_backgrounds
+  has_many :admin_user_racial_backgrounds, dependent: :delete_all
   has_many :racial_backgrounds, through: :admin_user_racial_backgrounds
 
-  has_many :admin_user_cultural_backgrounds
+  has_many :admin_user_cultural_backgrounds, dependent: :delete_all
   has_many :cultural_backgrounds, through: :admin_user_cultural_backgrounds
 
   enum old_skill_tree_level: {
@@ -104,35 +111,6 @@ class AdminUser < ApplicationRecord
       end
     end
   end
-
-  #def average_utilization
-  #  utilization_pass = UtilizationPass.first
-
-  #  data = utilization_pass.data.keys.reduce([]) do |acc, year|
-  #    months = utilization_pass.data[year].keys.sort do |a, b|
-  #      Date::MONTHNAMES.index(a.capitalize) <=> Date::MONTHNAMES.index(b.capitalize)
-  #    end
-  #    month_utilizations = [*acc, *months.reduce([]) do |agr, month|
-  #      data = utilization_pass.data[year][month][email]
-  #      next agr unless data.present?
-
-  #      start_of_month = Date.new(year.to_i, Date::MONTHNAMES.index(month.capitalize), 1)
-  #      next agr if Date.today.beginning_of_month == start_of_month
-  #      next agr if start_of_month < Date.new(2021, 6, 1)
-
-  #      working_days = working_days_between(start_of_month, start_of_month.end_of_month)
-  #      max_possible_hours = (working_days.count * 8)
-  #      next agr unless max_possible_hours > 0
-
-  #      billable_hours = data["billable"].reduce(0){|acc, r| acc += r["allocation"]}
-  #      agr << (billable_hours / max_possible_hours)
-  #      agr
-  #    end]
-  #  end
-
-  #  return 0.0 unless data.any?
-  #  data.reduce(:+) / data.length
-  #end
 
   def psu_earned_by(date = Date.today)
     return :no_data if full_time_periods.empty?

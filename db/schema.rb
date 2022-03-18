@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2022_03_17_204349) do
+ActiveRecord::Schema.define(version: 2022_03_18_174955) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -391,6 +391,16 @@ ActiveRecord::Schema.define(version: 2022_03_17_204349) do
     t.index ["trait_id"], name: "index_scores_on_trait_id"
   end
 
+  create_table "studio_memberships", force: :cascade do |t|
+    t.bigint "admin_user_id", null: false
+    t.bigint "studio_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id", "studio_id"], name: "index_studio_memberships_on_admin_user_id_and_studio_id", unique: true
+    t.index ["admin_user_id"], name: "index_studio_memberships_on_admin_user_id"
+    t.index ["studio_id"], name: "index_studio_memberships_on_studio_id"
+  end
+
   create_table "studios", force: :cascade do |t|
     t.string "accounting_prefix"
     t.string "name"
@@ -459,5 +469,7 @@ ActiveRecord::Schema.define(version: 2022_03_17_204349) do
   add_foreign_key "score_trees", "workspaces"
   add_foreign_key "scores", "score_trees"
   add_foreign_key "scores", "traits"
+  add_foreign_key "studio_memberships", "admin_users"
+  add_foreign_key "studio_memberships", "studios"
   add_foreign_key "traits", "trees"
 end

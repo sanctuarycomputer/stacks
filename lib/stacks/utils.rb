@@ -18,6 +18,11 @@ class Stacks::Utils
   ]
 
   class << self
+    def weighted_average(a)
+      # a = [[10, 1000], [9, 923], [8, 1230], [7, 10]] # [data,frequency]
+      a.reduce(0) { |m,r| m += r[0] * r[1] } / a.reduce(0) { |m,r| m += r[1] }.to_f
+    end
+
     def business_days_between(start_date, end_date)
       days_between = (end_date - start_date).to_i
       return 0 unless days_between > 0

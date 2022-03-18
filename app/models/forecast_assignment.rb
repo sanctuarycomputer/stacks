@@ -65,8 +65,8 @@ class ForecastAssignment < ApplicationRecord
     forecast_project.name == "Time Off" && forecast_project.forecast_client.nil?
   end
 
-  def is_non_billable?
-    is_time_off? || forecast_project.forecast_client.try(:is_internal?)
+  def is_non_billable?(preloaded_studios)
+    is_time_off? || forecast_project.forecast_client && forecast_project.forecast_client.is_internal?(preloaded_studios)
   end
 
   def allocation_in_seconds

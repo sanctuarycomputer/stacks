@@ -1,6 +1,36 @@
 class QboProfitAndLossReport < ApplicationRecord
   def find_row(label)
-    data["rows"].find {|r| r[0] == label } || [nil, 0]
+    (data["rows"].find {|r| r[0] == label } || [nil, 0])[1].to_f
+  end
+
+  def cogs_for_studio(studio)
+    gross_revenue = find_row(studio.qbo_sales_category)
+    g3d_gross_revenue = find_row("Total Income")
+
+    proportional_expenses = 0
+    if g3d_gross_revenue > 0
+      proportional_expenses =
+        (gross_revenue / g3d_gross_revenue) * find_row("Total Expenses")
+    end
+
+    base = {
+      revenue: gross_revenue,
+      payroll: find_row(studio.qbo_payroll_category),
+      benefits: find_row(studio.qbo_benefits_category),
+      expenses: proportional_expenses,
+      subcontractors: find_row(studio.qbo_subcontractors_category)
+    }
+
+    base[:cogs] = (
+      base[:payroll] +
+      base[:benefits] +
+      base[:expenses] +
+      base[:subcontractors]
+    )
+
+    base[:net_revenue] = base[:revenue] - base[:cogs]
+    base[:profit_margin] = (base[:net_revenue] / base[:revenue]) * 100
+    base
   end
 
   def self.find_or_fetch_for_range(start_of_range, end_of_range, force = false)

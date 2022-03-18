@@ -27,6 +27,23 @@
 
 <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
   <div id="titlebar_left">
+    <h2 id="page_title">📊 Economics</h2>
+  </div>
+</div>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Studio Economics</p>
+    </div>
+    <div class="module-body">
+      <canvas id="studio-economics"></canvas>
+    </div>
+  </div>
+</div>
+
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
     <h2 id="page_title">⌛ Utilization</h2>
   </div>
 </div>
@@ -42,11 +59,16 @@
   </div>
 </div>
 
-<table border="0" cellspacing="0" cellpadding="0" id="index_table_invoice_passes" class="index_table index" paginator="true">
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">👋 People</h2>
+  </div>
+</div>
+
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index">
   <thead>
     <tr>
       <th class="col">Person</th>
-      <th class="col">Utilization</th>
     </tr>
   </thead>
   <tbody>
@@ -61,7 +83,6 @@
             <%= tuple[0].email %>
           </td>
         <% end %>
-        <td class="col"><%= tuple[1].to_json %></td>
       </tr>
     <% end %>
   </tbody>
@@ -90,6 +111,22 @@
             drawOnChartArea: false, // only want the grid lines for one axis to show up
           },
         }
+      }
+    }
+  });
+
+  new Chart(document.getElementById('studio-economics'), {
+    type: 'bar',
+    data: <%= studio_economics_data.to_json.html_safe %>,
+    options: {
+      tension: 0.3,
+      scales: {
+        y: {
+          type: 'linear',
+          display: true,
+          position: 'left',
+          beginAtZero: true
+        },
       }
     }
   });

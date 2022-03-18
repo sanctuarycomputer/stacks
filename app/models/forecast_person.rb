@@ -7,7 +7,7 @@ class ForecastPerson < ApplicationRecord
     "https://forecastapp.com/864444/team/#{forecast_id}/edit"
   end
 
-  def utilization_during_range(start_of_range, end_of_range)
+  def utilization_during_range(start_of_range, end_of_range, preloaded_studios)
     assignments = forecast_assignments
       .includes(forecast_project: :forecast_client)
       .where(
@@ -23,7 +23,7 @@ class ForecastPerson < ApplicationRecord
           start_of_range,
           end_of_range
         )
-      elsif fa.is_non_billable?
+      elsif fa.is_non_billable?(preloaded_studios)
         acc[:non_billable] += fa.allocation_during_range_in_hours(
           start_of_range,
           end_of_range
