@@ -77,60 +77,8 @@ ActiveAdmin.register Studio do
     end
 
     preloaded_studios = Studio.all
-    studio_people =
-      ForecastPerson.includes(admin_user: :studios).all.select do |fp|
-        next true if resource.is_garden3d? && fp.admin_user.present?
-        (fp.try(:admin_user).try(:studios) || []).include?(resource)
-      end.reduce({}) do |acc, fp|
-        acc[fp] = periods.reduce({}) do |agr, period|
-          next agr if (
-            period[:starts_at] < Stacks::System.singleton_class::UTILIZATION_START_AT
-          )
-
-          agr[period[:label]] = fp.utilization_during_range(
-            period[:starts_at],
-            period[:ends_at],
-            Studio.all
-          )
-
-          agr[period[:label]][:report] = period[:report]
-
-          if fp.admin_user.present?
-            working_days = fp.admin_user.working_days_between(
-              period[:starts_at],
-              period[:ends_at],
-            ).count
-            sellable_hours = (working_days * fp.admin_user.expected_utilization * 8)
-            non_sellable_hours = (working_days * 8) - sellable_hours
-            agr[period[:label]] = agr[period[:label]].merge({
-              sellable: sellable_hours,
-              non_sellable: non_sellable_hours
-            })
-          end
-
-          agr
-        end
-        acc
-      end
-
-    # TODO: Should we be including Time Off for 4-day workers
-    # in the Time Off count?
-    aggregated_data =
-      studio_people.values.reduce({}) do |acc, periods|
-        periods.each do |label, data|
-          next acc[label] = data unless acc[label].present?
-          acc[label] = acc[label].merge(data) do |k, old, new|
-            if old.is_a?(Hash)
-              old.merge(new) {|k, o, n| o+n}
-            elsif old.is_a?(QboProfitAndLossReport)
-              old
-            else
-              old + new
-            end
-          end
-        end
-        acc
-      end
+    studio_people = resource.utilization_by_people(periods)
+    aggregated_data = resource.aggregated_utilization(studio_people)
 
     studio_profitability_data = {
       labels: periods.map{|p| p[:label]},
@@ -258,6 +206,7 @@ ActiveAdmin.register Studio do
     }])
 
     render(partial: "show", locals: {
+      studio_okr_data: resource.okrs,
       studio_profitability_data: studio_profitability_data,
       studio_economics_data: studio_economics_data,
       studio_utilization_data: studio_utilization_data,

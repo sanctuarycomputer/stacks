@@ -10,6 +10,48 @@
 
 <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
   <div id="titlebar_left">
+    <h2 id="page_title">🤝 OKRs</h2>
+  </div>
+</div>
+
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+  <thead>
+    <tr>
+      <th class="col"></th>
+      <th class="col">Last Month</th>
+      <th class="col">Last Quarter</th>
+      <th class="col">Last Year</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% studio_okr_data.each_with_index do |data, index| %>
+      <tr class="<%= index.even? ? "even" : "odd" %>">
+        <td class="col">
+          <%= data[:name] %>
+        </td>
+        <% [:last_month, :last_quarter, :last_year].each do |point| %>
+          <td class="col">
+            <% if data[point][:value] == :no_data %>
+              <%= data[point][:value] %>
+            <% else %>
+              <% case data[:unit]
+              when :usd %>
+                <%= number_to_currency data[point][:value].round(2) %>
+              <% when :percentage %>
+                <%= data[point][:value].round(2) %>%
+              <% else %>
+                <%= data[point][:value].round(2) %>
+              <% end %>
+            <% end %>
+          </td>
+        <% end %>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
+
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
     <h2 id="page_title">💸 Profitability</h2>
   </div>
 </div>
