@@ -34,7 +34,17 @@ ActiveAdmin.register ProjectTracker do
     column :work_status do |resource|
       span(resource.work_status.to_s.humanize.capitalize, class: "pill #{resource.work_status}")
     end
-    column :forecast_projects
+    column :forecast_projects do |resource|
+      if resource.forecast_projects.any?
+        div(
+          resource.forecast_projects.map do |fp|
+            a(fp.display_name, { href: fp.link, target: "_blank", class: "block" })
+          end
+        )
+      else
+        span("No Forecast Project Connected", class: "pill error")
+      end
+    end
     column :ATC do |resource|
       if resource.atc.present?
         resource.atc
@@ -42,12 +52,7 @@ ActiveAdmin.register ProjectTracker do
         span("No ATC", class: "pill error")
       end
     end
-    actions do |resource|
-      proposal_link = resource.project_tracker_links.find do |ptl|
-        ptl.link_type == "proposal"
-      end
-      link_to "Proposal ↗", proposal_link.url, target: "_blank" if proposal_link.present?
-    end
+    actions
   end
 
   action_item :mark_as_complete, only: :show do

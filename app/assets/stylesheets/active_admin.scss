@@ -724,7 +724,7 @@ body.logged_in .flash {
   font-weight: 700;
   font-size: 72%;
   color: $color-black;
-  &.draft, &.waiting, &.no, &.at_budget, &.not_sent, &.not_made, &.unpaid, &.partially_paid, &.changed, &.project_capsule_pending {
+  &.draft, &.waiting, &.no, &.at_budget, &.not_sent, &.not_made, &.unpaid, &.partially_paid, &.changed, &.capsule_pending {
     background-color: $color-orange;
     color: white;
   }

@@ -62,7 +62,7 @@ class ProjectTracker < ApplicationRecord
       if project_capsule.present? && project_capsule.complete?
         :complete
       else
-        :project_capsule_pending
+        :capsule_pending
       end
     end
   end
