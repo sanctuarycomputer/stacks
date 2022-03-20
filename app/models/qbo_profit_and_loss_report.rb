@@ -3,6 +3,13 @@ class QboProfitAndLossReport < ApplicationRecord
     (data["rows"].find {|r| r[0] == label } || [nil, 0])[1].to_f
   end
 
+  def burn_rate
+    find_row("Total Cost of Goods Sold") +
+    find_row("Total Expenses") -
+    find_row("[SC] Profit Share, Bonuses & Misc") -
+    find_row("[SC] Reinvestment")
+  end
+
   def cogs_for_studio(studio)
     gross_revenue = find_row(studio.qbo_sales_category)
     g3d_gross_revenue = find_row("Total Income")

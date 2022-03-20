@@ -69,6 +69,16 @@ class Stacks::Quickbooks
       access_token
     end
 
+    def fetch_all_accounts
+      access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
+
+      # Get all accounts (ie, "[SC] Payroll")
+      service = Quickbooks::Service::Account.new
+      service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
+      service.access_token = access_token
+      service.all
+    end
+
     def fetch_all_terms
       access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
 

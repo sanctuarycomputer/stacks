@@ -4,6 +4,23 @@ ActiveAdmin.register_page "Dashboard" do
   content title: proc { I18n.t("active_admin.dashboard") } do
     COLORS = Stacks::Utils::COLORS
 
+    qbo_accounts = Stacks::Quickbooks.fetch_all_accounts
+    cc_or_bank_accounts = qbo_accounts.select do |a|
+      ["Bank", "Credit Card"].include?(a.account_type)
+    end
+    net_cash = cc_or_bank_accounts.reduce(0) do |acc, a|
+      a.account_type == "Bank" ? acc += a.current_balance : acc -= a.current_balance
+      acc
+    end
+    burn_rates =
+      [1, 2, 3].map do |month|
+        QboProfitAndLossReport.find_or_fetch_for_range(
+          (Date.today - month.months).beginning_of_month,
+          (Date.today - month.months).end_of_month
+        ).burn_rate
+      end
+    average_burn_rate = burn_rates.sum(0.0) / burn_rates.length
+
     pp = ProfitabilityPass.order(created_at: :desc).first
 
     if pp.present?
@@ -108,6 +125,11 @@ ActiveAdmin.register_page "Dashboard" do
       end
 
       render(partial: "dashboard", locals: {
+        accounts: cc_or_bank_accounts,
+        runway_data: {
+          net_cash: net_cash,
+          average_burn_rate: average_burn_rate
+        },
         data: data,
         g3d_over_time_data: g3d_over_time_data,
         profitability_time_span: profitability_time_span,
