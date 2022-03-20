@@ -286,7 +286,8 @@ class AdminUser < ApplicationRecord
     user = where(email: auth.info.email).first || where(auth.slice(:provider, :uid).to_h).first || new
     user.update_attributes provider: auth.provider,
                            uid: auth.uid,
-                           email: auth.info.email
+                           email: auth.info.email,
+                           info: auth.dig("info")
     user
   end
 end
