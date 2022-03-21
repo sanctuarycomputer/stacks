@@ -102,7 +102,7 @@ class Stacks::Automator
 
       if send_twist_reminders
         needed_reminding.each do |person|
-          participant_ids = admin_twist_users.map{|p| p[:twist_data]["id"]}.join(",")
+          participant_ids = [*admin_twist_users, person].map{|p| p[:twist_data]["id"]}.join(",")
           conversation = twist.get_or_create_conversation(participant_ids)
           twist.add_message_to_conversation(conversation["id"], person[:reminder])
           sleep(0.1)

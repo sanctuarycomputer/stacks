@@ -611,6 +611,23 @@ a.member_link {
   padding-right: 14px;
 }
 
+.notifier {
+  position: absolute;
+  background-color: #FF160A;
+  z-index: 999999;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  right: -16px;
+  color: white;
+  font-size: 14px;
+  justify-content: center;
+  border-radius: 999px;
+  top: -16px;
+  border: 2.5px solid white;
+}
+
 #header ul.tabs > li:hover > a {
   background-color: $color-black;
   border-radius: 9999px;

@@ -1,4 +1,6 @@
 class AdminUser < ApplicationRecord
+  has_many :notifications, as: :recipient
+
   scope :active, -> {
           AdminUser.where(archived_at: nil)
         }
