@@ -25,15 +25,26 @@ class QboProfitAndLossReport < ApplicationRecord
       payroll: find_row(studio.qbo_payroll_category),
       benefits: find_row(studio.qbo_benefits_category),
       expenses: proportional_expenses,
-      subcontractors: find_row(studio.qbo_subcontractors_category)
+      subcontractors: find_row(studio.qbo_subcontractors_category),
+      profit_share: find_row("[SC] Profit Share, Bonuses & Misc"),
+      reinvestment: find_row("[SC] Reinvestment")
     }
 
-    base[:cogs] = (
-      base[:payroll] +
-      base[:benefits] +
-      base[:expenses] +
-      base[:subcontractors]
-    )
+    if studio.is_garden3d?
+      base[:cogs] = (
+        find_row("Total Cost of Goods Sold") +
+        base[:expenses] -
+        find_row("[SC] Profit Share, Bonuses & Misc") -
+        find_row("[SC] Reinvestment")
+      )
+    else
+      base[:cogs] = (
+        base[:payroll] +
+        base[:benefits] +
+        base[:expenses] +
+        base[:subcontractors]
+      )
+    end
 
     base[:net_revenue] = base[:revenue] - base[:cogs]
     base[:profit_margin] = (base[:net_revenue] / base[:revenue]) * 100

@@ -18,6 +18,11 @@ class Studio < ApplicationRecord
       type: :average_hourly_rate,
       unit: :usd,
       learn_more_url: "",
+    }, {
+      name: "Cost per Sellable Hour",
+      type: :cost_per_sellable_hour,
+      unit: :usd,
+      learn_more_url: "",
     }]
   end
 
@@ -74,6 +79,12 @@ class Studio < ApplicationRecord
       return { value: :no_data, health: :unknown } if v.nil?
       {
         value: Stacks::Utils.weighted_average(v[:billable].map{|k, v| [k.to_f, v]}),
+        health: 0
+      }
+    when :cost_per_sellable_hour
+      return { value: :no_data, health: :unknown } if v.nil?
+      {
+        value: (cogs[:cogs] / v[:sellable].to_f),
         health: 0
       }
     end
