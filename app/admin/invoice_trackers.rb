@@ -94,7 +94,7 @@ ActiveAdmin.register InvoiceTracker do
 
   controller do
     def show
-      resource.qbo_invoice.sync!
+      resource.qbo_invoice.try(:sync!)
       super
     end
   end
