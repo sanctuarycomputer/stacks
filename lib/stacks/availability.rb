@@ -35,7 +35,7 @@ class Stacks::Availability
           next acc
         end
 
-        allocation = a.dig("properties", "Role Capacity", "number")
+        allocation = a.dig("properties", "Allocation", "number")
         if allocation.nil?
           errors << { error: :allocation, url: a["url"], email: email } if allocation.nil?
           next acc

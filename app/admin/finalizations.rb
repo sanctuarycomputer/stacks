@@ -4,7 +4,7 @@ ActiveAdmin.register Finalization do
   config.paginate = false
   scope :finalized
 
-  menu if: proc { current_admin_user.is_admin? },
+  menu if: -> { current_admin_user.is_admin? },
        label: "Workspaces (Admin Only)",
        parent: "Skill Trees",
        priority: 3

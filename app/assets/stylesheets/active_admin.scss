@@ -10,16 +10,11 @@
 // Active Admin's got SASS!
 @import "active_admin/mixins";
 @import "active_admin/base";
-@import "active_admin/subnav";
 
 @import "colors";
 @import "generic_dashboard_modules";
 @import "budget_progress";
 @import "markdown";
-
-#header div.subnav {
-  padding: 4px 20px 4px 84px;
-}
 
 .icon-and-text {
   display: flex;
@@ -612,6 +607,7 @@ a.member_link {
 }
 
 .notifier {
+  box-shadow: 1px 1px 3px 1px #0000001f;
   position: absolute;
   background-color: #FF160A;
   z-index: 999999;
@@ -619,12 +615,12 @@ a.member_link {
   height: 28px;
   display: flex;
   align-items: center;
-  right: -16px;
+  right: -12px;
+  top: -14px;
   color: white;
   font-size: 14px;
   justify-content: center;
   border-radius: 999px;
-  top: -16px;
   border: 2.5px solid white;
 }
 

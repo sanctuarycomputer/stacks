@@ -7,7 +7,7 @@ class Stacks::Notifications
     end
 
     def notifications
-      # TODO Pending
+      # TODO Capsule Pending
       # TODO Unfinalized Skill Trees
       # TODO Forecast Client with malformed term?
       # TODO Users without Full Time Periods or base salary
@@ -34,28 +34,20 @@ class Stacks::Notifications
         Stacks::Quickbooks.fetch_all_customers
       end
 
-      # Load Invoice Statuses
-      invoice_statuses_thread = Thread.new do
-        invoice_trackers = InvoiceTracker.all
-        qbo_invoices =
-          Stacks::Automator.fetch_invoices_by_ids(
-            invoice_trackers.map(&:qbo_invoice_id).compact
-          )
-        invoice_statuses_need_action =
-          invoice_trackers.map do |it|
-            it.qbo_invoice(qbo_invoices)
-            it.status
-          end.inject(Hash.new(0)) do |h, e|
-            unless Stacks::System.singleton_class::INVOICE_STATUSES_NEED_ACTION.include?(e)
-              next h
-            end
-            h[e] += 1
-            h
+      invoice_trackers = InvoiceTracker.all
+      invoice_statuses_need_action =
+        invoice_trackers.map do |it|
+          it.status
+        end.inject(Hash.new(0)) do |h, e|
+          unless Stacks::System.singleton_class::INVOICE_STATUSES_NEED_ACTION.include?(e)
+            next h
           end
-      end
+          h[e] += 1
+          h
+        end
 
-      invoice_statuses_need_action, qbo_customers, allocation_data =
-        [invoice_statuses_thread, qbo_customers_thread, allocations_thread].map(&:value)
+      qbo_customers, allocation_data =
+        [qbo_customers_thread, allocations_thread].map(&:value)
       allocations, allocation_errors, allocations_today = allocation_data
 
       notifications << {
@@ -149,12 +141,12 @@ class Stacks::Notifications
 
           ⚠️ There are #{n.length} notifications in Stacks that need attention. If these items are not actioned, Stacks will not produce correct results.
 
-          👉 Please review and action the items [here](https://stacks.garden3d.net/admin/notifications) at your earliest convenience.
+          👉 Please review and action the items [here](https://stacks.garden3d.net/admin/system) at your earliest convenience.
         HEREDOC
 
         notify_admins_via_thread(
           "🥞 Stacks Notifications",
-          "There are #{n.length} notifications in Stacks that need attention."
+          message
         )
       end
     end

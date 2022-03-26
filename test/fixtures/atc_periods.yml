@@ -1,0 +1,13 @@
+# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+one:
+  project_tracker: one
+  admin_user: one
+  started_at: 2022-03-26
+  ended_at: 2022-03-26
+
+two:
+  project_tracker: two
+  admin_user: two
+  started_at: 2022-03-26
+  ended_at: 2022-03-26

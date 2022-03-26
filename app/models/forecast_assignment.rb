@@ -52,6 +52,10 @@ class ForecastAssignment < ApplicationRecord
     cost
   end
 
+  def value_in_usd
+    allocation_in_hours * forecast_project.hourly_rate
+  end
+
   def value_during_range_in_usd(start_of_range, end_of_range)
     hours =
       (allocation_during_range_in_seconds(

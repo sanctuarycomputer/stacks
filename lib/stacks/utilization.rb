@@ -2,7 +2,6 @@ class Stacks::Utilization
   # TODO: DRY these up
   START_AT = Date.new(2021, 6, 1)
   EIGHT_HOURS_IN_SECONDS = 28800
-  DEFAULT_HOURLY_RATE = 145
   STUDIO_TO_SERVICE_MAPPING = {
     "XXIX": "Brand Services",
     "Manhattan Hydraulics": "UX Services",
@@ -121,7 +120,7 @@ class Stacks::Utilization
         else
           hourly_rate_tags = project["tags"].filter { |t| t.ends_with?("p/h") }
           hourly_rate = if hourly_rate_tags.count == 0
-              DEFAULT_HOURLY_RATE
+              System.instance.default_hourly_rate
             elsif hourly_rate_tags.count > 1
               raise :malformed
             else

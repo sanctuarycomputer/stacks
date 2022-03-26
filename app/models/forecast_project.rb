@@ -32,7 +32,7 @@ class ForecastProject < ApplicationRecord
   def hourly_rate
     hourly_rate_tags = tags.filter { |t| t.ends_with?("p/h") }
     if hourly_rate_tags.count == 0
-      Stacks::Utilization::DEFAULT_HOURLY_RATE
+      System.instance.default_hourly_rate
     else
       hourly_rate_tags.first.to_f
     end

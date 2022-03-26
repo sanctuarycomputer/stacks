@@ -54,21 +54,6 @@
   </div>
 </div>
 
-
-<div class="dashboard-modules table index_table index">
-  <div class="dashboard-module">
-    <div class="module-header">
-      <p>Profitability (%)</p>
-      <p><a href="?profitability-time-span=3-months">3 Months</a></p>
-      <p><a href="?profitability-time-span=6-months">6 Months</a></p>
-      <p><a href="?profitability-time-span=all-time">All Time</a></p>
-    </div>
-    <div class="module-body">
-      <canvas id="profitability-chart" height="500"></canvas>
-    </div>
-  </div>
-</div>
-
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
     <div class="module-header">
@@ -101,30 +86,6 @@
 </div>
 
 <script>
-  new Chart(document.getElementById('profitability-chart'), {
-    type: 'line',
-    data: <%= data.to_json.html_safe %>,
-    options: {
-      tension: 0.3,
-      showLines: true,
-      scales: {
-        yAxes: {
-          ticks: {
-            min: -100,
-            max: 100,
-            stepSize: 20,
-          },
-          type: "linear",
-          display: true,
-          position: "left",
-          gridLines: {
-            drawOnArea: false,
-          },
-        }
-      },
-      maintainAspectRatio: false,
-    }
-  });
   new Chart(document.getElementById('g3d-over-time'), {
     type: 'bar',
     data: <%= g3d_over_time_data.to_json.html_safe %>,

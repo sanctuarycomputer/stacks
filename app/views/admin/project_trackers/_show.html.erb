@@ -162,8 +162,8 @@
 <div class="skill_tree_hint markdown-body" style="margin-top: 40px; margin-bottom:40px;">
   <%= sanitize RDiscount.new(@project_tracker.notes).to_html %>
 
-  <% if @project_tracker.atc.present? %>
-    <p style="margin-top:80px;"><strong>Project ATC: </strong><%= link_to @project_tracker.atc.email, admin_admin_user_path(@project_tracker.atc) %></p>
+  <% if @project_tracker.current_atc.present? %>
+    <p style="margin-top:80px;"><strong>Project ATC: </strong><%= link_to @project_tracker.current_atc.email, admin_admin_user_path(@project_tracker.current_atc) %></p>
   <% end %>
 </div>
 
@@ -251,13 +251,13 @@
 <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom:20px;">
   <tbody>
     <tr class="odd">
-      <td class="col">Invoiced Spend (Previous Months)</td>
+      <td class="col">Invoiced Spend</td>
       <td class="col">
         <%= number_to_currency(invoiced_spend) %>
       </td>
     </tr>
     <tr class="even">
-      <td class="col">Running Spend (This Month)</td>
+      <td class="col">Running Spend (Since last invoice)</td>
       <td class="col">
         <%= number_to_currency(running_spend) %>
       </td>
@@ -420,7 +420,7 @@
           </span>
         </td>
         <td class="col">
-          <%= number_to_currency(it.qbo_line_items_relating_to_forecast_projects(@project_tracker.forecast_projects).map(&:amount).reduce(&:+)) %>
+          <%= number_to_currency(it.qbo_line_items_relating_to_forecast_projects(@project_tracker.forecast_projects).map{|qbo_li| qbo_li.dig("amount").to_f}.reduce(&:+)) %>
         </td>
       </tr>
     <% end %>

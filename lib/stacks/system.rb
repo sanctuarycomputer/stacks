@@ -8,10 +8,8 @@ class Stacks::System
     INVOICE_STATUSES_NEED_ACTION = [
       :not_made,
       :not_sent,
-      :unpaid,
       :unpaid_overdue,
       :partially_paid_overdue,
-      :partially_paid
     ]
 
     NOTION_ASSIGNMENTS_LINK =

@@ -58,26 +58,6 @@ ActiveAdmin.register InvoiceTracker do
     end
   end
 
-  controller do
-    def index
-      index! do |format|
-        keyed_invoice_trackers =
-          @invoice_trackers.reduce({}) do |acc, it|
-            if it.qbo_invoice_id.present?
-              acc[it.qbo_invoice_id] = it
-            end
-            acc
-          end
-        if keyed_invoice_trackers.keys.any?
-          Stacks::Automator.fetch_invoices_by_ids(keyed_invoice_trackers.keys).each do |qbo_inv|
-            keyed_invoice_trackers[qbo_inv.id]._qbo_invoice = qbo_inv
-          end
-        end
-        format.html
-      end
-    end
-  end
-
   index download_links: false, :title => proc { "Invoices for #{self.parent.invoice_month}" } do
     column :client do |resource|
       resource.forecast_client.name
@@ -109,6 +89,13 @@ ActiveAdmin.register InvoiceTracker do
           method: :post
         )
       end
+    end
+  end
+
+  controller do
+    def show
+      resource.qbo_invoice.sync!
+      super
     end
   end
 

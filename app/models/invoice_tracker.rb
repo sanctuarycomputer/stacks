@@ -7,10 +7,14 @@ class InvoiceTracker < ApplicationRecord
   belongs_to :invoice_pass
   belongs_to :forecast_client, class_name: "ForecastClient", foreign_key: "forecast_client_id", primary_key: "forecast_id"
 
-  attr_accessor :_qbo_invoice
+  belongs_to :qbo_invoice, class_name: "QboInvoice", foreign_key: "qbo_invoice_id", primary_key: "qbo_id"
 
   def display_name
     "#{forecast_client.name} - #{invoice_pass.invoice_month}"
+  end
+
+  def qbo_invoice
+    super || (qbo_invoice_id ? QboInvoice.create!(qbo_id: qbo_invoice_id) : nil)
   end
 
   def qbo_invoice_link
@@ -28,28 +32,33 @@ class InvoiceTracker < ApplicationRecord
     end
 
     (qbo_invoice.try(:line_items) || []).reduce(diff_base) do |acc, qbo_li|
-      found = acc["lines"].values.find{|l| l["id"] == qbo_li.id}
+      found = acc["lines"].values.find{|l| l["id"] == qbo_li["id"]}
 
       if found
         found["diff_state"] = "unchanged"
-        binding.pry if qbo_li.sales_line_item_detail.nil?
-        if found["quantity"].to_f != qbo_li.sales_line_item_detail.quantity
+        if found["quantity"].to_f != qbo_li.dig("sales_line_item_detail", "quantity").to_f
           found["diff_state"] = "changed"
-          found["quantity"] = [found["quantity"].to_f, qbo_li.sales_line_item_detail.quantity]
+          found["quantity"] = [
+            found["quantity"].to_f,
+            qbo_li.dig("sales_line_item_detail", "quantity").to_f
+          ]
         end
-        if found["unit_price"].to_f != qbo_li.sales_line_item_detail.unit_price
+        if found["unit_price"].to_f != qbo_li.dig("sales_line_item_detail", "unit_price").to_f
           found["diff_state"] = "changed"
-          found["unit_price"] = [found["unit_price"].to_f, qbo_li.sales_line_item_detail.unit_price]
+          found["unit_price"] = [
+            found["unit_price"].to_f,
+            qbo_li.dig("sales_line_item_detail", "unit_price").to_f
+          ]
         end
       else
-        if qbo_li.sales_item?
-          acc["lines"][qbo_li.description] = {
-            "id" => qbo_li.id,
+        if qbo_li.dig("detail_type") == "SalesItemLineDetail"
+          acc["lines"][qbo_li["description"] || "No Description in Quickbooks"] = {
+            "id" => qbo_li["id"],
             "diff_state" => "added",
             "forecast_project" => nil,
             "forecast_person" => nil,
-            "quantity" => qbo_li.sales_line_item_detail.quantity.to_f,
-            "unit_price" => qbo_li.sales_line_item_detail.unit_price.to_f
+            "quantity" => qbo_li.dig("sales_line_item_detail", "quantity").to_f,
+            "unit_price" => qbo_li.dig("sales_line_item_detail", "unit_price").to_f
           }
         end
       end
@@ -70,7 +79,7 @@ class InvoiceTracker < ApplicationRecord
     ((qbo_invoice.try(:line_items) || []).select do |qbo_li|
       forecast_projects
         .map(&:id)
-        .include?((base["lines"].values.find{|l| l["id"] == qbo_li.id} || {})["forecast_project"])
+        .include?((base["lines"].values.find{|l| l["id"] == qbo_li["id"]} || {})["forecast_project"])
     end || [])
   end
 
@@ -97,29 +106,6 @@ class InvoiceTracker < ApplicationRecord
         else
           :not_sent
         end
-      end
-    end
-  end
-
-  def qbo_invoice(preloaded_qbo_invoices = [])
-    if qbo_invoice_id.nil?
-      @_qbo_invoice = nil
-      return nil
-    end
-    begin
-      @_qbo_invoice ||= (
-        preloaded = preloaded_qbo_invoices.find do |qbo_invoice|
-          qbo_invoice.id == qbo_invoice_id
-        end
-        preloaded || Stacks::Quickbooks.fetch_invoice_by_id(qbo_invoice_id)
-      )
-    rescue Quickbooks::IntuitRequestException => e
-      @_qbo_invoice = nil
-      if e.code == "610"
-        update!(qbo_invoice_id: nil)
-        return nil
-      else
-        raise e
       end
     end
   end
@@ -222,7 +208,7 @@ class InvoiceTracker < ApplicationRecord
         description =
           "#{project.code} #{project.name} (#{invoice_pass.invoice_month}) #{person.first_name} #{person.last_name}".strip
         line_item = qbo_inv.line_items.find do |qbo_li|
-          qbo_li.description == description
+          qbo_li.dig("description") == description
         end
 
         unless line_item.present?
@@ -263,8 +249,8 @@ class InvoiceTracker < ApplicationRecord
 
     # Assign Quickbooks Ids to our Internal Snapshot
     created_qbo_inv.line_items.reduce(snapshot) do |acc, qbo_li|
-      line = acc[:lines][qbo_li.description]
-      line[:id] = qbo_li.id if line.present?
+      line = acc[:lines][qbo_li.dig("description")]
+      line[:id] = qbo_li["id"] if line.present?
       acc
     end
 

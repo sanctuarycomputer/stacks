@@ -2,6 +2,9 @@ class Studio < ApplicationRecord
   has_many :studio_memberships
   has_many :admin_users, through: :studio_memberships
 
+  has_many :studio_coordinator_periods
+  accepts_nested_attributes_for :studio_coordinator_periods, allow_destroy: true
+
   def self.okrs
     [{
       name: "Profitability",

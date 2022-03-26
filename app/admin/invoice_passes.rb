@@ -25,28 +25,6 @@ ActiveAdmin.register InvoicePass do
     redirect_to admin_invoice_pass_path(resource), notice: "Done!"
   end
 
-  controller do
-    def index
-      index! do |format|
-        qbo_invoice_ids =
-          @invoice_passes.map{|ip| ip.invoice_trackers.map(&:qbo_invoice_id)}.flatten.compact
-        qbo_invoices =
-          Stacks::Automator.fetch_invoices_by_ids(qbo_invoice_ids).reduce({}) do |acc, qbo_inv|
-            acc[qbo_inv.id] = qbo_inv
-            acc
-          end
-
-        @invoice_passes.each do |ip|
-          ip.invoice_trackers.each do |it|
-            it._qbo_invoice = qbo_invoices[it.qbo_invoice_id]
-          end
-        end
-
-        format.html
-      end
-    end
-  end
-
   index download_links: false, title: "Monthly Invoicing" do
     column :start_of_month
     column :value do |resource|
@@ -71,7 +49,6 @@ ActiveAdmin.register InvoicePass do
   end
 
   show title: :invoice_month do
-    qbo_invoices = Stacks::Automator.fetch_invoices_by_ids(invoice_pass.latest_invoice_ids)
-    render 'invoice_pass', { invoice_pass: invoice_pass, qbo_invoices: qbo_invoices }
+    render 'invoice_pass', { invoice_pass: invoice_pass }
   end
 end

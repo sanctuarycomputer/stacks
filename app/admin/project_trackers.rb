@@ -24,6 +24,14 @@ ActiveAdmin.register ProjectTracker do
       :forecast_project_id,
       :_destroy,
       :_edit
+    ],
+    atc_periods_attributes: [
+      :id,
+      :admin_user_id,
+      :started_at,
+      :ended_at,
+      :_destroy,
+      :_edit
     ]
 
   index download_links: false, title: "Projects" do
@@ -46,8 +54,8 @@ ActiveAdmin.register ProjectTracker do
       end
     end
     column :ATC do |resource|
-      if resource.atc.present?
-        resource.atc
+      if resource.current_atc.present?
+        resource.current_atc
       else
         span("No ATC", class: "pill error")
       end
@@ -84,9 +92,14 @@ ActiveAdmin.register ProjectTracker do
       f.input :name
       f.input :budget_low_end
       f.input :budget_high_end
-      f.input :atc
 
-      f.has_many :project_tracker_links, heading: false, allow_destroy: true, new_record: 'Create a Project Link' do |a|
+      f.has_many :atc_periods, heading: false, allow_destroy: true, new_record: 'Add an ATC' do |a|
+        a.input :admin_user
+        a.input :started_at, hint: "Leave blank to default to the date of the first recorded hour"
+        a.input :ended_at, hint: "Leave blank unless ATC role was passed off to another person"
+      end
+
+      f.has_many :project_tracker_links, heading: false, allow_destroy: true, new_record: 'Add a Project URL' do |a|
         a.input(:name, {
           label: "Link Name",
           prompt: "Add a name for this link",

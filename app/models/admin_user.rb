@@ -15,6 +15,25 @@ class AdminUser < ApplicationRecord
     archived_at.nil?
   end
 
+  def atc_months
+    # TODO: Take into account wether this user is active or not
+    atc_periods.reduce(0.0) do |acc, atcp|
+      acc +=
+        (((atcp.period_ended_at || Date.today).to_time - atcp.period_started_at.to_time)/1.month.second)
+    end
+  end
+
+  def studio_coordinator_months
+    # TODO: Take into account wether this user is active or not
+    studio_coordinator_periods.reduce(0.0) do |acc, scp|
+      acc +=
+        ((scp.ended_at_or_now.to_time - scp.started_at.to_time)/1.month.second)
+    end
+  end
+
+  has_many :atc_periods, dependent: :nullify
+  has_many :studio_coordinator_periods, dependent: :nullify
+
   has_many :invoice_trackers, dependent: :nullify
   has_one :forecast_person, class_name: "ForecastPerson", foreign_key: "email", primary_key: "email"
 

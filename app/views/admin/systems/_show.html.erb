@@ -1,7 +1,50 @@
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Settings</p>
+    </div>
+    <div class="module-body">
+      <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom: 0px">
+        <tbody>
+          <% resource.class.stored_attributes[:settings].each_with_index do |attr, idx| %>
+            <tr class="<%= idx.even? ? "even" : "odd" %>">
+              <td class="col">
+                <%= attr.to_s.humanize %>
+              </td>
+              <td class="col text-right">
+                <%= resource.send(attr) %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Admins</p>
+    </div>
+    <div class="module-body">
+      <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom: 0px">
+        <tbody>
+          <% admins.each_with_index do |a, idx| %>
+            <tr class="<%= idx.even? ? "even" : "odd" %>">
+              <td class="col">
+                <%= link_to a.email, admin_admin_user_path(a) %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom: 20px">
   <tbody>
-    <% if notifications.any? %>
-      <% notifications.each_with_index do |n, idx| %>
+    <% if errors.any? %>
+      <% errors.each_with_index do |n, idx| %>
         <tr class="<%= idx.even? ? "even" : "odd" %>">
           <td class="col">
             <% case (n[:priority] || 0)
@@ -58,3 +101,5 @@
     <% end %>
   </tbody>
 </table>
+
+

@@ -4,6 +4,17 @@ class Stacks::Quickbooks
       sync_monthly_profit_and_loss_reports!
       sync_quarterly_profit_and_loss_reports!
       sync_yearly_profit_and_loss_reports!
+      sync_all_invoices!
+    end
+
+    def sync_all_invoices!
+      data = fetch_all_invoices.map do |i|
+        {
+          qbo_id: i["id"],
+          data: i.as_json,
+        }
+      end
+      QboInvoice.upsert_all(data, unique_by: :qbo_id)
     end
 
     def sync_monthly_profit_and_loss_reports!
@@ -67,6 +78,15 @@ class Stacks::Quickbooks
       end
 
       access_token
+    end
+
+    def fetch_all_invoices
+      access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
+
+      service = Quickbooks::Service::Invoice.new
+      service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
+      service.access_token = access_token
+      service.all
     end
 
     def fetch_all_accounts

@@ -5,7 +5,6 @@ class ProjectTracker < ApplicationRecord
   validates_numericality_of :budget_high_end,
     greater_than_or_equal_to: :budget_low_end, if: :validate_budgets?
 
-  belongs_to :atc, class_name: "AdminUser", optional: true
   has_one :project_capsule, dependent: :delete
   has_many :project_tracker_links, dependent: :delete_all
   accepts_nested_attributes_for :project_tracker_links, allow_destroy: true
@@ -13,6 +12,21 @@ class ProjectTracker < ApplicationRecord
   has_many :project_tracker_forecast_projects, dependent: :delete_all
   has_many :forecast_projects, through: :project_tracker_forecast_projects
   accepts_nested_attributes_for :project_tracker_forecast_projects, allow_destroy: true
+
+  has_many :atc_periods, dependent: :delete_all
+  accepts_nested_attributes_for :atc_periods, allow_destroy: true
+
+  belongs_to :atc, class_name: "AdminUser", optional: true
+
+  def current_atc
+    current_atc_period.try(:admin_user)
+  end
+
+  def current_atc_period
+    atc_periods.find do |atc_period|
+      atc_period.period_started_at <= Date.today && atc_period.period_ended_at.nil?
+    end
+  end
 
   def ensure_project_capsule_exists!
     ProjectCapsule.find_or_create_by!(project_tracker: self)
@@ -23,24 +37,12 @@ class ProjectTracker < ApplicationRecord
   end
 
   def invoice_trackers
-    its =
-      InvoiceTracker
-        .includes(:invoice_pass)
-        .all
-        .select{|it| (it.forecast_project_ids & forecast_projects.map(&:forecast_id)).any?}
-        .sort{|a, b| a.invoice_pass.start_of_month <=> b.invoice_pass.start_of_month}
-        .reverse
-    qbo_invoice_ids =
-      its.map(&:qbo_invoice_id).compact
-    qbo_invoices =
-      Stacks::Automator.fetch_invoices_by_ids(qbo_invoice_ids).reduce({}) do |acc, qbo_inv|
-        acc[qbo_inv.id] = qbo_inv
-        acc
-      end
-    its.each do |it|
-      it._qbo_invoice = qbo_invoices[it.qbo_invoice_id] if it.qbo_invoice_id.present?
-    end
-    its
+    its = InvoiceTracker
+      .includes(:invoice_pass)
+      .all
+      .select{|it| (it.forecast_project_ids & forecast_projects.map(&:forecast_id)).any?}
+      .sort{|a, b| a.invoice_pass.start_of_month <=> b.invoice_pass.start_of_month}
+      .reverse
   end
 
   def last_month_hours
@@ -149,21 +151,36 @@ class ProjectTracker < ApplicationRecord
     end || 0
   end
 
-  def invoiced_spend
+  def first_recorded_assignment
     forecast_project_ids = forecast_projects.map(&:forecast_id)
-    today = Date.today
+    ForecastAssignment
+      .where(project_id: forecast_project_ids)
+      .order(start_date: :asc)
+      .limit(1)
+      .first
+  end
 
-    assignments =
-      ForecastAssignment
-        .includes(:forecast_project)
-        .where(project_id: forecast_project_ids)
+  def last_recorded_assignment
+    forecast_project_ids = forecast_projects.map(&:forecast_id)
+    ForecastAssignment
+      .where(project_id: forecast_project_ids)
+      .order(start_date: :desc)
+      .limit(1)
+      .first
+  end
 
-    assignments.reduce(0) do |acc, a|
-      acc += a.value_during_range_in_usd(
-        Date.new(2015, 1, 1),
-        today.last_month.end_of_month
-      )
-    end || 0
+  def invoiced_spend
+    forecast_project_ids = forecast_projects.map(&:forecast_id) || []
+    invoice_trackers.map(&:blueprint_diff).reduce(0.0) do |acc, itbd|
+      acc +=
+        (itbd["lines"].values.reduce(0.0) do |agr, line|
+          next agr unless forecast_project_ids.include?(line["forecast_project"])
+          next agr if line["diff_state"] == "removed"
+          quantity = line["quantity"].is_a?(Array) ? line["quantity"][1] : line["quantity"]
+          unit_price = line["unit_price"].is_a?(Array) ? line["unit_price"][1] : line["unit_price"]
+          agr += (quantity * unit_price)
+        end || 0.0)
+    end
   end
 
   def running_spend
@@ -174,13 +191,29 @@ class ProjectTracker < ApplicationRecord
       ForecastAssignment
         .includes(:forecast_project)
         .where(project_id: forecast_project_ids)
-        .where('end_date >= ? AND start_date <= ?', today.beginning_of_month, today.end_of_month)
 
-    assignments.reduce(0) do |acc, a|
-      acc += a.value_during_range_in_usd(
-        today.beginning_of_month,
-        today.end_of_month
-      )
-    end || 0
+    if invoice_trackers.any?
+      last_day_covered_by_invoice_trackers = invoice_trackers
+        .first
+        .invoice_pass
+        .start_of_month
+        .end_of_month
+      assignments = assignments
+        .where(
+          'end_date >= ? AND start_date <= ?',
+          last_day_covered_by_invoice_trackers + 1.day,
+          today + 1.year
+        )
+      assignments.reduce(0) do |acc, a|
+        acc += a.value_during_range_in_usd(
+          last_day_covered_by_invoice_trackers + 1.day,
+          today + 1.year
+        )
+      end || 0
+    else
+      assignments.reduce(0) do |acc, a|
+        acc += a.value_in_usd
+      end || 0
+    end
   end
 end

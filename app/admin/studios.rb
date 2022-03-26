@@ -3,13 +3,31 @@ ActiveAdmin.register Studio do
   config.paginate = false
   actions :index, :show, :edit, :update
 
-  permit_params :name, :accounting_prefix, :mini_name
+  permit_params :name,
+    :accounting_prefix,
+    :mini_name,
+    studio_coordinator_periods_attributes: [
+      :id,
+      :admin_user_id,
+      :started_at,
+      :ended_at,
+      :_destroy,
+      :_edit
+    ]
 
   form do |f|
     f.inputs(class: "admin_inputs") do
       f.input :name
       f.input :accounting_prefix
       f.input :mini_name
+
+      f.has_many :studio_coordinator_periods, heading: false, allow_destroy: true, new_record: 'Add a Studio Coorindator' do |a|
+        a.input :admin_user
+        a.input :started_at
+        a.input :ended_at
+      end
+
+
     end
     f.actions
   end
