@@ -96,7 +96,7 @@ ActiveAdmin.register ProjectTracker do
       f.has_many :atc_periods, heading: false, allow_destroy: true, new_record: 'Add an ATC' do |a|
         a.input :admin_user
         a.input :started_at, hint: "Leave blank to default to the date of the first recorded hour"
-        a.input :ended_at, hint: "Leave blank unless ATC role was passed off to another person"
+        a.input :ended_at, hint: "Leave blank unless this ATC role was passed off to another person"
       end
 
       f.has_many :project_tracker_links, heading: false, allow_destroy: true, new_record: 'Add a Project URL' do |a|
