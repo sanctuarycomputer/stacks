@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2022_03_26_184914) do
+ActiveRecord::Schema.define(version: 2022_03_27_174526) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -287,12 +287,6 @@ ActiveRecord::Schema.define(version: 2022_03_26_184914) do
     t.decimal "internals_budget_multiplier", default: "0.5"
   end
 
-  create_table "profitability_passes", force: :cascade do |t|
-    t.jsonb "data"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-  end
-
   create_table "project_capsules", force: :cascade do |t|
     t.bigint "project_tracker_id", null: false
     t.text "postpartum_notes"
@@ -464,12 +458,6 @@ ActiveRecord::Schema.define(version: 2022_03_26_184914) do
 
   create_table "trees", force: :cascade do |t|
     t.string "name"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-  end
-
-  create_table "utilization_passes", force: :cascade do |t|
-    t.jsonb "data"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
   end

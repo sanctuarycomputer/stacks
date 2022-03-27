@@ -1,2 +1,0 @@
-class ProfitabilityPass < ApplicationRecord
-end

@@ -5,6 +5,8 @@ class Stacks::System
     # all of their hours in Harvest Forecast
     UTILIZATION_START_AT = Date.new(2021, 6, 1)
 
+    EIGHT_HOURS_IN_SECONDS = 28800
+
     INVOICE_STATUSES_NEED_ACTION = [
       :not_made,
       :not_sent,

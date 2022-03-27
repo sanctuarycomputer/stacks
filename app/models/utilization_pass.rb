@@ -1,2 +1,0 @@
-class UtilizationPass < ApplicationRecord
-end

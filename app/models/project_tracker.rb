@@ -97,38 +97,51 @@ class ProjectTracker < ApplicationRecord
 
   def estimated_cost
     cost = 0
-    units_rollup = Stacks::Economics.units_rollup
 
-    # We use a weighted average for December, as
-    # that's the month we'll usually give out profit
-    # share, so that throws the values here out of whack.
-    a = units_rollup.map do |k, v|
-      next nil if k.include?("December")
-      [v["cost_per_billable_hour"], v["billable"]]
-    end.compact
-    average_cost_per_billable_hour =
-      a.reduce(0) { |m,r| m += r[0] * r[1] } / a.reduce(0) { |m,r| m += r[1] }.to_f
-
-    time = Date.new(2020, 1, 1)
-    while time <= Date.today.beginning_of_month
-      hours =
-        forecast_projects.reduce(0) do |acc, fp|
-          acc += fp.total_hours_during_range(time.beginning_of_month, time.end_of_month)
-        end
-
-      if hours > 0
-        month = time.strftime("%B")
-        label = "#{time.strftime("%B")}, #{time.year}"
-        cost_per_billable_hour =
-          if month == "December" || units_rollup[label].nil?
-            average_cost_per_billable_hour
-          else
-            (units_rollup[label] && units_rollup[label]["cost_per_billable_hour"])
-          end
-        cost += hours * cost_per_billable_hour
-      end
+    garden3d = Studio.find_by(name: "garden3d")
+    periods = {}
+    time = (
+      first_recorded_assignment ?
+      first_recorded_assignment.start_date.beginning_of_month :
+      Date.new(2020, 1, 1)
+    )
+    end_time = (
+      last_recorded_assignment ?
+      last_recorded_assignment.start_date.beginning_of_month :
+      Date.today.beginning_of_month
+    )
+    while time <= end_time
+      period = Stacks::Period.new(
+        time.strftime("%B, %Y"),
+        time.beginning_of_month,
+        time.end_of_month
+      )
+      periods[period] =
+        garden3d.key_datapoints_for_period(period)
 
       time = time.advance(months: 1)
+    end
+
+    average_cost_per_hour_sold =
+      Stacks::Utils.weighted_average(
+        periods.map do |p, dp|
+          [dp[:actual_cost_per_hour_sold][:value], dp[:billable_hours][:value]]
+        end.reject{|p| p[0] == :no_data}
+      )
+
+    periods.each do |p, dp|
+      hours = forecast_projects.reduce(0) do |acc, fp|
+        acc += fp.total_hours_during_range(
+          p.starts_at,
+          p.ends_at
+        )
+      end
+      cost_per_hour = (
+        periods[p][:actual_cost_per_hour_sold][:value] == :no_data ?
+        average_cost_per_hour_sold :
+        periods[p][:actual_cost_per_hour_sold][:value]
+      )
+      cost += hours * cost_per_hour
     end
 
     cost

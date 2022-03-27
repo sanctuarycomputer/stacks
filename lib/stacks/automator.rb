@@ -2,15 +2,6 @@ class Stacks::Automator
   class << self
     EIGHT_HOURS_IN_SECONDS = 28800
 
-    STUDIO_TO_SERVICE_MAPPING = {
-      "XXIX": "Brand Services",
-      "Manhattan Hydraulics": "UX Services",
-      "Sanctuary Computer": "Development Services",
-      "garden3d": "Services",
-    }
-
-    STUDIOS = STUDIO_TO_SERVICE_MAPPING.keys
-
     def forecast
       @_forecast ||= Stacks::Forecast.new
     end
@@ -49,7 +40,6 @@ class Stacks::Automator
             ((invoice_pass.data || {})["reminder_passes"] || {}).merge(new_reminder_pass),
         })
       )
-
       return if needed_reminding.any?
 
       invoice_pass.make_trackers!
@@ -63,20 +53,19 @@ class Stacks::Automator
 
         Please review and send invoices [here](https://stacks.garden3d.net/admin/invoice_passes/#{invoice_pass.id}), and resolve any errors necessary.
       HEREDOC
-      message_operations_channel_thread("[#{invoice_pass.start_of_month.strftime("%B %Y")}] Invoicing", message)
+      message_operations_channel_thread(
+        "[#{invoice_pass.start_of_month.strftime("%B %Y")}] Invoicing",
+        message
+      )
     end
 
     # Designed to run daily, and remind folks to update their hours
     # until everyone has accounted for business_days * 8hrs in the
     # given month.
     def attempt_invoicing_for_previous_month
-      # Check if it's the first wednesday of the month (or after)
-      first_wednesday_of_month = Date.today.beginning_of_month
-      first_wednesday_of_month += 1.days until first_wednesday_of_month.wday == 3
-      return unless (first_wednesday_of_month <= Date.today)
-
-      # Ensure we have an Invoice Pass record to track this month
-      invoice_pass = InvoicePass.find_by(start_of_month: (Date.today - 1.month).beginning_of_month)
+      invoice_pass = InvoicePass.find_by(
+        start_of_month: (Date.today - 1.month).beginning_of_month
+      )
       unless invoice_pass.present?
         invoice_pass = InvoicePass.create!(
           start_of_month: (Date.today - 1.month).beginning_of_month,
@@ -84,6 +73,12 @@ class Stacks::Automator
         )
       end
       return if invoice_pass.complete?
+
+      # Check if it's the first business day of the month (or after)
+      first_business_day_of_month = Date.today.beginning_of_month
+      first_business_day_of_month += 1.days until first_business_day_of_month.wday.between?(1, 5)
+      return unless (first_business_day_of_month <= Date.today)
+
       attempt_invoicing_for_invoice_pass(invoice_pass)
     end
 
@@ -129,22 +124,6 @@ class Stacks::Automator
       end
 
       needed_reminding
-    end
-
-    # TODO: move me to Stacks::Quickbooks
-    def fetch_invoices_by_ids(ids = [])
-      return [] unless ids.any?
-
-      access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
-
-      invoice_service = Quickbooks::Service::Invoice.new
-      invoice_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
-      invoice_service.access_token = access_token
-
-      invoice_service.query(
-        "SELECT * FROM Invoice WHERE id in ('#{ids.join("','")}')",
-        per_page: 1000
-      )
     end
 
     def discover_people_missing_hours_for_month(start_of_month)
@@ -226,7 +205,6 @@ class Stacks::Automator
             twist_data: twist_user,
             missing_allocation: missing_allocation,
             reminder: reminder,
-            studio: person["roles"].filter { |r| STUDIOS.include?(:"#{r}") }.first,
           }
         else
           {
@@ -234,7 +212,6 @@ class Stacks::Automator
             twist_data: twist_user,
             missing_allocation: 0,
             reminder: nil,
-            studio: person["roles"].filter { |r| STUDIOS.include?(:"#{r}") }.first,
           }
         end
       end

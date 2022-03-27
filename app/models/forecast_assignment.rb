@@ -85,7 +85,7 @@ class ForecastAssignment < ApplicationRecord
 
     per_day_allocation = (
       allocation.nil? ?
-      Stacks::Utilization::EIGHT_HOURS_IN_SECONDS :
+      Stacks::System.singleton_class::EIGHT_HOURS_IN_SECONDS :
       allocation
     )
     (per_day_allocation * days).to_f
@@ -120,7 +120,7 @@ class ForecastAssignment < ApplicationRecord
     # Time Off has a nil allocation
     per_day_allocation = (
       allocation.nil? ?
-      Stacks::Utilization::EIGHT_HOURS_IN_SECONDS :
+      Stacks::System.singleton_class::EIGHT_HOURS_IN_SECONDS :
       allocation
     )
     (per_day_allocation * days).to_f
