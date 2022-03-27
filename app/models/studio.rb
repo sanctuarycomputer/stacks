@@ -5,92 +5,89 @@ class Studio < ApplicationRecord
   has_many :studio_coordinator_periods
   accepts_nested_attributes_for :studio_coordinator_periods, allow_destroy: true
 
-  def self.okrs
-    [{
-      name: "Profitability",
-      type: :profitability,
-      unit: :percentage,
-      learn_more_url: "",
-    }, {
-      name: "Utilization",
-      type: :utilization,
-      unit: :percentage,
-      learn_more_url: "",
-    }, {
-      name: "Average Hourly Rate",
-      type: :average_hourly_rate,
-      unit: :usd,
-      learn_more_url: "",
-    }, {
-      name: "Cost per Sellable Hour",
-      type: :cost_per_sellable_hour,
-      unit: :usd,
-      learn_more_url: "",
-    }]
-  end
-
-  def okrs
-    periods = [{
-      label: :last_month,
-      starts_at: Date.today.last_month.beginning_of_month,
-      ends_at: Date.today.last_month.end_of_month,
-    }, {
-      label: :last_quarter,
-      starts_at: Date.today.last_quarter.beginning_of_quarter,
-      ends_at: Date.today.last_quarter.end_of_quarter,
-    }, {
-      label: :last_year,
-      starts_at: Date.today.last_year.beginning_of_year,
-      ends_at: Date.today.last_year.end_of_year,
-    }].map do |period|
-      period[:report] = QboProfitAndLossReport.find_or_fetch_for_range(
-        period[:starts_at],
-        period[:ends_at]
-      )
-      period
-    end
-
-    Studio.okrs.map do |okr|
-      base = okr.clone
-      periods.each do |period|
-        base[period[:label]] = make_okr(okr[:type], period)
-      end
-      base
-    end
-  end
-
-  def make_okr(okr_name, period)
+  def key_datapoints_for_period(period)
+    cogs = period.report.cogs_for_studio(self)
     v = aggregated_utilization(
       utilization_by_people([period])
     ).values.first
-    cogs = period[:report].cogs_for_studio(self)
 
-    case okr_name
-    when :profitability
-      {
-        value: ((cogs[:net_revenue] / cogs[:revenue]) * 100),
-        health: 0
+    data = {
+      revenue: {
+        value: cogs[:revenue],
+        unit: :usd
+      },
+      payroll: {
+        value: cogs[:payroll],
+        unit: :usd
+      },
+      benefits: {
+        value: cogs[:benefits],
+        unit: :usd
+      },
+      expenses: {
+        value: cogs[:expenses],
+        unit: :usd
+      },
+      subcontractors: {
+        value: cogs[:subcontractors],
+        unit: :usd
+      },
+      profit_margin: {
+        value: cogs[:profit_margin],
+        unit: :percentage
       }
-    when :utilization
-      return { value: :no_data, health: :unknown } if v.nil?
-      total_billable = v[:billable].values.reduce(&:+) || 0
-      {
-        value: (total_billable / v[:sellable]) * 100,
-        health: 0
-      }
-    when :average_hourly_rate
-      return { value: :no_data, health: :unknown } if v.nil?
-      {
-        value: Stacks::Utils.weighted_average(v[:billable].map{|k, v| [k.to_f, v]}),
-        health: 0
-      }
-    when :cost_per_sellable_hour
-      return { value: :no_data, health: :unknown } if v.nil?
-      {
-        value: (cogs[:cogs] / v[:sellable].to_f),
-        health: 0
-      }
+    }
+
+    data[:sellable_hours] = { unit: :hours, value: :no_data }
+    unless v.nil?
+      data[:sellable_hours][:value] = v[:sellable]
     end
+
+    data[:non_sellable_hours] = { unit: :hours, value: :no_data }
+    unless v.nil?
+      data[:non_sellable_hours][:value] = v[:non_sellable]
+    end
+
+    data[:billable_hours] = { unit: :hours, value: :no_data }
+    unless v.nil?
+      total_billable = v[:billable].values.reduce(&:+) || 0
+      data[:billable_hours][:value] = total_billable
+    end
+
+    data[:non_billable_hours] = { unit: :hours, value: :no_data }
+    unless v.nil?
+      data[:non_billable_hours][:value] = v[:non_billable]
+    end
+
+    data[:time_off] = { unit: :hours, value: :no_data }
+    unless v.nil?
+      data[:time_off][:value] = v[:time_off]
+    end
+
+    data[:utilization] = { unit: :percentage, value: :no_data }
+    unless v.nil?
+      total_billable = v[:billable].values.reduce(&:+) || 0
+      data[:utilization][:value] = (total_billable / v[:sellable]) * 100
+    end
+
+    data[:average_hourly_rate] = { unit: :usd, value: :no_data }
+    unless v.nil?
+      data[:average_hourly_rate][:value] =
+        Stacks::Utils.weighted_average(v[:billable].map{|k, v| [k.to_f, v]})
+    end
+
+    data[:cost_per_sellable_hour] = { unit: :usd, value: :no_data }
+    unless v.nil?
+      data[:cost_per_sellable_hour][:value] = cogs[:cogs] / v[:sellable].to_f
+    end
+
+    data[:actual_cost_per_hour_sold] = { unit: :usd, value: :no_data }
+    unless v.nil?
+      total_billable = v[:billable].values.reduce(&:+) || 0
+      data[:actual_cost_per_hour_sold][:value] = cogs[:cogs] / total_billable
+    end
+
+    data
   end
 
   # TODO: Should we be including Time Off for 4-day workers
@@ -103,26 +100,24 @@ class Studio < ApplicationRecord
       (fp.try(:admin_user).try(:studios) || []).include?(self)
     end.reduce({}) do |acc, fp|
       acc[fp] = periods.reduce({}) do |agr, period|
-        next agr if (
-          period[:starts_at] < Stacks::System.singleton_class::UTILIZATION_START_AT
-        )
+        next agr unless period.has_utilization_data?
 
-        agr[period[:label]] = fp.utilization_during_range(
-          period[:starts_at],
-          period[:ends_at],
+        agr[period.label] = fp.utilization_during_range(
+          period.starts_at,
+          period.ends_at,
           Studio.all
         )
 
-        agr[period[:label]][:report] = period[:report]
+        agr[period.label][:report] = period.report
 
         if fp.admin_user.present?
           working_days = fp.admin_user.working_days_between(
-            period[:starts_at],
-            period[:ends_at],
+            period.starts_at,
+            period.ends_at,
           ).count
           sellable_hours = (working_days * fp.admin_user.expected_utilization * 8)
           non_sellable_hours = (working_days * 8) - sellable_hours
-          agr[period[:label]] = agr[period[:label]].merge({
+          agr[period.label] = agr[period.label].merge({
             sellable: sellable_hours,
             non_sellable: non_sellable_hours
           })

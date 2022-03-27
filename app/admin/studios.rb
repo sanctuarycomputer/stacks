@@ -55,180 +55,214 @@ ActiveAdmin.register Studio do
     when nil
     when "month"
       while time < Date.today.last_month.end_of_month
-        periods << {
-          label: time.strftime("%B, %Y"),
-          starts_at: time.beginning_of_month,
-          ends_at: time.end_of_month,
-          report: QboProfitAndLossReport.find_or_fetch_for_range(
-            time.beginning_of_month,
-            time.end_of_month
-          )
-        }
+        periods << Stacks::Period.new(
+          time.strftime("%B, %Y"),
+          time.beginning_of_month,
+          time.end_of_month
+        )
         time = time.advance(months: 1)
       end
     when "quarter"
       while time < Date.today.last_quarter.end_of_quarter
-        periods << {
-          label: "Q#{(time.beginning_of_quarter.month / 3) + 1}, #{time.beginning_of_quarter.year}",
-          starts_at: time.beginning_of_quarter,
-          ends_at: time.end_of_quarter,
-          report: QboProfitAndLossReport.find_or_fetch_for_range(
-            time.beginning_of_quarter,
-            time.end_of_quarter
-          )
-        }
+        periods << Stacks::Period.new(
+          "Q#{(time.beginning_of_quarter.month / 3) + 1}, #{time.beginning_of_quarter.year}",
+          time.beginning_of_quarter,
+          time.end_of_quarter
+        )
         time = time.advance(months: 3)
       end
     when "year"
       while time < Date.today.last_year.end_of_year
-        periods << {
-          label: "#{time.beginning_of_quarter.year}",
-          starts_at: time.beginning_of_year,
-          ends_at: time.end_of_year,
-          report: QboProfitAndLossReport.find_or_fetch_for_range(
-            time.beginning_of_year,
-            time.end_of_year,
-          )
-        }
+        periods << Stacks::Period.new(
+          "#{time.beginning_of_quarter.year}",
+          time.beginning_of_year,
+          time.end_of_year
+        )
         time = time.advance(years: 1)
       end
     end
 
-    preloaded_studios = Studio.all
-    studio_people = resource.utilization_by_people(periods)
-    aggregated_data = resource.aggregated_utilization(studio_people)
+    datapoints_for_periods =
+      periods.reduce({}) do |agg, period|
+        agg[period] = resource.key_datapoints_for_period(period)
+        agg
+      end
+
+    studio_okr_data = {
+      labels: datapoints_for_periods.keys.select(&:has_utilization_data?).map(&:label),
+      datasets: [{
+        label: "Utilization",
+        backgroundColor: COLORS[1],
+        data: (datapoints_for_periods.values.map do |dp|
+          next nil if dp[:utilization][:value] == :no_data
+          target = 90
+          diff = dp[:utilization][:value] - target
+        end).compact,
+        yAxisID: 'yPercentage'
+      }, {
+        label: "Average Hourly Rate",
+        backgroundColor: COLORS[2],
+        data: (datapoints_for_periods.values.map do |dp|
+          next nil if dp[:average_hourly_rate][:value] == :no_data
+          target = 175
+          dp[:average_hourly_rate][:value] - target
+        end).compact,
+        yAxisID: 'yUSD'
+      }, {
+        label: "Cost per Sellable Hour",
+        backgroundColor: COLORS[3],
+        data: (datapoints_for_periods.values.map do |dp|
+          next nil if dp[:cost_per_sellable_hour][:value] == :no_data
+          target = 94
+          target - dp[:cost_per_sellable_hour][:value]
+        end).compact,
+        yAxisID: 'yUSD'
+      }]
+    }
 
     studio_profitability_data = {
-      labels: periods.map{|p| p[:label]},
-      datasets: [
-        { label: "Profit Margin (%)", data: [], yAxisID: 'y1', type: 'line'},
-        { label: "Payroll", data: [], backgroundColor: COLORS[1], stack: 'cogs' },
-        { label: "Benefits", data: [], backgroundColor: COLORS[2], stack: 'cogs' },
-        { label: "Expenses", data: [], backgroundColor: COLORS[3], stack: 'cogs' },
-        { label: "Subcontractors", data: [], backgroundColor: COLORS[4], stack: 'cogs' },
-        { label: "Revenue", data: [], backgroundColor: COLORS[0] },
-      ]
+      labels: datapoints_for_periods.keys.map(&:label),
+      datasets: [{
+        label: "Profit Margin (%)",
+        data: (datapoints_for_periods.values.map do |dp|
+          dp[:profit_margin][:value]
+        end),
+        yAxisID: 'y1',
+        type: 'line'
+      }, {
+        label: "Payroll",
+        data: (datapoints_for_periods.values.map do |dp|
+          dp[:payroll][:value]
+        end),
+        backgroundColor: COLORS[1],
+        stack: 'cogs'
+      }, {
+        label: "Benefits",
+        data: (datapoints_for_periods.values.map do |dp|
+          dp[:benefits][:value]
+        end),
+        backgroundColor: COLORS[2],
+        stack: 'cogs'
+      }, {
+        label: "Expenses",
+        data: (datapoints_for_periods.values.map do |dp|
+          dp[:expenses][:value]
+        end),
+        backgroundColor: COLORS[3],
+        stack: 'cogs'
+      }, {
+        label: "Subcontractors",
+        data: (datapoints_for_periods.values.map do |dp|
+          dp[:subcontractors][:value]
+        end),
+        backgroundColor: COLORS[4],
+        stack: 'cogs'
+      }, {
+        label: "Revenue",
+        data: (datapoints_for_periods.values.map do |dp|
+          dp[:revenue][:value]
+        end),
+        backgroundColor: COLORS[0]
+      }]
     }
-
-    periods.each do |p|
-      report = p[:report]
-      cogs = report.cogs_for_studio(resource)
-
-      # Revenue
-      ds = studio_profitability_data[:datasets].find{|d| d[:label] == "Revenue"}
-      ds[:data] << cogs[:revenue]
-
-      # Payroll
-      ds = studio_profitability_data[:datasets].find{|d| d[:label] == "Payroll"}
-      ds[:data] << cogs[:payroll]
-
-      # Benefits
-      ds = studio_profitability_data[:datasets].find{|d| d[:label] == "Benefits"}
-      ds[:data] << cogs[:benefits]
-
-      # Expenses
-      ds = studio_profitability_data[:datasets].find{|d| d[:label] == "Expenses"}
-      ds[:data] << cogs[:expenses]
-
-      # Subcontractors
-      ds = studio_profitability_data[:datasets].find{|d| d[:label] == "Subcontractors"}
-      ds[:data] << cogs[:subcontractors]
-
-      # Margin
-      ds = studio_profitability_data[:datasets].find{|d| d[:label] == "Profit Margin (%)"}
-      ds[:data] << cogs[:profit_margin]
-    end
 
     studio_economics_data = {
-      labels: aggregated_data.keys,
-      datasets: []
+      labels: datapoints_for_periods.keys.select(&:has_utilization_data?).map(&:label),
+      datasets: [{
+        label: 'Average Hourly Rate Billed',
+        borderColor: COLORS[0],
+        type: 'line',
+        data: (datapoints_for_periods.map do |p, dp|
+          next nil unless p.has_utilization_data?
+          dp[:average_hourly_rate][:value]
+        end).compact
+      }, {
+        label: 'Cost per Sellable Hour',
+        borderColor: COLORS[1],
+        type: 'line',
+        data: (datapoints_for_periods.map do |p, dp|
+          next nil unless p.has_utilization_data?
+          dp[:cost_per_sellable_hour][:value]
+        end).compact
+      }, {
+        label: 'Actual Cost per Hour Sold',
+        borderColor: COLORS[2],
+        type: 'line',
+        data: (datapoints_for_periods.map do |p, dp|
+          next nil unless p.has_utilization_data?
+          dp[:actual_cost_per_hour_sold][:value]
+        end).compact
+      }]
     }
-
-    studio_economics_data[:datasets].concat([{
-      label: 'Average Hourly Rate Billed',
-      borderColor: COLORS[0],
-      type: 'line',
-      data: (aggregated_data.values.map do |v|
-        Stacks::Utils.weighted_average(v[:billable].map{|k, v| [k.to_f, v]})
-      end)
-    }, {
-      label: 'Cost per Sellable Hour',
-      borderColor: COLORS[1],
-      type: 'line',
-      data: (aggregated_data.map do |k, v|
-        cogs = v[:report].cogs_for_studio(resource)
-        cogs[:cogs] / v[:sellable].to_f
-      end)
-    }, {
-      label: 'Actual Cost per Hour Sold',
-      borderColor: COLORS[2],
-      type: 'line',
-      data: (aggregated_data.values.map do |v|
-        cogs = v[:report].cogs_for_studio(resource)
-        total_billable = v[:billable].values.reduce(&:+) || 0
-        cogs[:cogs] / total_billable
-      end)
-    }])
 
     studio_utilization_data = {
-      labels: aggregated_data.keys,
-      datasets: []
+      labels: datapoints_for_periods.keys.select(&:has_utilization_data?).map(&:label),
+      datasets: [{
+        label: 'Utilization Rate (%)',
+        borderColor: COLORS[4],
+        data: (datapoints_for_periods.map do |p, dp|
+          next nil unless p.has_utilization_data?
+          dp[:utilization][:value]
+        end).compact,
+        yAxisID: 'y2',
+      }, {
+        label: 'Actual Hours Sold',
+        backgroundColor: COLORS[8],
+        data: (datapoints_for_periods.map do |p, dp|
+          next nil unless p.has_utilization_data?
+          dp[:billable_hours][:value]
+        end).compact,
+        yAxisID: 'y1',
+        type: 'bar',
+        stack: 'Stack 0',
+      }, {
+        label: 'Non Billable',
+        backgroundColor: COLORS[6],
+        data: (datapoints_for_periods.map do |p, dp|
+          next nil unless p.has_utilization_data?
+          dp[:non_billable_hours][:value]
+        end).compact,
+        yAxisID: 'y1',
+        type: 'bar',
+        stack: 'Stack 0',
+      }, {
+        label: 'Time Off',
+        backgroundColor: COLORS[9],
+        data: (datapoints_for_periods.map do |p, dp|
+          next nil unless p.has_utilization_data?
+          dp[:time_off][:value]
+        end).compact,
+        yAxisID: 'y1',
+        type: 'bar',
+        stack: 'Stack 0',
+      }, {
+        label: 'Sellable Hours',
+        backgroundColor: COLORS[2],
+        data: (datapoints_for_periods.map do |p, dp|
+          next nil unless p.has_utilization_data?
+          dp[:sellable_hours][:value]
+        end).compact,
+        yAxisID: 'y1',
+        type: 'bar',
+        stack: 'Stack 1',
+      }, {
+        label: 'Non Sellable Hours',
+        backgroundColor: COLORS[5],
+        data: (datapoints_for_periods.map do |p, dp|
+          next nil unless p.has_utilization_data?
+          dp[:non_sellable_hours][:value]
+        end).compact,
+        yAxisID: 'y1',
+        type: 'bar',
+        stack: 'Stack 1',
+      }]
     }
 
-    studio_utilization_data[:datasets].concat([{
-      label: 'Utilization Rate (%)',
-      borderColor: COLORS[4],
-      data: (aggregated_data.values.map do |v|
-        total_billable = v[:billable].values.reduce(&:+)
-        next 0 if total_billable.nil? || v[:sellable].nil?
-        (total_billable / v[:sellable]) * 100
-      end),
-      yAxisID: 'y2',
-    }, {
-      label: 'Actual Hours Sold',
-      backgroundColor: COLORS[8],
-      data: (aggregated_data.values.map do |v|
-        v[:billable].values.reduce(&:+)
-      end),
-      yAxisID: 'y1',
-      type: 'bar',
-      stack: 'Stack 0',
-    }, {
-      label: 'Non Billable',
-      backgroundColor: COLORS[6],
-      data: aggregated_data.values.map{|v| v[:non_billable]},
-      yAxisID: 'y1',
-      type: 'bar',
-      stack: 'Stack 0',
-    }, {
-      label: 'Time Off',
-      backgroundColor: COLORS[9],
-      data: aggregated_data.values.map{|v| v[:time_off]},
-      yAxisID: 'y1',
-      type: 'bar',
-      stack: 'Stack 0',
-    }, {
-      label: 'Sellable Hours',
-      backgroundColor: COLORS[2],
-      data: aggregated_data.values.map{|v| v[:sellable]},
-      yAxisID: 'y1',
-      type: 'bar',
-      stack: 'Stack 1',
-    }, {
-      label: 'Non Sellable Hours',
-      backgroundColor: COLORS[5],
-      data: aggregated_data.values.map{|v| v[:non_sellable]},
-      yAxisID: 'y1',
-      type: 'bar',
-      stack: 'Stack 1',
-    }])
-
     render(partial: "show", locals: {
-      studio_okr_data: resource.okrs,
+      studio_okr_data: studio_okr_data,
       studio_profitability_data: studio_profitability_data,
       studio_economics_data: studio_economics_data,
       studio_utilization_data: studio_utilization_data,
-      studio_people: studio_people,
       all_gradations: all_gradations,
       default_gradation: default_gradation
     })
