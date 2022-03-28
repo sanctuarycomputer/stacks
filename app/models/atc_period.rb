@@ -5,7 +5,7 @@ class AtcPeriod < ApplicationRecord
   validate :ended_at_before_started_at?
 
   def period_started_at
-    started_at || project_tracker.first_recorded_assignment.start_date || Date.today
+    started_at || (project_tracker.first_recorded_assignment && project_tracker.first_recorded_assignment.start_date) || Date.today
   end
 
   def period_ended_at
