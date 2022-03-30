@@ -9,6 +9,9 @@ class ProjectTracker < ApplicationRecord
   has_many :project_tracker_links, dependent: :delete_all
   accepts_nested_attributes_for :project_tracker_links, allow_destroy: true
 
+  has_many :adhoc_invoice_trackers, dependent: :delete_all
+  accepts_nested_attributes_for :adhoc_invoice_trackers, allow_destroy: true
+
   has_many :project_tracker_forecast_projects, dependent: :delete_all
   has_many :forecast_projects, through: :project_tracker_forecast_projects
   accepts_nested_attributes_for :project_tracker_forecast_projects, allow_destroy: true
@@ -184,16 +187,25 @@ class ProjectTracker < ApplicationRecord
 
   def invoiced_spend
     forecast_project_ids = forecast_projects.map(&:forecast_id) || []
-    invoice_trackers.map(&:blueprint_diff).reduce(0.0) do |acc, itbd|
-      acc +=
-        (itbd["lines"].values.reduce(0.0) do |agr, line|
-          next agr unless forecast_project_ids.include?(line["forecast_project"])
-          next agr if line["diff_state"] == "removed"
-          quantity = line["quantity"].is_a?(Array) ? line["quantity"][1] : line["quantity"]
-          unit_price = line["unit_price"].is_a?(Array) ? line["unit_price"][1] : line["unit_price"]
-          agr += (quantity * unit_price)
-        end || 0.0)
-    end
+
+    from_generated_invoices =
+      (invoice_trackers.map(&:blueprint_diff).reduce(0.0) do |acc, itbd|
+        acc +=
+          (itbd["lines"].values.reduce(0.0) do |agr, line|
+            next agr unless forecast_project_ids.include?(line["forecast_project"])
+            next agr if line["diff_state"] == "removed"
+            quantity = line["quantity"].is_a?(Array) ? line["quantity"][1] : line["quantity"]
+            unit_price = line["unit_price"].is_a?(Array) ? line["unit_price"][1] : line["unit_price"]
+            agr += (quantity * unit_price)
+          end || 0.0)
+      end || 0)
+
+    from_adhoc_invoices =
+      (adhoc_invoice_trackers.reduce(0.0) do |acc, ahit|
+        acc += ahit.qbo_invoice.try(:total) || 0
+      end || 0)
+
+    from_generated_invoices + from_adhoc_invoices
   end
 
   def running_spend

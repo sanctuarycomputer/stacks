@@ -10,6 +10,12 @@ ActiveAdmin.register ProjectTracker do
     :budget_high_end,
     :notes,
     :atc_id,
+    adhoc_invoice_trackers_attributes: [
+      :id,
+      :qbo_invoice_id,
+      :_destroy,
+      :_edit
+    ],
     project_tracker_links_attributes: [
       :id,
       :name,
@@ -112,6 +118,10 @@ ActiveAdmin.register ProjectTracker do
           label: "Link Type",
           prompt: "Choose a type for this link",
         })
+      end
+
+      f.has_many :adhoc_invoice_trackers, heading: false, allow_destroy: true, new_record: 'Add an Adhoc Invoice' do |a|
+        a.input :qbo_invoice
       end
 
       f.has_many :project_tracker_forecast_projects, heading: false, allow_destroy: true, new_record: 'Connect a Forecast Project' do |a|

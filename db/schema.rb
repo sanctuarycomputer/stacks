@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2022_03_30_211351) do
+ActiveRecord::Schema.define(version: 2022_03_30_213411) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -27,6 +27,15 @@ ActiveRecord::Schema.define(version: 2022_03_30_211351) do
     t.index ["author_type", "author_id"], name: "index_active_admin_comments_on_author_type_and_author_id"
     t.index ["namespace"], name: "index_active_admin_comments_on_namespace"
     t.index ["resource_type", "resource_id"], name: "index_active_admin_comments_on_resource_type_and_resource_id"
+  end
+
+  create_table "adhoc_invoice_trackers", force: :cascade do |t|
+    t.string "qbo_invoice_id", null: false
+    t.bigint "project_tracker_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["project_tracker_id"], name: "index_adhoc_invoice_trackers_on_project_tracker_id"
+    t.index ["qbo_invoice_id"], name: "index_adhoc_invoice_trackers_on_qbo_invoice_id", unique: true
   end
 
   create_table "admin_user_communities", force: :cascade do |t|
@@ -475,6 +484,7 @@ ActiveRecord::Schema.define(version: 2022_03_30_211351) do
     t.index ["reviewable_type", "reviewable_id"], name: "index_workspaces_on_reviewable_type_and_reviewable_id"
   end
 
+  add_foreign_key "adhoc_invoice_trackers", "project_trackers"
   add_foreign_key "admin_user_communities", "admin_users"
   add_foreign_key "admin_user_communities", "communities"
   add_foreign_key "admin_user_cultural_backgrounds", "admin_users"

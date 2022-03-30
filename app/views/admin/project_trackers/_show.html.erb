@@ -367,7 +367,7 @@
       <th class="col">Rate</th>
       <th class="col">Hours (Last Month)</th>
       <th class="col">Hours (Total)</th>
-      <th class="col">Spend (Total)</th>
+      <th class="col text-right">Spend (Total)</th>
     </tr>
   </thead>
   <tbody>
@@ -387,7 +387,7 @@
         <td class="col">
           <%= fp.total_hours %>
         </td>
-        <td class="col">
+        <td class="col text-right">
           <%= number_to_currency(fp.total_hours * fp.hourly_rate) %>
         </td>
       </tr>
@@ -401,11 +401,11 @@
       <th class="col">
         <div class="icon-and-text">
           <%= image_tag("qbo-logo-icon.png") %>
-          Invoices
+          Generated Invoices
         </div>
       </th>
       <th class="col">Status</th>
-      <th class="col">Total (For this Project Tracker)</th>
+      <th class="col text-right">Total (For this Project Tracker)</th>
     </tr>
   </thead>
   <tbody>
@@ -419,10 +419,44 @@
             <%= it.status.to_s.humanize %>
           </span>
         </td>
-        <td class="col">
+        <td class="col text-right">
           <%= number_to_currency(it.qbo_line_items_relating_to_forecast_projects(@project_tracker.forecast_projects).map{|qbo_li| qbo_li.dig("amount").to_f}.reduce(&:+)) %>
         </td>
       </tr>
     <% end %>
   </tbody>
 </table>
+
+<% if @project_tracker.adhoc_invoice_trackers.any? %>
+  <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+    <thead>
+      <tr>
+        <th class="col">
+          <div class="icon-and-text">
+            <%= image_tag("qbo-logo-icon.png") %>
+            Adhoc Invoices
+          </div>
+        </th>
+        <th class="col">Status</th>
+        <th class="col text-right">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% @project_tracker.adhoc_invoice_trackers.each_with_index do |it, index| %>
+        <tr class="<%= index.even? ? "even" : "odd" %>">
+          <td class="col">
+            <%= link_to("#{it.qbo_invoice.try(:display_name)} ↗", it.qbo_invoice.try(:qbo_invoice_link), target: "_blank") %>
+          </td>
+          <td class="col">
+            <span class="pill <%= it.status %>">
+              <%= it.status.to_s.humanize %>
+            </span>
+          </td>
+          <td class="col text-right">
+            <%= number_to_currency(it.qbo_invoice.try(:total)) %>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+<% end %>

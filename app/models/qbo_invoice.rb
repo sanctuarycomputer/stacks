@@ -1,6 +1,12 @@
 class QboInvoice < ApplicationRecord
+  self.primary_key = "qbo_id"
+
   def data
     super || sync!.data
+  end
+
+  def display_name
+    "#{data.dig("doc_number")} - #{ActionController::Base.helpers.number_to_currency(data.dig("total"))}"
   end
 
   def qbo_invoice_link
