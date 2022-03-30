@@ -17,6 +17,19 @@
   </a>
 <% end %>
 
+<% if invoice_tracker.notes.present? %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-header">
+        <p>❗ Important Notes</p>
+      </div>
+      <div class="module-body markdown-body">
+        <%= sanitize RDiscount.new(invoice_tracker.notes).to_html %>
+      </div>
+    </div>
+  </div>
+<% end %>
+
 <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom:20px;">
   <thead>
     <tr>

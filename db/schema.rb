@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2022_03_27_174526) do
+ActiveRecord::Schema.define(version: 2022_03_30_211351) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -239,6 +239,7 @@ ActiveRecord::Schema.define(version: 2022_03_27_174526) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.bigint "admin_user_id"
+    t.text "notes"
     t.index ["admin_user_id"], name: "index_invoice_trackers_on_admin_user_id"
     t.index ["forecast_client_id", "invoice_pass_id"], name: "idx_invoice_trackers_on_forecast_client_id_and_invoice_pass_id", unique: true
     t.index ["forecast_client_id"], name: "index_invoice_trackers_on_forecast_client_id"

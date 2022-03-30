@@ -2,8 +2,9 @@ ActiveAdmin.register InvoiceTracker do
   menu label: "Invoices"
   config.filters = false
   config.paginate = false
-  actions :index, :show
+  actions :index, :show, :edit, :update
   belongs_to :invoice_pass
+  permit_params :notes
 
   action_item :attempt_generate, only: :show, if: proc { current_admin_user.is_admin? } do
     link_to(
@@ -97,6 +98,13 @@ ActiveAdmin.register InvoiceTracker do
       resource.qbo_invoice.try(:sync!)
       super
     end
+  end
+
+  form do |f|
+    f.inputs(class: "admin_inputs") do
+      f.input :notes, label: "❗Important Notes (accepts markdown)"
+    end
+    f.actions
   end
 
   show do
