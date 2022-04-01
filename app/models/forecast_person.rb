@@ -3,6 +3,27 @@ class ForecastPerson < ApplicationRecord
   has_many :forecast_assignments, class_name: "ForecastAssignment", foreign_key: "person_id"
   has_one :admin_user, class_name: "AdminUser", foreign_key: "email", primary_key: "email"
 
+  def missing_allocation_during_range_in_hours(start_of_range, end_of_range)
+    missing =
+      expected_allocation_during_range_in_seconds(start_of_range, end_of_range) -
+      recorded_allocation_during_range_in_seconds(start_of_range, end_of_range)
+    return 0 if missing <= 0
+    missing / 60 / 60
+  end
+
+  def expected_allocation_during_range_in_seconds(start_of_range, end_of_range)
+    business_days = (start_of_range..end_of_range).select { |d| (1..5).include?(d.wday) }.size
+    Stacks::System.singleton_class::EIGHT_HOURS_IN_SECONDS * business_days
+  end
+
+  def recorded_allocation_during_range_in_seconds(start_of_range, end_of_range)
+    forecast_assignments.includes(:forecast_project).where(
+      'end_date >= ? AND start_date <= ?', start_of_range, end_of_range
+    ).reduce(0) do |acc, fa|
+      acc += fa.allocation_during_range_in_seconds(start_of_range, end_of_range)
+    end || 0
+  end
+
   def edit_link
     "https://forecastapp.com/864444/team/#{forecast_id}/edit"
   end

@@ -29,7 +29,7 @@ class Stacks::Automator
       )
       new_reminder_pass = {}
       new_reminder_pass[DateTime.now.iso8601] = needed_reminding.reduce({}) do |acc, p|
-        acc[p[:forecast_data]["email"]] = {
+        acc[p[:forecast_data].email] = {
           missing_allocation: p[:missing_allocation]
         }
         acc
@@ -83,21 +83,25 @@ class Stacks::Automator
     end
 
     def remind_people_to_record_hours_prior_to_invoicing(start_of_month, send_twist_reminders)
-      people = discover_people_missing_hours_for_month(start_of_month)
+      twist_users = twist.get_workspace_users.parsed_response
+      people = discover_people_missing_hours_for_month(twist_users, start_of_month)
 
       admin_twist_users = (AdminUser.admin.map do |a|
-        people.find{ |p| p[:twist_data]["email"] == a.email }
+        twist_users.find{ |tu| tu["email"] == a.email }
       end).compact
 
       needed_reminding = people.filter do |person|
         person[:reminder].present? &&
         person[:twist_data].present? &&
-        !person[:forecast_data]["roles"].include?("Subcontractor")
+        !person[:forecast_data].roles.include?("Subcontractor")
       end
 
       if send_twist_reminders
         needed_reminding.each do |person|
-          participant_ids = [*admin_twist_users, person].map{|p| p[:twist_data]["id"]}.join(",")
+          participant_ids = [
+            *admin_twist_users.map{|tu| tu["id"]},
+            person[:twist_data]["id"]
+          ].join(",")
           conversation = twist.get_or_create_conversation(participant_ids)
           twist.add_message_to_conversation(conversation["id"], person[:reminder])
           sleep(0.1)
@@ -126,95 +130,44 @@ class Stacks::Automator
       needed_reminding
     end
 
-    def discover_people_missing_hours_for_month(start_of_month)
-      projects = forecast.projects()["projects"]
-
-      last_month_assignments = forecast.assignments(
-        start_of_month.beginning_of_month,
-        start_of_month.end_of_month,
-      )["assignments"]
-
-      business_days_last_month = (
-        start_of_month.beginning_of_month..start_of_month.end_of_month
-      ).select { |d| (1..5).include?(d.wday) }.size
-
-      allocation_expected_last_month = EIGHT_HOURS_IN_SECONDS * business_days_last_month
-
-      twist_users = twist.get_workspace_users.parsed_response
-
-      people = forecast.people["people"].reject { |p| p["archived"] }.map do |person|
+    def discover_people_missing_hours_for_month(twist_users, start_of_month)
+      ForecastPerson.all.reject(&:archived).map do |fp|
         twist_user = twist_users.find do |twist_user|
-          twist_user["email"].downcase == person["email"].try(:downcase) ||
-          twist_user["name"].downcase == "#{person["first_name"]} #{person["last_name"]}".downcase
+          twist_user["email"].downcase == fp.email.try(:downcase) ||
+          twist_user["name"].downcase == "#{fp.first_name} #{fp.last_name}".downcase
         end
 
-        assignments = last_month_assignments.filter { |a| a["person_id"] == person["id"] }
+        missing_hours = fp.missing_allocation_during_range_in_hours(
+          start_of_month.beginning_of_month,
+          start_of_month.end_of_month,
+        )
+        next nil unless missing_hours > 0
 
-        total_allocation_in_seconds = assignments.reduce(0) do |acc, a|
-          # A nil allocation is a full day of "Time Off" in Harvest Forecast
-          assignment_start_date = Date.parse(a["start_date"])
-          assignment_end_date = Date.parse(a["end_date"])
+        reminder = <<~HEREDOC
+          👋 Hi #{fp.first_name}!
 
-          start_date = if assignment_start_date < start_of_month.beginning_of_month
-              start_of_month.beginning_of_month
-            else
-              assignment_start_date
-            end
+          👉 We'd like to send invoices today, but we can't do that until you've accounted for at least 8 hours of time for every business day last month.
 
-          end_date = if assignment_end_date > start_of_month.end_of_month
-              start_of_month.end_of_month
-            else
-              assignment_end_date
-            end
+          **We're missing at least `#{missing_hours} hrs` of your time last month. Please ensure you've accounted for at least 8 hours of time each day between #{start_of_month.beginning_of_month.to_formatted_s(:long)} and #{start_of_month.end_of_month.to_formatted_s(:long)}, then ping me back, so we can send out invoices and get us all paid!**
 
-          project = projects.find { |p| p["id"] == a["project_id"] }
-          days = if project["name"] == "Time Off" && a["allocation"].nil?
-              # If this allocation is for the "Time Off" project, filter time on weekends!
-              (start_date..end_date).select { |d| (1..5).include?(d.wday) }.size
-            else
-              # This allocation is not for "Time Off", so count work done on weekends.
-              (end_date - start_date).to_i + 1
-            end
+          - [Please fill them out when you get a chance.](https://forecastapp.com/864444/schedule/team) (And remember that [Time Off](https://help.getharvest.com/forecast/schedule/plan/scheduling-time-off/) or Internal Work also needs to be recorded!)
 
-          per_day_allocation = a["allocation"].nil? ? EIGHT_HOURS_IN_SECONDS : a["allocation"]
-          acc + (per_day_allocation * days)
-        end
+          - If you worked a long day, then a short day, or something like that, that's totally fine! Just mark the remaining hours of your short day as "Time Off".
 
-        if total_allocation_in_seconds < allocation_expected_last_month
-          missing_allocation = allocation_expected_last_month - total_allocation_in_seconds
+          - If you're not sure how to do it, you can [learn about recording hours here](https://www.notion.so/garden3d/How-to-Record-your-Hours-ff971848f66d40cf818b930f05cfc533), or get in touch with your project lead. We're aiming for everyone to do this autonomously!
 
-          reminder = <<~HEREDOC
-            👋 Hi #{person["first_name"]}!
+          - If you think something here is incorrect, please let me know!
 
-            👉 We'd like to send invoices today, but we can't do that until you've accounted for at least 8 hours of time for every business day last month.
+          🙏 Thank you!
+        HEREDOC
 
-            **We're missing at least `#{(missing_allocation.to_f / 60 / 60)} hrs` of your time last month. Please ensure you've accounted for at least 8 hours of time each day between #{start_of_month.beginning_of_month.to_formatted_s(:long)} and #{start_of_month.end_of_month.to_formatted_s(:long)}, then ping me back, so we can send out invoices and get us all paid!**
-
-            - [Please fill them out when you get a chance.](https://forecastapp.com/864444/schedule/team) (And remember that [Time Off](https://help.getharvest.com/forecast/schedule/plan/scheduling-time-off/) or Internal Work also needs to be recorded!)
-
-            - If you worked a long day, then a short day, or something like that, that's totally fine! Just mark the remaining hours of your short day as "Time Off".
-
-            - If you're not sure how to do it, you can [learn about recording hours here](https://www.notion.so/garden3d/How-to-Record-your-Hours-ff971848f66d40cf818b930f05cfc533), or get in touch with your project lead. We're aiming for everyone to do this autonomously!
-
-            - If you think something here is incorrect, please let me know!
-
-            🙏 Thank you!
-          HEREDOC
-          {
-            forecast_data: person,
-            twist_data: twist_user,
-            missing_allocation: missing_allocation,
-            reminder: reminder,
-          }
-        else
-          {
-            forecast_data: person,
-            twist_data: twist_user,
-            missing_allocation: 0,
-            reminder: nil,
-          }
-        end
-      end
+        {
+          forecast_data: fp,
+          twist_data: twist_user,
+          missing_allocation: missing_hours,
+          reminder: reminder,
+        }
+      end.compact
     end
   end
 end
