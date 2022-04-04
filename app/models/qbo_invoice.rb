@@ -2,7 +2,9 @@ class QboInvoice < ApplicationRecord
   self.primary_key = "qbo_id"
 
   def data
-    super || sync!.data
+    existing = super
+    return existing if existing.present?
+    sync! ? data : nil
   end
 
   def display_name
@@ -38,8 +40,25 @@ class QboInvoice < ApplicationRecord
   end
 
   def sync!
-    invoice = Stacks::Quickbooks.fetch_invoice_by_id(qbo_id)
-    update! data: invoice.as_json
-    self
+    begin
+      invoice = Stacks::Quickbooks.fetch_invoice_by_id(qbo_id)
+      update! data: invoice.as_json
+      self
+    rescue => e
+      if e.message.starts_with?("Object Not Found:")
+        ActiveRecord::Base.transaction do
+          it = InvoiceTracker.find_by(qbo_invoice_id: id)
+          it.update(qbo_invoice_id: nil) if it.present?
+          it.reload if it.present?
+
+          ait = AdhocInvoiceTracker.find_by(qbo_invoice_id: id)
+          ait.update(qbo_invoice_id: nil) if ait.present?
+          ait.reload if ait.present?
+
+          self.destroy!
+        end
+      end
+      false
+    end
   end
 end
