@@ -7,7 +7,7 @@ class InvoiceTracker < ApplicationRecord
   belongs_to :invoice_pass
   belongs_to :forecast_client, class_name: "ForecastClient", foreign_key: "forecast_client_id", primary_key: "forecast_id"
 
-  belongs_to :qbo_invoice, class_name: "QboInvoice", foreign_key: "qbo_invoice_id", primary_key: "qbo_id"
+  belongs_to :qbo_invoice, class_name: "QboInvoice", foreign_key: "qbo_invoice_id", primary_key: "qbo_id", optional: true
 
   def display_name
     "#{forecast_client.name} - #{invoice_pass.invoice_month}"
@@ -208,7 +208,7 @@ class InvoiceTracker < ApplicationRecord
         description =
           "#{project.code} #{project.name} (#{invoice_pass.invoice_month}) #{person.first_name} #{person.last_name}".strip
         line_item = qbo_inv.line_items.find do |qbo_li|
-          qbo_li.dig("description") == description
+          qbo_li.description == description
         end
 
         unless line_item.present?
@@ -249,12 +249,14 @@ class InvoiceTracker < ApplicationRecord
 
     # Assign Quickbooks Ids to our Internal Snapshot
     created_qbo_inv.line_items.reduce(snapshot) do |acc, qbo_li|
-      line = acc[:lines][qbo_li.dig("description")]
-      line[:id] = qbo_li["id"] if line.present?
+      line = acc[:lines][qbo_li.description]
+      line[:id] = qbo_li.id if line.present?
       acc
     end
 
     update!(qbo_invoice_id: created_qbo_inv.id, blueprint: snapshot)
+    QboInvoice.create!(qbo_id: created_qbo_inv.id)
+    self.reload
     created_qbo_inv
   end
 end
