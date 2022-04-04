@@ -203,7 +203,7 @@ class InvoiceTracker < ApplicationRecord
         )
         service_name = person.studio.try(:accounting_prefix)
         item =
-          qbo_items.find { |s| s.fully_qualified_name == service_name } || default_service_item
+          qbo_items.find { |s| s.fully_qualified_name == "#{service_name} Services" } || default_service_item
 
         description =
           "#{project.code} #{project.name} (#{invoice_pass.invoice_month}) #{person.first_name} #{person.last_name}".strip
