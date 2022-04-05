@@ -228,7 +228,6 @@ class InvoiceTracker < ApplicationRecord
         end
         line_item.amount =
           line_item.sales_line_item_detail.quantity * line_item.sales_line_item_detail.unit_price
-        line_item.id = 9
 
         acc[:lines][description] = acc[:lines][description] || {
           id: nil,
