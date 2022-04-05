@@ -47,11 +47,13 @@ class QboInvoice < ApplicationRecord
     rescue => e
       if e.message.starts_with?("Object Not Found:")
         ActiveRecord::Base.transaction do
-          it = InvoiceTracker.find_by(qbo_invoice_id: id)
-          it.update(qbo_invoice_id: nil) if it.present?
+          InvoiceTracker
+            .where(qbo_invoice_id: id)
+            .update_all(qbo_invoice_id: nil)
 
-          ait = AdhocInvoiceTracker.find_by(qbo_invoice_id: id)
-          ait.update(qbo_invoice_id: nil) if ait.present?
+          AdhocInvoiceTracker
+            .where(qbo_invoice_id: id)
+            .update_all(qbo_invoice_id: nil)
 
           self.destroy!
         end
