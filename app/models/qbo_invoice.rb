@@ -49,11 +49,9 @@ class QboInvoice < ApplicationRecord
         ActiveRecord::Base.transaction do
           it = InvoiceTracker.find_by(qbo_invoice_id: id)
           it.update(qbo_invoice_id: nil) if it.present?
-          it.reload if it.present?
 
           ait = AdhocInvoiceTracker.find_by(qbo_invoice_id: id)
           ait.update(qbo_invoice_id: nil) if ait.present?
-          ait.reload if ait.present?
 
           self.destroy!
         end
