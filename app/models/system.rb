@@ -5,6 +5,7 @@ class System < ApplicationRecord
 
   store_attributes :settings do
     default_hourly_rate Float, default: 175
+    tentative_assignment_label String, default: "Tentative"
   end
 
   def display_name

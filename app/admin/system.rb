@@ -24,6 +24,9 @@ ActiveAdmin.register System do
       s.input :default_hourly_rate,
         as: :number,
         input_html: { value: resource.default_hourly_rate }
+      s.input :tentative_assignment_label,
+        as: :string,
+        input_html: { value: resource.tentative_assignment_label }
     end
 
     f.actions do

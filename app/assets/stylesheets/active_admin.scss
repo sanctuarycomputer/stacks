@@ -16,6 +16,22 @@
 @import "budget_progress";
 @import "markdown";
 
+.status-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background-color: $color-black;
+  &.urgent {
+    background-color: $color-red;
+  }
+  &.important {
+    background-color: $color-orange;
+  }
+  &.chill {
+    background-color: $color-purple;
+  }
+}
+
 .icon-and-text {
   display: flex;
   align-items: center;

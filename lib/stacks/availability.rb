@@ -5,6 +5,7 @@ class Stacks::Availability
     end
 
     def load_allocations_from_notion
+      system = System.instance
       results = []
       next_cursor = nil
       loop do
@@ -18,11 +19,13 @@ class Stacks::Availability
       allocations = results.reduce({}) do |acc, a|
         email =
           (a.dig("properties", "Assign", "people").try(:first) || {}).dig("person", "email")
+        status =
+          (a.dig("properties", "Status", "select", "name") || "")
 
         starts_at = a.dig("properties", "Date", "date", "start")
         ends_at = a.dig("properties", "Date", "date", "end")
         if (starts_at.nil? || ends_at.nil?)
-          errors << { error: :dates, url: a["url"], email: email }
+          errors << { error: :dates, url: a["url"], email: email, status: status }
           next acc
         end
 
@@ -31,13 +34,21 @@ class Stacks::Availability
         next acc if ends_at < Date.today
 
         if email.nil?
-          errors << { error: :email, url: a["url"] }
+          next acc if (
+            system
+              .tentative_assignment_label
+              .split(",")
+              .map(&:strip)
+              .map(&:downcase)
+              .include?(status.downcase)
+          )
+          errors << { error: :email, url: a["url"], status: status }
           next acc
         end
 
         allocation = a.dig("properties", "Allocation", "number")
         if allocation.nil?
-          errors << { error: :allocation, url: a["url"], email: email } if allocation.nil?
+          errors << { error: :allocation, url: a["url"], email: email, status: status } if allocation.nil?
           next acc
         end
 

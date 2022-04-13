@@ -46,16 +46,16 @@
     <% if errors.any? %>
       <% errors.each_with_index do |n, idx| %>
         <tr class="<%= idx.even? ? "even" : "odd" %>">
-          <td class="col">
+          <td class="col" style="vertical-align:middle;">
             <% case (n[:priority] || 0)
               when 0 %>
-              🔴
+              <div class="status-dot urgent"></div>
             <% when 1 %>
-              🟠
+              <div class="status-dot important"></div>
             <% when 2 %>
-              🟡
+              <div class="status-dot important"></div>
             <% else %>
-              🟣
+              <div class="status-dot chill"></div>
             <% end %>
           </td>
           <td class="col">
@@ -67,6 +67,30 @@
                 <strong><%= n[:subject] %></strong> is currently overassigned.
               <% else %>
                 An assignment for <strong><%= n[:subject] || "(No User)" %></strong> is missing <%= n[:error] %>.
+              <% end %>
+
+            <% when :user %>
+              <% case n[:error]
+                when :no_dei_response %>
+                <strong><%= n[:subject].email %></strong> has not recorded a DEI response.
+              <% when :unknown_salary %>
+                <strong><%= n[:subject].email %></strong> does not have a starting skill tree level set.
+              <% when :no_full_time_periods %>
+                <strong><%= n[:subject].email %></strong> does not have any employment periods set.
+              <% else %>
+                Unknown Project Tracker Error
+              <% end %>
+
+            <% when :project_tracker %>
+              <% case n[:error]
+                when :seemingly_complete %>
+                The <strong><%= n[:subject].name %></strong> Project Tracker did not register any hours in the last calendar month (and is not "ongoing"). Should it be marked as <span class="pill complete">Complete</span>?
+              <% when :over_budget %>
+                The <strong><%= n[:subject].name %></strong> Project Tracker is <span class="pill over_budget">Over budget</span>. Can we support them?
+              <% when :no_atc %>
+                The <strong><%= n[:subject].name %></strong> Project Tracker has <span class="pill error">No ATC</span>.
+              <% else %>
+                Unknown Project Tracker Error
               <% end %>
 
             <% when :finalization %>

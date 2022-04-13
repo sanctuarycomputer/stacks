@@ -19,6 +19,35 @@ class Stacks::Notifications
       forecast_projects = ForecastProject.all
       forecast_clients = Stacks::System.clients_served_since(Date.today - 3.months, Date.today)
       forecast_people = ForecastPerson.all
+      users = AdminUser.active
+
+      users_without_dei_response = users.select do |u|
+        u.should_nag_for_dei_data?
+      end
+
+      users_with_unknown_salary = users.select do |u|
+        u.skill_tree_level_without_salary == "No Reviews Yet"
+      end
+
+      users_without_full_time_periods = users.select do |u|
+        u.full_time_periods.empty?
+      end
+
+      active_project_trackers = ProjectTracker.where(work_completed_at: nil)
+
+      project_trackers_no_atc = active_project_trackers.select do |pt|
+        pt.current_atc_period == nil
+      end
+
+      project_trackers_over_budget = active_project_trackers.select do |pt|
+        pt.status == :over_budget
+      end
+
+      project_trackers_seemingly_complete = active_project_trackers.select do |pt|
+        pt.last_month_hours == 0
+      end.reject do |pt|
+        pt.name.downcase.include?("(ongoing)")
+      end
 
       # Load Allocation Data
       allocations_thread = Thread.new do
@@ -126,6 +155,66 @@ class Stacks::Notifications
           error: :needs_archiving,
           priority: 0
         } if f.review.status == "finalized"
+      end
+
+      project_trackers_over_budget.each do |pt|
+        notifications << {
+          subject: pt,
+          type: :project_tracker,
+          link: admin_project_tracker_path(pt),
+          error: :over_budget,
+          priority: 0
+        }
+      end
+
+      project_trackers_seemingly_complete.each do |pt|
+        notifications << {
+          subject: pt,
+          type: :project_tracker,
+          link: admin_project_tracker_path(pt),
+          error: :seemingly_complete,
+          priority: 2
+        }
+      end
+
+      project_trackers_no_atc.each do |pt|
+        notifications << {
+          subject: pt,
+          type: :project_tracker,
+          link: admin_project_tracker_path(pt),
+          error: :no_atc,
+          priority: 2
+        }
+      end
+
+      users_without_dei_response.each do |u|
+        notifications << {
+          subject: u,
+          type: :user,
+          link: edit_admin_admin_user_path(u),
+          error: :no_dei_response,
+          priority: 2
+        }
+      end
+
+      users_with_unknown_salary.each do |u|
+        notifications << {
+          subject: u,
+          type: :user,
+          link: edit_admin_admin_user_path(u),
+          error: :unknown_salary,
+          priority: 2
+        }
+      end
+
+      users_without_full_time_periods.each do |u|
+        notifications << {
+          subject: u,
+          type: :user,
+          link: edit_admin_admin_user_path(u),
+          error: :no_full_time_periods,
+          priority: 0
+        }
       end
 
       notifications.sort{|a, b| a[:priority] <=> b[:priority] }
