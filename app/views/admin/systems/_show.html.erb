@@ -89,14 +89,25 @@
                 The <strong><%= n[:subject].name %></strong> Project Tracker is <span class="pill over_budget">Over budget</span>. Can we support them?
               <% when :no_atc %>
                 The <strong><%= n[:subject].name %></strong> Project Tracker has <span class="pill error">No ATC</span>.
+              <% when :capsule_pending %>
+                The <strong><%= n[:subject].name %></strong> Project Tracker is currently <span class="pill capsule_pending">Capsule pending</span>. Let's finalize a project capsule?
               <% else %>
                 Unknown Project Tracker Error
               <% end %>
 
             <% when :finalization %>
               A Skill Tree Review is ready to review and archive.
-            <% when :forecast_project %>
-              A Forecast Project has multiple hourly rates (the first will be used).
+
+            <% when :forecast_project%>
+              <% case n[:error]
+                when :multiple_hourly_rates %>
+                <strong><%= n[:subject].display_name %></strong> has multiple hourly rates (the first will be used).
+              <% when :no_explicit_hourly_rate %>
+                <strong><%= n[:subject].display_name %></strong> does not have an explicit hourly rate (the Stacks default will be used).
+              <% else %>
+                Unknown Forecast Project Error
+              <% end %>
+
             <% when :forecast_client %>
               A Forecast Client called <strong><%= n[:subject].name %></strong> does not have a Quickbooks Customer record.
             <% when :forecast_person %>
@@ -109,7 +120,7 @@
                 </span>
               <% end %>
             <% else %>
-                hi
+              Unknown Error
             <% end %>
           </td>
 

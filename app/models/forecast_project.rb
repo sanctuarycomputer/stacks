@@ -11,8 +11,16 @@ class ForecastProject < ApplicationRecord
     where.not('data @> ?', {archived: true}.to_json)
   }
 
+  def is_time_off?
+    name == "Time Off" && forecast_client.nil?
+  end
+
+  def is_internal?
+    is_time_off? || forecast_client && forecast_client.is_internal?
+  end
+
   def display_name
-    "[#{data['code']}] #{data['name']}"
+    "[#{data['code'] || 'Missing Forecast Project Code'}] #{data['name']}"
   end
 
   def edit_link
@@ -27,6 +35,10 @@ class ForecastProject < ApplicationRecord
 
   def has_multiple_hourly_rates?
     tags.filter { |t| t.ends_with?("p/h") }.length > 1
+  end
+
+  def has_no_explicit_hourly_rate?
+    tags.filter { |t| t.ends_with?("p/h") }.length == 0
   end
 
   def hourly_rate

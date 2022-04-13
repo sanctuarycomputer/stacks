@@ -7,16 +7,11 @@ class Stacks::Notifications
     end
 
     def notifications
-      # TODO Capsule Pending
-      # TODO Unfinalized Skill Trees
       # TODO Forecast Client with malformed term?
-      # TODO Users without Full Time Periods or base salary
-      # TODO Unsent or Unmade Invoices that are unclaimed
-      # TODO Projects that don't have an ATC
       notifications = []
 
       finalizations = Finalization.all
-      forecast_projects = ForecastProject.all
+      forecast_projects = ForecastProject.active.reject(&:is_internal?)
       forecast_clients = Stacks::System.clients_served_since(Date.today - 3.months, Date.today)
       forecast_people = ForecastPerson.all
       users = AdminUser.active
@@ -34,6 +29,7 @@ class Stacks::Notifications
       end
 
       active_project_trackers = ProjectTracker.where(work_completed_at: nil)
+      completed_project_trackers = ProjectTracker.where.not(work_completed_at: nil)
 
       project_trackers_no_atc = active_project_trackers.select do |pt|
         pt.current_atc_period == nil
@@ -41,6 +37,10 @@ class Stacks::Notifications
 
       project_trackers_over_budget = active_project_trackers.select do |pt|
         pt.status == :over_budget
+      end
+
+      project_trackers_need_capsule = completed_project_trackers.select do |pt|
+        pt.work_status == :capsule_pending
       end
 
       project_trackers_seemingly_complete = active_project_trackers.select do |pt|
@@ -118,6 +118,14 @@ class Stacks::Notifications
           error: :multiple_hourly_rates,
           priority: 1
         } if fp.has_multiple_hourly_rates?
+
+        notifications << {
+          subject: fp,
+          type: :forecast_project,
+          link: fp.edit_link,
+          error: :no_explicit_hourly_rate,
+          priority: 0
+        } if fp.has_no_explicit_hourly_rate?
       end
 
       forecast_clients.each do |fc|
@@ -167,6 +175,16 @@ class Stacks::Notifications
           link: admin_project_tracker_path(pt),
           error: :over_budget,
           priority: 0
+        }
+      end
+
+      project_trackers_need_capsule.each do |pt|
+        notifications << {
+          subject: pt,
+          type: :project_tracker,
+          link: admin_project_tracker_path(pt),
+          error: :capsule_pending,
+          priority: 2
         }
       end
 
