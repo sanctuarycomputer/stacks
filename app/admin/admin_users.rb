@@ -199,28 +199,31 @@ ActiveAdmin.register AdminUser do
 ).html_safe
 
     if current_admin_user.is_admin?
+      hr
+      h1 "Admin Only"
       f.inputs(class: "admin_inputs") do
-        f.input :old_skill_tree_level, as: :select, collection: AdminUser.old_skill_tree_levels.keys
-      end
+        f.input :old_skill_tree_level,
+          as: :select, collection: AdminUser.old_skill_tree_levels.keys,
+          label: "Starting skill tree level"
+        f.input :profit_share_notes
 
-      f.input :profit_share_notes
+        f.has_many :full_time_periods, heading: false, allow_destroy: true do |a|
+          a.input :started_at, hint: "The date this employment period started"
+          a.input :ended_at, hint: "Leave blank until the nature of employment changes (termination or a move to 4-day work week, which requires an additional employment period to be added here)"
+          a.input :multiplier, label: "PSU earn rate", hint: "The rate that this employee earns PSU each month (4-day workers earn PSU at a rate of 0.8 per month)"
+          a.input :expected_utilization, hint: "ICs should be 0.8, Support Team members are 0.0. Studio Coordinators depend on the size of the studio coordination group."
+        end
 
-      f.has_many :full_time_periods, allow_destroy: true do |a|
-        a.input :started_at
-        a.input :ended_at
-        a.input :multiplier
-        a.input :expected_utilization
-      end
+        f.has_many :gifted_profit_shares, heading: false, allow_destroy: true do |a|
+          a.input :amount
+          a.input :reason
+        end
 
-      f.has_many :gifted_profit_shares, allow_destroy: true do |a|
-        a.input :amount
-        a.input :reason
-      end
-
-      f.has_many :pre_profit_share_purchases, allow_destroy: true do |a|
-        a.input :amount
-        a.input :note
-        a.input :purchased_at
+        f.has_many :pre_profit_share_purchases, heading: false, allow_destroy: true do |a|
+          a.input :amount
+          a.input :note
+          a.input :purchased_at
+        end
       end
     end
 

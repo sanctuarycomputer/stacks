@@ -16,6 +16,11 @@
 @import "budget_progress";
 @import "markdown";
 
+hr {
+  border: 1px solid $color-light-grey;
+  box-shadow: none;
+}
+
 .status-dot {
   width: 14px;
   height: 14px;
@@ -75,16 +80,31 @@ body { font-family: 'Inter', sans-serif; }
   }
 }
 
-
 .admin_inputs {
-  li.input.stringish, li.text.input {
+  li.input.stringish, li.input.text, li.input.boolean {
+    p.inline-hints {
+      font-size: 14px;
+      color: $color-grey;
+    }
+
     display: flex;
     flex-direction: column;
 
     label {
+      padding-left: 0;
       font-size: 14px;
       margin-bottom: 6px;
       text-transform: capitalize;
+    }
+
+    &.boolean {
+      input {
+        display: inline-block;
+        width: auto !important;
+      }
+      label {
+        font-weight: bold;
+      }
     }
 
     input, textarea {
@@ -193,32 +213,6 @@ form fieldset.inputs {
   }
 }
 
-body.edit.admin_admin_users {
-  .admin_inputs {
-    ol {
-      padding: 0;
-      box-shadow: 0 1px 20px #b7b7b7;
-      border-radius: 8px;
-      li {
-        display: flex;
-        padding: 20px;
-        justify-content: space-between;
-        border-bottom: 1px dashed #e8e8e8;
-        &:last-of-type {
-          border-bottom: none;
-        }
-      }
-      li.boolean label {
-        padding-left: 0;
-        font-size: 18px;
-        font-weight: 700;
-        margin-bottom: 0;
-        color: #5E6469;
-      }
-    }
-  }
-}
-
 body.new.admin_reviews,
 body.create.admin_reviews,
 body.edit.admin_reviews,
@@ -261,7 +255,7 @@ body.update.admin_reviews {
 
             label {
               font-size: 18px;
-              color: black;
+              color: $color-black;
               width: auto;
               margin-right: 20px;
               white-space: nowrap;

@@ -120,7 +120,7 @@ ActiveAdmin.register ProjectTracker do
         })
       end
 
-      f.has_many :adhoc_invoice_trackers, heading: false, allow_destroy: true, new_record: 'Add an Adhoc Invoice' do |a|
+      f.has_many :adhoc_invoice_trackers, heading: false, allow_destroy: true, new_record: 'Connect an Adhoc Invoice' do |a|
         a.input :qbo_invoice
       end
 
