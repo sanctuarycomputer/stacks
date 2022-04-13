@@ -44,7 +44,10 @@ class Stacks::Notifications
       end
 
       project_trackers_seemingly_complete = active_project_trackers.select do |pt|
-        pt.last_month_hours == 0
+        if pt.last_recorded_assignment
+          pt.last_recorded_assignment.end_date < (Date.today -  1.month)
+        end
+        false
       end.reject do |pt|
         pt.name.downcase.include?("(ongoing)")
       end

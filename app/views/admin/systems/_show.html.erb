@@ -84,7 +84,7 @@
             <% when :project_tracker %>
               <% case n[:error]
                 when :seemingly_complete %>
-                The <strong><%= n[:subject].name %></strong> Project Tracker did not register any hours in the last calendar month (and is not "ongoing"). Should it be marked as <span class="pill complete">Complete</span>?
+                The <strong><%= n[:subject].name %></strong> Project Tracker has not registered any new hours for over a month (and is not "ongoing"). Should it be marked as <span class="pill complete">Complete</span>?
               <% when :over_budget %>
                 The <strong><%= n[:subject].name %></strong> Project Tracker is <span class="pill over_budget">Over budget</span>. Can we support them?
               <% when :no_atc %>
