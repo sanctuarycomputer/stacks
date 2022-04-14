@@ -10,6 +10,8 @@ class ProjectTrackerLink < ApplicationRecord
     staging_link: 4,
     production_link: 5,
     qa_document: 6,
-    operator_manual: 5,
+    operator_manual: 7,
+    sow: 8,
+    msa: 9,
   }
 end
