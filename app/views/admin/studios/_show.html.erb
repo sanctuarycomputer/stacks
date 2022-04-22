@@ -17,6 +17,91 @@
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
     <div class="module-header">
+      <p>Studio OKRs</p>
+    </div>
+    <div class="module-body">
+
+<style>
+table.info {
+  position: absolute;
+  width: auto;
+  background-color: white;
+}
+
+table.right-scrolling {
+  padding-left: 230px;
+  display: block;
+  overflow: scroll;
+}
+table tr, table th {
+  white-space: nowrap;
+}
+table tr.invert {
+	display: table-cell;
+}
+table tr.invert td {
+	display: block;
+}
+</style>
+      <table border="0" cellspacing="0" cellpadding="0" class="index_table index info">
+        <thead>
+          <tr>
+            <th class="col">OKR Name</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="invert">
+            <% okrs_encountered.each do |okr| %>
+              <td class="col"><%= okr.name %></td>
+            <% end %>
+          </tr>
+        </tbody>
+      </table>
+
+      <table border="0" cellspacing="0" cellpadding="0" class="index_table index right-scrolling">
+        <thead>
+          <tr>
+            <% okrs_for_periods.keys.reverse.each do |period| %>
+              <th class="col"><%= period.label %></th>
+            <% end %>
+          </tr>
+        </thead>
+        <tbody>
+          <% okrs_for_periods.values.reverse.each_with_index do |okr_results, index| %>
+            <tr class="<%= index.even? ? "even" : "odd" %> invert">
+              <% okrs_encountered.each do |okr| %>
+                <td class="col">
+                  <% health = okr_results[okr] ? okr_results[okr][:health] : :no_okr_set %>
+                  <% unit = okr_results[okr] ? okr_results[okr][:unit] : :no_unit %>
+                  <% surplus = (okr_results[okr] ? okr_results[okr][:surplus] : 0).round(2) %>
+                  <span class="pill <%= health %>" style="margin-right: 6px;">
+                    <%= health.to_s.humanize %>
+                    <% if surplus != 0 %>
+                      <span class="split">
+                        <% if surplus > 0 %>+<% else %>-<% end %>
+                        <% if unit == :usd %>
+                          <%= number_to_currency(surplus.abs) %>
+                        <% elsif unit == :percentage %>
+                          <%= surplus.abs %>%
+                        <% else %>
+                          <%= surplus.abs %>
+                        <% end %>
+                      </span>
+                    <% end %>
+                  </span>
+                </td>
+              <% end %>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
       <p>Studio OKR Differentials</p>
     </div>
     <div class="module-body">

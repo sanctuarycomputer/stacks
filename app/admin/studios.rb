@@ -88,15 +88,35 @@ ActiveAdmin.register Studio do
         agg
       end
 
+    okrs_encountered = Set[]
+    okrs_for_periods =
+      periods.reduce({}) do |agg, period|
+        datapoints = datapoints_for_periods[period]
+        okr_periods =
+          OkrPeriodStudio
+            .includes(okr_period: :okr)
+            .where(studio: resource)
+            .select{|ops| ops.applies_to?(period)}
+            .map(&:okr_period)
+
+        agg[period] = okr_periods.reduce({}) do |acc, okrp|
+          data = datapoints[okrp.okr.datapoint.to_sym]
+          okrs_encountered.add(okrp.okr)
+          acc[okrp.okr] = okrp.health_for_value(data[:value]).merge(data)
+          acc
+        end
+        agg
+      end
+
     studio_okr_data = {
       labels: datapoints_for_periods.keys.select(&:has_utilization_data?).map(&:label),
       datasets: [{
-        label: "Utilization",
+        label: "Sellable Hours Sold",
         backgroundColor: COLORS[1],
         data: (datapoints_for_periods.values.map do |dp|
-          next nil if dp[:utilization][:value] == :no_data
+          next nil if dp[:sellable_hours_sold][:value] == :no_data
           target = 90
-          diff = dp[:utilization][:value] - target
+          diff = dp[:sellable_hours_sold][:value] - target
         end).compact,
         yAxisID: 'yPercentage'
       }, {
@@ -202,7 +222,7 @@ ActiveAdmin.register Studio do
         borderColor: COLORS[4],
         data: (datapoints_for_periods.map do |p, dp|
           next nil unless p.has_utilization_data?
-          dp[:utilization][:value]
+          dp[:sellable_hours_sold][:value]
         end).compact,
         yAxisID: 'y2',
       }, {
@@ -259,6 +279,9 @@ ActiveAdmin.register Studio do
     }
 
     render(partial: "show", locals: {
+      okrs_encountered: okrs_encountered,
+      okrs_for_periods: okrs_for_periods,
+
       studio_okr_data: studio_okr_data,
       studio_profitability_data: studio_profitability_data,
       studio_economics_data: studio_economics_data,

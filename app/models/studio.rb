@@ -64,10 +64,10 @@ class Studio < ApplicationRecord
       data[:time_off][:value] = v[:time_off]
     end
 
-    data[:utilization] = { unit: :percentage, value: :no_data }
+    data[:sellable_hours_sold] = { unit: :percentage, value: :no_data }
     unless v.nil?
       total_billable = v[:billable].values.reduce(&:+) || 0
-      data[:utilization][:value] = (total_billable / v[:sellable]) * 100
+      data[:sellable_hours_sold][:value] = (total_billable / v[:sellable]) * 100
     end
 
     data[:average_hourly_rate] = { unit: :usd, value: :no_data }

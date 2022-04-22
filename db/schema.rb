@@ -1,4 +1,4 @@
-# This file is auto-generated from the current state of the database. Instead
+# This file is auto-generated from the current state of the database. Instead:okr_period_studios
 # of editing this file, please use the migrations feature of Active Record to
 # incrementally modify your database, and then regenerate this schema definition.
 #
@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2022_03_30_213411) do
+ActiveRecord::Schema.define(version: 2022_04_21_210808) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -267,6 +267,35 @@ ActiveRecord::Schema.define(version: 2022_03_30_213411) do
     t.index ["recipient_type", "recipient_id"], name: "index_notifications_on_recipient_type_and_recipient_id"
   end
 
+  create_table "okr_period_studios", force: :cascade do |t|
+    t.bigint "studio_id", null: false
+    t.bigint "okr_period_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["okr_period_id"], name: "index_okr_period_studios_on_okr_period_id"
+    t.index ["studio_id"], name: "index_okr_period_studios_on_studio_id"
+  end
+
+  create_table "okr_periods", force: :cascade do |t|
+    t.bigint "okr_id", null: false
+    t.date "starts_at"
+    t.date "ends_at"
+    t.decimal "target", null: false
+    t.decimal "tolerance", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["okr_id"], name: "index_okr_periods_on_okr_id"
+  end
+
+  create_table "okrs", force: :cascade do |t|
+    t.string "name", null: false
+    t.text "description"
+    t.integer "operator", default: 0
+    t.integer "datapoint", default: 0
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+  end
+
   create_table "peer_reviews", force: :cascade do |t|
     t.bigint "admin_user_id", null: false
     t.bigint "review_id", null: false
@@ -500,6 +529,9 @@ ActiveRecord::Schema.define(version: 2022_03_30_213411) do
   add_foreign_key "gifted_profit_shares", "admin_users"
   add_foreign_key "invoice_trackers", "admin_users"
   add_foreign_key "invoice_trackers", "invoice_passes"
+  add_foreign_key "okr_period_studios", "okr_periods"
+  add_foreign_key "okr_period_studios", "studios"
+  add_foreign_key "okr_periods", "okrs"
   add_foreign_key "peer_reviews", "admin_users"
   add_foreign_key "peer_reviews", "reviews"
   add_foreign_key "pre_profit_share_purchases", "admin_users"
