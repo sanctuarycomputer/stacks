@@ -1,8 +1,8 @@
 ActiveAdmin.register Okr do
-  menu label: "OKRs", parent: "Money"
+  menu label: "Okey Dokeys", parent: "Money"
   config.filters = false
   config.paginate = false
-  actions :index, :show, :new, :create, :edit, :update
+  actions :index, :new, :create, :edit, :update, :destroy
   config.current_filters = false
 
   permit_params :name,

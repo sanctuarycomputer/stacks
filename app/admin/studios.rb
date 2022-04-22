@@ -109,35 +109,16 @@ ActiveAdmin.register Studio do
       end
 
     studio_okr_data = {
-      labels: datapoints_for_periods.keys.select(&:has_utilization_data?).map(&:label),
-      datasets: [{
-        label: "Sellable Hours Sold",
-        backgroundColor: COLORS[1],
-        data: (datapoints_for_periods.values.map do |dp|
-          next nil if dp[:sellable_hours_sold][:value] == :no_data
-          target = 90
-          diff = dp[:sellable_hours_sold][:value] - target
-        end).compact,
-        yAxisID: 'yPercentage'
-      }, {
-        label: "Average Hourly Rate",
-        backgroundColor: COLORS[2],
-        data: (datapoints_for_periods.values.map do |dp|
-          next nil if dp[:average_hourly_rate][:value] == :no_data
-          target = 175
-          dp[:average_hourly_rate][:value] - target
-        end).compact,
-        yAxisID: 'yUSD'
-      }, {
-        label: "Cost per Sellable Hour",
-        backgroundColor: COLORS[3],
-        data: (datapoints_for_periods.values.map do |dp|
-          next nil if dp[:cost_per_sellable_hour][:value] == :no_data
-          target = 94
-          target - dp[:cost_per_sellable_hour][:value]
-        end).compact,
-        yAxisID: 'yUSD'
-      }]
+      labels: okrs_for_periods.keys.map(&:label),
+      datasets: (okrs_encountered.each_with_index.map do |okr, i|
+        {
+          label: okr.name,
+          backgroundColor: COLORS[i],
+          data: okrs_for_periods.values.map do |okr_results|
+            okr_results[okr] ? okr_results[okr][:surplus] : 0
+          end
+        }
+      end)
     }
 
     studio_profitability_data = {
@@ -281,7 +262,6 @@ ActiveAdmin.register Studio do
     render(partial: "show", locals: {
       okrs_encountered: okrs_encountered,
       okrs_for_periods: okrs_for_periods,
-
       studio_okr_data: studio_okr_data,
       studio_profitability_data: studio_profitability_data,
       studio_economics_data: studio_economics_data,

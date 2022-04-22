@@ -17,11 +17,11 @@ class OkrPeriod < ApplicationRecord
       if okr.operator == "greater_than"
         surplus > 0 ?
         extreme ? :exceptional : :healthy :
-        extreme ? :at_risk : :failing
+        extreme ? :failing : :at_risk
       elsif okr.operator == "less_than"
         surplus < 0 ?
         extreme ? :exceptional : :healthy :
-        extreme ? :at_risk : :failing
+        extreme ? :failing : :at_risk
       else
         raise "unknown_operator"
       end
