@@ -27,6 +27,9 @@ ActiveAdmin.register System do
       s.input :tentative_assignment_label,
         as: :string,
         input_html: { value: resource.tentative_assignment_label }
+      s.input :expected_skill_tree_cadence_days,
+        as: :number,
+        input_html: { value: resource.expected_skill_tree_cadence_days }
     end
 
     f.actions do

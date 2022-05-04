@@ -23,7 +23,7 @@
 
   <div class="dashboard-module">
     <div class="module-header">
-      <p>Admins</p>
+      <p>Stacks Admins</p>
     </div>
     <div class="module-body">
       <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom: 0px">
@@ -77,6 +77,8 @@
                 <strong><%= n[:subject].email %></strong> does not have a starting skill tree level set.
               <% when :no_full_time_periods %>
                 <strong><%= n[:subject].email %></strong> does not have any employment periods set.
+              <% when :stale_skill_tree %>
+                <strong><%= n[:subject].email %></strong> is probably overdue to conduct a skill tree review.
               <% else %>
                 Unknown Project Tracker Error
               <% end %>

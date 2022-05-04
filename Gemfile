@@ -27,6 +27,7 @@ gem 'storext'
 
 group :development, :test do
   gem 'pry'
+  gem 'bullet'
 end
 
 group :development do

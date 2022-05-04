@@ -44,6 +44,21 @@ ActiveAdmin.register AdminUser do
   config.sort_order = "created_at_desc"
   config.paginate = false
 
+  controller do
+    def scoped_collection
+      super.includes(
+        :gifted_profit_shares,
+        :full_time_periods,
+        :admin_user_racial_backgrounds,
+        :racial_backgrounds,
+        :admin_user_cultural_backgrounds,
+        :cultural_backgrounds,
+        :admin_user_gender_identities,
+        :gender_identities,
+      )
+    end
+  end
+
   action_item :archive, only: :show, if: proc { current_admin_user.is_admin? } do
     if resource.archived_at.present?
       link_to "Unarchive", unarchive_admin_user_admin_admin_user_path(resource), method: :post
@@ -92,6 +107,9 @@ ActiveAdmin.register AdminUser do
     end
     column :has_dei_response? do |resource|
       !resource.should_nag_for_dei_data?
+    end
+    column :skill_tree_overdue? do |resource|
+      resource.should_nag_for_skill_tree?
     end
     column :projected_psu_by_eoy do |resource|
       resource.projected_psu_by_eoy

@@ -40,6 +40,18 @@ ActiveAdmin.register ProjectTracker do
       :_edit
     ]
 
+  controller do
+    def scoped_collection
+      super.includes(
+        :atc_periods,
+        :project_capsule,
+        :project_tracker_forecast_projects,
+        :forecast_projects,
+        :adhoc_invoice_trackers,
+      )
+    end
+  end
+
   index download_links: false, title: "Projects" do
     column :name
     column :budget_status do |resource|

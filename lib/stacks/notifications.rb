@@ -10,11 +10,28 @@ class Stacks::Notifications
       # TODO Forecast Client with malformed term?
       notifications = []
 
-      finalizations = Finalization.all
-      forecast_projects = ForecastProject.active.reject(&:is_internal?)
+      finalizations = Finalization
+        .includes(review: :workspace)
+        .includes(:workspace)
+        .all
+      forecast_projects = ForecastProject.includes(:forecast_client).active.reject(&:is_internal?)
       forecast_clients = Stacks::System.clients_served_since(Date.today - 3.months, Date.today)
       forecast_people = ForecastPerson.all
-      users = AdminUser.active
+
+      users = AdminUser
+        .includes([
+          :full_time_periods,
+          :admin_user_racial_backgrounds,
+          :racial_backgrounds,
+          :admin_user_cultural_backgrounds,
+          :cultural_backgrounds,
+          :admin_user_gender_identities,
+          :gender_identities,
+        ]).active
+
+      users_who_need_skill_tree = users.select do |u|
+        u.should_nag_for_skill_tree?
+      end
 
       users_without_dei_response = users.select do |u|
         u.should_nag_for_dei_data?
@@ -28,8 +45,16 @@ class Stacks::Notifications
         u.full_time_periods.empty?
       end
 
-      active_project_trackers = ProjectTracker.where(work_completed_at: nil)
-      completed_project_trackers = ProjectTracker.where.not(work_completed_at: nil)
+      active_project_trackers = ProjectTracker
+        .includes([
+          :atc_periods,
+          :adhoc_invoice_trackers,
+          :forecast_projects
+        ]).where(work_completed_at: nil)
+      completed_project_trackers = ProjectTracker
+        .includes([
+          :project_capsule
+        ]).where.not(work_completed_at: nil)
 
       project_trackers_no_atc = active_project_trackers.select do |pt|
         pt.current_atc_period == nil
@@ -66,7 +91,7 @@ class Stacks::Notifications
         Stacks::Quickbooks.fetch_all_customers
       end
 
-      invoice_trackers = InvoiceTracker.all
+      invoice_trackers = InvoiceTracker.includes(:qbo_invoice).all
       invoice_statuses_need_action =
         invoice_trackers.map do |it|
           it.status
@@ -214,6 +239,16 @@ class Stacks::Notifications
           type: :user,
           link: edit_admin_admin_user_path(u),
           error: :no_dei_response,
+          priority: 2
+        }
+      end
+
+      users_who_need_skill_tree.each do |u|
+        notifications << {
+          subject: u,
+          type: :user,
+          link: edit_admin_admin_user_path(u),
+          error: :stale_skill_tree,
           priority: 2
         }
       end

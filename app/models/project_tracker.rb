@@ -41,7 +41,7 @@ class ProjectTracker < ApplicationRecord
 
   def invoice_trackers
     its = InvoiceTracker
-      .includes(:invoice_pass)
+      .includes(:invoice_pass, :qbo_invoice)
       .all
       .select{|it| (it.forecast_project_ids & forecast_projects.map(&:forecast_id)).any?}
       .sort{|a, b| a.invoice_pass.start_of_month <=> b.invoice_pass.start_of_month}
@@ -64,7 +64,10 @@ class ProjectTracker < ApplicationRecord
     if work_completed_at.nil?
       :in_progress
     else
-      if project_capsule.present? && project_capsule.complete?
+      if (
+        project_capsule.present? &&
+        project_capsule.complete?
+      )
         :complete
       else
         :capsule_pending
