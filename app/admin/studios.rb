@@ -103,6 +103,23 @@ ActiveAdmin.register Studio do
           data = datapoints[okrp.okr.datapoint.to_sym]
           okrs_encountered.add(okrp.okr)
           acc[okrp.okr] = okrp.health_for_value(data[:value]).merge(data)
+
+          # It's helpful for reinvestment to know how much
+          # surplus profit we've made.
+          if okrp.okr.datapoint == "profit_margin"
+            faux_okr = FauxOKR.new("Surplus Profit")
+            okrs_encountered.add(faux_okr)
+
+            surplus_usd =
+              datapoints[:revenue][:value] * (acc[okrp.okr][:surplus]/100)
+            acc[faux_okr] = {
+              health: acc[okrp.okr][:health],
+              surplus: surplus_usd,
+              value: surplus_usd,
+              unit: :usd
+            }
+          end
+
           acc
         end
         agg

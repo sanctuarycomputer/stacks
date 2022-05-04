@@ -1,3 +1,5 @@
+FauxOKR = Struct.new(:name)
+
 class Okr < ApplicationRecord
   has_many :okr_periods, dependent: :delete_all
   accepts_nested_attributes_for :okr_periods, allow_destroy: true
