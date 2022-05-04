@@ -24,6 +24,10 @@ class Studio < ApplicationRecord
         value: cogs[:benefits],
         unit: :usd
       },
+      supplies: {
+        value: cogs[:supplies],
+        unit: :usd
+      },
       expenses: {
         value: cogs[:expenses],
         unit: :usd
@@ -166,8 +170,8 @@ class Studio < ApplicationRecord
     "[SC] #{accounting_prefix} Benefits, Contributions & Tax"
   end
 
-  def qbo_expenses_category
-    return "Total Expenses" if is_garden3d?
+  def qbo_supplies_category
+    return "Total [SC] Supplies & Materials" if is_garden3d?
     "[SC] #{accounting_prefix} Supplies & Materials"
   end
 

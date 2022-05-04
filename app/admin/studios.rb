@@ -176,6 +176,13 @@ ActiveAdmin.register Studio do
         backgroundColor: COLORS[4],
         stack: 'cogs'
       }, {
+        label: "Supplies & Materials",
+        data: (datapoints_for_periods.values.map do |dp|
+          dp[:supplies][:value]
+        end),
+        backgroundColor: COLORS[5],
+        stack: 'cogs'
+      }, {
         label: "Revenue",
         data: (datapoints_for_periods.values.map do |dp|
           dp[:revenue][:value]

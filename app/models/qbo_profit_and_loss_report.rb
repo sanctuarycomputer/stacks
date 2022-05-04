@@ -24,6 +24,7 @@ class QboProfitAndLossReport < ApplicationRecord
       revenue: gross_revenue,
       payroll: find_row(studio.qbo_payroll_category),
       benefits: find_row(studio.qbo_benefits_category),
+      supplies: find_row(studio.qbo_supplies_category),
       expenses: proportional_expenses,
       subcontractors: find_row(studio.qbo_subcontractors_category),
       profit_share: find_row("[SC] Profit Share, Bonuses & Misc"),
@@ -40,6 +41,7 @@ class QboProfitAndLossReport < ApplicationRecord
     else
       base[:cogs] = (
         base[:payroll] +
+        base[:supplies] +
         base[:benefits] +
         base[:expenses] +
         base[:subcontractors]
