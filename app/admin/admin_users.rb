@@ -1,5 +1,6 @@
 ActiveAdmin.register AdminUser do
   permit_params :show_skill_tree_data,
+    :contributor_type,
     :opt_out_of_dei_data_entry,
     :old_skill_tree_level,
     :profit_share_notes,
@@ -37,9 +38,14 @@ ActiveAdmin.register AdminUser do
   config.current_filters = false
   menu label: "Everybody", parent: "Team", priority: 1
   actions :index, :show, :edit, :update
-  scope :active, default: true
+
+  scope :active_core, default: true
+  scope :satellite
+  scope :bot
   scope :archived
   scope :admin
+  scope :all
+
   config.filters = false
   config.sort_order = "created_at_desc"
   config.paginate = false
@@ -59,14 +65,6 @@ ActiveAdmin.register AdminUser do
     end
   end
 
-  action_item :archive, only: :show, if: proc { current_admin_user.is_admin? } do
-    if resource.archived_at.present?
-      link_to "Unarchive", unarchive_admin_user_admin_admin_user_path(resource), method: :post
-    else
-      link_to "Archive", archive_admin_user_admin_admin_user_path(resource), method: :post
-    end
-  end
-
   action_item :toggle_admin, only: :show, if: proc { current_admin_user.is_admin? } do
     if resource.is_admin?
       link_to "Demote as Admin", demote_admin_user_admin_admin_user_path(resource), method: :post
@@ -83,16 +81,6 @@ ActiveAdmin.register AdminUser do
   member_action :promote_admin_user, method: :post do
     resource.update!(roles: ["admin"])
     redirect_to admin_admin_user_path(resource), notice: "Success!"
-  end
-
-  member_action :archive_admin_user, method: :post do
-    resource.update!(archived_at: DateTime.now)
-    redirect_to admin_admin_user_path(resource), notice: "Archived!"
-  end
-
-  member_action :unarchive_admin_user, method: :post do
-    resource.update!(archived_at: nil)
-    redirect_to admin_admin_user_path(resource), notice: "Archive reverted!"
   end
 
   index download_links: false do
@@ -220,6 +208,10 @@ ActiveAdmin.register AdminUser do
       hr
       h1 "Admin Only"
       f.inputs(class: "admin_inputs") do
+        f.input :contributor_type,
+          include_blank: false,
+          as: :select
+
         f.input :old_skill_tree_level,
           as: :select, collection: AdminUser.old_skill_tree_levels.keys,
           label: "Starting skill tree level"

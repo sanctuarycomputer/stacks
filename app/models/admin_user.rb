@@ -1,18 +1,31 @@
 class AdminUser < ApplicationRecord
   has_many :notifications, as: :recipient
 
+  enum contributor_type: {
+    core: 0,
+    satellite: 1,
+    bot: 2,
+  }
+
   scope :active, -> {
-          AdminUser.where(archived_at: nil)
-        }
+    joins(:full_time_periods).where("started_at <= ? AND coalesce(ended_at, 'infinity') > ?", Date.today, Date.today)
+  }
   scope :archived, -> {
-          AdminUser.where.not(archived_at: nil)
-        }
+    where.not(id: active)
+  }
   scope :admin , -> {
-          AdminUser.where(roles: ["admin"])
-        }
+    AdminUser.where(roles: ["admin"])
+  }
+  scope :active_core, -> {
+    self.active.where(contributor_type: :core)
+  }
 
   def active?
-    archived_at.nil?
+    AdminUser.active.include?(self)
+  end
+
+  def archived?
+    !AdminUser.active.include?(self)
   end
 
   def atc_months
@@ -94,6 +107,7 @@ class AdminUser < ApplicationRecord
 
   def latest_full_time_period
     return full_time_periods.first if full_time_periods.length < 2
+
     full_time_periods.reduce(nil) do |acc, ftp|
       if acc.present?
         if (ftp.ended_at || Date.today) > (acc.ended_at || Date.today)

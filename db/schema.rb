@@ -1,4 +1,4 @@
-# This file is auto-generated from the current state of the database. Instead:okr_period_studios
+# This file is auto-generated from the current state of the database. Instead
 # of editing this file, please use the migrations feature of Active Record to
 # incrementally modify your database, and then regenerate this schema definition.
 #
@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2022_04_21_210808) do
+ActiveRecord::Schema.define(version: 2022_05_25_133508) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -85,11 +85,11 @@ ActiveRecord::Schema.define(version: 2022_04_21_210808) do
     t.string "provider"
     t.string "uid"
     t.string "roles", default: [], array: true
-    t.datetime "archived_at"
     t.boolean "show_skill_tree_data", default: true
     t.integer "old_skill_tree_level"
     t.text "profit_share_notes"
     t.jsonb "info", default: "{}"
+    t.integer "contributor_type", default: 0
     t.index ["email"], name: "index_admin_users_on_email", unique: true
     t.index ["reset_password_token"], name: "index_admin_users_on_reset_password_token", unique: true
   end

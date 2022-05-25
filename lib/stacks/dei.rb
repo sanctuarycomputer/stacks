@@ -28,10 +28,10 @@ class Stacks::Dei
             id: o.id,
             name: o.name,
             skill_bands: (joins.map do |a|
-              a.admin_user.archived_at.present? ? nil : a.admin_user.skill_tree_level_without_salary
+              a.admin_user.active? ? a.admin_user.skill_tree_level_without_salary : nil
             end).compact,
             admin_user_ids: (joins.map do |a|
-              a.admin_user.archived_at.present? ? nil : a.admin_user.id
+              a.admin_user.active? ? a.admin_user.id : nil
             end).compact
           }
         end
