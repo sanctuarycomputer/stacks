@@ -29,20 +29,19 @@ class Stacks::Notifications
           :gender_identities,
         ]).core
 
-      users_who_need_skill_tree = users.select do |u|
-        u.should_nag_for_skill_tree?
-      end
-
-      users_without_dei_response = users.select do |u|
-        u.should_nag_for_dei_data?
-      end
-
-      users_with_unknown_salary = users.select do |u|
-        u.skill_tree_level_without_salary == "No Reviews Yet"
-      end
-
       users_without_full_time_periods = users.select do |u|
         u.full_time_periods.empty?
+      end
+
+      active_users = users.select(&:active?)
+      users_who_need_skill_tree = active_users.select do |u|
+        u.should_nag_for_skill_tree?
+      end
+      users_without_dei_response = active_users.select do |u|
+        u.should_nag_for_dei_data?
+      end
+      users_with_unknown_salary = active_users.select do |u|
+        u.skill_tree_level_without_salary == "No Reviews Yet"
       end
 
       active_project_trackers = ProjectTracker

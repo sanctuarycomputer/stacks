@@ -76,7 +76,7 @@
               <% when :unknown_salary %>
                 <strong><%= n[:subject].email %></strong> does not have a starting skill tree level set.
               <% when :no_full_time_periods %>
-                <strong><%= n[:subject].email %></strong> does not have any employment periods set.
+                <strong><%= n[:subject].email %></strong> is marked as a <strong>Core Contributor</strong>, but does not have any employment periods set.
               <% when :stale_skill_tree %>
                 <strong><%= n[:subject].email %></strong> is probably overdue to conduct a skill tree review.
               <% else %>
