@@ -27,7 +27,7 @@ class Stacks::Notifications
           :cultural_backgrounds,
           :admin_user_gender_identities,
           :gender_identities,
-        ]).active_core
+        ]).core
 
       users_who_need_skill_tree = users.select do |u|
         u.should_nag_for_skill_tree?
