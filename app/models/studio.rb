@@ -1,9 +1,41 @@
 class Studio < ApplicationRecord
+  has_many :studio_key_meetings, dependent: :delete_all
+  has_many :key_meetings, through: :studio_key_meetings
+  accepts_nested_attributes_for :studio_key_meetings, allow_destroy: true
+
   has_many :studio_memberships
   has_many :admin_users, through: :studio_memberships
 
   has_many :studio_coordinator_periods
   accepts_nested_attributes_for :studio_coordinator_periods, allow_destroy: true
+
+  def core_members_active_on(date)
+    if is_garden3d?
+      AdminUser
+        .where(contributor_type: :core)
+        .joins(:full_time_periods)
+        .where("started_at <= ? AND coalesce(ended_at, 'infinity') >= ?", date, date)
+    else
+      admin_users
+        .where(contributor_type: :core)
+        .joins(:full_time_periods)
+        .where("started_at <= ? AND coalesce(ended_at, 'infinity') >= ?", date, date)
+    end
+  end
+
+  def key_meeting_attendance_for_period(period)
+    return :no_data if key_meetings.empty?
+
+    events =
+      GoogleCalendarEvent.where(
+        summary: key_meetings.map(&:name),
+        start: period.starts_at...period.ends_at
+      )
+    return :no_data if events.empty?
+
+    arr = events.map(&:attendance_rate)
+    arr.inject(0.0) { |sum, el| sum + el } / arr.size
+  end
 
   def key_datapoints_for_period(period)
     cogs = period.report.cogs_for_studio(self)
@@ -12,6 +44,10 @@ class Studio < ApplicationRecord
     ).values.first
 
     data = {
+      key_meeting_attendance: {
+        value: key_meeting_attendance_for_period(period),
+        unit: :percentage
+      },
       revenue: {
         value: cogs[:revenue],
         unit: :usd

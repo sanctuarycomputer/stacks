@@ -1,0 +1,19 @@
+# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+one:
+  google_calendar: one
+  starts: 2022-05-25 14:28:08
+  end: 2022-05-25 14:28:08
+  html_link: MyString
+  google_id: MyString
+  status: MyString
+  summary: MyString
+
+two:
+  google_calendar: two
+  starts: 2022-05-25 14:28:08
+  end: 2022-05-25 14:28:08
+  html_link: MyString
+  google_id: MyString
+  status: MyString
+  summary: MyString

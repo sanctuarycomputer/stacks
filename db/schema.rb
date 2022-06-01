@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2022_05_25_133508) do
+ActiveRecord::Schema.define(version: 2022_05_26_121613) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -231,6 +231,35 @@ ActiveRecord::Schema.define(version: 2022_05_25_133508) do
     t.index ["admin_user_id"], name: "index_gifted_profit_shares_on_admin_user_id"
   end
 
+  create_table "google_calendar_events", force: :cascade do |t|
+    t.string "google_id", null: false
+    t.bigint "google_calendar_id", null: false
+    t.datetime "start"
+    t.datetime "end"
+    t.string "html_link"
+    t.string "status"
+    t.string "summary"
+    t.string "description"
+    t.string "recurrence"
+    t.string "recurring_event_id"
+    t.index ["google_calendar_id"], name: "index_google_calendar_events_on_google_calendar_id"
+    t.index ["google_id"], name: "index_google_calendar_events_on_google_id", unique: true
+  end
+
+  create_table "google_calendars", force: :cascade do |t|
+    t.string "google_id", null: false
+    t.string "name"
+    t.string "sync_token"
+    t.index ["google_id"], name: "index_google_calendars_on_google_id", unique: true
+  end
+
+  create_table "google_meet_attendance_records", force: :cascade do |t|
+    t.string "google_endpoint_id", null: false
+    t.string "google_calendar_event_id", null: false
+    t.string "participant_id", null: false
+    t.index ["google_endpoint_id"], name: "index_google_meet_attendance_records_on_google_endpoint_id", unique: true
+  end
+
   create_table "invoice_passes", force: :cascade do |t|
     t.date "start_of_month"
     t.datetime "completed_at"
@@ -253,6 +282,12 @@ ActiveRecord::Schema.define(version: 2022_05_25_133508) do
     t.index ["forecast_client_id", "invoice_pass_id"], name: "idx_invoice_trackers_on_forecast_client_id_and_invoice_pass_id", unique: true
     t.index ["forecast_client_id"], name: "index_invoice_trackers_on_forecast_client_id"
     t.index ["invoice_pass_id"], name: "index_invoice_trackers_on_invoice_pass_id"
+  end
+
+  create_table "key_meetings", force: :cascade do |t|
+    t.string "name", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
   end
 
   create_table "notifications", force: :cascade do |t|
@@ -463,6 +498,15 @@ ActiveRecord::Schema.define(version: 2022_05_25_133508) do
     t.index ["studio_id"], name: "index_studio_coordinator_periods_on_studio_id"
   end
 
+  create_table "studio_key_meetings", force: :cascade do |t|
+    t.bigint "studio_id", null: false
+    t.bigint "key_meeting_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["key_meeting_id"], name: "index_studio_key_meetings_on_key_meeting_id"
+    t.index ["studio_id"], name: "index_studio_key_meetings_on_studio_id"
+  end
+
   create_table "studio_memberships", force: :cascade do |t|
     t.bigint "admin_user_id", null: false
     t.bigint "studio_id", null: false
@@ -527,6 +571,7 @@ ActiveRecord::Schema.define(version: 2022_05_25_133508) do
   add_foreign_key "finalizations", "reviews"
   add_foreign_key "full_time_periods", "admin_users"
   add_foreign_key "gifted_profit_shares", "admin_users"
+  add_foreign_key "google_calendar_events", "google_calendars"
   add_foreign_key "invoice_trackers", "admin_users"
   add_foreign_key "invoice_trackers", "invoice_passes"
   add_foreign_key "okr_period_studios", "okr_periods"
@@ -548,6 +593,8 @@ ActiveRecord::Schema.define(version: 2022_05_25_133508) do
   add_foreign_key "scores", "traits"
   add_foreign_key "studio_coordinator_periods", "admin_users"
   add_foreign_key "studio_coordinator_periods", "studios"
+  add_foreign_key "studio_key_meetings", "key_meetings"
+  add_foreign_key "studio_key_meetings", "studios"
   add_foreign_key "studio_memberships", "admin_users"
   add_foreign_key "studio_memberships", "studios"
   add_foreign_key "traits", "trees"

@@ -42,6 +42,46 @@ class Stacks::System
       admin@sanctuarycomputer.com
     HEREDOC
 
+    def bing
+      service = Google::Apis::AdminReportsV1::ReportsService.new
+      service.authorization = Google::Auth::ServiceAccountCredentials.make_creds(
+        json_key_io: StringIO.new(Stacks::Utils.config[:google_oauth2][:service_account]),
+        scope: Google::Apis::AdminReportsV1::AUTH_ADMIN_REPORTS_AUDIT_READONLY
+      )
+      service.authorization.sub = "hugh@sanctuary.computer"
+      service.authorization.fetch_access_token!
+      activities_audit = service.list_activities("all", "meet", {
+        event_name: "call_ended"
+      })
+
+      #calendar_event_id =
+      #  activities_audit.items.first.events.first.parameters.find{|p| p.name == "calendar_event_id"}.try(:value)
+      #participant_email =
+      #  activities_audit.items.second.events.first.parameters.find{|p| p.name == "identifier"}.try(:value)
+
+      service = Google::Apis::CalendarV3::CalendarService.new
+      service.authorization = Google::Auth::ServiceAccountCredentials.make_creds(
+        json_key_io: StringIO.new(Stacks::Utils.config[:google_oauth2][:service_account]),
+        scope: Google::Apis::CalendarV3::AUTH_CALENDAR
+      )
+      service.authorization.sub = "hugh@sanctuary.computer"
+      service.authorization.fetch_access_token!
+
+      ## https://stackoverflow.com/questions/41838248/google-calendar-incremental-sync-with-initial-time-max
+      #g3d_cal =
+      #  GoogleCalendar.where(google_id: "sanctuary.computer_gbrhi5ntv010b4878hcjg4vrks@group.calendar.google.com").first_or_create
+
+      #if g3d_cal.sync_token.nil?
+      #else
+      #end
+
+      g3d_calendar_events = service.list_events("sanctuary.computer_gbrhi5ntv010b4878hcjg4vrks@group.calendar.google.com", {
+        #sync_token: g3d_cal.sync_token
+      })
+
+      binding.pry
+    end
+
     def clients_served_since(start_of_period, end_of_period)
       assignments =
         ForecastAssignment

@@ -764,7 +764,8 @@ body.logged_in .flash {
   &.partially_paid,
   &.changed,
   &.capsule_pending,
-  &.at_risk
+  &.at_risk,
+  &.no_attendance_record,
   {
     background-color: $color-orange;
     color: white;
@@ -774,7 +775,8 @@ body.logged_in .flash {
   &.under_budget,
   &.paid,
   &.added,
-  &.exceptional
+  &.exceptional,
+  &.attended
   {
     background-color: $color-green;
     color: white;
@@ -804,7 +806,7 @@ body.logged_in .flash {
   &.sanctu,
   &.unchanged,
   &.in_progress,
-  &.healthy
+  &.healthy,
   {
     background-color: $color-blue;
     color: white;

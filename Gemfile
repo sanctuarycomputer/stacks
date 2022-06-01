@@ -24,6 +24,8 @@ gem 'order_as_specified'
 gem 'validate_url'
 gem 'rdiscount'
 gem 'storext'
+gem 'google-apis-admin_reports_v1'
+gem 'google-apis-calendar_v3'
 
 group :development, :test do
   gem 'pry'

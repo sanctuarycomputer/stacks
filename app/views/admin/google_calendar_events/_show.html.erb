@@ -1,0 +1,31 @@
+<p class="pill nag <%= @google_calendar_event.past? ? 'past' : 'future' %>" style="margin-right: 6px">
+<%= @google_calendar_event.past? ? 'past' : 'future' %>
+</p>
+
+<a href="<%= @google_calendar_event.html_link %>" target="_blank">
+  <p class="nag" style="margin-bottom: 20px;margin-right: 6px;">
+    View in Google Calendar ↗
+  </p>
+</a>
+
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index" paginator="true">
+  <thead>
+    <tr>
+      <th class="sortable sorted-desc col col-start_of_month"><a href="/admin/invoice_passes?order=start_of_month_asc">Email</a></th>
+      <th class="col">Attended?</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% @google_calendar_event.attendance.each_with_index do |tuple, index| %>
+      <tr class="<%= index.even? ? "even" : "odd" %>">
+        <td class="col">
+          <%= link_to tuple[0].email, admin_admin_user_path(tuple[0]) %>
+        </td>
+        <td class="col">
+          <span class="status_tag <%= tuple[1] %>"><%= tuple[1].to_s.humanize %></span>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
+

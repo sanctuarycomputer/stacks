@@ -1,0 +1,2 @@
+class GoogleMeetAttendanceRecord < ApplicationRecord
+end

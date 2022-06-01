@@ -1,0 +1,9 @@
+# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+one:
+  calendar_event_id: MyString
+  participant_identifier: MyString
+
+two:
+  calendar_event_id: MyString
+  participant_identifier: MyString

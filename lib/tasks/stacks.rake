@@ -9,6 +9,7 @@ namespace :stacks do
     Stacks::Team.discover!
     Stacks::Forecast.new.sync_all!
     Stacks::Quickbooks.sync_all!
+    Stacks::Calendars.sync_all!
     Stacks::Expenses.sync_all! # TODO Remove me
     Stacks::Expenses.match_all! # TODO Remove me
 

@@ -8,7 +8,7 @@ class AdminUser < ApplicationRecord
   }
 
   scope :active, -> {
-    joins(:full_time_periods).where("started_at <= ? AND coalesce(ended_at, 'infinity') > ?", Date.today, Date.today)
+    joins(:full_time_periods).where("started_at <= ? AND coalesce(ended_at, 'infinity') >= ?", Date.today, Date.today)
   }
   scope :archived, -> {
     where.not(id: active)

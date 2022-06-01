@@ -1,5 +1,5 @@
 ActiveAdmin.register QboPurchaseLineItem do
-  filter :expense_group
+  #filter :expense_group
   config.sort_order = "txn_date_desc"
   config.current_filters = false
   config.filters = false
