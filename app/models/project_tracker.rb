@@ -1,9 +1,17 @@
 class ProjectTracker < ApplicationRecord
   validates :name, presence: :true
+
+  validates_presence_of :budget_low_end,
+    message: 'We should almost never commit to a fixed budget, but if we must, you can set "Budget Low End" and "Budget High End" to the same value.',
+    if: :budget_high_end?
+  validates_presence_of :budget_high_end,
+    message: 'We should almost never commit to a fixed budget, but if we must, you can set "Budget Low End" and "Budget High End" to the same value.', if: :budget_low_end?
   validates_numericality_of :budget_low_end,
+    less_than_or_equal_to: :budget_high_end,
     if: :validate_budgets?
   validates_numericality_of :budget_high_end,
-    greater_than_or_equal_to: :budget_low_end, if: :validate_budgets?
+    greater_than_or_equal_to: :budget_low_end,
+    if: :validate_budgets?
 
   has_one :project_capsule, dependent: :delete
   has_many :project_tracker_links, dependent: :delete_all
@@ -36,7 +44,7 @@ class ProjectTracker < ApplicationRecord
   end
 
   def validate_budgets?
-    budget_low_end.present? || budget_high_end.present?
+    budget_low_end.present? && budget_high_end.present?
   end
 
   def invoice_trackers
