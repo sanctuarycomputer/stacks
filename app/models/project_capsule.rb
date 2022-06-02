@@ -1,6 +1,14 @@
 class ProjectCapsule < ApplicationRecord
   belongs_to :project_tracker
 
+  scope :complete, -> {
+    self
+      .where.not(client_feedback_survey_status: nil)
+      .where.not(internal_marketing_status: nil)
+      .where.not(capsule_status: nil)
+      .where.not(postpartum_notes: [nil, ""])
+  }
+
   enum client_feedback_survey_status: {
     client_feedback_survey_received_and_shared_with_project_team: 0,
     no_response_from_client: 1,

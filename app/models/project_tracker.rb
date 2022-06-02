@@ -29,6 +29,33 @@ class ProjectTracker < ApplicationRecord
 
   belongs_to :atc, class_name: "AdminUser", optional: true
 
+  def generate_snapshot!
+    snapshot = (
+      self.first_recorded_assignment.start_date...
+      self.last_recorded_assignment.end_date
+    ).reduce({
+      generated_at: DateTime.now.iso8601,
+      spend: [],
+      cost: [],
+      spend_total: 0,
+      cost_total: 0
+    }) do |acc, date|
+      acc[:spend].push({
+        x: date.iso8601,
+        y: acc[:spend_total] +=
+          self.total_value_during_range(date, date)
+      })
+      acc[:cost].push({
+        x: date.iso8601,
+        y: acc[:cost_total] +=
+          self.raw_resourcing_cost_during_range_in_usd(date, date)
+      })
+      acc
+    end
+
+    update!(snapshot: snapshot)
+  end
+
   def current_atc
     current_atc_period.try(:admin_user)
   end
@@ -67,6 +94,22 @@ class ProjectTracker < ApplicationRecord
       acc += fp.total_value_during_range(Date.today.last_month.beginning_of_month, Date.today.last_month.end_of_month)
     end
   end
+
+  def total_value_during_range(start_range, end_range)
+    forecast_projects.reduce(0) do |acc, fp|
+      acc += fp.total_value_during_range(start_range, end_range)
+    end
+  end
+
+  scope :complete, -> {
+    where.not(work_completed_at: nil)
+      .includes(:project_capsule).where(
+        project_capsules: { id: ProjectCapsule.complete}
+      )
+  }
+  scope :in_progress , -> {
+    where.not(id: complete)
+  }
 
   def work_status
     if work_completed_at.nil?
@@ -160,6 +203,20 @@ class ProjectTracker < ApplicationRecord
 
     cost
   end
+
+  def raw_resourcing_cost_during_range_in_usd(start_range, end_range)
+    assignments =
+      ForecastAssignment
+        .includes(:forecast_project)
+        .where(project_id: forecast_projects.map(&:forecast_id))
+    assignments.reduce(0) do |acc, a|
+      acc += a.raw_resourcing_cost_during_range_in_usd(
+        start_range,
+        end_range
+      )
+    end || 0
+  end
+
 
   def raw_resourcing_cost
     forecast_project_ids = forecast_projects.map(&:forecast_id)

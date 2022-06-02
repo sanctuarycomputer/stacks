@@ -13,6 +13,7 @@ namespace :stacks do
     Stacks::Expenses.sync_all! # TODO Remove me
     Stacks::Expenses.match_all! # TODO Remove me
 
+    ProjectTracker.in_progress.each(&:generate_snapshot!)
     ProfitSharePass.ensure_exists!
     Stacks::Dei.make_rollup # TODO Remove me
 
