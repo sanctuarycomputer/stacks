@@ -4,7 +4,7 @@
   </p>
 </a>
 
-<% if (invoice_pass.data || {})["reminder_passes"].present? && invoice_pass.latest_reminder_pass.any? %>
+<% if hours_report.any? %>
   <h3>🚫 The following people are missing hours:</h3>
 
   <table border="0" cellspacing="0" cellpadding="0" id="index_table_invoice_passes" class="index_table index" paginator="true">
@@ -15,10 +15,10 @@
       </tr>
     </thead>
     <tbody>
-      <% invoice_pass.latest_reminder_pass.each_with_index do |tuple, index| %>
+      <% hours_report.each_with_index do |record, index| %>
         <tr class="<%= index.even? ? "even" : "odd" %>" id="invoice_pass_1">
-          <td class="col"><%= tuple[0] %></td>
-          <td class="col"><%= tuple[1]["missing_allocation"].to_f / 60 / 60 %></td>
+          <td class="col"><%= record[:forecast_person].email %></td>
+          <td class="col"><%= record[:missing_allocation].to_f %></td>
         </tr>
       <% end %>
     </tbody>

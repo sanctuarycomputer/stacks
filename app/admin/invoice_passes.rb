@@ -49,6 +49,21 @@ ActiveAdmin.register InvoicePass do
   end
 
   show title: :invoice_month do
-    render 'invoice_pass', { invoice_pass: invoice_pass }
+    hours_report =
+      ForecastPerson.all.reject(&:archived).map do |fp|
+        next nil if fp.roles.include?("Subcontractor")
+
+        missing_hours = fp.missing_allocation_during_range_in_hours(
+          resource.start_of_month.beginning_of_month,
+          resource.start_of_month.end_of_month,
+        )
+        next nil unless missing_hours > 0
+        {
+          forecast_person: fp,
+          missing_allocation: missing_hours,
+        }
+      end.compact
+
+    render 'invoice_pass', { invoice_pass: invoice_pass, hours_report: hours_report }
   end
 end
