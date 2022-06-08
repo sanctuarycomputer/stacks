@@ -1,10 +1,9 @@
-<% invoiced_spend = @project_tracker.invoiced_spend %>
-<% running_spend = @project_tracker.running_spend %>
+<% income = @project_tracker.income %>
+<% current_spend = @project_tracker.spend %>
+<% running_spend = current_spend - income %>
 <% budget_low_end = @project_tracker.budget_low_end %>
 <% budget_high_end = @project_tracker.budget_high_end %>
-<% current_spend = invoiced_spend + running_spend %>
 <% estimated_cost = @project_tracker.estimated_cost %>
-<% revenue = @project_tracker.revenue %>
 
 <% inbudget_overage = (
   budget_low_end.present? ?
@@ -72,12 +71,14 @@
         <div class="module-body">
           <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
             <tbody>
+              <!--
               <tr class="odd">
                 <td class="col"><strong>Raw Resourcing Cost</strong></td>
                 <td class="col text-right">
                   <%= number_to_currency(@project_tracker.raw_resourcing_cost) %>
                 </td>
               </tr>
+              -->
               <tr class="even">
                 <td class="col"><strong>Estimated COGS</strong></td>
                 <td class="col text-right">
@@ -85,21 +86,21 @@
                 </td>
               </tr>
               <tr class="odd">
-                <td class="col"><strong>Total Revenue</strong></td>
+                <td class="col"><strong>Total Income</strong></td>
                 <td class="col text-right">
-                  <%= number_to_currency(revenue) %>
+                  <%= number_to_currency(income) %>
                 </td>
               </tr>
               <tr class="even">
                 <td class="col"><strong>Total Profit</strong></td>
                 <td class="col text-right">
-                  <%= number_to_currency(revenue - estimated_cost) %>
+                  <%= number_to_currency(income - estimated_cost) %>
                 </td>
               </tr>
               <tr class="odd">
                 <td class="col"><strong>Profit Margin</strong></td>
                 <td class="col text-right">
-                  <%= (((revenue - estimated_cost) / estimated_cost) * 100).round(2) %>%
+                  <%= (((income - estimated_cost) / estimated_cost) * 100).round(2) %>%
                 </td>
               </tr>
             </tbody>
@@ -185,7 +186,7 @@
     <tr class="odd">
       <td class="col">Invoiced Spend</td>
       <td class="col">
-        <%= number_to_currency(invoiced_spend) %>
+        <%= number_to_currency(income) %>
       </td>
     </tr>
     <tr class="even">

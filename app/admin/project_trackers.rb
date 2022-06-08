@@ -221,9 +221,19 @@ ActiveAdmin.register ProjectTracker do
       burnup_data[:data][:datasets].push({
         backgroundColor: Stacks::Utils::COLORS[0], # color of dots
         borderColor: Stacks::Utils::COLORS[5], # color of line
-        label: "Budget Spent",
+        label: "Spend",
         data: resource.snapshot["spend"],
-        pointRadius: 0
+        pointRadius: 1
+      })
+    end
+
+    if resource.snapshot["cogs"]
+      burnup_data[:data][:datasets].push({
+        borderColor: Stacks::Utils::COLORS[2], # color of dots
+        backgroundColor: Stacks::Utils::COLORS[8], # color of line
+        label: "COGS",
+        data: resource.snapshot["cogs"],
+        pointRadius: 1
       })
     end
 
@@ -233,7 +243,7 @@ ActiveAdmin.register ProjectTracker do
         borderColor: Stacks::Utils::COLORS[8], # color of line
         label: "Cost of Labor",
         data: resource.snapshot["cost"],
-        pointRadius: 0
+        pointRadius: 1,
       })
     end
 

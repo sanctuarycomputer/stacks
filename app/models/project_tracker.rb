@@ -29,22 +29,62 @@ class ProjectTracker < ApplicationRecord
 
   belongs_to :atc, class_name: "AdminUser", optional: true
 
+  scope :complete, -> {
+    where.not(work_completed_at: nil)
+      .includes(:project_capsule).where(
+        project_capsules: { id: ProjectCapsule.complete}
+      )
+  }
+
+  scope :in_progress , -> {
+    where.not(id: complete)
+  }
+
   def generate_snapshot!
+    periods = decorated_datapoints_during_relevant_periods
+
+    average_cost_per_hour_sold =
+      Stacks::Utils.weighted_average(
+        periods.map do |p, dp|
+          [dp[:actual_cost_per_hour_sold][:value], dp[:billable_hours][:value]]
+        end.reject{|p| p[0] == :no_data}
+      )
+
     snapshot = (
       self.first_recorded_assignment.start_date...
       self.last_recorded_assignment.end_date
     ).reduce({
       generated_at: DateTime.now.iso8601,
       spend: [],
+      cogs: [],
       cost: [],
+      hours: [],
       spend_total: 0,
-      cost_total: 0
+      cogs_total: 0,
+      cost_total: 0,
+      hours_total: 0
     }) do |acc, date|
       acc[:spend].push({
         x: date.iso8601,
         y: acc[:spend_total] +=
           self.total_value_during_range(date, date)
       })
+
+      hours = self.total_hours_during_range(date, date)
+      acc[:hours].push({
+        x: date.iso8601,
+        y: acc[:hours_total] += hours
+      })
+
+      p =
+        periods.keys.find{|p| p.starts_at <= date && p.ends_at >= date}
+      cogs = hours * periods[p][:project_cost_per_hour]
+
+      acc[:cogs].push({
+        x: date.iso8601,
+        y: acc[:cogs_total] += cogs
+      })
+
       acc[:cost].push({
         x: date.iso8601,
         y: acc[:cost_total] +=
@@ -84,14 +124,29 @@ class ProjectTracker < ApplicationRecord
   end
 
   def last_month_hours
-    forecast_projects.reduce(0) do |acc, fp|
-      acc += fp.total_hours_during_range(Date.today.last_month.beginning_of_month, Date.today.last_month.end_of_month)
-    end
+    total_hours_during_range(
+      Date.today.last_month.beginning_of_month,
+      Date.today.last_month.end_of_month
+    )
   end
 
   def last_month_value
+    total_value_during_range(
+      Date.today.last_month.beginning_of_month,
+      Date.today.last_month.end_of_month
+    )
+  end
+
+  def spend
+    total_value_during_range(
+      self.first_recorded_assignment.start_date,
+      self.last_recorded_assignment.end_date
+    )
+  end
+
+  def total_hours_during_range(start_range, end_range)
     forecast_projects.reduce(0) do |acc, fp|
-      acc += fp.total_value_during_range(Date.today.last_month.beginning_of_month, Date.today.last_month.end_of_month)
+      acc += fp.total_hours_during_range(start_range, end_range)
     end
   end
 
@@ -100,16 +155,6 @@ class ProjectTracker < ApplicationRecord
       acc += fp.total_value_during_range(start_range, end_range)
     end
   end
-
-  scope :complete, -> {
-    where.not(work_completed_at: nil)
-      .includes(:project_capsule).where(
-        project_capsules: { id: ProjectCapsule.complete}
-      )
-  }
-  scope :in_progress , -> {
-    where.not(id: complete)
-  }
 
   def work_status
     if work_completed_at.nil?
@@ -131,7 +176,7 @@ class ProjectTracker < ApplicationRecord
       return :no_budget
     end
 
-    total = invoiced_spend + running_spend
+    total = spend
     if total < budget_low_end
       :under_budget
     elsif (total >= budget_low_end && total < budget_high_end)
@@ -141,20 +186,7 @@ class ProjectTracker < ApplicationRecord
     end
   end
 
-  def revenue
-    current_spend = (invoiced_spend + running_spend)
-    if budget_high_end.present?
-      [current_spend, budget_high_end].min
-    elsif budget_low_end.present?
-      [current_spend, budget_low_end].min
-    else
-      current_spend
-    end
-  end
-
-  def estimated_cost
-    cost = 0
-
+  def datapoints_during_relevant_periods
     garden3d = Studio.find_by(name: "garden3d")
     periods = {}
     time = (
@@ -175,9 +207,13 @@ class ProjectTracker < ApplicationRecord
       )
       periods[period] =
         garden3d.key_datapoints_for_period(period)
-
       time = time.advance(months: 1)
     end
+    periods
+  end
+
+  def decorated_datapoints_during_relevant_periods
+    periods = datapoints_during_relevant_periods
 
     average_cost_per_hour_sold =
       Stacks::Utils.weighted_average(
@@ -187,21 +223,20 @@ class ProjectTracker < ApplicationRecord
       )
 
     periods.each do |p, dp|
-      hours = forecast_projects.reduce(0) do |acc, fp|
-        acc += fp.total_hours_during_range(
-          p.starts_at,
-          p.ends_at
-        )
-      end
-      cost_per_hour = (
+      dp[:project_hours] =
+        total_hours_during_range(p.starts_at, p.ends_at)
+      dp[:project_cost_per_hour] = (
         periods[p][:actual_cost_per_hour_sold][:value] == :no_data ?
         average_cost_per_hour_sold :
         periods[p][:actual_cost_per_hour_sold][:value]
       )
-      cost += hours * cost_per_hour
+      dp[:project_cost] = (dp[:project_hours] * dp[:project_cost_per_hour])
     end
+  end
 
-    cost
+  def estimated_cost
+    periods = decorated_datapoints_during_relevant_periods
+    periods.values.map{|dp| dp[:project_cost]}.reduce(:+)
   end
 
   def raw_resourcing_cost_during_range_in_usd(start_range, end_range)
@@ -253,7 +288,7 @@ class ProjectTracker < ApplicationRecord
       .first
   end
 
-  def invoiced_spend
+  def income
     forecast_project_ids = forecast_projects.map(&:forecast_id) || []
 
     from_generated_invoices =
@@ -276,37 +311,4 @@ class ProjectTracker < ApplicationRecord
     from_generated_invoices + from_adhoc_invoices
   end
 
-  def running_spend
-    forecast_project_ids = forecast_projects.map(&:forecast_id)
-    today = Date.today
-
-    assignments =
-      ForecastAssignment
-        .includes(:forecast_project)
-        .where(project_id: forecast_project_ids)
-
-    if invoice_trackers.any?
-      last_day_covered_by_invoice_trackers = invoice_trackers
-        .first
-        .invoice_pass
-        .start_of_month
-        .end_of_month
-      assignments = assignments
-        .where(
-          'end_date >= ? AND start_date <= ?',
-          last_day_covered_by_invoice_trackers + 1.day,
-          today + 1.year
-        )
-      assignments.reduce(0) do |acc, a|
-        acc += a.value_during_range_in_usd(
-          last_day_covered_by_invoice_trackers + 1.day,
-          today + 1.year
-        )
-      end || 0
-    else
-      assignments.reduce(0) do |acc, a|
-        acc += a.value_in_usd
-      end || 0
-    end
-  end
 end
