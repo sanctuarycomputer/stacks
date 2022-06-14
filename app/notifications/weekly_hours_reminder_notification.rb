@@ -17,6 +17,8 @@ class WeeklyHoursReminderNotification < Noticed::Base
 
       **Tip:** If you consistently record last week's hours *before* the following Tuesday, you'll never see this reminder!
 
+      📥 Oh, and you can view all of your Stacks notifications [here](https://stacks.garden3d.net/admin/notifications), too.
+
       🙏 Thank you!
     HEREDOC
   end
