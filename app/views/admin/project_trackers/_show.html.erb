@@ -181,6 +181,28 @@
   new Chart(document.getElementById('burnup'), <%= burnup_data.to_json.html_safe %>);
 </script>
 
+<script>
+async function copyToClipboard() {
+  if (!navigator.clipboard) return alert('Could not copy.');
+  try {
+      await navigator.clipboard.writeText(`💹 Budgetary Progress
+Invoiced: <%= number_to_currency(income) %>
+Spend this Month: <%= number_to_currency(running_spend) %>
+Total Spend to Date: <%= number_to_currency(current_spend) %>
+<% if budget_low_end.present? %>
+  <% if budget_low_end != budget_high_end %>
+Budget Low End: <%= number_to_currency(budget_low_end) %>
+Budget High End: <%= number_to_currency(budget_high_end) %>
+  <% else %>
+Budget: <%= number_to_currency(budget_high_end) %>
+  <% end %>
+<% end %>`);
+      alert('Copied!');
+  } catch(e) {
+      alert('Could not copy.');
+  }
+};
+</script>
 <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom:20px;">
   <tbody>
     <tr class="odd">
@@ -232,8 +254,16 @@
         </tr>
       <% end %>
     <% end %>
+
+    <tr class="odd">
+      <td class="col"><strong>✨ Weekly Ship Gmail Autoformatter ✨</strong></td>
+      <td class="col">
+        <a style="margin-bottom:20px;cursor:pointer;" onclick="copyToClipboard()">Copy to Clipboard ↗</a>
+      </td>
+    </tr>
   </tbody>
 </table>
+
 
 <% if @project_tracker.last_month_value > 0 %>
   <div class="dashboard-modules table index_table index">
