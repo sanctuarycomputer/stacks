@@ -10,14 +10,16 @@ namespace :stacks do
     Stacks::Forecast.new.sync_all!
     Stacks::Quickbooks.sync_all!
     Stacks::Calendars.sync_all!
-    Stacks::Expenses.sync_all! # TODO Remove me
-    Stacks::Expenses.match_all! # TODO Remove me
+
+    Stacks::Expenses.sync_all! # TODO Remove me?
+    Stacks::Expenses.match_all! # TODO Remove me?
 
     ProjectTracker.all.each(&:generate_snapshot!)
     ProfitSharePass.ensure_exists!
     Stacks::Dei.make_rollup # TODO Remove me
 
     Stacks::Automator.attempt_invoicing_for_previous_month
+    Stacks::Automator.remind_people_to_record_hours_weekly
     Stacks::Notifications.notify_admins_of_outstanding_notifications_every_tuesday!
   end
 end

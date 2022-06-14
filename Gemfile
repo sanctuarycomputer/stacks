@@ -26,6 +26,7 @@ gem 'rdiscount'
 gem 'storext'
 gem 'google-apis-admin_reports_v1'
 gem 'google-apis-calendar_v3'
+gem 'noticed', '~> 1.5'
 
 group :development, :test do
   gem 'pry'
@@ -47,4 +48,3 @@ end
 
 gem 'tzinfo-data', platforms: [:mingw, :mswin, :x64_mingw, :jruby]
 
-gem "noticed", "~> 1.5"

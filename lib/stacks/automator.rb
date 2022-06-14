@@ -59,6 +59,36 @@ class Stacks::Automator
       )
     end
 
+    # Designed to run on every Tuesday that is not the first
+    # week of the month (when invoicing happens).
+    def remind_people_to_record_hours_weekly
+      twist_users = twist.get_workspace_users.parsed_response
+
+      first_tuesday = Date.today.beginning_of_month
+      first_tuesday += 1.days until first_tuesday.wday == 2
+      next_tuesday = Date.today
+      next_tuesday += 1.days until next_tuesday.wday == 2
+      return if next_tuesday == first_tuesday
+      return if next_tuesday != Date.today
+
+      end_of_last_week = (Date.today - 1.week).end_of_week
+      ForecastPerson.includes(:admin_user).all.reject(&:archived).each do |fp|
+        next unless fp.admin_user.present?
+        next unless fp.admin_user.contributor_type == "core"
+        next if fp.roles.include?("Subcontractor")
+
+        missing_hours = fp.missing_allocation_during_range_in_hours(
+          Date.today.beginning_of_month, end_of_last_week
+        )
+        next if missing_hours == 0
+
+        WeeklyHoursReminderNotification.with(
+          missing_hours: missing_hours,
+          include_admins: false,
+        ).deliver(fp.admin_user)
+      end
+    end
+
     # Designed to run daily, and remind folks to update their hours
     # until everyone has accounted for business_days * 8hrs in the
     # given month.
@@ -156,7 +186,7 @@ class Stacks::Automator
 
           - If you're not sure how to do it, you can [learn about recording hours here](https://www.notion.so/garden3d/How-to-Record-your-Hours-ff971848f66d40cf818b930f05cfc533), or get in touch with your project lead. We're aiming for everyone to do this autonomously!
 
-          - If you think something here is incorrect, please let me know!
+          - If you think something here is incorrect, please let someone know!
 
           🙏 Thank you!
         HEREDOC
