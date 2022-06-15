@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2022_06_14_192004) do
+ActiveRecord::Schema.define(version: 2022_06_15_194648) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -302,6 +302,14 @@ ActiveRecord::Schema.define(version: 2022_06_14_192004) do
     t.index ["recipient_type", "recipient_id"], name: "index_notifications_on_recipient_type_and_recipient_id"
   end
 
+  create_table "notion_pages", force: :cascade do |t|
+    t.string "notion_id", null: false
+    t.string "notion_parent_type"
+    t.string "notion_parent_id"
+    t.jsonb "data", default: {}, null: false
+    t.index ["notion_id"], name: "index_notion_pages_on_notion_id", unique: true
+  end
+
   create_table "okr_period_studios", force: :cascade do |t|
     t.bigint "studio_id", null: false
     t.bigint "okr_period_id", null: false
@@ -544,6 +552,17 @@ ActiveRecord::Schema.define(version: 2022_06_14_192004) do
     t.string "name"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+  end
+
+  create_table "versions", force: :cascade do |t|
+    t.string "item_type", null: false
+    t.bigint "item_id", null: false
+    t.string "event", null: false
+    t.string "whodunnit"
+    t.text "object"
+    t.datetime "created_at"
+    t.text "object_changes"
+    t.index ["item_type", "item_id"], name: "index_versions_on_item_type_and_item_id"
   end
 
   create_table "workspaces", force: :cascade do |t|

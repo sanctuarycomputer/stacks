@@ -27,6 +27,8 @@ gem 'storext'
 gem 'google-apis-admin_reports_v1'
 gem 'google-apis-calendar_v3'
 gem 'noticed', '~> 1.5'
+gem 'paper_trail'
+gem 'hashdiff'
 
 group :development, :test do
   gem 'pry'
