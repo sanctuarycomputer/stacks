@@ -28,6 +28,11 @@ class NotionPage < ApplicationRecord
     end
   end
 
+  def get_prop(name)
+    prop_type = data.dig("properties", name, "type")
+    data.dig("properties", name, prop_type)
+  end
+
   def page_title
     (data.dig("properties", "Name", "title")[0] || {}).dig("plain_text")
   end

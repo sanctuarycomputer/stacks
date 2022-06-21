@@ -9,6 +9,39 @@ class Studio < ApplicationRecord
   has_many :studio_coordinator_periods
   accepts_nested_attributes_for :studio_coordinator_periods, allow_destroy: true
 
+  def new_biz_notion_pages
+    if is_garden3d?
+      Stacks::Biz.all_cards
+    else
+      Stacks::Biz.all_cards.select do |c|
+        c.get_prop("Studio").map{|s| s.dig("name").downcase}.include?(self.mini_name.downcase)
+      end
+    end
+  end
+
+  def biz_leads_in_period(leads = new_biz_notion_pages, period)
+    leads.select do |l|
+      period.include?(DateTime.parse(l.data.dig("created_time")).to_date)
+    end
+  end
+
+  def biz_leads_status_changed_in_period(
+    leads = new_biz_notion_pages,
+    to_status,
+    period
+  )
+    return :no_data if period.has_new_biz_version_history?
+    leads.select do |l|
+      l.status_history.select do |h|
+        period.include?(h[:changed_at]) && h[:current_status] == to_status
+      end.any?
+    end
+  end
+
+  def biz_won_in_period(leads = new_biz_notion_pages, period)
+    return :no_data if period.ends_at > Stacks::Biz::HISTORY_STARTS_AT
+  end
+
   def core_members_active_on(date)
     if is_garden3d?
       AdminUser
@@ -38,6 +71,7 @@ class Studio < ApplicationRecord
   end
 
   def key_datapoints_for_period(period)
+    all_leads = new_biz_notion_pages
     cogs = period.report.cogs_for_studio(self)
     v = aggregated_utilization(
       utilization_by_people([period])
@@ -75,7 +109,23 @@ class Studio < ApplicationRecord
       profit_margin: {
         value: cogs[:profit_margin],
         unit: :percentage
-      }
+      },
+      biz_leads: {
+        value: biz_leads_in_period(all_leads, period).length,
+        unit: :count
+      },
+      biz_won: {
+        value: biz_leads_status_changed_in_period(all_leads, 'Active', period).length,
+        unit: :count
+      },
+      biz_passed: {
+        value: biz_leads_status_changed_in_period(all_leads, 'Passed', period).length,
+        unit: :count
+      },
+      biz_lost: {
+        value: biz_leads_status_changed_in_period(all_leads, 'Lost/Stale', period).length,
+        unit: :count
+      },
     }
 
     data[:sellable_hours] = { unit: :hours, value: :no_data }

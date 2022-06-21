@@ -229,6 +229,38 @@ ActiveAdmin.register Studio do
       }]
     }
 
+    studio_new_biz_data = {
+      labels: datapoints_for_periods.keys.map(&:label),
+      datasets: [{
+        label: 'New',
+        backgroundColor: COLORS[0],
+        data: (datapoints_for_periods.map do |p, dp|
+          dp[:biz_leads][:value]
+        end).compact
+      }, {
+        label: 'Won',
+        backgroundColor: COLORS[1],
+        data: (datapoints_for_periods.map do |p, dp|
+          next nil if dp[:biz_won][:value] == :no_data
+          dp[:biz_won][:value]
+        end).compact
+      }, {
+        label: 'Lost/Stale',
+        backgroundColor: COLORS[2],
+        data: (datapoints_for_periods.map do |p, dp|
+          next nil if dp[:biz_lost][:value] == :no_data
+          dp[:biz_lost][:value]
+        end).compact
+      }, {
+        label: 'Passed',
+        backgroundColor: COLORS[3],
+        data: (datapoints_for_periods.map do |p, dp|
+          next nil if dp[:biz_passed][:value] == :no_data
+          dp[:biz_passed][:value]
+        end).compact
+      }]
+    }
+
     studio_utilization_data = {
       labels: datapoints_for_periods.keys.select(&:has_utilization_data?).map(&:label),
       datasets: [{
@@ -299,6 +331,7 @@ ActiveAdmin.register Studio do
       studio_profitability_data: studio_profitability_data,
       studio_economics_data: studio_economics_data,
       studio_utilization_data: studio_utilization_data,
+      studio_new_biz_data: studio_new_biz_data,
       all_gradations: all_gradations,
       default_gradation: default_gradation
     })

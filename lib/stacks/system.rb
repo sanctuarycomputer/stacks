@@ -5,6 +5,10 @@ class Stacks::System
     # all of their hours in Harvest Forecast
     UTILIZATION_START_AT = Date.new(2021, 6, 1)
 
+    # This is the first full month that we started recording
+    # versions of NotionPage via PaperTrail in production
+    NEW_BIZ_VERSION_HISTORY_START_AT = Date.new(2022, 7, 1)
+
     EIGHT_HOURS_IN_SECONDS = 28800
 
     INVOICE_STATUSES_NEED_ACTION = [
