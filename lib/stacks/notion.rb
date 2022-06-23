@@ -13,6 +13,10 @@ class Stacks::Notion
     }
   end
 
+  def get_users
+    self.class.get("/users", headers: @headers)
+  end
+
   def get_database(database_id)
     self.class.get("/databases/#{database_id}", headers: @headers)
   end

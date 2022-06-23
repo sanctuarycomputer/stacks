@@ -79,8 +79,12 @@
                 <strong><%= n[:subject].email %></strong> is marked as a <strong>Core Contributor</strong>, but does not have any employment periods set.
               <% when :stale_skill_tree %>
                 <strong><%= n[:subject].email %></strong> is probably overdue to conduct a skill tree review.
+              <% when :active_but_missing_accounts %>
+                <strong><%= n[:subject].email %></strong> is active, but is missing key software accounts. Have they been onboarded, or should they archived?
+              <% when :archived_with_active_accounts %>
+                <strong><%= n[:subject].email %></strong> is archived, but still has user accounts with our software providers. Have they been offboarded from our systems properly?
               <% else %>
-                Unknown Project Tracker Error
+                Unknown UserError
               <% end %>
 
             <% when :project_tracker %>

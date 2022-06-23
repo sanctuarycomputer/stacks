@@ -6,6 +6,14 @@ class Stacks::Notifications
       @_twist ||= Stacks::Twist.new
     end
 
+    def notion
+      @_notion ||= Stacks::Notion.new
+    end
+
+    def forecast
+      @_forecast ||= Stacks::Forecast.new
+    end
+
     def notifications
       # TODO Forecast Client with malformed term?
       notifications = []
@@ -18,6 +26,17 @@ class Stacks::Notifications
       forecast_clients = Stacks::System.clients_served_since(Date.today - 3.months, Date.today)
       forecast_people = ForecastPerson.all
 
+      twist_users = twist.get_workspace_users.parsed_response
+      notion_users = notion.get_users
+      sanctu_google_users = Stacks::Team
+        .fetch_from_google_workspace("sanctuary.computer")
+        .map{|u| u.emails.find{|e| e["primary"]}.dig("address")}
+      xxix_google_users = Stacks::Team
+        .fetch_from_google_workspace("xxix.co")
+        .map{|u| u.emails.find{|e| e["primary"]}.dig("address")}
+      google_users = [*sanctu_google_users, *xxix_google_users]
+      latest_forecast_people = forecast.people["people"]
+
       users = AdminUser
         .includes([
           :full_time_periods,
@@ -28,6 +47,32 @@ class Stacks::Notifications
           :admin_user_gender_identities,
           :gender_identities,
         ]).core
+
+      user_accounts_report =
+        users.reduce({
+          active: {},
+          archived: {}
+        }) do |acc, u|
+          twist_user = twist_users.find{|t| t["email"] == u.email}
+          forecast_user = latest_forecast_people.find{|p| p["email"] == u.email}
+          report = {
+            twist: twist_user ? !twist_user["removed"] : false,
+            notion: notion_users["results"].find{|r| r.dig("person", "email") == u.email}.present?,
+            google: google_users.find{|e| e == u.email}.present?,
+            forecast: forecast_user ? !forecast_user["archived"] : false,
+          }
+          u.active? ? acc[:active][u] = report : acc[:archived][u] = report
+          acc
+        end
+
+      active_users_with_inactive_accounts =
+        user_accounts_report[:active].select do |u, accounts|
+          accounts.values.any?(false)
+        end
+      archived_users_with_active_accounts =
+        user_accounts_report[:archived].select do |u, accounts|
+          accounts.values.any?(true)
+        end
 
       users_without_full_time_periods = users.select do |u|
         u.full_time_periods.empty?
@@ -268,6 +313,25 @@ class Stacks::Notifications
           type: :user,
           link: edit_admin_admin_user_path(u),
           error: :no_full_time_periods,
+          priority: 0
+        }
+      end
+
+      active_users_with_inactive_accounts.each do |user, report|
+        notifications << {
+          subject: user,
+          type: :user,
+          error: :active_but_missing_accounts,
+          priority: 1
+        }
+      end
+
+      archived_users_with_active_accounts.each do |user, report|
+        notifications << {
+          subject: user,
+          type: :user,
+          link: "https://www.notion.so/garden3d/Offboard-a-team-member-b5bad91e92a644eab342ca98673ba1f2",
+          error: :archived_with_active_accounts,
           priority: 0
         }
       end
