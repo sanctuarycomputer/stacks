@@ -67,7 +67,7 @@ class Stacks::Calendars
             participant_id: participant_id,
             google_calendar_event_id: calendar_event_id,
           }
-        end.compact
+        end.compact.uniq{|d| d[:google_endpoint_id]}
 
         GoogleMeetAttendanceRecord.upsert_all(
           data,
@@ -80,53 +80,38 @@ class Stacks::Calendars
     end
 
     def sync_events!(service, calendar)
-      next_page_token = nil
-
-      begin
-        if calendar.sync_token.nil?
-          response = service.list_events(calendar.google_id, {
-            single_events: true,
-            time_max: DateTime.now.utc.strftime("%FT%TZ"),
-            max_results: 2500,
-            page_token: next_page_token
-          })
-        else
-          response = service.list_events(calendar.google_id,
-            sync_token: calendar.sync_token,
-            page_token: next_page_token
-          )
-        end
-        data = response.items.map do |e|
-          {
-            google_id: e.id,
-            google_calendar_id: calendar.id,
-            start: (e.start ?
-              (e.start.date_time || e.start.date.to_datetime) :
-              nil
-            ),
-            end: (e.end ?
-              (e.end.date_time || e.end.date.to_datetime) :
-              nil
-            ),
-            html_link: e.html_link,
-            status: e.status,
-            description: e.description,
-            summary: e.summary,
-            recurrence: e.recurrence,
-            recurring_event_id: e.recurring_event_id
-          }
-        end
-        if data.any?
-          GoogleCalendarEvent.upsert_all(
-            data,
-            unique_by: :google_id
-          )
-        end
-        next_page_token = response.next_page_token
-      rescue => e
-        raise e
-      end while (response.next_sync_token.nil?)
-
+      response = service.list_events(calendar.google_id, {
+        single_events: true,
+        time_max: DateTime.now.utc.strftime("%FT%TZ"),
+        time_min: DateTime.parse("1st January 2022").utc.strftime("%FT%TZ"),
+        max_results: 2500,
+      })
+      data = response.items.map do |e|
+        {
+          google_id: e.id,
+          google_calendar_id: calendar.id,
+          start: (e.start ?
+            (e.start.date_time || e.start.date.to_datetime) :
+            nil
+          ),
+          end: (e.end ?
+            (e.end.date_time || e.end.date.to_datetime) :
+            nil
+          ),
+          html_link: e.html_link,
+          status: e.status,
+          description: e.description,
+          summary: e.summary,
+          recurrence: e.recurrence,
+          recurring_event_id: e.recurring_event_id
+        }
+      end
+      if data.any?
+        GoogleCalendarEvent.upsert_all(
+          data,
+          unique_by: :google_id
+        )
+      end
       calendar.update_attributes(sync_token: response.next_sync_token)
     end
   end
