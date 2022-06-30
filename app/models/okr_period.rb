@@ -9,7 +9,7 @@ class OkrPeriod < ApplicationRecord
   accepts_nested_attributes_for :okr_period_studios, allow_destroy: true
 
   def health_for_value(value)
-    return { health: :no_data, surplus: 0 } if value == :no_data
+    return { health: nil, surplus: 0 } if value == nil
     surplus = value - target
     extreme = surplus.abs > tolerance
 

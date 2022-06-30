@@ -9,6 +9,48 @@ class Studio < ApplicationRecord
   has_many :studio_coordinator_periods
   accepts_nested_attributes_for :studio_coordinator_periods, allow_destroy: true
 
+  def generate_snapshot!
+    snapshot =
+      [:year, :month, :quarter].reduce({}) do |acc, gradation|
+        periods = Stacks::Period.for_gradation(gradation)
+        acc[gradation] = periods.reduce([]) do |agg, period|
+          d = { label: period.label }
+          d[:datapoints] = self.key_datapoints_for_period(period)
+          d[:okrs] = self.okrs_for_period(period, d[:datapoints])
+          [*agg, d]
+        end
+        acc
+      end
+    update!(snapshot: snapshot)
+  end
+
+  def okrs_for_period(period, datapoints = self.key_datapoints_for_period(period))
+    okr_periods =
+      OkrPeriodStudio
+        .includes(okr_period: :okr)
+        .where(studio: self)
+        .select{|ops| ops.applies_to?(period)}
+        .map(&:okr_period)
+    okr_periods.reduce({}) do |acc, okrp|
+      data = datapoints[okrp.okr.datapoint.to_sym]
+      acc[okrp.okr.name] = okrp.health_for_value(data[:value]).merge(data)
+
+      # HACK: It's helpful for reinvestment to know how much
+      # surplus profit we've made.
+      if okrp.okr.datapoint == "profit_margin"
+        surplus_usd =
+          datapoints[:revenue][:value] * (acc[okrp.okr.name][:surplus]/100)
+        acc["Surplus Profit"] = {
+          health: acc[okrp.okr.name][:health],
+          surplus: surplus_usd,
+          value: surplus_usd,
+          unit: :usd
+        }
+      end
+      acc
+    end
+  end
+
   def new_biz_notion_pages
     if is_garden3d?
       Stacks::Biz.all_cards
@@ -30,7 +72,7 @@ class Studio < ApplicationRecord
     to_status,
     period
   )
-    return :no_data if period.has_new_biz_version_history?
+    return nil if period.has_new_biz_version_history?
     leads.select do |l|
       l.status_history.select do |h|
         period.include?(h[:changed_at]) && h[:current_status] == to_status
@@ -39,7 +81,7 @@ class Studio < ApplicationRecord
   end
 
   def biz_won_in_period(leads = new_biz_notion_pages, period)
-    return :no_data if period.ends_at > Stacks::Biz::HISTORY_STARTS_AT
+    return nil if period.ends_at > Stacks::Biz::HISTORY_STARTS_AT
   end
 
   def core_members_active_on(date)
@@ -57,14 +99,14 @@ class Studio < ApplicationRecord
   end
 
   def key_meeting_attendance_for_period(period)
-    return :no_data if key_meetings.empty?
+    return nil if key_meetings.empty?
 
     events =
-      GoogleCalendarEvent.where(
+      GoogleCalendarEvent.includes(:google_meet_attendance_records).where(
         summary: key_meetings.map(&:name),
         start: period.starts_at...period.ends_at
       )
-    return :no_data if events.empty?
+    return nil if events.empty?
 
     arr = events.map(&:attendance_rate)
     arr.inject(0.0) { |sum, el| sum + el } / arr.size
@@ -128,50 +170,50 @@ class Studio < ApplicationRecord
       },
     }
 
-    data[:sellable_hours] = { unit: :hours, value: :no_data }
+    data[:sellable_hours] = { unit: :hours, value: nil }
     unless v.nil?
       data[:sellable_hours][:value] = v[:sellable]
     end
 
-    data[:non_sellable_hours] = { unit: :hours, value: :no_data }
+    data[:non_sellable_hours] = { unit: :hours, value: nil }
     unless v.nil?
       data[:non_sellable_hours][:value] = v[:non_sellable]
     end
 
-    data[:billable_hours] = { unit: :hours, value: :no_data }
+    data[:billable_hours] = { unit: :hours, value: nil }
     unless v.nil?
       total_billable = v[:billable].values.reduce(&:+) || 0
       data[:billable_hours][:value] = total_billable
     end
 
-    data[:non_billable_hours] = { unit: :hours, value: :no_data }
+    data[:non_billable_hours] = { unit: :hours, value: nil }
     unless v.nil?
       data[:non_billable_hours][:value] = v[:non_billable]
     end
 
-    data[:time_off] = { unit: :hours, value: :no_data }
+    data[:time_off] = { unit: :hours, value: nil }
     unless v.nil?
       data[:time_off][:value] = v[:time_off]
     end
 
-    data[:sellable_hours_sold] = { unit: :percentage, value: :no_data }
+    data[:sellable_hours_sold] = { unit: :percentage, value: nil }
     unless v.nil?
       total_billable = v[:billable].values.reduce(&:+) || 0
       data[:sellable_hours_sold][:value] = (total_billable / v[:sellable]) * 100
     end
 
-    data[:average_hourly_rate] = { unit: :usd, value: :no_data }
+    data[:average_hourly_rate] = { unit: :usd, value: nil }
     unless v.nil?
       data[:average_hourly_rate][:value] =
         Stacks::Utils.weighted_average(v[:billable].map{|k, v| [k.to_f, v]})
     end
 
-    data[:cost_per_sellable_hour] = { unit: :usd, value: :no_data }
+    data[:cost_per_sellable_hour] = { unit: :usd, value: nil }
     unless v.nil?
       data[:cost_per_sellable_hour][:value] = cogs[:cogs] / v[:sellable].to_f
     end
 
-    data[:actual_cost_per_hour_sold] = { unit: :usd, value: :no_data }
+    data[:actual_cost_per_hour_sold] = { unit: :usd, value: nil }
     unless v.nil?
       total_billable = v[:billable].values.reduce(&:+) || 0
       data[:actual_cost_per_hour_sold][:value] = cogs[:cogs] / total_billable
@@ -185,7 +227,7 @@ class Studio < ApplicationRecord
   def utilization_by_people(periods)
     preloaded_studios = Studio.all
 
-    ForecastPerson.includes(admin_user: :studios).all.select do |fp|
+    ForecastPerson.includes(admin_user: [:studios, :full_time_periods]).all.select do |fp|
       next true if is_garden3d? && fp.admin_user.present?
       (fp.try(:admin_user).try(:studios) || []).include?(self)
     end.reduce({}) do |acc, fp|

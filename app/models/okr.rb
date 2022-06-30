@@ -4,6 +4,7 @@ class Okr < ApplicationRecord
   has_many :okr_periods, dependent: :delete_all
   accepts_nested_attributes_for :okr_periods, allow_destroy: true
 
+  validates_uniqueness_of :name
   validates_presence_of :name
   validates_presence_of :operator
   validates_presence_of :datapoint

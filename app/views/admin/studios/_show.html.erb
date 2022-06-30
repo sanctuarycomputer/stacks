@@ -14,6 +14,42 @@
   </div>
 </div>
 
+<style>
+  table.info {
+    position: absolute;
+    width: auto;
+    background-color: white;
+    z-index: 1;
+  }
+  table.right-scrolling {
+    padding-left: 250px;
+    display: block;
+    overflow: scroll;
+  }
+  table tr, table th {
+    white-space: nowrap;
+  }
+  table tr.invert {
+    display: table-cell;
+  }
+  table tr.invert td {
+    display: block;
+  }
+  table.right-scrolling .pill {
+    position: relative;
+    cursor: pointer;
+  }
+  table.right-scrolling .pill:hover .tooltip {
+    display:inline;
+  }
+  table.right-scrolling .pill:hover .natural {
+    display:none;
+  }
+  table.right-scrolling .pill .tooltip {
+    display: none;
+  }
+</style>
+
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
     <div class="module-header">
@@ -21,38 +57,16 @@
     </div>
     <div class="module-body">
 
-<style>
-table.info {
-  position: absolute;
-  width: auto;
-  background-color: white;
-}
-
-table.right-scrolling {
-  padding-left: 250px;
-  display: block;
-  overflow: scroll;
-}
-table tr, table th {
-  white-space: nowrap;
-}
-table tr.invert {
-	display: table-cell;
-}
-table tr.invert td {
-	display: block;
-}
-</style>
       <table border="0" cellspacing="0" cellpadding="0" class="index_table index info">
         <thead>
           <tr>
-            <th class="col">OKR Name</th>
+            <th class="col">&nbsp;</th>
           </tr>
         </thead>
         <tbody>
           <tr class="invert">
-            <% okrs_encountered.each do |okr| %>
-              <td class="col"><%= okr.name %></td>
+            <% all_okrs.each do |okr_name| %>
+              <td class="col"><%= okr_name %></td>
             <% end %>
           </tr>
         </tbody>
@@ -61,27 +75,44 @@ table tr.invert td {
       <table border="0" cellspacing="0" cellpadding="0" class="index_table index right-scrolling">
         <thead>
           <tr>
-            <% okrs_for_periods.keys.reverse.each do |period| %>
-              <th class="col"><%= period.label %></th>
+            <% snapshot.reverse.each do |d| %>
+              <th class="col"><%= d["label"] %></th>
             <% end %>
           </tr>
         </thead>
+
         <tbody>
-          <% okrs_for_periods.values.reverse.each_with_index do |okr_results, index| %>
+          <% snapshot.reverse.each_with_index do |d, index| %>
             <tr class="<%= index.even? ? "even" : "odd" %> invert">
-              <% okrs_encountered.each do |okr| %>
+              <% all_okrs.each do |okr| %>
                 <td class="col">
-                  <% health = okr_results[okr] ? okr_results[okr][:health] : :no_okr_set %>
-                  <% unit = okr_results[okr] ? okr_results[okr][:unit] : :no_unit %>
-                  <% surplus = (okr_results[okr] ? okr_results[okr][:surplus] : 0).round(2) %>
+                  <% okr_results = d["okrs"][okr] || {} %>
+                  <% value = okr_results.dig("value").to_f  %>
+                  <% target = value + okr_results.dig("surplus").to_f %>
+                  <% health = okr_results.dig("health")  %>
+                  <% unit = okr_results.dig("unit") %>
+                  <% surplus = (okr_results.dig("surplus") || 0).to_f.round(2) %>
+
                   <span class="pill <%= health %>" style="margin-right: 6px;">
+
                     <%= health.to_s.humanize %>
+
                     <% if surplus != 0 %>
-                      <span class="split">
+                      <span class="split tooltip">
+                        <% if unit == "usd" %>
+                          <%= number_to_currency(value.round(2)) %>
+                        <% elsif unit == "percentage" %>
+                          <%= value.round(2) %>%
+                        <% else %>
+                          <%= value.round(2) %>
+                        <% end %>
+                      </span>
+
+                      <span class="split natural">
                         <% if surplus > 0 %>+<% else %>-<% end %>
-                        <% if unit == :usd %>
+                        <% if unit == "usd" %>
                           <%= number_to_currency(surplus.abs) %>
-                        <% elsif unit == :percentage %>
+                        <% elsif unit == "percentage" %>
                           <%= surplus.abs %>%
                         <% else %>
                           <%= surplus.abs %>
@@ -94,18 +125,8 @@ table tr.invert td {
             </tr>
           <% end %>
         </tbody>
-      </table>
-    </div>
-  </div>
-</div>
 
-<div class="dashboard-modules table index_table index">
-  <div class="dashboard-module">
-    <div class="module-header">
-      <p>Studio OKR Differentials</p>
-    </div>
-    <div class="module-body">
-      <canvas id="studio-okrs"></canvas>
+      </table>
     </div>
   </div>
 </div>
@@ -179,42 +200,6 @@ table tr.invert td {
 </div>
 
 <script>
-  new Chart(document.getElementById('studio-okrs'), {
-    type: 'bar',
-    data: <%= studio_okr_data.to_json.html_safe %>,
-    options: {
-      interaction: {
-        intersect: false,
-        mode: 'index',
-      },
-      plugins: {
-        tooltip: {
-          callbacks: {
-            footer: (tooltipItems) => {
-              if (tooltipItems.every(t => t.parsed.y > 0)) return "Healthy";
-              if (tooltipItems.some(t => t.parsed.y > 0)) return "Mixed Health";
-              return "Unhealthy";
-            },
-          }
-        }
-      },
-      scales: {
-        yPercentage: {
-          type: 'linear',
-          position: 'right',
-          max: 15,
-          min: -15,
-        },
-        yUSD: {
-          type: 'linear',
-          position: 'left',
-          max: 15,
-          min: -15,
-        }
-      }
-    }
-  })
-
   new Chart(document.getElementById('studio-profitability'), {
     type: 'bar',
     data: <%= studio_profitability_data.to_json.html_safe %>,

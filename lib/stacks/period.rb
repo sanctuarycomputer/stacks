@@ -25,4 +25,40 @@ class Stacks::Period
   def include?(date)
     date >= @starts_at && date <= @ends_at
   end
+
+  def self.for_gradation(gradation)
+    periods = []
+    time = Date.new(2020, 1, 1)
+    case gradation
+    when nil
+    when :month
+      while time < Date.today.last_month.end_of_month
+        periods << Stacks::Period.new(
+          time.strftime("%B, %Y"),
+          time.beginning_of_month,
+          time.end_of_month
+        )
+        time = time.advance(months: 1)
+      end
+    when :quarter
+      while time < Date.today.last_quarter.end_of_quarter
+        periods << Stacks::Period.new(
+          "Q#{(time.beginning_of_quarter.month / 3) + 1}, #{time.beginning_of_quarter.year}",
+          time.beginning_of_quarter,
+          time.end_of_quarter
+        )
+        time = time.advance(months: 3)
+      end
+    when :year
+      while time < Date.today.last_year.end_of_year
+        periods << Stacks::Period.new(
+          "#{time.beginning_of_quarter.year}",
+          time.beginning_of_year,
+          time.end_of_year
+        )
+        time = time.advance(years: 1)
+      end
+    end
+    periods
+  end
 end

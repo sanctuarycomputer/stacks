@@ -47,7 +47,7 @@ class ProjectTracker < ApplicationRecord
       Stacks::Utils.weighted_average(
         periods.map do |p, dp|
           [dp[:actual_cost_per_hour_sold][:value], dp[:billable_hours][:value]]
-        end.reject{|p| p[0] == :no_data}
+        end.reject{|p| p[0] == nil}
       )
 
     snapshot = (
@@ -219,14 +219,14 @@ class ProjectTracker < ApplicationRecord
       Stacks::Utils.weighted_average(
         periods.map do |p, dp|
           [dp[:actual_cost_per_hour_sold][:value], dp[:billable_hours][:value]]
-        end.reject{|p| p[0] == :no_data}
+        end.reject{|p| p[0] == nil}
       )
 
     periods.each do |p, dp|
       dp[:project_hours] =
         total_hours_during_range(p.starts_at, p.ends_at)
       dp[:project_cost_per_hour] = (
-        periods[p][:actual_cost_per_hour_sold][:value] == :no_data ?
+        periods[p][:actual_cost_per_hour_sold][:value] == nil ?
         average_cost_per_hour_sold :
         periods[p][:actual_cost_per_hour_sold][:value]
       )

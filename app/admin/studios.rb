@@ -58,266 +58,168 @@ ActiveAdmin.register Studio do
     current_gradation =
       default_gradation unless all_gradations.include?(current_gradation)
 
-    periods = []
-    time = Date.new(2020, 1, 1)
-    case current_gradation
-    when nil
-    when "month"
-      while time < Date.today.last_month.end_of_month
-        periods << Stacks::Period.new(
-          time.strftime("%B, %Y"),
-          time.beginning_of_month,
-          time.end_of_month
-        )
-        time = time.advance(months: 1)
-      end
-    when "quarter"
-      while time < Date.today.last_quarter.end_of_quarter
-        periods << Stacks::Period.new(
-          "Q#{(time.beginning_of_quarter.month / 3) + 1}, #{time.beginning_of_quarter.year}",
-          time.beginning_of_quarter,
-          time.end_of_quarter
-        )
-        time = time.advance(months: 3)
-      end
-    when "year"
-      while time < Date.today.last_year.end_of_year
-        periods << Stacks::Period.new(
-          "#{time.beginning_of_quarter.year}",
-          time.beginning_of_year,
-          time.end_of_year
-        )
-        time = time.advance(years: 1)
-      end
-    end
-
-    datapoints_for_periods =
-      periods.reduce({}) do |agg, period|
-        agg[period] = resource.key_datapoints_for_period(period)
-        agg
-      end
-
-    okrs_encountered = Set[]
-    okrs_for_periods =
-      periods.reduce({}) do |agg, period|
-        datapoints = datapoints_for_periods[period]
-        okr_periods =
-          OkrPeriodStudio
-            .includes(okr_period: :okr)
-            .where(studio: resource)
-            .select{|ops| ops.applies_to?(period)}
-            .map(&:okr_period)
-
-        agg[period] = okr_periods.reduce({}) do |acc, okrp|
-          data = datapoints[okrp.okr.datapoint.to_sym]
-          okrs_encountered.add(okrp.okr)
-          acc[okrp.okr] = okrp.health_for_value(data[:value]).merge(data)
-
-          # It's helpful for reinvestment to know how much
-          # surplus profit we've made.
-          if okrp.okr.datapoint == "profit_margin"
-            faux_okr = FauxOKR.new("Surplus Profit")
-            okrs_encountered.add(faux_okr)
-
-            surplus_usd =
-              datapoints[:revenue][:value] * (acc[okrp.okr][:surplus]/100)
-            acc[faux_okr] = {
-              health: acc[okrp.okr][:health],
-              surplus: surplus_usd,
-              value: surplus_usd,
-              unit: :usd
-            }
-          end
-
-          acc
-        end
-        agg
-      end
-
-    studio_okr_data = {
-      labels: okrs_for_periods.keys.map(&:label),
-      datasets: (okrs_encountered.each_with_index.map do |okr, i|
-        {
-          label: okr.name,
-          backgroundColor: COLORS[i],
-          data: okrs_for_periods.values.map do |okr_results|
-            okr_results[okr] ? okr_results[okr][:surplus] : 0
-          end
-        }
-      end)
-    }
+    snapshot =
+      resource.snapshot[current_gradation] || []
 
     studio_profitability_data = {
-      labels: datapoints_for_periods.keys.map(&:label),
+      labels: snapshot.map{|s| s["label"]},
       datasets: [{
         label: "Profit Margin (%)",
-        data: (datapoints_for_periods.values.map do |dp|
-          dp[:profit_margin][:value]
+        data: (snapshot.map do |v|
+          v.dig("datapoints", "profit_margin", "value")
         end),
         yAxisID: 'y1',
         type: 'line'
       }, {
         label: "Payroll",
-        data: (datapoints_for_periods.values.map do |dp|
-          dp[:payroll][:value]
+        data: (snapshot.map do |v|
+          v.dig("datapoints", "payroll", "value")
         end),
         backgroundColor: COLORS[1],
         stack: 'cogs'
       }, {
         label: "Benefits",
-        data: (datapoints_for_periods.values.map do |dp|
-          dp[:benefits][:value]
+        data: (snapshot.map do |v|
+          v.dig("datapoints", "benefits", "value")
         end),
         backgroundColor: COLORS[2],
         stack: 'cogs'
       }, {
         label: "Expenses",
-        data: (datapoints_for_periods.values.map do |dp|
-          dp[:expenses][:value]
+        data: (snapshot.map do |v|
+          v.dig("datapoints", "expenses", "value")
         end),
         backgroundColor: COLORS[3],
         stack: 'cogs'
       }, {
         label: "Subcontractors",
-        data: (datapoints_for_periods.values.map do |dp|
-          dp[:subcontractors][:value]
+        data: (snapshot.map do |v|
+          v.dig("datapoints", "subcontractors", "value")
         end),
         backgroundColor: COLORS[4],
         stack: 'cogs'
       }, {
         label: "Supplies & Materials",
-        data: (datapoints_for_periods.values.map do |dp|
-          dp[:supplies][:value]
+        data: (snapshot.map do |v|
+          v.dig("datapoints", "supplies", "value")
         end),
         backgroundColor: COLORS[5],
         stack: 'cogs'
       }, {
         label: "Revenue",
-        data: (datapoints_for_periods.values.map do |dp|
-          dp[:revenue][:value]
+        data: (snapshot.map do |v|
+          v.dig("datapoints", "revenue", "value")
         end),
         backgroundColor: COLORS[0]
       }]
     }
 
     studio_economics_data = {
-      labels: datapoints_for_periods.keys.select(&:has_utilization_data?).map(&:label),
+      labels: snapshot.map{|s| s["label"]},
       datasets: [{
         label: 'Average Hourly Rate Billed',
         borderColor: COLORS[0],
         type: 'line',
-        data: (datapoints_for_periods.map do |p, dp|
-          next nil unless p.has_utilization_data?
-          dp[:average_hourly_rate][:value]
-        end).compact
+        data: (snapshot.map do |v|
+          v.dig("datapoints", "average_hourly_rate", "value")
+        end)
       }, {
         label: 'Cost per Sellable Hour',
         borderColor: COLORS[1],
         type: 'line',
-        data: (datapoints_for_periods.map do |p, dp|
-          next nil unless p.has_utilization_data?
-          dp[:cost_per_sellable_hour][:value]
-        end).compact
+        data: (snapshot.map do |v|
+          v.dig("datapoints", "cost_per_sellable_hour", "value")
+        end)
       }, {
         label: 'Actual Cost per Hour Sold',
         borderColor: COLORS[2],
         type: 'line',
-        data: (datapoints_for_periods.map do |p, dp|
-          next nil unless p.has_utilization_data?
-          dp[:actual_cost_per_hour_sold][:value]
-        end).compact
+        data: (snapshot.map do |v|
+          v.dig("datapoints", "actual_cost_per_hour_sold", "value")
+        end)
       }]
     }
 
     studio_new_biz_data = {
-      labels: datapoints_for_periods.keys.map(&:label),
+      labels: snapshot.map{|s| s["label"]},
       datasets: [{
         label: 'New',
         backgroundColor: COLORS[0],
-        data: (datapoints_for_periods.map do |p, dp|
-          dp[:biz_leads][:value]
-        end).compact
+        data: (snapshot.map do |v|
+          v.dig("datapoints", "biz_leads", "value")
+        end)
       }, {
         label: 'Won',
         backgroundColor: COLORS[1],
-        data: (datapoints_for_periods.map do |p, dp|
-          next nil if dp[:biz_won][:value] == :no_data
-          dp[:biz_won][:value]
-        end).compact
+        data: (snapshot.map do |v|
+          v.dig("datapoints", "biz_won", "value")
+        end)
       }, {
         label: 'Lost/Stale',
         backgroundColor: COLORS[2],
-        data: (datapoints_for_periods.map do |p, dp|
-          next nil if dp[:biz_lost][:value] == :no_data
-          dp[:biz_lost][:value]
-        end).compact
+        data: (snapshot.map do |v|
+          v.dig("datapoints", "biz_lost", "value")
+        end)
       }, {
         label: 'Passed',
         backgroundColor: COLORS[3],
-        data: (datapoints_for_periods.map do |p, dp|
-          next nil if dp[:biz_passed][:value] == :no_data
-          dp[:biz_passed][:value]
-        end).compact
+        data: (snapshot.map do |v|
+          v.dig("datapoints", "biz_passed", "value")
+        end)
       }]
     }
 
     studio_utilization_data = {
-      labels: datapoints_for_periods.keys.select(&:has_utilization_data?).map(&:label),
+      labels: snapshot.map{|s| s["label"]},
       datasets: [{
         label: 'Utilization Rate (%)',
         borderColor: COLORS[4],
-        data: (datapoints_for_periods.map do |p, dp|
-          next nil unless p.has_utilization_data?
-          dp[:sellable_hours_sold][:value]
-        end).compact,
+        data: (snapshot.map do |v|
+          v.dig("datapoints", "sellable_hours_sold", "value")
+        end),
         yAxisID: 'y2',
       }, {
         label: 'Actual Hours Sold',
         backgroundColor: COLORS[8],
-        data: (datapoints_for_periods.map do |p, dp|
-          next nil unless p.has_utilization_data?
-          dp[:billable_hours][:value]
-        end).compact,
+        data: (snapshot.map do |v|
+          v.dig("datapoints", "billable_hours", "value")
+        end),
         yAxisID: 'y1',
         type: 'bar',
         stack: 'Stack 0',
       }, {
         label: 'Non Billable',
         backgroundColor: COLORS[6],
-        data: (datapoints_for_periods.map do |p, dp|
-          next nil unless p.has_utilization_data?
-          dp[:non_billable_hours][:value]
-        end).compact,
+        data: (snapshot.map do |v|
+          v.dig("datapoints", "non_billable_hours", "value")
+        end),
         yAxisID: 'y1',
         type: 'bar',
         stack: 'Stack 0',
       }, {
         label: 'Time Off',
         backgroundColor: COLORS[9],
-        data: (datapoints_for_periods.map do |p, dp|
-          next nil unless p.has_utilization_data?
-          dp[:time_off][:value]
-        end).compact,
+        data: (snapshot.map do |v|
+          v.dig("datapoints", "time_off", "value")
+        end),
         yAxisID: 'y1',
         type: 'bar',
         stack: 'Stack 0',
       }, {
         label: 'Sellable Hours',
         backgroundColor: COLORS[2],
-        data: (datapoints_for_periods.map do |p, dp|
-          next nil unless p.has_utilization_data?
-          dp[:sellable_hours][:value]
-        end).compact,
+        data: (snapshot.map do |v|
+          v.dig("datapoints", "sellable_hours", "value")
+        end),
         yAxisID: 'y1',
         type: 'bar',
         stack: 'Stack 1',
       }, {
         label: 'Non Sellable Hours',
         backgroundColor: COLORS[5],
-        data: (datapoints_for_periods.map do |p, dp|
-          next nil unless p.has_utilization_data?
-          dp[:non_sellable_hours][:value]
-        end).compact,
+        data: (snapshot.map do |v|
+          v.dig("datapoints", "non_sellable_hours", "value")
+        end),
         yAxisID: 'y1',
         type: 'bar',
         stack: 'Stack 1',
@@ -325,15 +227,14 @@ ActiveAdmin.register Studio do
     }
 
     render(partial: "show", locals: {
-      okrs_encountered: okrs_encountered,
-      okrs_for_periods: okrs_for_periods,
-      studio_okr_data: studio_okr_data,
+      all_gradations: all_gradations,
+      default_gradation: default_gradation,
+      all_okrs: [*Okr.all.map(&:name), "Surplus Profit"].sort,
+      snapshot: snapshot,
       studio_profitability_data: studio_profitability_data,
       studio_economics_data: studio_economics_data,
       studio_utilization_data: studio_utilization_data,
       studio_new_biz_data: studio_new_biz_data,
-      all_gradations: all_gradations,
-      default_gradation: default_gradation
     })
   end
 end
