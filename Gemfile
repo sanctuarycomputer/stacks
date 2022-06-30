@@ -30,6 +30,7 @@ gem 'google-apis-calendar_v3'
 gem 'noticed', '~> 1.5'
 gem 'paper_trail'
 gem 'hashdiff'
+gem 'skylight'
 
 group :development, :test do
   gem 'pry'
