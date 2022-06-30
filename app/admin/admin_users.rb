@@ -54,7 +54,6 @@ ActiveAdmin.register AdminUser do
     def scoped_collection
       super.includes(
         :gifted_profit_shares,
-        :full_time_periods,
         :admin_user_racial_backgrounds,
         :racial_backgrounds,
         :admin_user_cultural_backgrounds,
