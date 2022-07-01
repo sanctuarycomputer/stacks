@@ -16,7 +16,7 @@ class System < ApplicationRecord
   private
 
   def self.instance
-    first || System.create!(settings: {})
+    @@instance ||= (first || System.create!(settings: {}))
   end
 
   def confirm_singularity

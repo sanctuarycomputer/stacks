@@ -16,8 +16,8 @@ namespace :stacks do
     Stacks::Expenses.match_all! # TODO Remove me?
 
     # Snapshots
-    ProjectTracker.all.each(&:generate_snapshot!)
     Studio.all.each(&:generate_snapshot!)
+    ProjectTracker.all.each(&:generate_snapshot!)
 
     ProfitSharePass.ensure_exists!
     Stacks::Dei.make_rollup # TODO Remove me

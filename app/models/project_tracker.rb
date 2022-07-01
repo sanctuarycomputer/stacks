@@ -46,7 +46,7 @@ class ProjectTracker < ApplicationRecord
     average_cost_per_hour_sold =
       Stacks::Utils.weighted_average(
         periods.map do |p, dp|
-          [dp[:actual_cost_per_hour_sold][:value], dp[:billable_hours][:value]]
+          [dp.dig("actual_cost_per_hour_sold", "value"), dp.dig("billable_hours", "value")]
         end.reject{|p| p[0] == nil}
       )
 
@@ -78,18 +78,19 @@ class ProjectTracker < ApplicationRecord
 
       p =
         periods.keys.find{|p| p.starts_at <= date && p.ends_at >= date}
-      cogs = hours * periods[p][:project_cost_per_hour]
+      cogs = hours * periods[p]["project_cost_per_hour"]
 
       acc[:cogs].push({
         x: date.iso8601,
         y: acc[:cogs_total] += cogs
       })
 
-      acc[:cost].push({
-        x: date.iso8601,
-        y: acc[:cost_total] +=
-          self.raw_resourcing_cost_during_range_in_usd(date, date)
-      })
+      # TODO: Make me faster
+      #acc[:cost].push({
+      #  x: date.iso8601,
+      #  y: acc[:cost_total] +=
+      #    self.raw_resourcing_cost_during_range_in_usd(date, date)
+      #})
       acc
     end
 
@@ -206,7 +207,7 @@ class ProjectTracker < ApplicationRecord
         time.end_of_month
       )
       periods[period] =
-        garden3d.key_datapoints_for_period(period)
+        garden3d.snapshot["month"].find{|v| v["label"] == period.label}.try(:dig, "datapoints") || {}
       time = time.advance(months: 1)
     end
     periods
@@ -218,25 +219,26 @@ class ProjectTracker < ApplicationRecord
     average_cost_per_hour_sold =
       Stacks::Utils.weighted_average(
         periods.map do |p, dp|
-          [dp[:actual_cost_per_hour_sold][:value], dp[:billable_hours][:value]]
+          binding.pry if dp.nil?
+          [dp.dig("actual_cost_per_hour_sold", "value"), dp.dig("billable_hours", "value")]
         end.reject{|p| p[0] == nil}
       )
 
     periods.each do |p, dp|
-      dp[:project_hours] =
+      dp["project_hours"] =
         total_hours_during_range(p.starts_at, p.ends_at)
-      dp[:project_cost_per_hour] = (
-        periods[p][:actual_cost_per_hour_sold][:value] == nil ?
+      dp["project_cost_per_hour"] = (
+        periods[p].dig("actual_cost_per_hour_sold", "value") == nil ?
         average_cost_per_hour_sold :
-        periods[p][:actual_cost_per_hour_sold][:value]
+        periods[p].dig("actual_cost_per_hour_sold", "value")
       )
-      dp[:project_cost] = (dp[:project_hours] * dp[:project_cost_per_hour])
+      dp["project_cost"] = (dp["project_hours"] * dp["project_cost_per_hour"])
     end
   end
 
   def estimated_cost
     periods = decorated_datapoints_during_relevant_periods
-    periods.values.map{|dp| dp[:project_cost]}.reduce(:+)
+    periods.values.map{|dp| dp["project_cost"]}.reduce(:+)
   end
 
   def raw_resourcing_cost_during_range_in_usd(start_range, end_range)
@@ -310,5 +312,4 @@ class ProjectTracker < ApplicationRecord
 
     from_generated_invoices + from_adhoc_invoices
   end
-
 end
