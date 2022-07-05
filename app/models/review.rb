@@ -86,37 +86,37 @@ class Review < ApplicationRecord
     experienced_mid_level_3: {
       name: "EML3",
       min_points: 540,
-      salary: 94500
+      salary: 96862.5
     },
     senior_1: {
       name: "S1",
       min_points: 595,
-      salary: 99750
+      salary: 107231.25
     },
     senior_2: {
       name: "S2",
       min_points: 650,
-      salary: 105000
+      salary: 118125.00
     },
     senior_3: {
       name: "S3",
       min_points: 690,
-      salary: 110250
+      salary: 129543.75
     },
     senior_4: {
       name: "S4",
       min_points: 720,
-      salary: 115500
+      salary: 141487.50
     },
     lead_1: {
       name: "L1",
       min_points: 750,
-      salary: 120750
+      salary: 153956.25
     },
     lead_2: {
       name: "L2",
       min_points: 810,
-      salary: 126000
+      salary: 166950.00
     },
   }
 
