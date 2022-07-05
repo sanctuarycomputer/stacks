@@ -3,6 +3,15 @@ ActiveAdmin.register Studio do
   config.paginate = false
   actions :index, :show, :edit, :update
 
+  action_item :trigger_sync_okrs, only: :show do
+    link_to "Recalculate OKRs", trigger_sync_okrs_admin_studio_path(resource), method: :post
+  end
+
+  member_action :trigger_sync_okrs, method: :post do
+    resource.generate_snapshot!
+    redirect_to admin_studio_path(resource), notice: "OKRs synced!"
+  end
+
   permit_params :name,
     :accounting_prefix,
     :mini_name,
