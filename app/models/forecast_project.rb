@@ -11,6 +11,10 @@ class ForecastProject < ApplicationRecord
     where.not('data @> ?', {archived: true}.to_json)
   }
 
+  scope :with_archived_at_bottom , -> {
+    order(Arel.sql("data->>'archived'").asc)
+  }
+
   def is_time_off?
     name == "Time Off" && forecast_client.nil?
   end
@@ -20,7 +24,9 @@ class ForecastProject < ApplicationRecord
   end
 
   def display_name
-    "[#{data['code'] || 'Missing Forecast Project Code'}] #{data['name']}"
+    title = "[#{data['code'] || 'Missing Forecast Project Code'}] #{data['name']}"
+    title = "*ARCHIVED* #{title}" if data["archived"]
+    title
   end
 
   def edit_link

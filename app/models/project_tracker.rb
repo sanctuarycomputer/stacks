@@ -198,7 +198,7 @@ class ProjectTracker < ApplicationRecord
     )
     end_time = (
       last_recorded_assignment ?
-      last_recorded_assignment.start_date.beginning_of_month :
+      last_recorded_assignment.end_date.beginning_of_month :
       Date.today.beginning_of_month
     )
     while time <= end_time
