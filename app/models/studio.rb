@@ -157,15 +157,15 @@ class Studio < ApplicationRecord
         unit: :count
       },
       biz_won: {
-        value: biz_leads_status_changed_in_period(all_leads, 'Active', period).length,
+        value: biz_leads_status_changed_in_period(all_leads, 'Active', period).try(:length),
         unit: :count
       },
       biz_passed: {
-        value: biz_leads_status_changed_in_period(all_leads, 'Passed', period).length,
+        value: biz_leads_status_changed_in_period(all_leads, 'Passed', period).try(:length),
         unit: :count
       },
       biz_lost: {
-        value: biz_leads_status_changed_in_period(all_leads, 'Lost/Stale', period).length,
+        value: biz_leads_status_changed_in_period(all_leads, 'Lost/Stale', period).try(:length),
         unit: :count
       },
     }
