@@ -199,6 +199,23 @@
   </div>
 </div>
 
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">🥲 Attrition</h2>
+  </div>
+</div>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Studio Members leaving with DEI Demographic Breakdowns</p>
+    </div>
+    <div class="module-body">
+      <canvas id="studio-attrition"></canvas>
+    </div>
+  </div>
+</div>
+
 <script>
   new Chart(document.getElementById('studio-profitability'), {
     type: 'bar',
@@ -257,6 +274,27 @@
       interaction: {
         intersect: false,
         mode: 'index',
+      },
+      tension: 0.3,
+      scales: {
+        y: {
+          type: 'linear',
+          display: true,
+          position: 'left',
+          beginAtZero: true
+        },
+      }
+    }
+  });
+
+  new Chart(document.getElementById('studio-attrition'), {
+    type: 'bar',
+    data: <%= studio_attrition_data.to_json.html_safe %>,
+    options: {
+      plugins: {
+        legend: {
+          display: false
+        },
       },
       tension: 0.3,
       scales: {

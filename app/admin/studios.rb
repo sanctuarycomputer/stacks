@@ -178,6 +178,50 @@ ActiveAdmin.register Studio do
       }]
     }
 
+    studio_attrition_data = {
+      labels: snapshot.map{|s| s["label"]},
+      datasets: [{
+        label: 'Total',
+        backgroundColor: COLORS[0],
+        data: (snapshot.map do |v|
+          v.dig("datapoints", "attrition", "value").count
+        end)
+      }]
+    }
+
+    [RacialBackground, CulturalBackground, GenderIdentity].each do |klass|
+      studio_attrition_data[:datasets] << {
+        label: "#{klass.to_s.underscore.humanize} — No Response",
+        backgroundColor: COLORS[1],
+        data: (snapshot.map do |v|
+          v
+            .dig("datapoints", "attrition", "value")
+            .reduce(0) do |acc, m|
+              acc += m["#{klass.to_s.underscore}_ids"].empty? ? 1 : 0
+            end
+        end),
+        type: 'bar',
+        stack: klass.to_s.underscore,
+      }
+
+      klass.all.each_with_index do |dei_set, index|
+        studio_attrition_data[:datasets] << {
+          label: "#{klass.to_s.underscore.humanize} — #{dei_set.name}",
+          backgroundColor: COLORS[index + 2],
+          data: (snapshot.map do |v|
+            v
+              .dig("datapoints", "attrition", "value")
+              .reduce(0) do |acc, m|
+                acc +=
+                  m["#{klass.to_s.underscore}_ids"].include?(dei_set.id) ? (1.0 / m["#{klass.to_s.underscore}_ids"].count) : 0
+              end
+          end),
+          type: 'bar',
+          stack: klass.to_s.underscore,
+        }
+      end
+    end
+
     studio_utilization_data = {
       labels: snapshot.map{|s| s["label"]},
       datasets: [{
@@ -244,6 +288,7 @@ ActiveAdmin.register Studio do
       studio_economics_data: studio_economics_data,
       studio_utilization_data: studio_utilization_data,
       studio_new_biz_data: studio_new_biz_data,
+      studio_attrition_data: studio_attrition_data,
     })
   end
 end

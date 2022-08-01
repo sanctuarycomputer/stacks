@@ -112,6 +112,38 @@ class Studio < ApplicationRecord
     arr.inject(0.0) { |sum, el| sum + el } / arr.size
   end
 
+  def studio_members_that_left_during_period(period)
+    users =
+      (is_garden3d? ? AdminUser : admin_users)
+        .includes(:full_time_periods)
+        .where(contributor_type: :core)
+        .joins(:full_time_periods)
+        .where("ended_at >= ? AND coalesce(ended_at, 'infinity') <= ?", period.starts_at, period.ends_at)
+
+    users.select do |u|
+      # It's possible that a user has another full time period
+      # following the one that ended in this period if their
+      # utilization was adjusted or they switched to 4-day work
+      # week.
+
+      # However, someone like Alicia who left for a period and
+      # returned should be counted in the attrition numbers, so
+      # instead, we check that there's not another full_time_period
+      # immediately following the one that ended in this period (we
+      # give a 7 day window for this).
+      last_ending_ftp_in_period = u
+        .full_time_periods
+        .where("ended_at >= ? AND coalesce(ended_at, 'infinity') <= ?", period.starts_at, period.ends_at)
+        .order(started_at: :desc)
+        .last
+      u.full_time_periods.where(
+        "started_at >= ? AND started_at <= ?",
+        last_ending_ftp_in_period.ended_at + 1.day,
+        last_ending_ftp_in_period.ended_at + 7.days
+      ).empty?
+    end
+  end
+
   def key_datapoints_for_period(period)
     all_leads = new_biz_notion_pages
     cogs = period.report.cogs_for_studio(self)
@@ -119,7 +151,21 @@ class Studio < ApplicationRecord
       utilization_by_people([period])
     ).values.first
 
+
+    leaving_members =
+      studio_members_that_left_during_period(period)
+
     data = {
+      attrition: {
+        value: leaving_members.map do |m|
+          {
+            gender_identity_ids: m.gender_identity_ids,
+            cultural_background_ids: m.cultural_background_ids,
+            racial_background_ids: m.racial_background_ids,
+          }
+        end,
+        unit: :compound
+      },
       key_meeting_attendance: {
         value: key_meeting_attendance_for_period(period),
         unit: :percentage
