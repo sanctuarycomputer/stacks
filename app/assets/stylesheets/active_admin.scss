@@ -758,7 +758,6 @@ body.logged_in .flash {
   &.waiting,
   &.no,
   &.at_budget,
-  &.not_sent,
   &.not_made,
   &.unpaid,
   &.partially_paid,
@@ -787,7 +786,8 @@ body.logged_in .flash {
   &.unpaid_overdue,
   &.partially_paid_overdue,
   &.removed,
-  &.failing
+  &.failing,
+  &.not_sent,
   {
     background-color: $color-red;
     color: white;
