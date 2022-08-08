@@ -226,7 +226,7 @@ class AdminUser < ApplicationRecord
   def should_nag_for_skill_tree?
     system = System.instance
     if archived_reviews.any?
-      (Date.today - archived_reviews.last.archived_at.to_date).to_i >
+      (Date.today - archived_reviews.first.archived_at.to_date).to_i >
         system.expected_skill_tree_cadence_days
     elsif latest_full_time_period.present?
       (Date.today - latest_full_time_period.started_at).to_i >
