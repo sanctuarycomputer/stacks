@@ -134,11 +134,16 @@ class AdminUser < ApplicationRecord
       full_time_ranges.reduce([]){|acc, r| [*acc, *(r.to_a & period_range.to_a)]}
 
     overlaps.select do |d|
-      last_friday_of_month = Date.new(d.year, d.month, -1)
-      last_friday_of_month -= (last_friday_of_month.wday - 5) % 7
-      next false if d == last_friday_of_month
+      #unless consider_freedom_friday_a_working_day
+      #  last_friday_of_month = Date.new(d.year, d.month, -1)
+      #  last_friday_of_month -= (last_friday_of_month.wday - 5) % 7
+      #  next false if d == last_friday_of_month
+      #end
 
-      ftp = full_time_periods.find{|ftp| (ftp.started_at <= d) && (ftp.ended_at == nil || ftp.ended_at >= d)}
+      ftp = full_time_periods.find do |ftp|
+        (ftp.started_at <= d) && (ftp.ended_at == nil || ftp.ended_at >= d)
+      end
+
       if ftp.multiplier == 0.8
         (1..4).include?(d.wday)
       else

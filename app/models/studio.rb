@@ -248,6 +248,12 @@ class Studio < ApplicationRecord
       data[:sellable_hours_sold][:value] = (total_billable / v[:sellable]) * 100
     end
 
+    data[:sellable_hours_ratio] = { unit: :percentage, value: nil }
+    unless v.nil?
+      data[:sellable_hours_ratio][:value] =
+        (v[:sellable] / (v[:sellable] + v[:non_sellable])) * 100
+    end
+
     data[:average_hourly_rate] = { unit: :usd, value: nil }
     unless v.nil?
       data[:average_hourly_rate][:value] =

@@ -230,7 +230,15 @@ ActiveAdmin.register Studio do
         data: (snapshot.map do |v|
           v.dig("datapoints", "sellable_hours_sold", "value")
         end),
-        yAxisID: 'y2',
+        yAxisID: 'y',
+      }, {
+        label: 'Sellable Ratio (%)',
+        borderColor: COLORS[10],
+        data: (snapshot.map do |v|
+          v.dig("datapoints", "sellable_hours_ratio", "value")
+        end),
+        yAxisID: 'y',
+        borderDash: [10,5]
       }, {
         label: 'Actual Hours Sold',
         backgroundColor: COLORS[8],

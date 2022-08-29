@@ -108,9 +108,17 @@ class ForecastAssignment < ApplicationRecord
     end_date =
       (self.end_date > end_of_range ? end_of_range : self.end_date)
 
+    working_days =
+      self.forecast_person.admin_user.working_days_between(
+        start_of_range,
+        end_of_range,
+      )
     days = if forecast_project.name == "Time Off" && allocation.nil?
-        # If this allocation is for the "Time Off" project, filter time on weekends!
-        (start_date..end_date).select { |d| (1..5).include?(d.wday) }.size
+        # If this allocation is for the "Time Off" project, filter time on weekends,
+        # Fridays for 4-day workers (but not Freedom Fridays, which are a type of scheduled PTO)
+        (start_date..end_date).select do |d|
+          (working_days).include?(d)
+        end.size
       else
         # This allocation is not for "Time Off", so count work done on weekends.
         (end_date - start_date).to_i + 1

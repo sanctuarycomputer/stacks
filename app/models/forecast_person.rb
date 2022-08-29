@@ -30,7 +30,7 @@ class ForecastPerson < ApplicationRecord
 
   def utilization_during_range(start_of_range, end_of_range, preloaded_studios)
     assignments = forecast_assignments
-      .includes(forecast_project: :forecast_client)
+      .includes(forecast_project: :forecast_client, forecast_person: :admin_user)
       .where(
         'end_date >= ? AND start_date <= ?', start_of_range, end_of_range
       )
@@ -42,7 +42,7 @@ class ForecastPerson < ApplicationRecord
       if fa.is_time_off?
         acc[:time_off] += fa.allocation_during_range_in_hours(
           start_of_range,
-          end_of_range
+          end_of_range,
         )
       elsif fa.is_non_billable?(preloaded_studios)
         acc[:non_billable] += fa.allocation_during_range_in_hours(
