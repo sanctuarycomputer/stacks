@@ -109,7 +109,7 @@ class ForecastAssignment < ApplicationRecord
       (self.end_date > end_of_range ? end_of_range : self.end_date)
 
     working_days = nil
-    if self.forecast_person.admin_user.present?
+    if self.try(:forecast_person).try(:admin_user).present?
       working_days =
         self.forecast_person.admin_user.working_days_between(
           start_of_range,
