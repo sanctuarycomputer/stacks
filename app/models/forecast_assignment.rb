@@ -95,21 +95,22 @@ class ForecastAssignment < ApplicationRecord
     allocation_in_seconds / 60 / 60
   end
 
-  def allocation_during_range_in_hours(start_of_range, end_of_range)
+  def allocation_during_range_in_hours(start_of_range, end_of_range, only_during_working_days = false)
     (allocation_during_range_in_seconds(
       start_of_range,
-      end_of_range
+      end_of_range,
+      only_during_working_days
     ) / 60 / 60)
   end
 
-  def allocation_during_range_in_seconds(start_of_range, end_of_range)
+  def allocation_during_range_in_seconds(start_of_range, end_of_range, only_during_working_days = false)
     start_date =
       (self.start_date < start_of_range ? start_of_range : self.start_date)
     end_date =
       (self.end_date > end_of_range ? end_of_range : self.end_date)
 
     working_days = nil
-    if self.try(:forecast_person).try(:admin_user).present?
+    if only_during_working_days && self.try(:forecast_person).try(:admin_user).present?
       working_days =
         self.forecast_person.admin_user.working_days_between(
           start_of_range,

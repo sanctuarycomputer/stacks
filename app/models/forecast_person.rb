@@ -43,6 +43,7 @@ class ForecastPerson < ApplicationRecord
         acc[:time_off] += fa.allocation_during_range_in_hours(
           start_of_range,
           end_of_range,
+          true
         )
       elsif fa.is_non_billable?(preloaded_studios)
         acc[:non_billable] += fa.allocation_during_range_in_hours(
