@@ -109,6 +109,8 @@ ActiveAdmin.register ProjectTracker do
   end
 
   show do
+    accounting_method = session[:accounting_method] || "cash"
+
     income_data = [
       *resource.invoice_trackers,
       *resource.adhoc_invoice_trackers
@@ -227,25 +229,25 @@ ActiveAdmin.register ProjectTracker do
       })
     end
 
-    if resource.snapshot["cogs"]
+    if resource.snapshot[accounting_method]["cogs"]
       burnup_data[:data][:datasets].push({
         borderColor: Stacks::Utils::COLORS[2], # color of dots
         backgroundColor: Stacks::Utils::COLORS[8], # color of line
         label: "COGS",
-        data: resource.snapshot["cogs"],
+        data: resource.snapshot[accounting_method]["cogs"],
         pointRadius: 1
       })
     end
 
-    if resource.snapshot["cost"]
-      burnup_data[:data][:datasets].push({
-        backgroundColor: Stacks::Utils::COLORS[2], # color of dots
-        borderColor: Stacks::Utils::COLORS[8], # color of line
-        label: "Cost of Labor",
-        data: resource.snapshot["cost"],
-        pointRadius: 1,
-      })
-    end
+    #if resource.snapshot["cost"]
+    #  burnup_data[:data][:datasets].push({
+    #    backgroundColor: Stacks::Utils::COLORS[2], # color of dots
+    #    borderColor: Stacks::Utils::COLORS[8], # color of line
+    #    label: "Cost of Labor",
+    #    data: resource.snapshot["cost"],
+    #    pointRadius: 1,
+    #  })
+    #end
 
     render(partial: 'show', locals: {
       burnup_data: burnup_data

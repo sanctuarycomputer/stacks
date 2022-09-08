@@ -3,7 +3,8 @@
 <% running_spend = current_spend - income %>
 <% budget_low_end = @project_tracker.budget_low_end %>
 <% budget_high_end = @project_tracker.budget_high_end %>
-<% estimated_cost = @project_tracker.estimated_cost %>
+<% accounting_method = session[:accounting_method] || "cash" %>
+<% estimated_cost = @project_tracker.estimated_cost(accounting_method) %>
 
 <% inbudget_overage = (
   budget_low_end.present? ?

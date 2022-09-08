@@ -55,34 +55,47 @@ class ProjectTracker < ApplicationRecord
       self.last_recorded_assignment.end_date
     ).reduce({
       generated_at: DateTime.now.iso8601,
-      spend: [],
-      cogs: [],
-      cost: [],
       hours: [],
+      spend: [],
+      hours_total: 0,
       spend_total: 0,
-      cogs_total: 0,
-      cost_total: 0,
-      hours_total: 0
+      cash: {
+        cogs: [],
+        cogs_total: 0,
+        #cost: [],
+        #cost_total: 0,
+      },
+      accrual: {
+        cogs: [],
+        cogs_total: 0,
+        #cost: [],
+        #cost_total: 0,
+      }
     }) do |acc, date|
-      acc[:spend].push({
-        x: date.iso8601,
-        y: acc[:spend_total] +=
-          self.total_value_during_range(date, date)
-      })
-
       hours = self.total_hours_during_range(date, date)
       acc[:hours].push({
         x: date.iso8601,
         y: acc[:hours_total] += hours
       })
 
-      p =
-        periods.keys.find{|p| p.starts_at <= date && p.ends_at >= date}
-      cogs = hours * periods[p]["project_cost_per_hour"]
-
-      acc[:cogs].push({
+      acc[:spend].push({
         x: date.iso8601,
-        y: acc[:cogs_total] += cogs
+        y: acc[:spend_total] +=
+          self.total_value_during_range(date, date)
+      })
+
+      p = periods.keys.find{|p| p.starts_at <= date && p.ends_at >= date}
+
+      cash_cogs = hours * periods[p]["cash_project_cost_per_hour"]
+      acc[:cash][:cogs].push({
+        x: date.iso8601,
+        y: acc[:cash][:cogs_total] += cash_cogs
+      })
+
+      accrual_cogs = hours * periods[p]["accrual_project_cost_per_hour"]
+      acc[:accrual][:cogs].push({
+        x: date.iso8601,
+        y: acc[:accrual][:cogs_total] += accrual_cogs
       })
 
       # TODO: Make me faster
@@ -207,8 +220,12 @@ class ProjectTracker < ApplicationRecord
         time.beginning_of_month,
         time.end_of_month
       )
-      periods[period] =
-        garden3d.snapshot["month"].find{|v| v["label"] == period.label}.try(:dig, "datapoints") || {}
+      periods[period] = {
+        "cash" =>
+          garden3d.snapshot["month"].find{|v| v["label"] == period.label}.try(:dig, "cash", "datapoints") || {},
+        "accrual" =>
+          garden3d.snapshot["month"].find{|v| v["label"] == period.label}.try(:dig, "accrual",  "datapoints") || {},
+      }
       time = time.advance(months: 1)
     end
     periods
@@ -217,29 +234,40 @@ class ProjectTracker < ApplicationRecord
   def decorated_datapoints_during_relevant_periods
     periods = datapoints_during_relevant_periods
 
-    average_cost_per_hour_sold =
+    cash_average_cost_per_hour_sold =
       Stacks::Utils.weighted_average(
         periods.map do |p, dp|
-          binding.pry if dp.nil?
-          [dp.dig("actual_cost_per_hour_sold", "value"), dp.dig("billable_hours", "value")]
+          [dp.dig("cash", "actual_cost_per_hour_sold", "value"), dp.dig("cash", "billable_hours", "value")]
+        end.reject{|p| p[0] == nil}
+      )
+    accrual_average_cost_per_hour_sold =
+      Stacks::Utils.weighted_average(
+        periods.map do |p, dp|
+          [dp.dig("accrual", "actual_cost_per_hour_sold", "value"), dp.dig("accrual", "billable_hours", "value")]
         end.reject{|p| p[0] == nil}
       )
 
     periods.each do |p, dp|
       dp["project_hours"] =
         total_hours_during_range(p.starts_at, p.ends_at)
-      dp["project_cost_per_hour"] = (
-        periods[p].dig("actual_cost_per_hour_sold", "value") == nil ?
-        average_cost_per_hour_sold :
-        periods[p].dig("actual_cost_per_hour_sold", "value")
+      dp["cash_project_cost_per_hour"] = (
+        periods[p].dig("cash", "actual_cost_per_hour_sold", "value") == nil ?
+        cash_average_cost_per_hour_sold :
+        periods[p].dig("cash", "actual_cost_per_hour_sold", "value")
       )
-      dp["project_cost"] = (dp["project_hours"] * dp["project_cost_per_hour"])
+      dp["cash_project_cost"] = (dp["project_hours"] * dp["cash_project_cost_per_hour"])
+      dp["accrual_project_cost_per_hour"] = (
+        periods[p].dig("accrual", "actual_cost_per_hour_sold", "value") == nil ?
+        accrual_average_cost_per_hour_sold :
+        periods[p].dig("accrual", "actual_cost_per_hour_sold", "value")
+      )
+      dp["accrual_project_cost"] = (dp["project_hours"] * dp["accrual_project_cost_per_hour"])
     end
   end
 
-  def estimated_cost
+  def estimated_cost(accounting_method)
     periods = decorated_datapoints_during_relevant_periods
-    periods.values.map{|dp| dp["project_cost"]}.reduce(:+)
+    periods.values.map{|dp| dp["#{accounting_method}_project_cost"]}.reduce(:+)
   end
 
   def raw_resourcing_cost_during_range_in_usd(start_range, end_range)

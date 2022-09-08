@@ -14,9 +14,11 @@ class Studio < ApplicationRecord
       [:year, :month, :quarter].reduce({}) do |acc, gradation|
         periods = Stacks::Period.for_gradation(gradation)
         acc[gradation] = periods.reduce([]) do |agg, period|
-          d = { label: period.label }
-          d[:datapoints] = self.key_datapoints_for_period(period)
-          d[:okrs] = self.okrs_for_period(period, d[:datapoints])
+          d = { label: period.label, cash: {}, accrual: {} }
+          d[:cash][:datapoints] = self.key_datapoints_for_period(period, "cash")
+          d[:cash][:okrs] = self.okrs_for_period(period, d[:cash][:datapoints])
+          d[:accrual][:datapoints] = self.key_datapoints_for_period(period, "accrual")
+          d[:accrual][:okrs] = self.okrs_for_period(period, d[:accrual][:datapoints])
           [*agg, d]
         end
         acc
@@ -24,7 +26,7 @@ class Studio < ApplicationRecord
     update!(snapshot: snapshot)
   end
 
-  def okrs_for_period(period, datapoints = self.key_datapoints_for_period(period))
+  def okrs_for_period(period, datapoints)
     okr_periods =
       OkrPeriodStudio
         .includes(okr_period: :okr)
@@ -144,9 +146,9 @@ class Studio < ApplicationRecord
     end
   end
 
-  def key_datapoints_for_period(period)
+  def key_datapoints_for_period(period, accounting_method)
     all_leads = new_biz_notion_pages
-    cogs = period.report.cogs_for_studio(self)
+    cogs = period.report.cogs_for_studio(self, accounting_method)
     v = aggregated_utilization(
       utilization_by_people([period])
     ).values.first
