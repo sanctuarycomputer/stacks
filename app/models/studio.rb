@@ -245,13 +245,21 @@ class Studio < ApplicationRecord
     data[:sellable_hours_sold] = { unit: :percentage, value: nil }
     unless v.nil?
       total_billable = v[:billable].values.reduce(&:+) || 0
-      data[:sellable_hours_sold][:value] = (total_billable / v[:sellable]) * 100
+      begin
+        data[:sellable_hours_sold][:value] = (total_billable / v[:sellable]) * 100
+      rescue ZeroDivisionError
+        data[:sellable_hours_sold][:value] = 0
+      end
     end
 
     data[:sellable_hours_ratio] = { unit: :percentage, value: nil }
     unless v.nil?
-      data[:sellable_hours_ratio][:value] =
-        (v[:sellable] / (v[:sellable] + v[:non_sellable])) * 100
+      begin
+        data[:sellable_hours_ratio][:value] =
+          (v[:sellable] / (v[:sellable] + v[:non_sellable])) * 100
+      rescue ZeroDivisionError
+        data[:sellable_hours_ratio][:value] = 0
+      end
     end
 
     data[:average_hourly_rate] = { unit: :usd, value: nil }
@@ -274,14 +282,17 @@ class Studio < ApplicationRecord
     data
   end
 
-  # TODO: Should we be including Time Off for 4-day workers
-  # in the Time Off count?
   def utilization_by_people(periods)
     preloaded_studios = Studio.all
 
     ForecastPerson.includes(admin_user: [:studios, :full_time_periods]).all.select do |fp|
-      next true if is_garden3d? && fp.admin_user.present?
-      (fp.try(:admin_user).try(:studios) || []).include?(self)
+      next true if is_garden3d?
+
+      if (fp.try(:admin_user).try(:studios) || []).include?(self)
+        true
+      else
+        fp.studios.include?(self)
+      end
     end.reduce({}) do |acc, fp|
       acc[fp] = periods.reduce({}) do |agr, period|
         next agr unless period.has_utilization_data?
@@ -295,6 +306,7 @@ class Studio < ApplicationRecord
         agr[period.label][:report] = period.report
 
         if fp.admin_user.present?
+          # Probably a fulltimer
           working_days = fp.admin_user.working_days_between(
             period.starts_at,
             period.ends_at,
@@ -304,6 +316,12 @@ class Studio < ApplicationRecord
           agr[period.label] = agr[period.label].merge({
             sellable: sellable_hours,
             non_sellable: non_sellable_hours
+          })
+        else
+          # Probably a contractor
+          agr[period.label] = agr[period.label].merge({
+            sellable: agr[period.label][:billable].values.reduce(:+) || 0,
+            non_sellable: 0
           })
         end
 
