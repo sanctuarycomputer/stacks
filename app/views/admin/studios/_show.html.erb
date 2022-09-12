@@ -1,5 +1,6 @@
 <% current_gradation = params["gradation"] || default_gradation %>
 <% current_gradation = default_gradation unless all_gradations.include?(current_gradation) %>
+<% accounting_method = session[:accounting_method] || "cash" %>
 <% all_gradations.each do |gradation| %>
   <a href="?gradation=<%= gradation %>" style="margin-right: 6px">
     <p class="nag pill <%= current_gradation == gradation ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
@@ -86,7 +87,7 @@
             <tr class="<%= index.even? ? "even" : "odd" %> invert">
               <% all_okrs.each do |okr| %>
                 <td class="col">
-                  <% okr_results = d["okrs"][okr] || {} %>
+                  <% okr_results = d[accounting_method]["okrs"][okr] || {} %>
                   <% value = okr_results.dig("value").to_f  %>
                   <% target = value + okr_results.dig("surplus").to_f %>
                   <% health = okr_results.dig("health")  %>

@@ -238,7 +238,24 @@ ActiveAdmin.setup do |config|
     admin.authorization_adapter = "AdminAuthorization"
 
     admin.build_menu :utility_navigation do |menu|
-      menu.add label: "🤔 Learn Stacks", url: "https://www.notion.so/garden3d/Using-Stacks-3bb041a0cfe84e4d899707901374a001", html_options: { target: :blank }
+      menu.add id: "manual",
+               label: "🤔 Learn Stacks",
+               url: "https://www.notion.so/garden3d/Using-Stacks-3bb041a0cfe84e4d899707901374a001",
+               html_options: { target: :blank }
+      menu.add id: "accounting_method",
+               priority: 1,
+               html_options: { method: :post },
+               label: -> {
+                 if session[:accounting_method].nil? || session[:accounting_method] == "cash"
+                   "💸 Cash"
+                 elsif session[:accounting_method] == "accrual"
+                   "📊 Accrual"
+                 else
+                   "😵‍💫 WTF???"
+                 end
+               },
+               url: -> { "/toggle_accounting_method" },
+               if: :current_active_admin_user?
       admin.add_current_user_to_menu menu
       admin.add_logout_button_to_menu menu
     end

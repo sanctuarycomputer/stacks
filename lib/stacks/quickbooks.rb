@@ -151,7 +151,7 @@ class Stacks::Quickbooks
       qbo_invoices.select{|i| i.private_note == memo}
     end
 
-    def fetch_profit_and_loss_report_for_range(start_of_range, end_of_range)
+    def fetch_profit_and_loss_report_for_range(start_of_range, end_of_range, accounting_method = "Cash")
       qbo_access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
       report_service = Quickbooks::Service::Reports.new
       report_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
@@ -160,6 +160,7 @@ class Stacks::Quickbooks
       report_service.query("ProfitAndLoss", nil, {
         start_date: start_of_range.strftime("%Y-%m-%d"),
         end_date: end_of_range.strftime("%Y-%m-%d"),
+        accounting_method: accounting_method
       })
     end
   end
