@@ -111,6 +111,11 @@ ActiveAdmin.register ProjectTracker do
   show do
     accounting_method = session[:accounting_method] || "cash"
 
+    start_date =
+      resource.first_recorded_assignment&.start_date&.iso8601 || DateTime.now.iso8601
+    end_date =
+      resource.last_recorded_assignment&.end_date&.iso8601 || DateTime.now.iso8601
+
     income_data = [
       *resource.invoice_trackers,
       *resource.adhoc_invoice_trackers
@@ -121,7 +126,7 @@ ActiveAdmin.register ProjectTracker do
      end
      .reduce({
        income: [{
-         x: resource.first_recorded_assignment.start_date.iso8601,
+         x: start_date,
          y: 0
        }],
        income_total: 0
@@ -149,9 +154,7 @@ ActiveAdmin.register ProjectTracker do
      end
 
     latest_timestamp =
-      income_data[:income].reduce(
-        resource.last_recorded_assignment.end_date.iso8601
-      ) do |acc, datapoint|
+      income_data[:income].reduce(end_date) do |acc, datapoint|
         next datapoint[:x] if Date.parse(acc) < Date.parse(datapoint[:x])
         acc
       end
@@ -165,7 +168,7 @@ ActiveAdmin.register ProjectTracker do
         scales: {
           x: {
             type: 'time',
-            min: resource.first_recorded_assignment.start_date.iso8601,
+            min: start_date,
             max: latest_timestamp,
             time: {
               unit: 'month'
@@ -186,7 +189,7 @@ ActiveAdmin.register ProjectTracker do
         borderColor: Stacks::Utils::COLORS[6], # color of line
         pointRadius: 0,
         data: [{
-          x: resource.first_recorded_assignment.start_date.iso8601,
+          x: start_date,
           y: resource.budget_low_end
         }, {
           x: latest_timestamp,
@@ -202,7 +205,7 @@ ActiveAdmin.register ProjectTracker do
         borderColor: Stacks::Utils::COLORS[4], # color of line
         pointRadius: 0,
         data: [{
-          x: resource.first_recorded_assignment.start_date.iso8601,
+          x: start_date,
           y: resource.budget_high_end
         }, {
           x: latest_timestamp,
@@ -229,12 +232,12 @@ ActiveAdmin.register ProjectTracker do
       })
     end
 
-    if resource.snapshot[accounting_method]["cogs"]
+    if resource.snapshot[accounting_method].try(:dig, "cogs")
       burnup_data[:data][:datasets].push({
         borderColor: Stacks::Utils::COLORS[2], # color of dots
         backgroundColor: Stacks::Utils::COLORS[8], # color of line
         label: "COGS",
-        data: resource.snapshot[accounting_method]["cogs"],
+        data: resource.snapshot[accounting_method].try(:dig, "cogs"),
         pointRadius: 1
       })
     end
