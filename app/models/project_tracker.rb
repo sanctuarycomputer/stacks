@@ -40,6 +40,31 @@ class ProjectTracker < ApplicationRecord
     where.not(id: complete)
   }
 
+  def make_adhoc_snapshot(period = 7.days)
+    snapshot = (
+      (DateTime.now - period)...
+      DateTime.now
+    ).reduce({
+      hours: [],
+      spend: [],
+      hours_total: 0,
+      spend_total: 0,
+    }) do |acc, date|
+      hours = self.total_hours_during_range(date, date)
+      acc[:hours].push({
+        x: date.iso8601,
+        y: acc[:hours_total] += hours
+      })
+
+      acc[:spend].push({
+        x: date.iso8601,
+        y: acc[:spend_total] +=
+          self.total_value_during_range(date, date)
+      })
+      acc
+    end
+  end
+
   def generate_snapshot!
     periods = decorated_datapoints_during_relevant_periods
 

@@ -5,6 +5,7 @@
 <% budget_high_end = @project_tracker.budget_high_end %>
 <% accounting_method = session[:accounting_method] || "cash" %>
 <% estimated_cost = @project_tracker.estimated_cost(accounting_method) %>
+<% last_seven_days_snapshot = @project_tracker.make_adhoc_snapshot(7.days) %>
 
 <% inbudget_overage = (
   budget_low_end.present? ?
@@ -186,7 +187,10 @@
 async function copyToClipboard() {
   if (!navigator.clipboard) return alert('Could not copy.');
   try {
-      await navigator.clipboard.writeText(`💹 Budgetary Progress
+      await navigator.clipboard.writeText(`⏳ Hours Progress
+Last 7 days: <%= last_seven_days_snapshot[:hours_total] %> hours (<%= number_to_currency(last_seven_days_snapshot[:spend_total]) %>)
+
+💹 Budgetary Progress
 Invoiced: <%= number_to_currency(income) %>
 Spend this Month: <%= number_to_currency(running_spend) %>
 Total Spend to Date: <%= number_to_currency(current_spend) %>
