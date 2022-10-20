@@ -409,6 +409,19 @@ form.filter_form {
 }
 
 form {
+  ul.errors {
+    color: $color-orange;
+    font-weight: bold;
+    margin: 0;
+    font-size: 20px;
+    text-shadow: none;
+    background-image: none;
+    background: none;
+    li {
+      margin-left: 0px;
+    }
+  }
+
   a.button,
   a.button:link,
   a.button:visited,

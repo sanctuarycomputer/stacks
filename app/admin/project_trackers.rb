@@ -24,7 +24,7 @@ ActiveAdmin.register ProjectTracker do
       :id,
       :name,
       :url,
-      :link_tracker,
+      :link_type,
       :project_tracker_id,
       :_destroy,
       :_edit
@@ -45,6 +45,19 @@ ActiveAdmin.register ProjectTracker do
     ]
 
   controller do
+    def new
+      build_resource
+      resource.project_tracker_links << ProjectTrackerLink.new({
+        name: "MSA",
+        link_type: :msa
+      })
+      resource.project_tracker_links << ProjectTrackerLink.new({
+        name: "SOW",
+        link_type: :sow
+      })
+      new!
+    end
+
     def scoped_collection
       super.includes(
         :atc_periods,
@@ -259,6 +272,8 @@ ActiveAdmin.register ProjectTracker do
 
   form do |f|
     f.inputs(class: "admin_inputs") do
+
+      f.semantic_errors
       f.input :name
       f.input :budget_low_end
       f.input :budget_high_end
@@ -270,6 +285,7 @@ ActiveAdmin.register ProjectTracker do
         a.input :ended_at,
           hint: "Leave blank unless this ATC role was passed off to another person"
       end
+
 
       f.has_many :project_tracker_links, heading: false, allow_destroy: true, new_record: 'Add a Project URL' do |a|
         a.input(:name, {

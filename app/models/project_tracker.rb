@@ -1,5 +1,6 @@
 class ProjectTracker < ApplicationRecord
   validates :name, presence: :true
+  validate :has_msa_and_sow_links
 
   validates_presence_of :budget_low_end,
     message: 'We should almost never commit to a fixed budget, but if we must, you can set "Budget Low End" and "Budget High End" to the same value.',
@@ -39,6 +40,16 @@ class ProjectTracker < ApplicationRecord
   scope :in_progress , -> {
     where.not(id: complete)
   }
+
+  def has_msa_and_sow_links
+    unless project_tracker_links.find{|l| l.link_type == "msa"}.present?
+      errors.add(:base, "An MSA Project URL must be present.")
+    end
+
+    unless project_tracker_links.find{|l| l.link_type == "sow"}.present?
+      errors.add(:base, "An SOW Project URL must be present.")
+    end
+  end
 
   def make_adhoc_snapshot(period = 7.days)
     snapshot = (
