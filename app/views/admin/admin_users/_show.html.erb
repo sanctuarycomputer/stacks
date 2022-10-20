@@ -38,6 +38,9 @@
         <p><strong>Stacks System Roles:</strong> None</p>
       <% end %>
 
+      <% if resource.met_associates_requirements_at.present? %>
+        <p><strong>Met Associates Requirements At:</strong> <%= resource.met_associates_requirements_at.strftime("%B %d, %Y") %></p>
+      <% end %>
       <p><strong>Projected PSU by EOY:</strong> <%= resource.projected_psu_by_eoy %></p>
       <p><strong>ATC Months:</strong> <%= resource.atc_months.round(2) %></p>
       <p><strong>Studio Coordinator Months:</strong> <%= resource.studio_coordinator_months.round(2) %></p>

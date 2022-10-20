@@ -28,6 +28,50 @@ class AdminUser < ApplicationRecord
     !AdminUser.active.include?(self)
   end
 
+  def met_associates_skill_band_requirement_at
+    min_points = Review::LEVELS[:senior_2][:min_points]
+    # Find the first review that was above the requirement
+    first_review_above_requirement =
+      archived_reviews.reverse.find do |r|
+        r.total_points >= min_points
+      end
+    if first_review_above_requirement.try(:archived_at)
+      return first_review_above_requirement.archived_at
+    end
+
+    # Not found, so check if the old_skill_tree_level counts
+    if old_skill_tree_level.present? && Review::LEVELS[old_skill_tree_level.to_sym][:min_points] >= min_points
+      full_time_periods.order("started_at ASC").first.try(:started_at)
+    end
+  end
+
+  def met_associates_time_commitment_at
+    commitment = 1461.days
+
+    achieved_at = nil
+    full_time_periods.order("started_at ASC").reduce(0.days) do |running, ftp|
+      next if achieved_at.present?
+      day = ftp.started_at
+      until running > commitment || day == ftp.ended_at_or_now do
+        running += 1.days
+        day += 1.days
+        achieved_at = day if running == commitment
+      end
+      running
+    end
+    achieved_at
+  end
+
+  def met_associates_requirements_at
+    skill_band_met_at = met_associates_skill_band_requirement_at
+    return nil unless skill_band_met_at
+
+    time_commitment_met_at = met_associates_time_commitment_at
+    return nil unless time_commitment_met_at
+
+    [time_commitment_met_at, skill_band_met_at].max.to_date
+  end
+
   def atc_months
     # TODO: Take into account wether this user is active or not
     atc_periods.reduce(0.0) do |acc, atcp|
