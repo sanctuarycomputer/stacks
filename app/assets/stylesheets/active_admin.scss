@@ -388,6 +388,26 @@ form fieldset.actions li.cancel a {
   }
 }
 
+
+
+form.filter_form {
+  input[type=submit] {
+    padding: 6px 12px;
+    margin: 0 6px 0 0;
+    font-size: 13px;
+  }
+
+  a.clear_filters_btn {
+    padding: 6px 12px;
+    font-size: 13px;
+    font-family: 'Inter var', sans-serif;
+    background-color: transparent;
+    color: $color-black;
+    border: none;
+    box-shadow: none;
+  }
+}
+
 form {
   a.button,
   a.button:link,
@@ -438,7 +458,15 @@ h1 {
   color: #414141;
 }
 
-table.index_table {
+table.index_table, .sidebar_section.panel {
+  h3 {
+    display: none;
+  }
+  .panel_contents {
+    margin-top: 38px;
+    padding: 15px;
+  }
+  background: transparent;
   box-shadow: 0 1px 20px #b7b7b7;
   border-radius: 8px;
 }

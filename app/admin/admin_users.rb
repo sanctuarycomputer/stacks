@@ -35,7 +35,6 @@ ActiveAdmin.register AdminUser do
       :_edit,
       :_destroy
     ]
-  config.current_filters = false
   menu label: "Everybody", parent: "Team", priority: 1
   actions :index, :show, :edit, :update
 
@@ -46,7 +45,9 @@ ActiveAdmin.register AdminUser do
   scope :admin
   scope :all
 
-  config.filters = false
+  config.filters = true
+  config.current_filters = false
+  filter :studios, as: :check_boxes
   config.sort_order = "created_at_desc"
   config.paginate = false
 
@@ -88,9 +89,6 @@ ActiveAdmin.register AdminUser do
     end
     column :skill_tree_level do |resource|
       resource.show_skill_tree_data? ? resource.skill_tree_level_without_salary : "Private"
-    end
-    column :is_admin? do |resource|
-      resource.is_admin?
     end
     column :has_dei_response? do |resource|
       !resource.should_nag_for_dei_data?
