@@ -4,8 +4,24 @@
   position: absolute;
 }
 
+.underline {
+  text-decoration: underline !important;
+}
+
+.block {
+  display: block;
+}
+
+.hidden {
+  display: none !important;
+}
+
 .flex {
   display: flex;
+}
+
+.text-left {
+  text-align: left;
 }
 
 .text-center {

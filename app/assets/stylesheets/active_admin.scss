@@ -56,26 +56,6 @@ body { font-family: 'Inter', sans-serif; }
   body { font-family: 'Inter var', sans-serif; }
 }
 
-.underline {
-  text-decoration: underline !important;
-}
-
-.text-left{
-  text-align: left;
-}
-
-.text-right {
-  text-align: right;
-}
-
-.block {
-  display: block;
-}
-
-.hidden {
-  display: none !important;
-}
-
 .empty_state {
   text-align: center;
   img {
@@ -152,7 +132,6 @@ body.admin_availability {
     color: $color-grey;
   }
 }
-
 
 ::selection {
   background: $color-blue; /* WebKit/Blink Browsers */

@@ -118,6 +118,10 @@ class AdminUser < ApplicationRecord
   has_many :admin_user_cultural_backgrounds, dependent: :delete_all
   has_many :cultural_backgrounds, through: :admin_user_cultural_backgrounds
 
+  has_many :admin_user_interests, dependent: :delete_all
+  has_many :interests, through: :admin_user_interests
+
+
   enum old_skill_tree_level: {
     junior_1: 0,
     junior_2: 1,

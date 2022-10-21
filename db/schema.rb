@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2022_06_30_191551) do
+ActiveRecord::Schema.define(version: 2022_10_21_224858) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -63,6 +63,15 @@ ActiveRecord::Schema.define(version: 2022_06_30_191551) do
     t.datetime "updated_at", precision: 6, null: false
     t.index ["admin_user_id"], name: "index_admin_user_gender_identities_on_admin_user_id"
     t.index ["gender_identity_id"], name: "index_admin_user_gender_identities_on_gender_identity_id"
+  end
+
+  create_table "admin_user_interests", force: :cascade do |t|
+    t.bigint "interest_id", null: false
+    t.bigint "admin_user_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_admin_user_interests_on_admin_user_id"
+    t.index ["interest_id"], name: "index_admin_user_interests_on_interest_id"
   end
 
   create_table "admin_user_racial_backgrounds", force: :cascade do |t|
@@ -258,6 +267,12 @@ ActiveRecord::Schema.define(version: 2022_06_30_191551) do
     t.string "google_calendar_event_id", null: false
     t.string "participant_id", null: false
     t.index ["google_endpoint_id"], name: "index_google_meet_attendance_records_on_google_endpoint_id", unique: true
+  end
+
+  create_table "interests", force: :cascade do |t|
+    t.string "name"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
   end
 
   create_table "invoice_passes", force: :cascade do |t|
@@ -585,6 +600,8 @@ ActiveRecord::Schema.define(version: 2022_06_30_191551) do
   add_foreign_key "admin_user_cultural_backgrounds", "cultural_backgrounds"
   add_foreign_key "admin_user_gender_identities", "admin_users"
   add_foreign_key "admin_user_gender_identities", "gender_identities"
+  add_foreign_key "admin_user_interests", "admin_users"
+  add_foreign_key "admin_user_interests", "interests"
   add_foreign_key "admin_user_racial_backgrounds", "admin_users"
   add_foreign_key "admin_user_racial_backgrounds", "racial_backgrounds"
   add_foreign_key "atc_periods", "admin_users"

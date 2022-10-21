@@ -8,6 +8,7 @@ ActiveAdmin.register AdminUser do
     cultural_background_ids: [],
     gender_identity_ids: [],
     community_ids: [],
+    interest_ids: [],
     full_time_periods_attributes: [
       :id,
       :admin_user_id,
@@ -48,6 +49,7 @@ ActiveAdmin.register AdminUser do
   config.filters = true
   config.current_filters = false
   filter :studios, as: :check_boxes
+  filter :interests, as: :check_boxes
   config.sort_order = "created_at_desc"
   config.paginate = false
 
@@ -61,6 +63,8 @@ ActiveAdmin.register AdminUser do
         :cultural_backgrounds,
         :admin_user_gender_identities,
         :gender_identities,
+        :admin_user_interests,
+        :interests,
       )
     end
   end
@@ -148,11 +152,14 @@ ActiveAdmin.register AdminUser do
   end
 
   form do |f|
-    render(partial: "docs_linkout")
-
     f.semantic_errors
-    f.inputs(class: "admin_inputs") do
-      f.input :show_skill_tree_data, label: "Make my Skill Tree Data public"
+
+    render(partial: "add_more_interests")
+    f.inputs(id: "dei_admin_inputs") do
+      f.input :interests,
+        as: :check_boxes,
+        label: "What interests do you have?",
+        collection: Interest.all.map{|e| [e.name, e.id]}
     end
 
     render(partial: "add_more_dei_categories")
