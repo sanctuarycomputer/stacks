@@ -16,6 +16,9 @@
 @import "budget_progress";
 @import "markdown";
 
+@import "utils";
+@import "admin/admin_users/show";
+
 hr {
   border: 1px solid $color-light-grey;
   box-shadow: none;
@@ -793,7 +796,7 @@ body.logged_in .flash {
   padding: 6px;
   border-radius: 999px;
   font-weight: 700;
-  font-size: 72%;
+  font-size: 13px;
   color: $color-black;
   &.draft,
   &.waiting,

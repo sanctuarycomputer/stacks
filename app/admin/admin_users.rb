@@ -67,9 +67,9 @@ ActiveAdmin.register AdminUser do
 
   action_item :toggle_admin, only: :show, if: proc { current_admin_user.is_admin? } do
     if resource.is_admin?
-      link_to "Demote as Admin", demote_admin_user_admin_admin_user_path(resource), method: :post
+      link_to "Demote Admin", demote_admin_user_admin_admin_user_path(resource), method: :post
     else
-      link_to "Promote to Admin", promote_admin_user_admin_admin_user_path(resource), method: :post
+      link_to "Promote Admin", promote_admin_user_admin_admin_user_path(resource), method: :post
     end
   end
 
