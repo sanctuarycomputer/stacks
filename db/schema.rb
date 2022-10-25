@@ -10,10 +10,18 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2022_10_21_224858) do
+ActiveRecord::Schema.define(version: 2022_10_21_231223) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
+
+  create_table "acknowledgements", force: :cascade do |t|
+    t.string "name"
+    t.string "learn_more_url"
+    t.integer "acknowledgement_type", default: 0
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+  end
 
   create_table "active_admin_comments", force: :cascade do |t|
     t.string "namespace"
@@ -36,6 +44,15 @@ ActiveRecord::Schema.define(version: 2022_10_21_224858) do
     t.datetime "updated_at", precision: 6, null: false
     t.index ["project_tracker_id"], name: "index_adhoc_invoice_trackers_on_project_tracker_id"
     t.index ["qbo_invoice_id"], name: "index_adhoc_invoice_trackers_on_qbo_invoice_id", unique: true
+  end
+
+  create_table "admin_user_acknowledgements", force: :cascade do |t|
+    t.bigint "acknowledgement_id", null: false
+    t.bigint "admin_user_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["acknowledgement_id"], name: "index_admin_user_acknowledgements_on_acknowledgement_id"
+    t.index ["admin_user_id"], name: "index_admin_user_acknowledgements_on_admin_user_id"
   end
 
   create_table "admin_user_communities", force: :cascade do |t|
@@ -594,6 +611,8 @@ ActiveRecord::Schema.define(version: 2022_10_21_224858) do
   end
 
   add_foreign_key "adhoc_invoice_trackers", "project_trackers"
+  add_foreign_key "admin_user_acknowledgements", "acknowledgements"
+  add_foreign_key "admin_user_acknowledgements", "admin_users"
   add_foreign_key "admin_user_communities", "admin_users"
   add_foreign_key "admin_user_communities", "communities"
   add_foreign_key "admin_user_cultural_backgrounds", "admin_users"

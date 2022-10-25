@@ -9,6 +9,7 @@ ActiveAdmin.register AdminUser do
     gender_identity_ids: [],
     community_ids: [],
     interest_ids: [],
+    acknowledgement_ids: [],
     full_time_periods_attributes: [
       :id,
       :admin_user_id,
@@ -156,6 +157,10 @@ ActiveAdmin.register AdminUser do
 
     render(partial: "add_more_interests")
     f.inputs(id: "dei_admin_inputs") do
+      f.input :acknowledgements,
+        as: :check_boxes,
+        label: "⭕ Please acknowledge the following:",
+        collection: Acknowledgement.all.map{|e| [e.name, e.id]}
       f.input :interests,
         as: :check_boxes,
         label: "What interests do you have?",

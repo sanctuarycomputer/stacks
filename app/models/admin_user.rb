@@ -121,6 +121,12 @@ class AdminUser < ApplicationRecord
   has_many :admin_user_interests, dependent: :delete_all
   has_many :interests, through: :admin_user_interests
 
+  has_many :admin_user_acknowledgements, dependent: :delete_all
+  has_many :acknowledgements, through: :admin_user_acknowledgements
+
+  def pending_acknowledgements
+    Acknowledgement.all - acknowledgements
+  end
 
   enum old_skill_tree_level: {
     junior_1: 0,

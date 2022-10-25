@@ -364,6 +364,7 @@ ActiveAdmin::Views::Pages::Base.class_eval do
     within body(class: body_classes) do
       div id: "wrapper" do
         build_unsupported_browser
+        build_acknowledgement_nag if current_admin_user.pending_acknowledgements.any?
         build_dei_nag if current_admin_user.should_nag_for_dei_data?
         header active_admin_namespace, current_menu
         build_flash_messages
@@ -372,6 +373,13 @@ ActiveAdmin::Views::Pages::Base.class_eval do
         footer active_admin_namespace
       end
     end
+  end
+
+  def build_acknowledgement_nag
+    a("⭕ You have pending acknowledgements. Please action them here.", {
+      href: "/admin/admin_users/#{current_admin_user.id}/edit",
+      class: "flash flash_error block",
+    })
   end
 
   def build_dei_nag
