@@ -53,8 +53,8 @@ class ProjectTracker < ApplicationRecord
 
   def make_adhoc_snapshot(period = 7.days)
     snapshot = (
-      (DateTime.now - period)...
-      DateTime.now
+      (Date.today - period)...
+      Date.today
     ).reduce({
       hours: [],
       spend: [],
