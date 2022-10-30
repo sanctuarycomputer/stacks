@@ -22,7 +22,7 @@ class SocialProperty < ApplicationRecord
         browser.evaluate("Array.from(document.querySelectorAll('a')).find(b => b.innerText.includes('followers'));")
       end
 
-    binding.pry unless followers_el.present?
+    return unless followers_el.present?
     followers_count = followers_el.inner_text.gsub(/[,.]/,'').split(" ").find{|t| t.to_i > 0}.try(:to_i) || 0
     update!(snapshot: snapshot.merge({ DateTime.now.iso8601 => followers_count })) if followers_count > 0
   end
