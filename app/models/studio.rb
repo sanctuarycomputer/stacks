@@ -3,6 +3,9 @@ class Studio < ApplicationRecord
   has_many :key_meetings, through: :studio_key_meetings
   accepts_nested_attributes_for :studio_key_meetings, allow_destroy: true
 
+  has_many :social_properties
+  accepts_nested_attributes_for :social_properties, allow_destroy: true
+
   has_many :studio_memberships
   has_many :admin_users, through: :studio_memberships
 

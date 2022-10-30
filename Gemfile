@@ -31,6 +31,7 @@ gem 'noticed', '~> 1.5'
 gem 'paper_trail'
 gem 'hashdiff'
 gem 'skylight'
+gem 'ferrum'
 
 group :development, :test do
   gem 'pry'

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2022_10_21_224858) do
+ActiveRecord::Schema.define(version: 2022_10_30_194812) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -511,6 +511,15 @@ ActiveRecord::Schema.define(version: 2022_10_21_224858) do
     t.index ["trait_id"], name: "index_scores_on_trait_id"
   end
 
+  create_table "social_properties", force: :cascade do |t|
+    t.bigint "studio_id", null: false
+    t.string "profile_url"
+    t.jsonb "snapshot", default: {}
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["studio_id"], name: "index_social_properties_on_studio_id"
+  end
+
   create_table "studio_coordinator_periods", force: :cascade do |t|
     t.bigint "studio_id", null: false
     t.bigint "admin_user_id", null: false
@@ -629,6 +638,7 @@ ActiveRecord::Schema.define(version: 2022_10_21_224858) do
   add_foreign_key "score_trees", "workspaces"
   add_foreign_key "scores", "score_trees"
   add_foreign_key "scores", "traits"
+  add_foreign_key "social_properties", "studios"
   add_foreign_key "studio_coordinator_periods", "admin_users"
   add_foreign_key "studio_coordinator_periods", "studios"
   add_foreign_key "studio_key_meetings", "key_meetings"

@@ -123,6 +123,11 @@ GEM
       multipart-post (>= 1.2, < 3)
       ruby2_keywords
     faraday-net_http (1.0.1)
+    ferrum (0.12)
+      addressable (~> 2.5)
+      concurrent-ruby (~> 1.1)
+      webrick (~> 1.7)
+      websocket-driver (>= 0.6, < 0.8)
     ffi (1.14.2)
     ffi-compiler (1.0.1)
       ffi (>= 1.0.0)
@@ -437,6 +442,7 @@ DEPENDENCIES
   bullet
   capybara (>= 2.15)
   devise!
+  ferrum
   google-apis-admin_directory_v1
   google-apis-admin_reports_v1
   google-apis-calendar_v3

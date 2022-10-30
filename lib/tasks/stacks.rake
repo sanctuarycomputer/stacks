@@ -4,6 +4,11 @@ namespace :stacks do
     Stacks::Quickbooks.make_and_refresh_qbo_access_token
   end
 
+  desc "Sample Social Properties"
+  task :sample_social_properties => :environment do
+    SocialProperty.all.each(&:generate_snapshot!)
+  end
+
   desc "Daily Tasks"
   task :daily_tasks => :environment do
     Stacks::Team.discover!

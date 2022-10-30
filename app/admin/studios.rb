@@ -18,8 +18,16 @@ ActiveAdmin.register Studio do
     studio_coordinator_periods_attributes: [
       :id,
       :admin_user_id,
+      :studio_id,
       :started_at,
       :ended_at,
+      :_destroy,
+      :_edit
+    ],
+    social_properties_attributes: [
+      :id,
+      :profile_url,
+      :studio_id,
       :_destroy,
       :_edit
     ],
@@ -45,6 +53,10 @@ ActiveAdmin.register Studio do
 
       f.has_many :studio_key_meetings, heading: false, allow_destroy: true, new_record: 'Add a Key Meeting' do |a|
         a.input :key_meeting
+      end
+
+      f.has_many :social_properties, heading: false, allow_destroy: true, new_record: 'Add a Social Property' do |a|
+        a.input :profile_url
       end
     end
     f.actions
@@ -223,6 +235,36 @@ ActiveAdmin.register Studio do
       end
     end
 
+    social_properties_data = {
+      type: 'line',
+      data: {
+        datasets: []
+      },
+      options: {
+        scales: {
+          x: {
+            type: 'time',
+            time: {
+              unit: 'month'
+            }
+          },
+          y: {
+            beginAtZero: true
+          }
+        }
+      },
+    }
+
+    resource.social_properties.each_with_index do |sp, idx|
+      color = COLORS[idx + 2]
+      social_properties_data[:data][:datasets].push({
+        borderColor: color, # color of dots
+        backgroundColor: color, # color of line
+        label: sp.profile_url,
+        data: sp.snapshot.map{|k, v| { x: k, y: v}}
+      })
+    end
+
     studio_utilization_data = {
       labels: snapshot.map{|s| s["label"]},
       datasets: [{
@@ -298,6 +340,7 @@ ActiveAdmin.register Studio do
       studio_utilization_data: studio_utilization_data,
       studio_new_biz_data: studio_new_biz_data,
       studio_attrition_data: studio_attrition_data,
+      social_properties_data: social_properties_data
     })
   end
 end
