@@ -143,7 +143,7 @@ class ProjectTracker < ApplicationRecord
       acc
     end
 
-    update!(snapshot: snapshot)
+    update_attribute('snapshot', snapshot)
   end
 
   def current_atc
