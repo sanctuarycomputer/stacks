@@ -3,7 +3,7 @@ class SocialProperty < ApplicationRecord
   validates :profile_url, format: URI::regexp(%w[http https])
 
   def generate_snapshot!
-    browser = Ferrum::Browser.new(timeout: 60)
+    browser = Ferrum::Browser.new(timeout: 60, extensions: ['vendor/stealth.min.js'])
     browser.headers.add({
       "User-Agent" => "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36",
       "Referer" => "https://www.google.com/",
@@ -11,7 +11,8 @@ class SocialProperty < ApplicationRecord
 
     puts "~> Navigating to #{profile_url}"
     browser.go_to(profile_url)
-    browser.network.wait_for_idle(duration: 0.5)
+    # browser.network.wait_for_idle
+    sleep 10.seconds
 
     followers_el =
       if profile_url.include?("twitter.com")
