@@ -11,8 +11,7 @@ class SocialProperty < ApplicationRecord
 
     puts "~> Navigating to #{profile_url}"
     browser.go_to(profile_url)
-    browser.network.wait_for_idle(duration: 1)
-    sleep(5.second)
+    browser.network.wait_for_idle(duration: 0.5)
 
     followers_el =
       if profile_url.include?("twitter.com")
@@ -26,9 +25,17 @@ class SocialProperty < ApplicationRecord
       end
 
     unless followers_el.present?
-      # binding.pry
-      # browser.screenshot(path: "screenshot.png")
-      puts "~> No element found for: #{profile_url}"
+      browser.screenshot(path: "screenshot.png")
+      url = "https://file.io?expires=3d"
+      uri = URI.parse(url)
+      request = Net::HTTP::Post.new(uri)
+      form_data = [['file', File.open("screenshot.png", "rb")]]
+      request.set_form form_data, 'multipart/form-data'
+      response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) do |http|
+        http.request(request)
+      end
+      result = JSON.parse(response.body)
+      puts "~> No element found for: #{profile_url}. Screenshot here: #{result["link"]}"
       return
     end
 
