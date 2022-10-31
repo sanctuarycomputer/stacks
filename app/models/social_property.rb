@@ -9,10 +9,10 @@ class SocialProperty < ApplicationRecord
       "Referer" => "https://www.google.com/",
     })
 
-    puts "Navigating to #{profile_url}"
+    puts "~> Navigating to #{profile_url}"
     browser.go_to(profile_url)
-    browser.network.wait_for_idle(duration: 0.5)
-    sleep(1.second)
+    browser.network.wait_for_idle(duration: 1)
+    sleep(5.second)
 
     followers_el =
       if profile_url.include?("twitter.com")
@@ -28,7 +28,7 @@ class SocialProperty < ApplicationRecord
     unless followers_el.present?
       # binding.pry
       # browser.screenshot(path: "screenshot.png")
-      puts "No element found for: #{followers_el}"
+      puts "~> No element found for: #{profile_url}"
       return
     end
 
