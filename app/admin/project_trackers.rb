@@ -150,9 +150,9 @@ ActiveAdmin.register ProjectTracker do
              (it.qbo_invoice.try(:data) || {}).dig("due_date") ||
              it.created_at.to_date.iso8601
            ),
-           y: acc[:income_total] += it.qbo_line_items_relating_to_forecast_projects(
+           y: acc[:income_total] += (it.qbo_line_items_relating_to_forecast_projects(
              resource.forecast_projects
-           ).map{|qbo_li| qbo_li.dig("amount").to_f}.reduce(&:+)
+           ).map{|qbo_li| qbo_li.dig("amount").to_f}.reduce(&:+) || 0)
          })
        else
          acc[:income].push({

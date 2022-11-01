@@ -3,7 +3,13 @@ class SocialProperty < ApplicationRecord
   validates :profile_url, format: URI::regexp(%w[http https])
 
   def generate_snapshot!
-    browser = Ferrum::Browser.new(timeout: 60, extensions: ['vendor/stealth.min.js'])
+    browser = Ferrum::Browser.new({
+      timeout: 60,
+      extensions: ['vendor/stealth.min.js'],
+      #browser_options: {
+      #  'proxy-server': 'socks5://127.0.0.1:9050'
+      #}
+    })
     browser.headers.add({
       "User-Agent" => "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36",
       "Referer" => "https://www.google.com/",
