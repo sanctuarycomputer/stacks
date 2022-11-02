@@ -3,12 +3,20 @@ class SocialProperty < ApplicationRecord
   validates :profile_url, format: URI::regexp(%w[http https])
 
   def generate_snapshot!
+    if profile_url.include?("instagram.com")
+      puts "~> Requesting (via cryingparty) to #{profile_url}"
+      uri = URI.parse("https://cryingparty.vercel.app/api/instagram/#{profile_url.split("/").last}")
+      res = Net::HTTP.get(uri)
+      data = JSON.parse(res)
+      if data["follower_count"] > 0
+        update!(snapshot: snapshot.merge({ Date.today.iso8601 => data["followers_count"] }))
+      end
+      return
+    end
+
     browser = Ferrum::Browser.new({
       timeout: 60,
       extensions: ['vendor/stealth.min.js'],
-      #browser_options: {
-      #  'proxy-server': 'socks5://127.0.0.1:9050'
-      #}
     })
     browser.headers.add({
       "User-Agent" => "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36",
@@ -23,8 +31,6 @@ class SocialProperty < ApplicationRecord
     followers_el =
       if profile_url.include?("twitter.com")
         browser.evaluate("Array.from(document.querySelectorAll('a')).find(a => a.href.endsWith('/followers'));")
-      elsif profile_url.include?("instagram.com")
-        browser.evaluate("Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('followers'));")
       elsif profile_url.include?("linkedin.com")
         browser.evaluate("Array.from(document.querySelectorAll('h3')).find(b => b.innerText.includes('followers'));")
       elsif profile_url.include?("facebook.com")
