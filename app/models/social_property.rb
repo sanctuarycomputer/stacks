@@ -9,7 +9,7 @@ class SocialProperty < ApplicationRecord
       res = Net::HTTP.get(uri)
       data = JSON.parse(res)
       if data["follower_count"] > 0
-        update!(snapshot: snapshot.merge({ Date.today.iso8601 => data["followers_count"] }))
+        update!(snapshot: snapshot.merge({ Date.today.iso8601 => data["follower_count"] }))
       end
       return
     end
