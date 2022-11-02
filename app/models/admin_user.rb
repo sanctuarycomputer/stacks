@@ -45,19 +45,17 @@ class AdminUser < ApplicationRecord
     end
   end
 
-  def met_associates_time_commitment_at
-    commitment = 1461.days
+  def met_associates_psu_requirement_at
+    psu_required = 48
 
     achieved_at = nil
-    full_time_periods.order("started_at ASC").reduce(0.days) do |running, ftp|
+    full_time_periods.order("started_at ASC").each do |ftp|
       next if achieved_at.present?
       day = ftp.started_at
-      until running > commitment || day == ftp.ended_at_or_now do
-        running += 1.days
+      until achieved_at.present? || day == ftp.ended_at_or_now do
+        achieved_at = day if psu_earned_by(day) == psu_required
         day += 1.days
-        achieved_at = day if running == commitment
       end
-      running
     end
     achieved_at
   end
@@ -66,10 +64,10 @@ class AdminUser < ApplicationRecord
     skill_band_met_at = met_associates_skill_band_requirement_at
     return nil unless skill_band_met_at
 
-    time_commitment_met_at = met_associates_time_commitment_at
-    return nil unless time_commitment_met_at
+    psu_requirement_met_at = met_associates_psu_requirement_at
+    return nil unless psu_requirement_met_at
 
-    [time_commitment_met_at, skill_band_met_at].max.to_date
+    [psu_requirement_met_at, skill_band_met_at].max.to_date
   end
 
   def atc_months
