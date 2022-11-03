@@ -2,6 +2,27 @@ class SocialProperty < ApplicationRecord
   belongs_to :studio
   validates :profile_url, format: URI::regexp(%w[http https])
 
+  def self.aggregate!(social_properties)
+    all_dates =
+      social_properties.reduce([]) do |acc, sp|
+        [*acc, *sp.snapshot.keys].uniq
+      end.map{|d| Date.parse(d)}
+
+    (all_dates.min..all_dates.max).reduce({}) do |acc, date|
+      acc[date] = social_properties.reduce(0) do |agg, sp|
+        # Find the closest earlier sample to this date
+        closest_earlier_sample =
+          sp.snapshot.keys.map{|d| Date.parse(d)}.sort.reduce(nil) do |closest, sample_date|
+            next closest if sample_date > date
+            next sample_date if closest.nil?
+            closest < sample_date ? sample_date : closest
+          end
+        agg += sp.snapshot[closest_earlier_sample.try(:iso8601)] || 0
+      end
+      acc
+    end
+  end
+
   def generate_snapshot!
     if profile_url.include?("instagram.com")
       puts "~> Requesting (via cryingparty) to #{profile_url}"

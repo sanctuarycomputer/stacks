@@ -149,6 +149,37 @@ class Studio < ApplicationRecord
     end
   end
 
+  def aggregate_social_growth_for_period(aggregate_social_following, period)
+    closest_period_start_date_sample =
+      aggregate_social_following.keys.sort.reduce(nil) do |closest, sample_date|
+        next closest if sample_date > period.starts_at
+        next sample_date if closest.nil?
+        closest < sample_date ? sample_date : closest
+      end
+
+    closest_period_end_date_sample =
+      aggregate_social_following.keys.sort.reduce(nil) do |closest, sample_date|
+        next closest if sample_date > period.ends_at
+        next sample_date if closest.nil?
+        closest < sample_date ? sample_date : closest
+      end
+
+    return nil unless closest_period_start_date_sample && closest_period_end_date_sample
+
+    (
+      aggregate_social_following[closest_period_end_date_sample] /
+      aggregate_social_following[closest_period_start_date_sample]
+    ) * 100
+  end
+
+  def all_social_properties
+    if is_garden3d?
+      SocialProperty.all
+    else
+      social_properties
+    end
+  end
+
   def key_datapoints_for_period(period, accounting_method)
     all_leads = new_biz_notion_pages
     cogs = period.report.cogs_for_studio(self, accounting_method)
@@ -156,6 +187,8 @@ class Studio < ApplicationRecord
       utilization_by_people([period])
     ).values.first
 
+    aggregate_social_following =
+      SocialProperty.aggregate!(all_social_properties)
 
     leaving_members =
       studio_members_that_left_during_period(period)
@@ -206,6 +239,10 @@ class Studio < ApplicationRecord
       biz_leads: {
         value: biz_leads_in_period(all_leads, period).length,
         unit: :count
+      },
+      total_social_growth: {
+        value: aggregate_social_growth_for_period(aggregate_social_following, period),
+        unit: :percentage
       },
       biz_won: {
         value: biz_leads_status_changed_in_period(all_leads, 'Active', period).try(:length),

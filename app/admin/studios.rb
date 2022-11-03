@@ -235,10 +235,19 @@ ActiveAdmin.register Studio do
       end
     end
 
+    social_properties = resource.all_social_properties
     social_properties_data = {
       type: 'line',
       data: {
-        datasets: []
+        datasets: [{
+          borderDash: [10,5],
+          borderColor: COLORS[1], # color of dots
+          backgroundColor: COLORS[1], # color of line
+          label: "Aggregate",
+          data: SocialProperty.aggregate!(social_properties).map do |k, v|
+            {x: k.iso8601, y: v}
+          end
+        }]
       },
       options: {
         scales: {
@@ -255,7 +264,7 @@ ActiveAdmin.register Studio do
       },
     }
 
-    resource.social_properties.each_with_index do |sp, idx|
+    social_properties.each_with_index do |sp, idx|
       color = COLORS[idx + 2]
       social_properties_data[:data][:datasets].push({
         borderColor: color, # color of dots
