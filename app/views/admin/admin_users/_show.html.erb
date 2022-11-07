@@ -54,6 +54,12 @@
 </div>
 
 <!-- Profit Share -->
+
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">🤝 Profit Shares</h2>
+  </div>
+</div>
 <table border="0" cellspacing="0" cellpadding="0" class="index_table index mb2">
   <thead>
     <tr>
@@ -87,39 +93,58 @@
   </tbody>
 </table>
 
-<!-- Periods -->
-<table border="0" cellspacing="0" cellpadding="0" class="index_table index">
-  <thead>
-    <tr>
-      <th class="col">Employment Periods</th>
-      <th class="col text-center">Expected Utilization</th>
-      <th class="col text-center">Started At</th>
-      <th class="col text-right">Ended At</th>
-    </tr>
-  </thead>
-  <tbody>
-    <% resource.full_time_periods.order("started_at DESC").each_with_index do |ftp, index| %>
-      <tr class="<%= index.even? ? "even" : "odd" %>">
-        <td class="col">
-          <%= (ftp.multiplier * 5).to_i %>-Day Worker
-        </td>
-        <td class="col text-center">
-          <%= ftp.expected_utilization * 100 %>%
-        </td>
-        <td class="col text-center">
-          <%= ftp.started_at.strftime("%b %d, %Y") %>
-        </td>
-        <td class="col text-right">
-          <% if ftp.ended_at %>
-            <%= ftp.ended_at.strftime("%b %d, %Y") %>
-          <% else %>
-            <strong class="color-blue">Current</strong>
-          <% end %>
-        </td>
+<!-- PSU Audit Log -->
+<% resource.psu_audit_log.reverse.each_with_index do |ftp_log, index| %>
+  <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+    <div id="titlebar_left">
+      <h2 id="page_title">
+        <%= ftp_log[:ftp].started_at.strftime("%b %d, %Y") %> ->
+        <% if ftp_log[:ftp].ended_at %>
+          <%= ftp_log[:ftp].ended_at.strftime("%b %d, %Y") %>
+        <% else %>
+          <span class="color-blue">Current</span>
+        <% end %>
+      </h2>
+    </div>
+  </div>
+
+  <p class="nag" style="margin-right: 6px">
+    <strong>
+      <%= ftp_log[:ftp].expected_utilization * 100 %>% Expected Utilization
+    </strong>
+  </p>
+  <p class="nag" style="margin-right: 6px">
+    <strong>
+      <%= (ftp_log[:ftp].multiplier * 5).to_i %>-Day Worker
+    </strong>
+  </p>
+  <p class="nag">
+    <strong>
+      <%= (ftp_log[:ftp].multiplier) %> PSU p/month
+    </strong>
+  </p>
+
+  <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+    <thead>
+      <tr>
+        <th class="col">Date</th>
+        <th class="col text-right">PSU</th>
       </tr>
-    <% end %>
-  </tbody>
-</table>
+    </thead>
+    <tbody>
+      <% ftp_log[:log].map{|k,v| [k, v]}.reverse.each_with_index do |log_entry_tuple, index| %>
+        <tr class="<%= index.even? ? "even" : "odd" %>">
+          <td class="col">
+            <%= log_entry_tuple[1][:date].strftime("%b %d, %Y") %>
+          </td>
+          <td class="col text-right">
+            <%= log_entry_tuple[0] %>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+<% end %>
 
 
 <script>

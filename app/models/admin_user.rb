@@ -60,6 +60,22 @@ class AdminUser < ApplicationRecord
     achieved_at
   end
 
+  def psu_audit_log
+    full_time_periods.map do |ftp|
+      log =
+        (ftp.started_at..ftp.ended_at_or_now).reduce({}) do |acc, date|
+          psu = psu_earned_by(date)
+          acc[psu] = { date: date } unless acc.keys.include?(psu)
+          acc
+        end
+
+      {
+        ftp: ftp,
+        log: log
+      }
+    end
+  end
+
   def met_associates_requirements_at
     skill_band_met_at = met_associates_skill_band_requirement_at
     return nil unless skill_band_met_at
@@ -92,7 +108,7 @@ class AdminUser < ApplicationRecord
   has_many :invoice_trackers, dependent: :nullify
   has_one :forecast_person, class_name: "ForecastPerson", foreign_key: "email", primary_key: "email"
 
-  has_many :full_time_periods, dependent: :delete_all
+  has_many :full_time_periods, -> { order(started_at: :asc) }, dependent: :delete_all
   accepts_nested_attributes_for :full_time_periods, allow_destroy: true
 
   has_many :gifted_profit_shares, dependent: :delete_all
@@ -198,28 +214,41 @@ class AdminUser < ApplicationRecord
     end
   end
 
+  # TODO
+  # Should not reset the anchor date between contiguous ranges,
+  # 30th June -> 1st July should not result in a lost PSU
   def psu_earned_by(date = Date.today)
     return nil if full_time_periods.empty?
+    # anchor_date = full_time_periods.first.started_at
 
-    gifted = (gifted_profit_shares.map do |gps|
-      gps.amount
-    end).reduce(:+) || 0
+    # Form full_time_periods into contiguous blocks where multiplier didn't change
+    # Count remainders at the end of a period
+    total = full_time_periods.reduce(0) do |acc, ftp|
+      #ftp_idx = full_time_periods.find_index(ftp)
+      #is_contiguous =
+      #  unless ftp_idx == 0
+      #    prev_ftp = full_time_periods[ftp_idx - 1]
+      #    prev.ended_at + 1.day == ftp.started_at
+      #  end
 
-    total = ((full_time_periods.map do |ftp|
-      ended_at = (ftp.ended_at.present? ? ftp.ended_at : date)
+      ended_at =
+        ((ftp.ended_at.present? && ftp.ended_at <= date) ? ftp.ended_at : date)
       psu = Stacks::Utils.full_months_between(ended_at, ftp.started_at) * ftp.multiplier
-      if psu < 0
-        0.0
-      else
-        psu
-      end
-    end).reduce(:+) + gifted)
 
-    if total >= 48
-      48.0
-    else
-      total
+      remainder_days = 0
+      running_date = ended_at
+      while (running_date.day != ftp.started_at.day) do
+        remainder_days += 1
+        running_date = running_date - 1.day
+      end
+
+      acc += (psu < 0 ? 0.0 : psu)
     end
+
+    gifted =
+      gifted_profit_shares.reduce(0){|acc, gps| acc += gps.amount}
+    total += gifted
+    total >= 48 ? 48.0 : total
   end
 
   def projected_psu_by_eoy
