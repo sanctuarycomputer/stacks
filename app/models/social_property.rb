@@ -3,6 +3,8 @@ class SocialProperty < ApplicationRecord
   validates :profile_url, format: URI::regexp(%w[http https])
 
   def self.aggregate!(social_properties)
+    return {} unless social_properties.any?
+
     all_dates =
       social_properties.reduce([]) do |acc, sp|
         [*acc, *sp.snapshot.keys].uniq
