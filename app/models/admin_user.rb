@@ -125,7 +125,7 @@ class AdminUser < ApplicationRecord
     gifted =
       gifted_profit_shares.reduce(0){|acc, gps| acc += gps.amount}
     total += gifted
-    total >= 48 ? 48.0 : total
+    (total >= 48 ? 48.0 : total).round(2)
   end
 
   def projected_psu_by_eoy
