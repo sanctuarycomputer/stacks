@@ -1,9 +1,0 @@
-# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
-
-one:
-  community: one
-  admin_user: one
-
-two:
-  community: two
-  admin_user: two
