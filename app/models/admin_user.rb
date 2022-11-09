@@ -60,6 +60,91 @@ class AdminUser < ApplicationRecord
     achieved_at
   end
 
+  def contiguous_psu_earning_periods
+    full_time_periods.reduce([]) do |acc, ftp|
+      if acc.empty?
+        # This is the first ftp, stash it.
+        next acc << {ftps: [ftp], started_at: ftp.started_at, ended_at: ftp.ended_at_or_now}
+      end
+
+      if (acc.last[:ended_at] + 1.day != ftp.started_at)
+        # This ftp is not contiguous, break it.
+        next acc << {ftps: [ftp], started_at: ftp.started_at, ended_at: ftp.ended_at_or_now}
+      end
+
+      if (acc.last[:ftps].last.multiplier != ftp.multiplier)
+        # The PSU earn rate changed, break it.
+        next acc << {ftps: [ftp], started_at: ftp.started_at, ended_at: ftp.ended_at_or_now}
+      end
+
+      # This is contiguous! Combine them.
+      acc.last[:ftps] << ftp
+      acc.last[:ended_at] = ftp.ended_at_or_now
+      acc
+    end
+  end
+
+  def psu_earned_by(date = Date.today)
+    psu_earning_periods = contiguous_psu_earning_periods
+    return nil if psu_earning_periods.empty?
+
+    total = psu_earning_periods.reduce(0) do |acc, psuep|
+      ended_at = psuep[:ended_at] <= date ? psuep[:ended_at] : date
+      next acc if ended_at < psuep[:started_at]
+
+      multiplier = psuep[:ftps].last.multiplier
+      has_another = (psu_earning_periods.index(psuep) + 1) < psu_earning_periods.length
+      psu = Stacks::Utils.full_months_between(ended_at, psuep[:started_at]) * multiplier
+
+      # If there is a psuep before this one, check if it was contiguous
+      # (which means the multiplier changed) and if so, add the remainder
+      # so that the user doesn't lose out on the difference
+      remainder = 0
+      if psu_earning_periods.index(psuep) > 0
+        prev_psuep = psu_earning_periods[psu_earning_periods.index(psuep) - 1]
+        prev_multiplier = prev_psuep[:ftps].last.multiplier
+
+        if prev_psuep[:ended_at] + 1.day == psuep[:started_at]
+          # Count the amount of days between the anchor date and the
+          # date that this period ended at.
+          remainder_days = 1.0 # Start at 1 to capture to final day of this period
+          running_date = prev_psuep[:ended_at]
+          while (running_date.day != prev_psuep[:started_at].day) do
+            remainder_days += 1
+            running_date = running_date - 1.day
+          end
+          remainder =
+            (remainder_days / Time.days_in_month(prev_psuep[:ended_at].month, prev_psuep[:ended_at].year)) * prev_multiplier
+        end
+      end
+
+      psu += remainder
+      acc += (psu < 0 ? 0.0 : psu)
+    end
+
+    gifted =
+      gifted_profit_shares.reduce(0){|acc, gps| acc += gps.amount}
+    total += gifted
+    total >= 48 ? 48.0 : total
+  end
+
+  def projected_psu_by_eoy
+    # We calculate PSU at the 15th of december
+    psu_earned_by(Date.new(Date.today.year, 12, 15))
+  end
+
+  def psu_audit_log
+    full_time_periods.map do |ftp|
+      log =
+        (ftp.started_at..ftp.ended_at_or_now).reduce({}) do |acc, date|
+          psu = psu_earned_by(date)
+          acc[psu] = { date: date } unless acc.keys.include?(psu)
+          acc
+        end
+      { ftp: ftp, log: log }
+    end
+  end
+
   def met_associates_requirements_at
     skill_band_met_at = met_associates_skill_band_requirement_at
     return nil unless skill_band_met_at
@@ -92,7 +177,7 @@ class AdminUser < ApplicationRecord
   has_many :invoice_trackers, dependent: :nullify
   has_one :forecast_person, class_name: "ForecastPerson", foreign_key: "email", primary_key: "email"
 
-  has_many :full_time_periods, dependent: :delete_all
+  has_many :full_time_periods, -> { order(started_at: :asc) }, dependent: :delete_all
   accepts_nested_attributes_for :full_time_periods, allow_destroy: true
 
   has_many :gifted_profit_shares, dependent: :delete_all
@@ -196,35 +281,6 @@ class AdminUser < ApplicationRecord
         (1..5).include?(d.wday)
       end
     end
-  end
-
-  def psu_earned_by(date = Date.today)
-    return nil if full_time_periods.empty?
-
-    gifted = (gifted_profit_shares.map do |gps|
-      gps.amount
-    end).reduce(:+) || 0
-
-    total = ((full_time_periods.map do |ftp|
-      ended_at = (ftp.ended_at.present? ? ftp.ended_at : date)
-      psu = Stacks::Utils.full_months_between(ended_at, ftp.started_at) * ftp.multiplier
-      if psu < 0
-        0.0
-      else
-        psu
-      end
-    end).reduce(:+) + gifted)
-
-    if total >= 48
-      48.0
-    else
-      total
-    end
-  end
-
-  def projected_psu_by_eoy
-    # We calculate PSU at the 15th of december
-    psu_earned_by(Date.new(Date.today.year, 12, 15))
   end
 
   def pre_profit_share_spent_during(year)
