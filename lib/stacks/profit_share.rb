@@ -53,13 +53,16 @@ class Stacks::ProfitShare
     end
 
     def efficiency
-      Stacks::Utils.clamp(
-        raw_efficiency,
-        1.00,
-        @efficiency_cap,
-        0,
+      [
+        Stacks::Utils.clamp(
+          raw_efficiency,
+          1.00,
+          @efficiency_cap,
+          0,
+          1
+        ),
         1
-      )
+      ].min
     end
 
     def total_profit

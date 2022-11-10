@@ -44,9 +44,15 @@ class ProfitSharePass < ApplicationRecord
     !finalized?
   end
 
-  def prespent
+  def prespent_profit_share
     (PreProfitSharePurchase.where(
       purchased_at: Date.new(created_at.year).beginning_of_year..Date.new(created_at.year).end_of_year
+    ).map(&:amount).reduce(:+) || 0.0)
+  end
+
+  def prespent_budgetary_purchases
+    (PreSpentBudgetaryPurchase.where(
+      spent_at: Date.new(created_at.year).beginning_of_year..Date.new(created_at.year).end_of_year
     ).map(&:amount).reduce(:+) || 0.0)
   end
 
@@ -96,10 +102,14 @@ class ProfitSharePass < ApplicationRecord
           }
         end
 
+      # Add pre-spent budgetary purchases here, as they are considered
+      # part of our gross_revenue for that year
+      actuals[:gross_revenue] += self.prespent_budgetary_purchases
+
       Stacks::ProfitShare::Scenario.new(
         actuals,
         AdminUser.total_projected_psu_issued_by_eoy,
-        self.prespent,
+        self.prespent_profit_share,
         self.payroll_buffer_months,
         self.efficiency_cap,
         self.internals_budget_multiplier,

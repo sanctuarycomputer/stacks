@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2022_10_30_194812) do
+ActiveRecord::Schema.define(version: 2022_11_09_234323) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -373,6 +373,15 @@ ActiveRecord::Schema.define(version: 2022_10_30_194812) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.index ["admin_user_id"], name: "index_pre_profit_share_purchases_on_admin_user_id"
+  end
+
+  create_table "pre_spent_budgetary_purchases", force: :cascade do |t|
+    t.integer "budget_type", default: 0, null: false
+    t.decimal "amount", null: false
+    t.string "note"
+    t.date "spent_at", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
   end
 
   create_table "profit_share_passes", force: :cascade do |t|
