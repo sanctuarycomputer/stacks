@@ -450,6 +450,7 @@ DEPENDENCIES
   httparty
   intuit-oauth
   listen (~> 3.2)
+  mini_portile2 (= 2.5.0)
   noticed (~> 1.5)
   omniauth-google-oauth2
   omniauth-rails_csrf_protection
