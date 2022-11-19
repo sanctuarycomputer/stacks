@@ -1,0 +1,42 @@
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module" style="min-height: 371px">
+    <div class="module-body factoid-parent">
+      <div class="factoid">
+        <%= form_tag import_mailing_list_admin_studio_mailing_list_path, multipart: true do %>
+          <%= file_field_tag 'file', accept: 'text/csv' %>
+          <%= submit_tag 'Import CSV' %>
+        <% end %>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-module">
+    <div class="module-body factoid-parent">
+      <div class="factoid">
+        <p>Total Subscribers</p>
+        <h2><%= @mailing_list.mailing_list_subscribers.count %></h2>
+      </div>
+    </div>
+  </div>
+</div>
+
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+  <thead>
+    <tr>
+      <th class="col">Email</th>
+      <th class="col text-right">Info</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% @mailing_list.mailing_list_subscribers.each_with_index do |sub, index| %>
+      <tr class="<%= index.even? ? "even" : "odd" %>">
+        <td class="col">
+          <%= sub.email %>
+        </td>
+        <td class="col text-right">
+          <%= sub.info %>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>

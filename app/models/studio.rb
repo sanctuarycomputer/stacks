@@ -12,6 +12,8 @@ class Studio < ApplicationRecord
   has_many :studio_coordinator_periods
   accepts_nested_attributes_for :studio_coordinator_periods, allow_destroy: true
 
+  has_many :mailing_lists
+
   def generate_snapshot!
     snapshot =
       [:year, :month, :quarter].reduce({}) do |acc, gradation|
@@ -177,6 +179,14 @@ class Studio < ApplicationRecord
       SocialProperty.all
     else
       social_properties
+    end
+  end
+
+  def all_mailing_lists
+    if is_garden3d?
+      MailingList.all
+    else
+      mailing_lists
     end
   end
 

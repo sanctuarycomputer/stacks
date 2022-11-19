@@ -236,6 +236,7 @@ ActiveAdmin.register Studio do
     end
 
     social_properties = resource.all_social_properties
+    mailing_lists = resource.all_mailing_lists
     social_properties_data = {
       type: 'line',
       data: {
@@ -244,7 +245,7 @@ ActiveAdmin.register Studio do
           borderColor: COLORS[1], # color of dots
           backgroundColor: COLORS[1], # color of line
           label: "Aggregate",
-          data: SocialProperty.aggregate!(social_properties).map do |k, v|
+          data: SocialProperty.aggregate!([*social_properties, *mailing_lists]).map do |k, v|
             {x: k.iso8601, y: v}
           end
         }]
@@ -271,6 +272,16 @@ ActiveAdmin.register Studio do
         backgroundColor: color, # color of line
         label: sp.profile_url,
         data: sp.snapshot.map{|k, v| { x: k, y: v}}
+      })
+    end
+
+    mailing_lists.each_with_index do |ml, idx|
+      color = COLORS[idx + 2]
+      social_properties_data[:data][:datasets].push({
+        borderColor: color, # color of dots
+        backgroundColor: color, # color of line
+        label: ml.name,
+        data: ml.snapshot.map{|k, v| { x: k, y: v}}
       })
     end
 

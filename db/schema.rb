@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2022_11_09_234323) do
+ActiveRecord::Schema.define(version: 2022_11_19_105140) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -303,6 +303,24 @@ ActiveRecord::Schema.define(version: 2022_11_09_234323) do
     t.string "name", null: false
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+  end
+
+  create_table "mailing_list_subscribers", force: :cascade do |t|
+    t.bigint "mailing_list_id", null: false
+    t.string "email", null: false
+    t.jsonb "info", default: "{}", null: false
+    t.index ["mailing_list_id", "email"], name: "index_mailing_list_subscribers_on_mailing_list_id_and_email", unique: true
+    t.index ["mailing_list_id"], name: "index_mailing_list_subscribers_on_mailing_list_id"
+  end
+
+  create_table "mailing_lists", force: :cascade do |t|
+    t.string "name", null: false
+    t.bigint "studio_id", null: false
+    t.jsonb "snapshot", default: {}, null: false
+    t.integer "provider", default: 0, null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["studio_id"], name: "index_mailing_lists_on_studio_id"
   end
 
   create_table "notifications", force: :cascade do |t|
@@ -630,6 +648,8 @@ ActiveRecord::Schema.define(version: 2022_11_09_234323) do
   add_foreign_key "google_calendar_events", "google_calendars"
   add_foreign_key "invoice_trackers", "admin_users"
   add_foreign_key "invoice_trackers", "invoice_passes"
+  add_foreign_key "mailing_list_subscribers", "mailing_lists"
+  add_foreign_key "mailing_lists", "studios"
   add_foreign_key "okr_period_studios", "okr_periods"
   add_foreign_key "okr_period_studios", "studios"
   add_foreign_key "okr_periods", "okrs"
