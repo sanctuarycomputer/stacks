@@ -16,7 +16,9 @@ class Studio < ApplicationRecord
 
   def generate_snapshot!
     snapshot =
-      [:year, :month, :quarter].reduce({}) do |acc, gradation|
+      [:year, :month, :quarter].reduce({
+        generated_at: DateTime.now.iso8601,
+      }) do |acc, gradation|
         periods = Stacks::Period.for_gradation(gradation)
         acc[gradation] = periods.reduce([]) do |agg, period|
           d = { label: period.label, cash: {}, accrual: {} }
