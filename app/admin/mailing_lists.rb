@@ -17,8 +17,8 @@ ActiveAdmin.register MailingList do
     data = csv.map(&:to_hash).map do |row|
       {
         mailing_list_id: params["id"],
-        email: row["email"],
-        info: row.except("email")
+        email: row["email"] || row["Email Address"],
+        info: row.except("email", "Email Address")
       }
     end
 
