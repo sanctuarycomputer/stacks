@@ -15,17 +15,21 @@ class Studio < ApplicationRecord
   has_many :mailing_lists
 
   def forecast_people(preloaded_studios = Studio.all)
-    people =
-      ForecastPerson.includes(admin_user: [:studios, :full_time_periods]).all
-    return people if is_garden3d?
-
-    people.select do |fp|
-      next true if (fp.try(:admin_user).try(:studios) || []).include?(self)
-      fp.studios(preloaded_studios).include?(self)
-    end
+    @_forecast_people ||= (
+      people =
+        ForecastPerson.includes(admin_user: [:studios, :full_time_periods]).all
+      return people if is_garden3d?
+      people.select do |fp|
+        next true if (fp.try(:admin_user).try(:studios) || []).include?(self)
+        fp.studios(preloaded_studios).include?(self)
+      end
+    )
   end
 
-  def generate_snapshot!(preloaded_studios = Studio.all)
+  def generate_snapshot!(
+    preloaded_studios = Studio.all,
+    preloaded_new_biz_notion_pages = new_biz_notion_pages
+  )
     snapshot =
       [:year, :month, :quarter].reduce({
         generated_at: DateTime.now.iso8601,
@@ -33,9 +37,19 @@ class Studio < ApplicationRecord
         periods = Stacks::Period.for_gradation(gradation)
         acc[gradation] = Parallel.map(periods, in_threads: 5) do |period|
           d = { label: period.label, cash: {}, accrual: {} }
-          d[:cash][:datapoints] = self.key_datapoints_for_period(period, "cash", preloaded_studios)
+          d[:cash][:datapoints] = self.key_datapoints_for_period(
+            period,
+            "cash",
+            preloaded_studios,
+            preloaded_new_biz_notion_pages
+          )
           d[:cash][:okrs] = self.okrs_for_period(period, d[:cash][:datapoints])
-          d[:accrual][:datapoints] = self.key_datapoints_for_period(period, "accrual", preloaded_studios)
+          d[:accrual][:datapoints] = self.key_datapoints_for_period(
+            period,
+            "accrual",
+            preloaded_studios,
+            preloaded_new_biz_notion_pages
+          )
           d[:accrual][:okrs] = self.okrs_for_period(period, d[:accrual][:datapoints])
           d
         end
@@ -203,8 +217,12 @@ class Studio < ApplicationRecord
     end
   end
 
-  def key_datapoints_for_period(period, accounting_method, preloaded_studios = Studio.all)
-    all_leads = new_biz_notion_pages
+  def key_datapoints_for_period(
+    period,
+    accounting_method,
+    preloaded_studios = Studio.all,
+    preloaded_new_biz_notion_pages = new_biz_notion_pages
+  )
     cogs = period.report.cogs_for_studio(self, accounting_method)
     v = aggregated_utilization(
       utilization_by_people([period], preloaded_studios)
@@ -260,7 +278,7 @@ class Studio < ApplicationRecord
         unit: :percentage
       },
       biz_leads: {
-        value: biz_leads_in_period(all_leads, period).length,
+        value: biz_leads_in_period(preloaded_new_biz_notion_pages, period).length,
         unit: :count
       },
       total_social_growth: {
@@ -268,15 +286,15 @@ class Studio < ApplicationRecord
         unit: :percentage
       },
       biz_won: {
-        value: biz_leads_status_changed_in_period(all_leads, 'Active', period).try(:length),
+        value: biz_leads_status_changed_in_period(preloaded_new_biz_notion_pages, 'Active', period).try(:length),
         unit: :count
       },
       biz_passed: {
-        value: biz_leads_status_changed_in_period(all_leads, 'Passed', period).try(:length),
+        value: biz_leads_status_changed_in_period(preloaded_new_biz_notion_pages, 'Passed', period).try(:length),
         unit: :count
       },
       biz_lost: {
-        value: biz_leads_status_changed_in_period(all_leads, 'Lost/Stale', period).try(:length),
+        value: biz_leads_status_changed_in_period(preloaded_new_biz_notion_pages, 'Lost/Stale', period).try(:length),
         unit: :count
       },
     }

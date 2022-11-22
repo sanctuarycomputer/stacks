@@ -41,6 +41,10 @@ class ProjectTracker < ApplicationRecord
     where.not(id: complete)
   }
 
+  def forecast_projects
+    @_forecast_projects ||= super
+  end
+
   def has_msa_and_sow_links
     unless project_tracker_links.find{|l| l.link_type == "msa"}.present?
       errors.add(:base, "An MSA Project URL must be present.")
@@ -335,21 +339,25 @@ class ProjectTracker < ApplicationRecord
   end
 
   def first_recorded_assignment
-    forecast_project_ids = forecast_projects.map(&:forecast_id)
-    ForecastAssignment
-      .where(project_id: forecast_project_ids)
-      .order(start_date: :asc)
-      .limit(1)
-      .first
+    @_first_recorded_assignment ||= (
+      forecast_project_ids = forecast_projects.map(&:forecast_id)
+      ForecastAssignment
+        .where(project_id: forecast_project_ids)
+        .order(start_date: :asc)
+        .limit(1)
+        .first
+    )
   end
 
   def last_recorded_assignment
-    forecast_project_ids = forecast_projects.map(&:forecast_id)
-    ForecastAssignment
-      .where(project_id: forecast_project_ids)
-      .order(start_date: :desc)
-      .limit(1)
-      .first
+    @_last_recorded_assignment ||= (
+      forecast_project_ids = forecast_projects.map(&:forecast_id)
+      ForecastAssignment
+        .where(project_id: forecast_project_ids)
+        .order(start_date: :desc)
+        .limit(1)
+        .first
+    )
   end
 
   def income

@@ -15,6 +15,10 @@ class ForecastProject < ApplicationRecord
     order(Arel.sql("data->>'archived'").asc)
   }
 
+  def forecast_assignments
+    @_forecast_assignments ||= super.includes(:forecast_project)
+  end
+
   def is_time_off?
     name == "Time Off" && forecast_client.nil?
   end
