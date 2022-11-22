@@ -14,19 +14,30 @@ class Studio < ApplicationRecord
 
   has_many :mailing_lists
 
-  def generate_snapshot!
+  def forecast_people(preloaded_studios = Studio.all)
+    people =
+      ForecastPerson.includes(admin_user: [:studios, :full_time_periods]).all
+    return people if is_garden3d?
+
+    people.select do |fp|
+      next true if (fp.try(:admin_user).try(:studios) || []).include?(self)
+      fp.studios(preloaded_studios).include?(self)
+    end
+  end
+
+  def generate_snapshot!(preloaded_studios = Studio.all)
     snapshot =
       [:year, :month, :quarter].reduce({
         generated_at: DateTime.now.iso8601,
       }) do |acc, gradation|
         periods = Stacks::Period.for_gradation(gradation)
-        acc[gradation] = periods.reduce([]) do |agg, period|
+        acc[gradation] = Parallel.map(periods, in_threads: 5) do |period|
           d = { label: period.label, cash: {}, accrual: {} }
-          d[:cash][:datapoints] = self.key_datapoints_for_period(period, "cash")
+          d[:cash][:datapoints] = self.key_datapoints_for_period(period, "cash", preloaded_studios)
           d[:cash][:okrs] = self.okrs_for_period(period, d[:cash][:datapoints])
-          d[:accrual][:datapoints] = self.key_datapoints_for_period(period, "accrual")
+          d[:accrual][:datapoints] = self.key_datapoints_for_period(period, "accrual", preloaded_studios)
           d[:accrual][:okrs] = self.okrs_for_period(period, d[:accrual][:datapoints])
-          [*agg, d]
+          d
         end
         acc
       end
@@ -192,11 +203,11 @@ class Studio < ApplicationRecord
     end
   end
 
-  def key_datapoints_for_period(period, accounting_method)
+  def key_datapoints_for_period(period, accounting_method, preloaded_studios = Studio.all)
     all_leads = new_biz_notion_pages
     cogs = period.report.cogs_for_studio(self, accounting_method)
     v = aggregated_utilization(
-      utilization_by_people([period])
+      utilization_by_people([period], preloaded_studios)
     ).values.first
 
     aggregate_social_following =
@@ -336,28 +347,16 @@ class Studio < ApplicationRecord
     data
   end
 
-  def utilization_by_people(periods)
-    preloaded_studios = Studio.all
-
-    ForecastPerson.includes(admin_user: [:studios, :full_time_periods]).all.select do |fp|
-      next true if is_garden3d?
-
-      if (fp.try(:admin_user).try(:studios) || []).include?(self)
-        true
-      else
-        fp.studios.include?(self)
-      end
-    end.reduce({}) do |acc, fp|
+  def utilization_by_people(periods, preloaded_studios = Studio.all)
+    forecast_people(preloaded_studios).reduce({}) do |acc, fp|
       acc[fp] = periods.reduce({}) do |agr, period|
         next agr unless period.has_utilization_data?
 
         agr[period.label] = fp.utilization_during_range(
           period.starts_at,
           period.ends_at,
-          Studio.all
+          preloaded_studios
         )
-
-        agr[period.label][:report] = period.report
 
         if fp.admin_user.present?
           # Probably a fulltimer
@@ -365,6 +364,7 @@ class Studio < ApplicationRecord
             period.starts_at,
             period.ends_at,
           ).count
+
           sellable_hours = (working_days * fp.admin_user.expected_utilization * 8)
           non_sellable_hours = (working_days * 8) - sellable_hours
           agr[period.label] = agr[period.label].merge({
@@ -392,8 +392,6 @@ class Studio < ApplicationRecord
         acc[label] = acc[label].merge(data) do |k, old, new|
           if old.is_a?(Hash)
             old.merge(new) {|k, o, n| o+n}
-          elsif old.is_a?(QboProfitAndLossReport)
-            old
           else
             old + new
           end

@@ -63,8 +63,8 @@ namespace :stacks do
       Stacks::Quickbooks.sync_all!
 
       # Snapshots
-      Studio.all.each(&:generate_snapshot!)
-      ProjectTracker.all.each(&:generate_snapshot!)
+      Parallel.map(Studio.all, in_threads: 2) { |s| s.generate_snapshot! }
+      Parallel.map(ProjectTracker.all, in_threads: 10) { |pt| pt.generate_snapshot! }
 
       ProfitSharePass.ensure_exists!
       Stacks::Dei.make_rollup # TODO Remove me
