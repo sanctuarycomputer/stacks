@@ -188,11 +188,8 @@ class ProjectTracker < ApplicationRecord
   end
 
   def spend
-    return 0 unless self.first_recorded_assignment.present?
-    total_value_during_range(
-      self.first_recorded_assignment.start_date,
-      self.last_recorded_assignment.end_date
-    )
+    latest = snapshot["spend"].try(:last)
+    latest ? latest["y"] : 0
   end
 
   def total_hours_during_range(start_range, end_range)
