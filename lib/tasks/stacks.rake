@@ -79,6 +79,7 @@ namespace :stacks do
 
       Stacks::Automator.attempt_invoicing_for_previous_month
       Stacks::Automator.remind_people_to_record_hours_weekly
+      Stacks::Notifications.make_notifications!
       Stacks::Notifications.notify_admins_of_outstanding_notifications_every_tuesday!
     rescue => e
       Sentry.capture_exception(e)

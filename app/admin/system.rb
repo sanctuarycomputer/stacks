@@ -72,10 +72,18 @@ ActiveAdmin.register System do
     current_notification_view_mode =
       default_notification_view_mode unless notification_view_modes.include?(current_notification_view_mode)
 
+    notifications = System.instance.notifications.send(current_notification_view_mode)
+
+    if current_notification_view_mode == "unread"
+      notifications = notifications.sort do |a, b|
+        a.params[:priority] <=> b.params[:priority]
+      end
+    end
+
     render(partial: "show", locals: {
       notification_view_modes: notification_view_modes,
       current_notification_view_mode: current_notification_view_mode,
-      errors: System.instance.notifications.send(current_notification_view_mode),
+      errors: notifications,
       admins: AdminUser.admin
     })
   end
