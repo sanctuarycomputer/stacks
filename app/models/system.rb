@@ -1,4 +1,5 @@
 class System < ApplicationRecord
+  has_many :notifications, as: :recipient
   include Storext.model
 
   before_create :confirm_singularity

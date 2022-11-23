@@ -14,7 +14,7 @@ class Stacks::Notifications
       @_forecast ||= Stacks::Forecast.new
     end
 
-    def notifications
+    def make_notifications!
       # TODO Forecast Client with malformed term?
       notifications = []
 
@@ -337,12 +337,29 @@ class Stacks::Notifications
       end
 
       notifications.sort{|a, b| a[:priority] <=> b[:priority] }
+
+      notifications_made = 0
+      recent_notifications =
+        System.instance.notifications.where("read_at is NULL OR read_at > ?", 1.week.ago)
+
+      notifications.each do |n|
+        recent_notification = recent_notifications.find do |existing|
+          (existing.params.to_a - n.to_a | n.to_a - existing.params.to_a) == []
+        end
+
+        unless recent_notification.present?
+          notifications_made += 1
+          SystemNotification.with(n).deliver(System.instance)
+        end
+      end
+
+      puts "~> Delivered #{notifications_made} new notifications"
     end
 
     def notify_admins_of_outstanding_notifications_every_tuesday!
       return unless (Date.today.wday == 2)
 
-      n = notifications
+      n = System.instance.notifications.unread
       if n.any?
         message = <<~HEREDOC
           Hi, Stacks Admins!

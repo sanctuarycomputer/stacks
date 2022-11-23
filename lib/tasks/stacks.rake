@@ -8,6 +8,14 @@ namespace :stacks do
     end
   end
 
+  task :make_notifications => :environment do
+    begin
+      Stacks::Notifications.make_notifications!
+    rescue => e
+      Sentry.capture_exception(e)
+    end
+  end
+
   desc "Sync Calendars"
   task :sync_calendars => :environment do
     begin

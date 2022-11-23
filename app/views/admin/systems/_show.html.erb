@@ -1,3 +1,4 @@
+
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
     <div class="module-header">
@@ -41,13 +42,27 @@
   </div>
 </div>
 
-<table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom: 20px">
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">📢 System Notifications</h2>
+  </div>
+</div>
+
+<% notification_view_modes.each do |notification_view_mode| %>
+  <a href="?notification_view=<%= notification_view_mode %>" style="margin-right: 6px">
+    <p class="nag pill <%= current_notification_view_mode == notification_view_mode ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
+      <%= notification_view_mode.capitalize %>
+    </p>
+  </a>
+<% end %>
+
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-top: 20px; margin-bottom: 20px">
   <tbody>
     <% if errors.any? %>
       <% errors.each_with_index do |n, idx| %>
         <tr class="<%= idx.even? ? "even" : "odd" %>">
           <td class="col" style="vertical-align:middle;">
-            <% case (n[:priority] || 0)
+            <% case (n.params[:priority] || 0)
               when 0 %>
               <div class="status-dot urgent"></div>
             <% when 1 %>
@@ -59,44 +74,44 @@
             <% end %>
           </td>
           <td class="col">
-            <% case n[:type]
+            <% case n.params[:type]
               when :assignment %>
 
-              <% case n[:error]
+              <% case n.params[:error]
                 when :over_assigned %>
-                <strong><%= n[:subject] %></strong> is currently overassigned.
+                <strong><%= n.params[:subject] %></strong> is currently overassigned.
               <% else %>
-                An assignment for <strong><%= n[:subject] || "(No User)" %></strong> is missing <%= n[:error] %>.
+                An assignment for <strong><%= n.params[:subject] || "(No User)" %></strong> is missing <%= n.params[:error] %>.
               <% end %>
 
             <% when :user %>
-              <% case n[:error]
+              <% case n.params[:error]
                 when :no_dei_response %>
-                <strong><%= n[:subject].email %></strong> has not recorded a DEI response.
+                <strong><%= n.params[:subject].email %></strong> has not recorded a DEI response.
               <% when :unknown_salary %>
-                <strong><%= n[:subject].email %></strong> does not have a starting skill tree level set.
+                <strong><%= n.params[:subject].email %></strong> does not have a starting skill tree level set.
               <% when :no_full_time_periods %>
-                <strong><%= n[:subject].email %></strong> is marked as a <strong>Core Contributor</strong>, but does not have any employment periods set.
+                <strong><%= n.params[:subject].email %></strong> is marked as a <strong>Core Contributor</strong>, but does not have any employment periods set.
               <% when :stale_skill_tree %>
-                <strong><%= n[:subject].email %></strong> is probably overdue to conduct a skill tree review.
+                <strong><%= n.params[:subject].email %></strong> is probably overdue to conduct a skill tree review.
               <% when :active_but_missing_accounts %>
-                <strong><%= n[:subject].email %></strong> is active, but is missing key software accounts. Have they been onboarded, or should they archived?
+                <strong><%= n.params[:subject].email %></strong> is active, but is missing key software accounts. Have they been onboarded, or should they archived?
               <% when :archived_with_active_accounts %>
-                <strong><%= n[:subject].email %></strong> is archived, but still has user accounts with our software providers. Have they been offboarded from our systems properly?
+                <strong><%= n.params[:subject].email %></strong> is archived, but still has user accounts with our software providers. Have they been offboarded from our systems properly?
               <% else %>
                 Unknown UserError
               <% end %>
 
             <% when :project_tracker %>
-              <% case n[:error]
+              <% case n.params[:error]
                 when :seemingly_complete %>
-                The <strong><%= n[:subject].name %></strong> Project Tracker has not registered any new hours for over a month (and is not "ongoing"). Should it be marked as <span class="pill complete">Complete</span>?
+                The <strong><%= n.params[:subject].name %></strong> Project Tracker has not registered any new hours for over a month (and is not "ongoing"). Should it be marked as <span class="pill complete">Complete</span>?
               <% when :over_budget %>
-                The <strong><%= n[:subject].name %></strong> Project Tracker is <span class="pill over_budget">Over budget</span>. Can we support them?
+                The <strong><%= n.params[:subject].name %></strong> Project Tracker is <span class="pill over_budget">Over budget</span>. Can we support them?
               <% when :no_atc %>
-                The <strong><%= n[:subject].name %></strong> Project Tracker has <span class="pill error">No ATC</span>.
+                The <strong><%= n.params[:subject].name %></strong> Project Tracker has <span class="pill error">No ATC</span>.
               <% when :capsule_pending %>
-                The <strong><%= n[:subject].name %></strong> Project Tracker is currently <span class="pill capsule_pending">Capsule pending</span>. Let's finalize a project capsule?
+                The <strong><%= n.params[:subject].name %></strong> Project Tracker is currently <span class="pill capsule_pending">Capsule pending</span>. Let's finalize a project capsule?
               <% else %>
                 Unknown Project Tracker Error
               <% end %>
@@ -105,22 +120,22 @@
               A Skill Tree Review is ready to review and archive.
 
             <% when :forecast_project%>
-              <% case n[:error]
+              <% case n.params[:error]
                 when :multiple_hourly_rates %>
-                <strong><%= n[:subject].display_name %></strong> has multiple hourly rates (the first will be used).
+                <strong><%= n.params[:subject].display_name %></strong> has multiple hourly rates (the first will be used).
               <% when :no_explicit_hourly_rate %>
-                <strong><%= n[:subject].display_name %></strong> does not have an explicit hourly rate (the Stacks default will be used).
+                <strong><%= n.params[:subject].display_name %></strong> does not have an explicit hourly rate (the Stacks default will be used).
               <% else %>
                 Unknown Forecast Project Error
               <% end %>
 
             <% when :forecast_client %>
-              A Forecast Client called <strong><%= n[:subject].name %></strong> does not have a Quickbooks Customer record.
+              A Forecast Client called <strong><%= n.params[:subject].name %></strong> does not have a Quickbooks Customer record.
             <% when :forecast_person %>
-              <strong><%= n[:subject].email %></strong> does not have an assigned studio in Forecast.
+              <strong><%= n.params[:subject].email %></strong> does not have an assigned studio in Forecast.
             <% when :invoice_tracker %>
               The following invoice statuses need action:
-              <% n[:subject].each do |status, count| %>
+              <% n.params[:subject].each do |status, count| %>
                 <span class="pill <%= status %>" style="margin-right: 6px;">
                   <%= count %>x <%= status.to_s.humanize %>
                 </span>
@@ -131,8 +146,16 @@
           </td>
 
           <td class="col text-right">
-            <% if n[:link].present? %>
-              <a href="<%= n[:link] %>" target="_blank">Fix ↗</a>
+            <% if n.read? %>
+              <%= link_to "⏰ Unsnooze", mark_as_unread_admin_system_path(resource, notification_id: n.id), method: :post %>
+            <% else %>
+              <%= link_to "💤 Snooze", mark_as_read_admin_system_path(resource, notification_id: n.id), method: :post %>
+            <% end %>
+          </td>
+
+          <td class="col text-right">
+            <% if n.params[:link].present? %>
+              <a href="<%= n.params[:link] %>" target="_blank">Fix ↗</a>
             <% end %>
           </td>
         </tr>

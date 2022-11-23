@@ -2,7 +2,7 @@ ActiveAdmin.register System do
   menu if: -> { current_admin_user.is_admin? },
         priority: 0,
         label: -> {
-          div("!", class: "notifier")
+          div("#{System.instance.notifications.unread.count}", class: "notifier")
           "System"
         },
         url: -> { url_for [:admin, :system] }
@@ -16,6 +16,16 @@ ActiveAdmin.register System do
 
   action_item :trigger_qbo_sync, only: :show, if: proc { current_admin_user.is_admin? } do
     link_to "Sync QBO", trigger_qbo_sync_admin_system_path(resource), method: :post
+  end
+
+  member_action :mark_as_read, method: :post do
+    System.instance.notifications.find(params["notification_id"]).mark_as_read!
+    redirect_to admin_system_path, notice: "Snoozed! If it's still a problem in 1 week's time, a new notification will surface."
+  end
+
+  member_action :mark_as_unread, method: :post do
+    System.instance.notifications.find(params["notification_id"]).mark_as_unread!
+    redirect_to admin_system_path, notice: "Unsnoozed!"
   end
 
   member_action :trigger_forecast_sync, method: :post do
@@ -55,8 +65,17 @@ ActiveAdmin.register System do
   end
 
   show do
+    notification_view_modes = ["unread", "read"]
+    default_notification_view_mode = "unread"
+    current_notification_view_mode =
+      params["notification_view"] || default_notification_view_mode
+    current_notification_view_mode =
+      default_notification_view_mode unless notification_view_modes.include?(current_notification_view_mode)
+
     render(partial: "show", locals: {
-      errors: Stacks::Notifications.notifications,
+      notification_view_modes: notification_view_modes,
+      current_notification_view_mode: current_notification_view_mode,
+      errors: System.instance.notifications.send(current_notification_view_mode),
       admins: AdminUser.admin
     })
   end
