@@ -35,20 +35,34 @@ class Studio < ApplicationRecord
         generated_at: DateTime.now.iso8601,
       }) do |acc, gradation|
         periods = Stacks::Period.for_gradation(gradation)
+
+        utilization_by_period  =
+          periods.reduce({}) do |acc, period|
+            acc[period] = utilization_for_period(period, preloaded_studios)
+            acc
+          end
+
         acc[gradation] = Parallel.map(periods, in_threads: 5) do |period|
-          d = { label: period.label, cash: {}, accrual: {} }
+          d = {
+            label: period.label,
+            cash: {},
+            accrual: {},
+            utilization: utilization_by_period[period].transform_keys {|fp| fp.email.blank? ? "#{fp.first_name} #{fp.last_name}" : fp.email }
+          }
           d[:cash][:datapoints] = self.key_datapoints_for_period(
             period,
             "cash",
             preloaded_studios,
-            preloaded_new_biz_notion_pages
+            preloaded_new_biz_notion_pages,
+            utilization_by_period[period]
           )
           d[:cash][:okrs] = self.okrs_for_period(period, d[:cash][:datapoints])
           d[:accrual][:datapoints] = self.key_datapoints_for_period(
             period,
             "accrual",
             preloaded_studios,
-            preloaded_new_biz_notion_pages
+            preloaded_new_biz_notion_pages,
+            utilization_by_period[period]
           )
           d[:accrual][:okrs] = self.okrs_for_period(period, d[:accrual][:datapoints])
           d
@@ -221,12 +235,17 @@ class Studio < ApplicationRecord
     period,
     accounting_method,
     preloaded_studios = Studio.all,
-    preloaded_new_biz_notion_pages = new_biz_notion_pages
+    preloaded_new_biz_notion_pages = new_biz_notion_pages,
+    utilization_for_period = utilization_for_period(period)
   )
     cogs = period.report.cogs_for_studio(self, accounting_method)
-    v = aggregated_utilization(
-      utilization_by_people([period], preloaded_studios)
-    ).values.first
+    v = utilization_for_period.reduce(nil) do |acc, tuple|
+      fp, data = tuple
+      next data if acc.nil?
+      acc.merge(data) do |k, old, new|
+        old.is_a?(Hash) ? (old.merge(new) {|k, o, n| o+n}) : (old + new)
+      end
+    end
 
     aggregate_social_following =
       SocialProperty.aggregate!(all_social_properties)
@@ -365,55 +384,39 @@ class Studio < ApplicationRecord
     data
   end
 
-  def utilization_by_people(periods, preloaded_studios = Studio.all)
+  def utilization_for_period(period, preloaded_studios = Studio.all)
+    return {} unless period.has_utilization_data?
+
     forecast_people(preloaded_studios).reduce({}) do |acc, fp|
-      acc[fp] = periods.reduce({}) do |agr, period|
-        next agr unless period.has_utilization_data?
+      acc[fp] = fp.utilization_during_range(
+        period.starts_at,
+        period.ends_at,
+        preloaded_studios
+      )
 
-        agr[period.label] = fp.utilization_during_range(
-          period.starts_at,
-          period.ends_at,
-          preloaded_studios
-        )
-
-        if fp.admin_user.present?
-          # Probably a fulltimer
-          working_days = fp.admin_user.working_days_between(
-            period.starts_at,
-            period.ends_at,
-          ).count
-
-          sellable_hours = (working_days * fp.admin_user.expected_utilization * 8)
-          non_sellable_hours = (working_days * 8) - sellable_hours
-          agr[period.label] = agr[period.label].merge({
-            sellable: sellable_hours,
-            non_sellable: non_sellable_hours
-          })
-        else
-          # Probably a contractor
-          agr[period.label] = agr[period.label].merge({
-            sellable: agr[period.label][:billable].values.reduce(:+) || 0,
-            non_sellable: 0
-          })
-        end
-
-        agr
-      end
-      acc
-    end
-  end
-
-  def aggregated_utilization(utilization_by_people_data)
-    utilization_by_people_data.values.reduce({}) do |acc, periods|
-      periods.each do |label, data|
-        next acc[label] = data unless acc[label].present?
-        acc[label] = acc[label].merge(data) do |k, old, new|
-          if old.is_a?(Hash)
-            old.merge(new) {|k, o, n| o+n}
-          else
-            old + new
+      if fp.admin_user.present?
+        # Probably a fulltimer
+        d = (period.starts_at..period.ends_at).reduce({
+          sellable: 0,
+          non_sellable: 0
+        }) do |acc, date|
+          ftp = fp.admin_user.full_time_period_at(date)
+          next acc unless ftp.present?
+          is_working_day =
+            ftp.multiplier == 0.8 ? (1..4).include?(date.wday) : (1..5).include?(date.wday)
+          if is_working_day
+            acc[:sellable] += 8 * ftp.expected_utilization
+            acc[:non_sellable] += 8 - (8 * ftp.expected_utilization)
           end
+          acc
         end
+        acc[fp] = acc[fp].merge(d)
+      else
+        # Probably a contractor
+        acc[fp] = acc[fp].merge({
+          sellable: acc[fp][:billable].values.reduce(:+) || 0,
+          non_sellable: 0
+        })
       end
       acc
     end

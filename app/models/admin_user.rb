@@ -1,5 +1,6 @@
 class AdminUser < ApplicationRecord
   has_many :notifications, as: :recipient
+  has_many :full_time_periods, -> { order(started_at: :asc) }, dependent: :delete_all
 
   enum contributor_type: {
     core: 0,
@@ -26,6 +27,10 @@ class AdminUser < ApplicationRecord
 
   def archived?
     !AdminUser.active.include?(self)
+  end
+
+  def full_time_periods
+    @_full_time_periods ||= super
   end
 
   def met_associates_skill_band_requirement_at
@@ -177,7 +182,6 @@ class AdminUser < ApplicationRecord
   has_many :invoice_trackers, dependent: :nullify
   has_one :forecast_person, class_name: "ForecastPerson", foreign_key: "email", primary_key: "email"
 
-  has_many :full_time_periods, -> { order(started_at: :asc) }, dependent: :delete_all
   accepts_nested_attributes_for :full_time_periods, allow_destroy: true
 
   has_many :gifted_profit_shares, dependent: :delete_all
@@ -234,6 +238,16 @@ class AdminUser < ApplicationRecord
 
   def expected_utilization
     latest_full_time_period.try(:expected_utilization) || 0.8
+  end
+
+  def expected_utilization_at(date = Date.today)
+    full_time_period_at(date).try(:expected_utilization) || 0
+  end
+
+  def full_time_period_at(date = Date.today)
+    full_time_periods.find do |ftp|
+      ftp.started_at <= date && ftp.ended_at_or_now >= date
+    end
   end
 
   def latest_full_time_period

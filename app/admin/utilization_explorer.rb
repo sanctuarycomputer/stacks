@@ -2,22 +2,18 @@ ActiveAdmin.register_page "Utilization Explorer" do
   belongs_to :studio
 
   content title: proc { I18n.t("active_admin.utilization_explorer") } do
+    all_gradations = ["month", "quarter", "year"]
+    default_gradation = "month"
+    current_gradation =
+      params["gradation"] || default_gradation
+    current_gradation =
+      default_gradation unless all_gradations.include?(current_gradation)
+
     studio = Studio.find(params[:studio_id])
-
-    # TODO: Consider "0.0" billing rate as non-billable
-    # TODO: Expected Utilization should be historical
-    data =
-      [:month].reduce({}) do |acc, gradation|
-        periods = Stacks::Period.for_gradation(gradation)
-        acc[gradation] = {
-          periods: periods,
-          utilization: studio.utilization_by_people(periods)
-        }
-        acc
-      end
-
     render(partial: "utilization_explorer", locals: {
-      data: data
+      all_gradations: all_gradations,
+      default_gradation: default_gradation,
+      snapshot: studio.snapshot
     })
   end
 end
