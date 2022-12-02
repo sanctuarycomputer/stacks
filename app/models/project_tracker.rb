@@ -91,8 +91,8 @@ class ProjectTracker < ApplicationRecord
       )
 
     snapshot = (
-      self.first_recorded_assignment.start_date..
-      self.last_recorded_assignment.end_date
+      (self.first_recorded_assignment.try(:start_date) || Date.today)..
+      (self.last_recorded_assignment.try(:end_date) || Date.today)
     ).reduce({
       generated_at: DateTime.now.iso8601,
       hours: [],
