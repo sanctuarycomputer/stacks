@@ -57,7 +57,7 @@ class ProjectTracker < ApplicationRecord
 
   def make_adhoc_snapshot(period = 7.days)
     snapshot = (
-      (Date.today - period)...
+      (Date.today - period)..
       Date.today
     ).reduce({
       hours: [],
@@ -91,7 +91,7 @@ class ProjectTracker < ApplicationRecord
       )
 
     snapshot = (
-      self.first_recorded_assignment.start_date...
+      self.first_recorded_assignment.start_date..
       self.last_recorded_assignment.end_date
     ).reduce({
       generated_at: DateTime.now.iso8601,

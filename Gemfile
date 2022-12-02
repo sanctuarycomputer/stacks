@@ -1,7 +1,7 @@
 source 'https://rubygems.org'
 git_source(:github) { |repo| "https://github.com/#{repo}.git" }
 
-ruby '2.7.1'
+ruby '2.7.2'
 
 gem 'mini_portile2', '2.5.0'
 gem 'rails', '~> 6.0.3', '>= 6.0.3.4'
@@ -34,6 +34,7 @@ gem 'paper_trail'
 gem 'hashdiff'
 gem 'skylight'
 gem 'ferrum'
+gem 'parity'
 
 group :development, :test do
   gem 'pry'

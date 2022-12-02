@@ -224,7 +224,9 @@ GEM
     mime-types (3.3.1)
       mime-types-data (~> 3.2015)
     mime-types-data (3.2021.0225)
-    mimemagic (0.3.5)
+    mimemagic (0.3.10)
+      nokogiri (~> 1)
+      rake
     mini_mime (1.0.2)
     mini_portile2 (2.5.0)
     minitest (5.14.3)
@@ -270,6 +272,7 @@ GEM
       activerecord (>= 5.2)
       request_store (~> 1.1)
     parallel (1.22.1)
+    parity (3.5.0)
     pg (1.2.3)
     pry (0.14.0)
       coderay (~> 1.1)
@@ -458,6 +461,7 @@ DEPENDENCIES
   order_as_specified
   paper_trail
   parallel
+  parity
   pg (>= 0.18, < 2.0)
   pry
   puma (~> 4.1)
@@ -480,7 +484,7 @@ DEPENDENCIES
   webpacker (~> 4.0)
 
 RUBY VERSION
-   ruby 2.7.1p83
+   ruby 2.7.2p137
 
 BUNDLED WITH
    2.1.4
