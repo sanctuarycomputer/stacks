@@ -121,15 +121,12 @@ class Studio < ApplicationRecord
     period
   )
     return nil unless period.has_new_biz_version_history?
+    to_status = to_status.kind_of?(Array) ? to_status : [to_status]
     leads.select do |l|
       l.status_history.select do |h|
-        period.include?(h[:changed_at]) && h[:current_status] == to_status
+        period.include?(h[:changed_at]) && to_status.include?(h[:current_status])
       end.any?
     end
-  end
-
-  def biz_won_in_period(leads = new_biz_notion_pages, period)
-    return nil if period.ends_at > Stacks::Biz::HISTORY_STARTS_AT
   end
 
   def core_members_active_on(date)
@@ -253,6 +250,12 @@ class Studio < ApplicationRecord
     leaving_members =
       studio_members_that_left_during_period(period)
 
+    biz_settled_count = 
+      biz_leads_status_changed_in_period(preloaded_new_biz_notion_pages, ['Active', 'Passed', 'Lost/Stale'], period).try(:length) || 0
+    
+    biz_won_count =
+      biz_leads_status_changed_in_period(preloaded_new_biz_notion_pages, 'Active', period).try(:length) || 0
+
     data = {
       attrition: {
         value: leaving_members.map do |m|
@@ -300,12 +303,20 @@ class Studio < ApplicationRecord
         value: biz_leads_in_period(preloaded_new_biz_notion_pages, period).length,
         unit: :count
       },
+      settled_biz_leads: {
+        value: biz_settled_count,
+        unit: :count
+      },
       total_social_growth: {
         value: aggregate_social_growth_for_period(aggregate_social_following, period),
         unit: :percentage
       },
+      biz_win_rate: {
+        value: (biz_settled_count > 0) ? ((biz_won_count.to_f / biz_settled_count) * 100) : 0,
+        unit: :percentage
+      },
       biz_won: {
-        value: biz_leads_status_changed_in_period(preloaded_new_biz_notion_pages, 'Active', period).try(:length),
+        value: biz_won_count,
         unit: :count
       },
       biz_passed: {

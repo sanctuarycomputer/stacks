@@ -165,6 +165,15 @@ ActiveAdmin.register Studio do
     studio_new_biz_data = {
       labels: snapshot.map{|s| s["label"]},
       datasets: [{
+        label: "Win Rate (%)",
+        data: (snapshot.map do |v|
+          v.dig(accounting_method, "datapoints", "biz_win_rate", "value")
+        end),
+        yAxisID: 'y1',
+        type: 'line',
+        borderColor: COLORS[4],
+        borderDash: [10,5]
+      }, {
         label: 'New',
         backgroundColor: COLORS[0],
         data: (snapshot.map do |v|
@@ -173,18 +182,21 @@ ActiveAdmin.register Studio do
       }, {
         label: 'Won',
         backgroundColor: COLORS[1],
+        stack: 'settled',
         data: (snapshot.map do |v|
           v.dig(accounting_method, "datapoints", "biz_won", "value")
         end)
       }, {
         label: 'Lost/Stale',
         backgroundColor: COLORS[2],
+        stack: 'settled',
         data: (snapshot.map do |v|
           v.dig(accounting_method, "datapoints", "biz_lost", "value")
         end)
       }, {
         label: 'Passed',
         backgroundColor: COLORS[3],
+        stack: 'settled',
         data: (snapshot.map do |v|
           v.dig(accounting_method, "datapoints", "biz_passed", "value")
         end)
