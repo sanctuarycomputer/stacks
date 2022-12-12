@@ -323,6 +323,16 @@
           position: 'left',
           beginAtZero: true
         },
+        y1: {
+          type: 'linear',
+          display: true,
+          position: 'right',
+          beginAtZero: true,
+          stacked: true,
+          grid: {
+            drawOnChartArea: false, // only want the grid lines for one axis to show up
+          },
+        },
       }
     }
   });
