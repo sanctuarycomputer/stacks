@@ -47,8 +47,9 @@ class NotionPage < ApplicationRecord
 
   def status_history
     versions.map do |v|
-      prev_status = v.changeset["data"][0].dig("properties", "Status", "select", "name")
-      current_status = v.changeset["data"][1].dig("properties", "Status", "select", "name")
+      prev_status = v.changeset["data"][0].dig("properties", "Status", "select", "name") || v.changeset["data"][0].dig("properties", 'Stage (formerly "Status")', "select", "name")
+      current_status = v.changeset["data"][1].dig("properties", "Status", "select", "name") || v.changeset["data"][1].dig("properties", 'Stage (formerly "Status")', "select", "name")
+
       next nil if prev_status == current_status
       {
         prev_status: prev_status,
@@ -57,5 +58,4 @@ class NotionPage < ApplicationRecord
       }
     end.compact
   end
-
 end

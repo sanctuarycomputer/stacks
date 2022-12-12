@@ -120,7 +120,7 @@ class Studio < ApplicationRecord
     to_status,
     period
   )
-    return nil if period.has_new_biz_version_history?
+    return nil unless period.has_new_biz_version_history?
     leads.select do |l|
       l.status_history.select do |h|
         period.include?(h[:changed_at]) && h[:current_status] == to_status
