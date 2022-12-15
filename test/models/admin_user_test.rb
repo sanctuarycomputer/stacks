@@ -10,10 +10,10 @@ class AdminUserTest < ActiveSupport::TestCase
       admin_user: admin_user,
       started_at: Date.new(2020, 1, 1),
       ended_at: Date.new(2020, 12, 31),
-      multiplier: 1.0,
+      contributor_type: :five_day,
       expected_utilization: 0.8
     })
-    admin_user.reload
+    admin_user.full_time_periods.reload
 
     # User had not started their employment yet
     assert admin_user.psu_earned_by(Date.new(2019, 1, 1)) == 0
@@ -35,17 +35,17 @@ class AdminUserTest < ActiveSupport::TestCase
       admin_user: admin_user,
       started_at: Date.new(2020, 1, 1),
       ended_at: Date.new(2020, 12, 31),
-      multiplier: 1.0,
+      contributor_type: :five_day,
       expected_utilization: 0.8
     })
     FullTimePeriod.create!({
       admin_user: admin_user,
       started_at: Date.new(2021, 6, 5),
       ended_at: nil,
-      multiplier: 1.0,
+      contributor_type: :five_day,
       expected_utilization: 0.8
     })
-    admin_user.reload
+    admin_user.full_time_periods.reload
 
     # User had not started their employment yet
     assert admin_user.psu_earned_by(Date.new(2019, 1, 1)) == 0
@@ -71,17 +71,17 @@ class AdminUserTest < ActiveSupport::TestCase
       admin_user: admin_user,
       started_at: Date.new(2020, 1, 1),
       ended_at: Date.new(2020, 12, 31),
-      multiplier: 1.0,
+      contributor_type: :five_day,
       expected_utilization: 0.8
     })
     FullTimePeriod.create!({
       admin_user: admin_user,
       started_at: Date.new(2021, 1, 1),
       ended_at: nil,
-      multiplier: 0.8,
+      contributor_type: :four_day,
       expected_utilization: 0.8
     })
-    admin_user.reload
+    admin_user.full_time_periods.reload
 
     assert admin_user.psu_earned_by(Date.new(2020, 12, 31)) == 11
     assert admin_user.psu_earned_by(Date.new(2021, 1, 1)) == 12
@@ -97,17 +97,17 @@ class AdminUserTest < ActiveSupport::TestCase
       admin_user: admin_user,
       started_at: Date.new(2020, 1, 1),
       ended_at: Date.new(2020, 12, 15),
-      multiplier: 1.0,
+      contributor_type: :five_day,
       expected_utilization: 0.8
     })
     FullTimePeriod.create!({
       admin_user: admin_user,
       started_at: Date.new(2020, 12, 16),
       ended_at: nil,
-      multiplier: 0.8,
+      contributor_type: :four_day,
       expected_utilization: 0.8
     })
-    admin_user.reload
+    admin_user.full_time_periods.reload
 
     admin_user.psu_earned_by(Date.new(2020, 12, 15)) == 11
     assert(
@@ -125,17 +125,17 @@ class AdminUserTest < ActiveSupport::TestCase
       admin_user: admin_user,
       started_at: Date.new(2020, 1, 1),
       ended_at: Date.new(2020, 12, 15),
-      multiplier: 1.0,
+      contributor_type: :five_day,
       expected_utilization: 0.8
     })
     FullTimePeriod.create!({
       admin_user: admin_user,
       started_at: Date.new(2020, 12, 16),
       ended_at: nil,
-      multiplier: 1.0,
+      contributor_type: :five_day,
       expected_utilization: 0.2 # Utilization is the only thing that changed on the 16th of December
     })
-    admin_user.reload
+    admin_user.full_time_periods.reload
 
     # Anchor date has not changed!
     assert admin_user.psu_earned_by(Date.new(2020, 12, 31)) == 11

@@ -46,7 +46,7 @@ class Stacks::Notifications
           :cultural_backgrounds,
           :admin_user_gender_identities,
           :gender_identities,
-        ]).core
+        ]).active
 
       user_accounts_report =
         users.reduce({

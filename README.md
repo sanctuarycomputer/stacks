@@ -11,6 +11,10 @@ to clean it up one day (refactor to use service objects and
 fix the myriad of n+1 issues there are) but that day very well
 may never come.
 
+# [ ] Handle Weekly Reminders in automator.rb
+# [ ] Handle Notifications that request FTP be input
+# [ ] Update the list
+
 **You have been warned!**
 
 ## Prerequisites

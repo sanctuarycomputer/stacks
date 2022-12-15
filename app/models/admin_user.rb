@@ -2,6 +2,7 @@ class AdminUser < ApplicationRecord
   has_many :notifications, as: :recipient
   has_many :full_time_periods, -> { order(started_at: :asc) }, dependent: :delete_all
 
+  # TODO: Keep here until migration has run
   enum contributor_type: {
     core: 0,
     satellite: 1,
@@ -11,16 +12,13 @@ class AdminUser < ApplicationRecord
   scope :active, -> {
     joins(:full_time_periods).where("started_at <= ? AND coalesce(ended_at, 'infinity') >= ?", Date.today, Date.today)
   }
-  scope :archived, -> {
+  scope :inactive, -> {
     where.not(id: active)
   }
   scope :admin , -> {
     AdminUser.where(roles: ["admin"])
   }
-  scope :active_core, -> {
-    self.active.where(contributor_type: :core)
-  }
-
+  
   def active?
     AdminUser.active.include?(self)
   end
@@ -66,7 +64,7 @@ class AdminUser < ApplicationRecord
   end
 
   def contiguous_psu_earning_periods
-    full_time_periods.reduce([]) do |acc, ftp|
+    full_time_periods.select{|ftp| ["five_day", "four_day"].include?(ftp.contributor_type)}.reduce([]) do |acc, ftp|
       if acc.empty?
         # This is the first ftp, stash it.
         next acc << {ftps: [ftp], started_at: ftp.started_at, ended_at: ftp.ended_at_or_now}
@@ -77,7 +75,7 @@ class AdminUser < ApplicationRecord
         next acc << {ftps: [ftp], started_at: ftp.started_at, ended_at: ftp.ended_at_or_now}
       end
 
-      if (acc.last[:ftps].last.multiplier != ftp.multiplier)
+      if (acc.last[:ftps].last.contributor_type != ftp.contributor_type)
         # The PSU earn rate changed, break it.
         next acc << {ftps: [ftp], started_at: ftp.started_at, ended_at: ftp.ended_at_or_now}
       end
@@ -97,17 +95,15 @@ class AdminUser < ApplicationRecord
       ended_at = psuep[:ended_at] <= date ? psuep[:ended_at] : date
       next acc if ended_at < psuep[:started_at]
 
-      multiplier = psuep[:ftps].last.multiplier
-      has_another = (psu_earning_periods.index(psuep) + 1) < psu_earning_periods.length
-      psu = Stacks::Utils.full_months_between(ended_at, psuep[:started_at]) * multiplier
+      psu = psuep[:ftps].last.psu_earn_rate * Stacks::Utils.full_months_between(ended_at, psuep[:started_at])
 
       # If there is a psuep before this one, check if it was contiguous
-      # (which means the multiplier changed) and if so, add the remainder
+      # (which means the contributor_type changed) and if so, add the remainder
       # so that the user doesn't lose out on the difference
       remainder = 0
       if psu_earning_periods.index(psuep) > 0
         prev_psuep = psu_earning_periods[psu_earning_periods.index(psuep) - 1]
-        prev_multiplier = prev_psuep[:ftps].last.multiplier
+        prev_psu_earn_rate = prev_psuep[:ftps].last.psu_earn_rate
 
         if prev_psuep[:ended_at] + 1.day == psuep[:started_at]
           # Count the amount of days between the anchor date and the
@@ -119,7 +115,7 @@ class AdminUser < ApplicationRecord
             running_date = running_date - 1.day
           end
           remainder =
-            (remainder_days / Time.days_in_month(prev_psuep[:ended_at].month, prev_psuep[:ended_at].year)) * prev_multiplier
+            (remainder_days / Time.days_in_month(prev_psuep[:ended_at].month, prev_psuep[:ended_at].year)) * prev_psu_earn_rate
         end
       end
 
@@ -289,7 +285,7 @@ class AdminUser < ApplicationRecord
         (ftp.started_at <= d) && (ftp.ended_at == nil || ftp.ended_at >= d)
       end
 
-      if ftp.multiplier == 0.8
+      if ftp.contributor_type == "four_day"
         (1..4).include?(d.wday)
       else
         (1..5).include?(d.wday)
