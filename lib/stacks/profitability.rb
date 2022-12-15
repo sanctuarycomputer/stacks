@@ -2,7 +2,7 @@
 class Stacks::Profitability
   class << self
     def pull_outstanding_invoices
-      access_token = Stacks::Quckbooks.make_and_refresh_qbo_access_token
+      access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
 
       invoice_service = Quickbooks::Service::Invoice.new
       invoice_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]

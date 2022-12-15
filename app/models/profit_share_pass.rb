@@ -102,9 +102,9 @@ class ProfitSharePass < ApplicationRecord
           }
         end
 
-      # Add pre-spent budgetary purchases here, as they are considered
-      # part of our gross_revenue for that year
-      actuals[:gross_revenue] += self.prespent_budgetary_purchases
+      # Add pre-spent budgetary purchases here, as they are not considered
+      # part of our gross_expenses for that year
+      actuals[:gross_expenses] -= self.prespent_budgetary_purchases
 
       Stacks::ProfitShare::Scenario.new(
         actuals,
