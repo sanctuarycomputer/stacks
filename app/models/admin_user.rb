@@ -15,6 +15,9 @@ class AdminUser < ApplicationRecord
   scope :inactive, -> {
     where.not(id: active)
   }
+  scope :ignored, -> {
+    where(ignore: true)
+  }
   scope :admin , -> {
     AdminUser.where(roles: ["admin"])
   }

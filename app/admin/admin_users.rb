@@ -1,6 +1,7 @@
 ActiveAdmin.register AdminUser do
   permit_params :show_skill_tree_data,
     :opt_out_of_dei_data_entry,
+    :ignore,
     :old_skill_tree_level,
     :profit_share_notes,
     racial_background_ids: [],
@@ -40,6 +41,7 @@ ActiveAdmin.register AdminUser do
   scope :active, default: true
   scope :inactive
   scope :admin
+  scope :ignored
   scope :all
 
   config.filters = true
@@ -208,6 +210,7 @@ ActiveAdmin.register AdminUser do
       hr
       h1 "Admin Only"
       f.inputs(class: "admin_inputs") do
+        f.input :ignore, hint: "Check this box if this account is a dummy email address, bot or duplicate."
         f.input :old_skill_tree_level,
           as: :select, collection: AdminUser.old_skill_tree_levels.keys,
           label: "Starting skill tree level"

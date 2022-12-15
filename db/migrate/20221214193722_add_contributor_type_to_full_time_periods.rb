@@ -1,6 +1,7 @@
 class AddContributorTypeToFullTimePeriods < ActiveRecord::Migration[6.0]
   def change
     add_column :full_time_periods, :contributor_type, :integer, default: 0
+    add_column :admin_users, :ignore, :boolean, default: false
 
     # Ensure every user has a FTP, and assume that if they don't they're variable.
     AdminUser.all.each do |a|
@@ -9,6 +10,11 @@ class AddContributorTypeToFullTimePeriods < ActiveRecord::Migration[6.0]
           FullTimePeriod.create!(admin_user: a, started_at: Date.today, contributor_type: :variable_hours)
         end
       end
+    end
+
+    # Mark bot admins as "ignore"
+    AdminUser.all.each do |a|
+      a.update!(ignore: true) if a.contributor_type == "bot"
     end
 
     # Update each FTP with the correct contributor_type for this period
