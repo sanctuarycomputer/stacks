@@ -46,7 +46,7 @@ class Stacks::Notifications
           :cultural_backgrounds,
           :admin_user_gender_identities,
           :gender_identities,
-        ]).active
+        ]).not_ignored
 
       user_accounts_report =
         users.reduce({
@@ -79,9 +79,6 @@ class Stacks::Notifications
       end
 
       active_users = users.select(&:active?)
-      users_who_need_skill_tree = active_users.select do |u|
-        u.should_nag_for_skill_tree?
-      end
       users_without_dei_response = active_users.select do |u|
         u.should_nag_for_dei_data?
       end
@@ -115,8 +112,9 @@ class Stacks::Notifications
       project_trackers_seemingly_complete = active_project_trackers.select do |pt|
         if pt.last_recorded_assignment
           pt.last_recorded_assignment.end_date < (Date.today -  1.month)
+        else
+          false
         end
-        false
       end.reject do |pt|
         pt.name.downcase.include?("(ongoing)")
       end
@@ -283,16 +281,6 @@ class Stacks::Notifications
           type: :user,
           link: edit_admin_admin_user_path(u),
           error: :no_dei_response,
-          priority: 2
-        }
-      end
-
-      users_who_need_skill_tree.each do |u|
-        notifications << {
-          subject: u,
-          type: :user,
-          link: edit_admin_admin_user_path(u),
-          error: :stale_skill_tree,
           priority: 2
         }
       end

@@ -106,9 +106,12 @@ class ProfitSharePass < ApplicationRecord
       # part of our gross_expenses for that year
       actuals[:gross_expenses] -= self.prespent_budgetary_purchases
 
+      total_psu_issued =   
+        Studio.garden3d.core_members_active_on(finalization_day).map{|a| a.projected_psu_by_eoy }.reject{|v| v == nil}.reduce(:+) || 0
+
       Stacks::ProfitShare::Scenario.new(
         actuals,
-        AdminUser.total_projected_psu_issued_by_eoy,
+        total_psu_issued,
         self.prespent_profit_share,
         self.payroll_buffer_months,
         self.efficiency_cap,

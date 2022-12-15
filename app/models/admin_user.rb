@@ -18,6 +18,9 @@ class AdminUser < ApplicationRecord
   scope :ignored, -> {
     where(ignore: true)
   }
+  scope :not_ignored, -> {
+    where.not(id:ignored)
+  }
   scope :admin , -> {
     AdminUser.where(roles: ["admin"])
   }
@@ -93,6 +96,10 @@ class AdminUser < ApplicationRecord
   def psu_earned_by(date = Date.today)
     psu_earning_periods = contiguous_psu_earning_periods
     return nil if psu_earning_periods.empty?
+
+    ftp = full_time_period_at(date)
+    return nil unless ftp.present?
+    return nil unless ["five_day", "four_day"].include?(ftp.contributor_type)
 
     total = psu_earning_periods.reduce(0) do |acc, psuep|
       ended_at = psuep[:ended_at] <= date ? psuep[:ended_at] : date
@@ -234,6 +241,10 @@ class AdminUser < ApplicationRecord
 
   has_many :reviews
   has_many :peer_reviews
+
+  def contributor_type
+    latest_full_time_period.try(:contributor_type)
+  end
 
   def expected_utilization
     latest_full_time_period.try(:expected_utilization) || 0.8
@@ -442,10 +453,6 @@ class AdminUser < ApplicationRecord
   # Devise override to ignore the password requirement if the user is authenticated with Google
   def password_required?
     provider.present? ? false : super
-  end
-
-  def self.total_projected_psu_issued_by_eoy
-    AdminUser.active.map{|a| a.projected_psu_by_eoy }.reject{|v| v == nil}.reduce(:+) || 0
   end
 
   def self.from_omniauth(auth)

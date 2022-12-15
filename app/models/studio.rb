@@ -129,6 +129,10 @@ class Studio < ApplicationRecord
     end
   end
 
+  def self.garden3d
+    @@g3d_instance ||= Studio.find_by(name: "garden3d", mini_name: "g3d")
+  end
+
   # TODO
   def core_members_active_on(date)
     if is_garden3d?

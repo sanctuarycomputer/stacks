@@ -14,6 +14,7 @@ ActiveAdmin.register AdminUser do
       :admin_user_id,
       :started_at,
       :ended_at,
+      :contributor_type,
       :expected_utilization,
       :_edit,
       :_destroy
@@ -90,7 +91,10 @@ ActiveAdmin.register AdminUser do
       resource
     end
     column :skill_tree_level do |resource|
-      resource.show_skill_tree_data? ? resource.skill_tree_level_without_salary : "Private"
+      resource.skill_tree_level_without_salary
+    end
+    column :contributor_type do |resource|
+      resource.contributor_type.try(:humanize)
     end
     column :has_dei_response? do |resource|
       !resource.should_nag_for_dei_data?
