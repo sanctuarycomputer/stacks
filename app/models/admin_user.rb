@@ -242,7 +242,7 @@ class AdminUser < ApplicationRecord
   has_many :reviews
   has_many :peer_reviews
 
-  def contributor_type
+  def current_contributor_type
     latest_full_time_period.try(:contributor_type)
   end
 

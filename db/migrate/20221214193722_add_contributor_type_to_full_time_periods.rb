@@ -48,7 +48,5 @@ class AddContributorTypeToFullTimePeriods < ActiveRecord::Migration[6.0]
     # Drop the old columns
     remove_column :admin_users, :contributor_type
     remove_column :full_time_periods, :multiplier
-
-
   end
 end

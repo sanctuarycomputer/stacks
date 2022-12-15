@@ -95,7 +95,7 @@ ActiveAdmin.register AdminUser do
       resource.skill_tree_level_without_salary
     end
     column :contributor_type do |resource|
-      resource.contributor_type.try(:humanize)
+      resource.current_contributor_type.try(:humanize)
     end
     column :has_dei_response? do |resource|
       !resource.should_nag_for_dei_data?
