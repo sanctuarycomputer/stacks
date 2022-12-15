@@ -64,7 +64,6 @@ ActiveAdmin.register AdminUser do
         :gender_identities,
         :admin_user_interests,
         :interests,
-        :full_time_periods
       )
     end
   end
