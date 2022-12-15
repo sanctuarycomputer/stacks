@@ -1,5 +1,6 @@
 ActiveAdmin.register AdminUser do
   permit_params :show_skill_tree_data,
+    :contributor_type,
     :opt_out_of_dei_data_entry,
     :old_skill_tree_level,
     :profit_share_notes,
@@ -13,6 +14,7 @@ ActiveAdmin.register AdminUser do
       :admin_user_id,
       :started_at,
       :ended_at,
+      :multiplier,
       :expected_utilization,
       :_edit,
       :_destroy
@@ -37,8 +39,10 @@ ActiveAdmin.register AdminUser do
   menu label: "Everybody", parent: "Team", priority: 1
   actions :index, :show, :edit, :update
 
-  scope :active, default: true
-  scope :inactive
+  scope :active_core, default: true
+  scope :satellite
+  scope :bot
+  scope :archived
   scope :admin
   scope :all
 
@@ -208,6 +212,10 @@ ActiveAdmin.register AdminUser do
       hr
       h1 "Admin Only"
       f.inputs(class: "admin_inputs") do
+        f.input :contributor_type,
+          include_blank: false,
+          as: :select
+
         f.input :old_skill_tree_level,
           as: :select, collection: AdminUser.old_skill_tree_levels.keys,
           label: "Starting skill tree level"
@@ -216,33 +224,9 @@ ActiveAdmin.register AdminUser do
         f.has_many :full_time_periods, heading: false, allow_destroy: true do |a|
           a.input :started_at, hint: "The date this employment period started"
           a.input :ended_at, hint: "Leave blank until the nature of employment changes (termination or a move to 4-day work week, which requires an additional employment period to be added here)"
-          a.input :contributor_type,
-            include_blank: false,
-            as: :select
-          a.input :expected_utilization, hint: "Ignored when Contributor Type is `Variable Hours`. ICs should be 0.8, Support Team members are 0.0. Studio Coordinators depend on the size of the studio coordination group."
+          a.input :multiplier, label: "PSU earn rate", hint: "The rate that this employee earns PSU each month (4-day workers earn PSU at a rate of 0.8 per month)"
+          a.input :expected_utilization, hint: "ICs should be 0.8, Support Team members are 0.0. Studio Coordinators depend on the size of the studio coordination group."
         end
-
-script (<<-JS
-  function greyAndZeroOutExpectedUtilizationFieldForVariableHoursContributorType(el) {
-    var expectedUtilizationInput = 
-      Array.from(el.parentElement.parentElement.querySelectorAll('input')).find(i => i.id.endsWith("_expected_utilization"))
-    if (el.value === "variable_hours") {
-      expectedUtilizationInput.value = 0;
-      expectedUtilizationInput.disabled = true;
-    } else {
-      expectedUtilizationInput.disabled = false;
-    }
-  }
-  const contributorTypeSelects = 
-    Array.from(document.querySelectorAll('select')).filter(s => s.id.endsWith("_contributor_type"));
-  contributorTypeSelects.forEach(el => {
-    greyAndZeroOutExpectedUtilizationFieldForVariableHoursContributorType(el);
-    el.addEventListener('change', function() {
-      greyAndZeroOutExpectedUtilizationFieldForVariableHoursContributorType(el);
-    });
-  })
-JS
-).html_safe
 
         f.has_many :gifted_profit_shares, heading: false, allow_destroy: true do |a|
           a.input :amount

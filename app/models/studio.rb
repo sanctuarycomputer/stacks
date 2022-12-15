@@ -129,16 +129,17 @@ class Studio < ApplicationRecord
     end
   end
 
-  # TODO
   def core_members_active_on(date)
     if is_garden3d?
       AdminUser
+        .where(contributor_type: :core)
         .joins(:full_time_periods)
-        .where("started_at <= ? AND coalesce(ended_at, 'infinity') >= ? AND contributor_type IN (0, 1)", date, date)
+        .where("started_at <= ? AND coalesce(ended_at, 'infinity') >= ?", date, date)
     else
       admin_users
+        .where(contributor_type: :core)
         .joins(:full_time_periods)
-        .where("started_at <= ? AND coalesce(ended_at, 'infinity') >= ? AND contributor_type IN (0, 1)", date, date)
+        .where("started_at <= ? AND coalesce(ended_at, 'infinity') >= ?", date, date)
     end
   end
 
@@ -160,8 +161,9 @@ class Studio < ApplicationRecord
     users =
       (is_garden3d? ? AdminUser : admin_users)
         .includes(:full_time_periods)
+        .where(contributor_type: :core)
         .joins(:full_time_periods)
-        .where("ended_at >= ? AND coalesce(ended_at, 'infinity') <= ? AND contributor_type IN (0, 1)", period.starts_at, period.ends_at)
+        .where("ended_at >= ? AND coalesce(ended_at, 'infinity') <= ?", period.starts_at, period.ends_at)
 
     users.select do |u|
       # It's possible that a user has another full time period
@@ -411,10 +413,8 @@ class Studio < ApplicationRecord
         }) do |acc, date|
           ftp = fp.admin_user.full_time_period_at(date)
           next acc unless ftp.present?
-
           is_working_day =
-            (ftp.contributor_type == "four_day" && (1..4).include?(date.wday)) || 
-            (ftp.contributor_type == "five_day" && (1..5).include?(date.wday))
+            ftp.multiplier == 0.8 ? (1..4).include?(date.wday) : (1..5).include?(date.wday)
           if is_working_day
             acc[:sellable] += 8 * ftp.expected_utilization
             acc[:non_sellable] += 8 - (8 * ftp.expected_utilization)
@@ -423,7 +423,7 @@ class Studio < ApplicationRecord
         end
         acc[fp] = acc[fp].merge(d)
       else
-        # Probably a contractor with an external email address
+        # Probably a contractor
         acc[fp] = acc[fp].merge({
           sellable: acc[fp][:billable].values.reduce(:+) || 0,
           non_sellable: 0

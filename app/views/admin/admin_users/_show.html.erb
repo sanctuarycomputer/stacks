@@ -110,27 +110,17 @@
 
   <p class="nag" style="margin-right: 6px">
     <strong>
-      <% if ["five_day", "four_day"].include?(ftp_log[:ftp].contributor_type) %>
-        <%= ftp_log[:ftp].expected_utilization * 100 %>% Expected Utilization
-      <% else %>
-        Does not effect Expected Utilization
-      <% end %>
+      <%= ftp_log[:ftp].expected_utilization * 100 %>% Expected Utilization
     </strong>
   </p>
   <p class="nag" style="margin-right: 6px">
     <strong>
-      <%= ftp_log[:ftp].contributor_type.humanize %> Worker
+      <%= (ftp_log[:ftp].multiplier * 5).to_i %>-Day Worker
     </strong>
   </p>
   <p class="nag">
     <strong>
-      <% if ftp_log[:ftp].contributor_type == "five_day" %>
-        1 PSU p/month
-      <% elsif ftp_log[:ftp].contributor_type == "four_day" %>
-        0.8 PSU p/month
-      <% else %>
-        Does not accrue PSU
-      <% end %>
+      <%= (ftp_log[:ftp].multiplier) %> PSU p/month
     </strong>
   </p>
 

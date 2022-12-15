@@ -5,21 +5,6 @@ class FullTimePeriod < ApplicationRecord
   validate :does_not_overlap
   validate :ended_at_before_started_at?
 
-  enum contributor_type: {
-    five_day: 0,
-    four_day: 1,
-    variable_hours: 2
-  }
-
-  def psu_earn_rate
-    if contributor_type == "five_day"
-      return 1
-    elsif contributor_type == "four_day"
-      return 0.8
-    end
-    0
-  end
-
   def overlaps?(other)
     started_at <= other.ended_at && other.started_at <= ended_at
   end
