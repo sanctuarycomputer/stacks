@@ -60,6 +60,24 @@ class ProfitSharePass < ApplicationRecord
     Date.new(created_at.year, 12, 15)
   end
 
+  def payments(scenario = make_scenario)
+    return [] unless finalized?
+    psu_value = scenario.actual_value_per_psu
+
+    Studio.garden3d.core_members_active_on(finalization_day).map do |a|
+      psu_earnt = a.psu_earned_by(finalization_day)
+      psu_earnt = 0 if psu_earnt == nil
+      pre_spent_profit_share = a.pre_profit_share_spent_during(finalization_day.year)
+      {
+        admin_user: a,
+        psu_value: psu_value,
+        psu_earnt: psu_earnt,
+        pre_spent_profit_share: pre_spent_profit_share,
+        total_payout: (psu_value * psu_earnt) - pre_spent_profit_share
+      }
+    end
+  end
+
   def make_scenario
     if finalized?
       Stacks::ProfitShare::Scenario.new(
