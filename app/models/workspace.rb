@@ -8,7 +8,7 @@ class Workspace < ApplicationRecord
       .where(workspace: self)
       .joins(:tree)
       .order_as_specified(trees: {
-        name: ["Individual Contributor", "Strategist", "Designer", "Engineer", "Operations", "Studio Impact"]
+        name: ["Individual Contributor", "Strategist", "Designer", "Engineer", "Operations", "Communications", "Studio Impact"]
       })
   }, dependent: :destroy
   accepts_nested_attributes_for :score_trees
