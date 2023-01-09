@@ -110,13 +110,13 @@ ActiveAdmin.register ProjectTracker do
   end
 
   member_action :complete_work, method: :post do
-    resource.update!(work_completed_at: DateTime.now)
+    resource.update_column(:work_completed_at, DateTime.now)
     resource.ensure_project_capsule_exists!
     redirect_to admin_project_tracker_path(resource), notice: "Project marked as complete."
   end
 
   member_action :uncomplete_work, method: :post do
-    resource.update!(work_completed_at: nil)
+    resource.update_column(:work_completed_at, nil)
     resource.ensure_project_capsule_exists!
     redirect_to admin_project_tracker_path(resource), notice: "Project unmarked as complete."
   end
