@@ -45,6 +45,15 @@ rails s
 Navigate to `localhost:3000`, and you should see a local version
 of Stacks running a recent backup of the production database.
 
-## Deployment
+## Prod Commands
 
-`git push heroku main`
+[As per Parity's documentation](https://github.com/thoughtbot/parity)
+
+### Deploy
+`production deploy`
+
+### Console
+`production console`
+
+### DB Migration
+`production migrate`
