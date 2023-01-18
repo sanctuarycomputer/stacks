@@ -29,7 +29,7 @@ may never come.
 bundle
 
 # Add the Heroku remote
-git remote add heroku https://git.heroku.com/g3d-stacks.git
+git remote add production https://git.heroku.com/g3d-stacks.git
 
 # Login to heroku with dev@sanctuary.computer (in 1pass)
 heroku login
