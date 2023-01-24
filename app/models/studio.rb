@@ -73,16 +73,27 @@ class Studio < ApplicationRecord
   end
 
   def okrs_for_period(period, datapoints)
-    okr_periods =
-      OkrPeriodStudio
-        .includes(okr_period: :okr)
-        .where(studio: self)
-        .select{|ops| ops.applies_to?(period)}
-        .map(&:okr_period)
-    okr_periods.reduce({}) do |acc, okrp|
-      data = datapoints[okrp.okr.datapoint.to_sym]
-      acc[okrp.okr.name] = okrp.health_for_value(data[:value]).merge(data)
+    okrs = Okr.includes({ okr_periods: { okr_period_studios: :studio }}).all
+    okrs.reduce({}) do |acc, okr|
+      okrps_for_studio = okr.okr_periods
+        .select{|okrp| okrp.okr_period_studios.map(&:studio).include?(self)}
+        .sort_by{|okrp| okrp.period_starts_at}
+      next acc if okrps_for_studio.empty?
 
+      period_range = period.starts_at..period.ends_at
+      okrp_candidate = okrps_for_studio.reduce({ overlap_days: nil, okrp: nil }) do |agg, okrp|
+        okrp_range = okrp.period_starts_at..okrp.period_ends_at 
+        overlap_days = (period_range.to_a & okrp_range.to_a).count
+        next { overlap_days: overlap_days, okrp: okrp } if (agg[:overlap_days].nil? || overlap_days >= agg[:overlap_days])
+        agg
+      end
+
+      data = datapoints[okr.datapoint.to_sym]
+      okrp = okrp_candidate[:okrp]
+      acc[okr.name] = data
+      next acc if okrp.nil?
+      
+      acc[okr.name] = okrp.health_for_value(data[:value]).merge(data)
       # HACK: It's helpful for reinvestment to know how much
       # surplus profit we've made.
       if okrp.okr.datapoint == "profit_margin"

@@ -55,5 +55,8 @@ of Stacks running a recent backup of the production database.
 ### Console
 `production console`
 
+### Logs
+`production tail`
+
 ### DB Migration
 `production migrate`
