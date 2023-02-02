@@ -109,7 +109,11 @@ class InvoiceTracker < ApplicationRecord
             overdue ? :partially_paid_overdue : :partially_paid
           end
         else
-          :not_sent
+          if qbo_invoice.data["private_note"].downcase.include?("voided")
+            :voided
+          else
+            :not_sent
+          end
         end
       end
     end

@@ -824,6 +824,7 @@ body.logged_in .flash {
   &.hydro,
   &.deleted,
   &.missing_hours,
+  &.voided,
   &.complete
   {
     background-color: $color-purple;
