@@ -30,98 +30,7 @@
     </div>
   </div>
 
-  <% if project_capsule.complete? %>
-    <div class="dashboard-modules table index_table index">
-      <div class="dashboard-module">
-        <div class="module-header">
-          <p>Wrapup Status</p>
-          <% if project_capsule.client_feedback_survey_url.present? %>
-            <%= link_to "Client Survey URL ↗", project_capsule.client_feedback_survey_url %>
-          <% end %>
-        </div>
-        <div class="module-body">
-
-          <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
-            <tbody>
-              <tr class="odd">
-                <td class="col"><strong>Client Feedback</strong></td>
-                <td class="col text-right">
-                  <%= project_capsule.client_feedback_survey_status.humanize %>
-                </td>
-              </tr>
-              <tr class="even">
-                <td class="col"><strong>Marketing</strong></td>
-                <td class="col text-right">
-                  <%= project_capsule.internal_marketing_status.humanize %>
-                </td>
-              </tr>
-              <tr class="odd">
-                <td class="col"><strong>Internal Sharing</strong></td>
-                <td class="col text-right">
-                  <%= project_capsule.capsule_status.humanize %>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-
-        </div>
-      </div>
-      <div class="dashboard-module">
-        <div class="module-header">
-          <p>Profitability Study</p>
-        </div>
-        <div class="module-body">
-          <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
-            <tbody>
-              <!--
-              <tr class="odd">
-                <td class="col"><strong>Raw Resourcing Cost</strong></td>
-                <td class="col text-right">
-                  <%= number_to_currency(@project_tracker.raw_resourcing_cost) %>
-                </td>
-              </tr>
-              -->
-              <tr class="even">
-                <td class="col"><strong>Estimated COGS</strong></td>
-                <td class="col text-right">
-                  <%= number_to_currency(estimated_cost) %>
-                </td>
-              </tr>
-              <tr class="odd">
-                <td class="col"><strong>Total Income</strong></td>
-                <td class="col text-right">
-                  <%= number_to_currency(income) %>
-                </td>
-              </tr>
-              <tr class="even">
-                <td class="col"><strong>Total Profit</strong></td>
-                <td class="col text-right">
-                  <%= number_to_currency(income - estimated_cost) %>
-                </td>
-              </tr>
-              <tr class="odd">
-                <td class="col"><strong>Profit Margin</strong></td>
-                <td class="col text-right">
-                  <%= (((income - estimated_cost) / estimated_cost) * 100).round(2) %>%
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <div class="dashboard-modules table index_table index">
-      <div class="dashboard-module">
-        <div class="module-header">
-          <p>Postpartum Meeting Notes</p>
-        </div>
-        <div class="module-body markdown-body">
-          <%= sanitize RDiscount.new(project_capsule.postpartum_notes).to_html %>
-        </div>
-      </div>
-    </div>
-  <% else %>
+  <% unless project_capsule.complete? %>
     <div class="dashboard-modules table index_table index">
       <div class="dashboard-module">
         <div class="module-body factoid-parent">
@@ -132,8 +41,98 @@
         </div>
       </div>
     </div>
-
   <% end %>
+
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-header">
+        <p>Wrapup Status</p>
+        <% if project_capsule.client_feedback_survey_url.present? %>
+          <%= link_to "Client Survey URL ↗", project_capsule.client_feedback_survey_url %>
+        <% end %>
+      </div>
+      <div class="module-body">
+
+        <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+          <tbody>
+            <tr class="odd">
+              <td class="col"><strong>Client Feedback</strong></td>
+              <td class="col text-right">
+                <%= project_capsule.client_feedback_survey_status.try(:humanize) %>
+              </td>
+            </tr>
+            <tr class="even">
+              <td class="col"><strong>Marketing</strong></td>
+              <td class="col text-right">
+                <%= project_capsule.internal_marketing_status.try(:humanize) %>
+              </td>
+            </tr>
+            <tr class="odd">
+              <td class="col"><strong>Internal Sharing</strong></td>
+              <td class="col text-right">
+                <%= project_capsule.capsule_status.try(:humanize) %>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+      </div>
+    </div>
+    <div class="dashboard-module">
+      <div class="module-header">
+        <p>Profitability Study</p>
+      </div>
+      <div class="module-body">
+        <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+          <tbody>
+            <!--
+            <tr class="odd">
+              <td class="col"><strong>Raw Resourcing Cost</strong></td>
+              <td class="col text-right">
+                <%= number_to_currency(@project_tracker.raw_resourcing_cost) %>
+              </td>
+            </tr>
+            -->
+            <tr class="even">
+              <td class="col"><strong>Estimated COGS</strong></td>
+              <td class="col text-right">
+                <%= number_to_currency(estimated_cost) %>
+              </td>
+            </tr>
+            <tr class="odd">
+              <td class="col"><strong>Total Income</strong></td>
+              <td class="col text-right">
+                <%= number_to_currency(income) %>
+              </td>
+            </tr>
+            <tr class="even">
+              <td class="col"><strong>Total Profit</strong></td>
+              <td class="col text-right">
+                <%= number_to_currency(income - estimated_cost) %>
+              </td>
+            </tr>
+            <tr class="odd">
+              <td class="col"><strong>Profit Margin</strong></td>
+              <td class="col text-right">
+                <%= (((income - estimated_cost) / estimated_cost) * 100).round(2) %>%
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-header">
+        <p>Postpartum Meeting Notes</p>
+      </div>
+      <div class="module-body markdown-body">
+        <%= sanitize RDiscount.new(project_capsule.postpartum_notes || "").to_html %>
+      </div>
+    </div>
+  </div>
 
   <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
     <div id="titlebar_left">
@@ -144,7 +143,7 @@
 
 
 <p class="pill nag <%= @project_tracker.status %>" style="margin-bottom: 0px;margin-right: 6px;">
-  <%= @project_tracker.status.to_s.humanize %>
+  <%= @project_tracker.status.to_s.try(:humanize) %>
 </p>
 <% @project_tracker.project_tracker_links.each do |link| %>
   <a href="<%= link.url %>" target="_blank" style="margin-right: 6px">
@@ -384,7 +383,7 @@ Budget: <%= number_to_currency(budget_high_end) %>
         </td>
         <td class="col">
           <span class="pill <%= it.status %>">
-            <%= it.status.to_s.humanize %>
+            <%= it.status.to_s.try(:humanize) %>
           </span>
         </td>
         <td class="col text-right">
@@ -417,7 +416,7 @@ Budget: <%= number_to_currency(budget_high_end) %>
           </td>
           <td class="col">
             <span class="pill <%= it.status %>">
-              <%= it.status.to_s.humanize %>
+              <%= it.status.to_s.try(:humanize) %>
             </span>
           </td>
           <td class="col text-right">
