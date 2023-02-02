@@ -179,15 +179,22 @@ class ProjectTracker < ApplicationRecord
 
   def last_month_hours
     total_hours_during_range(
-      Date.today.last_month.beginning_of_month,
-      Date.today.last_month.end_of_month
+      Date.today - 1.month,
+      Date.today
+    )
+  end
+
+  def last_week_value
+    total_value_during_range(
+      Date.today - 1.week,
+      Date.today
     )
   end
 
   def last_month_value
     total_value_during_range(
-      Date.today.last_month.beginning_of_month,
-      Date.today.last_month.end_of_month
+      Date.today - 1.month,
+      Date.today
     )
   end
 

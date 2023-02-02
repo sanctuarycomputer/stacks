@@ -289,13 +289,15 @@ Budget: <%= number_to_currency(budget_high_end) %>
         <div class="module-body factoid-parent">
           <div class="factoid">
               <% if inbudget_overage == 0 %>
-                <h2>
+                <h2 style="line-height: 32px; margin-bottom: 8px;">
+                  <%= ((budget_low_end - current_spend) / @project_tracker.last_week_value).round(1) %> weeks
+                  <span style="font-size:16px;">or</span>
                   <%= ((budget_low_end - current_spend) / @project_tracker.last_month_value).round(1) %> months
                 </h2>
                 <% if budget_low_end == budget_high_end %>
-                  <p>Remaining in <strong class="color-red">Budget High End</strong> (based on last month's spend)</p>
+                  <p>Remaining in <strong class="color-red">Budget High End</strong> (based on recent spending)</p>
                 <% else %>
-                  <p>Remaining in <strong class="color-orange">Budget Low End</strong> (based on last month's spend)</p>
+                  <p>Remaining in <strong class="color-orange">Budget Low End</strong> (based on recent spending)</p>
                 <% end %>
               <% elsif overbudget_overage > 0 %>
                 <h2 class="color-red">
@@ -303,10 +305,12 @@ Budget: <%= number_to_currency(budget_high_end) %>
                 </h2>
                 <p>Overbudget</p>
               <% else %>
-                <h2>
+                <h2 style="line-height: 32px; margin-bottom: 8px;">
+                  <%= ((budget_high_end - current_spend) / @project_tracker.last_week_value).round(1) %> weeks
+                  <span style="font-size:16px;">or</span>
                   <%= ((budget_high_end - current_spend) / @project_tracker.last_month_value).round(1) %> months
                 </h2>
-                <p>Remaining in <strong class="color-red">Budget High End</strong> (based on last month's spend)</p>
+                <p>Remaining in <strong class="color-red">Budget High End</strong> (based on recent spending)</p>
               <% end %>
           </div>
         </div>
@@ -336,6 +340,7 @@ Budget: <%= number_to_currency(budget_high_end) %>
         </div>
       </th>
       <th class="col">Rate</th>
+      <th class="col">Hours (Last Week)</th>
       <th class="col">Hours (Last Month)</th>
       <th class="col">Hours (Total)</th>
       <th class="col text-right">Spend (Total)</th>
@@ -353,7 +358,10 @@ Budget: <%= number_to_currency(budget_high_end) %>
           <%= number_to_currency(fp.hourly_rate) %>
         </td>
         <td class="col">
-          <%= fp.total_hours_during_range(Date.today.last_month.beginning_of_month, Date.today.last_month.end_of_month) %>
+          <%= fp.total_hours_during_range(Date.today - 1.week, Date.today) %>
+        </td>
+        <td class="col">
+          <%= fp.total_hours_during_range(Date.today - 1.month, Date.today) %>
         </td>
         <td class="col">
           <%= fp.total_hours %>
