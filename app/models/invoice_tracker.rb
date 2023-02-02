@@ -72,14 +72,19 @@ class InvoiceTracker < ApplicationRecord
   end
 
   def qbo_line_items_relating_to_forecast_projects(forecast_projects)
-    base = blueprint.try(:clone) || {
+    base = blueprint_diff.try(:clone) || {
       "generated_at" => DateTime.now.to_s,
       "lines" => {}
     }
+    forecast_project_ids = forecast_projects.map(&:id)
+    forecast_project_codes = forecast_projects.map{|fp| fp.code}.uniq
+    
     ((qbo_invoice.try(:line_items) || []).select do |qbo_li|
-      forecast_projects
-        .map(&:id)
-        .include?((base["lines"].values.find{|l| l["id"] == qbo_li["id"]} || {})["forecast_project"])
+      if forecast_project_ids.include?((base["lines"].values.find{|l| l["id"] == qbo_li["id"]} || {})["forecast_project"])
+        next true
+      else
+        forecast_project_codes.any?{|code| (qbo_li["description"] || "").include?(code)}
+      end
     end || [])
   end
 
