@@ -781,6 +781,7 @@ body.logged_in .flash {
   font-size: 13px;
   color: $color-black;
   &.draft,
+  &.pending,
   &.waiting,
   &.no,
   &.at_budget,

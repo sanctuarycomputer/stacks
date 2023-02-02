@@ -30,6 +30,10 @@
     </div>
   </div>
 
+  <p class="pill nag <%= project_capsule.complete? ? 'complete' : 'pending' %>" style="margin-bottom: 20px;margin-right: 6px;">
+    <%= project_capsule.complete? ? "Complete" : "Pending" %>
+  </p>
+
   <% unless project_capsule.complete? %>
     <div class="dashboard-modules table index_table index">
       <div class="dashboard-module">
