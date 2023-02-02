@@ -263,12 +263,15 @@ body.edit.admin_workspaces, body.update.admin_workspaces {
   }
 }
 
-  .has_many_container.scores fieldset.inputs.inline_fieldset li.agree {
-    select {
-      background-color: $color-black;
-      color: white;
-      pointer-events: none;
-      opacity: 0.5;
+  .has_many_container.scores fieldset.inputs.inline_fieldset {
+    height: 74px;
+    li.agree {
+      select {
+        background-color: $color-black;
+        color: white;
+        pointer-events: none;
+        opacity: 0.5;
+      }
     }
   }
 

@@ -92,14 +92,13 @@ ActiveAdmin.register Finalization do
     if f.object.review.archived?
       div("This review is now archived, which means the reviewee's salary has been set as per this outcome.", class: "skill_tree_hint")
     elsif f.object.workspace.complete?
-      div("This review is now finalized! Please give this URL to a payroll admin, who'll go ahead and update your salary as per this outcome.", class: "skill_tree_hint")
+      render(partial: "finalized_nag")
     else
       div("Welcome to the finalization step! This screen is designed to be used on a screen share with your peers. The attributes in purple had deviation in their scores, and make for a good place to start discussion.", class: "skill_tree_hint")
-
       div("When all of your peers have agreed on a final score, fill them out in the right-most column, and mark as finalized.", class: "skill_tree_hint")
+      render(partial: "docs_linkout")
     end
 
-    render(partial: "docs_linkout")
 
     score_table = f.object.review.score_table
 
