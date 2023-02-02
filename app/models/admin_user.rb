@@ -69,32 +69,32 @@ class AdminUser < ApplicationRecord
     achieved_at
   end
 
-  def contiguous_psu_earning_periods
+  def contiguous_psu_earning_periods_until(date = Date.today)
     full_time_periods.select{|ftp| ["five_day", "four_day"].include?(ftp.contributor_type)}.reduce([]) do |acc, ftp|
       if acc.empty?
         # This is the first ftp, stash it.
-        next acc << {ftps: [ftp], started_at: ftp.started_at, ended_at: ftp.ended_at_or_now}
+        next acc << {ftps: [ftp], started_at: ftp.started_at, ended_at: ftp.ended_at_or(date) }
       end
 
       if (acc.last[:ended_at] + 1.day != ftp.started_at)
         # This ftp is not contiguous, break it.
-        next acc << {ftps: [ftp], started_at: ftp.started_at, ended_at: ftp.ended_at_or_now}
+        next acc << {ftps: [ftp], started_at: ftp.started_at, ended_at: ftp.ended_at_or(date) }
       end
 
       if (acc.last[:ftps].last.contributor_type != ftp.contributor_type)
         # The PSU earn rate changed, break it.
-        next acc << {ftps: [ftp], started_at: ftp.started_at, ended_at: ftp.ended_at_or_now}
+        next acc << {ftps: [ftp], started_at: ftp.started_at, ended_at: ftp.ended_at_or(date) }
       end
 
       # This is contiguous! Combine them.
       acc.last[:ftps] << ftp
-      acc.last[:ended_at] = ftp.ended_at_or_now
+      acc.last[:ended_at] = ftp.ended_at_or(date)
       acc
     end
   end
 
   def psu_earned_by(date = Date.today)
-    psu_earning_periods = contiguous_psu_earning_periods
+    psu_earning_periods = contiguous_psu_earning_periods_until(date)
     return nil if psu_earning_periods.empty?
 
     ftp = full_time_period_at(date)
@@ -255,6 +255,13 @@ class AdminUser < ApplicationRecord
   end
 
   def full_time_period_at(date = Date.today)
+    # If the latest_full_time_period is not ended, and the date is in the future
+    # assume the individual will not quit, and their FTP won't change (so we can
+    # project out PSU by the EOY)
+    if date > Date.today
+      latest = latest_full_time_period
+      return latest if latest.ended_at.nil?
+    end
     full_time_periods.find do |ftp|
       ftp.started_at <= date && ftp.ended_at_or_now >= date
     end

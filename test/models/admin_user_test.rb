@@ -9,21 +9,28 @@ class AdminUserTest < ActiveSupport::TestCase
     FullTimePeriod.create!({
       admin_user: admin_user,
       started_at: Date.new(2020, 1, 1),
-      ended_at: Date.new(2020, 12, 31),
+      ended_at: nil,
       contributor_type: :five_day,
       expected_utilization: 0.8
     })
     admin_user.full_time_periods.reload
 
     # User had not started their employment yet
-    assert admin_user.psu_earned_by(Date.new(2019, 1, 1)) == 0
+    # binding.pry
+    assert admin_user.psu_earned_by(Date.new(2019, 1, 1)) == nil
 
     # User has completed 6 full months
     assert admin_user.psu_earned_by(Date.new(2020, 5, 31)) == 4
     assert admin_user.psu_earned_by(Date.new(2020, 6, 1)) == 5
 
-    # User ended their employment before their 12th PSU clicked over
-    assert admin_user.psu_earned_by(Date.new(2021, 1, 1)) == 11
+    # They're about to hit 12 PSU...
+    assert admin_user.psu_earned_by(Date.new(2020, 12, 31)) == 11
+    assert admin_user.psu_earned_by(Date.new(2021, 1, 1)) == 12
+
+    # BUT! User ended their employment before their 12th PSU clicked over
+    admin_user.full_time_periods.first.update!(ended_at: Date.new(2020, 12, 31))
+    # They forfeited their PSU, so now it's nil
+    assert admin_user.psu_earned_by(Date.new(2021, 1, 1)) == nil
   end
 
   test "If I had a break in my employment, I forfeit the remainder of my unearnt PSU, even if I resume employment later" do
@@ -48,10 +55,13 @@ class AdminUserTest < ActiveSupport::TestCase
     admin_user.full_time_periods.reload
 
     # User had not started their employment yet
-    assert admin_user.psu_earned_by(Date.new(2019, 1, 1)) == 0
+    assert admin_user.psu_earned_by(Date.new(2019, 1, 1)) == nil
 
-    # User is not currently employed at this point
-    assert admin_user.psu_earned_by(Date.new(2021, 1, 1)) == 11
+    # User earns PSU like normal
+    assert admin_user.psu_earned_by(Date.new(2020, 2, 1)) == 1
+
+    # User is not currently employed at this point, they've forfeited PSU
+    assert admin_user.psu_earned_by(Date.new(2021, 1, 1)) == nil
 
     # User is now employed again, but their new anchor date is the 5th of the month
     # so this extra day did not incur an additive PSU

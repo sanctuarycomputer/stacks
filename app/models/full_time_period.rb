@@ -28,6 +28,10 @@ class FullTimePeriod < ApplicationRecord
     ended_at || Date.today
   end
 
+  def ended_at_or(date = Date.today)
+    ended_at || date
+  end
+
   def ended_at_before_started_at?
     if ended_at.present? && ended_at <= started_at
       errors.add(:started_at, "must be before ended_at")
