@@ -1,6 +1,17 @@
 class AdminUser < ApplicationRecord
   has_many :notifications, as: :recipient
   has_many :full_time_periods, -> { order(started_at: :asc) }, dependent: :delete_all
+  validate :all_but_latest_full_time_periods_are_closed?
+
+  def all_but_latest_full_time_periods_are_closed?
+    all_closed = full_time_periods.reject{|ftp| ftp == latest_full_time_period}.all? do |ftp|
+      ftp.ended_at.present?
+    end
+    
+    if !all_closed
+      errors.add(:base, "another full_time_period is open")
+    end
+  end
 
   # TODO: Keep here until migration has run
   enum contributor_type: {

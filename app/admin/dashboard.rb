@@ -8,6 +8,7 @@ ActiveAdmin.register_page "Dashboard" do
     cc_or_bank_accounts = qbo_accounts.select do |a|
       ["Bank", "Credit Card"].include?(a.account_type)
     end
+    
     net_cash = cc_or_bank_accounts.map(&:current_balance).reduce(:+)
     burn_rates =
       [1, 2, 3].map do |month|

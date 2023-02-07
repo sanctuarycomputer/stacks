@@ -1,7 +1,6 @@
 class FullTimePeriod < ApplicationRecord
   belongs_to :admin_user
   validates_presence_of :started_at
-  validate :all_other_periods_are_closed?
   validate :does_not_overlap
   validate :ended_at_before_started_at?
 
@@ -47,20 +46,6 @@ class FullTimePeriod < ApplicationRecord
     end
     if overlaps
       errors.add(:started_at, "overlaps with another full_time_period")
-    end
-  end
-
-  def all_other_periods_are_closed?
-    return if (started_at.present? && ended_at.present?)
-
-    without_self = admin_user.full_time_periods.reject{|ftp| ftp == self}
-    return unless without_self.any?
-
-    all_closed = admin_user.full_time_periods.reject{|ftp| ftp == self}.all? do |ftp|
-      ftp.ended_at.present?
-    end
-    if !all_closed
-      errors.add(:started_at, "another full_time_period is open")
     end
   end
 end
