@@ -365,7 +365,7 @@ ActiveAdmin.register Studio do
     render(partial: "show", locals: {
       all_gradations: all_gradations,
       default_gradation: default_gradation,
-      all_okrs: [*Okr.all.map(&:name), "Surplus Profit"].sort,
+      all_okrs: [*Okr.all, { name: "Surplus Profit", datapoint: "surplus_profit" }],
       snapshot: snapshot,
       studio_profitability_data: studio_profitability_data,
       studio_economics_data: studio_economics_data,

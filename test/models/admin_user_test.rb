@@ -16,7 +16,6 @@ class AdminUserTest < ActiveSupport::TestCase
     admin_user.full_time_periods.reload
 
     # User had not started their employment yet
-    # binding.pry
     assert admin_user.psu_earned_by(Date.new(2019, 1, 1)) == nil
 
     # User has completed 6 full months

@@ -27,8 +27,6 @@
   </strong>
 </p>
 
-
-
 <style>
   table.info {
     position: absolute;
@@ -37,7 +35,7 @@
     z-index: 1;
   }
   table.right-scrolling {
-    padding-left: 250px;
+    padding-left: 272px;
     display: block;
     overflow: scroll;
   }
@@ -83,8 +81,10 @@
         </thead>
         <tbody>
           <tr class="invert">
-            <% all_okrs.each do |okr_name| %>
-              <td class="col"><%= okr_name %></td>
+            <% all_okrs.each do |okr| %>
+              <td class="col">
+                <%= link_to okr[:name] + " ↗", admin_studio_okr_explorer_path(resource, { gradation: current_gradation, okr: okr[:datapoint] }) %>
+              </td>
             <% end %>
           </tr>
         </tbody>
@@ -104,7 +104,7 @@
             <tr class="<%= index.even? ? "even" : "odd" %> invert">
               <% all_okrs.each do |okr| %>
                 <td class="col">
-                  <% okr_results = d[accounting_method]["okrs"][okr] || {} %>
+                  <% okr_results = d[accounting_method]["okrs"][okr[:name]] || {} %>
                   <% value = okr_results.dig("value").to_f  %>
                   <% target = value + okr_results.dig("surplus").to_f %>
                   <% health = okr_results.dig("health")  %>
@@ -189,7 +189,7 @@
   </div>
   <div id="titlebar_right">
     <div class="action_items">
-      <%= link_to "Utilization Explorer ↗", admin_studio_utilization_explorer_path(resource) %>
+      <%= link_to "Utilization Explorer ↗", admin_studio_okr_explorer_path(resource, { gradation: current_gradation, okr: "sellable_hours_sold" }) %>
     </div>
   </div>
 </div>

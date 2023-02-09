@@ -1,0 +1,214 @@
+<script>
+function update(a, b) {
+  var searchParams = new URLSearchParams(window.location.search);
+  if (b !== '')
+    searchParams.set(a, b);
+  else
+    searchParams.delete(a);
+  window.location.search = searchParams.toString();
+}
+</script>
+
+<% current_gradation = params["gradation"] || default_gradation %>
+<% current_gradation = default_gradation unless all_gradations.include?(current_gradation) %>
+<div style="margin-bottom: 20px">
+  <% all_gradations.each do |gradation| %>
+    <a onclick='update("gradation", "<%= gradation %>");' style="margin-right: 6px">
+      <p class="nag pill <%= current_gradation == gradation ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
+        By <%= gradation.capitalize %>
+      </p>
+    </a>
+  <% end %>
+</div>
+
+<% current_okr = params["okr"] || default_okr %>
+<% current_okr = current_okr unless all_okrs.include?(current_okr) %>
+<div style="margin-bottom: 80px">
+  <% all_okrs.each do |okr| %>
+    <a onclick='update("okr", "<%= okr %>");' style="margin-right: 6px">
+      <p class="nag pill <%= current_okr == okr ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
+        <%= okr.humanize %>
+      </p>
+    </a>
+  <% end %>
+</div>
+
+<% unless all_okrs.include?(current_okr) %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <p style="margin-bottom: 6px;">🚧 This OKR does not yet have an explorer page.</p>
+      <a href="https://www.notion.so/garden3d/How-to-optimize-our-OKRs-82d1d26d9c0947fd962fd5f8b22be5c6" target="_blank">
+        Learn how to optimize our OKRs here ↗
+      </a>
+      </div>
+    </div>
+  </div>
+<% end %>
+
+<% if current_okr == "average_hourly_rate" %>
+  <a href="https://forecastapp.com/864444/export" target="_blank">
+    <p class="nag" style="margin-bottom: 20px;">
+      🤔 Something funny? You can audit this data with a Forecast export ↗
+    </p>
+  </a>
+
+  <% snapshot[current_gradation].reverse.each do |period| %>
+    <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+      <div id="titlebar_left">
+        <h2 id="page_title">
+          <%= period["label"] %>
+        </h2>
+      </div>
+    </div>
+
+    <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+      <thead>
+        <tr>
+          <th class="col">Person</th>
+          <th class="col">Rate</th>
+          <th class="col text-right">Hours Sold</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        <% period["utilization"].each do |tuple| %>
+          <% email, d = tuple %>
+
+          <% d["billable"].each_with_index do |tuple, index| %>
+            <% rate, count = tuple %>
+            <tr class="<%= index == 0 ? 'border-top' : '' %>">
+              <td class="col">
+                <%= index == 0 ? email : "" %>
+              </td>
+              <td class="col">
+                <%= number_to_currency rate %>
+              </td>
+              <td class="col text-right">
+                <%= count %>
+              </td>
+            </tr>
+          <% end %>
+
+          
+        <% end %>
+
+        
+        <tr class="even">
+          <td class="col">
+            <strong>Weighted Average & Total Hours Billed</strong>
+          </td>
+          <td class="col">
+            <%= number_to_currency period["cash"]["datapoints"]["average_hourly_rate"]["value"] %>
+          </td>
+          <td class="col text-right">
+            <%= period["cash"]["datapoints"]["billable_hours"]["value"] %>
+          </td>
+        </tr>
+
+      </tbody>
+    </table>
+  <% end %>
+<% end %>
+
+<% if current_okr == "sellable_hours_sold" %>
+  <a href="https://www.notion.so/garden3d/How-to-optimize-our-OKRs-82d1d26d9c0947fd962fd5f8b22be5c6?pvs=4#2246c78ab83a4703a58d569704c9c79d" target="_blank">
+    <p class="nag" style="margin-bottom: 20px;">
+      🤔 Utilization (or "Sellable Hours Sold") is complex. Learn how it works here ↗
+    </p>
+  </a>
+
+  <% snapshot[current_gradation].reverse.each do |period| %>
+    <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+      <div id="titlebar_left">
+        <h2 id="page_title">
+          <%= period["label"] %>
+        </h2>
+      </div>
+    </div>
+
+    <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+      <thead>
+        <tr>
+          <th class="col">Person</th>
+          <th class="col">Sellable</th>
+          <th class="col">Non Sellable</th>
+          <th class="col">Time Off</th>
+          <th class="col">Non Billable</th>
+          <th class="col">Actual Hours Sold</th>
+          <th class="col text-right">Health</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% period["utilization"].each_with_index do |tuple, index| %>
+          <% email, d = tuple %>
+          <% total_billable = (d["billable"].values.map(&:to_f).reduce(&:+) || 0).round(2) %>
+
+          <tr class="<%= index.even? ? "even" : "odd" %>">
+            <td class="col">
+              <%= email %>
+            </td>
+            <td class="col">
+              <%= d["sellable"].to_f.round(2) %>
+            </td>
+            <td class="col">
+              <%= d["non_sellable"].to_f.round(2) %>
+            </td>
+            <td class="col">
+              <%= d["time_off"].to_f.round(2) %>
+            </td>
+            <td class="col">
+              <%= d["non_billable"].to_f.round(2) %>
+            </td>
+            <td class="col">
+              <%= total_billable %>
+            </td>
+            <td class="col text-right">
+              <% surplus = (total_billable - d["sellable"].to_f).round(2) %>
+              <% extreme = surplus.abs > 20 %>
+              <% health = surplus >= 0 ? (extreme ? :exceptional : :healthy) : (extreme ? :failing : :at_risk) %>
+              <span class="pill <%= health %>" style="margin-right: 6px;">
+                <%= health.to_s.humanize %>
+                <span class="split natural">
+                  <% if surplus >= 0 %>+<% else %>-<% end %>
+                  <%= surplus.abs %>
+                </span>
+              </span>
+            </td>
+          </tr>
+        <% end %>
+
+        <% total_sellable = period["utilization"].values.reduce(0){|acc, d| acc += d["sellable"].to_f} %>
+        <% total_non_sellable = period["utilization"].values.reduce(0){|acc, d| acc += d["non_sellable"].to_f} %>
+        <% total_time_off = period["utilization"].values.reduce(0){|acc, d| acc += d["time_off"].to_f} %>
+        <% total_non_billable = period["utilization"].values.reduce(0){|acc, d| acc += d["non_billable"].to_f} %>
+        <% total_billable = period["utilization"].values.reduce(0){|acc, d| acc += (d["billable"].values.map(&:to_f).reduce(&:+) || 0)} %>
+
+        <tr class="odd">
+          <td class="col">
+            <strong>Total</strong>
+          </td>
+          <td class="col">
+            <%= total_sellable.round(2) %>
+          </td>
+          <td class="col">
+            <%= total_non_sellable.round(2) %>
+          </td>
+          <td class="col">
+            <%= total_time_off.round(2) %>
+          </td>
+          <td class="col">
+            <%= total_non_billable.round(2) %>
+          </td>
+          <td class="col">
+            <%= total_billable.round(2) %>
+          </td>
+          <td class="col text-right">
+            <%= total_sellable == 0 ? 0 : ((total_billable / total_sellable) * 100).round(2) %>%
+          </td>
+        </tr>
+
+      </tbody>
+    </table>
+  <% end %>
+<% end %>
