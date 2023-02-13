@@ -22,7 +22,7 @@
     <% end %>
     <li class="text input optional" style="margin-top: 26px;margin-bottom: 40px;">
       <textarea style="width:100%" readonly="readonly" rows="20" placeholder="As you fill out the skill tree, add notes that you think are relevant here." class="">
-<%= review[:notes].strip.length > 0 ? review[:notes].strip : "This reviewer did not leave any notes." %>
+<%= review[:notes].try(:strip).try(:length) || 0 > 0 ? review[:notes].try(:strip) : "This reviewer did not leave any notes." %>
       </textarea>
     </li>
   </ol>

@@ -22,6 +22,10 @@ class Workspace < ApplicationRecord
     end
   end
 
+  def all_scores
+    score_trees.map(&:scores).flatten
+  end
+
   before_create :build_score_trees
 
   def review

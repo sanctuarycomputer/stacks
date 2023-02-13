@@ -33,3 +33,4 @@ en:
   active_admin:
     dei_explorer: "DEI Explorer"
     okr_explorer: "OKR Explorer"
+    finalization_explorer: "Finalization Explorer"

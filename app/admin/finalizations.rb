@@ -35,6 +35,10 @@ ActiveAdmin.register Finalization do
     end
   end
 
+  action_item :explore, only: :edit, if: proc { current_admin_user.is_admin? && (finalization.review.archived? || finalization.workspace.complete?) } do
+    link_to "Explore Results", admin_finalization_finalization_explorer_path(resource)
+  end
+
   member_action :archive_finalization, method: :post do
     resource.review.update!(archived_at: DateTime.now)
     redirect_to edit_admin_finalization_path(resource), notice: "Archived!"
@@ -98,7 +102,6 @@ ActiveAdmin.register Finalization do
       div("When all of your peers have agreed on a final score, fill them out in the right-most column, and mark as finalized.", class: "skill_tree_hint")
       render(partial: "docs_linkout")
     end
-
 
     score_table = f.object.review.score_table
 
