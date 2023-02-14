@@ -9,7 +9,14 @@ ActiveAdmin.register_page "Dashboard" do
       ["Bank", "Credit Card"].include?(a.account_type)
     end
     
-    net_cash = cc_or_bank_accounts.map(&:current_balance).reduce(:+)
+    net_cash = cc_or_bank_accounts.map do |a| 
+      if a.classification == "Liability"
+        -1 * a.current_balance.abs 
+      else
+        a.current_balance
+      end
+    end.reduce(:+)
+    
     burn_rates =
       [1, 2, 3].map do |month|
         QboProfitAndLossReport.find_or_fetch_for_range(

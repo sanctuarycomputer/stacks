@@ -34,17 +34,25 @@
         <thead>
           <tr>
             <th class="col">Account</th>
+            <th class="col text-center">Classification</th>
             <th class="col text-right">Balance</th>
           </tr>
         </thead>
         <tbody>
-          <% accounts.each_with_index do |account, idx| %>
+          <% accounts.sort_by(&:classification).each_with_index do |account, idx| %>
             <tr class="<%= idx.even? ? "even" : "odd" %>">
               <td class="col text-left">
                 <%= account.name %>
               </td>
+              <td class="co text-center">
+                <%= account.classification %>
+              </td>
               <td class="col text-right">
-                <%= number_to_currency(account.current_balance) %>
+                <% if account.classification == "Liability" %>
+                  <%= number_to_currency(-1 * account.current_balance.abs) %>
+                <% else %>
+                  <%= number_to_currency(account.current_balance) %>
+                <% end %>
               </td>
             </tr>
           <% end %>
