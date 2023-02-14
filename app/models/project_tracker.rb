@@ -371,16 +371,9 @@ class ProjectTracker < ApplicationRecord
     forecast_project_ids = forecast_projects.map(&:forecast_id) || []
 
     from_generated_invoices =
-      (invoice_trackers.map(&:blueprint_diff).reduce(0.0) do |acc, itbd|
-        acc +=
-          (itbd["lines"].values.reduce(0.0) do |agr, line|
-            next agr unless forecast_project_ids.include?(line["forecast_project"])
-            next agr if line["diff_state"] == "removed"
-            quantity = line["quantity"].is_a?(Array) ? line["quantity"][1] : line["quantity"]
-            unit_price = line["unit_price"].is_a?(Array) ? line["unit_price"][1] : line["unit_price"]
-            agr += (quantity * unit_price)
-          end || 0.0)
-      end || 0)
+      invoice_trackers.reduce(0.0) do |acc, it|
+        acc += it.qbo_line_items_relating_to_forecast_projects(forecast_projects).map{|qbo_li| qbo_li.dig("amount").to_f}.reduce(&:+)
+      end
 
     from_adhoc_invoices =
       (adhoc_invoice_trackers.reduce(0.0) do |acc, ahit|
