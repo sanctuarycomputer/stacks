@@ -14,6 +14,13 @@ class Studio < ApplicationRecord
 
   has_many :mailing_lists
 
+  def current_studio_coordinators
+    studio_coordinator_periods
+      .select{|p| p.started_at <= Date.today && p.ended_at_or_now >= Date.today}
+      .map(&:admin_user)
+      .select(&:active?)
+  end
+
   def forecast_people(preloaded_studios = Studio.all)
     @_forecast_people ||= (
       people =

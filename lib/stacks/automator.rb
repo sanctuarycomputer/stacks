@@ -119,6 +119,14 @@ class Stacks::Automator
         twist_users.find{ |tu| tu["email"] == a.email }
       end).compact
 
+      studios = Studio.all
+      studio_coordinator_twist_users = studios.reduce({}) do |acc, s|
+        acc[s] = (s.current_studio_coordinators.map do |a|
+          twist_users.find{ |tu| tu["email"] == a.email }
+        end).compact
+        acc
+      end
+
       needed_reminding = people.filter do |person|
         person[:reminder].present? &&
         person[:twist_data].present? &&
@@ -127,8 +135,10 @@ class Stacks::Automator
 
       if send_twist_reminders
         needed_reminding.each do |person|
+          sc_twist_users = 
+            studio_coordinator_twist_users[person[:forecast_data].studio(studios)]
           participant_ids = [
-            *admin_twist_users.map{|tu| tu["id"]},
+            *(sc_twist_users.any? ? sc_twist_users : admin_twist_users).map{|tu| tu["id"]},
             person[:twist_data]["id"]
           ].join(",")
           conversation = twist.get_or_create_conversation(participant_ids)
