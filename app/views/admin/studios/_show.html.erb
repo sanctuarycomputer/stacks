@@ -46,11 +46,12 @@
     display: table-cell;
   }
   table tr.invert td {
-    display: block;
+    display: flex;
+    align-items: center;
+    min-height: 95px;
   }
   table.right-scrolling .pill {
     position: relative;
-    cursor: pointer;
   }
   table.right-scrolling .pill:hover .tooltip {
     display:inline;
@@ -60,6 +61,9 @@
   }
   table.right-scrolling .pill .tooltip {
     display: none;
+  }
+  table.right-scrolling td {
+    min-height: 95px;
   }
 </style>
 
@@ -106,38 +110,29 @@
                 <td class="col">
                   <% okr_results = d[accounting_method]["okrs"][okr[:name]] || {} %>
                   <% value = okr_results.dig("value").to_f  %>
-                  <% target = value + okr_results.dig("surplus").to_f %>
+                  <% target = (okr_results.dig("target").try(:to_f) || 0).round(2) %>
                   <% health = okr_results.dig("health")  %>
                   <% unit = okr_results.dig("unit") %>
                   <% surplus = (okr_results.dig("surplus") || 0).to_f.round(2) %>
+                  <% hint = (okr_results.dig("hint") || "No hint given") %>
 
-                  <span class="pill <%= health %>" style="margin-right: 6px;">
+                  <div>
+                    <span class="pill <%= health %>" style="margin-right: 6px;">
 
-                    <%= health.to_s.humanize %>
-
-                    <% if surplus != 0 %>
-                      <span class="split tooltip">
-                        <% if unit == "usd" %>
-                          <%= number_to_currency(value.round(2)) %>
-                        <% elsif unit == "percentage" %>
-                          <%= value.round(2) %>%
-                        <% else %>
-                          <%= value.round(2) %>
-                        <% end %>
-                      </span>
-
-                      <span class="split natural">
-                        <% if surplus > 0 %>+<% else %>-<% end %>
-                        <% if unit == "usd" %>
-                          <%= number_to_currency(surplus.abs) %>
-                        <% elsif unit == "percentage" %>
-                          <%= surplus.abs %>%
-                        <% else %>
-                          <%= surplus.abs %>
-                        <% end %>
-                      </span>
-                    <% end %>
-                  </span>
+                      <% if surplus != 0 %>
+                        <span class="split">
+                          <% if unit == "usd" %>
+                            <strong style="font-size: 15px"><%= number_to_currency(value.round(2)) %></strong> (target: <%= number_to_currency(target) %>)
+                          <% elsif unit == "percentage" %>
+                            <strong style="font-size: 15px"><%= value.round(2) %>%</strong> (target: <%= target.round(2) %>%)
+                          <% else %>
+                            <strong style="font-size: 15px"><%= value.round(2) %></strong> (target: <%= target.round(2) %>)
+                          <% end %>
+                        </span>
+                      <% end %>
+                    </span>
+                    <p class="okr_hint"><%= hint %></p>
+                  </div>
                 </td>
               <% end %>
             </tr>

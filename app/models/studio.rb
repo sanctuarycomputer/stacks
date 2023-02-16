@@ -100,20 +100,51 @@ class Studio < ApplicationRecord
       acc[okr.name] = data
       next acc if okrp.nil?
       
-      acc[okr.name] = okrp.health_for_value(data[:value]).merge(data)
+      acc[okr.name] = 
+        okrp.health_for_value(data[:value]).merge(data).merge({ hint: hint_for_okr(okr, datapoints) })
       # HACK: It's helpful for reinvestment to know how much
       # surplus profit we've made.
       if okrp.okr.datapoint == "profit_margin"
+        target_usd = 
+          datapoints[:revenue][:value] * (acc[okrp.okr.name][:target]/100)
+        surplus_usd =
+          datapoints[:revenue][:value] - datapoints[:cogs][:value]
+        acc["Profit"] = {
+          health: acc[okrp.okr.name][:health],
+          hint: acc[okrp.okr.name][:hint],
+          surplus: surplus_usd,
+          value: surplus_usd,
+          target: target_usd,
+          unit: :usd
+        }
+
+        target_usd = 
+          datapoints[:revenue][:value] * (acc[okrp.okr.name][:target]/100)
         surplus_usd =
           datapoints[:revenue][:value] * (acc[okrp.okr.name][:surplus]/100)
         acc["Surplus Profit"] = {
           health: acc[okrp.okr.name][:health],
+          hint: acc[okrp.okr.name][:hint],
           surplus: surplus_usd,
           value: surplus_usd,
+          target: target_usd,
           unit: :usd
         }
       end
       acc
+    end
+  end
+
+  def hint_for_okr(okr, datapoints)
+    case okr.datapoint
+    when "sellable_hours_sold"
+      "#{datapoints[:billable_hours][:value].try(:round, 0)} hrs sold of #{datapoints[:sellable_hours][:value].try(:round, 0)} sellable hrs"
+    when "cost_per_sellable_hour"
+      "#{ActionController::Base.helpers.number_to_currency(datapoints[:cogs][:value])} spent over #{datapoints[:sellable_hours][:value]} sellable hrs"
+    when "profit_margin"
+      "#{ActionController::Base.helpers.number_to_currency(datapoints[:cogs][:value])} spent, #{ActionController::Base.helpers.number_to_currency(datapoints[:revenue][:value]  )} earnt"
+    else
+      ""
     end
   end
 
@@ -313,6 +344,10 @@ class Studio < ApplicationRecord
       },
       subcontractors: {
         value: cogs[:subcontractors],
+        unit: :usd
+      },
+      cogs: {
+        value: cogs[:cogs],
         unit: :usd
       },
       profit_margin: {

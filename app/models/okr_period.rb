@@ -25,7 +25,11 @@ class OkrPeriod < ApplicationRecord
       else
         raise "unknown_operator"
       end
-    { health: tag, surplus: surplus }
+    { 
+      health: tag, 
+      surplus: surplus, 
+      target: target
+    }
   end
 
   def period_starts_at

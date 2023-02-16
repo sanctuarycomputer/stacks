@@ -766,18 +766,25 @@ body.logged_in .flash {
   }
 }
 
+p.okr_hint {
+  white-space: nowrap;
+  font-size: 13px !important;
+  color: $color-grey;
+  padding-top: 8px !important;
+}
+
 .pill, .status_tag {
   .split {
     background-color: white;
     color: $color-grey;
-    padding: 0px 6px;
+    padding: 1px 4px;
     border-radius: 999px;
-    margin-left: 3px;
+    //margin-left: 3px;
   }
   white-space: nowrap;
   padding: 6px;
   border-radius: 999px;
-  font-weight: 700;
+  //font-weight: 700;
   font-size: 13px;
   color: $color-black;
   &.draft,
