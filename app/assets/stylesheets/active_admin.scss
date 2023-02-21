@@ -779,12 +779,12 @@ p.okr_hint {
     color: $color-grey;
     padding: 1px 4px;
     border-radius: 999px;
-    //margin-left: 3px;
+    font-weight: 400;
   }
   white-space: nowrap;
   padding: 6px;
   border-radius: 999px;
-  //font-weight: 700;
+  font-weight: 700;
   font-size: 13px;
   color: $color-black;
   &.draft,

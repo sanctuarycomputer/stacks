@@ -372,7 +372,7 @@ class ProjectTracker < ApplicationRecord
 
     from_generated_invoices =
       invoice_trackers.reduce(0.0) do |acc, it|
-        acc += it.qbo_line_items_relating_to_forecast_projects(forecast_projects).map{|qbo_li| qbo_li.dig("amount").to_f}.reduce(&:+)
+        acc += it.qbo_line_items_relating_to_forecast_projects(forecast_projects).map{|qbo_li| qbo_li.dig("amount").to_f}.reduce(&:+) || 0
       end
 
     from_adhoc_invoices =
