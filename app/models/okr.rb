@@ -28,7 +28,7 @@ class Okr < ApplicationRecord
     billable_hours: 11,
     time_off: 12,
     profit_margin: 13,
-    # key_meeting_attendance: 14,
+    key_meeting_attendance: 14,
     total_social_growth: 15,
   }
 end
