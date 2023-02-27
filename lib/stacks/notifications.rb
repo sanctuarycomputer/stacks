@@ -80,10 +80,10 @@ class Stacks::Notifications
 
       active_users = users.select(&:active?)
       users_without_dei_response = active_users.select do |u|
-        u.should_nag_for_dei_data?
+        ["five_day", "four_day"].include?(u.current_contributor_type) && u.should_nag_for_dei_data?
       end
       users_with_unknown_salary = active_users.select do |u|
-        u.skill_tree_level_without_salary == "No Reviews Yet"
+        ["five_day", "four_day"].include?(u.current_contributor_type) && u.skill_tree_level_without_salary == "No Reviews Yet"
       end
 
       active_project_trackers = ProjectTracker
