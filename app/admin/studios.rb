@@ -30,13 +30,6 @@ ActiveAdmin.register Studio do
       :studio_id,
       :_destroy,
       :_edit
-    ],
-    studio_key_meetings_attributes: [
-      :id,
-      :studio_id,
-      :key_meeting_id,
-      :_destroy,
-      :_edit
     ]
 
   form do |f|
@@ -49,10 +42,6 @@ ActiveAdmin.register Studio do
         a.input :admin_user
         a.input :started_at
         a.input :ended_at
-      end
-
-      f.has_many :studio_key_meetings, heading: false, allow_destroy: true, new_record: 'Add a Key Meeting' do |a|
-        a.input :key_meeting
       end
 
       f.has_many :social_properties, heading: false, allow_destroy: true, new_record: 'Add a Social Property' do |a|

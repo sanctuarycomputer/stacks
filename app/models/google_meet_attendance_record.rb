@@ -1,2 +1,0 @@
-class GoogleMeetAttendanceRecord < ApplicationRecord
-end

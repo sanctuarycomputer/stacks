@@ -1,8 +1,4 @@
 class Studio < ApplicationRecord
-  has_many :studio_key_meetings, dependent: :delete_all
-  has_many :key_meetings, through: :studio_key_meetings
-  accepts_nested_attributes_for :studio_key_meetings, allow_destroy: true
-
   has_many :social_properties
   accepts_nested_attributes_for :social_properties, allow_destroy: true
 
@@ -195,20 +191,6 @@ class Studio < ApplicationRecord
     end
   end
 
-  def key_meeting_attendance_for_period(period)
-    return nil if key_meetings.empty?
-
-    events =
-      GoogleCalendarEvent.includes(:google_meet_attendance_records).where(
-        summary: key_meetings.map(&:name),
-        start: period.starts_at...period.ends_at
-      )
-    return nil if events.empty?
-
-    arr = events.map(&:attendance_rate)
-    arr.inject(0.0) { |sum, el| sum + el } / arr.size
-  end
-
   def studio_members_that_left_during_period(period)
     users =
       (is_garden3d? ? AdminUser : admin_users)
@@ -317,10 +299,6 @@ class Studio < ApplicationRecord
           }
         end,
         unit: :compound
-      },
-      key_meeting_attendance: {
-        value: key_meeting_attendance_for_period(period),
-        unit: :percentage
       },
       revenue: {
         value: cogs[:revenue],

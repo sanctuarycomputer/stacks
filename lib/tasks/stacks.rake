@@ -16,15 +16,6 @@ namespace :stacks do
     end
   end
 
-  desc "Sync Calendars"
-  task :sync_calendars => :environment do
-    begin
-      Stacks::Calendars.sync_all!
-    rescue => e
-      Sentry.capture_exception(e)
-    end
-  end
-
   desc "Sync Forecast"
   task :sync_forecast => :environment do
     begin

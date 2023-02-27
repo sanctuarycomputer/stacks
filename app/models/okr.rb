@@ -1,7 +1,7 @@
 FauxOKR = Struct.new(:name)
 
 class Okr < ApplicationRecord
-  has_many :okr_periods, dependent: :delete_all
+  has_many :okr_periods, dependent: :destroy
   accepts_nested_attributes_for :okr_periods, allow_destroy: true
 
   validates_uniqueness_of :name
@@ -28,7 +28,7 @@ class Okr < ApplicationRecord
     billable_hours: 11,
     time_off: 12,
     profit_margin: 13,
-    key_meeting_attendance: 14,
+    # key_meeting_attendance: 14,
     total_social_growth: 15,
   }
 end
