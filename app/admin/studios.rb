@@ -247,8 +247,17 @@ ActiveAdmin.register Studio do
           backgroundColor: COLORS[1], # color of line
           label: "Aggregate",
           data: SocialProperty.aggregate!([*social_properties, *mailing_lists]).map do |k, v|
-            {x: k.iso8601, y: v}
-          end
+            case current_gradation
+            when "month"
+              k == k.beginning_of_month ? {x: k.iso8601, y: v} : nil
+            when "quarter"
+              k == k.beginning_of_quarter ? {x: k.iso8601, y: v} : nil
+            when "year"
+              k == k.beginning_of_year ? {x: k.iso8601, y: v} : nil
+            else
+              nil
+            end
+          end.compact
         }]
       },
       options: {
@@ -272,7 +281,9 @@ ActiveAdmin.register Studio do
         borderColor: color, # color of dots
         backgroundColor: color, # color of line
         label: sp.profile_url,
-        data: sp.snapshot.map{|k, v| { x: k, y: v}}
+        data: sp.snapshot.map do |k, v| 
+          { x: k, y: v}
+        end
       })
     end
 

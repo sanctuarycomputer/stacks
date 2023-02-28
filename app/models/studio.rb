@@ -45,7 +45,7 @@ class Studio < ApplicationRecord
             acc
           end
 
-        acc[gradation] = Parallel.map(periods, in_threads: 5) do |period|
+        acc[gradation] = Parallel.map(periods, in_threads: 1) do |period|
           d = {
             label: period.label,
             cash: {},
@@ -139,6 +139,8 @@ class Studio < ApplicationRecord
       "#{ActionController::Base.helpers.number_to_currency(datapoints[:cogs][:value])} spent over #{datapoints[:sellable_hours][:value]} sellable hrs"
     when "profit_margin"
       "#{ActionController::Base.helpers.number_to_currency(datapoints[:cogs][:value])} spent, #{ActionController::Base.helpers.number_to_currency(datapoints[:revenue][:value]  )} earnt"
+    when "total_social_growth"
+      "#{datapoints[:social_growth_count][:value]} followers added"
     else
       ""
     end
@@ -239,10 +241,12 @@ class Studio < ApplicationRecord
 
     return nil unless closest_period_start_date_sample && closest_period_end_date_sample
 
-    (
-      aggregate_social_following[closest_period_end_date_sample] /
-      aggregate_social_following[closest_period_start_date_sample]
-    ) * 100
+    diff = aggregate_social_following[closest_period_end_date_sample] - aggregate_social_following[closest_period_start_date_sample]
+    percent_change = ((
+      aggregate_social_following[closest_period_end_date_sample].to_f /
+      aggregate_social_following[closest_period_start_date_sample].to_f
+    ) * 100.0) - 100
+    [diff, percent_change]
   end
 
   def all_social_properties
@@ -279,6 +283,9 @@ class Studio < ApplicationRecord
 
     aggregate_social_following =
       SocialProperty.aggregate!(all_social_properties)
+
+    social_growth_count, social_growth_percentage = 
+      aggregate_social_growth_for_period(aggregate_social_following, period)
 
     leaving_members =
       studio_members_that_left_during_period(period)
@@ -340,8 +347,12 @@ class Studio < ApplicationRecord
         value: biz_settled_count,
         unit: :count
       },
+      social_growth_count: {
+        value: social_growth_count,
+        unit: :count
+      },
       total_social_growth: {
-        value: aggregate_social_growth_for_period(aggregate_social_following, period),
+        value: social_growth_percentage,
         unit: :percentage
       },
       biz_win_rate: {
