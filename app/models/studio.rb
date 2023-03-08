@@ -10,6 +10,34 @@ class Studio < ApplicationRecord
 
   has_many :mailing_lists
 
+  HEALTH = {
+    0 => {
+      health: :failing,
+      value: "🚒 Emergency, Break Glass",
+      hint: ""
+    }, 
+    1 => {
+      health: :at_risk,
+      value: "😾 White Knuckling",
+      hint: ""
+    },
+    2 => {
+      health: :healthy,
+      value: "🐻‍❄️ Thinning Ice",
+      hint: ""
+    },
+    3 => {
+      health: :exceptional,
+      value: "🏝️ Chillin' Island",
+      hint: ""
+    },
+    4 => {
+      health: :exceptional,
+      value: "🏝️ Chillin' Island",
+      hint: ""
+    }
+  }
+
   def current_studio_coordinators
     studio_coordinator_periods
       .select{|p| p.started_at <= Date.today && p.ended_at_or_now >= Date.today}
@@ -45,7 +73,7 @@ class Studio < ApplicationRecord
             acc
           end
 
-        acc[gradation] = Parallel.map(periods, in_threads: 1) do |period|
+        acc[gradation] = Parallel.map(periods, in_threads: 5) do |period|
           d = {
             label: period.label,
             cash: {},
@@ -72,6 +100,47 @@ class Studio < ApplicationRecord
         end
         acc
       end
+
+    # HACK: Here we use sellable_hours_sold to bolt on
+    # another faux OKR that gives an aggregate studio health.
+    # We need to do it in this context because it has to look
+    # back at multiple periods
+    snapshot = 
+      [:year, :month, :quarter].reduce(snapshot) do |acc, gradation|
+        acc[gradation] = snapshot[gradation].map do |d|
+          # We need at least 4 periods to make this datapoint
+          idx = snapshot[gradation].index(d)
+          if idx < 3
+            d[:cash][:okrs]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
+            d[:accrual][:okrs]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
+            next d
+          end
+          
+          # We need to ensure those periods actually have sellable_hours_sold data
+          prev_four_periods = [d, snapshot[gradation][idx - 1], snapshot[gradation][idx - 2], snapshot[gradation][idx - 3]]
+          unless prev_four_periods.map{|d| d.dig(:cash, :okrs, "Sellable Hours Sold", :value).present? && d.dig(:accrual, :okrs, "Sellable Hours Sold", :value).present? }.all?
+            d[:cash][:okrs]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
+            d[:accrual][:okrs]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
+            next d
+          end
+
+          health = prev_four_periods
+            .map{|d| d.dig(:cash, :okrs, "Sellable Hours Sold", :health) }
+            .count{|v| [:exceptional, :healthy].include?(v) }
+
+          d[:cash][:okrs]["Health"] = d[:accrual][:okrs]["Health"] = {
+            "hint"=>HEALTH[health][:hint],
+            "unit"=>"display",
+            "value"=>HEALTH[health][:value],
+            "health"=>HEALTH[health][:health],
+            "target"=>4,
+            "surplus"=>1
+          }
+          d
+        end
+        acc
+      end
+
     update!(snapshot: snapshot)
   end
 
@@ -98,6 +167,7 @@ class Studio < ApplicationRecord
       
       acc[okr.name] = 
         okrp.health_for_value(data[:value]).merge(data).merge({ hint: hint_for_okr(okr, datapoints) })
+
       # HACK: It's helpful for reinvestment to know how much
       # surplus profit we've made.
       if okrp.okr.datapoint == "profit_margin"

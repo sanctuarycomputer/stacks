@@ -35,7 +35,7 @@
     z-index: 1;
   }
   table.right-scrolling {
-    padding-left: 272px;
+    padding-left: 254px;
     display: block;
     overflow: scroll;
   }
@@ -125,6 +125,8 @@
                             <strong style="font-size: 15px"><%= number_to_currency(value.round(2)) %></strong> (target: <%= number_to_currency(target) %>)
                           <% elsif unit == "percentage" %>
                             <strong style="font-size: 15px"><%= value.round(2) %>%</strong> (target: <%= target.round(2) %>%)
+                          <% elsif unit == "display" %>
+                            <strong style="font-size: 15px"><%= okr_results.dig("value") %></strong>
                           <% else %>
                             <strong style="font-size: 15px"><%= value.round(2) %></strong> (target: <%= target.round(2) %>)
                           <% end %>

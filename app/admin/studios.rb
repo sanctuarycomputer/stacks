@@ -55,6 +55,15 @@ ActiveAdmin.register Studio do
     column :name
     column :accounting_prefix
     column :mini_name
+    column :health do |resource|
+      value = resource.snapshot["month"].last.dig("cash", "okrs", "Health", "value")
+      health = resource.snapshot["month"].last.dig("cash", "okrs", "Health", "health")
+      span(class: "pill #{health}") do 
+        span(class: "split") do
+          strong(value)
+        end
+      end
+    end
     actions
   end
 
@@ -365,7 +374,11 @@ ActiveAdmin.register Studio do
     render(partial: "show", locals: {
       all_gradations: all_gradations,
       default_gradation: default_gradation,
-      all_okrs: [*Okr.all, {
+      all_okrs: [{
+        name: "Health", 
+        datapoint: "health",
+        operator: "greater_than"
+      }, *Okr.all, {
         name: "Profit", 
         datapoint: "profit",
         operator: "greater_than"
