@@ -30,10 +30,10 @@ class Stacks::Period
 
   def self.for_gradation(gradation)
     periods = []
-    time = Date.new(2020, 1, 1)
     case gradation
     when nil
     when :month
+      time = Date.new(2020, 1, 1)
       while time < Date.today.last_month.end_of_month
         periods << Stacks::Period.new(
           time.strftime("%B, %Y"),
@@ -42,7 +42,10 @@ class Stacks::Period
         )
         time = time.advance(months: 1)
       end
+      return periods
+
     when :quarter
+      time = Date.new(2020, 1, 1)
       while time < Date.today.last_quarter.end_of_quarter
         periods << Stacks::Period.new(
           "Q#{(time.beginning_of_quarter.month / 3) + 1}, #{time.beginning_of_quarter.year}",
@@ -51,7 +54,10 @@ class Stacks::Period
         )
         time = time.advance(months: 3)
       end
+      return periods
+
     when :year
+      time = Date.new(2020, 1, 1)
       while time < Date.today.last_year.end_of_year
         periods << Stacks::Period.new(
           "#{time.beginning_of_quarter.year}",
@@ -60,7 +66,64 @@ class Stacks::Period
         )
         time = time.advance(years: 1)
       end
+      return periods
+    
+    when :trailing_3_months
+      time = Date.today.last_month
+      while time > Date.new(2020, 1, 1)
+        starts_at = (time - 2.months).beginning_of_month
+        ends_at = time.end_of_month
+        periods << Stacks::Period.new(
+          "#{starts_at.strftime("%B, %Y")} - #{ends_at.strftime("%B, %Y")}",
+          starts_at,
+          ends_at
+        )
+        time = time - 2.months
+      end
+      return periods.reverse
+
+    when :trailing_4_months
+      time = Date.today.last_month
+      while time > Date.new(2020, 1, 1)
+        starts_at = (time - 3.months).beginning_of_month
+        ends_at = time.end_of_month
+        periods << Stacks::Period.new(
+          "#{starts_at.strftime("%B, %Y")} - #{ends_at.strftime("%B, %Y")}",
+          starts_at,
+          ends_at
+        )
+        time = time - 3.months
+      end
+      return periods.reverse
+
+    when :trailing_6_months
+      time = Date.today.last_month
+      while time > Date.new(2020, 1, 1)
+        starts_at = (time - 5.months).beginning_of_month
+        ends_at = time.end_of_month
+        periods << Stacks::Period.new(
+          "#{starts_at.strftime("%B, %Y")} - #{ends_at.strftime("%B, %Y")}",
+          starts_at,
+          ends_at
+        )
+        time = time - 5.months
+      end
+      return periods.reverse
+
+    when :trailing_12_months
+      time = Date.today.last_month
+      while time > Date.new(2020, 1, 1)
+        starts_at = (time - 11.months).beginning_of_month
+        ends_at = time.end_of_month
+        periods << Stacks::Period.new(
+          "#{starts_at.strftime("%B, %Y")} - #{ends_at.strftime("%B, %Y")}",
+          starts_at,
+          ends_at
+        )
+        time = time - 11.months
+      end
+      return periods.reverse
+
     end
-    periods
   end
 end

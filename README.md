@@ -11,6 +11,21 @@ to clean it up one day (refactor to use service objects and
 fix the myriad of n+1 issues there are) but that day very well
 may never come.
 
+## Gotchas
+
+### OAuth2::Error (invalid_grant)
+
+If you ever see an error like:
+
+```
+OAuth2::Error (invalid_grant: )
+{"error":"invalid_grant"}
+```
+
+Just re-sync the production database as per instructions below. 
+It means Quickbooks API has revoked the current OAuth token. 
+We freshen it every 10 minutes on prod.
+
 **You have been warned!**
 
 ## Prerequisites

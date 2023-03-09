@@ -61,7 +61,7 @@ ActiveAdmin.register Studio do
   show do
     COLORS = Stacks::Utils::COLORS
 
-    all_gradations = ["month", "quarter", "year"]
+    all_gradations = ["month", "quarter", "year", "trailing_3_months", "trailing_4_months", "trailing_6_months", "trailing_12_months"]
     default_gradation = "month"
     current_gradation =
       params["gradation"] || default_gradation

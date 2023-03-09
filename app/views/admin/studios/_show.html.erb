@@ -4,7 +4,7 @@
 <% all_gradations.each do |gradation| %>
   <a href="?gradation=<%= gradation %>" style="margin-right: 6px">
     <p class="nag pill <%= current_gradation == gradation ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
-      By <%= gradation.capitalize %>
+      By <%= gradation.humanize %>
     </p>
   </a>
 <% end %>

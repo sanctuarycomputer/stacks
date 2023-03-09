@@ -34,7 +34,7 @@ class Studio < ApplicationRecord
     preloaded_new_biz_notion_pages = new_biz_notion_pages
   )
     snapshot =
-      [:year, :month, :quarter].reduce({
+      [:year, :month, :quarter, :trailing_3_months, :trailing_4_months, :trailing_6_months, :trailing_12_months].reduce({
         generated_at: DateTime.now.iso8601,
       }) do |acc, gradation|
         periods = Stacks::Period.for_gradation(gradation)
