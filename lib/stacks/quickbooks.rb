@@ -66,8 +66,8 @@ class Stacks::Quickbooks
         refresh_token: qbo_token.refresh_token
       )
 
-      # Refresh the token if it's been longer than 45 minutes
-      if ((DateTime.now.to_i - qbo_token.created_at.to_i) / 60) > 45
+      # Refresh the token if it's been longer than 30 minutes
+      if ((DateTime.now.to_i - qbo_token.created_at.to_i) / 60) > 30
         access_token = access_token.refresh!
         new_qbo_token =
           QuickbooksToken.create!(
