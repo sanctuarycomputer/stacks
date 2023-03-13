@@ -26,6 +26,13 @@ Just re-sync the production database as per instructions below.
 It means Quickbooks API has revoked the current OAuth token. 
 We freshen it every 10 minutes on prod.
 
+### Feeding prod a new QBO Oauth 2.0 Token
+
+This is tricky. You'll need access to the "QBO App" on the Intuit
+Developer portal first, then you can follow the steps described here:
+
+https://www.loom.com/share/2c4f15512009443bb4e4c92d42e23a46
+
 **You have been warned!**
 
 ## Prerequisites

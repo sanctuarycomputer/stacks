@@ -78,7 +78,7 @@ class Stacks::Period
           starts_at,
           ends_at
         )
-        time = time - 2.months
+        time = time - 3.months
       end
       return periods.reverse
 
@@ -92,7 +92,7 @@ class Stacks::Period
           starts_at,
           ends_at
         )
-        time = time - 3.months
+        time = time - 4.months
       end
       return periods.reverse
 
@@ -106,7 +106,7 @@ class Stacks::Period
           starts_at,
           ends_at
         )
-        time = time - 5.months
+        time = time - 6.months
       end
       return periods.reverse
 
@@ -120,7 +120,7 @@ class Stacks::Period
           starts_at,
           ends_at
         )
-        time = time - 11.months
+        time = time - 12.months
       end
       return periods.reverse
 
