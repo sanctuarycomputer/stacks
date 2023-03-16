@@ -43,6 +43,7 @@ ActiveAdmin.register AdminUser do
   scope :inactive
   scope :admin
   scope :ignored
+  scope :associates
   scope :all
 
   config.filters = true

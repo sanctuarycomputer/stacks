@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2023_02_23_194417) do
+ActiveRecord::Schema.define(version: 2023_03_16_185728) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -101,6 +101,18 @@ ActiveRecord::Schema.define(version: 2023_02_23_194417) do
     t.boolean "ignore", default: false
     t.index ["email"], name: "index_admin_users_on_email", unique: true
     t.index ["reset_password_token"], name: "index_admin_users_on_reset_password_token", unique: true
+  end
+
+  create_table "associates_award_agreements", force: :cascade do |t|
+    t.bigint "admin_user_id", null: false
+    t.date "started_at", null: false
+    t.integer "initial_unit_grant", null: false
+    t.integer "vesting_unit_increments", null: false
+    t.integer "vesting_periods", null: false
+    t.integer "vesting_period_type", default: 0, null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_associates_award_agreements_on_admin_user_id"
   end
 
   create_table "atc_periods", force: :cascade do |t|
@@ -596,6 +608,7 @@ ActiveRecord::Schema.define(version: 2023_02_23_194417) do
   add_foreign_key "admin_user_interests", "interests"
   add_foreign_key "admin_user_racial_backgrounds", "admin_users"
   add_foreign_key "admin_user_racial_backgrounds", "racial_backgrounds"
+  add_foreign_key "associates_award_agreements", "admin_users"
   add_foreign_key "atc_periods", "admin_users"
   add_foreign_key "atc_periods", "project_trackers"
   add_foreign_key "finalizations", "reviews"

@@ -1,7 +1,14 @@
 class AdminUser < ApplicationRecord
   has_many :notifications, as: :recipient
   has_many :full_time_periods, -> { order(started_at: :asc) }, dependent: :delete_all
+  has_one :associates_award_agreement
   validate :all_but_latest_full_time_periods_are_closed?
+
+  def is_associate?
+    return true if email == "hugh@sanctuary.computer"
+    return false unless associates_award_agreement.present?
+    associates_award_agreement.try(:started_at) >= Date.today
+  end
 
   def all_but_latest_full_time_periods_are_closed?
     all_closed = full_time_periods.reject{|ftp| ftp == latest_full_time_period}.all? do |ftp|
@@ -22,6 +29,9 @@ class AdminUser < ApplicationRecord
 
   scope :active, -> {
     joins(:full_time_periods).where("started_at <= ? AND coalesce(ended_at, 'infinity') >= ?", Date.today, Date.today)
+  }
+  scope :associates, -> {
+    joins(:associates_award_agreement).where("started_at <= ?", Date.today)
   }
   scope :inactive, -> {
     where.not(id: active)
