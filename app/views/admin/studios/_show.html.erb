@@ -15,17 +15,27 @@
   </div>
 </div>
 
+<a href="https://www.notion.so/garden3d/The-Operating-Modes-of-garden3d-6eefbe5c5f5c463bb5e4679f977a46fa" target="_blank">
+  <p class="pill nag <%= resource.health.dig("health") %>" style="margin-bottom: 20px;margin-right: 6px;">
+      <strong><%= resource.health.dig("value") %></strong>
+    
+  </p>
+</a>
+
 <a href="https://www.notion.so/garden3d/How-to-optimize-our-OKRs-82d1d26d9c0947fd962fd5f8b22be5c6" target="_blank">
-  <p class="nag" style="margin-bottom: 20px;">
+  <p class="nag" style="margin-bottom: 20px;margin-right: 6px;">
     🤔 Learn to understand and optimize OKRs ↗
   </p>
 </a>
 
-<p class="nag">
-  <strong>
-    ⚠️ OKRs may shift for a given month until all hours are entered & QBO transactions have been categorized.
-  </strong>
-</p>
+<a href="https://www.notion.so/garden3d/How-to-optimize-our-OKRs-82d1d26d9c0947fd962fd5f8b22be5c6?pvs=4#a1941d190b16436bb54be7d618000ae1" target="_blank">
+  <p class="nag">
+    <strong>
+      ⚠️ OKRs are prone to shifting a little.
+    </strong>
+  </p>
+</a>
+
 
 <style>
   table.info {
@@ -133,7 +143,7 @@
                         </span>
                       <% end %>
                     </span>
-                    <p class="okr_hint"><%= hint %></p>
+                    <p class="okr_hint"><%= sanitize hint, attributes: ["href", "target"] %></p>
                   </div>
                 </td>
               <% end %>

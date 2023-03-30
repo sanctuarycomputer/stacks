@@ -14,29 +14,33 @@ class Studio < ApplicationRecord
     0 => {
       health: :failing,
       value: "🚒 Emergency, Break Glass",
-      hint: ""
+      hint: "<a href='https://www.notion.so/garden3d/The-Operating-Modes-of-garden3d-6eefbe5c5f5c463bb5e4679f977a46fa?pvs=4#002d71afc74c468381b5f300b81921fb' target='_blank'>Guidance ↗</a>"
     }, 
     1 => {
       health: :at_risk,
       value: "😾 White Knuckling",
-      hint: ""
+      hint: "<a href='https://www.notion.so/garden3d/The-Operating-Modes-of-garden3d-6eefbe5c5f5c463bb5e4679f977a46fa?pvs=4#82d23c1330a240f7aff1a7926efc6e6d' target='_blank'>Guidance ↗</a>"
     },
     2 => {
-      health: :healthy,
-      value: "🐻‍❄️ Thinning Ice",
-      hint: ""
+      health: :at_risk,
+      value: "😾 White Knuckling",
+      hint: "<a href='https://www.notion.so/garden3d/The-Operating-Modes-of-garden3d-6eefbe5c5f5c463bb5e4679f977a46fa?pvs=4#82d23c1330a240f7aff1a7926efc6e6d' target='_blank'>Guidance ↗</a>"
     },
     3 => {
-      health: :exceptional,
-      value: "🏝️ Chillin' Island",
-      hint: ""
+      health: :healthy,
+      value: "🐻‍❄️ Solid Ice",
+      hint: "<a href='https://www.notion.so/garden3d/The-Operating-Modes-of-garden3d-6eefbe5c5f5c463bb5e4679f977a46fa?pvs=4#4472c136ff994809b135de8dc7e2a224' target='_blank'>Guidance ↗</a>"
     },
     4 => {
       health: :exceptional,
       value: "🏝️ Chillin' Island",
-      hint: ""
+      hint: "<a href='https://www.notion.so/garden3d/The-Operating-Modes-of-garden3d-6eefbe5c5f5c463bb5e4679f977a46fa?pvs=4#93b1857723fb44a7a9c721cfa597dd6b' target='_blank'>Guidance ↗</a>"
     }
   }
+
+  def health
+    snapshot["month"].last.dig("cash", "okrs", "Health")
+  end
 
   def current_studio_coordinators
     studio_coordinator_periods
@@ -106,7 +110,7 @@ class Studio < ApplicationRecord
     # We need to do it in this context because it has to look
     # back at multiple periods
     snapshot = 
-      [:year, :month, :quarter].reduce(snapshot) do |acc, gradation|
+      [:month].reduce(snapshot) do |acc, gradation|
         acc[gradation] = snapshot[gradation].map do |d|
           # We need at least 4 periods to make this datapoint
           idx = snapshot[gradation].index(d)

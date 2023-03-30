@@ -771,6 +771,9 @@ p.okr_hint {
   font-size: 13px !important;
   color: $color-grey;
   padding-top: 8px !important;
+  a {
+    font-size: 13px !important;
+  }
 }
 
 .pill, .status_tag {
