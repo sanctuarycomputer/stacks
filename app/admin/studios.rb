@@ -55,6 +55,13 @@ ActiveAdmin.register Studio do
     column :name
     column :accounting_prefix
     column :mini_name
+    column :health do |resource|
+      span(class: "pill #{resource.health.dig("health")}") do 
+        span(class: "split") do
+          strong(resource.health.dig("value"))
+        end
+      end
+    end
     actions
   end
 
@@ -362,18 +369,28 @@ ActiveAdmin.register Studio do
       }]
     }
 
+    all_okrs = [*Okr.all, {
+      name: "Profit", 
+      datapoint: "profit",
+      operator: "greater_than"
+    }, { 
+      name: "Surplus Profit", 
+      datapoint: "surplus_profit",
+      operator: "greater_than"
+    }]
+
+    if current_gradation == "month"
+      all_okrs = [{
+        name: "Health", 
+        datapoint: "health",
+        operator: "greater_than"
+      }, *all_okrs]
+    end
+
     render(partial: "show", locals: {
       all_gradations: all_gradations,
       default_gradation: default_gradation,
-      all_okrs: [*Okr.all, {
-        name: "Profit", 
-        datapoint: "profit",
-        operator: "greater_than"
-      }, { 
-        name: "Surplus Profit", 
-        datapoint: "surplus_profit",
-        operator: "greater_than"
-      }],
+      all_okrs: all_okrs,
       snapshot: snapshot,
       studio_profitability_data: studio_profitability_data,
       studio_economics_data: studio_economics_data,
