@@ -295,9 +295,9 @@ Budget: <%= number_to_currency(budget_high_end) %>
                   <%= ((budget_low_end - current_spend) / @project_tracker.last_month_value).round(1) %> months
                 </h2>
                 <% if budget_low_end == budget_high_end %>
-                  <p>Remaining in <strong class="color-red">Budget High End</strong> (based on recent spending)</p>
+                  <p>Remaining in <strong class="color-red">Budget High End</strong> <a target="_blank" href="https://www.notion.so/garden3d/WIP-Stacks-Manual-71dbbc83d5a446ca998f8cd7b68f5c3b?pvs=4#24345066edd04483ae00f1ae4c5bd0ba">(based on recent spending ↗)</a></p>
                 <% else %>
-                  <p>Remaining in <strong class="color-orange">Budget Low End</strong> (based on recent spending)</p>
+                  <p>Remaining in <strong class="color-orange">Budget Low End</strong> <a target="_blank" href="https://www.notion.so/garden3d/WIP-Stacks-Manual-71dbbc83d5a446ca998f8cd7b68f5c3b?pvs=4#24345066edd04483ae00f1ae4c5bd0ba">(based on recent spending ↗)</a></p>
                 <% end %>
               <% elsif overbudget_overage > 0 %>
                 <h2 class="color-red">
@@ -310,7 +310,7 @@ Budget: <%= number_to_currency(budget_high_end) %>
                   <span style="font-size:16px;">or</span>
                   <%= ((budget_high_end - current_spend) / @project_tracker.last_month_value).round(1) %> months
                 </h2>
-                <p>Remaining in <strong class="color-red">Budget High End</strong> (based on recent spending)</p>
+                <p>Remaining in <strong class="color-red">Budget High End</strong> <a target="_blank" href="https://www.notion.so/garden3d/WIP-Stacks-Manual-71dbbc83d5a446ca998f8cd7b68f5c3b?pvs=4#24345066edd04483ae00f1ae4c5bd0ba">(based on recent spending ↗)</a></p>
               <% end %>
           </div>
         </div>
