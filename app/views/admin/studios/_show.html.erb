@@ -216,6 +216,11 @@
   <div id="titlebar_left">
     <h2 id="page_title">🤝 New Biz</h2>
   </div>
+  <div id="titlebar_right">
+    <div class="action_items">
+      <%= link_to "New Biz Explorer ↗", admin_studio_new_biz_explorer_path(resource, { gradation: current_gradation }) %>
+    </div>
+  </div>
 </div>
 
 <div class="dashboard-modules table index_table index">

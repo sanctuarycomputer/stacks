@@ -801,6 +801,11 @@ p.okr_hint {
   &.changed,
   &.capsule_pending,
   &.at_risk,
+  &.proposal_needed,
+  &.proposal_sent,
+  &.on_hold_needs_follow_up,
+  &.paused,
+  &.upcoming_legal_review,
   &.no_attendance_record,
   {
     background-color: $color-orange;
@@ -812,6 +817,7 @@ p.okr_hint {
   &.paid,
   &.added,
   &.exceptional,
+  &.active,
   &.attended
   {
     background-color: $color-green;
@@ -824,6 +830,7 @@ p.okr_hint {
   &.partially_paid_overdue,
   &.removed,
   &.failing,
+  &.lost_stale,
   &.not_sent,
   {
     background-color: $color-red;
@@ -835,6 +842,7 @@ p.okr_hint {
   &.deleted,
   &.missing_hours,
   &.voided,
+  &.passed,
   &.complete
   {
     background-color: $color-purple;
@@ -844,6 +852,8 @@ p.okr_hint {
   &.sanctu,
   &.unchanged,
   &.in_progress,
+  &.complete,
+  &.completed,
   &.healthy,
   {
     background-color: $color-blue;
@@ -852,6 +862,8 @@ p.okr_hint {
   &.archived,
   &.xxix,
   &.no_data,
+  &.no_status,
+  &.introduction,
   &.no_period
   {
     background-color: $color-black;

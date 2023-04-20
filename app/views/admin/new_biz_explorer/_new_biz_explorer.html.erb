@@ -1,0 +1,62 @@
+<script>
+function update(a, b) {
+  var searchParams = new URLSearchParams(window.location.search);
+  if (b !== '')
+    searchParams.set(a, b);
+  else
+    searchParams.delete(a);
+  window.location.search = searchParams.toString();
+}
+</script>
+
+<% current_gradation = params["gradation"] || default_gradation %>
+<% current_gradation = default_gradation unless all_gradations.include?(current_gradation) %>
+<div style="margin-bottom: 20px">
+  <% all_gradations.each do |gradation| %>
+    <a onclick='update("gradation", "<%= gradation %>");' style="margin-right: 6px">
+      <p class="nag pill <%= current_gradation == gradation ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
+        By <%= gradation.humanize %>
+      </p>
+    </a>
+  <% end %>
+</div>
+
+<% periods.reverse.each do |period| %>
+  <% status_history = (status_history_by_period[period] || []) %>
+
+  <% if status_history.any? %>
+    <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+      <div id="titlebar_left">
+        <h2 id="page_title">
+          <%= period.label %>
+        </h2>
+      </div>
+    </div>
+
+    <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+      <thead>
+        <tr>
+          <th class="col">New Biz Card</th>
+          <th class="col">Date</th>
+          <th class="col text-right">Status History</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        <% status_history.each_with_index do |history, index| %>
+          <tr class="<%= index == 0 ? 'border-top' : '' %>">
+            <td class="col">
+              <%= link_to(history[:page_title], history[:url], target: "_blank") %>
+            </td>
+            <td class="col">
+              <%= history[:changed_at].strftime("%B %d, %Y") %>
+            </td>
+            <td class="col text-right">
+              Changed from <span class='pill <%= (history[:prev_status] || 'No Status').parameterize.underscore.downcase %>'><%= history[:prev_status] || 'No Status' %></span> to <span class='pill <%= (history[:current_status] || 'No Status').parameterize.underscore.downcase %>'><%= history[:current_status] || 'No Status' %></span>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  <% end %>
+<% end %>

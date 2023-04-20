@@ -33,4 +33,5 @@ en:
   active_admin:
     dei_explorer: "DEI Explorer"
     okr_explorer: "OKR Explorer"
+    new_biz_explorer: "New Biz Explorer"
     finalization_explorer: "Finalization Explorer"
