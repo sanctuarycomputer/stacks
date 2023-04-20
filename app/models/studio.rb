@@ -39,7 +39,7 @@ class Studio < ApplicationRecord
   }
 
   def health
-    snapshot["month"].last.dig("cash", "okrs", "Health")
+    (snapshot["month"] || [{}]).last.dig("cash", "okrs", "Health") || {}
   end
 
   def current_studio_coordinators
