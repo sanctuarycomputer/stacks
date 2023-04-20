@@ -1,7 +1,7 @@
 ActiveAdmin.register Studio do
   config.filters = false
   config.paginate = false
-  actions :index, :show, :edit, :update
+  actions :index, :show, :edit, :update, :new, :create
 
   action_item :trigger_sync_okrs, only: :show do
     link_to "Recalculate OKRs", trigger_sync_okrs_admin_studio_path(resource), method: :post

@@ -49,14 +49,21 @@ class Studio < ApplicationRecord
       .select(&:active?)
   end
 
+  def sub_studios(preloaded_studios = Studio.all)
+    # If this is an "aggregated studio view" (ie, design@garden3d), split and
+    # aggregate the sub studios by matching mini_names
+    @_sub_studios ||= (preloaded_studios.select{|s| self.mini_name.split(",").map(&:strip).include?(s.mini_name) })
+  end
+
   def forecast_people(preloaded_studios = Studio.all)
     @_forecast_people ||= (
       people =
         ForecastPerson.includes(admin_user: [:studios, :full_time_periods]).all
       return people if is_garden3d?
+
       people.select do |fp|
-        next true if (fp.try(:admin_user).try(:studios) || []).include?(self)
-        fp.studios(preloaded_studios).include?(self)
+        next true if (fp.try(:admin_user).try(:studios) || []).to_a.intersection(sub_studios(preloaded_studios)).any?
+        fp.studios.to_a.intersection(sub_studio(preloaded_studios)).any?
       end
     )
   end
@@ -221,11 +228,12 @@ class Studio < ApplicationRecord
   end
 
   def new_biz_notion_pages
+    mini_names = mini_name.split(",").map(&:strip)
     if is_garden3d?
       Stacks::Biz.all_cards
     else
       Stacks::Biz.all_cards.select do |c|
-        c.get_prop("Studio").map{|s| s.dig("name").downcase}.include?(self.mini_name.downcase)
+        c.get_prop("Studio").map{|s| s.dig("name").downcase}.intersection(mini_names).any?
       end
     end
   end
@@ -557,28 +565,38 @@ class Studio < ApplicationRecord
     name == "garden3d" && mini_name == "g3d"
   end
 
-  def qbo_sales_category
+  def qbo_sales_categories
     return "Total Income" if is_garden3d?
-    "[SC] #{accounting_prefix} Services"
+    accounting_prefix.split(",").map(&:strip).map do |p|
+      "[SC] #{p} Services"
+    end
   end
 
-  def qbo_payroll_category
+  def qbo_payroll_categories
     return "Total [SC] Payroll" if is_garden3d?
-    "[SC] #{accounting_prefix} Payroll"
+    accounting_prefix.split(",").map(&:strip).map do |p|
+      "[SC] #{p} Payroll"
+    end
   end
 
-  def qbo_benefits_category
+  def qbo_benefits_categories
     return "Total [SC] Benefits, Contributions & Tax" if is_garden3d?
-    "[SC] #{accounting_prefix} Benefits, Contributions & Tax"
+    accounting_prefix.split(",").map(&:strip).map do |p|
+      "[SC] #{p} Benefits, Contributions & Tax"
+    end
   end
 
-  def qbo_supplies_category
+  def qbo_supplies_categories
     return "Total [SC] Supplies & Materials" if is_garden3d?
-    "[SC] #{accounting_prefix} Supplies & Materials"
+    accounting_prefix.split(",").map(&:strip).map do |p|
+      "[SC] #{p} Supplies & Materials"
+    end
   end
 
-  def qbo_subcontractors_category
+  def qbo_subcontractors_categories
     return "Total [SC] Subcontractors" if is_garden3d?
-    "[SC] #{accounting_prefix} Subcontractors"
+    accounting_prefix.split(",").map(&:strip).map do |p|
+      "[SC] #{p} Subcontractors"
+    end
   end
 end

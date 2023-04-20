@@ -3,6 +3,10 @@ class QboProfitAndLossReport < ApplicationRecord
     (data[accounting_method]["rows"].find {|r| r[0] == label } || [nil, 0])[1].to_f
   end
 
+  def find_rows(accounting_method, labels_array=[])
+    data[accounting_method]["rows"].select {|r| labels_array.include?(r[0]) }.reduce(0){|acc, row| acc += row[1].to_f}
+  end
+
   def burn_rate(accounting_method)
     find_row(accounting_method, "Total Cost of Goods Sold") +
     find_row(accounting_method, "Total Expenses") -
@@ -11,7 +15,8 @@ class QboProfitAndLossReport < ApplicationRecord
   end
 
   def cogs_for_studio(studio, accounting_method)
-    gross_revenue = find_row(accounting_method, studio.qbo_sales_category)
+    gross_revenue = find_rows(accounting_method, studio.qbo_sales_categories)
+
     g3d_gross_revenue = find_row(accounting_method, "Total Income")
 
     proportional_expenses = 0
@@ -22,11 +27,11 @@ class QboProfitAndLossReport < ApplicationRecord
 
     base = {
       revenue: gross_revenue,
-      payroll: find_row(accounting_method, studio.qbo_payroll_category),
-      benefits: find_row(accounting_method, studio.qbo_benefits_category),
-      supplies: find_row(accounting_method, studio.qbo_supplies_category),
+      payroll: find_rows(accounting_method, studio.qbo_payroll_categories),
+      benefits: find_rows(accounting_method, studio.qbo_benefits_categories),
+      supplies: find_rows(accounting_method, studio.qbo_supplies_categories),
       expenses: proportional_expenses,
-      subcontractors: find_row(accounting_method, studio.qbo_subcontractors_category),
+      subcontractors: find_rows(accounting_method, studio.qbo_subcontractors_categories),
       profit_share: find_row(accounting_method, "[SC] Profit Share, Bonuses & Misc"),
       reinvestment: find_row(accounting_method, "[SC] Reinvestment")
     }
