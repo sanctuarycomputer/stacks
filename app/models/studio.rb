@@ -63,7 +63,7 @@ class Studio < ApplicationRecord
 
       people.select do |fp|
         next true if (fp.try(:admin_user).try(:studios) || []).to_a.intersection(sub_studios(preloaded_studios)).any?
-        fp.studios.to_a.intersection(sub_studio(preloaded_studios)).any?
+        fp.studios.to_a.intersection(sub_studios(preloaded_studios)).any?
       end
     )
   end
