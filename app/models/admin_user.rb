@@ -291,16 +291,10 @@ class AdminUser < ApplicationRecord
   def latest_full_time_period
     return full_time_periods.first if full_time_periods.length < 2
 
+    # Almost def a better way to do this with a quick sort & pluck
     full_time_periods.reduce(nil) do |acc, ftp|
-      if acc.present?
-        if (ftp.ended_at || Date.today) > (acc.ended_at || Date.today)
-          ftp
-        else
-          acc
-        end
-      else
-        ftp
-      end
+      next ftp unless acc.present?
+      (ftp.started_at > acc.started_at) ? ftp : acc
     end
   end
 
