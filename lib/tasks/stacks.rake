@@ -54,20 +54,48 @@ namespace :stacks do
     end
   end
 
-  desc "Daily Tasks"
-  task :daily_tasks => :environment do
+  desc "Daily Tasks - sync"
+  tasks :daily_tasks_sync => :environment do
     begin
       Stacks::Team.discover!
       Stacks::Forecast.new.sync_all!
       Stacks::Quickbooks.sync_all!
+    rescue => e
+      Sentry.capture_exception(e)
+    end
+  end
 
-      # Snapshots
+  desc "Daily Tasks - studio snapshots"
+  tasks :daily_tasks_studio_snapshots => :environment do
+    begin
       Parallel.map(Studio.all, in_threads: 2) { |s| s.generate_snapshot! }
-      Parallel.map(ProjectTracker.all, in_threads: 10) { |pt| pt.generate_snapshot! }
+    rescue => e
+      Sentry.capture_exception(e)
+    end
+  end
 
+  desc "Daily Tasks - project tracker snapshots"
+  tasks :daily_tasks_project_tracker_snapshots => :environment do
+    begin
+      Parallel.map(ProjectTracker.all, in_threads: 10) { |pt| pt.generate_snapshot! }
+    rescue => e
+      Sentry.capture_exception(e)
+    end
+  end
+
+  desc "Daily Tasks - misc"
+  tasks :daily_tasks_misc => :environment do
+    begin
       ProfitSharePass.ensure_exists!
       Stacks::Dei.make_rollup # TODO Remove me
+    rescue => e
+      Sentry.capture_exception(e)
+    end
+  end
 
+  desc "Daily Tasks - invoicing"
+  tasks :daily_tasks_invoicing => :environment do
+    begin
       Stacks::Automator.attempt_invoicing_for_previous_month
       Stacks::Automator.remind_people_to_record_hours_weekly
       Stacks::Notifications.make_notifications!
@@ -76,4 +104,5 @@ namespace :stacks do
       Sentry.capture_exception(e)
     end
   end
+
 end
