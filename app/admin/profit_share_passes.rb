@@ -51,13 +51,13 @@ ActiveAdmin.register ProfitSharePass do
   end
 
   form do |f|
-    unless resource.finalized?
-      f.inputs(class: "admin_inputs") do
-        f.input :payroll_buffer_months
-        f.input :efficiency_cap
-        f.input :internals_budget_multiplier
-      end
-      f.actions
+    
+    f.inputs(class: "admin_inputs") do
+      f.input :payroll_buffer_months, input_html: { disabled: resource.finalized? }
+      f.input :efficiency_cap, input_html: { disabled: resource.finalized? }
+      f.input :internals_budget_multiplier, input_html: { disabled: resource.finalized? }
     end
+    f.actions unless resource.finalized?
+    
   end
 end

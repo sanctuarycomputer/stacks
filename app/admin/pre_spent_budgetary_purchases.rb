@@ -4,6 +4,7 @@ ActiveAdmin.register PreSpentBudgetaryPurchase do
   config.paginate = false
   actions :index, :new, :create, :edit, :update, :destroy
   config.current_filters = false
+  belongs_to :budget
 
   permit_params :note,
     :amount,
@@ -12,8 +13,9 @@ ActiveAdmin.register PreSpentBudgetaryPurchase do
 
   index download_links: false do
     column :note
-    column :amount
-    column :budget_type
+    column :amount do |resource|
+      number_to_currency(resource.amount)
+    end
     column :spent_at
     actions
   end
@@ -22,7 +24,6 @@ ActiveAdmin.register PreSpentBudgetaryPurchase do
     f.inputs(class: "admin_inputs") do
       f.input :note
       f.input :amount
-      f.input :budget_type
       f.input :spent_at
     end
 

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2023_03_16_185728) do
+ActiveRecord::Schema.define(version: 2023_09_08_034804) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -124,6 +124,15 @@ ActiveRecord::Schema.define(version: 2023_03_16_185728) do
     t.datetime "updated_at", precision: 6, null: false
     t.index ["admin_user_id"], name: "index_atc_periods_on_admin_user_id"
     t.index ["project_tracker_id"], name: "index_atc_periods_on_project_tracker_id"
+  end
+
+  create_table "budgets", force: :cascade do |t|
+    t.string "name", null: false
+    t.text "notes"
+    t.decimal "amount", default: "0.0", null: false
+    t.integer "budget_type", default: 0, null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
   end
 
   create_table "communities", force: :cascade do |t|
@@ -371,12 +380,13 @@ ActiveRecord::Schema.define(version: 2023_03_16_185728) do
   end
 
   create_table "pre_spent_budgetary_purchases", force: :cascade do |t|
-    t.integer "budget_type", default: 0, null: false
     t.decimal "amount", null: false
     t.string "note"
     t.date "spent_at", null: false
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.bigint "budget_id"
+    t.index ["budget_id"], name: "index_pre_spent_budgetary_purchases_on_budget_id"
   end
 
   create_table "profit_share_passes", force: :cascade do |t|
