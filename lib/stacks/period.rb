@@ -12,7 +12,9 @@ class Stacks::Period
   def report
     @_report ||= QboProfitAndLossReport.find_or_fetch_for_range(
       starts_at,
-      ends_at
+      ends_at,
+      false,
+      nil
     )
   end
 

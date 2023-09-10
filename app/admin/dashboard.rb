@@ -21,7 +21,9 @@ ActiveAdmin.register_page "Dashboard" do
       [1, 2, 3].map do |month|
         QboProfitAndLossReport.find_or_fetch_for_range(
           (Date.today - month.months).beginning_of_month,
-          (Date.today - month.months).end_of_month
+          (Date.today - month.months).end_of_month,
+          false,
+          nil
         ).burn_rate(session[:accounting_method] || "cash")
       end
     average_burn_rate = burn_rates.sum(0.0) / burn_rates.length

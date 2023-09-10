@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2023_09_08_034804) do
+ActiveRecord::Schema.define(version: 2023_09_10_051130) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -151,6 +151,13 @@ ActiveRecord::Schema.define(version: 2023_09_08_034804) do
 
   create_table "dei_rollups", force: :cascade do |t|
     t.jsonb "data"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+  end
+
+  create_table "enterprises", force: :cascade do |t|
+    t.string "name", null: false
+    t.jsonb "snapshot", default: {}
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
   end
@@ -440,6 +447,16 @@ ActiveRecord::Schema.define(version: 2023_09_08_034804) do
     t.jsonb "snapshot", default: {}
   end
 
+  create_table "qbo_accounts", force: :cascade do |t|
+    t.string "client_id", null: false
+    t.string "client_secret", null: false
+    t.string "realm_id", null: false
+    t.bigint "enterprise_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["enterprise_id"], name: "index_qbo_accounts_on_enterprise_id"
+  end
+
   create_table "qbo_invoices", force: :cascade do |t|
     t.string "qbo_id", null: false
     t.jsonb "data"
@@ -452,6 +469,8 @@ ActiveRecord::Schema.define(version: 2023_09_08_034804) do
     t.jsonb "data", default: "{}"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.bigint "qbo_account_id"
+    t.index ["qbo_account_id"], name: "index_qbo_profit_and_loss_reports_on_qbo_account_id"
   end
 
   create_table "qbo_purchase_line_items", id: :string, force: :cascade do |t|
@@ -463,6 +482,15 @@ ActiveRecord::Schema.define(version: 2023_09_08_034804) do
     t.jsonb "data", default: {}
     t.index ["expense_group_id"], name: "index_qbo_purchase_line_items_on_expense_group_id"
     t.index ["id"], name: "index_qbo_purchase_line_items_on_id", unique: true
+  end
+
+  create_table "qbo_tokens", force: :cascade do |t|
+    t.string "token", null: false
+    t.string "refresh_token", null: false
+    t.bigint "qbo_account_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["qbo_account_id"], name: "index_qbo_tokens_on_qbo_account_id"
   end
 
   create_table "quickbooks_tokens", force: :cascade do |t|
@@ -637,7 +665,10 @@ ActiveRecord::Schema.define(version: 2023_09_08_034804) do
   add_foreign_key "project_capsules", "project_trackers"
   add_foreign_key "project_tracker_forecast_projects", "project_trackers"
   add_foreign_key "project_tracker_links", "project_trackers"
+  add_foreign_key "qbo_accounts", "enterprises"
+  add_foreign_key "qbo_profit_and_loss_reports", "qbo_accounts"
   add_foreign_key "qbo_purchase_line_items", "expense_groups"
+  add_foreign_key "qbo_tokens", "qbo_accounts"
   add_foreign_key "review_trees", "reviews"
   add_foreign_key "review_trees", "trees"
   add_foreign_key "reviews", "admin_users"

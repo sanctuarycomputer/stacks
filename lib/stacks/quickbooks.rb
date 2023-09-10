@@ -1,3 +1,6 @@
+# TODO: Slowly deprecate this for qbo_account.rb now that we have
+# enterprises with different QBO credentials.
+
 class Stacks::Quickbooks
   class << self
     def sync_all!
@@ -23,7 +26,8 @@ class Stacks::Quickbooks
         QboProfitAndLossReport.find_or_fetch_for_range(
           time.beginning_of_month,
           time.end_of_month,
-          true
+          true,
+          nil
         )
         time = time.advance(months: 1)
       end
@@ -35,7 +39,8 @@ class Stacks::Quickbooks
         QboProfitAndLossReport.find_or_fetch_for_range(
           time.beginning_of_quarter,
           time.end_of_quarter,
-          true
+          true,
+          nil
         )
         time = time.advance(months: 3)
       end
@@ -47,7 +52,8 @@ class Stacks::Quickbooks
         QboProfitAndLossReport.find_or_fetch_for_range(
           time.beginning_of_year,
           time.end_of_year,
-          true
+          true,
+          nil
         )
         time = time.advance(years: 1)
       end

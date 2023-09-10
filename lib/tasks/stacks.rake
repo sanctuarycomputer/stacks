@@ -3,6 +3,7 @@ namespace :stacks do
   task :refresh_qbo_token => :environment do
     begin
       Stacks::Quickbooks.make_and_refresh_qbo_access_token
+      QboAccount.all.map(&:make_and_refresh_qbo_access_token)
     rescue => e
       Sentry.capture_exception(e)
     end
@@ -60,6 +61,7 @@ namespace :stacks do
       Stacks::Team.discover!
       Stacks::Forecast.new.sync_all!
       Stacks::Quickbooks.sync_all!
+      QboAccount.all.map(&:sync_all!)
 
       # Snapshots
       Parallel.map(Studio.all, in_threads: 2) { |s| s.generate_snapshot! }

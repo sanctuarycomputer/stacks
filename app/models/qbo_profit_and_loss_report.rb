@@ -1,4 +1,6 @@
 class QboProfitAndLossReport < ApplicationRecord
+  belongs_to :qbo_account, optional: true
+  
   def find_row(accounting_method, label)
     (data[accounting_method]["rows"].find {|r| r[0] == label } || [nil, 0])[1].to_f
   end
@@ -58,7 +60,7 @@ class QboProfitAndLossReport < ApplicationRecord
     base
   end
 
-  def self.find_or_fetch_for_range(start_of_range, end_of_range, force = false)
+  def self.find_or_fetch_for_range(start_of_range, end_of_range, force = false, qbo_account = nil)
     ActiveRecord::Base.transaction do
       existing = where(starts_at: start_of_range, ends_at: end_of_range)
       if force
@@ -67,19 +69,36 @@ class QboProfitAndLossReport < ApplicationRecord
         return existing.first if existing.any?
       end
 
-      cash_report = Stacks::Quickbooks.fetch_profit_and_loss_report_for_range(
-        start_of_range,
-        end_of_range,
-        "Cash"
-      )
+      cash_report = if qbo_account.present?
+        qbo_account.fetch_profit_and_loss_report_for_range(
+          start_of_range,
+          end_of_range,
+          "Cash"
+        )
+      else
+        Stacks::Quickbooks.fetch_profit_and_loss_report_for_range(
+          start_of_range,
+          end_of_range,
+          "Cash"
+        )
+      end
 
-      accrual_report = Stacks::Quickbooks.fetch_profit_and_loss_report_for_range(
-        start_of_range,
-        end_of_range,
-        "Accrual"
-      )
+      accrual_report = if qbo_account.present?
+        qbo_account.fetch_profit_and_loss_report_for_range(
+          start_of_range,
+          end_of_range,
+          "Accrual"
+        )
+      else
+        Stacks::Quickbooks.fetch_profit_and_loss_report_for_range(
+          start_of_range,
+          end_of_range,
+          "Accrual"
+        )
+      end
 
       create!(
+        qbo_account: qbo_account,
         starts_at: start_of_range,
         ends_at: end_of_range,
         data: {
