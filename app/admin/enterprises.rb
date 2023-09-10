@@ -56,10 +56,12 @@ ActiveAdmin.register Enterprise do
         qbo_account.input :realm_id
       end
 
-      qbo_token = f.object.qbo_account.qbo_token || QboToken.new(qbo_account: f.object.qbo_account)
-      f.inputs "QBO Token", for: [:qbo_token, qbo_token] do |qbo_token_form|
-        qbo_token_form.input :token, :hint => "Last refreshed #{time_ago_in_words(qbo_token.updated_at)} ago"
-        qbo_token_form.input :refresh_token
+      if f.object.qbo_account.present?
+        qbo_token = f.object.qbo_account.qbo_token || QboToken.new(qbo_account: f.object.qbo_account)
+        f.inputs "QBO Token", for: [:qbo_token, qbo_token] do |qbo_token_form|
+          qbo_token_form.input :token, :hint => "Last refreshed #{qbo_token.updated_at ? time_ago_in_words(qbo_token.updated_at) : "never"} ago"
+          qbo_token_form.input :refresh_token
+        end
       end
     end
 
