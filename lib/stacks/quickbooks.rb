@@ -59,7 +59,7 @@ class Stacks::Quickbooks
       end
     end
 
-    def make_and_refresh_qbo_access_token
+    def make_and_refresh_qbo_access_token(force_refresh = false)
       oauth2_client = OAuth2::Client.new(Stacks::Utils.config[:quickbooks][:client_id], Stacks::Utils.config[:quickbooks][:client_secret], {
         site: "https://appcenter.intuit.com/connect/oauth2",
         authorize_url: "https://appcenter.intuit.com/connect/oauth2",
@@ -73,7 +73,7 @@ class Stacks::Quickbooks
       )
 
       # Refresh the token if it's been longer than 30 minutes
-      if ((DateTime.now.to_i - qbo_token.created_at.to_i) / 60) > 30
+      if force_refresh || (((DateTime.now.to_i - qbo_token.created_at.to_i) / 60) > 30)
         access_token = access_token.refresh!
         new_qbo_token =
           QuickbooksToken.create!(
