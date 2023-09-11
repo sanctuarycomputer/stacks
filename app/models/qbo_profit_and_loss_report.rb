@@ -62,7 +62,7 @@ class QboProfitAndLossReport < ApplicationRecord
 
   def self.find_or_fetch_for_range(start_of_range, end_of_range, force = false, qbo_account = nil)
     ActiveRecord::Base.transaction do
-      existing = where(starts_at: start_of_range, ends_at: end_of_range)
+      existing = where(starts_at: start_of_range, ends_at: end_of_range, qbo_account: qbo_account)
       if force
         existing.delete_all
       else
