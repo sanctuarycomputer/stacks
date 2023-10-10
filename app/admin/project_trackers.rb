@@ -97,7 +97,7 @@ ActiveAdmin.register ProjectTracker do
           end
         end,
         para(class: "okr_hint") do
-          "#{free_hours_percentage.round(1)}% recorded hrs billed at $0p/h"
+          "#{free_hours_percentage.round(1)}% hrs billed at $0p/h"
         end
       ])
     end
