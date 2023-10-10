@@ -150,6 +150,25 @@ class ProjectTracker < ApplicationRecord
     update_attribute('snapshot', snapshot)
   end
 
+  def free_hours_ratio
+    return 0 if total_hours == 0
+    return 0 if total_free_hours == 0
+    total_free_hours / total_hours
+  end
+
+  def total_hours
+    forecast_projects.reduce(0) do |acc, fp|
+      acc += fp.total_hours
+    end
+  end
+
+  def total_free_hours
+    forecast_projects.reduce(0) do |acc, fp|
+      acc += fp.total_hours if fp.hourly_rate == 0
+      acc
+    end
+  end
+
   def current_atc
     current_atc_period.try(:admin_user)
   end

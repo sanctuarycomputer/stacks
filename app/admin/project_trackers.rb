@@ -74,6 +74,33 @@ ActiveAdmin.register ProjectTracker do
 
   index download_links: false, title: "Projects" do
     column :name
+    column :hours do |resource|
+      free_hours = resource.total_free_hours
+      total_hours = resource.total_hours
+      free_hours_percentage = resource.free_hours_ratio * 100
+
+      pill_class = 
+        if free_hours_percentage == 0
+          "exceptional"
+        elsif free_hours_percentage < 1
+          "healthy"
+        elsif free_hours_percentage < 5
+          "at_risk"
+        else
+          "failing"
+        end
+
+      div([
+        span(class: "pill #{pill_class}") do
+          span(class: "split") do
+            [strong("#{total_hours.round} hrs,"), span("#{free_hours.round} free")]
+          end
+        end,
+        para(class: "okr_hint") do
+          "#{free_hours_percentage.round(1)}% recorded hrs billed at $0p/h"
+        end
+      ])
+    end
     column :budget_status do |resource|
       span(resource.status.to_s.humanize.capitalize, class: "pill #{resource.status}")
     end
@@ -84,7 +111,7 @@ ActiveAdmin.register ProjectTracker do
       if resource.forecast_projects.any?
         div(
           resource.forecast_projects.map do |fp|
-            a(fp.display_name, { href: fp.link, target: "_blank", class: "block" })
+            a(fp.display_name, { href: fp.link, target: "_blank", class: "block", style: "white-space:nowrap" })
           end
         )
       else
