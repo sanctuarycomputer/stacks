@@ -72,7 +72,30 @@ ActiveAdmin.register ProjectTracker do
     end
   end
 
-  index download_links: false, title: "Projects" do
+  csv do
+    column :name
+    column :budget_low_end
+    column :budget_high_end
+    column :spend
+    column :income
+    column :estimated_cost do |pt|
+      pt.estimated_cost("cash")
+    end
+    column :profit do |pt|
+      pt.income - pt.estimated_cost("cash")
+    end
+    column :profit_margin do |pt|
+      estimated_cost = pt.estimated_cost("cash")
+      ((pt.income - estimated_cost) / estimated_cost) * 100
+    end
+    column :total_hours
+    column :total_free_hours
+    column :free_hours_ratio do |pt|
+      pt.free_hours_ratio * 100
+    end
+  end
+
+  index download_links: true, title: "Projects" do
     column :name
     column :hours do |resource|
       free_hours = resource.total_free_hours

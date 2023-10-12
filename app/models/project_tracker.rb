@@ -222,6 +222,11 @@ class ProjectTracker < ApplicationRecord
     latest ? latest["y"] : 0
   end
 
+  def estimated_cost(accounting_method)
+    latest = snapshot[accounting_method]["cogs"].try(:last)
+    latest ? latest["y"] : 0
+  end
+
   def total_hours_during_range(start_range, end_range)
     forecast_projects.reduce(0) do |acc, fp|
       acc += fp.total_hours_during_range(start_range, end_range)
@@ -326,11 +331,6 @@ class ProjectTracker < ApplicationRecord
       )
       dp["accrual_project_cost"] = (dp["project_hours"] * dp["accrual_project_cost_per_hour"])
     end
-  end
-
-  def estimated_cost(accounting_method)
-    periods = decorated_datapoints_during_relevant_periods
-    periods.values.map{|dp| dp["#{accounting_method}_project_cost"]}.reduce(:+)
   end
 
   def raw_resourcing_cost_during_range_in_usd(start_range, end_range)
