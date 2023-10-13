@@ -5,17 +5,26 @@ class AdminUser < ApplicationRecord
   validate :all_but_latest_full_time_periods_are_closed?
 
   def approximate_cost_per_sellable_hour_before_studio_expenses
-    now = DateTime.now.to_date
-    salary = skill_tree_level_on_date(now)[:salary]
-    hours = sellable_hours_for_period(Stacks::Period.new(
-      now.strftime("%Y"),
-      now.beginning_of_year,
-      now.end_of_year
-    ))
-    return nil if hours[:sellable] == 0
+    now = DateTime.now.to_date.beginning_of_week # monday
+    data = sellable_hours_for_date(now)
+    return nil unless data.present?
+    return nil if data[:sellable] == 0
+    cost_of_employment_on_date(now) / data[:sellable]
+  end
 
-    # The 10% multiplier is a rough approximation of payroll taxes & health care
-    (salary * 1.1) / hours[:sellable]
+  def sellable_hours_for_date(date)
+    ftp = full_time_period_at(date)
+    return nil unless ftp.present?
+
+    is_working_day =
+      (ftp.contributor_type == "four_day" && (1..4).include?(date.wday)) || 
+      (ftp.contributor_type == "five_day" && (1..5).include?(date.wday))
+    return nil unless is_working_day
+
+    {
+      sellable: 8 * ftp.expected_utilization,
+      non_sellable: 8 - (8 * ftp.expected_utilization)
+    }
   end
 
   def sellable_hours_for_period(period)
@@ -23,15 +32,10 @@ class AdminUser < ApplicationRecord
       sellable: 0,
       non_sellable: 0
     }) do |acc, date|
-      ftp = full_time_period_at(date)
-      next acc unless ftp.present?
-      is_working_day =
-        (ftp.contributor_type == "four_day" && (1..4).include?(date.wday)) || 
-        (ftp.contributor_type == "five_day" && (1..5).include?(date.wday))
-      if is_working_day
-        acc[:sellable] += 8 * ftp.expected_utilization
-        acc[:non_sellable] += 8 - (8 * ftp.expected_utilization)
-      end
+      data = sellable_hours_for_date(date)
+      next acc unless data.present?
+      acc[:sellable] += data[:sellable]
+      acc[:non_sellable] += data[:non_sellable]
       acc
     end
   end
@@ -472,7 +476,7 @@ class AdminUser < ApplicationRecord
       AdminUser.default_skill_level[:salary]
     business_days =
       Stacks::Utils.business_days_between(date.beginning_of_year, date.end_of_year)
-    (yearly_cost / business_days) * 1.2 # employment taxes & healthcare
+    (yearly_cost / business_days) * 1.1 # employment taxes & healthcare
   end
 
   def cost_of_employment_on_date(date)
@@ -480,7 +484,7 @@ class AdminUser < ApplicationRecord
       skill_tree_level_on_date(date)[:salary]
     business_days =
       Stacks::Utils.business_days_between(date.beginning_of_year, date.end_of_year)
-    (yearly_cost / business_days) * 1.2 # employment taxes & healthcare
+    (yearly_cost / business_days) * 1.1 # employment taxes & healthcare
   end
 
   def archived_reviews
