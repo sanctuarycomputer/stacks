@@ -110,6 +110,9 @@ ActiveAdmin.register AdminUser do
       column :expected_utilization do |resource|
         "#{(resource.expected_utilization * 100)}%"
       end
+      column :approximate_cost_per_sellable_hour_before_studio_expenses do |resource|
+        number_to_currency(resource.approximate_cost_per_sellable_hour_before_studio_expenses)
+      end
     end
     actions
   end

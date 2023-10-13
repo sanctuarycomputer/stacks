@@ -532,24 +532,9 @@ class Studio < ApplicationRecord
       )
 
       if fp.admin_user.present?
-        # Probably a fulltimer
-        d = (period.starts_at..period.ends_at).reduce({
-          sellable: 0,
-          non_sellable: 0
-        }) do |acc, date|
-          ftp = fp.admin_user.full_time_period_at(date)
-          next acc unless ftp.present?
-
-          is_working_day =
-            (ftp.contributor_type == "four_day" && (1..4).include?(date.wday)) || 
-            (ftp.contributor_type == "five_day" && (1..5).include?(date.wday))
-          if is_working_day
-            acc[:sellable] += 8 * ftp.expected_utilization
-            acc[:non_sellable] += 8 - (8 * ftp.expected_utilization)
-          end
-          acc
-        end
-        acc[fp] = acc[fp].merge(d)
+        acc[fp] = acc[fp].merge(
+          fp.admin_user.sellable_hours_for_period(period)
+        )
       else
         # Probably a contractor with an external email address
         acc[fp] = acc[fp].merge({

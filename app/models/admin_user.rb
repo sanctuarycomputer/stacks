@@ -4,6 +4,38 @@ class AdminUser < ApplicationRecord
   has_one :associates_award_agreement
   validate :all_but_latest_full_time_periods_are_closed?
 
+  def approximate_cost_per_sellable_hour_before_studio_expenses
+    now = DateTime.now.to_date
+    salary = skill_tree_level_on_date(now)[:salary]
+    hours = sellable_hours_for_period(Stacks::Period.new(
+      now.strftime("%Y"),
+      now.beginning_of_year,
+      now.end_of_year
+    ))
+    return nil if hours[:sellable] == 0
+
+    # The 10% multiplier is a rough approximation of payroll taxes & health care
+    (salary * 1.1) / hours[:sellable]
+  end
+
+  def sellable_hours_for_period(period)
+    (period.starts_at..period.ends_at).reduce({
+      sellable: 0,
+      non_sellable: 0
+    }) do |acc, date|
+      ftp = full_time_period_at(date)
+      next acc unless ftp.present?
+      is_working_day =
+        (ftp.contributor_type == "four_day" && (1..4).include?(date.wday)) || 
+        (ftp.contributor_type == "five_day" && (1..5).include?(date.wday))
+      if is_working_day
+        acc[:sellable] += 8 * ftp.expected_utilization
+        acc[:non_sellable] += 8 - (8 * ftp.expected_utilization)
+      end
+      acc
+    end
+  end
+
   def is_associate?
     return true if email == "hugh@sanctuary.computer"
     return false unless associates_award_agreement.present?
