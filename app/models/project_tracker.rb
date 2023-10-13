@@ -227,6 +227,15 @@ class ProjectTracker < ApplicationRecord
     latest ? latest["y"] : 0
   end
 
+  def profit
+    income - estimated_cost("cash")
+  end
+
+  def profit_margin
+    cost = estimated_cost("cash")
+    ((income - cost) / cost) * 100
+  end
+
   def total_hours_during_range(start_range, end_range)
     forecast_projects.reduce(0) do |acc, fp|
       acc += fp.total_hours_during_range(start_range, end_range)

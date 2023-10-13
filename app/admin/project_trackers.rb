@@ -81,13 +81,8 @@ ActiveAdmin.register ProjectTracker do
     column :estimated_cost do |pt|
       pt.estimated_cost("cash")
     end
-    column :profit do |pt|
-      pt.income - pt.estimated_cost("cash")
-    end
-    column :profit_margin do |pt|
-      estimated_cost = pt.estimated_cost("cash")
-      ((pt.income - estimated_cost) / estimated_cost) * 100
-    end
+    column :profit
+    column :profit_margin
     column :total_hours
     column :total_free_hours
     column :free_hours_ratio do |pt|
@@ -95,7 +90,7 @@ ActiveAdmin.register ProjectTracker do
     end
   end
 
-  index download_links: true, title: "Projects" do
+  index download_links: [:csv], title: "Projects" do
     column :name
     column :hours do |resource|
       free_hours = resource.total_free_hours
@@ -129,6 +124,14 @@ ActiveAdmin.register ProjectTracker do
     end
     column :work_status do |resource|
       span(resource.work_status.to_s.humanize.capitalize, class: "pill #{resource.work_status}")
+    end
+    column :profit_margin do |resource|
+      div([
+        span("#{resource.profit_margin.round(1)}%"),
+        para(class: "okr_hint", style: "margin-bottom:0px;padding-top:0px !important") do
+          "#{number_to_currency resource.income} invoiced, #{number_to_currency resource.estimated_cost("cash")} cost"
+        end
+      ])
     end
     column :forecast_projects do |resource|
       if resource.forecast_projects.any?
