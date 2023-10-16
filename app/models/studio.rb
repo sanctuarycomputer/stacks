@@ -83,6 +83,13 @@ class Studio < ApplicationRecord
             acc[period] = utilization_for_period(period, preloaded_studios)
             acc
           end
+        
+        g3d = preloaded_studios.find{|s| s.name == "garden3d"}
+        g3d_utilization_by_period  =
+          periods.reduce({}) do |acc, period|
+            acc[period] = g3d.utilization_for_period(period, preloaded_studios)
+            acc
+          end
 
         acc[gradation] = Parallel.map(periods, in_threads: 5) do |period|
           d = {
@@ -91,12 +98,14 @@ class Studio < ApplicationRecord
             accrual: {},
             utilization: utilization_by_period[period].transform_keys {|fp| fp.email.blank? ? "#{fp.first_name} #{fp.last_name}" : fp.email }
           }
+
           d[:cash][:datapoints] = self.key_datapoints_for_period(
             period,
             "cash",
             preloaded_studios,
             preloaded_new_biz_notion_pages,
-            utilization_by_period[period]
+            utilization_by_period[period],
+            g3d_utilization_by_period[period]
           )
           d[:cash][:okrs] = self.okrs_for_period(period, d[:cash][:datapoints])
           d[:accrual][:datapoints] = self.key_datapoints_for_period(
@@ -104,7 +113,8 @@ class Studio < ApplicationRecord
             "accrual",
             preloaded_studios,
             preloaded_new_biz_notion_pages,
-            utilization_by_period[period]
+            utilization_by_period[period],
+            g3d_utilization_by_period[period]
           )
           d[:accrual][:okrs] = self.okrs_for_period(period, d[:accrual][:datapoints])
           d
@@ -352,9 +362,9 @@ class Studio < ApplicationRecord
     accounting_method,
     preloaded_studios = Studio.all,
     preloaded_new_biz_notion_pages = new_biz_notion_pages,
-    utilization_for_period = utilization_for_period(period)
+    utilization_for_period = utilization_for_period(period, preloaded_studios), 
+    g3d_utilization_for_period = preloaded_studios.find{|s| s.name == "garden3d"}.utilization_for_period(period, preloaded_studios)
   )
-    cogs = period.report.cogs_for_studio(self, accounting_method)
     v = utilization_for_period.reduce(nil) do |acc, tuple|
       fp, data = tuple
       next data if acc.nil?
@@ -362,6 +372,24 @@ class Studio < ApplicationRecord
         old.is_a?(Hash) ? (old.merge(new) {|k, o, n| o+n}) : (old + new)
       end
     end
+
+    g3dv = g3d_utilization_for_period.reduce(nil) do |acc, tuple|
+      fp, data = tuple
+      next data if acc.nil?
+      acc.merge(data) do |k, old, new|
+        old.is_a?(Hash) ? (old.merge(new) {|k, o, n| o+n}) : (old + new)
+      end
+    end
+
+    sellable_hours_proportion = nil
+    if v.present? && g3dv.present?
+      sellable_hours_proportion =  v[:sellable] / g3dv[:sellable]
+    end
+    cogs = period.report.cogs_for_studio(
+      self, 
+      accounting_method,
+      sellable_hours_proportion
+    )
 
     aggregate_social_following =
       SocialProperty.aggregate!(all_social_properties)

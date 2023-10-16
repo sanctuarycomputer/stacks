@@ -16,15 +16,28 @@ class QboProfitAndLossReport < ApplicationRecord
     find_row(accounting_method, "[SC] Reinvestment")
   end
 
-  def cogs_for_studio(studio, accounting_method)
+  def cogs_for_studio(studio, accounting_method, sellable_hours_proportion = nil)
     gross_revenue = find_rows(accounting_method, studio.qbo_sales_categories)
 
-    g3d_gross_revenue = find_row(accounting_method, "Total Income")
-
+    # TODO: Include non-studio payroll & salary in COGS expenses
+    # TODO: Deduct profit share & pre-spent/reinvestment from Studio OKRs
     proportional_expenses = 0
-    if g3d_gross_revenue > 0
-      proportional_expenses =
-        (gross_revenue / g3d_gross_revenue) * find_row(accounting_method, "Total Expenses")
+    if sellable_hours_proportion.present?
+      # Studios are responsible for a proportion of total expenses based on their
+      # own the size of their own sellable pool.
+      proportional_expenses = 
+        sellable_hours_proportion * find_row(accounting_method, "Total Expenses")
+    else
+      # In cases where we don't have sellable_hour pool data (predates our use of Forecast)
+      # we fallback to splitting expenses based on how much revenue that studio brought in.
+      # See Stacks::System::UTILIZATION_START_AT for more information
+      # In any case, this is just a fallback; we don't actually surface this datapoint
+      # anywhere that predates us having utilization data.
+      g3d_gross_revenue = find_row(accounting_method, "Total Income")
+      if g3d_gross_revenue > 0
+        proportional_expenses =
+          (gross_revenue / g3d_gross_revenue) * find_row(accounting_method, "Total Expenses")
+      end
     end
 
     base = {
