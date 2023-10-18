@@ -27,7 +27,7 @@ ActiveAdmin.register Finalization do
     ],
   ]
 
-  action_item :archive, only: :edit, if: proc { current_admin_user.is_admin? && (finalization.workspace.complete?) } do
+  action_item :archive, only: :edit, if: proc { current_admin_user.is_admin? && current_admin_user != finalization.review.admin_user && finalization.workspace.complete? } do
     if resource.review.archived?
       link_to "Unarchive", unarchive_finalization_admin_finalization_path(resource), method: :post
     else
