@@ -19,7 +19,11 @@ class Score < ApplicationRecord
   }
 
   def score_to_points
-    ((Score.bands[band] * 10) + 10) + (Score.consistencies[consistency] * 2)
+    begin
+      ((Score.bands[band] * 10) + 10) + (Score.consistencies[consistency] * 2)
+    rescue => e
+      0
+    end
   end
 
   def display_name

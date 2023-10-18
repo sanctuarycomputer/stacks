@@ -15,6 +15,15 @@ class Review < ApplicationRecord
   before_create :build_workspace
   before_create :build_finalization
   after_update :ensure_workspaces_in_sync
+  validate :cannot_be_archived_unless_finalization_is_complete
+
+  def cannot_be_archived_unless_finalization_is_complete
+    if changes["archived_at"][0].nil? && changes["archived_at"][1].present?
+      unless finalization.workspace.status == "complete"
+        errors.add(:status, "Please fill out all scores and Mark as Finalized before archiving.")
+      end
+    end
+  end
 
   def craft_review_tree
     review_trees.find{|rt| Tree.craft_trees.include?(rt.tree)}

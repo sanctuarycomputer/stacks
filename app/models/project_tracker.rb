@@ -225,7 +225,7 @@ class ProjectTracker < ApplicationRecord
   def estimated_cost(accounting_method)
     return 0 if snapshot.empty? # If new project trackers are made, we'll not have a snapshot yet
     latest = snapshot[accounting_method]["cogs"].try(:last)
-    latest ? latest["y"] : 0
+    latest ? (latest["y"] || 0) : 0
   end
 
   def profit
