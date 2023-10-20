@@ -316,13 +316,13 @@ class ProjectTracker < ApplicationRecord
       Stacks::Utils.weighted_average(
         periods.map do |p, dp|
           [dp.dig("cash", "actual_cost_per_hour_sold", "value"), dp.dig("cash", "billable_hours", "value")]
-        end.reject{|p| p[0] == nil}
+        end.reject{|p| p[0] == nil}.map{|p| [p[0].to_f, p[1].to_f]}
       )
     accrual_average_cost_per_hour_sold =
       Stacks::Utils.weighted_average(
         periods.map do |p, dp|
           [dp.dig("accrual", "actual_cost_per_hour_sold", "value"), dp.dig("accrual", "billable_hours", "value")]
-        end.reject{|p| p[0] == nil}
+        end.reject{|p| p[0] == nil}.map{|p| [p[0].to_f, p[1].to_f]}
       )
 
     periods.each do |p, dp|
@@ -330,14 +330,14 @@ class ProjectTracker < ApplicationRecord
         total_hours_during_range(p.starts_at, p.ends_at)
       dp["cash_project_cost_per_hour"] = (
         periods[p].dig("cash", "actual_cost_per_hour_sold", "value") == nil ?
-        cash_average_cost_per_hour_sold :
-        periods[p].dig("cash", "actual_cost_per_hour_sold", "value")
+        cash_average_cost_per_hour_sold.to_f :
+        periods[p].dig("cash", "actual_cost_per_hour_sold", "value").to_f
       )
       dp["cash_project_cost"] = (dp["project_hours"] * dp["cash_project_cost_per_hour"])
       dp["accrual_project_cost_per_hour"] = (
         periods[p].dig("accrual", "actual_cost_per_hour_sold", "value") == nil ?
-        accrual_average_cost_per_hour_sold :
-        periods[p].dig("accrual", "actual_cost_per_hour_sold", "value")
+        accrual_average_cost_per_hour_sold.to_f :
+        periods[p].dig("accrual", "actual_cost_per_hour_sold", "value").to_f
       )
       dp["accrual_project_cost"] = (dp["project_hours"] * dp["accrual_project_cost_per_hour"])
     end
