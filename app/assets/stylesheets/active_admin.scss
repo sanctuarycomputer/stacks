@@ -913,7 +913,7 @@ body.logged_out #content_wrapper #active_admin_content {
 
 a, a:link, a:visited {
   text-decoration: none;
-  color: #1F78FF !important;
+  color: #1F78FF;
 }
 
 body.logged_out #login a {
