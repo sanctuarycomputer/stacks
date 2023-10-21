@@ -21,7 +21,7 @@ class Okr < ApplicationRecord
     revenue: 4,
     payroll: 5,
     benefits: 6,
-    expenses: 7,
+    total_expenses: 7,
     subcontractors: 8,
     sellable_hours: 9,
     non_sellable_hours: 10,
@@ -30,5 +30,6 @@ class Okr < ApplicationRecord
     profit_margin: 13,
     # key_meeting_attendance: 14,
     total_social_growth: 15,
+    free_hours: 16
   }
 end

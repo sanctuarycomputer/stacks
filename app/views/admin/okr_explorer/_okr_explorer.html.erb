@@ -56,10 +56,17 @@ function update(a, b) {
     <% has_utilization_data = !period[accounting_method]["datapoints"]["sellable_hours"]["value"].nil? %>
 
     <% g3d_period = g3d_snapshot[current_gradation].find{|s| s["label"] == period["label"]} %>
-    <% g3d_expenses = g3d_period[accounting_method]["datapoints"]["expenses"]["value"] %>
     <% g3d_sellable_hours = g3d_period[accounting_method]["datapoints"]["sellable_hours"]["value"].to_f %>
     <% studio_sellable_hours = period[accounting_method]["datapoints"]["sellable_hours"]["value"].to_f %>
-    <% studio_expenses = period[accounting_method]["datapoints"]["expenses"]["value"] %>
+
+    <% g3d_total_expenses = g3d_period[accounting_method]["datapoints"]["total_expenses"]["value"] %>
+    <% g3d_specific_expenses = g3d_period[accounting_method]["datapoints"]["specific_expenses"]["value"] %>
+    <% g3d_unspecified_split_expenses = g3d_period[accounting_method]["datapoints"]["unspecified_split_expenses"]["value"] %>
+
+    <% total_expenses = period[accounting_method]["datapoints"]["total_expenses"]["value"] %>
+    <% specific_expenses = period[accounting_method]["datapoints"]["specific_expenses"]["value"] %>
+    <% unspecified_split_expenses = period[accounting_method]["datapoints"]["unspecified_split_expenses"]["value"] %>
+    
     <% studio_cogs = period[accounting_method]["datapoints"]["cogs"]["value"] %>
 
     <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
@@ -71,11 +78,26 @@ function update(a, b) {
     </div>
 
     <% if has_utilization_data %>
+      <div class="title_bar" id="title_bar" style="padding: 0px 0px 6px 0px;">
+        <div id="titlebar_right">
+          <div class="action_items">
+            <%= link_to "Open P&L in Quickbooks ↗", "https://app.qbo.intuit.com/app/reportv2?token=PANDL&show_logo=false&date_macro=custom&low_date=#{period["period_starts_at"]}&high_date=#{period["period_ends_at"]}&column=total&showrows=active&showcols=active&subcol_pp=&subcol_pp_chg=&subcol_pp_pct_chg=&subcol_py=&subcol_py_chg=&subcol_py_pct_chg=&subcol_py_ytd=&subcol_ytd=&subcol_pct_ytd=&subcol_pct_row=&subcol_pct_col=&subcol_pct_inc=false&subcol_pct_exp=false&cash_basis=#{accounting_method == "cash" ? "yes" : "no"}&customized=yes&collapsed_rows=&edited_sections=false&divideby1000=false&hidecents=false&exceptzeros=true&adjusted_gain_loss=true&negativenums=1&negativered=false&show_header_title=true&show_header_range=true&show_footer_custom_message=true&show_footer_date=true&show_footer_time=true&show_footer_basis=true&header_alignment=Center&footer_alignment=Center&show_header_company=true&company_name=Sanctuary%20Computer%20Inc&collapse_subs=false&title=Profit%20and%20Loss&footer_custom_message=", target: "_blank" %>
+          </div>
+        </div>
+      </div>
+
       <div class="dashboard-modules table index_table index">
         <div class="dashboard-module">
           <div class="module-body factoid-parent">
-            <p style="margin-bottom: 6px;">In <%= period["label"] %> <%= studio.name %> had <code><%= studio_sellable_hours %></code> hours to sell. That's <code><%= ((studio_sellable_hours / g3d_sellable_hours) * 100).round(2) %>%</code> of g3d's total sellable pool.</p>
-            <p>Global g3d expenses totaled <code><%= number_to_currency(g3d_expenses) %></code>, so <%= studio.name %> assumes <code><%= (studio_sellable_hours / g3d_sellable_hours).round(4) %> * <%= number_to_currency(g3d_expenses) %> = <%= number_to_currency(studio_expenses) %>*</code></p>
+            <% if studio.is_garden3d? %>
+              <p style="margin-bottom: 6px;">In <%= period["label"] %>, <%= studio.name %> recorded <code><%= number_to_currency(g3d_specific_expenses) %></code> studio specific expenses.</p>
+              <p style="margin-bottom: 6px;">Additionally, it recorded <code><%= number_to_currency(g3d_unspecified_split_expenses) %></code> expenses without a studio.</p>
+              <p>So, g3d global expenses totaled <code><%= number_to_currency(g3d_total_expenses) %></code></p>
+            <% else %>
+              <p style="margin-bottom: 6px;">In <%= period["label"] %>, <%= studio.name %> recorded <code><%= number_to_currency(specific_expenses) %></code> specific expenses.</p>
+              <p style="margin-bottom: 6px;">Additionally, it had <code><%= studio_sellable_hours %></code> hours to sell, or <code><%= ((studio_sellable_hours / g3d_sellable_hours) * 100).round(4) %>%</code> of g3d's total sellable pool.</p>
+              <p>g3d global expenses totaled <code><%= number_to_currency(g3d_unspecified_split_expenses) %></code>, so <%= studio.name %> assumes <code><%= (studio_sellable_hours / g3d_sellable_hours).round(6) %> * <%= number_to_currency(g3d_unspecified_split_expenses) %> = <%= number_to_currency(unspecified_split_expenses) %>*</code></p>
+            <% end %>
           </div>
         </div>
       </div>
@@ -91,10 +113,28 @@ function update(a, b) {
         <tbody>
           <tr class="even">
             <td class="col">
-              Proportional Expenses*
+              Total Expenses
             </td>
             <td class="col text-right">
-              <%= number_to_currency(studio_expenses) %>
+              <%= number_to_currency(total_expenses) %>
+            </td>
+          </tr>
+
+          <tr class="odd">
+            <td class="col">
+              — Studio Specific Expenses
+            </td>
+            <td class="col text-right">
+              <%= number_to_currency(specific_expenses) %>
+            </td>
+          </tr>
+
+          <tr class="even">
+            <td class="col">
+              — Globally Split Expenses*
+            </td>
+            <td class="col text-right">
+              <%= number_to_currency(unspecified_split_expenses) %>
             </td>
           </tr>
 

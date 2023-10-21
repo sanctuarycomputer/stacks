@@ -15,6 +15,7 @@ ActiveAdmin.register Studio do
   permit_params :name,
     :accounting_prefix,
     :mini_name,
+    :studio_type,
     studio_coordinator_periods_attributes: [
       :id,
       :admin_user_id,
@@ -37,6 +38,9 @@ ActiveAdmin.register Studio do
       f.input :name
       f.input :accounting_prefix
       f.input :mini_name
+      f.input :studio_type,
+        include_blank: false,
+        as: :select
 
       f.has_many :studio_coordinator_periods, heading: false, allow_destroy: true, new_record: 'Add a Studio Coorindator' do |a|
         a.input :admin_user
@@ -55,6 +59,7 @@ ActiveAdmin.register Studio do
     column :name
     column :accounting_prefix
     column :mini_name
+    column :studio_type
     column :health do |resource|
       span(class: "pill #{resource.health.dig("health")}") do 
         span(class: "split") do
@@ -103,11 +108,18 @@ ActiveAdmin.register Studio do
         backgroundColor: COLORS[2],
         stack: 'cogs'
       }, {
-        label: "Expenses",
+        label: "Studio Specific Expenses",
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "expenses", "value")
+          v.dig(accounting_method, "datapoints", "specific_expenses", "value")
         end),
         backgroundColor: COLORS[3],
+        stack: 'cogs'
+      }, {
+        label: "Globally Split Expenses",
+        data: (snapshot.map do |v|
+          v.dig(accounting_method, "datapoints", "unspecified_split_expenses", "value")
+        end),
+        backgroundColor: COLORS[6],
         stack: 'cogs'
       }, {
         label: "Subcontractors",

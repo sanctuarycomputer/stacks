@@ -10,6 +10,12 @@ class Studio < ApplicationRecord
 
   has_many :mailing_lists
 
+  enum studio_type: {
+    client_services: 0,
+    internal: 1,
+    reinvestment: 2,
+  }
+
   HEALTH = {
     0 => {
       health: :failing,
@@ -84,16 +90,18 @@ class Studio < ApplicationRecord
             acc
           end
         
-        g3d = preloaded_studios.find{|s| s.name == "garden3d"}
+        g3d = preloaded_studios.find(&:is_garden3d?)
         g3d_utilization_by_period  =
           periods.reduce({}) do |acc, period|
             acc[period] = g3d.utilization_for_period(period, preloaded_studios)
             acc
           end
 
-        acc[gradation] = Parallel.map(periods, in_threads: 5) do |period|
+        acc[gradation] = Parallel.map(periods, in_threads: 10) do |period|
           d = {
             label: period.label,
+            period_starts_at: period.starts_at.strftime("%m/%d/%Y"),
+            period_ends_at: period.ends_at.strftime("%m/%d/%Y"),
             cash: {},
             accrual: {},
             utilization: utilization_by_period[period].transform_keys {|fp| fp.email.blank? ? "#{fp.first_name} #{fp.last_name}" : fp.email }
@@ -226,12 +234,14 @@ class Studio < ApplicationRecord
     case okr.datapoint
     when "sellable_hours_sold"
       "#{datapoints[:billable_hours][:value].try(:round, 0)} hrs sold of #{datapoints[:sellable_hours][:value].try(:round, 0)} sellable hrs"
+    when "free_hours"
+      "#{datapoints[:free_hours_count][:value].try(:round, 0)} free hrs of #{datapoints[:sellable_hours][:value].try(:round, 0)} sellable hrs"
     when "cost_per_sellable_hour"
       "#{ActionController::Base.helpers.number_to_currency(datapoints[:cogs][:value])} spent over #{datapoints[:sellable_hours][:value]} sellable hrs"
     when "profit_margin"
       "#{ActionController::Base.helpers.number_to_currency(datapoints[:cogs][:value])} spent, #{ActionController::Base.helpers.number_to_currency(datapoints[:revenue][:value]  )} earnt"
     when "total_social_growth"
-      "#{datapoints[:social_growth_count][:value]} followers added"
+      "#{datapoints[:social_growth_count][:value]} new followers"
     else
       ""
     end
@@ -363,7 +373,7 @@ class Studio < ApplicationRecord
     preloaded_studios = Studio.all,
     preloaded_new_biz_notion_pages = new_biz_notion_pages,
     utilization_for_period = utilization_for_period(period, preloaded_studios), 
-    g3d_utilization_for_period = preloaded_studios.find{|s| s.name == "garden3d"}.utilization_for_period(period, preloaded_studios)
+    g3d_utilization_for_period = preloaded_studios.find(&:is_garden3d?).utilization_for_period(period, preloaded_studios)
   )
     v = utilization_for_period.reduce(nil) do |acc, tuple|
       fp, data = tuple
@@ -387,6 +397,7 @@ class Studio < ApplicationRecord
     end
     cogs = period.report.cogs_for_studio(
       self, 
+      preloaded_studios,
       accounting_method,
       sellable_hours_proportion
     )
@@ -433,8 +444,16 @@ class Studio < ApplicationRecord
         value: cogs[:supplies],
         unit: :usd
       },
-      expenses: {
-        value: cogs[:expenses],
+      total_expenses: {
+        value: cogs[:expenses][:total],
+        unit: :usd
+      },
+      specific_expenses: {
+        value: cogs[:expenses][:specific],
+        unit: :usd
+      },
+      unspecified_split_expenses: {
+        value: cogs[:expenses][:unspecified_split],
         unit: :usd
       },
       subcontractors: {
@@ -482,6 +501,14 @@ class Studio < ApplicationRecord
         unit: :count
       },
     }
+
+    data[:free_hours] = { unit: :percentage, value: nil }
+    data[:free_hours_count] = { unit: :count, value: nil }
+    unless v.nil?
+      free_hours_given = v[:billable]["0.0"] || 0
+      data[:free_hours][:value] = ((free_hours_given / v[:sellable]) * 100) 
+      data[:free_hours_count][:value] = free_hours_given
+    end
 
     data[:sellable_hours] = { unit: :hours, value: nil }
     unless v.nil?
