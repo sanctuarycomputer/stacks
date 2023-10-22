@@ -63,8 +63,11 @@ namespace :stacks do
       Stacks::Quickbooks.sync_all!
       QboAccount.all.map(&:sync_all!)
 
-      # Snapshots
-      Parallel.map(Studio.all, in_threads: 2) { |s| s.generate_snapshot! }
+      ## Snapshots
+      # Do internal studios first, because their costs are absorbed by client_services studios
+      Parallel.map(Studio.internal, in_threads: 5) { |s| s.generate_snapshot! }
+      # Do internal studios first, because their costs are absorbed by client_services studios
+      Parallel.map(Studio.not_internal, in_threads: 5) { |s| s.generate_snapshot! }
       Parallel.map(ProjectTracker.all, in_threads: 10) { |pt| pt.generate_snapshot! }
 
       ProfitSharePass.ensure_exists!

@@ -294,7 +294,8 @@
           type: 'linear',
           display: true,
           position: 'left',
-          beginAtZero: true
+          beginAtZero: true,
+          min: 0,
         },
         y1: {
           type: 'linear',
@@ -302,6 +303,8 @@
           position: 'right',
           beginAtZero: true,
           stacked: true,
+          max: 100,
+          min: 0,
           grid: {
             drawOnChartArea: false, // only want the grid lines for one axis to show up
           },
@@ -324,8 +327,20 @@
           type: 'linear',
           display: true,
           position: 'left',
-          beginAtZero: true
+          beginAtZero: true,
         },
+        y1: {
+          type: 'linear',
+          display: true,
+          position: 'right',
+          beginAtZero: true,
+          stacked: true,
+          max: 100,
+          min: 0,
+          grid: {
+            drawOnChartArea: false, // only want the grid lines for one axis to show up
+          },
+        }
       }
     }
   });

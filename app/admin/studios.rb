@@ -92,6 +92,7 @@ ActiveAdmin.register Studio do
           v.dig(accounting_method, "datapoints", "profit_margin", "value")
         end),
         yAxisID: 'y1',
+        fill: true,
         type: 'line'
       }, {
         label: "Payroll",
@@ -167,6 +168,14 @@ ActiveAdmin.register Studio do
         data: (snapshot.map do |v|
           v.dig(accounting_method, "datapoints", "actual_cost_per_hour_sold", "value")
         end)
+      }, {
+        label: 'Free Hours Given (%)',
+        backgroundColor: COLORS[4],
+        type: 'bar',
+        data: (snapshot.map do |v|
+          v.dig(accounting_method, "datapoints", "free_hours", "value")
+        end),
+        yAxisID: 'y1',
       }]
     }
 
