@@ -58,18 +58,25 @@ namespace :stacks do
   desc "Daily Tasks"
   task :daily_tasks => :environment do
     begin
+
+      puts "~~~> DOING SYNC: #{Time.new.localtime}"
       Stacks::Team.discover!
       Stacks::Forecast.new.sync_all!
       Stacks::Quickbooks.sync_all!
       QboAccount.all.map(&:sync_all!)
 
-      ## Snapshots
+      puts "~~~> DOING SNAPSHOTS"
       # Do internal studios first, because their costs are absorbed by client_services studios
       Parallel.map(Studio.internal, in_threads: 5) { |s| s.generate_snapshot! }
-      # Do internal studios first, because their costs are absorbed by client_services studios
-      Parallel.map(Studio.not_internal, in_threads: 5) { |s| s.generate_snapshot! }
+      # Next, do reinvestment studios
+      Parallel.map(Studio.reinvestment, in_threads: 5) { |s| s.generate_snapshot! }
+      # Finally, do client_services, which require data from internal studios 
+      # (and garden3d hides reinvestment data)
+      Parallel.map(Studio.client_services, in_threads: 5) { |s| s.generate_snapshot! }
+      # Now, generate project snapshots
       Parallel.map(ProjectTracker.all, in_threads: 10) { |pt| pt.generate_snapshot! }
 
+      puts "~~~> DOING MISC"
       ProfitSharePass.ensure_exists!
       Stacks::Dei.make_rollup # TODO Remove me
 
@@ -77,7 +84,12 @@ namespace :stacks do
       Stacks::Automator.remind_people_to_record_hours_weekly
       Stacks::Notifications.make_notifications!
       Stacks::Notifications.notify_admins_of_outstanding_notifications_every_tuesday!
+      puts "~~~> FIN: #{Time.new.localtime}"
+
     rescue => e
+      puts "~~~> ERROR"
+      puts e
+      puts e.backtrace
       Sentry.capture_exception(e)
     end
   end

@@ -9,13 +9,6 @@ class QboProfitAndLossReport < ApplicationRecord
     data[accounting_method]["rows"].select {|r| labels_array.include?(r[0]) }.reduce(0){|acc, row| acc += row[1].to_f}
   end
 
-  def burn_rate(accounting_method)
-    find_row(accounting_method, "Total Cost of Goods Sold") +
-    find_row(accounting_method, "Total Expenses") -
-    find_row(accounting_method, "[SC] Profit Share, Bonuses & Misc") -
-    find_row(accounting_method, "[SC] Reinvestment")
-  end
-
   def expenses_by_studio(studios = Studio.all, accounting_method)
     expense_data = studios.reduce({}) do |acc, studio|
       acc[studio] = []
@@ -98,28 +91,31 @@ class QboProfitAndLossReport < ApplicationRecord
     base = {
       revenue: gross_revenue,
       payroll: find_rows(accounting_method, studio.qbo_payroll_categories),
+      bonuses: find_rows(accounting_method, studio.qbo_bonus_categories),
       benefits: find_rows(accounting_method, studio.qbo_benefits_categories),
       supplies: find_rows(accounting_method, studio.qbo_supplies_categories),
       expenses: expense_map,
       subcontractors: find_rows(accounting_method, studio.qbo_subcontractors_categories),
-      profit_share: find_row(accounting_method, "[SC] Profit Share, Bonuses & Misc"),
-      reinvestment: find_row(accounting_method, "[SC] Reinvestment") # TODO: move me into reinvestment studio
+      profit_share: find_row(accounting_method, "[SC] Profit Share, Bonuses & Misc"), # TODO: What?
+      reinvestment: find_row(accounting_method, "[SC] Reinvestment") # TODO: move me into reinvestment studio?
     }
 
     if studio.is_garden3d?
       base[:cogs] = (
         find_row(accounting_method, "Total Cost of Goods Sold") +
         base[:expenses][:total] -
-        find_row(accounting_method, "[SC] Profit Share, Bonuses & Misc") -
+        find_row(accounting_method, "[SC] Reinvestment Profit Share, Bonuses & Misc") -
         find_row(accounting_method, "[SC] Reinvestment")
+        # TODO: Make this the total cost of reinvestment (and toggleable)
       )
     else
       base[:cogs] = (
         base[:payroll] +
+        base[:bonuses] +
         base[:supplies] +
         base[:benefits] +
-        base[:expenses][:total] +
-        base[:subcontractors]
+        base[:subcontractors] +
+        base[:expenses][:total]
       )
     end
 

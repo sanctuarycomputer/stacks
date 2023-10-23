@@ -109,6 +109,13 @@ ActiveAdmin.register Studio do
         backgroundColor: COLORS[2],
         stack: 'cogs'
       }, {
+        label: "Profit Share, Bonuses & Misc",
+        data: (snapshot.map do |v|
+          v.dig(accounting_method, "datapoints", "benefits", "value")
+        end),
+        backgroundColor: COLORS[2],
+        stack: 'cogs'
+      }, {
         label: "Studio Specific Expenses",
         data: (snapshot.map do |v|
           v.dig(accounting_method, "datapoints", "specific_expenses", "value")

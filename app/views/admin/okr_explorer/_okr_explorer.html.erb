@@ -75,17 +75,14 @@ function update(a, b) {
           <%= period["label"] %>
         </h2>
       </div>
+      <div id="titlebar_right">
+        <div class="action_items">
+          <%= link_to "Open P&L in Quickbooks ↗", "https://app.qbo.intuit.com/app/reportv2?token=PANDL&show_logo=false&date_macro=custom&low_date=#{period["period_starts_at"]}&high_date=#{period["period_ends_at"]}&column=total&showrows=active&showcols=active&subcol_pp=&subcol_pp_chg=&subcol_pp_pct_chg=&subcol_py=&subcol_py_chg=&subcol_py_pct_chg=&subcol_py_ytd=&subcol_ytd=&subcol_pct_ytd=&subcol_pct_row=&subcol_pct_col=&subcol_pct_inc=false&subcol_pct_exp=false&cash_basis=#{accounting_method == "cash" ? "yes" : "no"}&customized=yes&collapsed_rows=&edited_sections=false&divideby1000=false&hidecents=false&exceptzeros=true&adjusted_gain_loss=true&negativenums=1&negativered=false&show_header_title=true&show_header_range=true&show_footer_custom_message=true&show_footer_date=true&show_footer_time=true&show_footer_basis=true&header_alignment=Center&footer_alignment=Center&show_header_company=true&company_name=Sanctuary%20Computer%20Inc&collapse_subs=false&title=Profit%20and%20Loss&footer_custom_message=", target: "_blank" %>
+        </div>
+      </div>
     </div>
 
     <% if has_utilization_data %>
-      <div class="title_bar" id="title_bar" style="padding: 0px 0px 6px 0px;">
-        <div id="titlebar_right">
-          <div class="action_items">
-            <%= link_to "Open P&L in Quickbooks ↗", "https://app.qbo.intuit.com/app/reportv2?token=PANDL&show_logo=false&date_macro=custom&low_date=#{period["period_starts_at"]}&high_date=#{period["period_ends_at"]}&column=total&showrows=active&showcols=active&subcol_pp=&subcol_pp_chg=&subcol_pp_pct_chg=&subcol_py=&subcol_py_chg=&subcol_py_pct_chg=&subcol_py_ytd=&subcol_ytd=&subcol_pct_ytd=&subcol_pct_row=&subcol_pct_col=&subcol_pct_inc=false&subcol_pct_exp=false&cash_basis=#{accounting_method == "cash" ? "yes" : "no"}&customized=yes&collapsed_rows=&edited_sections=false&divideby1000=false&hidecents=false&exceptzeros=true&adjusted_gain_loss=true&negativenums=1&negativered=false&show_header_title=true&show_header_range=true&show_footer_custom_message=true&show_footer_date=true&show_footer_time=true&show_footer_basis=true&header_alignment=Center&footer_alignment=Center&show_header_company=true&company_name=Sanctuary%20Computer%20Inc&collapse_subs=false&title=Profit%20and%20Loss&footer_custom_message=", target: "_blank" %>
-          </div>
-        </div>
-      </div>
-
       <div class="dashboard-modules table index_table index">
         <div class="dashboard-module">
           <div class="module-body factoid-parent">

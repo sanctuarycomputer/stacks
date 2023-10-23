@@ -50,10 +50,16 @@ class ProfitSharePass < ApplicationRecord
     ).map(&:amount).reduce(:+) || 0.0)
   end
 
-  def prespent_budgetary_purchases
-    (PreSpentBudgetaryPurchase.where(
-      spent_at: Date.new(created_at.year).beginning_of_year..Date.new(created_at.year).end_of_year
-    ).map(&:amount).reduce(:+) || 0.0)
+  # TODO This isn't quite right yet
+  def total_cost_of_reinvestment_studios
+    all_studios = Studio.all
+    ytd_period = Stacks::Period.new(created_at.year.to_s, Date.new(created_at.year, 1, 1), finalization_day)
+    Studio.reinvestment.reduce(0) do |acc, s|
+      # Assume reinvestment studios don't have sellable hours
+      cogs = ytd_period.report.cogs_for_studio(s, all_studios, "cash", 0)
+      acc += cogs[:cogs]
+      acc
+    end
   end
 
   def finalization_day
@@ -120,9 +126,8 @@ class ProfitSharePass < ApplicationRecord
           }
         end
 
-      # Add pre-spent budgetary purchases here, as they are not considered
-      # part of our gross_expenses for that year
-      actuals[:gross_expenses] -= self.prespent_budgetary_purchases
+      # TODO: Hide the total cost of all reinvestment studios within this year from the calculator
+      actuals[:gross_expenses] -= self.total_cost_of_reinvestment_studios
 
       total_psu_issued =   
         Studio.garden3d.core_members_active_on(finalization_day).map{|a| a.projected_psu_by_eoy }.reject{|v| v == nil}.reduce(:+) || 0

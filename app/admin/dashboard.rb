@@ -3,6 +3,7 @@ ActiveAdmin.register_page "Dashboard" do
 
   content title: proc { I18n.t("active_admin.dashboard") } do
     COLORS = Stacks::Utils::COLORS
+    accounting_method = session[:accounting_method] || "cash"
 
     qbo_accounts = Stacks::Quickbooks.fetch_all_accounts
     cc_or_bank_accounts = qbo_accounts.select do |a|
@@ -19,12 +20,19 @@ ActiveAdmin.register_page "Dashboard" do
     
     burn_rates =
       [1, 2, 3].map do |month|
-        QboProfitAndLossReport.find_or_fetch_for_range(
+        report = QboProfitAndLossReport.find_or_fetch_for_range(
           (Date.today - month.months).beginning_of_month,
           (Date.today - month.months).end_of_month,
           false,
           nil
-        ).burn_rate(session[:accounting_method] || "cash")
+        )
+
+        (
+          report.find_row(accounting_method, "Total Cost of Goods Sold") +
+          report.find_row(accounting_method, "Total Expenses") -
+          report.find_row(accounting_method, "[SC] Reinvestment Profit Share, Bonuses & Misc") -
+          report.find_row(accounting_method, "[SC] Reinvestment") # TODO: not a thing anymore
+        )        
       end
     average_burn_rate = burn_rates.sum(0.0) / burn_rates.length
 

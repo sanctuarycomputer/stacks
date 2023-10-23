@@ -97,7 +97,7 @@ class Studio < ApplicationRecord
             acc
           end
 
-        acc[gradation] = Parallel.map(periods, in_threads: 5) do |period|
+        acc[gradation] = Parallel.map(periods, in_threads: 10) do |period|
           d = {
             label: period.label,
             period_starts_at: period.starts_at.strftime("%m/%d/%Y"),
@@ -198,7 +198,7 @@ class Studio < ApplicationRecord
         okrp.health_for_value(data[:value]).merge(data).merge({ hint: hint_for_okr(okr, datapoints) })
 
       # HACK: It's helpful for reinvestment to know how much
-      # surplus profit we've made.
+      # surplus profit we've made in the YTD.
       if okrp.okr.datapoint == "profit_margin"
         target_usd = 
           datapoints[:revenue][:value] * (acc[okrp.okr.name][:target]/100)
@@ -282,7 +282,6 @@ class Studio < ApplicationRecord
     @@g3d_instance ||= Studio.find_by(name: "garden3d", mini_name: "g3d")
   end
 
-  # TODO
   def core_members_active_on(date)
     if is_garden3d?
       AdminUser
@@ -375,6 +374,9 @@ class Studio < ApplicationRecord
     utilization_for_period = utilization_for_period(period, preloaded_studios), 
     g3d_utilization_for_period = preloaded_studios.find(&:is_garden3d?).utilization_for_period(period, preloaded_studios)
   )
+
+    # TODO: Fix me - right now I return nil if this period predates utilization data OR
+    # there's just no one there
     v = utilization_for_period.reduce(nil) do |acc, tuple|
       fp, data = tuple
       next data if acc.nil?
@@ -434,6 +436,10 @@ class Studio < ApplicationRecord
       },
       payroll: {
         value: cogs[:payroll],
+        unit: :usd
+      },
+      bonuses: {
+        value: cogs[:bonuses],
         unit: :usd
       },
       benefits: {
@@ -506,7 +512,7 @@ class Studio < ApplicationRecord
     data[:free_hours_count] = { unit: :count, value: nil }
     unless v.nil?
       free_hours_given = v[:billable]["0.0"] || 0
-      data[:free_hours][:value] = ((free_hours_given / v[:sellable]) * 100) 
+      data[:free_hours][:value] = v[:sellable] == 0 ? 0 : ((free_hours_given / v[:sellable]) * 100) 
       data[:free_hours_count][:value] = free_hours_given
     end
 
@@ -609,6 +615,13 @@ class Studio < ApplicationRecord
     return "Total Income" if is_garden3d?
     accounting_prefix.split(",").map(&:strip).map do |p|
       "[SC] #{p} Services"
+    end
+  end
+
+  def qbo_bonus_categories
+    return "Total [SC] Profit Share, Bonuses & Misc" if is_garden3d?
+    accounting_prefix.split(",").map(&:strip).map do |p|
+      "[SC] #{p} Profit Share, Bonuses & Misc"
     end
   end
 
