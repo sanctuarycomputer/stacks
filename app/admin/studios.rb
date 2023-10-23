@@ -67,6 +67,9 @@ ActiveAdmin.register Studio do
         end
       end
     end
+    column :last_generated do |resource|
+      "#{time_ago_in_words(DateTime.iso8601(resource.snapshot["generated_at"]))} ago"
+    end
     actions
   end
 
