@@ -96,7 +96,7 @@ class QboProfitAndLossReport < ApplicationRecord
       supplies: find_rows(accounting_method, studio.qbo_supplies_categories),
       expenses: expense_map,
       subcontractors: find_rows(accounting_method, studio.qbo_subcontractors_categories),
-      profit_share: find_row(accounting_method, "[SC] Profit Share, Bonuses & Misc"), # TODO: What?
+      profit_share: find_row(accounting_method, "[SC] Profit Share, Bonuses & Misc"), # TODO: What? Is this key used?
       reinvestment: find_row(accounting_method, "[SC] Reinvestment") # TODO: move me into reinvestment studio?
     }
 

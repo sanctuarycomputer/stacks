@@ -97,7 +97,7 @@ class Studio < ApplicationRecord
             acc
           end
 
-        acc[gradation] = Parallel.map(periods, in_threads: 10) do |period|
+        acc[gradation] = Parallel.map(periods, in_threads: 5) do |period|
           d = {
             label: period.label,
             period_starts_at: period.starts_at.strftime("%m/%d/%Y"),
