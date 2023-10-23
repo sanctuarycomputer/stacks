@@ -1,0 +1,87 @@
+<script>
+function update(a, b) {
+  var searchParams = new URLSearchParams(window.location.search);
+  if (b !== '')
+    searchParams.set(a, b);
+  else
+    searchParams.delete(a);
+  window.location.search = searchParams.toString();
+}
+</script>
+
+<% current_gradation = default_gradation unless all_gradations.include?(current_gradation) %>
+<div style="margin-bottom: 20px">
+  <% all_gradations.each do |gradation| %>
+    <a onclick='update("gradation", "<%= gradation %>");' style="margin-right: 6px">
+      <p class="nag pill <%= current_gradation == gradation ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
+        By <%= gradation.humanize %>
+      </p>
+    </a>
+  <% end %>
+</div>
+
+<% cosr.reverse_each do |p| %>
+  <% period, by_studio = p %>
+
+  <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+    <div id="titlebar_left">
+      <h2 id="page_title">
+        <%= period.label %>
+      </h2>
+    </div>
+  </div>
+
+  <% by_studio.keys.each do |studio| %>
+
+    <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom:20px;">
+      <thead>
+        <tr>
+          <th class="col">
+            <%= studio.name %>
+          </th>
+          <th class="col">
+            Hours
+          </th>
+          <th class="col">
+            @ Cost per Sellable Hour <%= number_to_currency by_studio[studio][accounting_method.to_sym][:cost_per_sellable_hour] %>
+          </th>
+          <th class="col text-right">
+            @ Actual Cost per Hour Sold <%= number_to_currency by_studio[studio][accounting_method.to_sym][:actual_cost_per_hour_sold] %>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+      
+        <% by_studio[studio][:forecast_people].each_with_index do |tuple, index| %>
+          <% person, data = tuple %>
+          <tr class="<%= index.even? ? "even" : "odd" %>">
+            <td class="col">
+              <%= person.email %>
+            </td>
+            <td class="col">
+              <%= data[:hours] %>
+            </td>
+            <td class="col">
+              <%= number_to_currency data[:hours] * by_studio[studio][accounting_method.to_sym][:cost_per_sellable_hour] %>
+            </td>
+            <td class="col text-right">
+              <%= number_to_currency data[:hours] * by_studio[studio][accounting_method.to_sym][:actual_cost_per_hour_sold] %>
+            </td>
+          </tr>
+        <% end %>
+        <tr class="odd">
+          <td class="col">
+            <strong>Total</strong>
+          </td>
+          <td></td>
+          <td></td>
+          <td class="col text-right">
+            <%= number_to_currency by_studio[studio][:forecast_people].reduce(0){|acc, p| acc += p[1][:hours]; acc } * by_studio[studio][accounting_method.to_sym][:actual_cost_per_hour_sold] %>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  <% end %>
+  
+
+<% end %>

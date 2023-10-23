@@ -81,14 +81,8 @@ class ProjectTracker < ApplicationRecord
   end
 
   def generate_snapshot!
-    periods = decorated_datapoints_during_relevant_periods
-
-    average_cost_per_hour_sold =
-      Stacks::Utils.weighted_average(
-        periods.map do |p, dp|
-          [dp.dig("actual_cost_per_hour_sold", "value"), dp.dig("billable_hours", "value")]
-        end.reject{|p| p[0] == nil}
-      )
+    cosr = cost_of_services_rendered("month")
+    preloaded_studios = Studio.all
 
     snapshot = (
       (self.first_recorded_assignment.try(:start_date) || Date.today)..
@@ -112,7 +106,9 @@ class ProjectTracker < ApplicationRecord
         #cost_total: 0,
       }
     }) do |acc, date|
-      hours = self.total_hours_during_range(date, date)
+      hours_by_studio = self.total_hours_during_range_by_studio(preloaded_studios, date, date)
+      hours = hours_by_studio.values.reduce(:+) || 0
+      
       acc[:hours].push({
         x: date.iso8601,
         y: acc[:hours_total] += hours
@@ -124,18 +120,23 @@ class ProjectTracker < ApplicationRecord
           self.total_value_during_range(date, date)
       })
 
-      p = periods.keys.find{|p| p.starts_at <= date && p.ends_at >= date}
-
-      cash_cogs = hours * periods[p]["cash_project_cost_per_hour"]
+      cosrp = cosr.keys.find{|p| p.starts_at <= date && p.ends_at >= date}
+      cosr_for_date = hours_by_studio.reduce({ cash: 0, accrual: 0 }) do |acc, s|
+        studio, hours = s
+        data = cosr[cosrp][studio]
+        acc[:cash] += hours * data[:cash][:actual_cost_per_hour_sold]
+        acc[:accrual] += hours * data[:accrual][:actual_cost_per_hour_sold]
+        acc
+      end
+      
       acc[:cash][:cogs].push({
         x: date.iso8601,
-        y: acc[:cash][:cogs_total] += cash_cogs
+        y: acc[:cash][:cogs_total] += cosr_for_date[:cash]
       })
 
-      accrual_cogs = hours * periods[p]["accrual_project_cost_per_hour"]
       acc[:accrual][:cogs].push({
         x: date.iso8601,
-        y: acc[:accrual][:cogs_total] += accrual_cogs
+        y: acc[:accrual][:cogs_total] += cosr_for_date[:accrual]
       })
 
       # TODO: Make me faster
@@ -237,6 +238,23 @@ class ProjectTracker < ApplicationRecord
     ((income - cost) / cost) * 100
   end
 
+  def total_hours_during_range_by_studio(preloaded_studios = Studio.all, start_range, end_range)
+    assignments =
+      ForecastAssignment
+        .includes(:forecast_person)
+        .where(project_id: forecast_projects.map(&:forecast_id))
+        .where('end_date >= ? AND start_date <= ?', start_range, end_range)
+
+    assignments.reduce({}) do |acc, assignment|
+      studio = assignment.forecast_person.studio(preloaded_studios)
+      next acc unless studio.present?
+
+      acc[studio] ||= 0
+      acc[studio] += assignment.allocation_during_range_in_hours(start_range, end_range)
+      acc
+    end
+  end
+
   def total_hours_during_range(start_range, end_range)
     forecast_projects.reduce(0) do |acc, fp|
       acc += fp.total_hours_during_range(start_range, end_range)
@@ -279,8 +297,9 @@ class ProjectTracker < ApplicationRecord
     end
   end
 
-  def datapoints_during_relevant_periods
-    garden3d = Studio.find_by(name: "garden3d")
+  def cost_of_services_rendered(mode)
+    preloaded_studios = Studio.all
+    g3d = preloaded_studios.find(&:is_garden3d?)
     periods = {}
     time = (
       first_recorded_assignment ?
@@ -292,57 +311,57 @@ class ProjectTracker < ApplicationRecord
       last_recorded_assignment.end_date.beginning_of_month :
       Date.today.beginning_of_month
     )
+
+    assignments =
+      ForecastAssignment
+        .includes(:forecast_person)
+        .where(project_id: forecast_projects.map(&:forecast_id))
+        .where('end_date >= ? AND start_date <= ?', time, end_time)
+
     while time <= end_time
       period = Stacks::Period.new(
         time.strftime("%B, %Y"),
         time.beginning_of_month,
         time.end_of_month
       )
-      periods[period] = {
-        "cash" =>
-          garden3d.snapshot["month"].find{|v| v["label"] == period.label}.try(:dig, "cash", "datapoints") || {},
-        "accrual" =>
-          garden3d.snapshot["month"].find{|v| v["label"] == period.label}.try(:dig, "accrual",  "datapoints") || {},
-      }
+
+      periods[period] = assignments.reduce({}) do |acc, assignment|
+        studio = assignment.forecast_person.studio(preloaded_studios)
+
+        # Find the snapshot for the corresponding month, or (if it's the current month and thus
+        # not in the snapshot), fallback to the studio's latest monthly snapshot
+        snapshot = 
+          studio.snapshot["month"].find{|v| v["label"] == period.label} || studio.snapshot["month"].last
+
+        acc[studio] = acc[studio] || {
+          cash: {
+            cost_per_sellable_hour: 
+              snapshot.try(:dig, "cash", "datapoints", "cost_per_sellable_hour", "value").try(:to_f) || 0,
+            actual_cost_per_hour_sold: 
+              snapshot.try(:dig, "cash", "datapoints", "actual_cost_per_hour_sold", "value").try(:to_f) || 0
+          },
+          accrual: {
+            cost_per_sellable_hour: 
+              snapshot.try(:dig, "accrual", "datapoints", "cost_per_sellable_hour", "value").try(:to_f) || 0,
+            actual_cost_per_hour_sold: 
+              snapshot.try(:dig, "accrual", "datapoints", "actual_cost_per_hour_sold", "value").try(:to_f) || 0
+          },
+          forecast_people: {},
+        }
+      
+        acc[studio][:forecast_people][assignment.forecast_person] = 
+          acc[studio][:forecast_people][assignment.forecast_person] || { hours: 0 }
+        acc[studio][:forecast_people][assignment.forecast_person][:hours] +=
+          assignment.allocation_during_range_in_hours(period.starts_at, period.ends_at)
+        acc
+      end
+    
       time = time.advance(months: 1)
     end
+
     periods
   end
-
-  def decorated_datapoints_during_relevant_periods
-    periods = datapoints_during_relevant_periods
-
-    cash_average_cost_per_hour_sold =
-      Stacks::Utils.weighted_average(
-        periods.map do |p, dp|
-          [dp.dig("cash", "actual_cost_per_hour_sold", "value"), dp.dig("cash", "billable_hours", "value")]
-        end.reject{|p| p[0] == nil}.map{|p| [p[0].to_f, p[1].to_f]}
-      )
-    accrual_average_cost_per_hour_sold =
-      Stacks::Utils.weighted_average(
-        periods.map do |p, dp|
-          [dp.dig("accrual", "actual_cost_per_hour_sold", "value"), dp.dig("accrual", "billable_hours", "value")]
-        end.reject{|p| p[0] == nil}.map{|p| [p[0].to_f, p[1].to_f]}
-      )
-
-    periods.each do |p, dp|
-      dp["project_hours"] =
-        total_hours_during_range(p.starts_at, p.ends_at)
-      dp["cash_project_cost_per_hour"] = (
-        periods[p].dig("cash", "actual_cost_per_hour_sold", "value") == nil ?
-        cash_average_cost_per_hour_sold.to_f :
-        periods[p].dig("cash", "actual_cost_per_hour_sold", "value").to_f
-      )
-      dp["cash_project_cost"] = (dp["project_hours"] * dp["cash_project_cost_per_hour"])
-      dp["accrual_project_cost_per_hour"] = (
-        periods[p].dig("accrual", "actual_cost_per_hour_sold", "value") == nil ?
-        accrual_average_cost_per_hour_sold.to_f :
-        periods[p].dig("accrual", "actual_cost_per_hour_sold", "value").to_f
-      )
-      dp["accrual_project_cost"] = (dp["project_hours"] * dp["accrual_project_cost_per_hour"])
-    end
-  end
-
+ 
   def raw_resourcing_cost_during_range_in_usd(start_range, end_range)
     assignments =
       ForecastAssignment
