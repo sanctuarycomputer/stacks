@@ -98,7 +98,7 @@
             </tr>
             -->
             <tr class="even">
-              <td class="col"><strong>Estimated COGS</strong></td>
+              <td class="col"><strong>Estimated COSR</strong></td>
               <td class="col text-right">
                 <%= number_to_currency(estimated_cost) %>
               </td>
@@ -145,6 +145,13 @@
   </div>
 <% end %>
 
+<% if @project_tracker.has_recorded_hours_after_today? %>
+  <a href="https://www.notion.so/garden3d/How-to-Record-your-Working-Time-ff971848f66d40cf818b930f05cfc533?pvs=4#561f0ff911ff4948b676d0f336cafd19" target="_blank" style="margin-bottom:0px;margin-right: 6px">
+    <p class="pill nag error">
+      Future hours detected ↗
+    </p>
+  </a>
+<% end %>
 
 <p class="pill nag <%= @project_tracker.status %>" style="margin-bottom: 0px;margin-right: 6px;">
   <%= @project_tracker.status.to_s.try(:humanize) %>
@@ -174,6 +181,7 @@
       <% else %>
         <p>Full chart not generated yet.</p>
       <% end %>
+      <%= link_to "COSR Explorer ↗", admin_project_tracker_project_cosr_explorer_path(@project_tracker) %>
     </div>
     <div class="module-body">
       <canvas id="burnup"></canvas>

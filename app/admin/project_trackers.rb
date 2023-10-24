@@ -129,7 +129,7 @@ ActiveAdmin.register ProjectTracker do
       div([
         span("#{resource.profit_margin.round(1)}%"),
         para(class: "okr_hint", style: "margin-bottom:0px;padding-top:0px !important") do
-          "#{number_to_currency resource.income} invoiced, #{number_to_currency resource.estimated_cost("cash")} COGS"
+          "#{number_to_currency resource.income} invoiced, #{number_to_currency resource.estimated_cost("cash")} COSR"
         end
       ])
     end
@@ -298,25 +298,15 @@ ActiveAdmin.register ProjectTracker do
       })
     end
 
-    if resource.snapshot[accounting_method].try(:dig, "cogs")
+    if resource.snapshot[accounting_method].try(:dig, "cosr")
       burnup_data[:data][:datasets].push({
         borderColor: Stacks::Utils::COLORS[2], # color of dots
         backgroundColor: Stacks::Utils::COLORS[8], # color of line
-        label: "COGS",
-        data: resource.snapshot[accounting_method].try(:dig, "cogs"),
+        label: "Cost of Services Rendered (COSR)",
+        data: resource.snapshot[accounting_method].try(:dig, "cosr"),
         pointRadius: 1
       })
     end
-
-    #if resource.snapshot["cost"]
-    #  burnup_data[:data][:datasets].push({
-    #    backgroundColor: Stacks::Utils::COLORS[2], # color of dots
-    #    borderColor: Stacks::Utils::COLORS[8], # color of line
-    #    label: "Cost of Labor",
-    #    data: resource.snapshot["cost"],
-    #    pointRadius: 1,
-    #  })
-    #end
 
     render(partial: 'show', locals: {
       burnup_data: burnup_data

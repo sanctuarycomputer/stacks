@@ -1,25 +1,3 @@
-<script>
-function update(a, b) {
-  var searchParams = new URLSearchParams(window.location.search);
-  if (b !== '')
-    searchParams.set(a, b);
-  else
-    searchParams.delete(a);
-  window.location.search = searchParams.toString();
-}
-</script>
-
-<% current_gradation = default_gradation unless all_gradations.include?(current_gradation) %>
-<div style="margin-bottom: 20px">
-  <% all_gradations.each do |gradation| %>
-    <a onclick='update("gradation", "<%= gradation %>");' style="margin-right: 6px">
-      <p class="nag pill <%= current_gradation == gradation ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
-        By <%= gradation.humanize %>
-      </p>
-    </a>
-  <% end %>
-</div>
-
 <% cosr.reverse_each do |p| %>
   <% period, by_studio = p %>
 
@@ -29,15 +7,19 @@ function update(a, b) {
         <%= period.label %>
       </h2>
     </div>
+    <div id="titlebar_right">
+      <h2>
+        <%= number_to_currency by_studio.reduce(0){|acc, d| acc += d[1][:total_studio_hours] * d[1][accounting_method.to_sym][:actual_cost_per_hour_sold]; acc} %>
+      </h2>
+    </div>
   </div>
 
   <% by_studio.keys.each do |studio| %>
-
-    <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom:20px;">
+    <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom:20px;table-layout:fixed;">
       <thead>
         <tr>
           <th class="col">
-            <%= studio.name %>
+            <%= link_to "#{studio.name} ↗", admin_studio_path(studio) %>
           </th>
           <th class="col">
             Hours
@@ -50,8 +32,8 @@ function update(a, b) {
           </th>
         </tr>
       </thead>
+
       <tbody>
-      
         <% by_studio[studio][:forecast_people].each_with_index do |tuple, index| %>
           <% person, data = tuple %>
           <tr class="<%= index.even? ? "even" : "odd" %>">
@@ -76,7 +58,7 @@ function update(a, b) {
           <td></td>
           <td></td>
           <td class="col text-right">
-            <%= number_to_currency by_studio[studio][:forecast_people].reduce(0){|acc, p| acc += p[1][:hours]; acc } * by_studio[studio][accounting_method.to_sym][:actual_cost_per_hour_sold] %>
+            <%= number_to_currency by_studio[studio][:total_studio_hours] * by_studio[studio][accounting_method.to_sym][:actual_cost_per_hour_sold] %>
           </td>
         </tr>
       </tbody>

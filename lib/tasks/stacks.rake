@@ -65,7 +65,7 @@ namespace :stacks do
       Stacks::Quickbooks.sync_all!
 
       # TODO: When we start using enterprises, freshen this
-      #QboAccount.all.map(&:sync_all!)
+      # QboAccount.all.map(&:sync_all!)
 
       puts "~~~> DOING SNAPSHOTS"
       # Do internal studios first, because their costs are absorbed by client_services studios

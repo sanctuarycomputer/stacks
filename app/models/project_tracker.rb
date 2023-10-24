@@ -45,6 +45,10 @@ class ProjectTracker < ApplicationRecord
     @_forecast_projects ||= super
   end
 
+  def has_recorded_hours_after_today?
+    (last_recorded_assignment.try(:end_date) || Date.today) > Date.today
+  end
+
   def has_msa_and_sow_links
     unless project_tracker_links.find{|l| l.link_type == "msa"}.present?
       errors.add(:base, "An MSA Project URL must be present.")
@@ -56,6 +60,8 @@ class ProjectTracker < ApplicationRecord
   end
 
   def make_adhoc_snapshot(period = 7.days)
+    preloaded_studios = Studio.all
+
     snapshot = (
       (Date.today - period)..
       Date.today
@@ -65,7 +71,9 @@ class ProjectTracker < ApplicationRecord
       hours_total: 0,
       spend_total: 0,
     }) do |acc, date|
-      hours = self.total_hours_during_range(date, date)
+      hours_by_studio = self.total_hours_during_range_by_studio(preloaded_studios, date, date)
+      hours = hours_by_studio.values.reduce(:+) || 0
+
       acc[:hours].push({
         x: date.iso8601,
         y: acc[:hours_total] += hours
@@ -83,10 +91,11 @@ class ProjectTracker < ApplicationRecord
   def generate_snapshot!
     cosr = cost_of_services_rendered("month")
     preloaded_studios = Studio.all
+    today = Date.today
 
     snapshot = (
       (self.first_recorded_assignment.try(:start_date) || Date.today)..
-      (self.last_recorded_assignment.try(:end_date) || Date.today)
+      [(self.last_recorded_assignment.try(:end_date) || Date.today), today].min
     ).reduce({
       generated_at: DateTime.now.iso8601,
       hours: [],
@@ -94,16 +103,12 @@ class ProjectTracker < ApplicationRecord
       hours_total: 0,
       spend_total: 0,
       cash: {
-        cogs: [],
-        cogs_total: 0,
-        #cost: [],
-        #cost_total: 0,
+        cosr: [],
+        cosr_total: 0,
       },
       accrual: {
-        cogs: [],
-        cogs_total: 0,
-        #cost: [],
-        #cost_total: 0,
+        cosr: [],
+        cosr_total: 0,
       }
     }) do |acc, date|
       hours_by_studio = self.total_hours_during_range_by_studio(preloaded_studios, date, date)
@@ -129,22 +134,15 @@ class ProjectTracker < ApplicationRecord
         acc
       end
       
-      acc[:cash][:cogs].push({
+      acc[:cash][:cosr].push({
         x: date.iso8601,
-        y: acc[:cash][:cogs_total] += cosr_for_date[:cash]
+        y: acc[:cash][:cosr_total] += cosr_for_date[:cash]
       })
 
-      acc[:accrual][:cogs].push({
+      acc[:accrual][:cosr].push({
         x: date.iso8601,
-        y: acc[:accrual][:cogs_total] += cosr_for_date[:accrual]
+        y: acc[:accrual][:cosr_total] += cosr_for_date[:accrual]
       })
-
-      # TODO: Make me faster
-      #acc[:cost].push({
-      #  x: date.iso8601,
-      #  y: acc[:cost_total] +=
-      #    self.raw_resourcing_cost_during_range_in_usd(date, date)
-      #})
       acc
     end
 
@@ -225,7 +223,7 @@ class ProjectTracker < ApplicationRecord
 
   def estimated_cost(accounting_method)
     return 0 if snapshot.empty? # If new project trackers are made, we'll not have a snapshot yet
-    latest = snapshot[accounting_method]["cogs"].try(:last)
+    latest = snapshot[accounting_method]["cosr"].try(:last)
     latest ? (latest["y"] || 0) : 0
   end
 
@@ -246,6 +244,7 @@ class ProjectTracker < ApplicationRecord
         .where('end_date >= ? AND start_date <= ?', start_range, end_range)
 
     assignments.reduce({}) do |acc, assignment|
+      next acc unless assignment.forecast_person.present?
       studio = assignment.forecast_person.studio(preloaded_studios)
       next acc unless studio.present?
 
@@ -298,6 +297,7 @@ class ProjectTracker < ApplicationRecord
   end
 
   def cost_of_services_rendered(mode)
+    today = Date.today
     preloaded_studios = Studio.all
     g3d = preloaded_studios.find(&:is_garden3d?)
     periods = {}
@@ -306,17 +306,16 @@ class ProjectTracker < ApplicationRecord
       first_recorded_assignment.start_date.beginning_of_month :
       Date.new(2020, 1, 1)
     )
-    end_time = (
+    end_time = [(
       last_recorded_assignment ?
       last_recorded_assignment.end_date.beginning_of_month :
       Date.today.beginning_of_month
-    )
+    ), today].min
 
     assignments =
       ForecastAssignment
         .includes(:forecast_person)
         .where(project_id: forecast_projects.map(&:forecast_id))
-        .where('end_date >= ? AND start_date <= ?', time, end_time)
 
     while time <= end_time
       period = Stacks::Period.new(
@@ -326,7 +325,12 @@ class ProjectTracker < ApplicationRecord
       )
 
       periods[period] = assignments.reduce({}) do |acc, assignment|
+        next acc unless assignment.forecast_person.present?
+
         studio = assignment.forecast_person.studio(preloaded_studios)
+        # Old records (like Joshie) never got assigned a studio in Forecast. That's a long time ago
+        # so no need to worry about that :)
+        next acc unless studio.present?
 
         # Find the snapshot for the corresponding month, or (if it's the current month and thus
         # not in the snapshot), fallback to the studio's latest monthly snapshot
@@ -351,12 +355,27 @@ class ProjectTracker < ApplicationRecord
       
         acc[studio][:forecast_people][assignment.forecast_person] = 
           acc[studio][:forecast_people][assignment.forecast_person] || { hours: 0 }
+
         acc[studio][:forecast_people][assignment.forecast_person][:hours] +=
-          assignment.allocation_during_range_in_hours(period.starts_at, period.ends_at)
+          assignment.allocation_during_range_in_hours(period.starts_at, [period.ends_at, today].min)
         acc
       end
-    
+
       time = time.advance(months: 1)
+    end
+
+    periods.each do |p|
+      period, by_studio = p
+      
+      by_studio.each do |s|
+        studio, data = s
+        data[:total_studio_hours] = 
+          by_studio[studio][:forecast_people].reduce(0) do |acc, pd|
+            forecast_person, hours_data = pd
+            acc += hours_data[:hours]
+            acc
+          end
+      end
     end
 
     periods
