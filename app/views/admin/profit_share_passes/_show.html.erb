@@ -1,4 +1,11 @@
-<% scenario = profit_share_pass.make_scenario %>
+<% scenario = profit_share_pass.make_scenario(
+  params["gross_revenue_override"],
+  params["gross_payroll_override"],
+  params["gross_benefits_override"],
+  params["gross_expenses_override"],
+  params["gross_subcontractors_override"],
+) %>
+
 <% is_projection = profit_share_pass.is_projection? %>
 
 <% if is_projection %>
@@ -44,11 +51,17 @@
             <td class="col">
               <%= number_to_currency(scenario.actuals[:gross_revenue]) %>
             </td>
+            <td class="col text-right">
+              $<%= text_field_tag 'gross_revenue_override', params["gross_revenue_override"], disabled: !is_projection, placeholder: "Revenue Override", type: "number" %>
+            </td>
           </tr>
           <tr class="even">
             <td class="col">Gross Payroll</td>
             <td class="col">
               <%= number_to_currency(scenario.actuals[:gross_payroll]) %>
+            </td>
+            <td class="col text-right">
+              $<%= text_field_tag 'gross_payroll_override', params["gross_payroll_override"], disabled: !is_projection, placeholder: "Payroll Override", type: "number" %>
             </td>
           </tr>
           <tr class="odd">
@@ -56,11 +69,17 @@
             <td class="col">
               <%= number_to_currency(scenario.actuals[:gross_benefits]) %>
             </td>
+            <td class="col text-right">
+              $<%= text_field_tag 'gross_benefits_override', params["gross_benefits_override"], disabled: !is_projection, placeholder: "Benefits Override", type: "number" %>
+            </td>
           </tr>
           <tr class="even">
             <td class="col">Gross Expenses</td>
             <td class="col">
               <%= number_to_currency(scenario.actuals[:gross_expenses]) %>
+            </td>
+            <td class="col text-right">
+              $<%= text_field_tag 'gross_expenses_override', params["gross_expenses_override"], disabled: !is_projection, placeholder: "Expenses Override", type: "number" %>
             </td>
           </tr>
           <tr class="odd">
@@ -68,16 +87,23 @@
             <td class="col">
               <%= number_to_currency(scenario.actuals[:gross_subcontractors]) %>
             </td>
+            <td class="col text-right">
+              $<%= text_field_tag 'gross_subcontractors_override', params["gross_subcontractors_override"], disabled: !is_projection, placeholder: "Subcontractors Override", type: "number" %>
+            </td>
           </tr>
           <tr class="even">
             <td class="col"><strong>Total Profit</strong></td>
             <td class="col">
               <%= number_to_currency(scenario.total_profit) %>
             </td>
+            <td class="col text-right">
+              <form>
+                <%= button_tag 'Apply Overrides', class: 'apply_overrides', type: 'submit', disabled: !is_projection %>
+              </form>
+            </td>
           </tr>
         </tbody>
       </table>
-
     </div>
   </div>
 </div>
@@ -245,3 +271,23 @@
     <% end %>
   </tbody>
 </table>
+
+<script>
+var button = document.querySelector('button.apply_overrides')
+if (button) {
+  button.addEventListener('click', function(e) {
+    e.preventDefault();
+    var searchParams = new URLSearchParams(window.location.search);
+    
+    document.querySelectorAll('input').forEach(function(e) {
+      if (e.value) { 
+        searchParams.set(e.name, e.value);
+      } else {
+        searchParams.delete(e.name);
+      }
+    });
+
+    window.location.search = searchParams.toString();
+  })
+}
+</script>

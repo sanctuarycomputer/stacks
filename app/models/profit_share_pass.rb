@@ -52,6 +52,7 @@ class ProfitSharePass < ApplicationRecord
 
   # TODO This isn't quite right yet
   def total_cost_of_reinvestment_studios
+    return 0
     all_studios = Studio.all
     ytd_period = Stacks::Period.new(created_at.year.to_s, Date.new(created_at.year, 1, 1), finalization_day)
     Studio.reinvestment.reduce(0) do |acc, s|
@@ -84,7 +85,13 @@ class ProfitSharePass < ApplicationRecord
     end
   end
 
-  def make_scenario
+  def make_scenario(
+    gross_revenue_override = nil,
+    gross_payroll_override = nil,
+    gross_benefits_override = nil,
+    gross_expenses_override = nil,
+    gross_subcontractors_override = nil
+  )
     if finalized?
       Stacks::ProfitShare::Scenario.new(
         snapshot["inputs"]["actuals"].symbolize_keys,
@@ -125,6 +132,13 @@ class ProfitSharePass < ApplicationRecord
             gross_subcontractors: (ytd[:gross_subcontractors] / days_elapsed) * days_this_year,
           }
         end
+      
+      # Override for projections
+      actuals[:gross_revenue] = gross_revenue_override.to_f if gross_revenue_override.present?
+      actuals[:gross_payroll] = gross_payroll_override.to_f if gross_payroll_override.present?
+      actuals[:gross_benefits] = gross_benefits_override.to_f if gross_benefits_override.present?
+      actuals[:gross_expenses] = gross_expenses_override.to_f if gross_expenses_override.present?
+      actuals[:gross_subcontractors] = gross_subcontractors_override.to_f if gross_subcontractors_override.present?
 
       # TODO: Hide the total cost of all reinvestment studios within this year from the calculator
       actuals[:gross_expenses] -= self.total_cost_of_reinvestment_studios

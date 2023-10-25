@@ -24,6 +24,12 @@ hr {
   box-shadow: none;
 }
 
+input {
+  border: 1px solid $color-light-grey;
+  font-family: 'Inter var', sans-serif;
+  border-radius: 4px;
+}
+
 code {
   background-color: #f4f5f5;
   border-radius: 999px;
