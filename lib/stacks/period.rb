@@ -68,6 +68,11 @@ class Stacks::Period
         )
         time = time.advance(years: 1)
       end
+      periods << Stacks::Period.new(
+        "YTD",
+        Date.today.beginning_of_year,
+        Date.today.end_of_year
+      )
       return periods
     
     when :trailing_3_months

@@ -48,6 +48,10 @@ class Studio < ApplicationRecord
     (snapshot["month"] || [{}]).last.dig("cash", "okrs", "Health") || {}
   end
 
+  def net_revenue(accounting_method = "cash")
+    (snapshot["year"].find{|p| p["label"] == "YTD"} || {}).dig(accounting_method, "datapoints", "net_revenue", "value").try(:to_f)
+  end
+
   def current_studio_coordinators
     studio_coordinator_periods
       .select{|p| p.started_at <= Date.today && p.ended_at_or_now >= Date.today}
@@ -374,29 +378,14 @@ class Studio < ApplicationRecord
     utilization_for_period = utilization_for_period(period, preloaded_studios), 
     g3d_utilization_for_period = preloaded_studios.find(&:is_garden3d?).utilization_for_period(period, preloaded_studios)
   )
-
     # TODO: Fix me - right now I return nil if this period predates utilization data OR
     # there's just no one there
-    v = utilization_for_period.reduce(nil) do |acc, tuple|
-      fp, data = tuple
-      next data if acc.nil?
-      acc.merge(data) do |k, old, new|
-        old.is_a?(Hash) ? (old.merge(new) {|k, o, n| o+n}) : (old + new)
-      end
-    end
 
-    g3dv = g3d_utilization_for_period.reduce(nil) do |acc, tuple|
-      fp, data = tuple
-      next data if acc.nil?
-      acc.merge(data) do |k, old, new|
-        old.is_a?(Hash) ? (old.merge(new) {|k, o, n| o+n}) : (old + new)
-      end
-    end
+    v, g3dv, sellable_hours_proportion = merged_utilization_data(
+      utilization_for_period,
+      g3d_utilization_for_period
+    )
 
-    sellable_hours_proportion = nil
-    if v.present? && g3dv.present?
-      sellable_hours_proportion =  v[:sellable] / g3dv[:sellable]
-    end
     cogs = period.report.cogs_for_studio(
       self, 
       preloaded_studios,
@@ -468,6 +457,10 @@ class Studio < ApplicationRecord
       },
       cogs: {
         value: cogs[:cogs],
+        unit: :usd
+      },
+      net_revenue: {
+        value: cogs[:net_revenue],
         unit: :usd
       },
       profit_margin: {
@@ -605,6 +598,36 @@ class Studio < ApplicationRecord
       end
       acc
     end
+  end
+
+  def merged_utilization_data(
+    utilization_for_period,
+    g3d_utilization_for_period 
+  )
+    # TODO: Fix me - right now I return nil if this period predates utilization data OR
+    # there's just no one there
+    v = utilization_for_period.reduce(nil) do |acc, tuple|
+      fp, data = tuple
+      next data if acc.nil?
+      acc.merge(data) do |k, old, new|
+        old.is_a?(Hash) ? (old.merge(new) {|k, o, n| o+n}) : (old + new)
+      end
+    end
+
+    g3dv = g3d_utilization_for_period.reduce(nil) do |acc, tuple|
+      fp, data = tuple
+      next data if acc.nil?
+      acc.merge(data) do |k, old, new|
+        old.is_a?(Hash) ? (old.merge(new) {|k, o, n| o+n}) : (old + new)
+      end
+    end
+
+    sellable_hours_proportion = nil
+    if v.present? && g3dv.present?
+      sellable_hours_proportion =  v[:sellable] / g3dv[:sellable]
+    end
+
+    [v, g3dv, sellable_hours_proportion]
   end
 
   def is_garden3d?

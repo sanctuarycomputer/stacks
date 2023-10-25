@@ -61,10 +61,19 @@ ActiveAdmin.register Studio do
     column :mini_name
     column :studio_type
     column :health do |resource|
-      span(class: "pill #{resource.health.dig("health")}") do 
-        span(class: "split") do
-          strong(resource.health.dig("value"))
+      if resource.client_services?
+        span(class: "pill #{resource.health.dig("health")}") do 
+          span(class: "split") do
+            strong(resource.health.dig("value"))
+          end
         end
+      else
+        div([
+          span("#{number_to_currency resource.net_revenue}"),
+          para(class: "okr_hint", style: "margin-bottom:0px;padding-top:0px !important") do
+            "YTD Net revenue"
+          end
+        ])
       end
     end
     column :last_generated do |resource|
