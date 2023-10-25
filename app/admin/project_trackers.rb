@@ -129,7 +129,7 @@ ActiveAdmin.register ProjectTracker do
       div([
         span("#{resource.profit_margin.round(1)}%"),
         para(class: "okr_hint", style: "margin-bottom:0px;padding-top:0px !important") do
-          "#{number_to_currency resource.income} invoiced, #{number_to_currency resource.estimated_cost("cash")} COSR"
+          "#{number_to_currency resource.spend} earnt, #{number_to_currency resource.estimated_cost("cash")} COSR"
         end
       ])
     end

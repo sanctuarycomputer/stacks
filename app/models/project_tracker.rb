@@ -217,8 +217,11 @@ class ProjectTracker < ApplicationRecord
   end
 
   def spend
-    latest = snapshot["spend"].try(:last)
-    latest ? latest["y"] : 0
+    # Invoiced amount plus this month's value
+    income + total_value_during_range(
+      Date.today.beginning_of_month,
+      Date.today.end_of_month,
+    )
   end
 
   def estimated_cost(accounting_method)
@@ -228,12 +231,12 @@ class ProjectTracker < ApplicationRecord
   end
 
   def profit
-    income - estimated_cost("cash")
+    spend - estimated_cost("cash")
   end
 
   def profit_margin
     cost = estimated_cost("cash")
-    ((income - cost) / cost) * 100
+    ((spend - cost) / cost) * 100
   end
 
   def total_hours_during_range_by_studio(preloaded_studios = Studio.all, start_range, end_range)
@@ -435,18 +438,20 @@ class ProjectTracker < ApplicationRecord
   end
 
   def income
-    forecast_project_ids = forecast_projects.map(&:forecast_id) || []
+    @_income ||= (
+      forecast_project_ids = forecast_projects.map(&:forecast_id) || []
 
-    from_generated_invoices =
-      invoice_trackers.reduce(0.0) do |acc, it|
-        acc += it.qbo_line_items_relating_to_forecast_projects(forecast_projects).map{|qbo_li| qbo_li.dig("amount").to_f}.reduce(&:+) || 0
-      end
+      from_generated_invoices =
+        invoice_trackers.reduce(0.0) do |acc, it|
+          acc += it.qbo_line_items_relating_to_forecast_projects(forecast_projects).map{|qbo_li| qbo_li.dig("amount").to_f}.reduce(&:+) || 0
+        end
 
-    from_adhoc_invoices =
-      (adhoc_invoice_trackers.reduce(0.0) do |acc, ahit|
-        acc += ahit.qbo_invoice.try(:total) || 0
-      end || 0)
+      from_adhoc_invoices =
+        (adhoc_invoice_trackers.reduce(0.0) do |acc, ahit|
+          acc += ahit.qbo_invoice.try(:total) || 0
+        end || 0)
 
-    from_generated_invoices + from_adhoc_invoices
+      from_generated_invoices + from_adhoc_invoices
+    )
   end
 end
