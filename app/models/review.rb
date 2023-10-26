@@ -18,7 +18,7 @@ class Review < ApplicationRecord
   validate :cannot_be_archived_unless_finalization_is_complete
 
   def cannot_be_archived_unless_finalization_is_complete
-    if changes["archived_at"][0].nil? && changes["archived_at"][1].present?
+    if changes.dig("archived_at", 0).nil? && changes.dig("archived_at", 1).present?
       unless finalization.workspace.status == "complete"
         errors.add(:status, "Please fill out all scores and Mark as Finalized before archiving.")
       end
