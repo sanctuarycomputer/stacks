@@ -3,6 +3,11 @@ ActiveAdmin.register Studio do
   config.paginate = false
   actions :index, :show, :edit, :update, :new, :create
 
+  scope :all, default: true
+  scope :client_services
+  scope :internal
+  scope :reinvestment
+
   action_item :trigger_sync_okrs, only: :show do
     link_to "Recalculate OKRs", trigger_sync_okrs_admin_studio_path(resource), method: :post
   end
@@ -61,6 +66,8 @@ ActiveAdmin.register Studio do
     column :mini_name
     column :studio_type
     column :health do |resource|
+      accounting_method = session[:accounting_method] || "cash"
+
       if resource.client_services?
         span(class: "pill #{resource.health.dig("health")}") do 
           span(class: "split") do
@@ -69,7 +76,7 @@ ActiveAdmin.register Studio do
         end
       else
         div([
-          span("#{number_to_currency resource.net_revenue}"),
+          span("#{number_to_currency resource.net_revenue(accounting_method)}"),
           para(class: "okr_hint", style: "margin-bottom:0px;padding-top:0px !important") do
             "YTD Net revenue"
           end

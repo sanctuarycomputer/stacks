@@ -31,6 +31,7 @@ class ProfitSharePass < ApplicationRecord
         internals_budget_multiplier: scenario.internals_budget_multiplier,
         projected_monthly_cost_of_doing_business: scenario.projected_monthly_cost_of_doing_business,
         fica_tax_rate: scenario.fica_tax_rate,
+        pre_spent_reinvestment: scenario.pre_spent_reinvestment
       }
     })
   end
@@ -50,15 +51,21 @@ class ProfitSharePass < ApplicationRecord
     ).map(&:amount).reduce(:+) || 0.0)
   end
 
-  # TODO This isn't quite right yet
-  def total_cost_of_reinvestment_studios
-    return 0
-    all_studios = Studio.all
-    ytd_period = Stacks::Period.new(created_at.year.to_s, Date.new(created_at.year, 1, 1), finalization_day)
-    Studio.reinvestment.reduce(0) do |acc, s|
-      # Assume reinvestment studios don't have sellable hours
-      cogs = ytd_period.report.cogs_for_studio(s, all_studios, "cash", 0)
-      acc += cogs[:cogs]
+  def net_revenue_by_reinvestment_studio(accounting_method = "cash")
+    @_net_revenue_by_reinvestment_studio ||= (
+      Studio.reinvestment.reduce({}) do |acc, studio|
+        acc[studio] = {
+          net_revenue: studio.net_revenue(accounting_method)
+        }
+        acc
+      end
+    )
+  end
+
+  def total_reinvestment_spend(accounting_method = "cash")
+    net_revenue_by_reinvestment_studio(accounting_method).reduce(0) do |acc, tuple|
+      studio, data = tuple
+      acc += data[:net_revenue].abs if data[:net_revenue].present? && data[:net_revenue] < 0
       acc
     end
   end
@@ -101,11 +108,13 @@ class ProfitSharePass < ApplicationRecord
         snapshot["inputs"]["efficiency_cap"].to_f,
         snapshot["inputs"]["internals_budget_multiplier"].to_f,
         snapshot["inputs"]["projected_monthly_cost_of_doing_business"].to_f,
-        snapshot["inputs"]["fica_tax_rate"].to_f
+        snapshot["inputs"]["fica_tax_rate"].to_f,
+        snapshot["inputs"]["pre_spent_reinvestment"].to_f
       )
     else
       ytd = Stacks::Profitability.pull_actuals_for_year(created_at.year)
       latest_month = Stacks::Profitability.pull_actuals_for_latest_month
+
       projected_monthly_cost_of_doing_business = (
         latest_month[:gross_payroll] +
         latest_month[:gross_expenses] +
@@ -140,9 +149,6 @@ class ProfitSharePass < ApplicationRecord
       actuals[:gross_expenses] = gross_expenses_override.to_f if gross_expenses_override.present?
       actuals[:gross_subcontractors] = gross_subcontractors_override.to_f if gross_subcontractors_override.present?
 
-      # TODO: Hide the total cost of all reinvestment studios within this year from the calculator
-      actuals[:gross_expenses] -= self.total_cost_of_reinvestment_studios
-
       total_psu_issued =   
         Studio.garden3d.core_members_active_on(finalization_day).map{|a| a.projected_psu_by_eoy }.reject{|v| v == nil}.reduce(:+) || 0
 
@@ -154,7 +160,8 @@ class ProfitSharePass < ApplicationRecord
         self.efficiency_cap,
         self.internals_budget_multiplier,
         projected_monthly_cost_of_doing_business,
-        Stacks::ProfitShare::Scenario::FICA_TAX_RATE
+        Stacks::ProfitShare::Scenario::FICA_TAX_RATE,
+        total_reinvestment_spend("cash")
       )
     end
   end

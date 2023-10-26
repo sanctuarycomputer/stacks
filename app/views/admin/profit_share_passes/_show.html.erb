@@ -6,6 +6,7 @@
   params["gross_subcontractors_override"],
 ) %>
 
+<% total_reinvestment_spend = profit_share_pass.total_reinvestment_spend %>
 <% is_projection = profit_share_pass.is_projection? %>
 
 <% if is_projection %>
@@ -30,12 +31,55 @@
   <div class="dashboard-module">
     <div class="module-body factoid-parent">
       <div class="factoid">
-        <h2><%= number_to_currency(profit_share_pass.total_cost_of_reinvestment_studios) %></h2>
-        <%= link_to "Prespent Budgetary Purchases ↗", admin_budgets_path %>
+        <h2><%= number_to_currency(total_reinvestment_spend) %></h2>
+        <%= link_to "Spent under Reinvestment Studios ↗", admin_studios_path(scope: :reinvestment) %>
       </div>
     </div>
   </div>
 </div>
+
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom:20px;table-layout:fixed;">
+  <thead>
+    <tr>
+      <th class="col">
+        Reinvestment Studio
+      </th>
+      <th class="col text-right">
+        Reinvestment Spend
+      </th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <% profit_share_pass.net_revenue_by_reinvestment_studio("cash").each_with_index do |tuple, index| %>
+      <% studio, data = tuple %>
+      <tr class="<%= index.even? ? "even" : "odd" %>">
+        <td class="col">
+          <%= link_to "#{studio.name} ↗", admin_studio_path(studio) %>
+        </td>
+        <td class="col text-right">
+          <% if data[:net_revenue].present? %>
+            <% if data[:net_revenue] < 0 %>
+              <%= number_to_currency data[:net_revenue].abs %>
+            <% else %>
+              Broke Even
+            <% end %>
+          <% else %>
+            Unknown
+          <% end %>
+        </td>
+      </tr>
+    <% end %>
+    <tr class="odd">
+      <td class="col">
+        <strong>Pre-spent Reinvestment Total</strong>
+      </td>
+      <td class="col text-right">
+        <%= number_to_currency total_reinvestment_spend %>
+      </td>
+    </tr>
+  </tbody>
+</table>
 
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
@@ -58,7 +102,7 @@
           <tr class="even">
             <td class="col">Gross Payroll</td>
             <td class="col">
-              <%= number_to_currency(scenario.actuals[:gross_payroll]) %>
+              -<%= number_to_currency(scenario.actuals[:gross_payroll]) %>
             </td>
             <td class="col text-right">
               $<%= text_field_tag 'gross_payroll_override', params["gross_payroll_override"], disabled: !is_projection, placeholder: "Payroll Override", type: "number" %>
@@ -67,7 +111,7 @@
           <tr class="odd">
             <td class="col">Gross Benefits & Taxes</td>
             <td class="col">
-              <%= number_to_currency(scenario.actuals[:gross_benefits]) %>
+              -<%= number_to_currency(scenario.actuals[:gross_benefits]) %>
             </td>
             <td class="col text-right">
               $<%= text_field_tag 'gross_benefits_override', params["gross_benefits_override"], disabled: !is_projection, placeholder: "Benefits Override", type: "number" %>
@@ -76,7 +120,7 @@
           <tr class="even">
             <td class="col">Gross Expenses</td>
             <td class="col">
-              <%= number_to_currency(scenario.actuals[:gross_expenses]) %>
+              -<%= number_to_currency(scenario.actuals[:gross_expenses]) %>
             </td>
             <td class="col text-right">
               $<%= text_field_tag 'gross_expenses_override', params["gross_expenses_override"], disabled: !is_projection, placeholder: "Expenses Override", type: "number" %>
@@ -85,16 +129,30 @@
           <tr class="odd">
             <td class="col">Gross Subcontractors</td>
             <td class="col">
-              <%= number_to_currency(scenario.actuals[:gross_subcontractors]) %>
+              -<%= number_to_currency(scenario.actuals[:gross_subcontractors]) %>
             </td>
             <td class="col text-right">
               $<%= text_field_tag 'gross_subcontractors_override', params["gross_subcontractors_override"], disabled: !is_projection, placeholder: "Subcontractors Override", type: "number" %>
             </td>
           </tr>
           <tr class="even">
-            <td class="col"><strong>Total Profit</strong></td>
+            <td class="col">Pre-spent Profit Share</td>
             <td class="col">
-              <%= number_to_currency(scenario.total_profit) %>
+              +<%= number_to_currency(scenario.pre_spent) %>
+            </td>
+            <td></td>
+          </tr>
+          <tr class="odd">
+            <td class="col">Pre-spent Reinvestment</td>
+            <td class="col">
+              +<%= number_to_currency(scenario.pre_spent_reinvestment) %>
+            </td>
+            <td></td>
+          </tr>
+          <tr class="even">
+            <td class="col"><strong>Effective Profit (before pre-spending)</strong></td>
+            <td class="col">
+              <strong><%= number_to_currency(scenario.total_profit) %></strong>
             </td>
             <td class="col text-right">
               <form>
@@ -124,42 +182,36 @@
             </td>
           </tr>
           <tr class="even">
-            <td class="col">Pre Spent Profit Share</td>
-            <td class="col">
-              <%= number_to_currency(scenario.pre_spent) %>
-            </td>
-          </tr>
-          <tr class="odd">
             <td class="col">Payroll Buffer Months</td>
             <td class="col">
               <%= scenario.desired_buffer_months %>
             </td>
           </tr>
-          <tr class="even">
+          <tr class="odd">
             <td class="col">Efficiency Cap</td>
             <td class="col">
               <%= scenario.efficiency_cap %>
             </td>
           </tr>
-          <tr class="odd">
+          <tr class="even">
             <td class="col">Corporate Tax Rate</td>
             <td class="col">
               <%= Stacks::ProfitShare::Scenario::TAX_RATE %>
             </td>
           </tr>
-          <tr class="even">
+          <tr class="odd">
             <td class="col">FICA Tax Rate</td>
             <td class="col">
               <%= scenario.fica_tax_rate %>
             </td>
           </tr>
-          <tr class="odd">
+          <tr class="even">
             <td class="col">Internals Budget Multiplier</td>
             <td class="col">
               <%= scenario.internals_budget_multiplier %>
             </td>
           </tr>
-          <tr class="even">
+          <tr class="odd">
             <td class="col">Total PSU Issued</td>
             <td class="col">
               <%= scenario.total_psu_issued %>
@@ -193,36 +245,30 @@
             </td>
           </tr>
           <tr class="odd">
-            <td class="col">Internals Budget</td>
+            <td class="col">Internals + Reinvestment Fund</td>
             <td class="col">
-              <%= number_to_currency(scenario.allowances[:internals_budget]) %>
+            <%= number_to_currency(scenario.allowances[:internals_budget]) %> & <%= number_to_currency(scenario.allowances[:reinvestment_budget]) %> (<%= number_to_currency(total_reinvestment_spend) %> already spent)
             </td>
           </tr>
           <tr class="even">
-            <td class="col">Reinvestment Fund</td>
-            <td class="col">
-              <%= number_to_currency(scenario.allowances[:reinvestment_budget]) %>
-            </td>
-          </tr>
-          <tr class="odd">
             <td class="col">Gross Profit Share Pool</td>
             <td class="col">
               <%= number_to_currency(scenario.allowances[:pool]) %>
             </td>
           </tr>
-          <tr class="even">
+          <tr class="odd">
             <td class="col">FICA Withholding</td>
             <td class="col">
               <%= number_to_currency(scenario.allowances[:fica_withholding]) %>
             </td>
           </tr>
-          <tr class="odd">
+          <tr class="even">
             <td class="col">Profit Share Pool after FICA</td>
             <td class="col">
               <%= number_to_currency(scenario.allowances[:pool_after_fica_withholding]) %>
             </td>
           </tr>
-          <tr class="even">
+          <tr class="odd">
             <td class="col"><strong>Value per PSU</strong></td>
             <td class="col">
               <%= number_to_currency(scenario.actual_value_per_psu) %>

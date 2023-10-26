@@ -44,12 +44,16 @@ class Studio < ApplicationRecord
     }
   }
 
+  def ytd_snapshot
+    (snapshot["year"].find{|p| p["label"] == "YTD"} || {})
+  end
+
   def health
     (snapshot["month"] || [{}]).last.dig("cash", "okrs", "Health") || {}
   end
 
   def net_revenue(accounting_method = "cash")
-    (snapshot["year"].find{|p| p["label"] == "YTD"} || {}).dig(accounting_method, "datapoints", "net_revenue", "value").try(:to_f)
+    ytd_snapshot.dig(accounting_method, "datapoints", "net_revenue", "value").try(:to_f)
   end
 
   def current_studio_coordinators

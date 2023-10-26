@@ -11,6 +11,7 @@ class Stacks::ProfitShare
     attr_accessor :internals_budget_multiplier
     attr_accessor :projected_monthly_cost_of_doing_business
     attr_accessor :fica_tax_rate
+    attr_accessor :pre_spent_reinvestment
 
     # What does 1.6 efficiency_cap mean? Well, it means that for
     # every dollar we spend, we strive to make 1.6 dollars back.
@@ -23,7 +24,8 @@ class Stacks::ProfitShare
       efficiency_cap = 1.6,
       internals_budget_multiplier = 0.5,
       projected_monthly_cost_of_doing_business = nil,
-      fica_tax_rate = Stacks::ProfitShare::Scenario::FICA_TAX_RATE
+      fica_tax_rate = Stacks::ProfitShare::Scenario::FICA_TAX_RATE,
+      pre_spent_reinvestment = 0
     )
       @actuals = actuals
       @total_psu_issued = total_psu_issued
@@ -33,6 +35,7 @@ class Stacks::ProfitShare
       @internals_budget_multiplier = internals_budget_multiplier
       @projected_monthly_cost_of_doing_business = projected_monthly_cost_of_doing_business
       @fica_tax_rate = fica_tax_rate
+      @pre_spent_reinvestment = pre_spent_reinvestment
     end
 
     def total_cost_of_doing_business
@@ -40,7 +43,8 @@ class Stacks::ProfitShare
       @actuals[:gross_expenses].to_f +
       @actuals[:gross_benefits].to_f +
       @actuals[:gross_subcontractors].to_f -
-      @pre_spent # Don't count prespent profit share against this
+      @pre_spent - # Don't count prespent profit share against this
+      @pre_spent_reinvestment # Don't count prespent reinvestment against this
     end
 
     def projected_monthly_cost_of_doing_business
