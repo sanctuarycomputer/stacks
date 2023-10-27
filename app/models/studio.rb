@@ -394,7 +394,8 @@ class Studio < ApplicationRecord
       self, 
       preloaded_studios,
       accounting_method,
-      sellable_hours_proportion
+      period.label,
+      sellable_hours_proportion,
     )
 
     aggregate_social_following =
@@ -453,6 +454,10 @@ class Studio < ApplicationRecord
       },
       unspecified_split_expenses: {
         value: cogs[:expenses][:unspecified_split],
+        unit: :usd
+      },
+      internal_split_expenses: {
+        value: cogs[:expenses][:internal_split],
         unit: :usd
       },
       subcontractors: {

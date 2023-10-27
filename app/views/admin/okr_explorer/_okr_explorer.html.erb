@@ -62,10 +62,12 @@ function update(a, b) {
     <% g3d_total_expenses = g3d_period[accounting_method]["datapoints"]["total_expenses"]["value"] %>
     <% g3d_specific_expenses = g3d_period[accounting_method]["datapoints"]["specific_expenses"]["value"] %>
     <% g3d_unspecified_split_expenses = g3d_period[accounting_method]["datapoints"]["unspecified_split_expenses"]["value"] %>
+    <% g3d_total_internal_expense = g3d_period[accounting_method]["datapoints"]["internal_split_expenses"]["value"] %>
 
     <% total_expenses = period[accounting_method]["datapoints"]["total_expenses"]["value"] %>
     <% specific_expenses = period[accounting_method]["datapoints"]["specific_expenses"]["value"] %>
     <% unspecified_split_expenses = period[accounting_method]["datapoints"]["unspecified_split_expenses"]["value"] %>
+    <% internal_split_expenses = period[accounting_method]["datapoints"]["internal_split_expenses"]["value"] %>
     
     <% studio_cogs = period[accounting_method]["datapoints"]["cogs"]["value"] %>
 
@@ -93,7 +95,8 @@ function update(a, b) {
             <% else %>
               <p style="margin-bottom: 6px;">In <%= period["label"] %>, <%= studio.name %> recorded <code><%= number_to_currency(specific_expenses) %></code> specific expenses.</p>
               <p style="margin-bottom: 6px;">Additionally, it had <code><%= studio_sellable_hours %></code> hours to sell, or <code><%= ((studio_sellable_hours / g3d_sellable_hours) * 100).round(4) %>%</code> of g3d's total sellable pool.</p>
-              <p>g3d global expenses totaled <code><%= number_to_currency(g3d_unspecified_split_expenses) %></code>, so <%= studio.name %> assumes <code><%= (studio_sellable_hours / g3d_sellable_hours).round(6) %> * <%= number_to_currency(g3d_unspecified_split_expenses) %> = <%= number_to_currency(unspecified_split_expenses) %>*</code></p>
+              <p style="margin-bottom: 6px;">g3d global expenses totaled <code><%= number_to_currency(g3d_unspecified_split_expenses) %></code>, so <%= studio.name %> assumes <code><%= (studio_sellable_hours / g3d_sellable_hours).round(6) %> * <%= number_to_currency(g3d_unspecified_split_expenses) %> = <%= number_to_currency(unspecified_split_expenses) %>*</code></p>
+              <p>the cost of running internal studios totaled <code><%= number_to_currency(g3d_total_internal_expense) %></code>, so <%= studio.name %> assumes <code><%= (studio_sellable_hours / g3d_sellable_hours).round(6) %> * <%= number_to_currency(g3d_total_internal_expense) %> = <%= number_to_currency(internal_split_expenses) %>*</code></p>
             <% end %>
           </div>
         </div>
@@ -108,33 +111,6 @@ function update(a, b) {
         </thead>
 
         <tbody>
-          <tr class="even">
-            <td class="col">
-              Total Expenses
-            </td>
-            <td class="col text-right">
-              <%= number_to_currency(total_expenses) %>
-            </td>
-          </tr>
-
-          <tr class="odd">
-            <td class="col">
-              — Studio Specific Expenses
-            </td>
-            <td class="col text-right">
-              <%= number_to_currency(specific_expenses) %>
-            </td>
-          </tr>
-
-          <tr class="even">
-            <td class="col">
-              — Globally Split Expenses*
-            </td>
-            <td class="col text-right">
-              <%= number_to_currency(unspecified_split_expenses) %>
-            </td>
-          </tr>
-
           <tr class="odd">
             <td class="col">
               Payroll
@@ -170,6 +146,44 @@ function update(a, b) {
               <%= number_to_currency(period[accounting_method]["datapoints"]["supplies"]["value"]) %>
             </td>
           </tr>
+
+          <tr class="odd">
+            <td class="col">
+              Total Expenses
+            </td>
+            <td class="col text-right">
+              <%= number_to_currency(total_expenses) %>
+            </td>
+          </tr>
+
+          <tr class="even">
+            <td class="col">
+              — Studio Specific Expenses
+            </td>
+            <td class="col text-right">
+              <%= number_to_currency(specific_expenses) %> —
+            </td>
+          </tr>
+
+          <tr class="odd">
+            <td class="col">
+              — Globally Split Expenses*
+            </td>
+            <td class="col text-right">
+              <%= number_to_currency(unspecified_split_expenses) %> —
+            </td>
+          </tr>
+
+          <% unless studio.is_garden3d? %>
+            <tr class="even">
+              <td class="col">
+                — Internal Studio Split Cost*
+              </td>
+              <td class="col text-right">
+                <%= number_to_currency(internal_split_expenses) %> —
+              </td>
+            </tr>
+          <% end %>
 
           <tr class="odd">
             <td class="col">

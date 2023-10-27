@@ -45,29 +45,41 @@ class QboProfitAndLossReport < ApplicationRecord
     expense_data
   end
 
-  def cogs_for_studio(studio, preloaded_studios, accounting_method, sellable_hours_proportion = nil)
+  def cogs_for_studio(studio, preloaded_studios, accounting_method, period_label, sellable_hours_proportion = nil)
     gross_revenue = find_rows(accounting_method, studio.qbo_sales_categories)
 
     # TODO: Include internal studio payroll (UBS) & salary & expenses in COGS expenses
     divided_expenses = expenses_by_studio(preloaded_studios, accounting_method)
     specified_expenses = divided_expenses[studio].reduce(0){|acc, e| acc += e[1].to_f}
+    
+    total_internal_cost =
+      Studio.internal.reduce(0) do |acc, studio|
+        snapshot_period = studio.snapshot["month"].find{|p| p["label"] == period_label} || {}
+        net_revenue = snapshot_period.dig(accounting_method, "datapoints", "net_revenue", "value").try(:to_f) || 0
+        acc += net_revenue.abs if net_revenue < 0
+        acc
+      end
 
     expense_map =
       if studio.is_garden3d?
         {
           total: find_row(accounting_method, "Total Expenses"),
           specific: find_row(accounting_method, "Total Expenses") - specified_expenses, # for g3d, expenses w a studio
-          unspecified_split: specified_expenses # for g3d, expenses w/o a studio
+          unspecified_split: specified_expenses, # for g3d, expenses w/o a studio
+          internal_split: total_internal_cost
         }
       else
         g3d = preloaded_studios.find(&:is_garden3d?)
         unspecified_expenses = divided_expenses[g3d].reduce(0){|acc, e| acc += e[1].to_f}
         unspecified_split_expenses = 0
+        internal_split_cost = 0
         if sellable_hours_proportion.present?
           # Studios are responsible for a proportion of total expenses based on their
           # own the size of their own sellable pool.
           unspecified_split_expenses = 
             sellable_hours_proportion * unspecified_expenses
+          internal_split_cost = 
+            sellable_hours_proportion * total_internal_cost
         else
           # In cases where we don't have sellable_hour pool data (predates our use of Forecast)
           # we fallback to splitting expenses based on how much revenue that studio brought in.
@@ -78,13 +90,16 @@ class QboProfitAndLossReport < ApplicationRecord
           if g3d_gross_revenue > 0
             unspecified_split_expenses =
               (gross_revenue / g3d_gross_revenue) * unspecified_expenses
+            internal_split_cost = 
+              (gross_revenue / g3d_gross_revenue) * total_internal_cost
           end
         end
 
         {
-          total: (unspecified_split_expenses + specified_expenses),
+          total: (unspecified_split_expenses + specified_expenses + internal_split_cost),
           specific: specified_expenses, # for studios, expenses under a studio tag
           unspecified_split: unspecified_split_expenses, # for studios, expenses w/o a studio tag, split proportionally
+          internal_split: internal_split_cost
         }
       end
 
