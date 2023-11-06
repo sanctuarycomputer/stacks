@@ -19,6 +19,49 @@
 @import "utils";
 @import "admin/admin_users/show";
 
+.clearfix::after {
+  content: "";
+  clear: both;
+  display: table;
+}
+
+
+.comment {
+  display: flex;
+  max-width: 60%;
+  align-items: flex-start;
+  width: fit-content;
+  background-color: $color-light-grey;
+  border-radius: 8px;
+  margin: 20px 20px 0px 20px;
+  padding: 20px;
+  &.own {
+    flex-direction: row-reverse;
+    float: right;
+  }
+
+  img.comment-avatar {
+    width: 50px;
+    background-color: white;
+    border-radius: 999999px;
+  }
+  .comment-body {
+    margin: 0px 20px;
+    p {
+      font-size: 14px;
+      margin-bottom: 0px;
+      white-space: pre-wrap;
+    }
+    p.comment-delete {
+      font-size: 11px;
+      cursor: pointer;
+      &:hover {
+        color: $color-red;
+      }
+    }
+  }
+}
+
 .full-screen-modal {
   position: fixed;
   left: 0;
@@ -35,8 +78,10 @@
   }
 
   .full-screen-modal__contents {
-    overflow-y: scroll;
-    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+
     box-shadow: 0 1px 20px #b7b7b7;
     border-radius: 8px;
     background-color: white;
@@ -46,6 +91,29 @@
     width: 80%;
     height: 80%;
     position: absolute;
+
+    .full-screen-modal__contents__title {
+      padding: 20px 20px 0px 20px;
+    }
+
+    .full-screen-modal__contents__body {
+      overflow-y: scroll;
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column-reverse;
+    }
+
+    form.full-screen-modal__comment-box {
+      padding: 20px;
+      bottom: 0;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      textarea {
+        margin-bottom: 0px;
+      }
+    }
   }
 }
 

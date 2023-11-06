@@ -17,33 +17,61 @@ ActiveAdmin.register Studio do
     redirect_to admin_studio_path(resource), notice: "OKRs synced!"
   end
 
-  member_action :fetch_annotations, method: :get do
-    # Load all annotations (sorted by date)
-    data = Annotation.where(annotatable: resource)
-    render(json: { data: data })
-  end
-
-  member_action :create_annotation, method: :post do
-    # Create annotation
-    binding.pry
-    Annotation.create!(
-      annotatable: resource, 
-      user: current_admin_user,
-      annotation: params["annotation"]
-    )
-    render(json: { status: :foobie })
-  end
-
-  member_action :delete_annotation, method: :delete do
-    # Delete annotation
-    # Check if user created it current_admin_user, resource, annotation, 
-    annotation = Annotation.find(params["annotation_id"])
-    if annotation.user == current_admin_user
-      annotation.delete!
-    else
-      # Error
+  member_action :comments, method: [:get, :post, :delete] do
+    if request.method == "GET"
+      data = ActiveAdmin::Comment.where(resource: resource, namespace: params["namespace"]).order(created_at: :asc).map do |c|
+        {
+          id: c.id,
+          author: {
+            id: c.author.id,
+            email: c.author.email,
+            name: (c.author.info || {}).dig("name"),
+            avatar: (c.author.info || {}).dig("image"),
+            is_self: c.author.id == current_admin_user.id,
+          },
+          body: c.body,
+          namespace: c.namespace,
+          resource: {
+            id: c.resource.id
+          },
+          time_ago_in_words: "1 day ago" # todo
+        }
+      end
+      return render(json: { data: data })
     end
-    render(json: { status: :foobie })
+
+    if request.method == "POST"
+      c = ActiveAdmin::Comment.create!(
+        resource: resource, 
+        author: current_admin_user,
+        body: params["body"],
+        namespace: params["namespace"]
+      )
+      data = {
+        id: c.id,
+        author: {
+          id: c.author.id,
+          email: c.author.email,
+          name: (c.author.info || {}).dig("name"),
+          avatar: (c.author.info || {}).dig("image"),
+          is_self: c.author.id == current_admin_user.id,
+        },
+        body: c.body,
+        namespace: c.namespace,
+        resource: {
+          id: c.resource.id
+        },
+        time_ago_in_words: "1 day ago" # todo
+      }
+      return render(json: { data: data })
+    end
+
+    if request.method == "DELETE"
+      c = ActiveAdmin::Comment.find(params["comment_id"]);
+      raise "Unauthorized" if c.author.id != current_admin_user.id
+      c.delete
+      head :ok
+    end
   end
 
   permit_params :name,
@@ -464,6 +492,7 @@ ActiveAdmin.register Studio do
     end
 
     render(partial: "show", locals: {
+      comments: ActiveAdmin::Comment.where(resource: resource),
       all_gradations: all_gradations,
       default_gradation: default_gradation,
       all_okrs: all_okrs,

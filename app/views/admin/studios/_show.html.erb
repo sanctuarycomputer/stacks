@@ -50,6 +50,32 @@
   table tr, table th {
     white-space: nowrap;
   }
+  table th a, table th a:visited, table th a:link {
+    color: #1F78FF !important;
+  }
+  table th {
+    cursor: pointer;
+  }
+  table th:hover {
+    box-shadow: inset 0px 0px 14px 6px #0000001f;;
+  }
+  table th div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  table th div .comment-notifier {
+    box-shadow: 1px 1px 3px 1px #0000001f;
+    background-color: #FF160A;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    color: white;
+    font-size: 12px;
+    justify-content: center;
+    border-radius: 999px;
+  }
   table tr.invert {
     display: table-cell;
   }
@@ -105,9 +131,15 @@
         <thead>
           <tr>
             <% snapshot.reverse.each do |d| %>
-              <th class="col" data-annotatable="<%= d["label"] %>:__GLOBAL__">
-                <%= d["label"] %>
-                <%= link_to "P&L ↗", "https://app.qbo.intuit.com/app/reportv2?token=PANDL&show_logo=false&date_macro=custom&low_date=#{d["period_starts_at"]}&high_date=#{d["period_ends_at"]}&column=total&showrows=active&showcols=active&subcol_pp=&subcol_pp_chg=&subcol_pp_pct_chg=&subcol_py=&subcol_py_chg=&subcol_py_pct_chg=&subcol_py_ytd=&subcol_ytd=&subcol_pct_ytd=&subcol_pct_row=&subcol_pct_col=&subcol_pct_inc=false&subcol_pct_exp=false&cash_basis=#{accounting_method == "cash" ? "yes" : "no"}&customized=yes&collapsed_rows=&edited_sections=false&divideby1000=false&hidecents=false&exceptzeros=true&adjusted_gain_loss=true&negativenums=1&negativered=false&show_header_title=true&show_header_range=true&show_footer_custom_message=true&show_footer_date=true&show_footer_time=true&show_footer_basis=true&header_alignment=Center&footer_alignment=Center&show_header_company=true&company_name=Sanctuary%20Computer%20Inc&collapse_subs=false&title=Profit%20and%20Loss&footer_custom_message=", target: "_blank", style: "display:inline-block;float:right;" %>
+              <th class="col" data-commentable="<%= d["label"] %>">
+                <div>
+                  <%= d["label"] %>
+                  <% count = comments.count{|c| c.namespace == d["label"]} %>
+                  <% if count > 0 %>
+                    <div class="comment-notifier"><%= count %></div>
+                  <% end %>
+                  <%= link_to "P&L ↗", "https://app.qbo.intuit.com/app/reportv2?token=PANDL&show_logo=false&date_macro=custom&low_date=#{d["period_starts_at"]}&high_date=#{d["period_ends_at"]}&column=total&showrows=active&showcols=active&subcol_pp=&subcol_pp_chg=&subcol_pp_pct_chg=&subcol_py=&subcol_py_chg=&subcol_py_pct_chg=&subcol_py_ytd=&subcol_ytd=&subcol_pct_ytd=&subcol_pct_row=&subcol_pct_col=&subcol_pct_inc=false&subcol_pct_exp=false&cash_basis=#{accounting_method == "cash" ? "yes" : "no"}&customized=yes&collapsed_rows=&edited_sections=false&divideby1000=false&hidecents=false&exceptzeros=true&adjusted_gain_loss=true&negativenums=1&negativered=false&show_header_title=true&show_header_range=true&show_footer_custom_message=true&show_footer_date=true&show_footer_time=true&show_footer_basis=true&header_alignment=Center&footer_alignment=Center&show_header_company=true&company_name=Sanctuary%20Computer%20Inc&collapse_subs=false&title=Profit%20and%20Loss&footer_custom_message=", target: "_blank", style: "display:inline-block;float:right;" %>
+                </div>
               </th>
             <% end %>
           </tr>
@@ -275,11 +307,137 @@
 
 <div class="full-screen-modal hidden">
   <div class="full-screen-modal__contents">
-    <h1>
-      Hello
-    </h1>
+    <div class="full-screen-modal__contents__title">
+      <p style="margin-bottom:10px;"><%= resource.name %> · <span>[NAMESPACE]</span></p>
+      <hr />
+    </div>
+    <div class="full-screen-modal__contents__body"></div>
+    <form class="full-screen-modal__comment-box">
+      <textarea id="comment" name="comment"></textarea>
+      <button>Submit</button>
+    </form>
   </div>
 </div>
+
+<script>
+  function insertComment(modalEl, data) {
+    const parent = modalEl.querySelector('.full-screen-modal__contents__body');
+    const existing = parent.querySelector(`[data-comment-id="${data.id}"]`);
+    if (existing) return;
+    const dom = `
+<div class="clearfix" data-comment-id="${data.id}">
+  <div class="comment ${data.author.is_self ? 'own' : ''}">
+    <img class="comment-avatar" src="${data.author.avatar}" />
+    <div class="comment-body">
+      <p><strong>${data.author.name}</strong> 1 day ago</p>
+      <p>${data.body}</p>
+      ${data.author.is_self ? '<p class="comment-delete">Delete</p>' : ""}
+    </div>
+  </div>
+</div>
+`;
+    parent.insertAdjacentHTML('afterbegin', dom);
+    const newEl = parent.querySelector(`[data-comment-id="${data.id}"]`);
+    const deleteButton = newEl.querySelector('.comment-delete');
+    if (!deleteButton) return;
+
+    deleteButton.addEventListener('click', async  function() {
+      const shouldDelete = confirm("Are you sure you want to delete this comment?");
+      if (!shouldDelete) return;
+      const csrfToken = document.querySelector("[name='csrf-token']").content;      
+      const response = await fetch(`${window.location.pathname}/comments`, {
+        method: 'DELETE',
+        headers: {
+          'X-CSRF-Token': csrfToken,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          comment_id: data.id
+        })
+      });
+      parent.removeChild(newEl);
+    });
+  }
+
+  async function openFullScreenModal(modalEl, namespace) {
+    modalEl.querySelector('form.full-screen-modal__comment-box').dataset.namespace = namespace;
+    modalEl.querySelector('.full-screen-modal__contents__title span').innerHTML = namespace;
+
+    // Remove old comments
+    const parent = modalEl.querySelector('.full-screen-modal__contents__body');
+    parent.querySelectorAll('.clearfix').forEach(e => {
+      parent.removeChild(e);
+    });
+
+    // Show Modal
+    modalEl.classList.remove('hidden');
+
+    // Load Comments
+    const response = await fetch(`${window.location.pathname}/comments?namespace=${namespace}`, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      }
+    })
+    const data = await response.json();
+    data.data.forEach(d => {
+      insertComment(modalEl, d);
+    });
+  }
+
+  function closeFullScreenModal(modalEl) {
+    modalEl.dataset.namespace = null;
+    const parent = modalEl.querySelector('.full-screen-modal__contents__body');
+    parent.querySelectorAll('.clearfix').forEach(e => {
+      parent.removeChild(e);
+    });
+    modalEl.classList.add('hidden');
+  }
+
+  document.querySelectorAll('.full-screen-modal').forEach(e => {
+    e.addEventListener("click", function(event) {
+      if (event.target !== this) return;
+      closeFullScreenModal(this);
+    });
+  });
+
+  document.querySelectorAll('form.full-screen-modal__comment-box').forEach(e => {
+    e.addEventListener("submit", async function(event) {
+      event.preventDefault();
+
+      const csrfToken = document.querySelector("[name='csrf-token']").content;      
+      const response = await fetch(`${window.location.pathname}/comments`, {
+        method: 'POST',
+        headers: {
+          'X-CSRF-Token': csrfToken,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          namespace: event.target.dataset.namespace, 
+          body: event.target.querySelector('textarea').value
+        })
+      });
+      event.target.querySelector('textarea').value = "";
+      const data = await response.json();
+      const modalEl = e.closest(".full-screen-modal");
+      
+      insertComment(modalEl, data.data);
+    });
+  });
+
+  document.querySelectorAll('[data-commentable]').forEach(e => {
+    e.addEventListener("click", function(event) {
+      const commentableEl = event.target.closest("[data-commentable]");
+      openFullScreenModal(
+        document.querySelector('.full-screen-modal'),
+        commentableEl.dataset.commentable
+      );
+    });
+  });
+</script>
 
 <script>
   luxon.Settings.defaultLocale = "en";
@@ -440,33 +598,4 @@
       }
     }
   })
-</script>
-
-<script>
-  async function openFullScreenModal(modalEl) {
-    modalEl.classList.remove('hidden');
-    const response = await fetch(`${window.location.pathname}/annotations`)
-    const data = await response.json();
-  }
-
-  function closeFullScreenModal(modalEl) {
-    modalEl.classList.add('hidden');
-  }
-
-  document.querySelectorAll('.full-screen-modal').forEach(e => {
-    e.addEventListener("click", function(event) {
-      if (event.target !== this) return;
-      closeFullScreenModal(this);
-    });
-  });
-
-  document.querySelectorAll('[data-annotatable]').forEach(e => {
-    e.addEventListener("click", function(event) {
-      console.log('did click', event.target.dataset.annotatable);
-      openFullScreenModal(
-        document.querySelector('.full-screen-modal'),
-
-      );
-    });
-  });
 </script>
