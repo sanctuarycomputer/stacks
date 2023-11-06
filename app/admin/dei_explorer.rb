@@ -4,7 +4,16 @@ ActiveAdmin.register_page "DEI Explorer" do
   content title: proc { I18n.t("active_admin.dei_explorer") } do
     BROAD_BANDS = ["J", "ML", "EML", "S", "L"]
     COLORS = Stacks::Utils::COLORS
-    dei_rollup = DeiRollup.order(created_at: :desc).first
+
+    all_dei_rollups = DeiRollup.all
+
+    latest_dei_rollup = DeiRollup.order(created_at: :desc).first
+    dei_rollup = latest_dei_rollup
+    if params["period"].present?
+      current_dei_rollup = all_dei_rollups.find{|d| d.created_at.strftime("%B, %Y") == params["period"]}
+      dei_rollup = current_dei_rollup if current_dei_rollup.present?
+    end
+
     total = dei_rollup.data.dig("meta", "total")
 
     cultural_background_raw_data = dei_rollup.data["cultural_background"]
@@ -116,6 +125,8 @@ ActiveAdmin.register_page "DEI Explorer" do
     render(partial: "dei_data", locals: {
       # Meta
       total: total,
+      all_rollup_periods: all_dei_rollups.map{|r| r.created_at.strftime("%B, %Y") },
+      latest_rollup_period: latest_dei_rollup.created_at.strftime("%B, %Y"),
 
       # Racial Backgrounds
       skill_level_by_racial_background: skill_level_by_racial_background,

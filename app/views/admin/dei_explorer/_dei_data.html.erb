@@ -1,3 +1,26 @@
+<script>
+function update(a, b) {
+  var searchParams = new URLSearchParams(window.location.search);
+  if (b !== '')
+    searchParams.set(a, b);
+  else
+    searchParams.delete(a);
+  window.location.search = searchParams.toString();
+}
+</script>
+
+<% current_period = params["period"] || latest_rollup_period %>
+<% current_period = latest_rollup_period unless all_rollup_periods.include?(current_period) %>
+<div style="margin-bottom: 20px">
+  <% all_rollup_periods.each do |month| %>
+    <a onclick='update("period", "<%= month %>");' style="margin-right: 6px">
+      <p class="nag pill <%= month == current_period ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
+        <%= month %>
+      </p>
+    </a>
+  <% end %>
+</div>
+
 <div class="skill_tree_hint">
   <p>As a group, we care deeply about making great things for a diverse set of users, and to do that well, we need our people who think through a wide lens of different experiences.</p>
   <p>garden3d is committed to holding space for folks who are underrepresented in our industry. Our DEI explorer (updated monthly!) helps us set goals, and hold us accountable in meeting them.</p>
