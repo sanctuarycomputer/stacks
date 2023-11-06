@@ -19,6 +19,36 @@
 @import "utils";
 @import "admin/admin_users/show";
 
+.full-screen-modal {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(255,255,255,0.5);
+  z-index: 999999;
+  backdrop-filter: blur(10px);
+
+  &.hidden {
+    display: none;
+    pointer-events: none;
+  }
+
+  .full-screen-modal__contents {
+    overflow-y: scroll;
+    padding: 20px;
+    box-shadow: 0 1px 20px #b7b7b7;
+    border-radius: 8px;
+    background-color: white;
+    transform: translate(-50%, -50%);
+    top: 50%;
+    left: 50%;
+    width: 80%;
+    height: 80%;
+    position: absolute;
+  }
+}
+
 hr {
   border: 1px solid $color-light-grey;
   box-shadow: none;

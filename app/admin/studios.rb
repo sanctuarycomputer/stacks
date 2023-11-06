@@ -17,6 +17,35 @@ ActiveAdmin.register Studio do
     redirect_to admin_studio_path(resource), notice: "OKRs synced!"
   end
 
+  member_action :fetch_annotations, method: :get do
+    # Load all annotations (sorted by date)
+    data = Annotation.where(annotatable: resource)
+    render(json: { data: data })
+  end
+
+  member_action :create_annotation, method: :post do
+    # Create annotation
+    binding.pry
+    Annotation.create!(
+      annotatable: resource, 
+      user: current_admin_user,
+      annotation: params["annotation"]
+    )
+    render(json: { status: :foobie })
+  end
+
+  member_action :delete_annotation, method: :delete do
+    # Delete annotation
+    # Check if user created it current_admin_user, resource, annotation, 
+    annotation = Annotation.find(params["annotation_id"])
+    if annotation.user == current_admin_user
+      annotation.delete!
+    else
+      # Error
+    end
+    render(json: { status: :foobie })
+  end
+
   permit_params :name,
     :accounting_prefix,
     :mini_name,
