@@ -130,7 +130,7 @@ ActiveAdmin.register Studio do
       }, {
         label: "Profit Share, Bonuses & Misc",
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "benefits", "value")
+          v.dig(accounting_method, "datapoints", "bonuses", "value")
         end),
         backgroundColor: COLORS[2],
         stack: 'cogs'
