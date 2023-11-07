@@ -77,7 +77,7 @@ class InvoiceTracker < ApplicationRecord
       "lines" => {}
     }
     forecast_project_ids = forecast_projects.map(&:id)
-    forecast_project_codes = forecast_projects.map{|fp| fp.code}.uniq
+    forecast_project_codes = forecast_projects.map{|fp| fp.code}.compact.uniq
     
     ((qbo_invoice.try(:line_items) || []).select do |qbo_li|
       corresponding_base_line_item = (base["lines"].values.find{|l| l["id"] == qbo_li["id"]} || {})
