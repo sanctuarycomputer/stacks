@@ -329,7 +329,7 @@
   <div class="comment ${data.author.is_self ? 'own' : ''}">
     <img class="comment-avatar" src="${data.author.avatar}" />
     <div class="comment-body">
-      <p><strong>${data.author.name}</strong> 1 day ago</p>
+      <p><strong>${data.author.name}</strong> ${data.time_ago_in_words}</p>
       <p>${data.body}</p>
       ${data.author.is_self ? '<p class="comment-delete">Delete</p>' : ""}
     </div>

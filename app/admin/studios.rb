@@ -34,7 +34,7 @@ ActiveAdmin.register Studio do
           resource: {
             id: c.resource.id
           },
-          time_ago_in_words: "1 day ago" # todo
+          time_ago_in_words: ApplicationController.helpers.time_ago_in_words(c.created_at)
         }
       end
       return render(json: { data: data })
@@ -61,7 +61,7 @@ ActiveAdmin.register Studio do
         resource: {
           id: c.resource.id
         },
-        time_ago_in_words: "1 day ago" # todo
+        time_ago_in_words: ApplicationController.helpers.time_ago_in_words(c.created_at)
       }
       return render(json: { data: data })
     end
