@@ -41,29 +41,20 @@ class Stacks::Team
         .map{|u| u.emails.find{|e| e["primary"]}.dig("address")}
 
       [*sanctu_google_users, *xxix_google_users].each do |e|
-        AdminUser.find_or_create_by!(
-          email: e,
-          provider: "google_oauth2"
-        )
+        admin_user = AdminUser.find_or_create_by_g3d_uid!(e)
       end
 
       twist_users = twist.get_workspace_users.parsed_response
       twist_users.select do |u|
         u["email"].ends_with?("@sanctuary.computer") || u["email"].ends_with?("@xxix.co")
       end.each do |u|
-        AdminUser.find_or_create_by!(
-          email: u["email"],
-          provider: "google_oauth2"
-        )
+        AdminUser.find_or_create_by_g3d_uid!(u["email"])
       end
 
       ForecastPerson.all.select do |fp|
         (fp.email || "").ends_with?("@sanctuary.computer") || (fp.email || "").ends_with?("@xxix.co")
       end.each do |fp|
-        admin_user = AdminUser.find_or_create_by!(
-          email: fp.email,
-          provider: "google_oauth2"
-        )
+        admin_user = AdminUser.find_or_create_by_g3d_uid!(fp.email)
         fp.studios.each do |s|
           StudioMembership.find_or_create_by!(
             studio: s,

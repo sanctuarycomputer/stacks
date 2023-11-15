@@ -1,8 +1,82 @@
 class AdminUser < ApplicationRecord
-  has_many :notifications, as: :recipient
+  has_many :notifications, as: :recipient, dependent: :delete_all
   has_many :full_time_periods, -> { order(started_at: :asc) }, dependent: :delete_all
-  has_one :associates_award_agreement
+  has_one :associates_award_agreement, dependent: :delete
   validate :all_but_latest_full_time_periods_are_closed?
+
+  has_many :atc_periods, dependent: :delete_all
+  has_many :studio_coordinator_periods, dependent: :delete_all
+
+  has_many :invoice_trackers, dependent: :nullify
+  has_one :forecast_person, class_name: "ForecastPerson", foreign_key: "email", primary_key: "email"
+
+  accepts_nested_attributes_for :full_time_periods, allow_destroy: true
+
+  has_many :gifted_profit_shares, dependent: :delete_all
+  accepts_nested_attributes_for :gifted_profit_shares, allow_destroy: true
+
+  has_many :pre_profit_share_purchases, dependent: :nullify
+  accepts_nested_attributes_for :pre_profit_share_purchases, allow_destroy: true
+
+  has_many :studio_memberships, dependent: :delete_all
+  has_many :studios, through: :studio_memberships
+
+  has_many :admin_user_gender_identities, dependent: :delete_all
+  has_many :gender_identities, through: :admin_user_gender_identities
+
+  has_many :admin_user_communities, dependent: :delete_all
+  has_many :communities, through: :admin_user_communities
+
+  has_many :admin_user_racial_backgrounds, dependent: :delete_all
+  has_many :racial_backgrounds, through: :admin_user_racial_backgrounds
+
+  has_many :admin_user_cultural_backgrounds, dependent: :delete_all
+  has_many :cultural_backgrounds, through: :admin_user_cultural_backgrounds
+
+  has_many :admin_user_interests, dependent: :delete_all
+  has_many :interests, through: :admin_user_interests
+
+  enum old_skill_tree_level: {
+    junior_1: 0,
+    junior_2: 1,
+    junior_3: 2,
+    mid_level_1: 3,
+    mid_level_2: 4,
+    mid_level_3: 5,
+    experienced_mid_level_1: 6,
+    experienced_mid_level_2: 7,
+    experienced_mid_level_3: 8,
+    senior_1: 9,
+    senior_2: 10,
+    senior_3: 11,
+    senior_4: 12,
+    lead_1: 13,
+    lead_2: 14,
+  }
+
+  # Include default devise modules. Others available are:
+  # :confirmable, :lockable, :timeoutable, :trackable and :omniauthable
+  devise :database_authenticatable,
+         :recoverable, :rememberable, :validatable,
+         :omniauthable, omniauth_providers: %i[google_oauth2]
+
+  has_many :reviews, dependent: :nullify
+  has_many :peer_reviews, dependent: :nullify
+
+  def self.find_or_create_by_g3d_uid!(email)
+    return nil unless (email.ends_with?("@sanctuary.computer") || email.ends_with?("@xxix.co"))
+
+    uid = email.split("@")[0]
+    existing = [
+      AdminUser.find_by(email: "#{uid}@xxix.co"), 
+      AdminUser.find_by(email: "#{uid}@sanctuary.computer")
+    ].compact[0]
+    return existing if existing.present?
+    AdminUser.find_or_create_by!(
+      email: email,
+      provider: "google_oauth2"
+    )
+  end
 
   def approximate_cost_per_sellable_hour_before_studio_expenses
     now = DateTime.now.to_date.beginning_of_week # monday
@@ -239,66 +313,6 @@ class AdminUser < ApplicationRecord
     end
   end
 
-  has_many :atc_periods, dependent: :nullify
-  has_many :studio_coordinator_periods, dependent: :nullify
-
-  has_many :invoice_trackers, dependent: :nullify
-  has_one :forecast_person, class_name: "ForecastPerson", foreign_key: "email", primary_key: "email"
-
-  accepts_nested_attributes_for :full_time_periods, allow_destroy: true
-
-  has_many :gifted_profit_shares, dependent: :delete_all
-  accepts_nested_attributes_for :gifted_profit_shares, allow_destroy: true
-
-  has_many :pre_profit_share_purchases, dependent: :delete_all
-  accepts_nested_attributes_for :pre_profit_share_purchases, allow_destroy: true
-
-  has_many :studio_memberships, dependent: :delete_all
-  has_many :studios, through: :studio_memberships
-
-  has_many :admin_user_gender_identities, dependent: :delete_all
-  has_many :gender_identities, through: :admin_user_gender_identities
-
-  has_many :admin_user_communities, dependent: :delete_all
-  has_many :communities, through: :admin_user_communities
-
-  has_many :admin_user_racial_backgrounds, dependent: :delete_all
-  has_many :racial_backgrounds, through: :admin_user_racial_backgrounds
-
-  has_many :admin_user_cultural_backgrounds, dependent: :delete_all
-  has_many :cultural_backgrounds, through: :admin_user_cultural_backgrounds
-
-  has_many :admin_user_interests, dependent: :delete_all
-  has_many :interests, through: :admin_user_interests
-
-
-  enum old_skill_tree_level: {
-    junior_1: 0,
-    junior_2: 1,
-    junior_3: 2,
-    mid_level_1: 3,
-    mid_level_2: 4,
-    mid_level_3: 5,
-    experienced_mid_level_1: 6,
-    experienced_mid_level_2: 7,
-    experienced_mid_level_3: 8,
-    senior_1: 9,
-    senior_2: 10,
-    senior_3: 11,
-    senior_4: 12,
-    lead_1: 13,
-    lead_2: 14,
-  }
-
-  # Include default devise modules. Others available are:
-  # :confirmable, :lockable, :timeoutable, :trackable and :omniauthable
-  devise :database_authenticatable,
-         :recoverable, :rememberable, :validatable,
-         :omniauthable, omniauth_providers: %i[google_oauth2]
-
-  has_many :reviews
-  has_many :peer_reviews
-
   def current_contributor_type
     latest_full_time_period.try(:contributor_type)
   end
@@ -514,7 +528,8 @@ class AdminUser < ApplicationRecord
   end
 
   def self.from_omniauth(auth)
-    user = where(email: auth.info.email).first || where(auth.slice(:provider, :uid).to_h).first || new
+    uid = auth.info.email.split("@")[0]
+    user = where(email: "#{uid}@sanctuary.computer").first || where(email: "#{uid}@xxix.co").first || where(auth.slice(:provider, :uid).to_h).first || new
     user.update_attributes provider: auth.provider,
                            uid: auth.uid,
                            email: auth.info.email,
