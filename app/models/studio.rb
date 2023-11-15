@@ -1,14 +1,15 @@
 class Studio < ApplicationRecord
-  has_many :social_properties
+  has_many :social_properties, dependent: :delete_all
   accepts_nested_attributes_for :social_properties, allow_destroy: true
 
-  has_many :studio_memberships
-  has_many :admin_users, through: :studio_memberships
+  has_many :studio_memberships, dependent: :delete_all
+  has_many :admin_users, through: :studio_memberships, dependent: :delete_all
 
-  has_many :studio_coordinator_periods
+  has_many :studio_coordinator_periods, dependent: :delete_all
   accepts_nested_attributes_for :studio_coordinator_periods, allow_destroy: true
 
-  has_many :mailing_lists
+  has_many :mailing_lists, dependent: :destroy
+  has_many :okr_period_studios, dependent: :delete_all
 
   enum studio_type: {
     client_services: 0,
