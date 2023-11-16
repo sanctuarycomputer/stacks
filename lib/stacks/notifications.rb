@@ -332,7 +332,13 @@ class Stacks::Notifications
 
       notifications.each do |n|
         recent_notification = recent_notifications.find do |existing|
-          (existing.params.to_a - n.to_a | n.to_a - existing.params.to_a) == []
+          begin
+            (existing.params.to_a - n.to_a | n.to_a - existing.params.to_a) == []
+          rescue => e
+            # In rare cases, Notification might exist that references a deleted user.
+            existing.destroy!
+            false
+          end
         end
 
         unless recent_notification.present?
