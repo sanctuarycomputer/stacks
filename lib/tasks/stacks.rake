@@ -69,12 +69,12 @@ namespace :stacks do
 
       puts "~~~> DOING SNAPSHOTS"
       # Do internal studios first, because their costs are absorbed by client_services studios
-      Parallel.map(Studio.internal, in_threads: 5) { |s| s.generate_snapshot! }
+      Parallel.map(Studio.internal, in_threads: 2) { |s| s.generate_snapshot! }
       # Next, do reinvestment studios
-      Parallel.map(Studio.reinvestment, in_threads: 5) { |s| s.generate_snapshot! }
+      Parallel.map(Studio.reinvestment, in_threads: 2) { |s| s.generate_snapshot! }
       # Finally, do client_services, which require data from internal studios 
       # (and garden3d hides reinvestment data)
-      Parallel.map(Studio.client_services, in_threads: 5) { |s| s.generate_snapshot! }
+      Parallel.map(Studio.client_services, in_threads: 2) { |s| s.generate_snapshot! }
       # Now, generate project snapshots
       Parallel.map(ProjectTracker.all, in_threads: 10) { |pt| pt.generate_snapshot! }
 
