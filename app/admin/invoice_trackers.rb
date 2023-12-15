@@ -105,7 +105,7 @@ ActiveAdmin.register InvoiceTracker do
   form do |f|
     f.inputs(class: "admin_inputs") do
       f.input :notes, label: "❗Important Notes (accepts markdown)"
-      #f.input :qbo_invoice
+      f.input :forecast_client
     end
     f.actions
   end

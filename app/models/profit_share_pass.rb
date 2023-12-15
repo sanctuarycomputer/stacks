@@ -75,7 +75,7 @@ class ProfitSharePass < ApplicationRecord
   end
 
   def payments(scenario = make_scenario)
-    return [] unless finalized?
+    return [] unless finalized? || (Date.today >= finalization_day)
     psu_value = scenario.actual_value_per_psu
 
     Studio.garden3d.core_members_active_on(finalization_day).map do |a|
@@ -129,7 +129,7 @@ class ProfitSharePass < ApplicationRecord
         if Date.today >= finalization_day
           outstanding = Stacks::Profitability.pull_outstanding_invoices
           remaining_revenue_due_this_year =
-            outstanding.filter{|iv| iv.due_date <= Date.today.end_of_year && iv.due_date >= Date.today.beginning_of_year}.map(&:balance).reduce(:+)
+            outstanding.filter{|iv| (iv.due_date <= Date.today.end_of_year + 15.days) && iv.due_date >= Date.today.beginning_of_year}.map(&:balance).reduce(:+)
           ytd[:gross_revenue] += remaining_revenue_due_this_year
           ytd
         else
