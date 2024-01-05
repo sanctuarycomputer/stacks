@@ -27,11 +27,11 @@ ActiveAdmin.register_page "Skill Filter" do
         Score.bands[score.band] >= Score.bands[filter[:band]] && Score.consistencies[score.consistency] >= Score.consistencies[filter[:consistency]]
       end
       acc
-    end.flatten.uniq
+    end
     
     render(partial: "skill_filter", locals: {
       selected_filters: selected_filters,
-      filtered_team: filtered_team.flatten,
+      filtered_team: filtered_team,
       active_team_without_review: active_team_without_review
     })
   end
