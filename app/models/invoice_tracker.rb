@@ -10,7 +10,7 @@ class InvoiceTracker < ApplicationRecord
   belongs_to :qbo_invoice, class_name: "QboInvoice", foreign_key: "qbo_invoice_id", primary_key: "qbo_id", optional: true
 
   def display_name
-    "#{forecast_client.name} - #{invoice_pass.invoice_month}"
+    "#{qbo_invoice.try(:display_name)}"
   end
 
   def qbo_invoice

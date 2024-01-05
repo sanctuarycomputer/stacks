@@ -382,7 +382,7 @@ Budget: <%= number_to_currency(budget_high_end) %>
   </tbody>
 </table>
 
-<table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="table-layout:fixed">
   <thead>
     <tr>
       <th class="col">
@@ -391,6 +391,7 @@ Budget: <%= number_to_currency(budget_high_end) %>
           Generated Invoices
         </div>
       </th>
+      <th class="col">Month Generated</th>
       <th class="col">Status</th>
       <th class="col text-right">Total (For this Project Tracker)</th>
     </tr>
@@ -400,6 +401,9 @@ Budget: <%= number_to_currency(budget_high_end) %>
       <tr class="<%= index.even? ? "even" : "odd" %>">
         <td class="col">
           <%= link_to it.display_name, admin_invoice_pass_invoice_tracker_path(it.invoice_pass, it) %>
+        </td>
+        <td class="col">
+          <%= it.invoice_pass.invoice_month %>
         </td>
         <td class="col">
           <span class="pill <%= it.status %>">
@@ -415,7 +419,7 @@ Budget: <%= number_to_currency(budget_high_end) %>
 </table>
 
 <% if @project_tracker.adhoc_invoice_trackers.any? %>
-  <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+  <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="table-layout:fixed">
     <thead>
       <tr>
         <th class="col">
@@ -424,15 +428,19 @@ Budget: <%= number_to_currency(budget_high_end) %>
             Adhoc Invoices
           </div>
         </th>
+        <th class="col">Made Adhoc At</th>
         <th class="col">Status</th>
-        <th class="col text-right">Total</th>
+        <th class="col text-right">Total (For this Project Tracker)</th>
       </tr>
     </thead>
     <tbody>
       <% @project_tracker.adhoc_invoice_trackers.each_with_index do |it, index| %>
         <tr class="<%= index.even? ? "even" : "odd" %>">
           <td class="col">
-            <%= link_to("#{it.qbo_invoice.try(:display_name)} ↗", it.qbo_invoice.try(:qbo_invoice_link), target: "_blank") %>
+            <%= link_to("#{it.try(:display_name)} ↗", it.qbo_invoice.try(:qbo_invoice_link), target: "_blank") %>
+          </td>
+          <td class="col">
+            <%= Date.parse(it.qbo_invoice.data.dig("txn_date")).strftime("%B %d, %Y") %>
           </td>
           <td class="col">
             <span class="pill <%= it.status %>">
@@ -440,7 +448,7 @@ Budget: <%= number_to_currency(budget_high_end) %>
             </span>
           </td>
           <td class="col text-right">
-            <%= number_to_currency(it.qbo_invoice.try(:total)) %>
+            <%= number_to_currency(it.qbo_line_items_relating_to_forecast_projects(@project_tracker.forecast_projects).map{|qbo_li| qbo_li.dig("amount").to_f}.reduce(&:+)) %>
           </td>
         </tr>
       <% end %>

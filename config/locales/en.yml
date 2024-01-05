@@ -31,6 +31,7 @@
 
 en:
   active_admin:
+    skill_filter: "Skill Filter"
     dei_explorer: "DEI Explorer"
     okr_explorer: "OKR Explorer"
     project_cosr_explorer: "Cost of Services Rendered (COSR) Explorer"

@@ -1,6 +1,9 @@
 <% qbo_invoice = invoice_tracker.qbo_invoice %>
 <% status = invoice_tracker.status %>
 
+<p class="pill nag" style="margin-right: 6px">
+  <%= invoice_tracker.invoice_pass.invoice_month %>
+</p>
 <p class="pill nag <%= status %>" style="margin-right: 6px">
   <%= status.to_s.humanize %>
 </p>

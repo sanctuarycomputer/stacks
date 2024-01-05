@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2023_10_21_204938) do
+ActiveRecord::Schema.define(version: 2024_01_05_194135) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -35,7 +35,7 @@ ActiveRecord::Schema.define(version: 2023_10_21_204938) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.index ["project_tracker_id"], name: "index_adhoc_invoice_trackers_on_project_tracker_id"
-    t.index ["qbo_invoice_id"], name: "index_adhoc_invoice_trackers_on_qbo_invoice_id", unique: true
+    t.index ["qbo_invoice_id", "project_tracker_id"], name: "index_adhoc_invoice_trackers_on_qbo_invoice_and_project_tracker", unique: true
   end
 
   create_table "admin_user_communities", force: :cascade do |t|

@@ -1,6 +1,8 @@
 class ProjectTracker < ApplicationRecord
   validates :name, presence: :true
   validate :has_msa_and_sow_links
+  validate :no_forecast_projects_missing_project_code
+  validate :no_forecast_project_code_collisions
 
   validates_presence_of :budget_low_end,
     message: 'We should almost never commit to a fixed budget, but if we must, you can set "Budget Low End" and "Budget High End" to the same value.',
@@ -56,6 +58,26 @@ class ProjectTracker < ApplicationRecord
 
     unless project_tracker_links.find{|l| l.link_type == "sow"}.present?
       errors.add(:base, "An SOW Project URL must be present.")
+    end
+  end
+
+  def no_forecast_projects_missing_project_code
+    return if created_at < Date.new(2024,1,5) # Only apply this validation going forward
+
+    associated_forecast_codes = project_tracker_forecast_projects.map(&:forecast_project).map(&:code)
+    if associated_forecast_codes.any?(nil) || associated_forecast_codes.any?("")
+      errors.add(:base, "You are trying to connect a Forecast Project that is missing a Project Code. Please add a Project Code in Forecast, wait for Forecast to resync (every 10 minutes), and try again.")
+    end
+  end
+
+  def no_forecast_project_code_collisions
+    return if created_at < Date.new(2024,1,5) # Only apply this validation going forward
+
+    associated_forecast_codes = project_tracker_forecast_projects.map(&:forecast_project).map(&:code)
+    taken_forecast_codes = ForecastProject.forecast_codes_already_associated_to_project_tracker(self.id)
+    cant_associate = taken_forecast_codes.intersection(associated_forecast_codes)
+    if cant_associate.length > 0
+      errors.add(:base, "Forecast Project Codes: #{cant_associate.join(" ,")} are already used by another in Project Tracker. Please either use a new Project Code in Forecast OR add connect this Forecast Project/s to the existing Project Tracker.")
     end
   end
 
@@ -448,7 +470,7 @@ class ProjectTracker < ApplicationRecord
 
       from_adhoc_invoices =
         (adhoc_invoice_trackers.reduce(0.0) do |acc, ahit|
-          acc += ahit.qbo_invoice.try(:total) || 0
+          acc += ahit.qbo_line_items_relating_to_forecast_projects(forecast_projects).map{|qbo_li| qbo_li.dig("amount").to_f}.reduce(&:+) || 0
         end || 0)
 
       from_generated_invoices + from_adhoc_invoices

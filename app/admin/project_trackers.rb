@@ -353,7 +353,7 @@ ActiveAdmin.register ProjectTracker do
         a.input(:forecast_project, {
           label: "Forecast Project",
           prompt: "Select a Forecast Project",
-          collection: ForecastProject.with_archived_at_bottom
+          collection: ForecastProject.candidates_for_association_with_project_tracker(resource)
         })
       end
 

@@ -15,6 +15,27 @@ class ForecastProject < ApplicationRecord
     order(Arel.sql("data->>'archived'").asc)
   }
 
+  def self.candidates_for_association_with_project_tracker(project_tracker)
+    already_associated = self.forecast_codes_already_associated_to_project_tracker(project_tracker.id)
+    all = with_archived_at_bottom.reject{|fp| already_associated.include?(fp.code)}
+
+    not_archived = all.select{|fp| !fp.data.dig("archived") }
+    archived = all.select{|fp| fp.data.dig("archived") }
+
+    [
+      nil,
+      *not_archived.select{|fp| fp.code.present?}.sort_by(&:code),
+      nil,
+      *not_archived.select{|fp| !fp.code.present?}.sort_by{|fp| fp.data.dig("name") },
+      nil,
+      *archived.sort_by.sort_by{|fp| fp.code || "" }
+    ]
+  end
+
+  def self.forecast_codes_already_associated_to_project_tracker(except_project_tracker_id = nil)
+    ProjectTrackerForecastProject.includes(:forecast_project).all.reject{|ptfp| ptfp.project_tracker_id == except_project_tracker_id}.map(&:forecast_project).map(&:code).flatten
+  end
+
   def forecast_assignments
     @_forecast_assignments ||= super.includes(:forecast_project)
   end
@@ -28,7 +49,7 @@ class ForecastProject < ApplicationRecord
   end
 
   def display_name
-    title = "[#{data['code'] || 'Missing Forecast Project Code'}] #{data['name']}"
+    title = "[#{data['code'] || '????'}] #{data['name']}"
     title = "*ARCHIVED* #{title}" if data["archived"]
     title
   end

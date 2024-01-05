@@ -1,0 +1,133 @@
+<p>This is a tool to help find team members that have achieved at last a certain level of skill in a particular Skill Tree area.</p>
+
+<form>
+  <% if selected_filters.empty? %>
+    <div class="dashboard-modules table index_table index">
+      <div class="dashboard-module">
+        <div class="module-header">
+          <p>Filter Group</p>
+        </div>
+        <div class="module-body markdown-body">
+          <%= select("trait", "trait_id", Trait.all.collect {|p| [ "#{p.tree.display_name}: #{p.name}", p.id ] })%>
+          <hr />
+          <%= select("band", "band_key", Score.bands.keys.collect {|b| [b.humanize,b] })%>
+          <%= select("consistency", "consistency", Score.consistencies.keys.collect {|b| [b.humanize,b] })%>
+          <hr />
+          <%= button_tag 'Remove Filter Group', type: 'button', onclick: "removeFilterGroup(this)" %>
+        </div>
+      </div>
+    </div>
+  <% else %>
+    <% selected_filters.each do |f| %>
+      <div class="dashboard-modules table index_table index">
+        <div class="dashboard-module">
+          <div class="module-header">
+            <p>Filter Group</p>
+          </div>
+          <div class="module-body markdown-body">
+            <%= select("trait", "trait_id", Trait.all.collect {|p| [ "#{p.tree.display_name}: #{p.name}", p.id ] }, selected: f[:trait_id])%>
+            <hr />
+            <%= select("band", "band_key", Score.bands.keys.collect {|b| [b.humanize,b] }, selected: f[:band]) %>
+            <%= select("consistency", "consistency", Score.consistencies.keys.collect {|b| [b.humanize,b] }, selected: f[:consistency])%>
+            <hr />
+            <%= button_tag 'Remove Filter Group', type: 'button', onclick: "removeFilterGroup(this)", class: "cancel" %>
+          </div>
+        </div>
+      </div>
+    <% end %>
+  <% end %> 
+
+  <%= button_tag '+ Add Filter Group', type: 'button', onclick: "addFilterGroup()", class: "draft" %>
+  <%= button_tag 'Search!', type: 'button', onclick: "search()", class: "complete" %>
+</form>
+
+<% if selected_filters.any? %>
+  <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+    <div id="titlebar_left">
+      <h2 id="page_title">🔎 Search Results</h2>
+    </div>
+  </div>
+  <p>These team members have reached all of the criteria given (and possibly exceed it).</p>
+
+  <table border="0" cellspacing="0" cellpadding="0" class="index_table index mb2">
+    <thead>
+      <tr>
+        <th class="col">Team Member</th>
+        <th class="col text-right">Skill Tree Level</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% filtered_team.each_with_index do |team_member, index| %>
+        <tr class="<%= index.even? ? "even" : "odd" %>">
+          <td class="col">
+            <%= link_to team_member.email, admin_admin_user_path(team_member) %>
+          </td>
+          <td class="col text-right">
+            <%= team_member.skill_tree_level %>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+
+  <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+    <div id="titlebar_left">
+      <h2 id="page_title">🤔 Active Team Members without Skill Tree Review</h2>
+    </div>
+  </div>
+  <p>These team members haven't yet completed a Skill Tree Review via Stacks, so we aren't sure if they match the filter groups.</p>
+
+  <table border="0" cellspacing="0" cellpadding="0" class="index_table index mb2">
+    <thead>
+      <tr>
+        <th class="col">Team Member</th>
+        <th class="col text-right">Skill Tree Level</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% active_team_without_review.each_with_index do |team_member, index| %>
+        <tr class="<%= index.even? ? "even" : "odd" %>">
+          <td class="col">
+            <%= link_to team_member.email, admin_admin_user_path(team_member) %>
+          </td>
+          <td class="col text-right">
+            <%= team_member.skill_tree_level %>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+<% end %>
+
+<script>
+  var proto = document.querySelector(".dashboard-modules").cloneNode(true);
+  function addFilterGroup() {
+    var filterGroups = document.querySelectorAll(".dashboard-modules");
+    var lastFilterGroup = filterGroups[filterGroups.length -1];
+    lastFilterGroup.after(proto);
+    proto = proto.cloneNode(true);
+  }
+  function removeFilterGroup(filterGroupRemoveButtonEl) {
+    var filterGroupEl = filterGroupRemoveButtonEl.closest(".dashboard-modules")
+    var filterGroups = document.querySelectorAll(".dashboard-modules");
+    var firstFilterGroup = filterGroups[0];
+    if (firstFilterGroup === filterGroupEl) {
+      alert("Must have at least one filter group.")
+    } else {
+      filterGroupEl.remove()
+    }
+  }
+  function search() {
+    var searchParams = new URLSearchParams();
+
+    var filterGroups = document.querySelectorAll(".dashboard-modules");
+    filterGroups.forEach(function(filterGroupEl, idx) {
+      var traitId = filterGroupEl.querySelector("select#trait_trait_id").value;
+      var band = filterGroupEl.querySelector("select#band_band_key").value;
+      var consistency = filterGroupEl.querySelector("select#consistency_consistency").value;
+      searchParams.set(`filter_group_${idx}`, `${traitId},${band},${consistency}`);
+    });
+
+    window.location.search = searchParams.toString();
+  }
+</script>

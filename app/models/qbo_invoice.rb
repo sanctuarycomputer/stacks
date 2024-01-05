@@ -8,7 +8,7 @@ class QboInvoice < ApplicationRecord
   end
 
   def display_name
-    "#{data.dig("doc_number")} - #{ActionController::Base.helpers.number_to_currency(data.dig("total"))}"
+    "##{data.dig("doc_number")} (#{ActionController::Base.helpers.number_to_currency(data.dig("total"))}) - #{data.dig("customer_ref", "name")}"
   end
 
   def qbo_invoice_link
