@@ -107,6 +107,8 @@ class Studio < ApplicationRecord
           end
 
         acc[gradation] = Parallel.map(periods, in_threads: 5) do |period|
+          prev_period = periods[0] == period ? nil : periods[periods.index(period) - 1]
+
           d = {
             label: period.label,
             period_starts_at: period.starts_at.strftime("%m/%d/%Y"),
@@ -118,20 +120,26 @@ class Studio < ApplicationRecord
 
           d[:cash][:datapoints] = self.key_datapoints_for_period(
             period,
+            prev_period,
             "cash",
             preloaded_studios,
             preloaded_new_biz_notion_pages,
             utilization_by_period[period],
-            g3d_utilization_by_period[period]
+            utilization_by_period[prev_period],
+            g3d_utilization_by_period[period],
+            g3d_utilization_by_period[prev_period]
           )
           d[:cash][:okrs] = self.okrs_for_period(period, d[:cash][:datapoints])
           d[:accrual][:datapoints] = self.key_datapoints_for_period(
             period,
+            prev_period,
             "accrual",
             preloaded_studios,
             preloaded_new_biz_notion_pages,
             utilization_by_period[period],
-            g3d_utilization_by_period[period]
+            utilization_by_period[prev_period],
+            g3d_utilization_by_period[period],
+            g3d_utilization_by_period[prev_period]
           )
           d[:accrual][:okrs] = self.okrs_for_period(period, d[:accrual][:datapoints])
           d
@@ -377,11 +385,14 @@ class Studio < ApplicationRecord
 
   def key_datapoints_for_period(
     period,
+    prev_period,
     accounting_method,
     preloaded_studios = Studio.all,
     preloaded_new_biz_notion_pages = new_biz_notion_pages,
     utilization_for_period = utilization_for_period(period, preloaded_studios), 
-    g3d_utilization_for_period = preloaded_studios.find(&:is_garden3d?).utilization_for_period(period, preloaded_studios)
+    utilization_for_prev_period = utilization_for_period(prev_period, preloaded_studios), 
+    g3d_utilization_for_period = preloaded_studios.find(&:is_garden3d?).utilization_for_period(period, preloaded_studios),
+    g3d_utilization_for_prev_period = preloaded_studios.find(&:is_garden3d?).utilization_for_period(prev_period, preloaded_studios)
   )
     # TODO: Fix me - right now I return nil if this period predates utilization data OR
     # there's just no one there
@@ -398,6 +409,21 @@ class Studio < ApplicationRecord
       period.label,
       sellable_hours_proportion,
     )
+
+    if prev_period.present?
+      prev_v, prev_g3dv, prev_sellable_hours_proportion = merged_utilization_data(
+        utilization_for_prev_period,
+        g3d_utilization_for_prev_period
+      )
+
+      prev_cogs = prev_period.report.cogs_for_studio(
+        self, 
+        preloaded_studios,
+        accounting_method,
+        prev_period.label,
+        prev_sellable_hours_proportion,
+      )
+    end
 
     aggregate_social_following =
       SocialProperty.aggregate!(all_social_properties)
@@ -427,7 +453,8 @@ class Studio < ApplicationRecord
       },
       revenue: {
         value: cogs[:revenue],
-        unit: :usd
+        unit: :usd,
+        growth: prev_cogs ? ((cogs[:revenue].to_f / prev_cogs[:revenue].to_f) * 100) - 100 : nil
       },
       payroll: {
         value: cogs[:payroll],

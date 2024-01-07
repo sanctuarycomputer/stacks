@@ -207,6 +207,23 @@
 
 <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
   <div id="titlebar_left">
+    <h2 id="page_title">📈 Growth</h2>
+  </div>
+</div>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Studio Growth</p>
+    </div>
+    <div class="module-body">
+      <canvas id="studio-growth"></canvas>
+    </div>
+  </div>
+</div>
+
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
     <h2 id="page_title">📊 Economics</h2>
   </div>
 </div>
@@ -472,6 +489,27 @@
             drawOnChartArea: false, // only want the grid lines for one axis to show up
           },
         }
+      }
+    }
+  });
+
+  new Chart(document.getElementById('studio-growth'), {
+    type: 'bar',
+    data: <%= studio_growth_data.to_json.html_safe %>,
+    options: {
+      interaction: {
+        intersect: false,
+        mode: 'index',
+      },
+      tension: 0.3,
+      scales: {
+        y: {
+          type: 'linear',
+          display: true,
+          position: 'left',
+          beginAtZero: true,
+          min: 0,
+        },
       }
     }
   });

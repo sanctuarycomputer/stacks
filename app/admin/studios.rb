@@ -228,6 +228,18 @@ ActiveAdmin.register Studio do
       }]
     }
 
+    studio_growth_data = {
+      labels: snapshot.map{|s| s["label"]},
+      datasets:[{
+        label: "Revenue Growth (%)",
+        borderColor: COLORS[2],
+        data: (snapshot.map do |v|
+          v.dig(accounting_method, "datapoints", "revenue", "growth")
+        end),
+        type: 'line'
+      }]
+    }
+
     studio_economics_data = {
       labels: snapshot.map{|s| s["label"]},
       datasets: [{
@@ -498,6 +510,7 @@ ActiveAdmin.register Studio do
       all_okrs: all_okrs,
       snapshot: snapshot,
       studio_profitability_data: studio_profitability_data,
+      studio_growth_data: studio_growth_data, 
       studio_economics_data: studio_economics_data,
       studio_utilization_data: studio_utilization_data,
       studio_new_biz_data: studio_new_biz_data,
