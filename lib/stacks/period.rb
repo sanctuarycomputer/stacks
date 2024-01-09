@@ -9,12 +9,12 @@ class Stacks::Period
     @ends_at = ends_at
   end
 
-  def report
+  def report(qbo_account = nil)
     @_report ||= QboProfitAndLossReport.find_or_fetch_for_range(
       starts_at,
       ends_at,
       false,
-      nil
+      qbo_account
     )
   end
 
@@ -30,12 +30,12 @@ class Stacks::Period
     date >= @starts_at && date <= @ends_at
   end
 
-  def self.for_gradation(gradation)
+  def self.for_gradation(gradation, start_at = Date.new(2020, 1, 1))
     periods = []
     case gradation
     when nil
     when :month
-      time = Date.new(2020, 1, 1)
+      time = start_at
       while time < Date.today.last_month.end_of_month
         periods << Stacks::Period.new(
           time.strftime("%B, %Y"),
@@ -47,7 +47,7 @@ class Stacks::Period
       return periods
 
     when :quarter
-      time = Date.new(2020, 1, 1)
+      time = start_at
       while time < Date.today.last_quarter.end_of_quarter
         periods << Stacks::Period.new(
           "Q#{(time.beginning_of_quarter.month / 3) + 1}, #{time.beginning_of_quarter.year}",
@@ -59,7 +59,7 @@ class Stacks::Period
       return periods
 
     when :year
-      time = Date.new(2020, 1, 1)
+      time = start_at
       while time < Date.today.last_year.end_of_year
         periods << Stacks::Period.new(
           "#{time.beginning_of_quarter.year}",
@@ -77,7 +77,7 @@ class Stacks::Period
     
     when :trailing_3_months
       time = Date.today.last_month
-      while time > Date.new(2020, 1, 1)
+      while time > start_at
         starts_at = (time - 2.months).beginning_of_month
         ends_at = time.end_of_month
         periods << Stacks::Period.new(
@@ -91,7 +91,7 @@ class Stacks::Period
 
     when :trailing_4_months
       time = Date.today.last_month
-      while time > Date.new(2020, 1, 1)
+      while time > start_at
         starts_at = (time - 3.months).beginning_of_month
         ends_at = time.end_of_month
         periods << Stacks::Period.new(
@@ -105,7 +105,7 @@ class Stacks::Period
 
     when :trailing_6_months
       time = Date.today.last_month
-      while time > Date.new(2020, 1, 1)
+      while time > start_at
         starts_at = (time - 5.months).beginning_of_month
         ends_at = time.end_of_month
         periods << Stacks::Period.new(
@@ -119,7 +119,7 @@ class Stacks::Period
 
     when :trailing_12_months
       time = Date.today.last_month
-      while time > Date.new(2020, 1, 1)
+      while time > start_at
         starts_at = (time - 11.months).beginning_of_month
         ends_at = time.end_of_month
         periods << Stacks::Period.new(

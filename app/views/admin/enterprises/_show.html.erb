@@ -1,0 +1,100 @@
+<% current_gradation = params["gradation"] || default_gradation %>
+<% current_gradation = default_gradation unless all_gradations.include?(current_gradation) %>
+<% accounting_method = session[:accounting_method] || "cash" %>
+<% all_gradations.each do |gradation| %>
+  <a href="?gradation=<%= gradation %>" style="margin-right: 6px">
+    <p class="nag pill <%= current_gradation == gradation ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
+      By <%= gradation.humanize %>
+    </p>
+  </a>
+<% end %>
+
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">💸 Profitability</h2>
+  </div>
+</div>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Profitability</p>
+    </div>
+    <div class="module-body">
+      <canvas id="profitability"></canvas>
+    </div>
+  </div>
+</div>
+
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">📈 Growth</h2>
+  </div>
+</div>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Enterprise Growth</p>
+    </div>
+    <div class="module-body">
+      <canvas id="growth"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+  new Chart(document.getElementById('profitability'), {
+    type: 'bar',
+    data: <%= profitability_data.to_json.html_safe %>,
+    options: {
+      interaction: {
+        intersect: false,
+        mode: 'index',
+      },
+      tension: 0.3,
+      scales: {
+        y: {
+          type: 'linear',
+          display: true,
+          position: 'left',
+          beginAtZero: true,
+          min: 0,
+        },
+        y1: {
+          type: 'linear',
+          display: true,
+          position: 'right',
+          beginAtZero: true,
+          stacked: true,
+          max: 100,
+          min: 0,
+          grid: {
+            drawOnChartArea: false, // only want the grid lines for one axis to show up
+          },
+        }
+      }
+    }
+  });
+
+  new Chart(document.getElementById('growth'), {
+    type: 'bar',
+    data: <%= growth_data.to_json.html_safe %>,
+    options: {
+      interaction: {
+        intersect: false,
+        mode: 'index',
+      },
+      tension: 0.3,
+      scales: {
+        y: {
+          type: 'linear',
+          display: true,
+          position: 'left',
+          beginAtZero: true,
+          min: 0,
+        },
+      }
+    }
+  });
+</script>

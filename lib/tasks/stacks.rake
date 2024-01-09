@@ -17,6 +17,11 @@ namespace :stacks do
     end
   end
 
+  desc "Daily Enterprise Tasks"
+  task :daily_enterprise_tasks => :environment do
+    Parallel.map(Enterprise.all, in_threads: 2) { |e| e.generate_snapshot! }
+  end
+
   desc "Make Notifications"
   task :make_notifications => :environment do
     begin

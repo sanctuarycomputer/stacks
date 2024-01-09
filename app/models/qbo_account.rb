@@ -82,8 +82,8 @@ class QboAccount < ApplicationRecord
       refresh_token: qbo_token.refresh_token
     )
 
-    # Refresh the token if it's been longer than 30 minutes
-    if ((DateTime.now.to_i - qbo_token.updated_at.to_i) / 60) > 30
+    # Refresh the token if it's been longer than 10 minutes
+    if ((DateTime.now.to_i - qbo_token.updated_at.to_i) / 60) >= 10
       access_token = access_token.refresh!
       qbo_token.update!(
         token: access_token.token,

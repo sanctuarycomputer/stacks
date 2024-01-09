@@ -67,4 +67,56 @@ ActiveAdmin.register Enterprise do
 
     f.actions
   end
+
+  show do
+    COLORS = Stacks::Utils::COLORS
+
+    all_gradations = ["month", "quarter", "year", "trailing_3_months", "trailing_4_months", "trailing_6_months", "trailing_12_months"]
+    default_gradation = "month"
+    current_gradation =
+      params["gradation"] || default_gradation
+    current_gradation =
+      default_gradation unless all_gradations.include?(current_gradation)
+
+    snapshot =
+      resource.snapshot[current_gradation] || []
+    snapshot_without_ytd = snapshot.reject{|s| s["label"] == "YTD"}
+    accounting_method = session[:accounting_method] || "cash"
+
+    profitability_data = {
+      labels: snapshot.map{|s| s["label"]},
+      datasets: [{
+        label: "Revenue",
+        data: (snapshot.map do |v|
+          v.dig(accounting_method, "datapoints", "revenue", "value")
+        end),
+        backgroundColor: COLORS[0]
+      }]
+    }
+
+    # YTD throws the trendline out
+    growth_data = {
+      labels: snapshot_without_ytd.map{|s| s["label"]},
+      datasets:[{
+        label: "Revenue Growth (%)",
+        borderColor: COLORS[2],
+        data: (snapshot_without_ytd.map do |v|
+          v.dig(accounting_method, "datapoints", "revenue", "growth")
+        end),
+        type: 'line',
+        trendlineLinear: {
+          colorMin: COLORS[2],
+          lineStyle: "dotted",
+          width: 1,
+        }
+      }]
+    }
+
+    render(partial: "show", locals: {
+      all_gradations: all_gradations,
+      default_gradation: default_gradation,
+      profitability_data: profitability_data,
+      growth_data: growth_data
+    })
+  end
 end

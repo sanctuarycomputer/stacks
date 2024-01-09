@@ -45,6 +45,16 @@ class QboProfitAndLossReport < ApplicationRecord
     expense_data
   end
 
+  def data_for_enterprise(enterprise, accounting_method, period_label)
+    gross_revenue = find_rows(accounting_method, "Total Income")
+
+    base = {
+      revenue: gross_revenue
+    }
+
+    base
+  end
+
   def cogs_for_studio(studio, preloaded_studios, accounting_method, period_label, sellable_hours_proportion = nil)
     gross_revenue = find_rows(accounting_method, studio.qbo_sales_categories)
 
