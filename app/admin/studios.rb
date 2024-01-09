@@ -158,6 +158,7 @@ ActiveAdmin.register Studio do
 
     snapshot =
       resource.snapshot[current_gradation] || []
+    snapshot_without_ytd = snapshot.reject{|s| s["label"] == "YTD"}
     accounting_method = session[:accounting_method] || "cash"
 
     studio_profitability_data = {
@@ -228,15 +229,21 @@ ActiveAdmin.register Studio do
       }]
     }
 
+    # YTD throws the trendline out
     studio_growth_data = {
-      labels: snapshot.map{|s| s["label"]},
+      labels: snapshot_without_ytd.map{|s| s["label"]},
       datasets:[{
         label: "Revenue Growth (%)",
         borderColor: COLORS[2],
-        data: (snapshot.map do |v|
+        data: (snapshot_without_ytd.map do |v|
           v.dig(accounting_method, "datapoints", "revenue", "growth")
         end),
-        type: 'line'
+        type: 'line',
+        trendlineLinear: {
+          colorMin: COLORS[2],
+          lineStyle: "dotted",
+          width: 1,
+        }
       }]
     }
 

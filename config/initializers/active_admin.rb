@@ -216,6 +216,7 @@ ActiveAdmin.setup do |config|
   # To load a javascript file:
   #   config.register_javascript 'my_javascript.js'
   config.register_javascript 'https://cdn.jsdelivr.net/npm/chart.js@3.6.0/dist/chart.min.js'
+  config.register_javascript 'https://cdn.jsdelivr.net/npm/chartjs-plugin-trendline'
   config.register_javascript 'https://cdn.jsdelivr.net/npm/luxon@^2'
   config.register_javascript 'https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@^1'
   config.register_javascript 'https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2'

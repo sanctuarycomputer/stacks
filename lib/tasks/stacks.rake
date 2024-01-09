@@ -3,12 +3,21 @@ namespace :stacks do
   task :refresh_qbo_token => :environment do
     begin
       Stacks::Quickbooks.make_and_refresh_qbo_access_token
+    rescue => e
+      Sentry.capture_exception(e)
+    end
+  end
+
+  desc "Freshen Enterprise Qbo Tokens"
+  task :refresh_enterprise_qbo_tokens => :environment do
+    begin
       QboAccount.all.map(&:make_and_refresh_qbo_access_token)
     rescue => e
       Sentry.capture_exception(e)
     end
   end
 
+  desc "Make Notifications"
   task :make_notifications => :environment do
     begin
       Stacks::Notifications.make_notifications!
