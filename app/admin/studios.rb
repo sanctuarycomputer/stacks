@@ -322,6 +322,19 @@ ActiveAdmin.register Studio do
       }]
     }
 
+    skill_level_data = 
+      resource.skill_levels_on(Date.today)
+    studio_talent_pool_data = {
+      labels: skill_level_data.values.map{|s| s[:name] },
+      datasets: [{
+        label: 'Total',
+        backgroundColor: COLORS[0],
+        data: (skill_level_data.values.map do |s|
+          s[:count] || 0
+        end)
+      }]
+    }
+
     studio_attrition_data = {
       labels: snapshot.map{|s| s["label"]},
       datasets: [{
@@ -518,6 +531,7 @@ ActiveAdmin.register Studio do
       snapshot: snapshot,
       studio_profitability_data: studio_profitability_data,
       studio_growth_data: studio_growth_data, 
+      studio_talent_pool_data: studio_talent_pool_data,
       studio_economics_data: studio_economics_data,
       studio_utilization_data: studio_utilization_data,
       studio_new_biz_data: studio_new_biz_data,
