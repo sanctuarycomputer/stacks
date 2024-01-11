@@ -62,7 +62,7 @@ class ProjectTracker < ApplicationRecord
   end
 
   def no_forecast_projects_missing_project_code
-    return if created_at < Date.new(2024,1,5) # Only apply this validation going forward
+    return if (created_at || Date.today) < Date.new(2024,1,5) # Only apply this validation going forward
 
     associated_forecast_codes = project_tracker_forecast_projects.map(&:forecast_project).map(&:code)
     if associated_forecast_codes.any?(nil) || associated_forecast_codes.any?("")
@@ -71,7 +71,7 @@ class ProjectTracker < ApplicationRecord
   end
 
   def no_forecast_project_code_collisions
-    return if created_at < Date.new(2024,1,5) # Only apply this validation going forward
+    return if (created_at || Date.today) < Date.new(2024,1,5) # Only apply this validation going forward
 
     associated_forecast_codes = project_tracker_forecast_projects.map(&:forecast_project).map(&:code)
     taken_forecast_codes = ForecastProject.forecast_codes_already_associated_to_project_tracker(self.id)
