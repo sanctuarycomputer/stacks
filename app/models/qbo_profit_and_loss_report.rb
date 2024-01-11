@@ -46,13 +46,13 @@ class QboProfitAndLossReport < ApplicationRecord
   end
 
   def data_for_enterprise(enterprise, accounting_method, period_label)
-    gross_revenue = find_rows(accounting_method, "Total Income")
-
-    base = {
-      revenue: gross_revenue
+    {
+      revenue: find_rows(accounting_method, "Total Income"),
+      cogs: find_rows(accounting_method, "Total Cost of Goods Sold"),
+      expenses: find_rows(accounting_method, "Total Expenses"),
+      net_revenue: find_rows(accounting_method, "Net Income"),
+      profit_margin: ((find_rows(accounting_method, "Net Income") / find_rows(accounting_method, "Total Income")) * 100),
     }
-
-    base
   end
 
   def cogs_for_studio(studio, preloaded_studios, accounting_method, period_label, sellable_hours_proportion = nil)

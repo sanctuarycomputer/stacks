@@ -70,6 +70,7 @@ ActiveAdmin.register Enterprise do
 
   show do
     COLORS = Stacks::Utils::COLORS
+    accounting_method = session[:accounting_method] || "cash"
 
     all_gradations = ["month", "quarter", "year", "trailing_3_months", "trailing_4_months", "trailing_6_months", "trailing_12_months"]
     default_gradation = "month"
@@ -78,14 +79,75 @@ ActiveAdmin.register Enterprise do
     current_gradation =
       default_gradation unless all_gradations.include?(current_gradation)
 
+    qbo_accounts = resource.qbo_account.fetch_all_accounts
+    cc_or_bank_accounts = qbo_accounts.select do |a|
+      ["Bank", "Credit Card"].include?(a.account_type)
+    end
+    
+    net_cash = cc_or_bank_accounts.map do |a| 
+      if a.classification == "Liability"
+        -1 * a.current_balance.abs 
+      else
+        a.current_balance
+      end
+    end.reduce(:+)
+
+    burn_rates =
+      [1, 2, 3].map do |month|
+        report = QboProfitAndLossReport.find_or_fetch_for_range(
+          (Date.today - month.months).beginning_of_month,
+          (Date.today - month.months).end_of_month,
+          false,
+          resource.qbo_account
+        )
+
+        (
+          report.find_row(accounting_method, "Total Cost of Goods Sold") +
+          report.find_row(accounting_method, "Total Expenses")
+        )        
+      end
+    average_burn_rate = burn_rates.sum(0.0) / burn_rates.length
+
     snapshot =
       resource.snapshot[current_gradation] || []
     snapshot_without_ytd = snapshot.reject{|s| s["label"] == "YTD"}
-    accounting_method = session[:accounting_method] || "cash"
 
     profitability_data = {
       labels: snapshot.map{|s| s["label"]},
       datasets: [{
+        label: "Revenue",
+        data: (snapshot.map do |v|
+          v.dig(accounting_method, "datapoints", "revenue", "value")
+        end),
+        backgroundColor: COLORS[0]
+      }]
+    }
+
+    profitability_data = {
+      labels: snapshot.map{|s| s["label"]},
+      datasets: [{
+        label: "Profit Margin (%)",
+        data: (snapshot.map do |v|
+          v.dig(accounting_method, "datapoints", "profit_margin", "value")
+        end),
+        yAxisID: 'y1',
+        fill: true,
+        type: 'line'
+      }, {
+        label: "Expenses",
+        data: (snapshot.map do |v|
+          v.dig(accounting_method, "datapoints", "expenses", "value")
+        end),
+        backgroundColor: COLORS[6],
+        stack: 'cogs'
+      }, {
+        label: "COGS",
+        data: (snapshot.map do |v|
+          v.dig(accounting_method, "datapoints", "cogs", "value")
+        end),
+        backgroundColor: COLORS[5],
+        stack: 'cogs'
+      }, {
         label: "Revenue",
         data: (snapshot.map do |v|
           v.dig(accounting_method, "datapoints", "revenue", "value")
@@ -115,6 +177,11 @@ ActiveAdmin.register Enterprise do
     render(partial: "show", locals: {
       all_gradations: all_gradations,
       default_gradation: default_gradation,
+      accounts: cc_or_bank_accounts,
+      runway_data: {
+        net_cash: net_cash,
+        average_burn_rate: average_burn_rate
+      },
       profitability_data: profitability_data,
       growth_data: growth_data
     })

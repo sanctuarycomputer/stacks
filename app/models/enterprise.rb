@@ -49,16 +49,27 @@ class Enterprise < ApplicationRecord
   end
 
   def key_datapoints_for_period(period, prev_period, accounting_method)
-    cogs = period.report(self.qbo_account).data_for_enterprise(self, accounting_method, period.label)
-    prev_cogs = prev_period.report(self.qbo_account).data_for_enterprise(self, accounting_method, prev_period.label) if prev_period.present?
+    data = period.report(self.qbo_account).data_for_enterprise(self, accounting_method, period.label)
+    prev_data = prev_period.report(self.qbo_account).data_for_enterprise(self, accounting_method, prev_period.label) if prev_period.present?
 
-    data = {
+    {
       revenue: {
-        value: cogs[:revenue],
+        value: data[:revenue],
         unit: :usd,
-        growth: (prev_cogs ? ((cogs[:revenue].to_f / prev_cogs[:revenue].to_f) * 100) - 100 : nil)
-      }
+        growth: (prev_data ? ((data[:revenue].to_f / prev_data[:revenue].to_f) * 100) - 100 : nil)
+      },
+      cogs: {
+        value: data[:cogs],
+        unit: :usd
+      },
+      expenses: {
+        value: data[:expenses],
+        unit: :usd
+      },
+      profit_margin: {
+        value: data[:profit_margin],
+        unit: :percentage
+      },
     }
-    data
   end
 end
