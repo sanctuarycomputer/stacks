@@ -12,8 +12,21 @@ ActiveAdmin.register Enterprise do
       :realm_id,
     ]
 
+  action_item :trigger_generate_snapshot, only: :show do
+    link_to "Regenerate Data", trigger_generate_snapshot_admin_enterprise_path(resource), method: :post
+  end
+
+  member_action :trigger_generate_snapshot, method: :post do
+    resource.qbo_account.sync_all!
+    resource.generate_snapshot!
+    redirect_to admin_enterprise_path(resource), notice: "Regenerated!"
+  end
+
   index download_links: false do
     column :name
+    column :last_generated do |resource|
+      "#{time_ago_in_words(DateTime.iso8601(resource.snapshot["generated_at"]))} ago"
+    end
     actions
   end
 

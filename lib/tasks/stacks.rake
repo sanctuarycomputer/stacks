@@ -19,6 +19,7 @@ namespace :stacks do
 
   desc "Daily Enterprise Tasks"
   task :daily_enterprise_tasks => :environment do
+    Parallel.map(QboAccount.all, in_threads: 2) { |e| e.sync_all! }
     Parallel.map(Enterprise.all, in_threads: 2) { |e| e.generate_snapshot! }
   end
 
