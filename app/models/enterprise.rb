@@ -1,20 +1,11 @@
 class Enterprise < ApplicationRecord
   has_one :qbo_account
   accepts_nested_attributes_for :qbo_account, allow_destroy: true
-
   VERTICAL_MATCHER = /\[(.+)\](.*)/
-
-  # Is the programming business profitable?
-  # Is the desk/rental business profitable?
-  # Is the online course business profitable?
-  # TODO: Setup Shopify <> QBO
-  # TODO: Setup Deel <> QBO
-  # TODO: Look into Patreon, Optix <> QBO
 
   def discover_verticals
     qbo_account.qbo_profit_and_loss_reports.reduce([]) do |acc, qbo_profit_and_loss_report|
       qbo_profit_and_loss_report.data["cash"]["rows"].each do |row|
-        puts row[0]
         splat = /\[(.+)\](.*)/.match(row[0])
         acc |= [splat[1]] if splat.present?
       end
@@ -23,34 +14,51 @@ class Enterprise < ApplicationRecord
   end
 
   def generate_snapshot!
+    verticals = discover_verticals.map(&:to_sym)
     snapshot =
       [:year, :month, :quarter, :trailing_3_months, :trailing_4_months, :trailing_6_months, :trailing_12_months].reduce({
         generated_at: DateTime.now.iso8601,
       }) do |acc, gradation|
         periods = Stacks::Period.for_gradation(gradation, Date.new(2023, 1, 1))
-        acc[gradation] = Parallel.map(periods, in_threads: 5) do |period|
+        acc[gradation] = Parallel.map(periods, in_threads: 1) do |period|
           prev_period = periods[0] == period ? nil : periods[periods.index(period) - 1]
 
-          {
+          verticals.reduce({
             label: period.label,
             period_starts_at: period.starts_at.strftime("%m/%d/%Y"),
             period_ends_at: period.ends_at.strftime("%m/%d/%Y"),
-            cash: {
-              datapoints: self.key_datapoints_for_period(period, prev_period, "cash")
-            },
-            accrual: {
-              datapoints: self.key_datapoints_for_period(period, prev_period, "accrual")
-            },
-          }
+            verticals: {
+              All: {
+                cash: {
+                  datapoints: self.key_datapoints_for_period(period, prev_period, "cash", :All)
+                },
+                accrual: {
+                  datapoints: self.key_datapoints_for_period(period, prev_period, "accrual", :All)
+                },
+              }
+            }
+          }) do |acc, vertical|
+            acc[:verticals][vertical] = {
+              cash: {
+                datapoints: self.key_datapoints_for_period(period, prev_period, "cash", vertical)
+              },
+              accrual: {
+                datapoints: self.key_datapoints_for_period(period, prev_period, "accrual", vertical)
+              },
+            }
+            acc
+          end
+
         end
         acc
       end
     update!(snapshot: snapshot)
   end
 
-  def key_datapoints_for_period(period, prev_period, accounting_method)
-    data = period.report(self.qbo_account).data_for_enterprise(self, accounting_method, period.label)
-    prev_data = prev_period.report(self.qbo_account).data_for_enterprise(self, accounting_method, prev_period.label) if prev_period.present?
+  def key_datapoints_for_period(period, prev_period, accounting_method, vertical)
+    data = period.report(self.qbo_account).data_for_enterprise(self, accounting_method, period.label, vertical)
+    prev_data = 
+      prev_period.report(self.qbo_account).data_for_enterprise(self, accounting_method, prev_period.label, vertical) if prev_period.present?
 
     {
       revenue: {

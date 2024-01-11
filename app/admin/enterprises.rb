@@ -85,6 +85,10 @@ ActiveAdmin.register Enterprise do
     COLORS = Stacks::Utils::COLORS
     accounting_method = session[:accounting_method] || "cash"
 
+    all_verticals = resource.discover_verticals
+    current_vertical = params["vertical"]
+    current_gradation = nil unless all_verticals.include?(current_vertical)
+
     all_gradations = ["month", "quarter", "year", "trailing_3_months", "trailing_4_months", "trailing_6_months", "trailing_12_months"]
     default_gradation = "month"
     current_gradation =
@@ -130,7 +134,7 @@ ActiveAdmin.register Enterprise do
       datasets: [{
         label: "Revenue",
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "revenue", "value")
+          v.dig("verticals", current_vertical || "All", accounting_method, "datapoints", "revenue", "value")
         end),
         backgroundColor: COLORS[0]
       }]
@@ -141,7 +145,7 @@ ActiveAdmin.register Enterprise do
       datasets: [{
         label: "Profit Margin (%)",
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "profit_margin", "value")
+          v.dig("verticals", current_vertical || "All", accounting_method, "datapoints", "profit_margin", "value")
         end),
         yAxisID: 'y1',
         fill: true,
@@ -149,21 +153,21 @@ ActiveAdmin.register Enterprise do
       }, {
         label: "Expenses",
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "expenses", "value")
+          v.dig("verticals", current_vertical || "All", accounting_method, "datapoints", "expenses", "value")
         end),
         backgroundColor: COLORS[6],
         stack: 'cogs'
       }, {
         label: "COGS",
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "cogs", "value")
+          v.dig("verticals", current_vertical || "All", accounting_method, "datapoints", "cogs", "value")
         end),
         backgroundColor: COLORS[5],
         stack: 'cogs'
       }, {
         label: "Revenue",
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "revenue", "value")
+          v.dig("verticals", current_vertical || "All", accounting_method, "datapoints", "revenue", "value")
         end),
         backgroundColor: COLORS[0]
       }]
@@ -176,7 +180,7 @@ ActiveAdmin.register Enterprise do
         label: "Revenue Growth (%)",
         borderColor: COLORS[2],
         data: (snapshot_without_ytd.map do |v|
-          v.dig(accounting_method, "datapoints", "revenue", "growth")
+          v.dig("verticals", current_vertical || "All", accounting_method, "datapoints", "revenue", "growth")
         end),
         type: 'line',
         trendlineLinear: {
@@ -188,6 +192,7 @@ ActiveAdmin.register Enterprise do
     }
 
     render(partial: "show", locals: {
+      all_verticals: all_verticals,
       all_gradations: all_gradations,
       default_gradation: default_gradation,
       accounts: cc_or_bank_accounts,

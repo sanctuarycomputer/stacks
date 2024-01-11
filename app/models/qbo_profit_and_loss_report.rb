@@ -1,5 +1,11 @@
 class QboProfitAndLossReport < ApplicationRecord
   belongs_to :qbo_account, optional: true
+
+  TOP_LEVEL_CATEGORIES = {
+    revenue: "Total Income", 
+    cogs: "Total Cost of Goods Sold", 
+    expenses: "Total Expenses"
+  }
   
   def find_row(accounting_method, label)
     (data[accounting_method]["rows"].find {|r| r[0] == label } || [nil, 0])[1].to_f
@@ -45,14 +51,41 @@ class QboProfitAndLossReport < ApplicationRecord
     expense_data
   end
 
-  def data_for_enterprise(enterprise, accounting_method, period_label)
-    {
-      revenue: find_rows(accounting_method, "Total Income"),
-      cogs: find_rows(accounting_method, "Total Cost of Goods Sold"),
-      expenses: find_rows(accounting_method, "Total Expenses"),
-      net_revenue: find_rows(accounting_method, "Net Income"),
-      profit_margin: ((find_rows(accounting_method, "Net Income") / find_rows(accounting_method, "Total Income")) * 100),
-    }
+  def data_for_enterprise(enterprise, accounting_method, period_label, vertical)
+    if vertical == :All
+      dataset = 
+        {
+          revenue: find_rows(accounting_method, "Total Income"),
+          cogs: find_rows(accounting_method, "Total Cost of Goods Sold"),
+          expenses: find_rows(accounting_method, "Total Expenses"),
+          net_revenue: find_rows(accounting_method, "Net Income"),
+          profit_margin: 0
+        }
+      ((dataset[:net_revenue] / dataset[:revenue]) * 100) if dataset[:revenue] > 0
+      return dataset
+    end
+
+    dataset = 
+      data[accounting_method]["rows"].reduce({
+        revenue: 0,
+        cogs: 0,
+        expenses: 0,
+        net_revenue: 0,
+        profit_margin: 0
+      }) do |acc, row|
+        splat = Enterprise::VERTICAL_MATCHER.match(row[0])
+        next acc unless splat.present?
+        next acc unless splat[1].to_sym == vertical
+        idx = data[accounting_method]["rows"].index(row)
+        top_level_category_row =
+          data[accounting_method]["rows"][idx..].find{|r| TOP_LEVEL_CATEGORIES.values.include?(r[0])}
+        acc[TOP_LEVEL_CATEGORIES.key(top_level_category_row[0])] += row[1].to_f
+        acc
+      end
+    
+      dataset[:net_revenue] = dataset[:revenue] - dataset[:cogs] - dataset[:expenses]
+    ((dataset[:net_revenue] / dataset[:revenue]) * 100) if dataset[:revenue] > 0
+    dataset
   end
 
   def cogs_for_studio(studio, preloaded_studios, accounting_method, period_label, sellable_hours_proportion = nil)

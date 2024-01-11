@@ -1,20 +1,17 @@
+<script>
+function update(a, b) {
+  var searchParams = new URLSearchParams(window.location.search);
+  if (b !== '')
+    searchParams.set(a, b);
+  else
+    searchParams.delete(a);
+  window.location.search = searchParams.toString();
+}
+</script>
+
 <% current_gradation = params["gradation"] || default_gradation %>
 <% current_gradation = default_gradation unless all_gradations.include?(current_gradation) %>
 <% accounting_method = session[:accounting_method] || "cash" %>
-<% all_gradations.each do |gradation| %>
-  <a href="?gradation=<%= gradation %>" style="margin-right: 6px">
-    <p class="nag pill <%= current_gradation == gradation ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
-      By <%= gradation.humanize %>
-    </p>
-  </a>
-<% end %>
-
-<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
-  <div id="titlebar_left">
-    <h2 id="page_title">🏃 Runway</h2>
-  </div>
-</div>
-
 
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module" style="min-height: 235px">
@@ -41,7 +38,7 @@
     <div class="module-body factoid-parent">
       <div class="factoid">
         <h2><%= (runway_data[:net_cash] / runway_data[:average_burn_rate]).round(2) %> months</h2>
-        <p>Estimated business runway</p>
+        <p>Estimated business runway (3 - 6 months is healthy)</p>
       </div>
     </div>
   </div>
@@ -79,6 +76,41 @@
     </div>
   </div>
 </div>
+
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">🕒 Time Gradation</h2>
+  </div>
+</div>
+
+<% all_gradations.each do |gradation| %>
+  <a onclick='update("gradation", "<%= gradation %>");' style="margin-right: 6px">
+    <p class="nag pill <%= current_gradation == gradation ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
+      By <%= gradation.humanize %>
+    </p>
+  </a>
+<% end %>
+
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">🚦 Business Vertical</h2>
+  </div>
+</div>
+
+<% current_vertical = params["vertical"] %>
+<% current_vertical = nil unless all_verticals.include?(current_vertical) %>
+<a onclick='update("vertical", "");' style="margin-right: 6px">
+  <p class="nag pill <%= current_vertical == nil ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
+    All
+  </p>
+</a>
+<% all_verticals.each do |vertical| %>
+  <a onclick='update("vertical", "<%= vertical %>");' style="margin-right: 6px">
+    <p class="nag pill <%= current_vertical == vertical ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
+      <%= vertical %>
+    </p>
+  </a>
+<% end %>
 
 <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
   <div id="titlebar_left">
