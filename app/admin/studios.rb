@@ -324,6 +324,16 @@ ActiveAdmin.register Studio do
 
     skill_level_data = 
       resource.skill_levels_on(Date.today)
+
+    studio_senior_ratio_data =
+      skill_level_data.reduce({ senior: 0, total: 0 }) do |acc, band|
+        if band[1][:name].starts_with?("S") || band[1][:name].starts_with?("L")
+          acc[:senior] += band[1][:count] || 0
+        end
+        acc[:total] += band[1][:count] || 0
+        acc
+      end
+
     studio_talent_pool_data = {
       labels: skill_level_data.values.map{|s| s[:name] },
       datasets: [{
@@ -532,6 +542,7 @@ ActiveAdmin.register Studio do
       studio_profitability_data: studio_profitability_data,
       studio_growth_data: studio_growth_data, 
       studio_talent_pool_data: studio_talent_pool_data,
+      studio_senior_ratio_data: studio_senior_ratio_data,
       studio_economics_data: studio_economics_data,
       studio_utilization_data: studio_utilization_data,
       studio_new_biz_data: studio_new_biz_data,

@@ -300,14 +300,14 @@ class Studio < ApplicationRecord
   end
 
   def skill_levels_on(date)
-    core_members_active_on(date).reduce(Review::LEVELS.dup) do |acc, member|
+    core_members_active_on(date).reduce(Marshal.load(Marshal.dump(Review::LEVELS))) do |acc, member|
       level_key = acc.keys.find{|k| acc[k][:name] == member.skill_tree_level_on_date(date)[:name]}
       if level_key
         acc[level_key][:count] ||= 0
         acc[level_key][:count] += 1
       else
-        acc[:unknown] ||= { count: 0 }
-        acc[unknown][:count] += 1
+        acc[:unknown] ||= { name: :unknown, count: 0 }
+        acc[:unknown][:count] += 1
       end
       acc
     end

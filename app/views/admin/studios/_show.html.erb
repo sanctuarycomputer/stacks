@@ -311,6 +311,28 @@
   </div>
 </div>
 
+<% if studio_senior_ratio_data[:total] > 0 %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module" style="min-height: 240px">
+      <div class="module-body factoid-parent">
+        <div class="factoid">
+          <h2><%= ((studio_senior_ratio_data[:senior].to_f / studio_senior_ratio_data[:total]) * 100).round %>%</h2>
+          <p>Team members at S1 or above</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <div class="factoid">
+          <h2><%= studio_senior_ratio_data[:total] %></h2>
+          <p>Total team members, active today</p>
+        </div>
+      </div>
+    </div>
+  </div>
+<% end %>
+
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
     <div class="module-header">
@@ -609,7 +631,10 @@
           type: 'linear',
           display: true,
           position: 'left',
-          beginAtZero: true
+          beginAtZero: true,
+          ticks: {
+            stepSize: 1
+          }
         },
       }
     }
@@ -630,7 +655,10 @@
           type: 'linear',
           display: true,
           position: 'left',
-          beginAtZero: true
+          beginAtZero: true,
+          ticks: {
+            stepSize: 1
+          }
         },
       }
     }

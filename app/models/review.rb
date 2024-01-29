@@ -127,7 +127,7 @@ class Review < ApplicationRecord
       min_points: 810,
       salary: 166950.00
     },
-  }
+  }.freeze
 
   def level
     LEVELS.keys.reduce(nil) do |acc, l|
