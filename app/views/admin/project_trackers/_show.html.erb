@@ -169,6 +169,18 @@
 
   <% if @project_tracker.current_atc.present? %>
     <p style="margin-top:80px;"><strong>Project ATC: </strong><%= link_to @project_tracker.current_atc.email, admin_admin_user_path(@project_tracker.current_atc) %></p>
+  <% else %>
+    <span class="pill error">No ATC</span>
+  <% end %>
+
+  <% if @project_tracker.current_project_safety_representatives.any? %>
+    <p style="margin-top:80px;"><strong>Project Safety Reps: </strong>
+      <% @project_tracker.current_project_safety_representatives.each do |rep| %>
+        <%= link_to rep.email, admin_admin_user_path(rep) %>
+      <% end %>
+    </p>
+  <% else %>
+    <span class="pill error">No Project Safety Reps</span>
   <% end %>
 </div>
 
