@@ -29,8 +29,11 @@ class ProjectTracker < ApplicationRecord
 
   has_many :atc_periods, dependent: :delete_all
   accepts_nested_attributes_for :atc_periods, allow_destroy: true
-
   belongs_to :atc, class_name: "AdminUser", optional: true
+
+  has_many :project_safety_representative_periods, dependent: :delete_all
+  accepts_nested_attributes_for :project_safety_representative_periods, allow_destroy: true
+  has_many :project_safety_representatives, through: :project_safety_representative_periods, source: :admin_user
 
   scope :complete, -> {
     where.not(work_completed_at: nil)
@@ -187,6 +190,16 @@ class ProjectTracker < ApplicationRecord
     forecast_projects.reduce(0) do |acc, fp|
       acc += fp.total_hours if fp.hourly_rate == 0
       acc
+    end
+  end
+
+  def current_project_safety_representatives
+    current_project_safety_representative_periods.map(&:admin_user)
+  end
+
+  def current_project_safety_representative_periods
+    project_safety_representative_periods.select do |p|
+      p.period_started_at <= Date.today && p.period_ended_at.nil?
     end
   end
 

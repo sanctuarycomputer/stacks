@@ -42,6 +42,15 @@ ActiveAdmin.register ProjectTracker do
       :ended_at,
       :_destroy,
       :_edit
+    ],
+    project_safety_representative_periods_attributes: [
+      :id,
+      :admin_user_id,
+      :studio_id,
+      :started_at,
+      :ended_at,
+      :_destroy,
+      :_edit
     ]
 
   controller do
@@ -149,6 +158,13 @@ ActiveAdmin.register ProjectTracker do
         resource.current_atc
       else
         span("No ATC", class: "pill error")
+      end
+    end
+    column :project_safety_reps do |resource|
+      if resource.current_project_safety_representatives.any?
+        resource.current_project_safety_representatives
+      else
+        span("No Project Safety Reps", class: "pill error")
       end
     end
     actions
@@ -329,6 +345,14 @@ ActiveAdmin.register ProjectTracker do
           hint: "Leave blank unless this ATC role was passed off to another person"
       end
 
+      f.has_many :project_safety_representative_periods, heading: false, allow_destroy: true, new_record: 'Add a Project Safety Rep' do |a|
+        a.input :admin_user
+        a.input :studio
+        a.input :started_at,
+          hint: "Leave blank to default to the date of the first recorded hour"
+        a.input :ended_at,
+          hint: "Leave blank unless this role was passed off to another person"
+      end
 
       f.has_many :project_tracker_links, heading: false, allow_destroy: true, new_record: 'Add a Project URL' do |a|
         a.input(:name, {
