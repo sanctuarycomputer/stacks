@@ -270,8 +270,7 @@ class ProjectTracker < ApplicationRecord
   end
 
   def profit_margin
-    cost = estimated_cost("cash")
-    ((spend - cost) / cost) * 100
+    (profit / spend) * 100
   end
 
   def total_hours_during_range_by_studio(preloaded_studios = Studio.all, start_range, end_range)
