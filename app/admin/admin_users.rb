@@ -100,8 +100,8 @@ ActiveAdmin.register AdminUser do
     column :has_dei_response? do |resource|
       !resource.should_nag_for_dei_data?
     end
-    column :skill_tree_overdue? do |resource|
-      resource.should_nag_for_skill_tree?
+    column :has_current_skill_tree? do |resource|
+      !resource.should_nag_for_skill_tree?
     end
     column :projected_psu_by_eoy do |resource|
       resource.projected_psu_by_eoy
