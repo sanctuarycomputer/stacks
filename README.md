@@ -22,8 +22,8 @@ OAuth2::Error (invalid_grant: )
 {"error":"invalid_grant"}
 ```
 
-Just re-sync the production database as per instructions below. 
-It means Quickbooks API has revoked the current OAuth token. 
+Just re-sync the production database as per instructions below.
+It means Quickbooks API has revoked the current OAuth token.
 We freshen it every 10 minutes on prod.
 
 ### Feeding prod a new QBO Oauth 2.0 Token
@@ -67,12 +67,16 @@ rails s
 Navigate to `localhost:3000`, and you should see a local version
 of Stacks running a recent backup of the production database.
 
+## Deploying
+
+Heroku is configured to automatically deploy Stacks from the `main` branch when
+PR's are merged. If you need to trigger a deploy manually, you can run:
+
+`production deploy`
+
 ## Prod Commands
 
 [As per Parity's documentation](https://github.com/thoughtbot/parity)
-
-### Deploy
-`production deploy`
 
 ### Console
 `production console`
