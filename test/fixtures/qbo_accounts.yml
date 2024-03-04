@@ -4,8 +4,10 @@ one:
   client_id: MyString
   client_secret: MyString
   realm_id: MyString
+  enterprise_id: 1
 
 two:
   client_id: MyString
   client_secret: MyString
   realm_id: MyString
+  enterprise_id: 1
