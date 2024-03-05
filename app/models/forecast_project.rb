@@ -16,11 +16,22 @@ class ForecastProject < ApplicationRecord
   }
 
   def self.candidates_for_association_with_project_tracker(project_tracker)
-    already_associated = self.forecast_codes_already_associated_to_project_tracker(project_tracker.id)
-    all = with_archived_at_bottom.reject{|fp| already_associated.include?(fp.code)}
+    forecast_codes_for_other_trackers = self.forecast_codes_already_associated_to_project_tracker(project_tracker.id)
+    forecast_codes_for_this_tracker = project_tracker.forecast_projects.map(&:code)
 
-    not_archived = all.select{|fp| !fp.data.dig("archived") }
-    archived = all.select{|fp| fp.data.dig("archived") }
+    forecast_projects_to_display = with_archived_at_bottom.select do |fp|
+      next true if forecast_codes_for_other_trackers.exclude?(fp.code)
+      # We always want to display project forecasts that are already associated
+      # with the current project tracker, even if their code is associated
+      # with a separate project tracker (which shouldn't happen anymore, but
+      # there are some historical cases of this in the database).
+      next true if forecast_codes_for_this_tracker.include?(fp.code)
+
+      false
+    end
+
+    not_archived = forecast_projects_to_display.select{|fp| !fp.data.dig("archived") }
+    archived = forecast_projects_to_display.select{|fp| fp.data.dig("archived") }
 
     [
       nil,
@@ -33,7 +44,13 @@ class ForecastProject < ApplicationRecord
   end
 
   def self.forecast_codes_already_associated_to_project_tracker(except_project_tracker_id = nil)
-    ProjectTrackerForecastProject.includes(:forecast_project).all.reject{|ptfp| ptfp.project_tracker_id == except_project_tracker_id}.map(&:forecast_project).map(&:code).flatten
+    all_ptfps = ProjectTrackerForecastProject.includes(:forecast_project).all
+
+    filtered_ptfps = all_ptfps.reject do |ptfp|
+      ptfp.project_tracker_id == except_project_tracker_id
+    end
+
+    filtered_ptfps.map(&:forecast_project).map(&:code).flatten
   end
 
   def forecast_assignments
