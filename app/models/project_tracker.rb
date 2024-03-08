@@ -174,6 +174,56 @@ class ProjectTracker < ApplicationRecord
     update_attribute('snapshot', snapshot)
   end
 
+  def generate_snapshot_new!
+    cost_of_services_rendered_new.keys.reduce({
+      generated_at: DateTime.now.iso8601,
+      hours: [],
+      spend: [],
+      hours_total: 0,
+      spend_total: 0,
+      cash: {
+        cosr: [],
+        cosr_total: 0,
+      },
+      accrual: {
+        cosr: [],
+        cosr_total: 0,
+      }
+    }) do |acc, date|
+      daily_hours = 0
+      daily_spend = 0
+
+      cosr[date].each do |studio_id, studio_data|
+        daily_hours += studio_data[:total_hours]
+        daily_spend += studio_data[:total_spend]
+      end
+
+      acc[:hours].push({
+        x: date.iso8601,
+        y: acc[:hours_total] += daily_hours
+      })
+
+      acc[:spend].push({
+        x: date.iso8601,
+        y: acc[:spend_total] += daily_spend
+      })
+
+      acc[:cash][:cosr].push({
+        x: date.iso8601,
+        y: acc[:cash][:cosr_total] += daily_spend
+      })
+
+      acc[:accrual][:cosr].push({
+        x: date.iso8601,
+        y: acc[:accrual][:cosr_total] += daily_spend
+      })
+
+      acc
+    end
+
+    update_attribute('snapshot', snapshot)
+  end
+
   def free_hours_ratio
     return 0 if total_hours == 0
     return 0 if total_free_hours == 0
@@ -417,7 +467,44 @@ class ProjectTracker < ApplicationRecord
 
     periods
   end
- 
+
+  def cost_of_services_rendered_new
+    start_date = (
+      project_tracker.first_recorded_assignment ?
+      project_tracker.first_recorded_assignment.start_date.beginning_of_month :
+      Date.new(2020, 1, 1)
+    )
+
+    end_date = [(
+      project_tracker.last_recorded_assignment ?
+      project_tracker.last_recorded_assignment.end_date.beginning_of_month :
+      Date.today.beginning_of_month
+    ), today].min
+
+    project_ids = forecast_projects.map(&:forecast_id)
+
+    assignments =
+      ForecastAssignment
+        .includes({
+          forecast_person: [{
+            admin_user: [:full_time_periods]
+          }]
+        })
+        .where(project_id: project_ids)
+
+    cost_windows = ForecastPersonCostWindow.where(project_id: project_ids)
+
+    calculator = Stacks::CostOfServicesRenderedCalculator.new(
+      start_date: start_date,
+      end_date: end_date,
+      assignments: assignments,
+      cost_windows: cost_windows,
+      studios: Studio.all
+    )
+
+    calculator.calculate
+  end
+
   def raw_resourcing_cost_during_range_in_usd(start_range, end_range)
     assignments =
       ForecastAssignment
