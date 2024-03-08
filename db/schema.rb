@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2024_01_29_013623) do
+ActiveRecord::Schema.define(version: 2024_03_04_041442) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -221,6 +221,16 @@ ActiveRecord::Schema.define(version: 2024_01_29_013623) do
     t.integer "updated_by_id"
     t.jsonb "data"
     t.index ["forecast_id"], name: "index_forecast_people_on_forecast_id", unique: true
+  end
+
+  create_table "forecast_person_cost_windows", force: :cascade do |t|
+    t.bigint "forecast_person_id", null: false
+    t.date "started_at"
+    t.date "ended_at"
+    t.decimal "hourly_cost"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["forecast_person_id"], name: "idx_forecast_person_cost_windows_on_forecast_person_id"
   end
 
   create_table "forecast_projects", force: :cascade do |t|
@@ -664,6 +674,7 @@ ActiveRecord::Schema.define(version: 2024_01_29_013623) do
   add_foreign_key "atc_periods", "admin_users"
   add_foreign_key "atc_periods", "project_trackers"
   add_foreign_key "finalizations", "reviews"
+  add_foreign_key "forecast_person_cost_windows", "forecast_people", primary_key: "forecast_id"
   add_foreign_key "full_time_periods", "admin_users"
   add_foreign_key "gifted_profit_shares", "admin_users"
   add_foreign_key "invoice_trackers", "admin_users"
