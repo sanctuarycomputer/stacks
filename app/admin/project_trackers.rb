@@ -13,7 +13,6 @@ ActiveAdmin.register ProjectTracker do
     :budget_low_end,
     :budget_high_end,
     :notes,
-    :atc_id,
     adhoc_invoice_trackers_attributes: [
       :id,
       :qbo_invoice_id,
@@ -35,9 +34,10 @@ ActiveAdmin.register ProjectTracker do
       :_destroy,
       :_edit
     ],
-    atc_periods_attributes: [
+    project_lead_periods_attributes: [
       :id,
       :admin_user_id,
+      :studio_id,
       :started_at,
       :ended_at,
       :_destroy,
@@ -69,13 +69,13 @@ ActiveAdmin.register ProjectTracker do
 
     def scoped_collection
       super.includes(
-        :atc_periods,
+        :project_lead_periods,
         :project_capsule,
         :project_tracker_forecast_projects,
         :forecast_projects,
         :adhoc_invoice_trackers,
       ).includes(
-        atc_periods: :admin_user,
+        project_lead_periods: :admin_user,
         adhoc_invoice_trackers: :qbo_invoice
       )
     end
@@ -153,11 +153,11 @@ ActiveAdmin.register ProjectTracker do
         span("No Forecast Project Connected", class: "pill error")
       end
     end
-    column :ATC do |resource|
-      if resource.current_atc.present?
-        resource.current_atc
+    column :project_leads do |resource|
+      if resource.current_project_leads.any?
+        resource.current_project_leads
       else
-        span("No ATC", class: "pill error")
+        span("No Project Leadsd", class: "pill error")
       end
     end
     column :project_safety_reps do |resource|
@@ -337,12 +337,13 @@ ActiveAdmin.register ProjectTracker do
       f.input :budget_low_end
       f.input :budget_high_end
 
-      f.has_many :atc_periods, heading: false, allow_destroy: true, new_record: 'Add an ATC' do |a|
+      f.has_many :project_lead_periods, heading: false, allow_destroy: true, new_record: 'Add a Project Lead' do |a|
         a.input :admin_user
+        a.input :studio
         a.input :started_at,
           hint: "Leave blank to default to the date of the first recorded hour"
         a.input :ended_at,
-          hint: "Leave blank unless this ATC role was passed off to another person"
+          hint: "Leave blank unless this role was passed off to another person"
       end
 
       f.has_many :project_safety_representative_periods, heading: false, allow_destroy: true, new_record: 'Add a Project Safety Rep' do |a|

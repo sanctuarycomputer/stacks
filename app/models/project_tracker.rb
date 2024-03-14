@@ -27,9 +27,8 @@ class ProjectTracker < ApplicationRecord
   has_many :forecast_projects, through: :project_tracker_forecast_projects
   accepts_nested_attributes_for :project_tracker_forecast_projects, allow_destroy: true
 
-  has_many :atc_periods, dependent: :delete_all
-  accepts_nested_attributes_for :atc_periods, allow_destroy: true
-  belongs_to :atc, class_name: "AdminUser", optional: true
+  has_many :project_lead_periods, dependent: :delete_all
+  accepts_nested_attributes_for :project_lead_periods, allow_destroy: true
 
   has_many :project_safety_representative_periods, dependent: :delete_all
   accepts_nested_attributes_for :project_safety_representative_periods, allow_destroy: true
@@ -203,13 +202,13 @@ class ProjectTracker < ApplicationRecord
     end
   end
 
-  def current_atc
-    current_atc_period.try(:admin_user)
+  def current_project_leads
+    current_project_lead_periods.map(&:admin_user)
   end
 
-  def current_atc_period
-    atc_periods.find do |atc_period|
-      atc_period.period_started_at <= Date.today && atc_period.period_ended_at.nil?
+  def current_project_lead_periods
+    project_lead_periods.select do |p|
+      p.period_started_at <= Date.today && p.period_ended_at.nil?
     end
   end
 

@@ -4,7 +4,7 @@ class AdminUser < ApplicationRecord
   has_one :associates_award_agreement, dependent: :delete
   validate :all_but_latest_full_time_periods_are_closed?
 
-  has_many :atc_periods, dependent: :delete_all
+  has_many :project_lead_periods, dependent: :delete_all
   has_many :studio_coordinator_periods, dependent: :delete_all
 
   has_many :invoice_trackers, dependent: :nullify
@@ -297,11 +297,11 @@ class AdminUser < ApplicationRecord
     [psu_requirement_met_at, skill_band_met_at].max.to_date
   end
 
-  def atc_months
+  def project_lead_months
     # TODO: Take into account wether this user is active or not
-    atc_periods.reduce(0.0) do |acc, atcp|
+    project_lead_periods.reduce(0.0) do |acc, p|
       acc +=
-        (((atcp.period_ended_at || Date.today).to_time - atcp.period_started_at.to_time)/1.month.second)
+        (((p.period_ended_at || Date.today).to_time - p.period_started_at.to_time)/1.month.second)
     end
   end
 
