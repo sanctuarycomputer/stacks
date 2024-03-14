@@ -112,13 +112,13 @@
             <tr class="even">
               <td class="col"><strong>Total Profit</strong></td>
               <td class="col text-right">
-                <%= number_to_currency(income - estimated_cost) %>
+                <%= number_to_currency(@project_tracker.profit) %>
               </td>
             </tr>
             <tr class="odd">
               <td class="col"><strong>Profit Margin</strong></td>
               <td class="col text-right">
-                <%= (((income - estimated_cost) / estimated_cost) * 100).round(2) %>%
+                <%= @project_tracker.profit_margin.round(2) %>%
               </td>
             </tr>
           </tbody>
