@@ -11,9 +11,7 @@ class ConvertAtcPeriodsToPlPeriods < ActiveRecord::Migration[6.0]
       t.timestamps
     end
 
-    AtcPeriod.all.each do |atcp|
-      raise "No Studio Present for this admin_user" if atcp.admin_user.studios.first.nil?
-      
+    AtcPeriod.all.each do |atcp|      
       ProjectLeadPeriod.create!({
         project_tracker: atcp.project_tracker,
         admin_user: atcp.admin_user,
@@ -22,5 +20,7 @@ class ConvertAtcPeriodsToPlPeriods < ActiveRecord::Migration[6.0]
         ended_at: atcp.ended_at
       })
     end
+
+    drop_table :atc_periods
   end
 end

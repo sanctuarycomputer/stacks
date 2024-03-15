@@ -115,17 +115,6 @@ ActiveRecord::Schema.define(version: 2024_03_14_200201) do
     t.index ["admin_user_id"], name: "index_associates_award_agreements_on_admin_user_id"
   end
 
-  create_table "atc_periods", force: :cascade do |t|
-    t.bigint "project_tracker_id", null: false
-    t.bigint "admin_user_id", null: false
-    t.date "started_at"
-    t.date "ended_at"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["admin_user_id"], name: "index_atc_periods_on_admin_user_id"
-    t.index ["project_tracker_id"], name: "index_atc_periods_on_project_tracker_id"
-  end
-
   create_table "budgets", force: :cascade do |t|
     t.string "name", null: false
     t.text "notes"
@@ -674,8 +663,6 @@ ActiveRecord::Schema.define(version: 2024_03_14_200201) do
   add_foreign_key "admin_user_racial_backgrounds", "admin_users"
   add_foreign_key "admin_user_racial_backgrounds", "racial_backgrounds"
   add_foreign_key "associates_award_agreements", "admin_users"
-  add_foreign_key "atc_periods", "admin_users"
-  add_foreign_key "atc_periods", "project_trackers"
   add_foreign_key "finalizations", "reviews"
   add_foreign_key "full_time_periods", "admin_users"
   add_foreign_key "gifted_profit_shares", "admin_users"
