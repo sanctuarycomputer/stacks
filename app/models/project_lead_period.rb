@@ -1,7 +1,7 @@
-# TODO: Delete this file and drop ATC Period Table after Project Lead Migration
-class AtcPeriod < ApplicationRecord
+class ProjectLeadPeriod < ApplicationRecord
   belongs_to :project_tracker
   belongs_to :admin_user
+  belongs_to :studio
   validate :does_not_overlap
   validate :ended_at_before_started_at?
 
@@ -14,17 +14,19 @@ class AtcPeriod < ApplicationRecord
   end
 
   def does_not_overlap
-    overlapping_atc_period =
-      project_tracker.atc_periods
-        .reject{|atcp| atcp.id.nil?}
-        .reject{|atcp| atcp == self}
-        .find{|atcp| self.overlaps?(atcp)}
-    if overlapping_atc_period.present?
-      errors.add(:admin_user, "Must not overlap with another ATC")
+    overlapping_project_lead_period =
+      project_tracker.project_lead_periods
+        .reject{|p| p.id.nil?}
+        .reject{|p| p == self}
+        .find{|p| self.overlaps?(p)}
+    if overlapping_project_lead_period.present?
+      errors.add(:admin_user, "Must not overlap with another Project Lead for this studio")
     end
   end
 
   def overlaps?(other)
+    return false if studio != other.studio
+
     period_started_at <= (other.period_ended_at || Date.today) &&
     other.period_started_at <= (period_ended_at || Date.today)
   end

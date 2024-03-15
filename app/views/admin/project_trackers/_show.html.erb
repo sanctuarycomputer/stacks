@@ -167,10 +167,14 @@
 <div class="skill_tree_hint markdown-body" style="margin-top: 40px; margin-bottom:40px;">
   <%= sanitize RDiscount.new(@project_tracker.notes).to_html %>
 
-  <% if @project_tracker.current_atc.present? %>
-    <p style="margin-top:80px;"><strong>Project ATC: </strong><%= link_to @project_tracker.current_atc.email, admin_admin_user_path(@project_tracker.current_atc) %></p>
+  <% if @project_tracker.current_project_leads.any? %>
+    <p style="margin-top:80px;"><strong>Project Safety Reps: </strong>
+      <% @project_tracker.current_project_leads.each do |pl| %>
+        <%= link_to pl.email, admin_admin_user_path(pl) %>
+      <% end %>
+    </p>
   <% else %>
-    <span class="pill error">No ATC</span>
+    <span class="pill error">No Project Leads</span>
   <% end %>
 
   <% if @project_tracker.current_project_safety_representatives.any? %>

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2024_01_29_013623) do
+ActiveRecord::Schema.define(version: 2024_03_14_200201) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -113,17 +113,6 @@ ActiveRecord::Schema.define(version: 2024_01_29_013623) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.index ["admin_user_id"], name: "index_associates_award_agreements_on_admin_user_id"
-  end
-
-  create_table "atc_periods", force: :cascade do |t|
-    t.bigint "project_tracker_id", null: false
-    t.bigint "admin_user_id", null: false
-    t.date "started_at"
-    t.date "ended_at"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["admin_user_id"], name: "index_atc_periods_on_admin_user_id"
-    t.index ["project_tracker_id"], name: "index_atc_periods_on_project_tracker_id"
   end
 
   create_table "budgets", force: :cascade do |t|
@@ -417,6 +406,19 @@ ActiveRecord::Schema.define(version: 2024_01_29_013623) do
     t.index ["project_tracker_id"], name: "index_project_capsules_on_project_tracker_id"
   end
 
+  create_table "project_lead_periods", force: :cascade do |t|
+    t.bigint "project_tracker_id", null: false
+    t.bigint "admin_user_id", null: false
+    t.bigint "studio_id", null: false
+    t.date "started_at"
+    t.date "ended_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_project_lead_periods_on_admin_user_id"
+    t.index ["project_tracker_id"], name: "index_project_lead_periods_on_project_tracker_id"
+    t.index ["studio_id"], name: "index_project_lead_periods_on_studio_id"
+  end
+
   create_table "project_safety_representative_periods", force: :cascade do |t|
     t.bigint "project_tracker_id", null: false
     t.bigint "admin_user_id", null: false
@@ -661,8 +663,6 @@ ActiveRecord::Schema.define(version: 2024_01_29_013623) do
   add_foreign_key "admin_user_racial_backgrounds", "admin_users"
   add_foreign_key "admin_user_racial_backgrounds", "racial_backgrounds"
   add_foreign_key "associates_award_agreements", "admin_users"
-  add_foreign_key "atc_periods", "admin_users"
-  add_foreign_key "atc_periods", "project_trackers"
   add_foreign_key "finalizations", "reviews"
   add_foreign_key "full_time_periods", "admin_users"
   add_foreign_key "gifted_profit_shares", "admin_users"
@@ -677,6 +677,9 @@ ActiveRecord::Schema.define(version: 2024_01_29_013623) do
   add_foreign_key "peer_reviews", "reviews"
   add_foreign_key "pre_profit_share_purchases", "admin_users"
   add_foreign_key "project_capsules", "project_trackers"
+  add_foreign_key "project_lead_periods", "admin_users"
+  add_foreign_key "project_lead_periods", "project_trackers"
+  add_foreign_key "project_lead_periods", "studios"
   add_foreign_key "project_safety_representative_periods", "admin_users"
   add_foreign_key "project_safety_representative_periods", "project_trackers"
   add_foreign_key "project_safety_representative_periods", "studios"

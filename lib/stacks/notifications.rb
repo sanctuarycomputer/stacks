@@ -88,7 +88,7 @@ class Stacks::Notifications
 
       active_project_trackers = ProjectTracker
         .includes([
-          :atc_periods,
+          :project_lead_periods,
           :adhoc_invoice_trackers,
           :forecast_projects
         ]).where(work_completed_at: nil)
@@ -97,8 +97,8 @@ class Stacks::Notifications
           :project_capsule
         ]).where.not(work_completed_at: nil)
 
-      project_trackers_no_atc = active_project_trackers.select do |pt|
-        pt.current_atc_period == nil
+      project_trackers_no_project_lead = active_project_trackers.select do |pt|
+        pt.current_project_leads.empty?
       end
 
       project_trackers_over_budget = active_project_trackers.select do |pt|
@@ -265,12 +265,12 @@ class Stacks::Notifications
         }
       end
 
-      project_trackers_no_atc.each do |pt|
+      project_trackers_no_project_lead.each do |pt|
         notifications << {
           subject: pt,
           type: :project_tracker,
           link: admin_project_tracker_path(pt),
-          error: :no_atc,
+          error: :no_project_lead,
           priority: 2
         }
       end

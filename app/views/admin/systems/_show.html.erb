@@ -108,8 +108,8 @@
                 The <strong><%= n.params[:subject].name %></strong> Project Tracker has not registered any new hours for over a month (and is not "ongoing"). Should it be marked as <span class="pill complete">Complete</span>?
               <% when :over_budget %>
                 The <strong><%= n.params[:subject].name %></strong> Project Tracker is <span class="pill over_budget">Over budget</span>. Can we support them?
-              <% when :no_atc %>
-                The <strong><%= n.params[:subject].name %></strong> Project Tracker has <span class="pill error">No ATC</span>.
+              <% when :no_project_lead %>
+                The <strong><%= n.params[:subject].name %></strong> Project Tracker has <span class="pill error">No Project Lead</span>.
               <% when :capsule_pending %>
                 The <strong><%= n.params[:subject].name %></strong> Project Tracker is currently <span class="pill capsule_pending">Capsule pending</span>. Let's finalize a project capsule?
               <% else %>
