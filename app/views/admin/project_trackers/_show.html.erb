@@ -34,6 +34,12 @@
     <%= project_capsule.complete? ? "Complete" : "Pending" %>
   </p>
 
+  <% unless @project_tracker.considered_successful?.nil? %>
+    <p class="pill nag <%= @project_tracker.considered_successful? ? 'exceptional' : 'failing' %>" style="margin-bottom: 20px;margin-right: 6px;">
+      <%= @project_tracker.considered_successful? ? "Successful" : "Unsuccessful" %>
+    </p>
+  <% end %>
+
   <% unless project_capsule.complete? %>
     <div class="dashboard-modules table index_table index">
       <div class="dashboard-module">
@@ -56,7 +62,6 @@
         <% end %>
       </div>
       <div class="module-body">
-
         <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
           <tbody>
             <tr class="odd">
@@ -80,13 +85,6 @@
           </tbody>
         </table>
 
-      </div>
-    </div>
-    <div class="dashboard-module">
-      <div class="module-header">
-        <p>Profitability Study</p>
-      </div>
-      <div class="module-body">
         <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
           <tbody>
             <!--
@@ -98,7 +96,7 @@
             </tr>
             -->
             <tr class="even">
-              <td class="col"><strong>Estimated COSR</strong></td>
+              <td class="col"><%= link_to "Estimated COSR ↗", admin_project_tracker_project_cosr_explorer_path(@project_tracker) %></td>
               <td class="col text-right">
                 <%= number_to_currency(estimated_cost) %>
               </td>
@@ -115,14 +113,64 @@
                 <%= number_to_currency(@project_tracker.profit) %>
               </td>
             </tr>
-            <tr class="odd">
-              <td class="col"><strong>Profit Margin</strong></td>
+          </tbody>
+        </table>
+
+      </div>
+    </div>
+
+    <div class="dashboard-module">
+      <div class="module-header">
+        <p>Success Status</p>
+      </div>
+      <div class="module-body">
+        <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+          <tbody>
+            <tr class="even">
+              <td class="col"><strong>Client Satisfied?</strong></td>
               <td class="col text-right">
-                <%= @project_tracker.profit_margin.round(2) %>%
+              <span class="pill <%= @project_tracker.client_satisfied? ? 'yes' : 'error' %>">
+                <%= project_capsule.try(:client_satisfaction_status).try(:humanize) %>
+              </span>
+              </td>
+            </tr>
+            <tr class="odd">
+              <td class="col">
+                <strong>Free Hours Billed</strong> <code>(target <= <%= @project_tracker.target_free_hours_percent %>%)</code>
+              </td>
+              <td class="col text-right">
+                <span class="pill <%= @project_tracker.target_free_hours_ratio_satisfied? ? 'yes' : 'error' %>">
+                  <%= (@project_tracker.free_hours_ratio * 100).round(2) %>%
+                </span>
+              </td>
+            </tr>
+            <tr class="even">
+              <td class="col">
+                <strong>Profit Margin</strong> <code>(target >= <%= @project_tracker.target_profit_margin %>%)</code>
+              </td>
+              <td class="col text-right">
+                <span class="pill <%= @project_tracker.target_profit_margin_satisfied? ? 'yes' : 'error' %>">
+                  <%= @project_tracker.profit_margin.round(2) %>%
+                </span>
+              </td>
+            </tr>
+            <tr class="odd">
+              <td class="col"><strong>Considered Successful?</strong></td>
+              <td class="col text-right">
+                <% if @project_tracker.considered_successful? %>
+                  <span class="pill yes">Successful</span>
+                <% else %>
+                  <span class="pill error">Unsuccessful</span>
+                <% end %>
               </td>
             </tr>
           </tbody>
         </table>
+
+        <p style="padding-top: 20px;"><strong>Client Satisfaction Detail</strong></p>
+        <hr />
+        <%= sanitize RDiscount.new(project_capsule.client_satisfaction_detail || "").to_html %>
+
       </div>
     </div>
   </div>

@@ -12,6 +12,8 @@ ActiveAdmin.register ProjectTracker do
   permit_params :name,
     :budget_low_end,
     :budget_high_end,
+    :target_profit_margin,
+    :target_free_hours_percent,
     :notes,
     adhoc_invoice_trackers_attributes: [
       :id,
@@ -61,7 +63,7 @@ ActiveAdmin.register ProjectTracker do
         link_type: :msa
       })
       resource.project_tracker_links << ProjectTrackerLink.new({
-        name: "SOW",
+        name: "SOW/PD",
         link_type: :sow
       })
       new!
@@ -100,7 +102,12 @@ ActiveAdmin.register ProjectTracker do
   end
 
   index download_links: [:csv], title: "Projects" do
+    if params["scope"] == "complete"
+      column :considered_successful?
+    end
+
     column :name
+    
     column :hours do |resource|
       free_hours = resource.total_free_hours
       total_hours = resource.total_hours
@@ -336,6 +343,11 @@ ActiveAdmin.register ProjectTracker do
       f.input :name
       f.input :budget_low_end
       f.input :budget_high_end
+
+      if current_admin_user.is_admin?
+        f.input :target_profit_margin
+        f.input :target_free_hours_percent
+      end
 
       f.has_many :project_lead_periods, heading: false, allow_destroy: true, new_record: 'Add a Project Lead' do |a|
         a.input :admin_user

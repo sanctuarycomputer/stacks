@@ -9,7 +9,9 @@ ActiveAdmin.register ProjectCapsule do
     :client_feedback_survey_url,
     :internal_marketing_status,
     :capsule_status,
-    :postpartum_notes
+    :postpartum_notes,
+    :client_satisfaction_status,
+    :client_satisfaction_detail
 
   controller do
     def update
@@ -23,6 +25,11 @@ ActiveAdmin.register ProjectCapsule do
 
   form do |f|
     f.inputs(class: "admin_inputs") do
+      f.input :client_satisfaction_status
+      f.input :client_satisfaction_detail, 
+        label: "Client Satisfaction Detail (accepts markdown) <a href='https://www.notion.so/garden3d/What-a-successful-project-is-d430681549fc40e2af5ec4b7452fd94a' target='_blank'>(Instructions ↗)</a>".html_safe,
+        placeholder: "Example: The client rated their satisfaction as 4 (out of 5)"
+
       f.input :client_feedback_survey_status
       f.input :client_feedback_survey_url
       f.input :internal_marketing_status
