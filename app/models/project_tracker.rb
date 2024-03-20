@@ -3,6 +3,7 @@ class ProjectTracker < ApplicationRecord
   validate :has_msa_and_sow_links
   validate :no_forecast_projects_missing_project_code
   validate :no_forecast_project_code_collisions
+  after_initialize :set_targets
 
   validates_presence_of :budget_low_end,
     message: 'We should almost never commit to a fixed budget, but if we must, you can set "Budget Low End" and "Budget High End" to the same value.',
@@ -49,6 +50,13 @@ class ProjectTracker < ApplicationRecord
     @_forecast_projects ||= super
   end
 
+  def set_targets
+    unless self.id.present?
+      self.target_free_hours_percent = Stacks::System.singleton_class::DEFAULT_PROJECT_TRACKER_TARGET_FREE_HOURS_PERCENT if self.target_free_hours_percent == 0
+      self.target_profit_margin = Stacks::System.singleton_class::DEFAULT_PROJECT_TRACKER_TARGET_PROFIT_MARGIN if self.target_profit_margin == 0
+    end
+  end
+
   def considered_successful?
     return nil if work_status != :complete
     return client_satisfied? && target_profit_margin_satisfied? && target_free_hours_ratio_satisfied?
@@ -79,7 +87,7 @@ class ProjectTracker < ApplicationRecord
     end
 
     unless project_tracker_links.find{|l| l.link_type == "sow"}.present?
-      errors.add(:base, "An SOW Project URL must be present.")
+      errors.add(:base, "An SOW/PD Project URL must be present.")
     end
   end
 

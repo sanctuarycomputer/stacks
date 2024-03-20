@@ -63,7 +63,7 @@ ActiveAdmin.register ProjectTracker do
         link_type: :msa
       })
       resource.project_tracker_links << ProjectTrackerLink.new({
-        name: "SOW",
+        name: "SOW/PD",
         link_type: :sow
       })
       new!

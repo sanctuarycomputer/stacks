@@ -462,8 +462,8 @@ ActiveRecord::Schema.define(version: 2024_03_20_020826) do
     t.datetime "updated_at", precision: 6, null: false
     t.datetime "work_completed_at"
     t.jsonb "snapshot", default: {}
-    t.decimal "target_free_hours_percent", default: "1.0"
-    t.decimal "target_profit_margin", default: "32.0"
+    t.decimal "target_free_hours_percent", default: "0.0"
+    t.decimal "target_profit_margin", default: "0.0"
   end
 
   create_table "qbo_accounts", force: :cascade do |t|
