@@ -9,6 +9,11 @@ class ProjectCapsule < ApplicationRecord
       .where.not(postpartum_notes: [nil, ""])
   }
 
+  enum client_satisfaction_status: {
+    satisfied: 0,
+    dissatisfied: 1,
+  }
+
   enum client_feedback_survey_status: {
     client_feedback_survey_received_and_shared_with_project_team: 0,
     no_response_from_client: 1,
@@ -16,7 +21,7 @@ class ProjectCapsule < ApplicationRecord
   }
 
   enum internal_marketing_status: {
-    internal_marketing_scheduled_with_town_crier: 0,
+    case_study_scheduled_with_communications_team: 0,
     opt_out_out_of_internal_marketing: 1
   }
 
@@ -29,6 +34,8 @@ class ProjectCapsule < ApplicationRecord
     client_feedback_survey_status.present? &&
     internal_marketing_status.present? &&
     capsule_status.present? &&
-    postpartum_notes.present?
+    postpartum_notes.present? &&
+    client_satisfaction_status.present? &&
+    client_satisfaction_detail.present?
   end
 end
