@@ -2,7 +2,7 @@ require 'test_helper'
 
 class Api::ProfitSharePassesControllerTest < ActionDispatch::IntegrationTest
   test "for each pass, appends total_psu_issued for that year to the response" do
-    pass = ProfitSharePass.create!()
+    pass = ProfitSharePass.create!
     Studio.create!({
       name: "garden3d",
       mini_name: "g3d"
