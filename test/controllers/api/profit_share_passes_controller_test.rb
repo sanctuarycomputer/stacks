@@ -8,8 +8,9 @@ class Api::ProfitSharePassesControllerTest < ActionDispatch::IntegrationTest
       mini_name: "g3d"
     })
     get "/api/profit_share_passes"
+
     assert_response :success
-    expected = [pass.as_json.merge({"total_psu_issued"=> 0})].to_json
+    expected = [{ id: pass.id, snapshot: pass.snapshot, total_psu_issued: pass.total_psu_issued.round }].to_json
     assert_equal(expected, @response.body)
   end
 
@@ -19,6 +20,7 @@ class Api::ProfitSharePassesControllerTest < ActionDispatch::IntegrationTest
       mini_name: "g3d"
     })
     get "/api/profit_share_passes"
+
     assert_response :success
     assert_equal([].to_json, @response.body)
   end
