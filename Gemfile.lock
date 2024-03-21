@@ -224,9 +224,9 @@ GEM
     llhttp-ffi (0.5.0)
       ffi-compiler (~> 1.0)
       rake (~> 13.0)
-    loofah (2.20.0)
+    loofah (2.22.0)
       crass (~> 1.0.2)
-      nokogiri (>= 1.5.9)
+      nokogiri (>= 1.12.0)
     mail (2.8.1)
       mini_mime (>= 0.1.1)
       net-imap
@@ -335,8 +335,9 @@ GEM
       activesupport (>= 5.0.0)
       minitest
       nokogiri (>= 1.6)
-    rails-html-sanitizer (1.5.0)
-      loofah (~> 2.19, >= 2.19.1)
+    rails-html-sanitizer (1.6.0)
+      loofah (~> 2.21)
+      nokogiri (~> 1.14)
     railties (6.0.6.1)
       actionpack (= 6.0.6.1)
       activesupport (= 6.0.6.1)
@@ -481,7 +482,6 @@ DEPENDENCIES
   httparty
   intuit-oauth
   listen (~> 3.2)
-  loofah (< 2.21.0)
   mini_portile2 (= 2.5.0)
   nio4r (~> 2.6)
   noticed (~> 1.5)

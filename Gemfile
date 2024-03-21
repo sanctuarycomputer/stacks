@@ -37,7 +37,6 @@ gem 'ferrum', '~>0.12'
 gem 'parity'
 gem 'nio4r', '~>2.6'
 gem 'active_model_serializers', '~> 0.10.2'
-gem 'loofah', "< 2.21.0" 
 
 group :development, :test do
   gem 'pry'
