@@ -93,9 +93,7 @@ class ProfitSharePass < ApplicationRecord
   end
 
   def total_psu_issued
-    total_psu_issued = Studio.garden3d.core_members_active_on(finalization_day).map{|a| a.psu_earned_by(finalization_day) }.reject{|v| v == nil}.reduce(:+) || 0
-
-    total_psu_issued.round()
+    Studio.garden3d.core_members_active_on(finalization_day).map{|a| a.psu_earned_by(finalization_day) }.reject{|v| v == nil}.reduce(:+) || 0
   end 
 
   def make_scenario(
