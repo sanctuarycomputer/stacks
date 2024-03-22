@@ -9,6 +9,10 @@ class Stacks::System
     # versions of NotionPage via PaperTrail in production
     NEW_BIZ_VERSION_HISTORY_START_AT = Date.new(2022, 7, 1)
 
+    # Default targets for Project Trackers
+    DEFAULT_PROJECT_TRACKER_TARGET_PROFIT_MARGIN = 32
+    DEFAULT_PROJECT_TRACKER_TARGET_FREE_HOURS_PERCENT = 1
+
     EIGHT_HOURS_IN_SECONDS = 28800
 
     INVOICE_STATUSES_NEED_ACTION = [
