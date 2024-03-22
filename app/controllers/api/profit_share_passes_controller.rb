@@ -1,6 +1,6 @@
 class Api::ProfitSharePassesController < ActionController::Base
   def index
     result = ProfitSharePass.all
-    render json: result, each_serializer: Api::ProfitSharePassSerializer
+    render json: Api::ProfitSharePassSerializer.new(result)
   end
 end
