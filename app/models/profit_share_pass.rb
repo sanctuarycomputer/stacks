@@ -169,4 +169,36 @@ class ProfitSharePass < ApplicationRecord
       )
     end
   end
+
+  def efficiency_cap_from_snapshot
+    (snapshot && snapshot["inputs"]["efficiency_cap"]) || nil
+  end
+
+  def desired_buffer_months
+    (snapshot && snapshot["inputs"]["desired_buffer_months"]) || nil
+  end
+
+  def gross_revenue 
+    (snapshot && snapshot["inputs"]["actuals"]["gross_revenue"]) || nil
+  end
+
+  def gross_expenses
+    (snapshot && snapshot["inputs"]["actuals"]["gross_expenses"]) || nil
+  end
+
+  def gross_payroll
+    (snapshot && snapshot["inputs"]["actuals"]["gross_payroll"]) || nil
+  end
+
+  def projected_monthly_cost_of_doing_business
+    (snapshot && snapshot["inputs"]["projected_monthly_cost_of_doing_business"]) || nil
+  end
+
+  def fica_tax_rate
+    (snapshot && snapshot["inputs"]["fica_tax_rate"]) || nil
+  end
+
+  def internals_budget_multiplier
+    (snapshot && snapshot["inputs"]["internals_budget_multiplier"]) || nil
+  end 
 end
