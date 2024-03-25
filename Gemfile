@@ -13,13 +13,13 @@ gem 'webpacker', '~> 4.0'
 gem 'turbolinks', '~> 5'
 gem 'bootsnap', '>= 1.4.2', require: false
 gem 'activeadmin'
-gem 'devise'
+gem 'devise', github: 'heartcombo/devise', branch: 'ca-omniauth-2'
 gem 'omniauth-google-oauth2'
 gem 'omniauth-rails_csrf_protection'
 gem 'intuit-oauth'
 gem 'acts_as_paranoid', '~> 0.7.0'
 gem 'sentry-ruby'
-gem 'sentry-rails', '~>4.3.0'
+gem 'sentry-rails'
 gem 'httparty'
 gem 'quickbooks-ruby'
 gem 'order_as_specified'
@@ -33,10 +33,8 @@ gem 'noticed', '~> 1.5'
 gem 'paper_trail'
 gem 'hashdiff'
 gem 'skylight'
-gem 'ferrum', '~>0.12'
+gem 'ferrum'
 gem 'parity'
-gem 'nio4r', '~>2.6'
-gem 'active_model_serializers', '~> 0.10.2'
 
 group :development, :test do
   gem 'pry'
@@ -57,4 +55,3 @@ group :test do
 end
 
 gem 'tzinfo-data', platforms: [:mingw, :mswin, :x64_mingw, :jruby]
-
