@@ -1,7 +1,7 @@
 class Api::ProfitSharePassSerializer < ActiveModel::Serializer
   attributes :id, 
   :desired_buffer_months,
-  :efficiency_cap_from_snapshot,
+  :efficiency_cap,
   :fica_tax_rate,
   :gross_expenses,
   :gross_payroll,
@@ -15,7 +15,7 @@ class Api::ProfitSharePassSerializer < ActiveModel::Serializer
     object.snapshot.dig("inputs", "desired_buffer_months").to_f
   end
   
-  def efficiency_cap_from_snapshot
+  def efficiency_cap
     object.snapshot.dig("inputs", "efficiency_cap").to_f
   end
   

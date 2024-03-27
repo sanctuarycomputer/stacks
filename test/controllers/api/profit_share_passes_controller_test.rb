@@ -2,7 +2,7 @@ require 'test_helper'
 
 class Api::ProfitSharePassesControllerTest < ActionDispatch::IntegrationTest
   test "for each pass, appends total_psu_issued for that year to the response" do
-    pass = ProfitSharePass.create!(snapshot: {"inputs": {"actuals": {"gross_payroll": 653351, "gross_revenue": 1168836, "gross_benefits": 0, "gross_expenses": 304610, "gross_subcontractors": 0}, "pre_spent": 0, "fica_tax_rate": 0, "efficiency_cap": 1.6, "total_psu_issued": 139, "desired_buffer_months": 1, "internals_budget_multiplier": 0.5, "projected_monthly_cost_of_doing_business": 84000}, "finalized_at": "2018-12-15T00:00:00.000+00:00"})
+    pass = ProfitSharePass.create!(efficiency_cap: 1.2, snapshot: {"inputs": {"actuals": {"gross_payroll": 653351, "gross_revenue": 1168836, "gross_benefits": 0, "gross_expenses": 304610, "gross_subcontractors": 0}, "pre_spent": 0, "fica_tax_rate": 0, "efficiency_cap": 1.6, "total_psu_issued": 139, "desired_buffer_months": 1, "internals_budget_multiplier": 0.5, "projected_monthly_cost_of_doing_business": 84000}, "finalized_at": "2018-12-15T00:00:00.000+00:00"})
     Studio.create!({
       name: "garden3d",
       mini_name: "g3d"
@@ -13,7 +13,8 @@ class Api::ProfitSharePassesControllerTest < ActionDispatch::IntegrationTest
 
     expected = [{ id: pass.id, 
     desired_buffer_months: pass.snapshot.dig("inputs", "desired_buffer_months").to_f,
-    efficiency_cap_from_snapshot: pass.snapshot.dig("inputs", "efficiency_cap").to_f,
+    # Note that we expect the efficiency cap from the snapshot instead of the top-level one
+    efficiency_cap: pass.snapshot.dig("inputs", "efficiency_cap").to_f,
     fica_tax_rate: pass.snapshot.dig("inputs", "fica_tax_rate").to_f,
     gross_expenses: pass.snapshot.dig("inputs", "actuals", "gross_expenses").to_f,
     gross_payroll: pass.snapshot.dig("inputs", "actuals", "gross_payroll").to_f,
