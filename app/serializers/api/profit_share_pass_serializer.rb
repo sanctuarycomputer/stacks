@@ -44,7 +44,7 @@ class Api::ProfitSharePassSerializer < ActiveModel::Serializer
   end
   
   def total_psu_issued
-    object.total_psu_issued.round
+    object.total_psu_issued(object.finalization_day).round
   end
   
   def year

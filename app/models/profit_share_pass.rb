@@ -92,8 +92,8 @@ class ProfitSharePass < ApplicationRecord
     end
   end
 
-  def total_psu_issued
-    Studio.garden3d.core_members_active_on(finalization_day).map{|a| a.psu_earned_by(finalization_day) }.reject{|v| v == nil}.reduce(:+) || 0
+  def total_psu_issued(psu_earned_by_date)
+    Studio.garden3d.core_members_active_on(finalization_day).map{|a| a.psu_earned_by(psu_earned_by_date) }.reject{|v| v == nil}.reduce(:+) || 0
   end 
 
   def make_scenario(
@@ -153,9 +153,8 @@ class ProfitSharePass < ApplicationRecord
       actuals[:gross_expenses] = gross_expenses_override.to_f if gross_expenses_override.present?
       actuals[:gross_subcontractors] = gross_subcontractors_override.to_f if gross_subcontractors_override.present?
 
-      total_psu_issued =   
-        Studio.garden3d.core_members_active_on(finalization_day).map{|a| a.projected_psu_by_eoy }.reject{|v| v == nil}.reduce(:+) || 0
-
+      total_psu_issued = total_psu_issued((Date.new(Date.today.year, 12, 15)))
+      
       Stacks::ProfitShare::Scenario.new(
         actuals,
         total_psu_issued,
