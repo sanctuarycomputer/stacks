@@ -12,4 +12,8 @@ Rails.application.routes.draw do
   ActiveAdmin.routes(self)
 
   get "/:page" => "pages#show"
+  
+  namespace :api do
+    resources :profit_share_passes, only: [:index]
+  end
 end
