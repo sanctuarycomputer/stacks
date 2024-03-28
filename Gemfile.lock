@@ -473,13 +473,13 @@ PLATFORMS
 
 DEPENDENCIES
   active_model_serializers (~> 0.10.2)
-  activeadmin (= 2.9.0)
+  activeadmin
   acts_as_paranoid (~> 0.7.0)
   bootsnap (>= 1.4.2)
   bullet
   capybara (>= 2.15)
   devise
-  ferrum (= 0.12)
+  ferrum
   google-apis-admin_directory_v1
   google-apis-admin_reports_v1
   google-apis-calendar_v3
@@ -505,7 +505,7 @@ DEPENDENCIES
   rdiscount
   sass-rails (>= 6)
   selenium-webdriver
-  sentry-rails (~> 4.3.0)
+  sentry-rails
   sentry-ruby
   skylight
   spring
@@ -522,4 +522,4 @@ RUBY VERSION
    ruby 2.7.2p137
 
 BUNDLED WITH
-   2.4.22
+   2.3.25
