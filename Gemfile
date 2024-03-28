@@ -12,7 +12,7 @@ gem 'sass-rails', '>= 6'
 gem 'webpacker', '~> 4.0'
 gem 'turbolinks', '~> 5'
 gem 'bootsnap', '>= 1.4.2', require: false
-gem 'activeadmin'
+gem 'activeadmin', '2.9.0'
 gem 'devise'
 gem 'omniauth-google-oauth2'
 gem 'omniauth-rails_csrf_protection'
