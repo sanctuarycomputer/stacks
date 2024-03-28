@@ -80,6 +80,12 @@ test:
 #   production:
 #     url: <%= ENV['DATABASE_URL'] %>
 #
+staging:
+  <<: *default
+  database: stacks_production
+  username: stacks
+  password: <%= ENV['STACKS_DATABASE_PASSWORD'] %>
+
 production:
   <<: *default
   database: stacks_production
