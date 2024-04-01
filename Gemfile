@@ -36,8 +36,6 @@ gem 'skylight'
 gem 'ferrum', '0.12'
 gem 'parity'
 gem 'nio4r', '~> 2.6'
-gem 'active_model_serializers', '~> 0.10.2'
-gem 'rack-cors', '~> 1.1', '>= 1.1.1'
 
 group :development, :test do
   gem 'pry'
