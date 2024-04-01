@@ -387,8 +387,8 @@ GEM
       rexml (~> 3.2, >= 3.2.5)
       rubyzip (>= 1.2.2, < 3.0)
       websocket (~> 1.0)
-    sentry-rails (4.3.4)
-      railties (>= 5.0)
+    sentry-rails (4.3.0)
+      rails (>= 5.0)
       sentry-ruby-core (~> 4.3.0)
     sentry-ruby (5.17.1)
       bigdecimal
@@ -466,7 +466,7 @@ GEM
     zlib (2.1.1)
 
 PLATFORMS
-  ruby
+  arm64-darwin-23
 
 DEPENDENCIES
   active_model_serializers (~> 0.10.2)
@@ -502,7 +502,7 @@ DEPENDENCIES
   rdiscount
   sass-rails (>= 6)
   selenium-webdriver
-  sentry-rails (~> 4.3.0)
+  sentry-rails (= 4.3.0)
   sentry-ruby
   skylight
   spring
@@ -519,4 +519,4 @@ RUBY VERSION
    ruby 2.7.2p137
 
 BUNDLED WITH
-   2.1.4
+   2.3.25
