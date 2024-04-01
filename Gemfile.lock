@@ -113,7 +113,7 @@ GEM
     declarative (0.0.20)
     descendants_tracker (0.0.4)
       thread_safe (~> 0.3, >= 0.3.1)
-    devise (4.9.3)
+    devise (4.8.0)
       bcrypt (~> 3.0)
       orm_adapter (~> 0.1)
       railties (>= 4.1.0)
@@ -478,7 +478,7 @@ DEPENDENCIES
   bootsnap (>= 1.4.2)
   bullet
   capybara (>= 2.15)
-  devise
+  devise (= 4.8.0)
   ferrum (= 0.12)
   google-apis-admin_directory_v1
   google-apis-admin_reports_v1

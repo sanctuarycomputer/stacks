@@ -13,7 +13,7 @@ gem 'webpacker', '~> 4.0'
 gem 'turbolinks', '~> 5'
 gem 'bootsnap', '>= 1.4.2', require: false
 gem 'activeadmin', '2.9.0'
-gem 'devise'
+gem 'devise', '4.8.0'
 gem 'omniauth-google-oauth2'
 gem 'omniauth-rails_csrf_protection'
 gem 'intuit-oauth'
