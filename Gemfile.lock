@@ -42,15 +42,15 @@ GEM
       activemodel (>= 4.1)
       case_transform (>= 0.2)
       jsonapi-renderer (>= 0.1.1.beta1, < 0.3)
-    activeadmin (2.12.0)
+    activeadmin (2.9.0)
       arbre (~> 1.2, >= 1.2.1)
       formtastic (>= 3.1, < 5.0)
       formtastic_i18n (~> 0.4)
       inherited_resources (~> 1.7)
       jquery-rails (~> 4.2)
       kaminari (~> 1.0, >= 1.2.1)
-      railties (>= 6.0, < 7.1)
-      ransack (>= 2.1.1, < 4)
+      railties (>= 5.2, < 6.2)
+      ransack (~> 2.1, >= 2.1.1)
     activejob (6.0.6.1)
       activesupport (= 6.0.6.1)
       globalid (>= 0.3.6)
@@ -347,9 +347,9 @@ GEM
       rake (>= 0.8.7)
       thor (>= 0.20.3, < 2.0)
     rake (13.1.0)
-    ransack (3.1.0)
-      activerecord (>= 6.0.4)
-      activesupport (>= 6.0.4)
+    ransack (2.4.1)
+      activerecord (>= 5.2.4)
+      activesupport (>= 5.2.4)
       i18n
     rb-fsevent (0.11.2)
     rb-inotify (0.10.1)
@@ -470,7 +470,7 @@ PLATFORMS
 
 DEPENDENCIES
   active_model_serializers (~> 0.10.2)
-  activeadmin
+  activeadmin (= 2.9.0)
   acts_as_paranoid (~> 0.7.0)
   bootsnap (>= 1.4.2)
   bullet
@@ -485,7 +485,7 @@ DEPENDENCIES
   intuit-oauth
   listen (~> 3.2)
   mini_portile2 (= 2.5.0)
-  nio4r
+  nio4r (~> 2.6)
   noticed (~> 1.5)
   omniauth-google-oauth2
   omniauth-rails_csrf_protection
