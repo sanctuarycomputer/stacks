@@ -35,6 +35,30 @@ https://www.loom.com/share/2c4f15512009443bb4e4c92d42e23a46
 
 **You have been warned!**
 
+### Gem installation on a Mac M1 
+
+If you ever see an error upon running `bundle install` along the lines of: 
+
+```
+Results logged to
+/Users/josephineweidner/.asdf/installs/ruby/2.7.2/lib/ruby/gems/2.7.0/extensions/arm64-darwin-23/2.7.0/nio4r-2.5.5/gem_make.out
+
+An error occurred while installing nio4r (2.5.5), and Bundler cannot continue.
+Make sure that `gem install nio4r -v '2.5.5' --source 'https://rubygems.org/'` succeeds before bundling.
+```
+
+Open up the `gem_make.out` log file. Search for "error" (there are lots of warnings
+you can ignore). You should see a line that ends in something like "[-Wincompatible-function-pointer-types]". 
+The trick is to pass a flag in the `gem install` command that tells the compiler to ignore
+that error. For example: 
+
+```
+gem install nio4r -v '2.5.5' --source 'https://rubygems.org/' -- --with-cflags="-Wno-error=incompatible-function-pointer-types"
+```
+
+This may happen for gems other than `nio4r`, but the same steps apply. Good luck! 
+
+
 ## Prerequisites
 
 1. A Ruby on Rails ready dev environment (w/ PostgresQL)
