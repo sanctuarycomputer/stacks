@@ -6,6 +6,10 @@ class Api::ProfitSharePassSerializer < ActiveModel::Serializer
   :gross_expenses,
   :gross_payroll,
   :gross_revenue,
+  :gross_benefits,
+  :subcontractors,
+  :pre_spent,
+  :pre_spent_reinvestment,
   :internals_budget_multiplier,
   :projected_monthly_cost_of_doing_business,
   :total_psu_issued,
@@ -33,6 +37,22 @@ class Api::ProfitSharePassSerializer < ActiveModel::Serializer
   
   def gross_revenue
     object.snapshot&.dig("inputs", "actuals", "gross_revenue").to_f
+  end
+
+  def gross_benefits
+    object.snapshot&.dig("inputs", "actuals", "gross_benefits").to_f
+  end
+
+  def subcontractors
+    object.snapshot&.dig("inputs", "actuals", "gross_subcontractors").to_f
+  end
+
+  def pre_spent
+    object.snapshot&.dig("inputs", "pre_spent").to_f
+  end
+
+  def pre_spent_reinvestment
+    object.snapshot&.dig("inputs", "pre_spent_reinvestment").to_f
   end
   
   def internals_budget_multiplier
