@@ -142,6 +142,7 @@ class ProjectTracker < ApplicationRecord
 
   def generate_snapshot!
     cosr = cost_of_services_rendered("month")
+    cosr_new = cost_of_services_rendered_new
     preloaded_studios = Studio.all
     today = Date.today
 
@@ -151,21 +152,27 @@ class ProjectTracker < ApplicationRecord
     ).reduce({
       generated_at: DateTime.now.iso8601,
       hours: [],
+      hours_new: [],
       spend: [],
       hours_total: 0,
+      hours_total_new: 0,
       spend_total: 0,
       cash: {
         cosr: [],
+        cosr_new: [],
         cosr_total: 0,
+        cosr_total_new: 0,
       },
       accrual: {
         cosr: [],
+        cosr_new: [],
         cosr_total: 0,
+        cosr_total_new: 0,
       }
     }) do |acc, date|
       hours_by_studio = self.total_hours_during_range_by_studio(preloaded_studios, date, date)
       hours = hours_by_studio.values.reduce(:+) || 0
-      
+
       acc[:hours].push({
         x: date.iso8601,
         y: acc[:hours_total] += hours
@@ -195,6 +202,36 @@ class ProjectTracker < ApplicationRecord
         x: date.iso8601,
         y: acc[:accrual][:cosr_total] += cosr_for_date[:accrual]
       })
+
+      # Once we confirm that the new COSR numbers look okay in production,
+      # we can remove all of the above logic and just use the following instead.
+
+      cosr_for_date_new = cosr_new[date]
+      total_cosr_for_date = 0
+      total_hours_for_date = 0
+
+      unless cosr_for_date_new.blank?
+        cosr_for_date_new.each do |studio_id, cosr_data|
+          total_cosr_for_date += cosr_data[:total_cost]
+          total_hours_for_date += cosr_data[:total_hours]
+        end
+      end
+
+      acc[:hours_new].push({
+        x: date.iso8601,
+        y: acc[:hours_total_new] += total_hours_for_date
+      })
+
+      acc[:cash][:cosr_new].push({
+        x: date.iso8601,
+        y: acc[:cash][:cosr_total_new] += total_cosr_for_date
+      })
+
+      acc[:accrual][:cosr_new].push({
+        x: date.iso8601,
+        y: acc[:accrual][:cosr_total_new] += total_cosr_for_date
+      })
+
       acc
     end
 
@@ -444,7 +481,46 @@ class ProjectTracker < ApplicationRecord
 
     periods
   end
- 
+
+  def cost_of_services_rendered_new
+    today = Date.today
+
+    start_date = (
+      first_recorded_assignment ?
+      first_recorded_assignment.start_date :
+      Date.new(2020, 1, 1)
+    )
+
+    end_date = [(
+      last_recorded_assignment ?
+      last_recorded_assignment.end_date :
+      today.beginning_of_month
+    ), today].min
+
+    project_ids = forecast_projects.map(&:forecast_id)
+
+    forecast_assignments =
+      ForecastAssignment
+        .includes({
+          forecast_person: [
+            :forecast_person_cost_windows,
+            {
+              admin_user: [:full_time_periods]
+            }
+          ]
+        })
+        .where(project_id: project_ids)
+
+    calculator = Stacks::CostOfServicesRenderedCalculator.new(
+      start_date: start_date,
+      end_date: end_date,
+      forecast_assignments: forecast_assignments,
+      studios: Studio.all
+    )
+
+    calculator.calculate
+  end
+
   def raw_resourcing_cost_during_range_in_usd(start_range, end_range)
     assignments =
       ForecastAssignment
@@ -492,7 +568,7 @@ class ProjectTracker < ApplicationRecord
       forecast_project_ids = forecast_projects.map(&:forecast_id)
       ForecastAssignment
         .where(project_id: forecast_project_ids)
-        .order(start_date: :desc)
+        .order(end_date: :desc)
         .limit(1)
         .first
     )
