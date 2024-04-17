@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2024_03_20_020826) do
+ActiveRecord::Schema.define(version: 2024_04_10_041442) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -210,6 +210,20 @@ ActiveRecord::Schema.define(version: 2024_03_20_020826) do
     t.integer "updated_by_id"
     t.jsonb "data"
     t.index ["forecast_id"], name: "index_forecast_people_on_forecast_id", unique: true
+  end
+
+  create_table "forecast_person_cost_windows", force: :cascade do |t|
+    t.bigint "forecast_person_id"
+    t.bigint "forecast_project_id"
+    t.date "start_date", null: false
+    t.date "end_date"
+    t.decimal "hourly_cost", null: false
+    t.boolean "needs_review", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["forecast_person_id"], name: "idx_forecast_person_cost_windows_on_forecast_person_id"
+    t.index ["forecast_project_id"], name: "idx_forecast_person_cost_windows_on_forecast_project_id"
+    t.index ["needs_review"], name: "index_forecast_person_cost_windows_on_needs_review"
   end
 
   create_table "forecast_projects", force: :cascade do |t|
@@ -668,6 +682,8 @@ ActiveRecord::Schema.define(version: 2024_03_20_020826) do
   add_foreign_key "admin_user_racial_backgrounds", "racial_backgrounds"
   add_foreign_key "associates_award_agreements", "admin_users"
   add_foreign_key "finalizations", "reviews"
+  add_foreign_key "forecast_person_cost_windows", "forecast_people", primary_key: "forecast_id"
+  add_foreign_key "forecast_person_cost_windows", "forecast_projects", primary_key: "forecast_id"
   add_foreign_key "full_time_periods", "admin_users"
   add_foreign_key "gifted_profit_shares", "admin_users"
   add_foreign_key "invoice_trackers", "admin_users"
