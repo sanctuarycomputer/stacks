@@ -79,11 +79,15 @@ class AdminUser < ApplicationRecord
   end
 
   def approximate_cost_per_sellable_hour_before_studio_expenses
-    now = DateTime.now.to_date.beginning_of_week # monday
-    data = sellable_hours_for_date(now)
+    approximate_cost_per_sellable_hour_before_studio_expenses_on_date(Date.today)
+  end
+
+  def approximate_cost_per_sellable_hour_before_studio_expenses_on_date(date)
+    date = date.beginning_of_week
+    data = sellable_hours_for_date(date)
     return nil unless data.present?
     return nil if data[:sellable] == 0
-    cost_of_employment_on_date(now) / data[:sellable]
+    cost_of_employment_on_date(date) / data[:sellable]
   end
 
   def sellable_hours_for_date(date)
