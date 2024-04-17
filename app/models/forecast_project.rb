@@ -2,6 +2,7 @@ class ForecastProject < ApplicationRecord
   self.primary_key = "forecast_id"
   belongs_to :forecast_client, class_name: "ForecastClient", foreign_key: "client_id"
   has_many :forecast_assignments, class_name: "ForecastAssignment", foreign_key: "project_id"
+  has_many :forecast_person_cost_windows
 
   scope :archived, -> {
     where('data @> ?', {archived: true}.to_json)
