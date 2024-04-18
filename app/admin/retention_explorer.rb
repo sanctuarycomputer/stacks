@@ -6,7 +6,7 @@ ActiveAdmin.register_page "Retention Explorer" do
       Stacks::Team.admin_users_sorted_by_tenure_in_days
     render(partial: "show", locals: {
       mean_tenure_in_days: Stacks::Team.mean_tenure_in_days(admin_users_sorted_by_tenure_in_days),
-      admin_users_sorted_by_tenure_in_days: Stacks::Team.admin_users_sorted_by_tenure_in_days
+      admin_users_sorted_by_tenure_in_days: admin_users_sorted_by_tenure_in_days
     })
   end
 end
