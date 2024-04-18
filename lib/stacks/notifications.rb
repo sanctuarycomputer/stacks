@@ -195,6 +195,17 @@ class Stacks::Notifications
         } if fp.has_no_explicit_hourly_rate?
       end
 
+      ForecastPersonCostWindow.needs_review.each do |cost_window|
+        notifications << {
+          # Deliberately set to the forecast person instead of the project:
+          subject: cost_window.forecast_person,
+          type: :forecast_project,
+          link: cost_window.forecast_project.edit_link,
+          error: :person_missing_hourly_rate,
+          priority: 1
+        }
+      end
+
       forecast_clients.each do |fc|
         notifications << {
           subject: fc,
