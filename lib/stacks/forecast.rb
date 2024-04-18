@@ -20,6 +20,10 @@ class Stacks::Forecast
       sync_people!
       sync_projects!
       sync_all_assignments!
+      # NOTE: We deliberately don't sync cost windows as part of this.
+      # We need to do a lot of AR queries in order to determine the cost
+      # for each cost window, and it wouldn't work to wrap that in a single
+      # transaction like we're doing here.
     end
   end
 
@@ -57,6 +61,36 @@ class Stacks::Forecast
 
   def roles
     self.class.get("/roles", headers: @headers)
+  end
+
+  def sync_cost_windows!
+    ForecastPersonCostWindow.delete_all
+
+    start_date = Date.new(2020, 1, 1)
+    end_date = Date.tomorrow
+    current_date = start_date
+
+    while current_date < end_date
+      query = ForecastAssignment.where(
+        "start_date <= ? AND end_date >= ?",
+        current_date,
+        current_date
+      ).includes(:forecast_person, :forecast_project)
+
+      query.each do |forecast_assignment|
+        next if forecast_assignment.forecast_person.blank?
+        next if forecast_assignment.forecast_project.blank?
+
+        syncer = Stacks::ForecastPersonCostWindowSyncer.new(
+          forecast_project: forecast_assignment.forecast_project,
+          forecast_person: forecast_assignment.forecast_person,
+          target_date: current_date
+        )
+        syncer.sync!
+      end
+
+      current_date = current_date.advance(days: 1)
+    end
   end
 
   private

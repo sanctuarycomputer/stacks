@@ -243,4 +243,82 @@ class Stacks::ForecastPersonCostWindowSyncerTest < ActiveSupport::TestCase
       [start_date, nil, 0, true],
     ], cost_window_attributes)
   end
+
+  test "#sync! creates cost windows for Project A even if overlapping cost windows exist for Project B" do
+    start_date = Date.new(2024, 1, 1)
+    end_date = Date.new(2024, 1, 10)
+
+    forecast_client = ForecastClient.create!
+
+    project_a = ForecastProject.create!({
+      id: 1,
+      name: "Project A",
+      forecast_client: forecast_client,
+      code: "ABCD-1A",
+      notes: "subcontractor@some-other-agency.com: $123.45",
+      start_date: start_date
+    })
+
+    project_b = ForecastProject.create!({
+      id: 2,
+      name: "Project B",
+      forecast_client: forecast_client,
+      code: "ABCD-1B",
+      notes: "subcontractor@some-other-agency.com: $123.45",
+      start_date: start_date
+    })
+
+    forecast_person = ForecastPerson.create!({
+      forecast_id: "123",
+      roles: ["Subcontractor"],
+      email: "subcontractor@some-other-agency.com"
+    })
+
+    ForecastAssignment.create!({
+      forecast_id: "111",
+      start_date: start_date,
+      end_date: end_date,
+      forecast_person: forecast_person,
+      forecast_project: project_a
+    })
+
+    ForecastAssignment.create!({
+      forecast_id: "222",
+      start_date: start_date,
+      end_date: end_date,
+      forecast_person: forecast_person,
+      forecast_project: project_b
+    })
+
+    ForecastPersonCostWindow.create!({
+      forecast_person: forecast_person,
+      forecast_project: project_b,
+      start_date: start_date,
+      end_date: nil,
+      hourly_cost: 123.45,
+      needs_review: false
+    })
+
+    syncer = Stacks::ForecastPersonCostWindowSyncer.new(
+      forecast_project: project_a,
+      forecast_person: forecast_person,
+      target_date: start_date
+    )
+
+    syncer.sync!
+
+    cost_window_attributes = ForecastPersonCostWindow.pluck(
+      :forecast_project_id,
+      :forecast_person_id,
+      :start_date,
+      :end_date,
+      :hourly_cost,
+      :needs_review
+    )
+
+    assert_equal([
+      [2, 123, start_date, nil, 123.45, false],
+      [1, 123, start_date, nil, 123.45, false],
+    ], cost_window_attributes)
+  end
 end

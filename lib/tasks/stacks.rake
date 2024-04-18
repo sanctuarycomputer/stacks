@@ -87,7 +87,7 @@ namespace :stacks do
       Parallel.map(Studio.internal, in_threads: 2) { |s| s.generate_snapshot! }
       # Next, do reinvestment studios
       Parallel.map(Studio.reinvestment, in_threads: 2) { |s| s.generate_snapshot! }
-      # Finally, do client_services, which require data from internal studios 
+      # Finally, do client_services, which require data from internal studios
       # (and garden3d hides reinvestment data)
       Parallel.map(Studio.client_services, in_threads: 2) { |s| s.generate_snapshot! }
       # Now, generate project snapshots
@@ -109,5 +109,10 @@ namespace :stacks do
       puts e.backtrace
       Sentry.capture_exception(e)
     end
+  end
+
+  desc "Nightly cost window rebuild"
+  task :nightly_cost_window_rebuild => :environment do
+    Stacks::Forecast.new.sync_cost_windows!
   end
 end

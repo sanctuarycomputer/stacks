@@ -1,7 +1,6 @@
 class Stacks::ForecastPersonCostWindowSyncer
   HISTORICAL_SUBCONTRACTOR_RATES = {}
 
-
   def initialize(forecast_project:, forecast_person:, target_date:)
     @forecast_project = forecast_project
     @forecast_person = forecast_person
@@ -15,7 +14,10 @@ class Stacks::ForecastPersonCostWindowSyncer
     )
 
     max_end_date = @forecast_project.start_date || @target_date
-    cost_windows = @forecast_person.forecast_person_cost_windows
+    cost_windows = @forecast_person.forecast_person_cost_windows.filter do |cost_window|
+      cost_window.forecast_project == @forecast_project
+    end
+
     needs_new_cost_window = cost_windows.empty?
 
     cost_windows.each do |cost_window|
