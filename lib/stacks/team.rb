@@ -4,6 +4,20 @@ class Stacks::Team
       @_twist ||= Stacks::Twist.new
     end
 
+    def mean_tenure_in_days(admin_users_tenure_tuples = admin_users_sorted_by_tenure_in_days)
+      tenures = admin_users_tenure_tuples.map{|tuple| tuple[:days]}
+      tenures.sum(0.0) / tenures.size
+    end
+
+    def admin_users_sorted_by_tenure_in_days
+      AdminUser.core.map do |a|
+        {
+          admin_user: a,
+          days: (a.full_time_periods.last.ended_at_or_now - a.full_time_periods.first.started_at).to_i
+        }
+      end.sort {|a,b| b[:days] <=> a[:days]}
+    end
+
     def fetch_from_google_workspace(domain)
       service = Google::Apis::AdminDirectoryV1::DirectoryService.new
       service.authorization = Google::Auth::ServiceAccountCredentials.make_creds(

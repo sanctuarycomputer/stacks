@@ -31,6 +31,7 @@
 
 en:
   active_admin:
+    retention_explorer: "Retention Explorer"
     skill_filter: "Skill Filter"
     dei_explorer: "DEI Explorer"
     okr_explorer: "OKR Explorer"
