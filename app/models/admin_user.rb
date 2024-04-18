@@ -68,7 +68,7 @@ class AdminUser < ApplicationRecord
 
     uid = email.split("@")[0]
     existing = [
-      AdminUser.find_by(email: "#{uid}@xxix.co"), 
+      AdminUser.find_by(email: "#{uid}@xxix.co"),
       AdminUser.find_by(email: "#{uid}@sanctuary.computer")
     ].compact[0]
     return existing if existing.present?
@@ -91,7 +91,7 @@ class AdminUser < ApplicationRecord
     return nil unless ftp.present?
 
     is_working_day =
-      (ftp.contributor_type == "four_day" && (1..4).include?(date.wday)) || 
+      (ftp.contributor_type == "four_day" && (1..4).include?(date.wday)) ||
       (ftp.contributor_type == "five_day" && (1..5).include?(date.wday))
     return nil unless is_working_day
 
@@ -124,7 +124,7 @@ class AdminUser < ApplicationRecord
     all_closed = full_time_periods.reject{|ftp| ftp == latest_full_time_period}.all? do |ftp|
       ftp.ended_at.present?
     end
-    
+
     if !all_closed
       errors.add(:base, "another full_time_period is open")
     end
@@ -155,7 +155,14 @@ class AdminUser < ApplicationRecord
   scope :admin , -> {
     AdminUser.where(roles: ["admin"])
   }
-  
+  scope :core, -> {
+    joins(:full_time_periods).where(
+      "full_time_periods.contributor_type = ? OR full_time_periods.contributor_type = ?",
+      FullTimePeriod.contributor_types["five_day"],
+      FullTimePeriod.contributor_types["four_day"]
+    ).uniq
+  }
+
   def active?
     AdminUser.active.include?(self)
   end
