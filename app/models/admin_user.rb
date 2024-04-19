@@ -304,11 +304,16 @@ class AdminUser < ApplicationRecord
     [psu_requirement_met_at, skill_band_met_at].max.to_date
   end
 
+  def time_in_days_since_last_project_lead_role
+    return Float::INFINITY if project_lead_periods.empty?
+    (Date.today - project_lead_periods.map(&:period_ended_at).max).to_i
+  end
+
   def project_lead_months
     # TODO: Take into account wether this user is active or not
     project_lead_periods.reduce(0.0) do |acc, p|
       acc +=
-        (((p.period_ended_at || Date.today).to_time - p.period_started_at.to_time)/1.month.second)
+        (((p.period_ended_at).to_time - p.period_started_at.to_time)/1.month.second)
     end
   end
 
