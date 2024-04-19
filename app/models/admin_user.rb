@@ -309,6 +309,12 @@ class AdminUser < ApplicationRecord
     (Date.today - project_lead_periods.map(&:period_ended_at).max).to_i
   end
 
+  def total_time_in_days_holding_project_lead_role
+    project_lead_periods.reduce(0) do |acc, plp|
+      acc += (plp.period_ended_at - plp.period_started_at).to_i
+    end
+  end
+
   def project_lead_months
     # TODO: Take into account wether this user is active or not
     project_lead_periods.reduce(0.0) do |acc, p|

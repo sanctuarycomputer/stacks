@@ -17,13 +17,16 @@ ActiveAdmin.register_page "Roles Explorer" do
         admin_user
       end
       column "Studios", :studios
-      column "Time in days since last Project Lead role", :time_in_days_since_last_project_lead_role do |admin_user|
+      column "Time in days since role last held", :time_in_days_since_role_last_held do |admin_user|
         time_in_days = admin_user.time_in_days_since_last_project_lead_role
         if time_in_days.infinite?
           "Never held"
         else
           "#{time_in_days} days"
         end
+      end
+      column "Aggregate time spent holding role", :aggregate_time_spent_holding_role do |admin_user|
+        "#{admin_user.total_time_in_days_holding_project_lead_role} days"
       end
     end
 
