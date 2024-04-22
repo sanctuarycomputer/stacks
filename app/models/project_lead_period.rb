@@ -17,6 +17,10 @@ class ProjectLeadPeriod < ApplicationRecord
     (period_ended_at - period_started_at).to_i
   end
 
+  def current?
+    period_ended_at >= Date.today - 14.days
+  end
+
   def does_not_overlap
     overlapping_project_lead_period =
       project_tracker.project_lead_periods

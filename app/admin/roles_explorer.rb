@@ -35,14 +35,11 @@ ActiveAdmin.register_page "Roles Explorer" do
       column "Admin User", :admin_user
       column "Studio", :studio
       column "Project Tracker", :project_tracker
-      column "Current?", :current? do |plp|
-        plp.period_ended_at >= Date.today - 14.days
-      end
+      column "Current?", :current?
       column "Started At", :period_started_at
       column "Ended At", :period_ended_at
       column "Time Held", :time_held_in_days do |plp|
-        time_held_in_days = plp.time_held_in_days
-        "#{time_held_in_days} days"
+        "#{plp.time_held_in_days} days"
       end
     end
   end
