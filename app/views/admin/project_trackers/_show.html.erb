@@ -87,14 +87,14 @@
 
         <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
           <tbody>
-            <!--
-            <tr class="odd">
-              <td class="col"><strong>Raw Resourcing Cost</strong></td>
-              <td class="col text-right">
-                <%= number_to_currency(@project_tracker.raw_resourcing_cost) %>
-              </td>
-            </tr>
-            -->
+            <% if false %>
+              <tr class="odd">
+                <td class="col"><strong>Raw Resourcing Cost</strong></td>
+                <td class="col text-right">
+                  <%= number_to_currency(@project_tracker.raw_resourcing_cost) %>
+                </td>
+              </tr>
+            <% end %>
             <tr class="even">
               <td class="col"><%= link_to "Estimated COSR ↗", admin_project_tracker_project_cosr_explorer_path(@project_tracker) %></td>
               <td class="col text-right">

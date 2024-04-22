@@ -107,13 +107,13 @@ ActiveAdmin.register ProjectTracker do
     end
 
     column :name
-    
+
     column :hours do |resource|
       free_hours = resource.total_free_hours
       total_hours = resource.total_hours
       free_hours_percentage = resource.free_hours_ratio * 100
 
-      pill_class = 
+      pill_class =
         if free_hours_percentage == 0
           "exceptional"
         elsif free_hours_percentage < 1
