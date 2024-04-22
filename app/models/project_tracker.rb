@@ -165,7 +165,7 @@ class ProjectTracker < ApplicationRecord
     }) do |acc, date|
       hours_by_studio = self.total_hours_during_range_by_studio(preloaded_studios, date, date)
       hours = hours_by_studio.values.reduce(:+) || 0
-      
+
       acc[:hours].push({
         x: date.iso8601,
         y: acc[:hours_total] += hours
@@ -185,7 +185,7 @@ class ProjectTracker < ApplicationRecord
         acc[:accrual] += hours * data[:accrual][:actual_cost_per_hour_sold]
         acc
       end
-      
+
       acc[:cash][:cosr].push({
         x: date.iso8601,
         y: acc[:cash][:cosr_total] += cosr_for_date[:cash]
@@ -236,7 +236,7 @@ class ProjectTracker < ApplicationRecord
 
   def current_project_lead_periods
     project_lead_periods.select do |p|
-      p.period_started_at <= Date.today && p.period_ended_at.nil?
+      p.period_started_at <= Date.today && p.ended_at.nil?
     end
   end
 
@@ -398,26 +398,26 @@ class ProjectTracker < ApplicationRecord
 
         # Find the snapshot for the corresponding month, or (if it's the current month and thus
         # not in the snapshot), fallback to the studio's latest monthly snapshot
-        snapshot = 
+        snapshot =
           studio.snapshot["month"].find{|v| v["label"] == period.label} || studio.snapshot["month"].last
 
         acc[studio] = acc[studio] || {
           cash: {
-            cost_per_sellable_hour: 
+            cost_per_sellable_hour:
               snapshot.try(:dig, "cash", "datapoints", "cost_per_sellable_hour", "value").try(:to_f) || 0,
-            actual_cost_per_hour_sold: 
+            actual_cost_per_hour_sold:
               snapshot.try(:dig, "cash", "datapoints", "actual_cost_per_hour_sold", "value").try(:to_f) || 0
           },
           accrual: {
-            cost_per_sellable_hour: 
+            cost_per_sellable_hour:
               snapshot.try(:dig, "accrual", "datapoints", "cost_per_sellable_hour", "value").try(:to_f) || 0,
-            actual_cost_per_hour_sold: 
+            actual_cost_per_hour_sold:
               snapshot.try(:dig, "accrual", "datapoints", "actual_cost_per_hour_sold", "value").try(:to_f) || 0
           },
           forecast_people: {},
         }
-      
-        acc[studio][:forecast_people][assignment.forecast_person] = 
+
+        acc[studio][:forecast_people][assignment.forecast_person] =
           acc[studio][:forecast_people][assignment.forecast_person] || { hours: 0 }
 
         acc[studio][:forecast_people][assignment.forecast_person][:hours] +=
@@ -430,10 +430,10 @@ class ProjectTracker < ApplicationRecord
 
     periods.each do |p|
       period, by_studio = p
-      
+
       by_studio.each do |s|
         studio, data = s
-        data[:total_studio_hours] = 
+        data[:total_studio_hours] =
           by_studio[studio][:forecast_people].reduce(0) do |acc, pd|
             forecast_person, hours_data = pd
             acc += hours_data[:hours]
@@ -444,7 +444,7 @@ class ProjectTracker < ApplicationRecord
 
     periods
   end
- 
+
   def raw_resourcing_cost_during_range_in_usd(start_range, end_range)
     assignments =
       ForecastAssignment

@@ -164,7 +164,7 @@ ActiveAdmin.register ProjectTracker do
       if resource.current_project_leads.any?
         resource.current_project_leads
       else
-        span("No Project Leadsd", class: "pill error")
+        span("No Project Leads", class: "pill error")
       end
     end
     column :project_safety_reps do |resource|
