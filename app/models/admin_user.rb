@@ -311,7 +311,7 @@ class AdminUser < ApplicationRecord
 
   def total_time_in_days_holding_project_lead_role
     project_lead_periods.reduce(0) do |acc, plp|
-      acc += (plp.period_ended_at - plp.period_started_at).to_i
+      acc += plp.time_held_in_days
     end
   end
 
