@@ -418,4 +418,24 @@ class AdminUserTest < ActiveSupport::TestCase
       salary: 107231.25
     }, AdminUser.default_skill_level)
   end
+
+  test "It creates the user's initial salary window on create" do
+    admin_user = AdminUser.create!({
+      email: "josh@sanctuary.computer",
+      password: "password"
+    })
+
+    actual_windows = admin_user.admin_user_salary_windows.reload.map do |salary_window|
+      salary_window.attributes.symbolize_keys.slice(:admin_user_id, :salary, :start_date, :end_date)
+    end
+
+    assert_equal([
+      {
+        admin_user_id: admin_user.id,
+        salary: BigDecimal("107231.25"),
+        start_date: Date.today,
+        end_date: nil
+      }
+    ], actual_windows)
+  end
 end

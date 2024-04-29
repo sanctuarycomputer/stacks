@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2024_05_20_174007) do
+ActiveRecord::Schema.define(version: 2024_05_21_155122) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -81,6 +81,16 @@ ActiveRecord::Schema.define(version: 2024_05_20_174007) do
     t.datetime "updated_at", precision: 6, null: false
     t.index ["admin_user_id"], name: "index_admin_user_racial_backgrounds_on_admin_user_id"
     t.index ["racial_background_id"], name: "index_admin_user_racial_backgrounds_on_racial_background_id"
+  end
+
+  create_table "admin_user_salary_windows", force: :cascade do |t|
+    t.bigint "admin_user_id", null: false
+    t.decimal "salary", null: false
+    t.date "start_date", null: false
+    t.date "end_date"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_admin_user_salary_windows_on_admin_user_id"
   end
 
   create_table "admin_users", force: :cascade do |t|
@@ -695,6 +705,7 @@ ActiveRecord::Schema.define(version: 2024_05_20_174007) do
   add_foreign_key "admin_user_interests", "interests"
   add_foreign_key "admin_user_racial_backgrounds", "admin_users"
   add_foreign_key "admin_user_racial_backgrounds", "racial_backgrounds"
+  add_foreign_key "admin_user_salary_windows", "admin_users"
   add_foreign_key "associates_award_agreements", "admin_users"
   add_foreign_key "finalizations", "reviews"
   add_foreign_key "full_time_periods", "admin_users"

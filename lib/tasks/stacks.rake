@@ -149,4 +149,13 @@ namespace :stacks do
       Sentry.capture_exception(e)
     end
   end
+
+  desc "Resync salary windows"
+  task :resync_salary_windows => :environment do
+    begin
+      AdminUser.all.each(&:sync_salary_windows!)
+    rescue => e
+      Sentry.capture_exception(e)
+    end
+  end
 end

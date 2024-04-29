@@ -134,5 +134,14 @@ class Review < ApplicationRecord
     workspace.sync!
     peer_reviews.each{|pr| pr.workspace.sync!}
     finalization.workspace.sync!
+
+    if archived?
+      sync_salary_windows!
+    end
+  end
+
+  def sync_salary_windows!
+    syncer = Stacks::AdminUserSalaryWindowSyncer.new(self.admin_user)
+    syncer.sync!
   end
 end

@@ -7,6 +7,10 @@ class Stacks::SkillLevelFinder
     self.new(date).find!(key)
   end
 
+  def self.effective_dates
+    LEVELS_BY_DATE.keys
+  end
+
   def initialize(date)
     @date = date
   end
