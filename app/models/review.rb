@@ -51,96 +51,21 @@ class Review < ApplicationRecord
     end
   end
 
-  LEVELS = {
-    junior_1: {
-      name: "J1",
-      min_points: 100,
-      salary: 63000
-    },
-    junior_2: {
-      name: "J2",
-      min_points: 155,
-      salary: 66675
-    },
-    junior_3: {
-      name: "J3",
-      min_points: 210,
-      salary: 70350
-    },
-    mid_level_1: {
-      name: "ML1",
-      min_points: 265,
-      salary: 73500
-    },
-    mid_level_2: {
-      name: "ML2",
-      min_points: 320,
-      salary: 77175
-    },
-    mid_level_3: {
-      name: "ML3",
-      min_points: 375,
-      salary: 80850
-    },
-    experienced_mid_level_1: {
-      name: "EML1",
-      min_points: 430,
-      salary: 84000
-    },
-    experienced_mid_level_2: {
-      name: "EML2",
-      min_points: 485,
-      salary: 89250
-    },
-    experienced_mid_level_3: {
-      name: "EML3",
-      min_points: 540,
-      salary: 96862.5
-    },
-    senior_1: {
-      name: "S1",
-      min_points: 595,
-      salary: 107231.25
-    },
-    senior_2: {
-      name: "S2",
-      min_points: 650,
-      salary: 118125.00
-    },
-    senior_3: {
-      name: "S3",
-      min_points: 690,
-      salary: 129543.75
-    },
-    senior_4: {
-      name: "S4",
-      min_points: 720,
-      salary: 141487.50
-    },
-    lead_1: {
-      name: "L1",
-      min_points: 750,
-      salary: 153956.25
-    },
-    lead_2: {
-      name: "L2",
-      min_points: 810,
-      salary: 166950.00
-    },
-  }.freeze
-
   def level
-    LEVELS.keys.reduce(nil) do |acc, l|
-      if acc.nil?
-        LEVELS[:junior_1]
-      else
-        if LEVELS[l][:min_points] <= total_points
-          LEVELS[l]
-        else
-          acc
-        end
+    levels = Stacks::SkillLevelFinder.find_all!(Date.today)
+    actual_points = total_points
+
+    descending_levels = levels.sort do |a, b|
+      b[:min_points] <=> a[:min_points]
+    end
+
+    descending_levels.each do |level|
+      if level[:min_points] < actual_points
+        return level
       end
     end
+
+    descending_levels.last
   end
 
   def score_table

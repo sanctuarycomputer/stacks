@@ -150,4 +150,272 @@ class AdminUserTest < ActiveSupport::TestCase
     assert admin_user.psu_earned_by(Date.new(2020, 12, 31)) == 11
     assert admin_user.psu_earned_by(Date.new(2021, 1, 1)) == 12
   end
+
+  test "#met_associates_skill_band_requirement_at when the user has an archived review exceeding the band" do
+    user = AdminUser.create!({
+      email: "josh@sanctuary.computer",
+      password: "password"
+    })
+
+    target_date = 5.days.ago
+
+    user.reviews.create!({
+      archived_at: target_date,
+      finalization: Finalization.new({
+        workspace: Workspace.new({
+          status: "complete"
+        })
+      })
+    })
+
+    Review.any_instance.expects(:total_points).returns(650)
+
+    assert_in_delta(
+      target_date,
+      user.met_associates_skill_band_requirement_at,
+      1.second
+    )
+  end
+
+  test "#met_associates_skill_band_requirement_at when the user has an archived review that does not exceed the band" do
+    user = AdminUser.create!({
+      email: "josh@sanctuary.computer",
+      password: "password"
+    })
+
+    target_date = 5.days.ago
+
+    user.reviews.create!({
+      archived_at: target_date,
+      finalization: Finalization.new({
+        workspace: Workspace.new({
+          status: "complete"
+        })
+      })
+    })
+
+    Review.any_instance.expects(:total_points).returns(400)
+
+    assert_nil(user.met_associates_skill_band_requirement_at)
+  end
+
+  test "#met_associates_skill_band_requirement_at with no archived reviews or old skill tree level" do
+    user = AdminUser.create!({
+      email: "josh@sanctuary.computer",
+      password: "password"
+    })
+
+    assert_nil(user.met_associates_skill_band_requirement_at)
+  end
+
+  test "#met_associates_skill_band_requirement_at with old skill level exceeding required points" do
+    user = AdminUser.create!({
+      email: "josh@sanctuary.computer",
+      password: "password",
+      old_skill_tree_level: :senior_4
+    })
+
+    start_date = Date.new(2023, 1, 1)
+
+    FullTimePeriod.create!({
+      admin_user: user,
+      started_at: start_date,
+      ended_at: nil,
+      contributor_type: :five_day,
+      expected_utilization: 0.8
+    })
+
+    assert_in_delta(
+      start_date,
+      user.met_associates_skill_band_requirement_at,
+      1.second
+    )
+  end
+
+  test "#met_associates_skill_band_requirement_at with old skill level not exceeding required points" do
+    user = AdminUser.create!({
+      email: "josh@sanctuary.computer",
+      password: "password",
+      old_skill_tree_level: :junior_1
+    })
+
+    start_date = Date.new(2023, 1, 1)
+
+    FullTimePeriod.create!({
+      admin_user: user,
+      started_at: start_date,
+      ended_at: nil,
+      contributor_type: :five_day,
+      expected_utilization: 0.8
+    })
+
+    assert_nil(user.met_associates_skill_band_requirement_at)
+  end
+
+  test "#skill_tree_level_without_salary when the user has an archived review" do
+    user = AdminUser.create!({
+      email: "josh@sanctuary.computer",
+      password: "password"
+    })
+
+    target_date = 5.days.ago
+
+    user.reviews.create!({
+      archived_at: target_date,
+      finalization: Finalization.new({
+        workspace: Workspace.new({
+          status: "complete"
+        })
+      })
+    })
+
+    Review.any_instance.expects(:total_points).returns(400)
+
+    assert_equal("ML3", user.skill_tree_level_without_salary)
+  end
+
+  test "#skill tree level_without_salary when the user does not have archived reviews but has an old skill tree level" do
+    user = AdminUser.create!({
+      email: "josh@sanctuary.computer",
+      password: "password",
+      old_skill_tree_level: :senior_3
+    })
+
+    assert_equal("S3", user.skill_tree_level_without_salary)
+  end
+
+  test "#skill_tree_level_without_salary when the user does not have an archived review or old skill tree level" do
+    user = AdminUser.create!({
+      email: "josh@sanctuary.computer",
+      password: "password"
+    })
+
+    assert_equal("No Reviews Yet", user.skill_tree_level_without_salary)
+  end
+
+  test "#skill_tree_level when the user has an archived review" do
+    user = AdminUser.create!({
+      email: "josh@sanctuary.computer",
+      password: "password"
+    })
+
+    target_date = 5.days.ago
+
+    user.reviews.create!({
+      archived_at: target_date,
+      finalization: Finalization.new({
+        workspace: Workspace.new({
+          status: "complete"
+        })
+      })
+    })
+
+    Review.any_instance.expects(:total_points).returns(400).twice
+
+    assert_equal("ML3 ($80,850)", user.skill_tree_level)
+  end
+
+  test "#skill_tree_level when the user does not have archived reviews but has an old skill tree level" do
+    user = AdminUser.create!({
+      email: "josh@sanctuary.computer",
+      password: "password",
+      old_skill_tree_level: :senior_3
+    })
+
+    assert_equal("S3 ($129,543.75)", user.skill_tree_level)
+  end
+
+  test "#skill_tree_level when the user does not have archived reviews or an old skill tree level" do
+    user = AdminUser.create!({
+      email: "josh@sanctuary.computer",
+      password: "password"
+    })
+
+    assert_equal("No Reviews Yet", user.skill_tree_level)
+  end
+
+  test "#skill_tree_level_on_date when the user has an archived review prior to the date" do
+    user = AdminUser.create!({
+      email: "josh@sanctuary.computer",
+      password: "password"
+    })
+
+    target_date = 5.days.ago
+
+    user.reviews.create!({
+      archived_at: target_date,
+      finalization: Finalization.new({
+        workspace: Workspace.new({
+          status: "complete"
+        })
+      })
+    })
+
+    Review.any_instance.expects(:total_points).returns(400)
+
+    assert_equal({
+      name: "ML3",
+      min_points: 375,
+      salary: 80850
+    }, user.skill_tree_level_on_date(2.days.ago))
+  end
+
+  test "#skill_tree_level_on_date when the user has an archived review but it falls after the date" do
+    user = AdminUser.create!({
+      email: "josh@sanctuary.computer",
+      password: "password"
+    })
+
+    target_date = 5.days.ago
+
+    user.reviews.create!({
+      archived_at: target_date,
+      finalization: Finalization.new({
+        workspace: Workspace.new({
+          status: "complete"
+        })
+      })
+    })
+
+    assert_equal({
+      name: "S1",
+      min_points: 595,
+      salary: 107231.25,
+    }, user.skill_tree_level_on_date(7.days.ago))
+  end
+
+  test "#skill_tree_level_on_date when the user does not have an archived review but has an old skill tree level" do
+    user = AdminUser.create!({
+      email: "josh@sanctuary.computer",
+      password: "password",
+      old_skill_tree_level: :senior_3
+    })
+
+    assert_equal({
+      name: "S3",
+      min_points: 690,
+      salary: 129543.75
+    }, user.skill_tree_level_on_date(7.days.ago))
+  end
+
+  test "#skill_tree_level_on_date when the user does not have an archived review or old skill tree level" do
+    user = AdminUser.create!({
+      email: "josh@sanctuary.computer",
+      password: "password"
+    })
+
+    assert_equal({
+      name: "S1",
+      min_points: 595,
+      salary: 107231.25
+    }, user.skill_tree_level_on_date(7.days.ago))
+  end
+
+  test "#default_skill_level returns the expected value" do
+    assert_equal({
+      name: "S1",
+      min_points: 595,
+      salary: 107231.25
+    }, AdminUser.default_skill_level)
+  end
 end

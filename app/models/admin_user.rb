@@ -176,19 +176,32 @@ class AdminUser < ApplicationRecord
   end
 
   def met_associates_skill_band_requirement_at
-    min_points = Review::LEVELS[:senior_2][:min_points]
     # Find the first review that was above the requirement
-    first_review_above_requirement =
-      archived_reviews.reverse.find do |r|
-        r.total_points >= min_points
-      end
+    first_review_above_requirement = archived_reviews.reverse.find do |r|
+      level = Stacks::SkillLevelFinder.find!(r.archived_at, :senior_2)
+      r.total_points >= level[:min_points]
+    end
+
     if first_review_above_requirement.try(:archived_at)
       return first_review_above_requirement.archived_at
     end
 
-    # Not found, so check if the old_skill_tree_level counts
-    if old_skill_tree_level.present? && Review::LEVELS[old_skill_tree_level.to_sym][:min_points] >= min_points
-      full_time_periods.order("started_at ASC").first.try(:started_at)
+    # Check if the old_skill_tree_level counts.
+    if old_skill_tree_level.blank?
+      return nil
+    end
+
+    start_date = full_time_periods.order("started_at ASC").first.try(:started_at)
+
+    if start_date.blank?
+      return nil
+    end
+
+    min_level = Stacks::SkillLevelFinder.find!(start_date, :senior_2)
+    actual_level = Stacks::SkillLevelFinder.find!(start_date, old_skill_tree_level)
+
+    if actual_level[:min_points] >= min_level[:min_points]
+      start_date
     end
   end
 
@@ -461,7 +474,7 @@ class AdminUser < ApplicationRecord
       "#{latest_review.level[:name]}"
     else
       if old_skill_tree_level.present?
-        level = Review::LEVELS[old_skill_tree_level.to_sym]
+        level = Stacks::SkillLevelFinder.find!(Date.today, old_skill_tree_level)
         "#{level[:name]}"
       else
         "No Reviews Yet"
@@ -475,7 +488,7 @@ class AdminUser < ApplicationRecord
       "#{latest_review.level[:name]} ($#{latest_review.level[:salary].to_s(:delimited)})"
     else
       if old_skill_tree_level.present?
-        level = Review::LEVELS[old_skill_tree_level.to_sym]
+        level = Stacks::SkillLevelFinder.find!(Date.today, old_skill_tree_level)
         "#{level[:name]} ($#{level[:salary].to_s(:delimited)})"
       else
         "No Reviews Yet"
@@ -493,14 +506,14 @@ class AdminUser < ApplicationRecord
     if latest_review_before_date.present?
       latest_review_before_date.level
     elsif old_skill_tree_level.present?
-      Review::LEVELS[old_skill_tree_level.to_sym]
+      Stacks::SkillLevelFinder.find!(Date.today, old_skill_tree_level)
     else
       AdminUser.default_skill_level
     end
   end
 
   def self.default_skill_level
-    Review::LEVELS[:senior_1]
+    Stacks::SkillLevelFinder.find!(Date.today, :senior_1)
   end
 
   def self.default_cost_of_employment_on_date(date)
