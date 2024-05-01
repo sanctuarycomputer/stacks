@@ -238,6 +238,7 @@ GEM
     mini_mime (1.0.2)
     mini_portile2 (2.5.0)
     minitest (5.14.3)
+    mocha (2.0.0)
     msgpack (1.4.2)
     multi_json (1.15.0)
     multi_xml (0.6.0)
@@ -466,6 +467,7 @@ DEPENDENCIES
   intuit-oauth
   listen (~> 3.2)
   mini_portile2 (= 2.5.0)
+  mocha
   noticed (~> 1.5)
   omniauth-google-oauth2
   omniauth-rails_csrf_protection
