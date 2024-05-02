@@ -300,7 +300,9 @@ class Studio < ApplicationRecord
   end
 
   def skill_levels_on(date)
-    core_members_active_on(date).reduce(Marshal.load(Marshal.dump(Review::LEVELS))) do |acc, member|
+    level_data = Marshal.load(Marshal.dump(Stacks::SkillLevelFinder::LEVELS_BY_DATE.values.last))
+
+    core_members_active_on(date).reduce(level_data) do |acc, member|
       level_key = acc.keys.find{|k| acc[k][:name] == member.skill_tree_level_on_date(date)[:name]}
       if level_key
         acc[level_key][:count] ||= 0
