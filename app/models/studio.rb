@@ -300,17 +300,16 @@ class Studio < ApplicationRecord
   end
 
   def skill_levels_on(date)
-    level_data = Marshal.load(Marshal.dump(Stacks::SkillLevelFinder::LEVELS_BY_DATE.values.last))
+    archetypal_levels = Stacks::SkillLevelFinder.find_all!(date)
 
-    core_members_active_on(date).reduce(level_data) do |acc, member|
-      level_key = acc.keys.find{|k| acc[k][:name] == member.skill_tree_level_on_date(date)[:name]}
-      if level_key
-        acc[level_key][:count] ||= 0
-        acc[level_key][:count] += 1
-      else
-        acc[:unknown] ||= { name: :unknown, count: 0 }
-        acc[:unknown][:count] += 1
-      end
+    bands = archetypal_levels.reduce({}) do |acc, archetypal_level|
+      acc[archetypal_level[:name]] = 0
+      acc
+    end
+
+    core_members_active_on(date).reduce(bands) do |acc, member|
+      member_level = member.skill_tree_level_on_date(date)
+      acc[member_level[:name]] += 1
       acc
     end
   end
