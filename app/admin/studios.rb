@@ -322,26 +322,25 @@ ActiveAdmin.register Studio do
       }]
     }
 
-    skill_level_data = 
-      resource.skill_levels_on(Date.today)
+    band_tallies = resource.skill_levels_on(Date.today)
 
     studio_senior_ratio_data =
-      skill_level_data.reduce({ senior: 0, total: 0 }) do |acc, band|
-        if band[1][:name].starts_with?("S") || band[1][:name].starts_with?("L")
-          acc[:senior] += band[1][:count] || 0
+      band_tallies.reduce({ senior: 0, total: 0 }) do |acc, band_tally|
+        name, count = band_tally
+
+        if name.starts_with?("S") || name.starts_with?("L")
+          acc[:senior] += count
         end
-        acc[:total] += band[1][:count] || 0
+        acc[:total] += count
         acc
       end
 
     studio_talent_pool_data = {
-      labels: skill_level_data.values.map{|s| s[:name] },
+      labels: band_tallies.keys,
       datasets: [{
         label: 'Total',
         backgroundColor: COLORS[0],
-        data: (skill_level_data.values.map do |s|
-          s[:count] || 0
-        end)
+        data: band_tallies.values
       }]
     }
 
