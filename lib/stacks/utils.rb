@@ -23,6 +23,10 @@ class Stacks::Utils
       a.reduce(0) { |m,r| m += r[0] * r[1] } / a.reduce(0) { |m,r| m += r[1] }.to_f
     end
 
+    def dashify_uuid(uuid_without_dashes)
+      uuid_without_dashes.unpack("A8 A4 A4 A4 A12").join('-')
+    end
+
     def business_days_between(start_date, end_date)
       days_between = (end_date - start_date).to_i
       return 0 unless days_between > 0

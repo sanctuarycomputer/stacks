@@ -61,6 +61,18 @@ namespace :stacks do
     end
   end
 
+  desc "Sync Notion"
+  task :sync_notion => :environment do
+    begin
+      notion = Stacks::Notion.new
+      Parallel.map(Stacks::Notion::DATABASE_IDS.values, in_threads: 3) do |db_id|
+        notion.sync_database(db_id)
+      end
+    rescue => e
+      Sentry.capture_exception(e)
+    end
+  end
+
   desc "Sample Social Properties"
   task :sample_social_properties => :environment do
     begin
@@ -87,7 +99,7 @@ namespace :stacks do
       Parallel.map(Studio.internal, in_threads: 2) { |s| s.generate_snapshot! }
       # Next, do reinvestment studios
       Parallel.map(Studio.reinvestment, in_threads: 2) { |s| s.generate_snapshot! }
-      # Finally, do client_services, which require data from internal studios 
+      # Finally, do client_services, which require data from internal studios
       # (and garden3d hides reinvestment data)
       Parallel.map(Studio.client_services, in_threads: 2) { |s| s.generate_snapshot! }
       # Now, generate project snapshots
