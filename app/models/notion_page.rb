@@ -1,13 +1,22 @@
 class NotionPage < ApplicationRecord
+  self.primary_key = 'notion_id'
   has_paper_trail
 
+  scope :milestones, -> {
+    where(
+      notion_parent_type: "database_id",
+      notion_parent_id: Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:MILESTONES])
+    )
+  }
+
+  scope :page_title_eq, ->(page_title) { where_page_title(page_title) }
+
+  def self.ransackable_scopes(*)
+    %i(page_title_eq)
+  end
+
   def self.where_page_title(name)
-    NotionPage.find_by_sql("
-      SELECT *
-      FROM notion_pages,
-          LATERAL JSONB_ARRAY_ELEMENTS(notion_pages.data -> 'properties' -> 'Name' -> 'title') name_item
-      WHERE name_item ->> 'plain_text' = '#{name}'
-    ")
+    NotionPage.where("data -> 'properties' -> 'Name' -> 'title' @> ?", [{"plain_text": name}].to_json)
   end
 
   def self.where_status(status)
@@ -38,7 +47,11 @@ class NotionPage < ApplicationRecord
   end
 
   def status
-    data.dig("properties", "Status", "select", "name")
+    if notion_parent_id == Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:MILESTONES])
+      data.dig("properties", "✳️ Status (New)", "status", "name")
+    else
+      data.dig("properties", "Status", "select", "name")
+    end
   end
 
   def created_at
@@ -47,8 +60,15 @@ class NotionPage < ApplicationRecord
 
   def status_history
     versions.map do |v|
-      prev_status = v.changeset["data"][0].dig("properties", "Status", "select", "name") || v.changeset["data"][0].dig("properties", 'Stage (formerly "Status")', "select", "name")
-      current_status = v.changeset["data"][1].dig("properties", "Status", "select", "name") || v.changeset["data"][1].dig("properties", 'Stage (formerly "Status")', "select", "name")
+      prev_status = ""
+      current_status = ""
+      if notion_parent_id == Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:TASKS])
+        prev_status = v.changeset["data"][0].dig("properties", "✳️ Status 🚦", "status", "name")
+        current_status = v.changeset["data"][1].dig("properties", "✳️ Status 🚦", "status", "name")
+      else
+        prev_status = v.changeset["data"][0].dig("properties", "Status", "select", "name") || v.changeset["data"][0].dig("properties", 'Stage (formerly "Status")', "select", "name")
+        current_status = v.changeset["data"][1].dig("properties", "Status", "select", "name") || v.changeset["data"][1].dig("properties", 'Stage (formerly "Status")', "select", "name")
+      end
 
       next nil if prev_status == current_status
       {
