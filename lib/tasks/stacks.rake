@@ -66,6 +66,7 @@ namespace :stacks do
     begin
       notion = Stacks::Notion.new
       Parallel.map(Stacks::Notion::DATABASE_IDS.values, in_threads: 3) do |db_id|
+        puts "will sync #{db_id}"
         notion.sync_database(db_id)
       end
     rescue => e

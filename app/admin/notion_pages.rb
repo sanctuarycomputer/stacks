@@ -14,9 +14,10 @@ ActiveAdmin.register NotionPage do
 
   show do
     if notion_page.notion_parent_id == Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:MILESTONES])
+      tasks = NotionPage.where(notion_id: notion_page.data["properties"]["Tasks"]["relation"].map{|t| t["id"]})
       render 'milestones_show', {
         milestone: notion_page,
-        tasks: NotionPage.where(notion_id: notion_page.data["properties"]["Tasks"]["relation"].map{|t| t["id"]})
+        tasks: tasks
       }
     else
       h1 "Not sure how to render this notion page"
