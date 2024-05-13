@@ -84,20 +84,10 @@ class Stacks::Notion
   end
 
   def sync_database(database_id)
-    ActiveRecord::Base.transaction do
-      results = []
-      next_cursor = nil
-      loop do
-        response = query_database(database_id, next_cursor)
-        results = [*results, *response["results"]]
-        next_cursor = response["next_cursor"]
-        break if next_cursor.nil?
-      end
-
-      # We're using papertrail to capture diffs,
-      # so we can't use upsert, which doesn't run
-      # callbacks.
-      results.each do |r|
+    next_cursor = nil
+    loop do
+      response = query_database(database_id, next_cursor)
+      response["results"].each do |r|
         r.delete("icon") # Custom icons have an AWS Expiry that break our diff
         r.delete("cover") # Cover images have an AWS Expiry that break our diff
         parent_type = r.dig("parent", "type")
@@ -112,6 +102,8 @@ class Stacks::Notion
           })
         end
       end
+      next_cursor = response["next_cursor"]
+      break if next_cursor.nil?
     end
   end
 end
