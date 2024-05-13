@@ -175,12 +175,22 @@ body { font-family: 'Inter', sans-serif; }
 }
 
 .admin_inputs {
+  ol.fragments-group {
+    padding: 0;
+  }
+  li {
+    border-bottom: 1px dashed $color-lighter-grey;
+    padding: 20px 0px;
+  }
+  li label {
+    font-size: 14px;
+  }
+  li p.inline-hints {
+    font-size: 0.95em;
+    color: $color-grey;
+    margin: 0.5em 0 0 0;
+  }
   li.input.stringish, li.input.text, li.input.boolean {
-    p.inline-hints {
-      font-size: 14px;
-      color: $color-grey;
-    }
-
     display: flex;
     flex-direction: column;
 
@@ -198,6 +208,7 @@ body { font-family: 'Inter', sans-serif; }
       }
       label {
         font-weight: bold;
+        margin-bottom: 0;
       }
     }
 
@@ -336,7 +347,7 @@ body.update.admin_reviews {
         box-shadow: none;
         border-radius: 0px;
         background-color: transparent;
-        border-bottom: 1px dashed #e8e8e8;
+        border-bottom: 1px dashed $color-light-grey;
         ol {
           display: flex;
           align-items: center;

@@ -14,6 +14,7 @@ ActiveAdmin.register AdminUser do
       :admin_user_id,
       :started_at,
       :ended_at,
+      :considered_temporary,
       :contributor_type,
       :expected_utilization,
       :_edit,
@@ -225,17 +226,19 @@ ActiveAdmin.register AdminUser do
         f.input :profit_share_notes
 
         f.has_many :full_time_periods, heading: false, allow_destroy: true do |a|
-          a.input :started_at, hint: "The date this employment period started"
-          a.input :ended_at, hint: "Leave blank until the nature of employment changes (termination or a move to 4-day work week, which requires an additional employment period to be added here)"
+          a.input :started_at, hint: "The date this employment period started."
+          a.input :ended_at, hint: "Leave blank until the nature of employment changes (termination or a move to 4-day work week, which requires an additional employment period to be added here)."
+          a.input :considered_temporary, hint: "Check this box if this period was considered temporary (like an internship)."
           a.input :contributor_type,
             include_blank: false,
-            as: :select
+            as: :select,
+            hint: "Use Variable hours for a contractor who's billing us hourly. Otherwise, they should be Four or Five day contributors."
           a.input :expected_utilization, hint: "Ignored when Contributor Type is `Variable Hours`. ICs should be 0.8, Support Team members are 0.0. Studio Coordinators depend on the size of the studio coordination group."
         end
 
 script (<<-JS
   function greyAndZeroOutExpectedUtilizationFieldForVariableHoursContributorType(el) {
-    var expectedUtilizationInput = 
+    var expectedUtilizationInput =
       Array.from(el.parentElement.parentElement.querySelectorAll('input')).find(i => i.id.endsWith("_expected_utilization"))
     if (el.value === "variable_hours") {
       expectedUtilizationInput.value = 0;
@@ -244,7 +247,7 @@ script (<<-JS
       expectedUtilizationInput.disabled = false;
     }
   }
-  const contributorTypeSelects = 
+  const contributorTypeSelects =
     Array.from(document.querySelectorAll('select')).filter(s => s.id.endsWith("_contributor_type"));
   contributorTypeSelects.forEach(el => {
     greyAndZeroOutExpectedUtilizationFieldForVariableHoursContributorType(el);

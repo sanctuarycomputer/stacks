@@ -179,6 +179,10 @@ class AdminUser < ApplicationRecord
     @_full_time_periods ||= super
   end
 
+  def considered_temporary?
+    full_time_periods.map(&:considered_temporary).all?
+  end
+
   def met_associates_skill_band_requirement_at
     # Find the first review that was above the requirement
     first_review_above_requirement = archived_reviews.reverse.find do |r|

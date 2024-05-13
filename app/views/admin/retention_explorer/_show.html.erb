@@ -15,6 +15,14 @@
   </div>
 </div>
 
+<p>
+  <% admin_users_considered_temporary.each do |a| %>
+    <%= link_to a[:admin_user].email, admin_admin_user_path(a[:admin_user]) %>,
+  <% end %>
+  not included as their employment was considered temporary.
+</p>
+
+
 <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom:20px;table-layout:fixed;">
   <thead>
     <tr>
