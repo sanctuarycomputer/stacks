@@ -5,7 +5,7 @@ class Stacks::Team
     end
 
     def mean_tenure_in_days(admin_users_tenure_tuples = admin_users_sorted_by_tenure_in_days)
-      tenures = admin_users_tenure_tuples.map{|tuple| tuple[:days]}
+      tenures = admin_users_tenure_tuples.reject{|a| a[:considered_temporary] }.map{|tuple| tuple[:days]}
       tenures.sum(0.0) / tenures.size
     end
 
@@ -13,7 +13,8 @@ class Stacks::Team
       AdminUser.core.map do |a|
         {
           admin_user: a,
-          days: (a.full_time_periods.last.ended_at_or_now - a.full_time_periods.first.started_at).to_i
+          days: (a.full_time_periods.last.ended_at_or_now - a.full_time_periods.first.started_at).to_i,
+          considered_temporary: a.considered_temporary?
         }
       end.sort {|a,b| b[:days] <=> a[:days]}
     end

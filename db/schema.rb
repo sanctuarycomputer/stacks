@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2024_05_02_041442) do
+ActiveRecord::Schema.define(version: 2024_05_13_172417) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -255,6 +255,7 @@ ActiveRecord::Schema.define(version: 2024_05_02_041442) do
     t.datetime "updated_at", precision: 6, null: false
     t.decimal "expected_utilization", default: "0.8"
     t.integer "contributor_type", default: 0
+    t.boolean "considered_temporary", default: false
     t.index ["admin_user_id"], name: "index_full_time_periods_on_admin_user_id"
   end
 
