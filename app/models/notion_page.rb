@@ -1,5 +1,4 @@
 class NotionPage < ApplicationRecord
-  self.primary_key = 'notion_id'
   has_paper_trail
 
   scope :milestones, -> {
