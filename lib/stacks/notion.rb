@@ -102,7 +102,8 @@ class Stacks::Notion
           })
         end
       end
-      break if response["next_cursor"].nil?
+      next_cursor = response["next_cursor"]
+      break if next_cursor.nil?
     end
   end
 end
