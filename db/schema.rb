@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2024_03_20_020826) do
+ActiveRecord::Schema.define(version: 2024_05_02_041442) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -167,6 +167,23 @@ ActiveRecord::Schema.define(version: 2024_03_20_020826) do
     t.datetime "deleted_at"
     t.index ["deleted_at"], name: "index_finalizations_on_deleted_at"
     t.index ["review_id"], name: "index_finalizations_on_review_id"
+  end
+
+  create_table "forecast_assignment_daily_financial_snapshots", force: :cascade do |t|
+    t.bigint "forecast_assignment_id", null: false
+    t.bigint "forecast_person_id", null: false
+    t.bigint "forecast_project_id", null: false
+    t.date "effective_date", null: false
+    t.bigint "studio_id", null: false
+    t.decimal "hourly_cost", null: false
+    t.decimal "hours", null: false
+    t.boolean "needs_review", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["forecast_assignment_id"], name: "idx_snapshots_on_forecast_assignment_id"
+    t.index ["forecast_person_id"], name: "idx_snapshots_on_forecast_person_id"
+    t.index ["forecast_project_id"], name: "idx_snapshots_on_forecast_project_id"
+    t.index ["needs_review"], name: "idx_snapshots_on_needs_review"
   end
 
   create_table "forecast_assignments", force: :cascade do |t|

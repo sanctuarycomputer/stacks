@@ -104,6 +104,7 @@ namespace :stacks do
       Parallel.map(Studio.client_services, in_threads: 2) { |s| s.generate_snapshot! }
       # Now, generate project snapshots
       Parallel.map(ProjectTracker.all, in_threads: 10) { |pt| pt.generate_snapshot! }
+      Stacks::DailyFinancialSnapshotter.snapshot_all!
 
       puts "~~~> DOING MISC"
       ProfitSharePass.ensure_exists!
