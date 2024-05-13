@@ -84,12 +84,9 @@ class Stacks::Notion
   end
 
   def sync_database(database_id)
-    results = []
     next_cursor = nil
     loop do
       response = query_database(database_id, next_cursor)
-      results = [*results, *response["results"]]
-
       response["results"].each do |r|
         r.delete("icon") # Custom icons have an AWS Expiry that break our diff
         r.delete("cover") # Cover images have an AWS Expiry that break our diff
@@ -105,7 +102,6 @@ class Stacks::Notion
           })
         end
       end
-
       break if response["next_cursor"].nil?
     end
   end
