@@ -104,7 +104,6 @@ namespace :stacks do
         sleep 1.5
       end
     rescue => e
-      binding.pry
       Sentry.capture_exception(e)
     end
   end
