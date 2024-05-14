@@ -2,7 +2,7 @@ ActiveAdmin.register MailingList do
   config.filters = false
   config.paginate = false
   actions :index, :new, :show, :create, :edit, :update, :destroy
-  permit_params :name
+  permit_params :name, :provider
   menu false
   belongs_to :studio
 
