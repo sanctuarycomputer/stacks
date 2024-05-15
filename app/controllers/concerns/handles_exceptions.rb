@@ -21,7 +21,6 @@ module HandlesExceptions
     when ActionController::InvalidAuthenticityToken
       handle_for_json(Stacks::Errors::Unauthorized.new('Invalid Authenticity Token'))
     else
-      raise exception
       handle_for_json(Stacks::Errors::Unexpected.new('Unhandled exception', exception))
     end
   end

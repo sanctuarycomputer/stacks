@@ -401,7 +401,7 @@
     deleteButton.addEventListener('click', async  function() {
       const shouldDelete = confirm("Are you sure you want to delete this comment?");
       if (!shouldDelete) return;
-      const csrfToken = document.querySelector("[name='csrf-token']").content;      
+      const csrfToken = document.querySelector("[name='csrf-token']").content;
       const response = await fetch(`${window.location.pathname}/comments`, {
         method: 'DELETE',
         headers: {
@@ -464,7 +464,7 @@
     e.addEventListener("submit", async function(event) {
       event.preventDefault();
 
-      const csrfToken = document.querySelector("[name='csrf-token']").content;      
+      const csrfToken = document.querySelector("[name='csrf-token']").content;
       const response = await fetch(`${window.location.pathname}/comments`, {
         method: 'POST',
         headers: {
@@ -473,14 +473,14 @@
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          namespace: event.target.dataset.namespace, 
+          namespace: event.target.dataset.namespace,
           body: event.target.querySelector('textarea').value
         })
       });
       event.target.querySelector('textarea').value = "";
       const data = await response.json();
       const modalEl = e.closest(".full-screen-modal");
-      
+
       insertComment(modalEl, data.data);
     });
   });

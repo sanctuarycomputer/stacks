@@ -82,6 +82,32 @@ namespace :stacks do
     end
   end
 
+  desc "Sync Contacts"
+  task :sync_contacts => :environment do
+    begin
+      # First ensure that any new mailing list subscribers have a Contact record
+      MailingList.includes(:mailing_list_subscribers).each do |ml|
+        ml.mailing_list_subscribers.each do |sub|
+          contact = Contact.create_or_find_by!(email: sub.email)
+          contact.update(sources: [*contact.sources, "#{ml.studio.mini_name}:#{ml.provider}:#{ml.name.parameterize(separator: '_')}"].uniq)
+        end
+      end
+
+      # Sync each contact to Apollo
+      apollo = Stacks::Apollo.new
+      Contact.where(apollo_id: nil).each do |c|
+        existing_contacts = apollo.search_by_email(c.email)
+        apollo_contact = existing_contacts.first || apollo.create_contact(c.email)
+        c.update(apollo_id: apollo_contact["id"])
+        # Apollo API free plan only allows 50 requests per minute, 200 per hour, and 600 per day,
+        # so I'll schedule this 3 times per day and it will eventually sync all contacts over.
+        sleep 1.5
+      end
+    rescue => e
+      Sentry.capture_exception(e)
+    end
+  end
+
   desc "Daily Tasks"
   task :daily_tasks => :environment do
     begin

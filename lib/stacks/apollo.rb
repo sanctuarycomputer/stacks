@@ -18,7 +18,15 @@ class Stacks::Apollo
     self.class.post("/contacts", {
       body: JSON.dump({ "email": email }),
       headers: @headers
+    })["contact"]
+  end
+
+  def search_by_email(email)
+    resp = self.class.post("/contacts/search", {
+      body: JSON.dump({ "q_keywords": email }),
+      headers: @headers
     })
+    resp.parsed_response["contacts"]
   end
 end
 
