@@ -3,6 +3,7 @@ ActiveAdmin.register Contact do
   config.per_page = [1000, 500, 100]
   actions :index, :new, :create, :edit, :update
   permit_params :email, sources: []
+  config.sort_order = "updated_at_desc"
 
   filter :email_cont, as: :string, label: "Email Contains"
 
