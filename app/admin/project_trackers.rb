@@ -331,6 +331,16 @@ ActiveAdmin.register ProjectTracker do
       })
     end
 
+    if resource.snapshot[accounting_method].try(:dig, "cosr_new")
+      burnup_data[:data][:datasets].push({
+        borderColor: Stacks::Utils::COLORS[9], # color of dots
+        backgroundColor: Stacks::Utils::COLORS[9], # color of line
+        label: "Cost of Services Rendered (COSR - NEW)",
+        data: resource.snapshot[accounting_method].try(:dig, "cosr_new"),
+        pointRadius: 1
+      })
+    end
+
     render(partial: 'show', locals: {
       burnup_data: burnup_data
     })
