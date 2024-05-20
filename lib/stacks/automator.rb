@@ -10,6 +10,41 @@ class Stacks::Automator
       @_twist ||= Stacks::Twist.new
     end
 
+    def send_people_of_stale_tasks_digest
+      raw_digest =
+        NotionPage.stale_tasks.reduce({}) do |acc, task|
+          key = task.data.dig("properties").keys.find{|k| k.downcase.include?("steward")}
+          people = task.data.dig("properties", key)
+          stewards_emails = people.dig("people").map{|p| p.dig("person", "email")}
+
+          stewards_emails.compact.each do |e|
+            acc[e] = acc[e] || { tasks_stewarding: [], tasks_assigned: [] }
+            acc[e][:tasks_stewarding] = [*acc[e][:tasks_stewarding], task]
+          end
+
+          key = task.data.dig("properties").keys.find{|k| k.downcase.include?("assignees")}
+          people = task.data.dig("properties", key)
+          assignees_emails = people.dig("people").map{|p| p.dig("person", "email")}
+
+          assignees_emails.compact.each do |e|
+            acc[e] = acc[e] || { tasks_stewarding: [], tasks_assigned: [] }
+            acc[e][:tasks_assigned] = [*acc[e][:tasks_assigned], task]
+          end
+
+          acc
+        end
+
+      raw_digest.each do |k, v|
+        if k == "hugh@sanctuary.computer"
+          a = AdminUser.find_by(email: k)
+          StaleTasksNotification.with(
+            digest: v,
+            include_admins: false,
+          ).deliver(a) if a.present?
+        end
+      end
+    end
+
     def message_operations_channel_thread(thread_title, message)
       channel = twist.get_channel("467805")
       thread = twist.get_all_threads(channel["id"]).find do |t|
@@ -135,7 +170,7 @@ class Stacks::Automator
 
       if send_twist_reminders
         needed_reminding.each do |person|
-          sc_twist_users = 
+          sc_twist_users =
             studio_coordinator_twist_users[person[:forecast_data].studio(studios)]
           participant_ids = [
             *(sc_twist_users.any? ? sc_twist_users : admin_twist_users).map{|tu| tu["id"]},
