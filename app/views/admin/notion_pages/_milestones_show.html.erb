@@ -1,1 +1,140 @@
-hi
+<a href="https://www.notion.so/garden3d/<%= milestone.notion_id.gsub('-', '') %>" target="_blank" style="margin-right: 6px">
+  <p class="nag" style="margin-bottom: 20px;margin-right: 6px;">
+    Open in Notion ↗
+  </p>
+</a>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Budget Burnup</p>
+    </div>
+    <div class="module-body">
+      <canvas id="burnup"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+  luxon.Settings.defaultLocale = "en";
+  new Chart(document.getElementById('burnup'), <%= burnup_data.to_json.html_safe %>);
+</script>
+
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">🚧 Remaining Tasks</h2>
+  </div>
+</div>
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index mb2">
+  <thead>
+    <tr>
+      <th class="col">Task Name</th>
+      <th class="col">Complexity</th>
+      <th class="col">Status</th>
+      <th class="col">Due Date</th>
+      <th class="col text-right">View in Notion</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% tasks_by_status[:todo].each_with_index do |t, index| %>
+      <tr class="<%= index.even? ? "even" : "odd" %>">
+        <td class="col">
+          <%= link_to t[:task].page_title, admin_notion_page_path(t[:task]) %>
+        </td>
+        <td class="col">
+          1
+        </td>
+        <td class="col">
+          <%= t[:task].status %>
+        </td>
+        <td class="col">
+          <% if t[:due_date].present? && t[:due_date] < Date.today %>
+            <span class="pill error"><%= t[:due_date]&.strftime("%B %d, %Y") %></span>
+          <% else %>
+            <%= t[:due_date]&.strftime("%B %d, %Y") || "—" %>
+          <% end %>
+
+        </td>
+        <td class="col text-right">
+          <a href="https://www.notion.so/garden3d/<%= milestone.notion_id.gsub('-', '') %>&pm=s" target="_blank">View in Notion ↗</a>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
+
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">✅ Completed Tasks</h2>
+  </div>
+</div>
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index mb2">
+  <thead>
+    <tr>
+      <th class="col">Task Name</th>
+      <th class="col">Complexity</th>
+      <th class="col">Status</th>
+      <th class="col">Due Date</th>
+      <th class="col text-right">View in Notion</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% tasks_by_status[:completed].each_with_index do |t, index| %>
+      <tr class="<%= index.even? ? "even" : "odd" %>">
+        <td class="col">
+          <%= link_to t[:task].page_title, admin_notion_page_path(t[:task]) %>
+        </td>
+        <td class="col">
+          1
+        </td>
+        <td class="col">
+          <%= t[:task].status %>
+        </td>
+        <td class="col">
+          <%= t[:due_date]&.strftime("%B %d, %Y") || "—" %>
+        </td>
+        <td class="col text-right">
+          <a href="https://www.notion.so/garden3d/<%= milestone.notion_id.gsub('-', '') %>&pm=s" target="_blank">View in Notion ↗</a>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
+
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">🪦 Let Go Tasks</h2>
+  </div>
+</div>
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index mb2">
+  <thead>
+    <tr>
+      <th class="col">Task Name</th>
+      <th class="col">Complexity</th>
+      <th class="col">Status</th>
+      <th class="col">Due Date</th>
+      <th class="col text-right">View in Notion</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% tasks_by_status[:let_go].each_with_index do |t, index| %>
+      <tr class="<%= index.even? ? "even" : "odd" %>">
+        <td class="col">
+          <%= link_to t[:task].page_title, admin_notion_page_path(t[:task]) %>
+        </td>
+        <td class="col">
+          1
+        </td>
+        <td class="col">
+          <%= t[:task].status %>
+        </td>
+        <td class="col">
+          <%= t[:due_date]&.strftime("%B %d, %Y") || "Unset" %>
+        </td>
+        <td class="col text-right">
+          <a href="https://www.notion.so/garden3d/<%= milestone.notion_id.gsub('-', '') %>&pm=s" target="_blank">View in Notion ↗</a>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2024_05_14_210637) do
+ActiveRecord::Schema.define(version: 2024_05_20_174007) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -350,6 +350,7 @@ ActiveRecord::Schema.define(version: 2024_05_14_210637) do
     t.string "notion_parent_type"
     t.string "notion_parent_id"
     t.jsonb "data", default: {}, null: false
+    t.string "page_title", default: "", null: false
     t.index ["notion_id"], name: "index_notion_pages_on_notion_id", unique: true
   end
 

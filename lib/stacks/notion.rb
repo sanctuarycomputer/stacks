@@ -98,7 +98,8 @@ class Stacks::Notion
           page.update_attributes!({
             notion_parent_type: parent_type,
             notion_parent_id: parent_id,
-            data: r
+            data: r,
+            page_title: (r.dig("properties", "Name", "title")[0] || {}).dig("plain_text") || ""
           })
         end
       end
