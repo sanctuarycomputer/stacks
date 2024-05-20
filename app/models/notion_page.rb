@@ -12,7 +12,7 @@ class NotionPage < ApplicationRecord
     milestones.where("page_title LIKE ?", "In 2024,%")
   }
 
-  def stale_tasks {
+  def stale_tasks
     where(
       notion_parent_type: "database_id",
       notion_parent_id: Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:TASKS])
