@@ -397,3 +397,7 @@ ActiveAdmin::Views::Pages::Index.class_eval do
     end
   end
 end
+
+module ActiveAdmin::ViewHelpers
+  include CosrExplorerHelper
+end

@@ -15,6 +15,7 @@ class Stacks::CostOfServicesRenderedCalculator
         @end_date
       )
       .pluck(
+        :forecast_person_id,
         :forecast_assignment_id,
         :effective_date,
         :hours,
@@ -27,6 +28,7 @@ class Stacks::CostOfServicesRenderedCalculator
 
       while daily_snapshots.length > 0
         (
+          forecast_person_id,
           forecast_assignment_id,
           effective_date,
           hours,
@@ -48,7 +50,9 @@ class Stacks::CostOfServicesRenderedCalculator
         acc[date][studio_id][:total_cost] += (hours * hourly_cost).to_f
 
         acc[date][studio_id][:assignment_costs] << {
+          forecast_person_id: forecast_person_id,
           forecast_assignment_id: forecast_assignment_id,
+          effective_date: date,
           hours: hours,
           hourly_cost: hourly_cost
         }

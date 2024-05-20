@@ -1,20 +1,21 @@
-<% cosr.reverse_each do |p| %>
-  <% period, by_studio = p %>
+<% monthly_studio_rollups.reverse_each do |p| %>
+  <% month_start, studio_rollups = p %>
 
   <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
     <div id="titlebar_left">
       <h2 id="page_title">
-        <%= period.label %>
+        <%= month_start.strftime("%B %Y") %>
       </h2>
     </div>
     <div id="titlebar_right">
       <h2>
-        <%= number_to_currency by_studio.reduce(0){|acc, d| acc += d[1][:total_studio_hours] * d[1][accounting_method.to_sym][:actual_cost_per_hour_sold]; acc} %>
+        <%= number_to_currency studio_rollups.values.map{ |rollup| rollup[:total_cost] }.sum %>
       </h2>
     </div>
   </div>
 
-  <% by_studio.keys.each do |studio| %>
+  <% studio_rollups.each do |studio_id, studio_rollup| %>
+    <% studio = studios.fetch(studio_id) %>
     <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom:20px;table-layout:fixed;">
       <thead>
         <tr>
@@ -22,32 +23,39 @@
             <%= link_to "#{studio.name} ↗", admin_studio_path(studio) %>
           </th>
           <th class="col">
+            Date(s)
+          </th>
+          <th class="col">
             Hours
           </th>
           <th class="col">
-            @ Cost per Sellable Hour <%= number_to_currency by_studio[studio][accounting_method.to_sym][:cost_per_sellable_hour] %>
+            Hourly rate
           </th>
           <th class="col text-right">
-            @ Actual Cost per Hour Sold <%= number_to_currency by_studio[studio][accounting_method.to_sym][:actual_cost_per_hour_sold] %>
+            Total cost
           </th>
         </tr>
       </thead>
 
       <tbody>
-        <% by_studio[studio][:forecast_people].each_with_index do |tuple, index| %>
-          <% person, data = tuple %>
+        <% studio_rollup.fetch(:assignment_rollups).each_with_index do |tuple, index| %>
+          <% _key, assignment_rollup = tuple %>
+          <% person = forecast_people.fetch(assignment_rollup[:forecast_person_id]) %>
           <tr class="<%= index.even? ? "even" : "odd" %>">
             <td class="col">
               <%= person.email %>
             </td>
             <td class="col">
-              <%= data[:hours] %>
+              <%= format_date_range(assignment_rollup) %>
             </td>
             <td class="col">
-              <%= number_to_currency data[:hours] * by_studio[studio][accounting_method.to_sym][:cost_per_sellable_hour] %>
+              <%= assignment_rollup.fetch(:hours) %>
+            </td>
+            <td class="col">
+              <%= number_to_currency assignment_rollup.fetch(:hourly_cost) %>
             </td>
             <td class="col text-right">
-              <%= number_to_currency data[:hours] * by_studio[studio][accounting_method.to_sym][:actual_cost_per_hour_sold] %>
+              <%= number_to_currency assignment_rollup.fetch(:total_cost) %>
             </td>
           </tr>
         <% end %>
@@ -57,13 +65,14 @@
           </td>
           <td></td>
           <td></td>
+          <td></td>
           <td class="col text-right">
-            <%= number_to_currency by_studio[studio][:total_studio_hours] * by_studio[studio][accounting_method.to_sym][:actual_cost_per_hour_sold] %>
+            <%= number_to_currency studio_rollup.fetch(:total_cost) %>
           </td>
         </tr>
       </tbody>
     </table>
   <% end %>
-  
+
 
 <% end %>
