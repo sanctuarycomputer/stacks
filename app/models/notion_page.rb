@@ -12,17 +12,12 @@ class NotionPage < ApplicationRecord
     milestones.where("page_title LIKE ?", "In 2024,%")
   }
 
-  def stale_tasks
-    where(
-      notion_parent_type: "database_id",
-      notion_parent_id: Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:TASKS])
-    ).all.select do |task|
-      next false if task.status.downcase.include?("let go")
-      next false if task.status.downcase.include?("done")
-      due_date = task.data.dig("properties", "✳️ Due Date 🗓", "date", "end") || task.data.dig("properties", "✳️ Due Date 🗓", "date", "start")
-      next false if due_date.nil?
-      Date.parse(due_date) < Date.today
-    end
+  def as_task
+    Stacks::Notion::Task.new(self)
+  end
+
+  def notion_link
+    "https://www.notion.so/garden3d/#{notion_id.gsub('-', '')}"
   end
 
   # For active admin to set the title on the show page
