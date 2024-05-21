@@ -141,8 +141,7 @@ class ProjectTracker < ApplicationRecord
   end
 
   def generate_snapshot!
-    cosr = cost_of_services_rendered("month")
-    cosr_new = cost_of_services_rendered_new
+    cosr = cost_of_services_rendered
     preloaded_studios = Studio.all
     today = Date.today
 
@@ -152,84 +151,51 @@ class ProjectTracker < ApplicationRecord
     ).reduce({
       generated_at: DateTime.now.iso8601,
       hours: [],
-      hours_new: [],
       spend: [],
       hours_total: 0,
-      hours_total_new: 0,
       spend_total: 0,
       cash: {
         cosr: [],
-        cosr_new: [],
         cosr_total: 0,
-        cosr_total_new: 0,
       },
       accrual: {
         cosr: [],
-        cosr_new: [],
         cosr_total: 0,
-        cosr_total_new: 0,
       }
     }) do |acc, date|
-      hours_by_studio = self.total_hours_during_range_by_studio(preloaded_studios, date, date)
-      hours = hours_by_studio.values.reduce(:+) || 0
-
-      acc[:hours].push({
-        x: date.iso8601,
-        y: acc[:hours_total] += hours
-      })
-
       acc[:spend].push({
         x: date.iso8601,
         y: acc[:spend_total] +=
           self.total_value_during_range(date, date)
       })
 
-      cosrp = cosr.keys.find{|p| p.starts_at <= date && p.ends_at >= date}
-      cosr_for_date = hours_by_studio.reduce({ cash: 0, accrual: 0 }) do |acc, s|
-        studio, hours = s
-        data = cosr[cosrp][studio]
-        acc[:cash] += hours * data[:cash][:actual_cost_per_hour_sold]
-        acc[:accrual] += hours * data[:accrual][:actual_cost_per_hour_sold]
-        acc
-      end
-
-      acc[:cash][:cosr].push({
-        x: date.iso8601,
-        y: acc[:cash][:cosr_total] += cosr_for_date[:cash]
-      })
-
-      acc[:accrual][:cosr].push({
-        x: date.iso8601,
-        y: acc[:accrual][:cosr_total] += cosr_for_date[:accrual]
-      })
-
       # Once we confirm that the new COSR numbers look okay in production,
       # we can remove all of the above logic and just use the following instead.
 
-      cosr_for_date_new = cosr_new[date]
+      cosr_for_date = cosr[date]
       total_cosr_for_date = 0
       total_hours_for_date = 0
 
-      unless cosr_for_date_new.blank?
-        cosr_for_date_new.each do |studio_id, cosr_data|
+      unless cosr_for_date.blank?
+        cosr_for_date.each do |studio_id, cosr_data|
           total_cosr_for_date += cosr_data[:total_cost]
           total_hours_for_date += cosr_data[:total_hours]
         end
       end
 
-      acc[:hours_new].push({
+      acc[:hours].push({
         x: date.iso8601,
-        y: acc[:hours_total_new] += total_hours_for_date
+        y: acc[:hours_total] += total_hours_for_date
       })
 
-      acc[:cash][:cosr_new].push({
+      acc[:cash][:cosr].push({
         x: date.iso8601,
-        y: acc[:cash][:cosr_total_new] += total_cosr_for_date
+        y: acc[:cash][:cosr_total] += total_cosr_for_date
       })
 
-      acc[:accrual][:cosr_new].push({
+      acc[:accrual][:cosr].push({
         x: date.iso8601,
-        y: acc[:accrual][:cosr_total_new] += total_cosr_for_date
+        y: acc[:accrual][:cosr_total] += total_cosr_for_date
       })
 
       acc
@@ -397,92 +363,7 @@ class ProjectTracker < ApplicationRecord
     end
   end
 
-  def cost_of_services_rendered(mode)
-    today = Date.today
-    preloaded_studios = Studio.all
-    g3d = preloaded_studios.find(&:is_garden3d?)
-    periods = {}
-    time = (
-      first_recorded_assignment ?
-      first_recorded_assignment.start_date.beginning_of_month :
-      Date.new(2020, 1, 1)
-    )
-    end_time = [(
-      last_recorded_assignment ?
-      last_recorded_assignment.end_date.beginning_of_month :
-      Date.today.beginning_of_month
-    ), today].min
-
-    assignments =
-      ForecastAssignment
-        .includes(:forecast_person)
-        .where(project_id: forecast_projects.map(&:forecast_id))
-
-    while time <= end_time
-      period = Stacks::Period.new(
-        time.strftime("%B, %Y"),
-        time.beginning_of_month,
-        time.end_of_month
-      )
-
-      periods[period] = assignments.reduce({}) do |acc, assignment|
-        next acc unless assignment.forecast_person.present?
-
-        studio = assignment.forecast_person.studio(preloaded_studios)
-        # Old records (like Joshie) never got assigned a studio in Forecast. That's a long time ago
-        # so no need to worry about that :)
-        next acc unless studio.present?
-
-        # Find the snapshot for the corresponding month, or (if it's the current month and thus
-        # not in the snapshot), fallback to the studio's latest monthly snapshot
-        snapshot =
-          studio.snapshot["month"].find{|v| v["label"] == period.label} || studio.snapshot["month"].last
-
-        acc[studio] = acc[studio] || {
-          cash: {
-            cost_per_sellable_hour:
-              snapshot.try(:dig, "cash", "datapoints", "cost_per_sellable_hour", "value").try(:to_f) || 0,
-            actual_cost_per_hour_sold:
-              snapshot.try(:dig, "cash", "datapoints", "actual_cost_per_hour_sold", "value").try(:to_f) || 0
-          },
-          accrual: {
-            cost_per_sellable_hour:
-              snapshot.try(:dig, "accrual", "datapoints", "cost_per_sellable_hour", "value").try(:to_f) || 0,
-            actual_cost_per_hour_sold:
-              snapshot.try(:dig, "accrual", "datapoints", "actual_cost_per_hour_sold", "value").try(:to_f) || 0
-          },
-          forecast_people: {},
-        }
-
-        acc[studio][:forecast_people][assignment.forecast_person] =
-          acc[studio][:forecast_people][assignment.forecast_person] || { hours: 0 }
-
-        acc[studio][:forecast_people][assignment.forecast_person][:hours] +=
-          assignment.allocation_during_range_in_hours(period.starts_at, [period.ends_at, today].min)
-        acc
-      end
-
-      time = time.advance(months: 1)
-    end
-
-    periods.each do |p|
-      period, by_studio = p
-
-      by_studio.each do |s|
-        studio, data = s
-        data[:total_studio_hours] =
-          by_studio[studio][:forecast_people].reduce(0) do |acc, pd|
-            forecast_person, hours_data = pd
-            acc += hours_data[:hours]
-            acc
-          end
-      end
-    end
-
-    periods
-  end
-
-  def cost_of_services_rendered_new
+  def cost_of_services_rendered
     start_date = (
       first_recorded_assignment ?
       first_recorded_assignment.start_date :

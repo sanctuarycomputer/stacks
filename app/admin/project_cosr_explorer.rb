@@ -3,7 +3,7 @@ ActiveAdmin.register_page "Project COSR Explorer" do
 
   content title: proc { I18n.t("active_admin.project_cosr_explorer") } do
     project_tracker = ProjectTracker.find(params[:project_tracker_id])
-    cosr = project_tracker.cost_of_services_rendered_new
+    cosr = project_tracker.cost_of_services_rendered
 
     monthly_studio_rollups, forecast_person_ids, studio_ids = build_monthly_rollup(cosr)
     forecast_people = ForecastPerson.find(forecast_person_ids)
