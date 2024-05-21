@@ -2,7 +2,7 @@ ActiveAdmin.register_page "Stale Tasks" do
   menu parent: "Notion Pages"
 
   content title: "Stale Tasks" do
-    table_for(NotionPage.stale_tasks, class: 'index_table') do
+    table_for(Stacks::Notion::Task.stale, class: 'index_table') do
       column "Task", :task do |task|
         task.notion_page
       end

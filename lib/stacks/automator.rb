@@ -14,7 +14,7 @@ class Stacks::Automator
       return unless Time.now.thursday?
 
       raw_digest =
-        NotionPage.stale_tasks.reduce({}) do |acc, task|
+        Stacks::Notion::Task.stale.reduce({}) do |acc, task|
           stewards_emails = task.stewards.map{|p| p.dig("person", "email")}
           stewards_emails.compact.each do |e|
             acc[e] = acc[e] || { tasks_stewarding: [], tasks_assigned: [] }

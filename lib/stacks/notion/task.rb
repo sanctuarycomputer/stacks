@@ -1,4 +1,21 @@
 class Stacks::Notion::Task < Stacks::Notion::Base
+  class << self
+    def all
+      NotionPage.where(
+        notion_parent_type: "database_id",
+        notion_parent_id: Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:TASKS])
+      ).map(&:as_task)
+    end
+
+    def stale
+      Stacks::Notion::Task.all.select do |task|
+        task.in_flight? && task.overdue?
+      end.sort_by do |task|
+        task.due_date
+      end
+    end
+  end
+
   def stewards
     get_prop_value("steward")
   end

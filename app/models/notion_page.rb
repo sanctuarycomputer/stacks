@@ -16,17 +16,6 @@ class NotionPage < ApplicationRecord
     Stacks::Notion::Task.new(self)
   end
 
-  def self.stale_tasks
-    where(
-      notion_parent_type: "database_id",
-      notion_parent_id: Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:TASKS])
-    ).all.map(&:as_task).select do |task|
-      task.in_flight? && task.overdue?
-    end.sort_by do |task|
-      task.due_date
-    end
-  end
-
   def notion_link
     "https://www.notion.so/garden3d/#{notion_id.gsub('-', '')}"
   end
