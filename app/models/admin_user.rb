@@ -535,10 +535,21 @@ class AdminUser < ApplicationRecord
   end
 
   def cost_of_employment_on_date(date)
-    yearly_cost =
+    salary_window = admin_user_salary_windows.find_by(
+      "start_date <= ? AND (end_date >= ? OR end_date IS NULL)",
+      date,
+      date
+    )
+
+    yearly_cost = if salary_window.nil?
       skill_tree_level_on_date(date)[:salary]
+    else
+      salary_window.salary
+    end
+
     business_days =
       Stacks::Utils.business_days_between(date.beginning_of_year, date.end_of_year)
+
     (yearly_cost / business_days) * 1.1 # employment taxes & healthcare
   end
 
