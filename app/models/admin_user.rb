@@ -36,6 +36,8 @@ class AdminUser < ApplicationRecord
   has_many :admin_user_interests, dependent: :delete_all
   has_many :interests, through: :admin_user_interests
 
+  has_many :admin_user_salary_windows, dependent: :delete_all
+
   enum old_skill_tree_level: {
     junior_1: 0,
     junior_2: 1,
@@ -62,6 +64,8 @@ class AdminUser < ApplicationRecord
 
   has_many :reviews, dependent: :nullify
   has_many :peer_reviews, dependent: :nullify
+
+  after_create :sync_salary_windows!
 
   def self.find_or_create_by_g3d_uid!(email)
     return nil unless (email.ends_with?("@sanctuary.computer") || email.ends_with?("@xxix.co"))
@@ -183,6 +187,10 @@ class AdminUser < ApplicationRecord
     full_time_periods.map(&:considered_temporary).all?
   end
 
+  def start_date
+    full_time_periods.order("started_at ASC").first.try(:started_at) || created_at.to_date
+  end
+
   def met_associates_skill_band_requirement_at
     # Find the first review that was above the requirement
     first_review_above_requirement = archived_reviews.reverse.find do |r|
@@ -196,12 +204,6 @@ class AdminUser < ApplicationRecord
 
     # Check if the old_skill_tree_level counts.
     if old_skill_tree_level.blank?
-      return nil
-    end
-
-    start_date = full_time_periods.order("started_at ASC").first.try(:started_at)
-
-    if start_date.blank?
       return nil
     end
 
@@ -514,7 +516,7 @@ class AdminUser < ApplicationRecord
     if latest_review_before_date.present?
       latest_review_before_date.level
     elsif old_skill_tree_level.present?
-      Stacks::SkillLevelFinder.find!(Date.today, old_skill_tree_level)
+      Stacks::SkillLevelFinder.find!(date, old_skill_tree_level)
     else
       AdminUser.default_skill_level
     end
@@ -574,5 +576,10 @@ class AdminUser < ApplicationRecord
                            email: auth.info.email,
                            info: auth.dig("info")
     user
+  end
+
+  def sync_salary_windows!
+    syncer = Stacks::AdminUserSalaryWindowSyncer.new(self)
+    syncer.sync!
   end
 end

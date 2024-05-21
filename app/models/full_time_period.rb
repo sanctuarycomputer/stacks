@@ -4,6 +4,8 @@ class FullTimePeriod < ApplicationRecord
   validate :does_not_overlap
   validate :ended_at_before_started_at?
 
+  after_create :sync_salary_windows!
+
   enum contributor_type: {
     five_day: 0,
     four_day: 1,
@@ -21,6 +23,10 @@ class FullTimePeriod < ApplicationRecord
 
   def overlaps?(other)
     started_at <= other.ended_at && other.started_at <= ended_at
+  end
+
+  def include?(date)
+    started_at <= date && date <= ended_at_or_now
   end
 
   def ended_at_or_now
@@ -47,5 +53,12 @@ class FullTimePeriod < ApplicationRecord
     if overlaps
       errors.add(:started_at, "overlaps with another full_time_period")
     end
+  end
+
+  private
+
+  def sync_salary_windows!
+    syncer = Stacks::AdminUserSalaryWindowSyncer.new(admin_user)
+    syncer.sync!
   end
 end
