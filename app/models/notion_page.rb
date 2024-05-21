@@ -21,8 +21,7 @@ class NotionPage < ApplicationRecord
       notion_parent_type: "database_id",
       notion_parent_id: Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:TASKS])
     ).all.map(&:as_task).select do |task|
-      next false unless task.in_flight?
-      task.overdue?
+      task.in_flight? && task.overdue?
     end.sort_by do |task|
       task.due_date
     end
