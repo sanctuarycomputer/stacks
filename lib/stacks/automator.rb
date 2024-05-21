@@ -11,7 +11,7 @@ class Stacks::Automator
     end
 
     def send_stale_task_digests_every_thursday
-      #return unless Time.now.thursday?
+      return unless Time.now.thursday?
 
       raw_digest =
         NotionPage.stale_tasks.reduce({}) do |acc, task|
