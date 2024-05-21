@@ -93,13 +93,10 @@ class Stacks::DailyFinancialSnapshotter
 
   def employee_hourly_cost(forecast_person, forecast_project)
     admin_user = forecast_person.admin_user
-    cost = admin_user.approximate_cost_per_sellable_hour_before_studio_expenses_on_date(@effective_date)
+    daily_cost = admin_user.cost_of_employment_on_date(@effective_date)
+    hours_per_day = 8
 
-    if cost.nil?
-      return 0
-    end
-
-    cost.round(2)
+    (daily_cost / hours_per_day).round(2)
   end
 
   def subcontractor_hourly_cost(forecast_person, forecast_project)

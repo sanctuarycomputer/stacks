@@ -58,7 +58,7 @@ class Stacks::DailyFinancialSnapshotterTest < ActiveSupport::TestCase
         forecast_project_id: forecast_project.id,
         effective_date: start_date,
         studio_id: studio.id,
-        hourly_cost: 85.31,
+        hourly_cost: 68.25,
         hours: 8,
         needs_review: false
       }
@@ -169,7 +169,7 @@ class Stacks::DailyFinancialSnapshotterTest < ActiveSupport::TestCase
       forecast_project_id: forecast_project.id,
       effective_date: start_date,
       studio_id: studio.id,
-      hourly_cost: 70.61,
+      hourly_cost: 56.49,
       hours: 8,
       needs_review: false
     })
@@ -183,7 +183,7 @@ class Stacks::DailyFinancialSnapshotterTest < ActiveSupport::TestCase
         forecast_project_id: forecast_project.id,
         effective_date: start_date,
         studio_id: studio.id,
-        hourly_cost: 70.61,
+        hourly_cost: 56.49,
         hours: 8,
         needs_review: false
       }
@@ -291,7 +291,7 @@ class Stacks::DailyFinancialSnapshotterTest < ActiveSupport::TestCase
         forecast_project_id: forecast_project.id,
         effective_date: start_date,
         studio_id: 0,
-        hourly_cost: 70.61,
+        hourly_cost: 56.49,
         hours: 8,
         needs_review: true
       }
@@ -459,7 +459,7 @@ class Stacks::DailyFinancialSnapshotterTest < ActiveSupport::TestCase
         forecast_project_id: forecast_project.id,
         effective_date: Date.today,
         studio_id: studio.id,
-        hourly_cost: 70.61,
+        hourly_cost: 56.49,
         hours: 8,
         needs_review: false
       }
@@ -592,7 +592,7 @@ class Stacks::DailyFinancialSnapshotterTest < ActiveSupport::TestCase
         forecast_project_id: current_project_one.id,
         effective_date: Date.today,
         studio_id: studio_one.id,
-        hourly_cost: 70.61,
+        hourly_cost: 56.49,
         hours: 4,
         needs_review: false
       },
@@ -601,7 +601,7 @@ class Stacks::DailyFinancialSnapshotterTest < ActiveSupport::TestCase
         forecast_project_id: current_project_one.id,
         effective_date: Date.today,
         studio_id: studio_two.id,
-        hourly_cost: 70.61,
+        hourly_cost: 56.49,
         hours: 4,
         needs_review: false
       },
@@ -610,7 +610,7 @@ class Stacks::DailyFinancialSnapshotterTest < ActiveSupport::TestCase
         forecast_project_id: current_project_two.id,
         effective_date: Date.today,
         studio_id: studio_one.id,
-        hourly_cost: 70.61,
+        hourly_cost: 56.49,
         hours: 4,
         needs_review: false
       },
@@ -619,7 +619,7 @@ class Stacks::DailyFinancialSnapshotterTest < ActiveSupport::TestCase
         forecast_project_id: current_project_two.id,
         effective_date: Date.today,
         studio_id: studio_two.id,
-        hourly_cost: 70.61,
+        hourly_cost: 56.49,
         hours: 4,
         needs_review: false
       }
@@ -752,7 +752,7 @@ class Stacks::DailyFinancialSnapshotterTest < ActiveSupport::TestCase
         forecast_project_id: past_project.id,
         effective_date: past_project.start_date,
         studio_id: studio_one.id,
-        hourly_cost: 70.61,
+        hourly_cost: 56.49,
         hours: 4,
         needs_review: false
       },
@@ -761,7 +761,7 @@ class Stacks::DailyFinancialSnapshotterTest < ActiveSupport::TestCase
         forecast_project_id: past_project.id,
         effective_date: past_project.start_date,
         studio_id: studio_two.id,
-        hourly_cost: 70.61,
+        hourly_cost: 56.49,
         hours: 4,
         needs_review: false
       },
@@ -770,7 +770,7 @@ class Stacks::DailyFinancialSnapshotterTest < ActiveSupport::TestCase
         forecast_project_id: current_project_one.id,
         effective_date: current_project_one.start_date,
         studio_id: studio_one.id,
-        hourly_cost: 70.61,
+        hourly_cost: 56.49,
         hours: 4,
         needs_review: false
       },
@@ -779,7 +779,7 @@ class Stacks::DailyFinancialSnapshotterTest < ActiveSupport::TestCase
         forecast_project_id: current_project_one.id,
         effective_date: current_project_one.start_date,
         studio_id: studio_two.id,
-        hourly_cost: 70.61,
+        hourly_cost: 56.49,
         hours: 4,
         needs_review: false
       },
@@ -788,7 +788,7 @@ class Stacks::DailyFinancialSnapshotterTest < ActiveSupport::TestCase
         forecast_project_id: current_project_two.id,
         effective_date: current_project_two.start_date,
         studio_id: studio_one.id,
-        hourly_cost: 70.61,
+        hourly_cost: 56.49,
         hours: 4,
         needs_review: false
       },
@@ -797,7 +797,7 @@ class Stacks::DailyFinancialSnapshotterTest < ActiveSupport::TestCase
         forecast_project_id: current_project_two.id,
         effective_date: current_project_two.start_date,
         studio_id: studio_two.id,
-        hourly_cost: 70.61,
+        hourly_cost: 56.49,
         hours: 4,
         needs_review: false
       }
