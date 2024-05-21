@@ -8,14 +8,12 @@ class StaleTasksNotification < Noticed::Base
   end
 
   def body
-    stewardship_body = record.params[:digest][:tasks_stewarding].reduce("# Stewarding\n") do |acc, task|
-      due_date = task.data.dig("properties", "✳️ Due Date 🗓", "date", "end") || task.data.dig("properties", "✳️ Due Date 🗓", "date", "start")
-      acc + "- **[#{task.page_title}](#{task.notion_link})**: Due #{ApplicationController.helpers.time_ago_in_words(Date.parse(due_date))} ago\n"
+    stewardship_body = record.params[:digest][:tasks_stewarding].map(&:as_task).reduce("# Stewarding\n") do |acc, task|
+      acc + "- **[#{task.page_title}](#{task.notion_link})**: Due #{ApplicationController.helpers.time_ago_in_words(task.due_date)} ago\n"
     end
 
-    assignment_body = record.params[:digest][:tasks_assigned].reduce("# Assigned\n") do |acc, task|
-      due_date = task.data.dig("properties", "✳️ Due Date 🗓", "date", "end") || task.data.dig("properties", "✳️ Due Date 🗓", "date", "start")
-      acc + "- **[#{task.page_title}](#{task.notion_link})**: Due #{ApplicationController.helpers.time_ago_in_words(Date.parse(due_date))} ago\n"
+    assignment_body = record.params[:digest][:tasks_assigned].map(&:as_task).reduce("# Assigned\n") do |acc, task|
+      acc + "- **[#{task.page_title}](#{task.notion_link})**: Due #{ApplicationController.helpers.time_ago_in_words(task.due_date)} ago\n"
     end
 
     <<~HEREDOC

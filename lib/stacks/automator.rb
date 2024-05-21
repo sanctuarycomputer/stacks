@@ -11,26 +11,20 @@ class Stacks::Automator
     end
 
     def send_stale_task_digests_every_thursday
-      return unless Time.now.thursday?
+      #return unless Time.now.thursday?
 
       raw_digest =
         NotionPage.stale_tasks.reduce({}) do |acc, task|
-          key = task.data.dig("properties").keys.find{|k| k.downcase.include?("steward")}
-          people = task.data.dig("properties", key)
-          stewards_emails = people.dig("people").map{|p| p.dig("person", "email")}
-
+          stewards_emails = task.stewards.map{|p| p.dig("person", "email")}
           stewards_emails.compact.each do |e|
             acc[e] = acc[e] || { tasks_stewarding: [], tasks_assigned: [] }
-            acc[e][:tasks_stewarding] = [*acc[e][:tasks_stewarding], task]
+            acc[e][:tasks_stewarding] = [*acc[e][:tasks_stewarding], task.notion_page]
           end
 
-          key = task.data.dig("properties").keys.find{|k| k.downcase.include?("assignees")}
-          people = task.data.dig("properties", key)
-          assignees_emails = people.dig("people").map{|p| p.dig("person", "email")}
-
+          assignees_emails = task.assignees.map{|p| p.dig("person", "email")}
           assignees_emails.compact.each do |e|
             acc[e] = acc[e] || { tasks_stewarding: [], tasks_assigned: [] }
-            acc[e][:tasks_assigned] = [*acc[e][:tasks_assigned], task]
+            acc[e][:tasks_assigned] = [*acc[e][:tasks_assigned], task.notion_page]
           end
 
           acc
@@ -38,10 +32,12 @@ class Stacks::Automator
 
       raw_digest.each do |k, v|
         a = AdminUser.find_by(email: k)
-        StaleTasksNotification.with(
-          digest: v,
-          include_admins: false,
-        ).deliver(a) if a.present?
+        if a.present?
+          StaleTasksNotification.with(
+            digest: v,
+            include_admins: false,
+          ).deliver(a)
+        end
       end
     end
 

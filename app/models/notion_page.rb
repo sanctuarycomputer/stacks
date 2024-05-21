@@ -12,19 +12,19 @@ class NotionPage < ApplicationRecord
     milestones.where("page_title LIKE ?", "In 2024,%")
   }
 
+  def as_task
+    Stacks::Notion::Task.new(self)
+  end
+
   def self.stale_tasks
     where(
       notion_parent_type: "database_id",
       notion_parent_id: Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:TASKS])
-    ).all.select do |task|
-      next false if task.status.downcase.include?("let go")
-      next false if task.status.downcase.include?("done")
-      due_date = task.data.dig("properties", "✳️ Due Date 🗓", "date", "end") || task.data.dig("properties", "✳️ Due Date 🗓", "date", "start")
-      next false if due_date.nil?
-      Date.parse(due_date) < Date.today
+    ).all.map(&:as_task).select do |task|
+      next false unless task.in_flight?
+      task.overdue?
     end.sort_by do |task|
-      due_date = task.data.dig("properties", "✳️ Due Date 🗓", "date", "end") || task.data.dig("properties", "✳️ Due Date 🗓", "date", "start")
-      Date.parse(due_date)
+      task.due_date
     end
   end
 
