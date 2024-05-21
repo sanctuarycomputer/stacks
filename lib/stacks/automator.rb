@@ -10,8 +10,8 @@ class Stacks::Automator
       @_twist ||= Stacks::Twist.new
     end
 
-    def send_stale_task_digests_every_wednesday
-      return unless Time.now.wednesday?
+    def send_stale_task_digests_every_thursday
+      return unless Time.now.thursday?
 
       raw_digest =
         NotionPage.stale_tasks.reduce({}) do |acc, task|
@@ -37,14 +37,11 @@ class Stacks::Automator
         end
 
       raw_digest.each do |k, v|
-        # TODO: Remove this email check when we're ready to open these emails up to everyone!
-        if k == "hugh@sanctuary.computer"
-          a = AdminUser.find_by(email: k)
-          StaleTasksNotification.with(
-            digest: v,
-            include_admins: false,
-          ).deliver(a) if a.present?
-        end
+        a = AdminUser.find_by(email: k)
+        StaleTasksNotification.with(
+          digest: v,
+          include_admins: false,
+        ).deliver(a) if a.present?
       end
     end
 

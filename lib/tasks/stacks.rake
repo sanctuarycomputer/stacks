@@ -68,7 +68,7 @@ namespace :stacks do
       Parallel.map(Stacks::Notion::DATABASE_IDS.values, in_threads: 3) do |db_id|
         notion.sync_database(db_id)
       end
-      Stacks::Automator.send_stale_task_digests_every_wednesday
+      Stacks::Automator.send_stale_task_digests_every_thursday
     rescue => e
       Sentry.capture_exception(e)
     end
