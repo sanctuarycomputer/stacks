@@ -135,14 +135,18 @@ class Stacks::CostOfServicesRenderedCalculatorTest < ActiveSupport::TestCase
           total_cost: 495,
           assignment_costs: [
             {
+              forecast_person_id: person_one.id,
               forecast_assignment_id: assignment_one.id,
               hours: 7,
-              hourly_cost: 33
+              hourly_cost: 33,
+              effective_date: start_date
             },
             {
+              forecast_person_id: person_two.id,
               forecast_assignment_id: assignment_two.id,
               hours: 6,
-              hourly_cost: 44
+              hourly_cost: 44,
+              effective_date: start_date
             }
           ]
         }
@@ -153,14 +157,18 @@ class Stacks::CostOfServicesRenderedCalculatorTest < ActiveSupport::TestCase
           total_cost: 495,
           assignment_costs: [
             {
+              forecast_person_id: person_one.id,
               forecast_assignment_id: assignment_one.id,
               hours: 7,
-              hourly_cost: 33
+              hourly_cost: 33,
+              effective_date: start_date + 1.day
             },
             {
+              forecast_person_id: person_two.id,
               forecast_assignment_id: assignment_two.id,
               hours: 6,
-              hourly_cost: 44
+              hourly_cost: 44,
+              effective_date: start_date + 1.day
             }
           ]
         }
@@ -171,14 +179,18 @@ class Stacks::CostOfServicesRenderedCalculatorTest < ActiveSupport::TestCase
           total_cost: 495,
           assignment_costs: [
             {
+              forecast_person_id: person_one.id,
               forecast_assignment_id: assignment_one.id,
               hours: 7,
-              hourly_cost: 33
+              hourly_cost: 33,
+              effective_date: start_date + 2.days
             },
             {
+              forecast_person_id: person_two.id,
               forecast_assignment_id: assignment_two.id,
               hours: 6,
-              hourly_cost: 44
+              hourly_cost: 44,
+              effective_date: start_date + 2.days
             }
           ]
         }
@@ -189,14 +201,18 @@ class Stacks::CostOfServicesRenderedCalculatorTest < ActiveSupport::TestCase
           total_cost: 495,
           assignment_costs: [
             {
+              forecast_person_id: person_one.id,
               forecast_assignment_id: assignment_one.id,
               hours: 7,
-              hourly_cost: 33
+              hourly_cost: 33,
+              effective_date: start_date + 3.days
             },
             {
+              forecast_person_id: person_two.id,
               forecast_assignment_id: assignment_two.id,
               hours: 6,
-              hourly_cost: 44
+              hourly_cost: 44,
+              effective_date: start_date + 3.days
             }
           ]
         }
@@ -207,14 +223,18 @@ class Stacks::CostOfServicesRenderedCalculatorTest < ActiveSupport::TestCase
           total_cost: 495,
           assignment_costs: [
             {
+              forecast_person_id: person_one.id,
               forecast_assignment_id: assignment_one.id,
               hours: 7,
-              hourly_cost: 33
+              hourly_cost: 33,
+              effective_date: start_date + 4.days
             },
             {
+              forecast_person_id: person_two.id,
               forecast_assignment_id: assignment_two.id,
               hours: 6,
-              hourly_cost: 44
+              hourly_cost: 44,
+              effective_date: start_date + 4.days
             }
           ]
         }
@@ -225,14 +245,18 @@ class Stacks::CostOfServicesRenderedCalculatorTest < ActiveSupport::TestCase
           total_cost: 539,
           assignment_costs: [
             {
+              forecast_person_id: person_one.id,
               forecast_assignment_id: assignment_three.id,
               hours: 6,
-              hourly_cost: 44
+              hourly_cost: 44,
+              effective_date: start_date + 5.days
             },
             {
+              forecast_person_id: person_two.id,
               forecast_assignment_id: assignment_four.id,
               hours: 5,
-              hourly_cost: 55
+              hourly_cost: 55,
+              effective_date: start_date + 5.days
             }
           ]
         }
@@ -243,14 +267,18 @@ class Stacks::CostOfServicesRenderedCalculatorTest < ActiveSupport::TestCase
           total_cost: 539,
           assignment_costs: [
             {
+              forecast_person_id: person_one.id,
               forecast_assignment_id: assignment_three.id,
               hours: 6,
-              hourly_cost: 44
+              hourly_cost: 44,
+              effective_date: start_date + 6.days
             },
             {
+              forecast_person_id: person_two.id,
               forecast_assignment_id: assignment_four.id,
               hours: 5,
-              hourly_cost: 55
+              hourly_cost: 55,
+              effective_date: start_date + 6.days
             }
           ]
         }
@@ -261,14 +289,18 @@ class Stacks::CostOfServicesRenderedCalculatorTest < ActiveSupport::TestCase
           total_cost: 539,
           assignment_costs: [
             {
+              forecast_person_id: person_one.id,
               forecast_assignment_id: assignment_three.id,
               hours: 6,
-              hourly_cost: 44
+              hourly_cost: 44,
+              effective_date: start_date + 7.days
             },
             {
+              forecast_person_id: person_two.id,
               forecast_assignment_id: assignment_four.id,
               hours: 5,
-              hourly_cost: 55
+              hourly_cost: 55,
+              effective_date: start_date + 7.days
             }
           ]
         }
@@ -279,14 +311,18 @@ class Stacks::CostOfServicesRenderedCalculatorTest < ActiveSupport::TestCase
           total_cost: 539,
           assignment_costs: [
             {
+              forecast_person_id: person_one.id,
               forecast_assignment_id: assignment_three.id,
               hours: 6,
-              hourly_cost: 44
+              hourly_cost: 44,
+              effective_date: start_date + 8.days
             },
             {
+              forecast_person_id: person_two.id,
               forecast_assignment_id: assignment_four.id,
               hours: 5,
-              hourly_cost: 55
+              hourly_cost: 55,
+              effective_date: start_date + 8.days
             }
           ]
         }
@@ -297,14 +333,18 @@ class Stacks::CostOfServicesRenderedCalculatorTest < ActiveSupport::TestCase
           total_cost: 539,
           assignment_costs: [
             {
+              forecast_person_id: person_one.id,
               forecast_assignment_id: assignment_three.id,
               hours: 6,
-              hourly_cost: 44
+              hourly_cost: 44,
+              effective_date: start_date + 9.days
             },
             {
+              forecast_person_id: person_two.id,
               forecast_assignment_id: assignment_four.id,
               hours: 5,
-              hourly_cost: 55
+              hourly_cost: 55,
+              effective_date: start_date + 9.days
             }
           ]
         }
