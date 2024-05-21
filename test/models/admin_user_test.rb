@@ -438,4 +438,109 @@ class AdminUserTest < ActiveSupport::TestCase
       }
     ], actual_windows)
   end
+
+  test "#cost_of_employment_on_date returns expected cost based on salary windows" do
+    user = AdminUser.create!({
+      email: "josh@sanctuary.computer",
+      password: "password"
+    })
+
+    user.admin_user_salary_windows.create!({
+      salary: 123,
+      start_date: Date.new(2022, 1, 1),
+      end_date: Date.new(2023, 1, 1)
+    })
+
+    user.admin_user_salary_windows.create!({
+      salary: 456,
+      start_date: Date.new(2023, 1, 2),
+      end_date: Date.new(2024, 1, 1)
+    })
+
+    user.admin_user_salary_windows.create!({
+      salary: 789,
+      start_date: Date.new(2024, 1, 2),
+      end_date: nil
+    })
+
+    actual_cost = user.cost_of_employment_on_date(Date.new(2023, 6, 1))
+    business_days = Stacks::Utils.business_days_between(
+      Date.new(2023, 1, 1),
+      Date.new(2023, 12, 31)
+    )
+    tax_benefits_factor = 1.1
+    expected_cost = 456 * tax_benefits_factor / business_days
+
+    assert_in_delta(expected_cost, actual_cost, 0.00001)
+  end
+
+  test "#cost_of_employment_on_date uses open-ended salary window when necessary" do
+    user = AdminUser.create!({
+      email: "josh@sanctuary.computer",
+      password: "password"
+    })
+
+    user.admin_user_salary_windows.delete_all
+
+    user.admin_user_salary_windows.create!({
+      salary: 123,
+      start_date: Date.new(2022, 1, 1),
+      end_date: Date.new(2023, 1, 1)
+    })
+
+    user.admin_user_salary_windows.create!({
+      salary: 456,
+      start_date: Date.new(2023, 1, 2),
+      end_date: Date.new(2024, 1, 1)
+    })
+
+    user.admin_user_salary_windows.create!({
+      salary: 789,
+      start_date: Date.new(2024, 1, 2),
+      end_date: nil
+    })
+
+    actual_cost = user.cost_of_employment_on_date(Date.new(2024, 6, 1))
+    business_days = Stacks::Utils.business_days_between(
+      Date.new(2024, 1, 1),
+      Date.new(2024, 12, 31)
+    )
+    tax_benefits_factor = 1.1
+    expected_cost = 789 * tax_benefits_factor / business_days
+
+    assert_in_delta(expected_cost, actual_cost, 0.00001)
+  end
+
+  test "#cost_of_employment_on_date uses skill tree fallback if no matching salary window present" do
+    user = AdminUser.create!({
+      email: "josh@sanctuary.computer",
+      password: "password",
+      old_skill_tree_level: :senior_2
+    })
+
+    user.admin_user_salary_windows.create!({
+      salary: 123,
+      start_date: Date.new(2022, 1, 1),
+      end_date: Date.new(2023, 1, 1)
+    })
+
+    user.admin_user_salary_windows.create!({
+      salary: 456,
+      start_date: Date.new(2023, 1, 2),
+      end_date: Date.new(2024, 1, 1)
+    })
+
+    # Note: no salary window defined for 2024.
+
+    actual_cost = user.cost_of_employment_on_date(Date.new(2024, 6, 1))
+    business_days = Stacks::Utils.business_days_between(
+      Date.new(2024, 1, 1),
+      Date.new(2024, 12, 31)
+    )
+    tax_benefits_factor = 1.1
+    expected_salary = 118125
+    expected_cost = expected_salary * tax_benefits_factor / business_days
+
+    assert_in_delta(expected_cost, actual_cost, 0.00001)
+  end
 end
