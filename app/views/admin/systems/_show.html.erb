@@ -125,6 +125,8 @@
                 <strong><%= n.params[:subject].display_name %></strong> has multiple hourly rates (the first will be used).
               <% when :no_explicit_hourly_rate %>
                 <strong><%= n.params[:subject].display_name %></strong> does not have an explicit hourly rate (the Stacks default will be used).
+              <% when :person_missing_hourly_rate %>
+                <strong><%= n.params[:subject].forecast_person.email %></strong> does not have an hourly rate set for the project <strong><%= n.params[:subject].forecast_project.name %></strong>. Add an hourly rate for this user to the notes for the project in Forecast, eg: <em>"john.doe@example.com: $123.45"</em>
               <% else %>
                 Unknown Forecast Project Error
               <% end %>

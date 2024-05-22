@@ -195,6 +195,16 @@ class Stacks::Notifications
         } if fp.has_no_explicit_hourly_rate?
       end
 
+			ForecastAssignmentDailyFinancialSnapshot.needs_review.each do |snapshot|
+        notifications << {
+          subject: snapshot.forecast_assignment,
+          type: :forecast_project,
+          link: snapshot.forecast_assignment.forecast_project.edit_link,
+          error: :person_missing_hourly_rate,
+          priority: 1
+        }
+      end
+
       forecast_clients.each do |fc|
         notifications << {
           subject: fc,
