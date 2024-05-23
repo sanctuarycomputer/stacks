@@ -1,9 +1,8 @@
 class FullTimePeriod < ApplicationRecord
+  include ActsAsPeriod
+
   belongs_to :admin_user
   validates_presence_of :started_at
-  validate :does_not_overlap
-  validate :ended_at_before_started_at?
-
   after_create :sync_salary_windows!
 
   enum contributor_type: {
@@ -21,38 +20,20 @@ class FullTimePeriod < ApplicationRecord
     0
   end
 
-  def overlaps?(other)
-    started_at <= other.ended_at && other.started_at <= ended_at
-  end
-
   def include?(date)
     started_at <= date && date <= ended_at_or_now
   end
 
   def ended_at_or_now
-    ended_at || Date.today
+    ended_at_or(Date.today)
   end
 
   def ended_at_or(date = Date.today)
     ended_at || date
   end
 
-  def ended_at_before_started_at?
-    if ended_at.present? && ended_at <= started_at
-      errors.add(:started_at, "must be before ended_at")
-    end
-  end
-
-  def does_not_overlap
-    without_self = admin_user.full_time_periods.reject{|ftp| ftp == self}
-    return unless without_self.any?
-
-    overlaps = without_self.all? do |ftp|
-      (started_at <= ftp.ended_at_or_now) && (ftp.started_at <= ended_at_or_now)
-    end
-    if overlaps
-      errors.add(:started_at, "overlaps with another full_time_period")
-    end
+  def sibling_periods
+    admin_user.full_time_periods
   end
 
   private

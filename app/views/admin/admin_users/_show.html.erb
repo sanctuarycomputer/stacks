@@ -55,6 +55,49 @@
 
 <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
   <div id="titlebar_left">
+    <h2 id="page_title">🏓 Studio Memberships</h2>
+  </div>
+  <div id="titlebar_right">
+    <div class="action_items">
+      <%= link_to "Studio Memberships ↗", admin_admin_user_studio_memberships_path(resource) %>
+    </div>
+  </div>
+</div>
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index mb2">
+  <thead>
+    <tr>
+      <th class="col">Studio</th>
+      <th class="col">Current?</th>
+      <th class="col">Started At</th>
+      <th class="col text-right">Ended At</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% resource.studio_memberships.each_with_index do |sm, index| %>
+      <tr class="<%= index.even? ? "even" : "odd" %>">
+        <td class="col">
+          <%= link_to sm.studio.name, admin_studio_path(sm.studio) %>
+        </td>
+        <td class="col">
+          <% if sm.current? %>
+            <span class="status_tag yes">Yes</span>
+          <% else %>
+            <span class="status_tag no">No</span>
+          <% end %>
+        </td>
+        <td class="col">
+          <%= sm.period_started_at.strftime("%B %d, %Y") %>
+        </td>
+        <td class="col text-right">
+          <%= sm.period_ended_at.strftime("%B %d, %Y") %>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
+
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
     <h2 id="page_title">📏 Project Lead Roles</h2>
   </div>
 </div>

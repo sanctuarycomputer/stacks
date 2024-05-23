@@ -70,11 +70,19 @@ class Stacks::Team
         (fp.email || "").ends_with?("@sanctuary.computer") || (fp.email || "").ends_with?("@xxix.co")
       end.each do |fp|
         admin_user = AdminUser.find_or_create_by_g3d_uid!(fp.email)
-        fp.studios.each do |s|
-          StudioMembership.find_or_create_by!(
-            studio: s,
-            admin_user: admin_user
-          )
+        # In the past, we'd seed the first Studio Membership from a forecast tag,
+        # so this is for backward compatibility here. However, as garden3d has evolved, ppl
+        # have moved between studios, and now the best place to administer the studio
+        # an admin_user is currently a part of is by updating that on their AdminUser#Show
+        # page in Active Admin.
+        if admin_user.studio_memberships.empty?
+          fp.studios.each do |s|
+            StudioMembership.find_or_create_by!(
+              studio: s,
+              admin_user: admin_user,
+              started_at: admin_user.created_at
+            )
+          end
         end
       end
     end
