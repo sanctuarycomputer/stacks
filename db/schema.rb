@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2024_05_21_155122) do
+ActiveRecord::Schema.define(version: 2024_05_23_205832) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -636,6 +636,8 @@ ActiveRecord::Schema.define(version: 2024_05_21_155122) do
     t.bigint "studio_id", null: false
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.date "started_at", null: false
+    t.date "ended_at"
     t.index ["admin_user_id", "studio_id"], name: "index_studio_memberships_on_admin_user_id_and_studio_id", unique: true
     t.index ["admin_user_id"], name: "index_studio_memberships_on_admin_user_id"
     t.index ["studio_id"], name: "index_studio_memberships_on_studio_id"

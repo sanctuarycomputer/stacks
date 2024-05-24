@@ -218,7 +218,7 @@ class AdminUser < ApplicationRecord
     full_time_periods.order("started_at ASC").each do |ftp|
       next if achieved_at.present?
       day = ftp.started_at
-      until achieved_at.present? || day == ftp.ended_at_or_now do
+      until achieved_at.present? || day == ftp.period_ended_at do
         achieved_at = day if psu_earned_by(day) == psu_required
         day += 1.days
       end
@@ -304,7 +304,7 @@ class AdminUser < ApplicationRecord
   def psu_audit_log
     full_time_periods.map do |ftp|
       log =
-        (ftp.started_at..ftp.ended_at_or_now).reduce({}) do |acc, date|
+        (ftp.started_at..ftp.period_ended_at).reduce({}) do |acc, date|
           psu = psu_earned_by(date)
           acc[psu] = { date: date } unless acc.keys.include?(psu)
           acc
@@ -346,7 +346,7 @@ class AdminUser < ApplicationRecord
     # TODO: Take into account wether this user is active or not
     studio_coordinator_periods.reduce(0.0) do |acc, scp|
       acc +=
-        ((scp.ended_at_or_now.to_time - scp.started_at.to_time)/1.month.second)
+        ((scp.period_ended_at.to_time - scp.started_at.to_time)/1.month.second)
     end
   end
 
@@ -371,7 +371,7 @@ class AdminUser < ApplicationRecord
       return latest if latest.ended_at.nil?
     end
     full_time_periods.find do |ftp|
-      ftp.started_at <= date && ftp.ended_at_or_now >= date
+      ftp.started_at <= date && ftp.period_ended_at >= date
     end
   end
 

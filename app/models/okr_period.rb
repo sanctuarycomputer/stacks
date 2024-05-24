@@ -1,6 +1,6 @@
 class OkrPeriod < ApplicationRecord
-  validate :does_not_overlap
-  validate :ends_at_before_starts_at?
+  include ActsAsPeriod
+
   validates_presence_of :target
   validates_presence_of :tolerance
 
@@ -25,9 +25,9 @@ class OkrPeriod < ApplicationRecord
       else
         raise "unknown_operator"
       end
-    { 
-      health: tag, 
-      surplus: surplus, 
+    {
+      health: tag,
+      surplus: surplus,
       target: target
     }
   end
@@ -40,27 +40,7 @@ class OkrPeriod < ApplicationRecord
     ends_at || Date.new(3015, 1, 1)
   end
 
-  def does_not_overlap
-    overlap =
-      okr.okr_periods
-        .reject{|p| p.id.nil?}
-        .reject{|p| p == self}
-        .find{|p| self.overlaps?(p)}
-    if overlap.present?
-      errors.add(:starts_at, "Must not overlap with another period")
-    end
-  end
-
-  def overlaps?(other)
-    period_starts_at <= other.period_ends_at &&
-    other.period_starts_at <= period_ends_at
-  end
-
-  def ends_at_before_starts_at?
-    if starts_at.present? && ends_at.present?
-      unless ends_at > starts_at
-        errors.add(:starts_at, "Must be before ends_at")
-      end
-    end
+  def sibling_periods
+    okr.okr_periods
   end
 end

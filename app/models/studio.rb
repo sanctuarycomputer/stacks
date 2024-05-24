@@ -22,7 +22,7 @@ class Studio < ApplicationRecord
       health: :failing,
       value: "🚒 Emergency, Break Glass",
       hint: "<a href='https://www.notion.so/garden3d/The-Operating-Modes-of-garden3d-6eefbe5c5f5c463bb5e4679f977a46fa?pvs=4#002d71afc74c468381b5f300b81921fb' target='_blank'>Guidance ↗</a>"
-    }, 
+    },
     1 => {
       health: :at_risk,
       value: "😾 White Knuckling",
@@ -59,7 +59,7 @@ class Studio < ApplicationRecord
 
   def current_studio_coordinators
     studio_coordinator_periods
-      .select{|p| p.started_at <= Date.today && p.ended_at_or_now >= Date.today}
+      .select{|p| p.started_at <= Date.today && p.period_ended_at >= Date.today}
       .map(&:admin_user)
       .select(&:active?)
   end
@@ -98,7 +98,7 @@ class Studio < ApplicationRecord
             acc[period] = utilization_for_period(period, preloaded_studios)
             acc
           end
-        
+
         g3d = preloaded_studios.find(&:is_garden3d?)
         g3d_utilization_by_period  =
           periods.reduce({}) do |acc, period|
@@ -151,7 +151,7 @@ class Studio < ApplicationRecord
     # another faux OKR that gives an aggregate studio health.
     # We need to do it in this context because it has to look
     # back at multiple periods
-    snapshot = 
+    snapshot =
       [:month].reduce(snapshot) do |acc, gradation|
         acc[gradation] = snapshot[gradation].map do |d|
           # We need at least 4 periods to make this datapoint
@@ -161,7 +161,7 @@ class Studio < ApplicationRecord
             d[:accrual][:okrs]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
             next d
           end
-          
+
           # We need to ensure those periods actually have sellable_hours_sold data
           prev_four_periods = [d, snapshot[gradation][idx - 1], snapshot[gradation][idx - 2], snapshot[gradation][idx - 3]]
           unless prev_four_periods.map{|d| d.dig(:cash, :okrs, "Sellable Hours Sold", :value).present? && d.dig(:accrual, :okrs, "Sellable Hours Sold", :value).present? }.all?
@@ -200,7 +200,7 @@ class Studio < ApplicationRecord
 
       period_range = period.starts_at..period.ends_at
       okrp_candidate = okrps_for_studio.reduce({ overlap_days: nil, okrp: nil }) do |agg, okrp|
-        okrp_range = okrp.period_starts_at..okrp.period_ends_at 
+        okrp_range = okrp.period_starts_at..okrp.period_ends_at
         overlap_days = (period_range.to_a & okrp_range.to_a).count
         next { overlap_days: overlap_days, okrp: okrp } if (agg[:overlap_days].nil? || overlap_days >= agg[:overlap_days])
         agg
@@ -210,14 +210,14 @@ class Studio < ApplicationRecord
       okrp = okrp_candidate[:okrp]
       acc[okr.name] = data
       next acc if okrp.nil?
-      
-      acc[okr.name] = 
+
+      acc[okr.name] =
         okrp.health_for_value(data[:value]).merge(data).merge({ hint: hint_for_okr(okr, datapoints) })
 
       # HACK: It's helpful for reinvestment to know how much
       # surplus profit we've made in the YTD.
       if okrp.okr.datapoint == "profit_margin"
-        target_usd = 
+        target_usd =
           datapoints[:revenue][:value] * (acc[okrp.okr.name][:target]/100)
         surplus_usd =
           datapoints[:revenue][:value] - datapoints[:cogs][:value]
@@ -230,7 +230,7 @@ class Studio < ApplicationRecord
           unit: :usd
         }
 
-        target_usd = 
+        target_usd =
           datapoints[:revenue][:value] * (acc[okrp.okr.name][:target]/100)
         surplus_usd =
           datapoints[:revenue][:value] * (acc[okrp.okr.name][:surplus]/100)
@@ -315,45 +315,24 @@ class Studio < ApplicationRecord
   end
 
   def core_members_active_on(date)
-    if is_garden3d?
-      AdminUser
-        .joins(:full_time_periods)
-        .where("started_at <= ? AND coalesce(ended_at, 'infinity') >= ? AND contributor_type IN (0, 1)", date, date)
-    else
-      admin_users
-        .joins(:full_time_periods)
-        .where("started_at <= ? AND coalesce(ended_at, 'infinity') >= ? AND contributor_type IN (0, 1)", date, date)
-    end
+    (is_garden3d? ? AdminUser : admin_users)
+      .joins(:full_time_periods, :studio_memberships)
+      .where("
+        full_time_periods.started_at <= :date AND
+        coalesce(full_time_periods.ended_at, 'infinity') >= :date AND
+        full_time_periods.contributor_type IN (0, 1) AND
+        studio_memberships.started_at <= :date AND
+        coalesce(studio_memberships.ended_at, 'infinity') >= :date AND
+        studio_memberships.studio_id = :studio_id
+      ", { date: date, studio_id: self.id })
   end
 
   def studio_members_that_left_during_period(period)
-    users =
-      (is_garden3d? ? AdminUser : admin_users)
-        .includes(:full_time_periods)
-        .joins(:full_time_periods)
-        .where("ended_at >= ? AND coalesce(ended_at, 'infinity') <= ? AND contributor_type IN (0, 1)", period.starts_at, period.ends_at)
+    studio_members_at_start_of_period = core_members_active_on(period.starts_at)
+    studio_members_at_end_of_period = core_members_active_on(period.ends_at)
 
-    users.select do |u|
-      # It's possible that a user has another full time period
-      # following the one that ended in this period if their
-      # utilization was adjusted or they switched to 4-day work
-      # week.
-
-      # However, someone like Alicia who left for a period and
-      # returned should be counted in the attrition numbers, so
-      # instead, we check that there's not another full_time_period
-      # immediately following the one that ended in this period (we
-      # give a 7 day window for this).
-      last_ending_ftp_in_period = u
-        .full_time_periods
-        .where("ended_at >= ? AND coalesce(ended_at, 'infinity') <= ?", period.starts_at, period.ends_at)
-        .order(started_at: :desc)
-        .last
-      u.full_time_periods.where(
-        "started_at >= ? AND started_at <= ?",
-        last_ending_ftp_in_period.ended_at + 1.day,
-        last_ending_ftp_in_period.ended_at + 7.days
-      ).empty?
+    studio_members_at_start_of_period.reject do |sm|
+      studio_members_at_end_of_period.include?(sm)
     end
   end
 
@@ -404,8 +383,8 @@ class Studio < ApplicationRecord
     accounting_method,
     preloaded_studios = Studio.all,
     preloaded_new_biz_notion_pages = new_biz_notion_pages,
-    utilization_for_period = utilization_for_period(period, preloaded_studios), 
-    utilization_for_prev_period = utilization_for_period(prev_period, preloaded_studios), 
+    utilization_for_period = utilization_for_period(period, preloaded_studios),
+    utilization_for_prev_period = utilization_for_period(prev_period, preloaded_studios),
     g3d_utilization_for_period = preloaded_studios.find(&:is_garden3d?).utilization_for_period(period, preloaded_studios),
     g3d_utilization_for_prev_period = preloaded_studios.find(&:is_garden3d?).utilization_for_period(prev_period, preloaded_studios)
   )
@@ -418,7 +397,7 @@ class Studio < ApplicationRecord
     )
 
     cogs = period.report.cogs_for_studio(
-      self, 
+      self,
       preloaded_studios,
       accounting_method,
       period.label,
@@ -432,7 +411,7 @@ class Studio < ApplicationRecord
       )
 
       prev_cogs = prev_period.report.cogs_for_studio(
-        self, 
+        self,
         preloaded_studios,
         accounting_method,
         prev_period.label,
@@ -443,15 +422,15 @@ class Studio < ApplicationRecord
     aggregate_social_following =
       SocialProperty.aggregate!(all_social_properties)
 
-    social_growth_count, social_growth_percentage = 
+    social_growth_count, social_growth_percentage =
       aggregate_social_growth_for_period(aggregate_social_following, period)
 
     leaving_members =
       studio_members_that_left_during_period(period)
 
-    biz_settled_count = 
+    biz_settled_count =
       biz_leads_status_changed_in_period(preloaded_new_biz_notion_pages, ['Active', 'Passed', 'Lost/Stale'], period).try(:length) || 0
-    
+
     biz_won_count =
       biz_leads_status_changed_in_period(preloaded_new_biz_notion_pages, 'Active', period).try(:length) || 0
 
@@ -557,7 +536,7 @@ class Studio < ApplicationRecord
     data[:free_hours_count] = { unit: :count, value: nil }
     unless v.nil?
       free_hours_given = v[:billable]["0.0"] || 0
-      data[:free_hours][:value] = v[:sellable] == 0 ? 0 : ((free_hours_given / v[:sellable]) * 100) 
+      data[:free_hours][:value] = v[:sellable] == 0 ? 0 : ((free_hours_given / v[:sellable]) * 100)
       data[:free_hours_count][:value] = free_hours_given
     end
 
@@ -654,7 +633,7 @@ class Studio < ApplicationRecord
 
   def merged_utilization_data(
     utilization_for_period,
-    g3d_utilization_for_period 
+    g3d_utilization_for_period
   )
     # TODO: Fix me - right now I return nil if this period predates utilization data OR
     # there's just no one there
