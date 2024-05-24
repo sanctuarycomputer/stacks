@@ -328,40 +328,11 @@ class Studio < ApplicationRecord
   end
 
   def studio_members_that_left_during_period(period)
-    users =
-      (is_garden3d? ? AdminUser : admin_users)
-        .includes(:full_time_periods)
-        .joins(:full_time_periods, :studio_memberships)
-        .where("
-          full_time_periods.ended_at >= :period_starts_at AND
-          coalesce(full_time_periods.ended_at, 'infinity') <= :period_ends_at AND
-          full_time_periods.contributor_type IN (0, 1) AND
-          studio_memberships.ended_at >= :period_starts_at AND
-          coalesce(studio_memberships.ended_at, 'infinity') <= :period_ends_at AND
-          studio_memberships.studio_id = :studio_id
-        ", { period_starts_at: period.starts_at, period_ends_at: period.ends_at, studio_id: self.id })
+    studio_members_at_start_of_period = core_members_active_on(period.starts_at)
+    studio_members_at_end_of_period = core_members_active_on(period.ends_at)
 
-    users.select do |u|
-      # It's possible that a user has another full time period
-      # following the one that ended in this period if their
-      # utilization was adjusted or they switched to 4-day work
-      # week.
-
-      # However, someone like Alicia who left for a period and
-      # returned should be counted in the attrition numbers, so
-      # instead, we check that there's not another full_time_period
-      # immediately following the one that ended in this period (we
-      # give a 7 day window for this).
-      last_ending_ftp_in_period = u
-        .full_time_periods
-        .where("full_time_periods.ended_at >= ? AND coalesce(full_time_periods.ended_at, 'infinity') <= ?", period.starts_at, period.ends_at)
-        .order(started_at: :desc)
-        .last
-      u.full_time_periods.where(
-        "full_time_periods.started_at >= ? AND full_time_periods.started_at <= ?",
-        last_ending_ftp_in_period.ended_at + 1.day,
-        last_ending_ftp_in_period.ended_at + 7.days
-      ).empty?
+    studio_members_at_start_of_period.reject do |sm|
+      studio_members_at_end_of_period.include?(sm)
     end
   end
 
