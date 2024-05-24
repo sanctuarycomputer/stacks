@@ -197,8 +197,9 @@ class Stacks::Notifications
 
 			ForecastAssignmentDailyFinancialSnapshot.needs_review.each do |snapshot|
         notifications << {
-          subject: snapshot.forecast_assignment,
+          subject: snapshot.forecast_assignment.forecast_project,
           type: :forecast_project,
+          forecast_person_email: snapshot.forecast_assignment.forecast_person.email,
           link: snapshot.forecast_assignment.forecast_project.edit_link,
           error: :person_missing_hourly_rate,
           priority: 1
