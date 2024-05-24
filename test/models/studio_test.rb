@@ -28,7 +28,7 @@ class StudioTest < ActiveSupport::TestCase
       admin_user: admin_user,
       started_at: Date.new(2021, 1, 1),
       ended_at: Date.new(2021, 12, 31),
-      contributor_type: :five_day,
+      contributor_type: Enum::ContributorType::FIVE_DAY,
       expected_utilization: 0.8
     })
     admin_user.full_time_periods.reload
@@ -66,7 +66,7 @@ class StudioTest < ActiveSupport::TestCase
       admin_user: admin_user,
       started_at: Date.new(2021, 1, 1),
       ended_at: Date.new(2021, 12, 31),
-      contributor_type: :four_day,
+      contributor_type: Enum::ContributorType::FOUR_DAY,
       expected_utilization: 0.6
     })
     admin_user.full_time_periods.reload
@@ -104,7 +104,7 @@ class StudioTest < ActiveSupport::TestCase
       admin_user: admin_user,
       started_at: Date.new(2021, 1, 1),
       ended_at: Date.new(2021, 12, 31),
-      contributor_type: :variable_hours,
+      contributor_type: Enum::ContributorType::VARIABLE_HOURS,
       expected_utilization: 0.6
     })
     admin_user.full_time_periods.reload
@@ -151,7 +151,7 @@ class StudioTest < ActiveSupport::TestCase
       admin_user: user_one,
       started_at: Date.yesterday,
       ended_at: nil,
-      contributor_type: :five_day,
+      contributor_type: Enum::ContributorType::FIVE_DAY,
       expected_utilization: 0.8
     })
 
@@ -159,7 +159,7 @@ class StudioTest < ActiveSupport::TestCase
       admin_user: user_two,
       started_at: Date.yesterday,
       ended_at: nil,
-      contributor_type: :five_day,
+      contributor_type: Enum::ContributorType::FIVE_DAY,
       expected_utilization: 0.8
     })
 
@@ -167,7 +167,7 @@ class StudioTest < ActiveSupport::TestCase
       admin_user: user_three,
       started_at: Date.yesterday,
       ended_at: nil,
-      contributor_type: :five_day,
+      contributor_type: Enum::ContributorType::FIVE_DAY,
       expected_utilization: 0.8
     })
 
@@ -175,7 +175,7 @@ class StudioTest < ActiveSupport::TestCase
       admin_user: user_four,
       started_at: Date.yesterday,
       ended_at: nil,
-      contributor_type: :five_day,
+      contributor_type: Enum::ContributorType::FIVE_DAY,
       expected_utilization: 0.8
     })
 

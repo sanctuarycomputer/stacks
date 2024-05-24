@@ -95,8 +95,9 @@ class AdminUser < ApplicationRecord
     return nil unless ftp.present?
 
     is_working_day =
-      (ftp.contributor_type == "four_day" && (1..4).include?(date.wday)) ||
-      (ftp.contributor_type == "five_day" && (1..5).include?(date.wday))
+      (ftp.four_day? && (1..4).include?(date.wday)) ||
+      (ftp.five_day? && (1..5).include?(date.wday))
+
     return nil unless is_working_day
 
     {
@@ -162,8 +163,8 @@ class AdminUser < ApplicationRecord
   scope :core, -> {
     joins(:full_time_periods).where(
       "full_time_periods.contributor_type = ? OR full_time_periods.contributor_type = ?",
-      FullTimePeriod.contributor_types["five_day"],
-      FullTimePeriod.contributor_types["four_day"]
+      FullTimePeriod.contributor_types[Enum::ContributorType::FIVE_DAY],
+      FullTimePeriod.contributor_types[Enum::ContributorType::FOUR_DAY]
     ).uniq
   }
 
@@ -227,7 +228,7 @@ class AdminUser < ApplicationRecord
   end
 
   def contiguous_psu_earning_periods_until(date = Date.today)
-    full_time_periods.select{|ftp| ["five_day", "four_day"].include?(ftp.contributor_type)}.reduce([]) do |acc, ftp|
+    full_time_periods.select{|ftp| ftp.four_day? || ftp.five_day? }.reduce([]) do |acc, ftp|
       if acc.empty?
         # This is the first ftp, stash it.
         next acc << {ftps: [ftp], started_at: ftp.started_at, ended_at: ftp.ended_at_or(date) }
@@ -256,7 +257,7 @@ class AdminUser < ApplicationRecord
 
     ftp = full_time_period_at(date)
     return nil unless ftp.present?
-    return nil unless ["five_day", "four_day"].include?(ftp.contributor_type)
+    return nil unless ftp.four_day? || ftp.five_day?
 
     total = psu_earning_periods.reduce(0) do |acc, psuep|
       ended_at = psuep[:ended_at] <= date ? psuep[:ended_at] : date
@@ -408,7 +409,7 @@ class AdminUser < ApplicationRecord
         (ftp.started_at <= d) && (ftp.ended_at == nil || ftp.ended_at >= d)
       end
 
-      if ftp.contributor_type == "four_day"
+      if ftp.four_day?
         (1..4).include?(d.wday)
       else
         (1..5).include?(d.wday)

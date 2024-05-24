@@ -12,13 +12,22 @@ class FullTimePeriod < ApplicationRecord
     variable_hours: 2
   }
 
+  def four_day?
+    contributor_type == Enum::ContributorType::FOUR_DAY
+  end
+
+  def five_day?
+    contributor_type == Enum::ContributorType::FIVE_DAY
+  end
+
   def psu_earn_rate
-    if contributor_type == "five_day"
-      return 1
-    elsif contributor_type == "four_day"
-      return 0.8
+    if five_day?
+      1
+    elsif four_day?
+      0.8
+    else
+      0
     end
-    0
   end
 
   def overlaps?(other)

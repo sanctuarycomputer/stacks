@@ -117,12 +117,12 @@ class Stacks::AdminUserCostWindowSyncerTest < ActiveSupport::TestCase
     user.full_time_periods.create!({
       started_at: Date.today - 1.year,
       ended_at: Date.today - 6.months - 1.day,
-      contributor_type: :five_day
+      contributor_type: Enum::ContributorType::FIVE_DAY
     })
 
     user.full_time_periods.create!({
       started_at: Date.today - 6.months,
-      contributor_type: :four_day
+      contributor_type: Enum::ContributorType::FOUR_DAY
     })
 
     syncer = Stacks::AdminUserSalaryWindowSyncer.new(user)

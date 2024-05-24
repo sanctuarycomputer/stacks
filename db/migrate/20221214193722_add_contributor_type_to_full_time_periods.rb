@@ -7,7 +7,11 @@ class AddContributorTypeToFullTimePeriods < ActiveRecord::Migration[6.0]
     AdminUser.all.each do |a|
       if a.full_time_periods.empty?
         if ["core", "satellite"].include?(a.contributor_type)
-          FullTimePeriod.create!(admin_user: a, started_at: Date.today, contributor_type: :variable_hours)
+          FullTimePeriod.create!({
+            admin_user: a,
+            started_at: Date.today,
+            contributor_type: Enum::ContributorType::VARIABLE_HOURS
+          })
         end
       end
     end
@@ -23,21 +27,27 @@ class AddContributorTypeToFullTimePeriods < ActiveRecord::Migration[6.0]
         if a.contributor_type == "core"
           if ftp.multiplier == 0.8
             # 4 day worker
-            next ftp.update!(contributor_type: :four_day)
+            next ftp.update!(contributor_type: Enum::ContributorType::FOUR_DAY)
           elsif ftp.multiplier == 1
             # 5 Day worker
-            next ftp.update!(contributor_type: :five_day)
+            next ftp.update!(contributor_type: Enum::ContributorType::FIVE_DAY)
           elsif ftp.multiplier
             # ??? Give a "0" multiplier, probably should be variable_hours
-            next ftp.update!(contributor_type: :variable_hours, expected_utilization: 0)
-          end 
+            next ftp.update!({
+              contributor_type: Enum::ContributorType::VARIABLE_HOURS,
+              expected_utilization: 0
+            })
+          end
         end
-  
+
         if a.contributor_type == "satellite"
           # Move to variable_hours
-          next ftp.update!(contributor_type: :variable_hours, expected_utilization: 0)
+          next ftp.update!({
+            contributor_type: Enum::ContributorType::VARIABLE_HOURS,
+            expected_utilization: 0
+          })
         end
-  
+
         if a.contributor_type == "bot"
           # ??? Why does a bot have a FTP
           next ftp.destroy!

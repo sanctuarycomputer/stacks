@@ -105,7 +105,7 @@ class Stacks::Automator
       end_of_last_week = (Date.today - 1.week).end_of_week
       ForecastPerson.includes(:admin_user).all.reject(&:archived).each do |fp|
         next unless fp.admin_user.present?
-        next if fp.admin_user.contributor_type == "variable_hours"
+        next if fp.admin_user.contributor_type == Enum::ContributorType::VARIABLE_HOURS
 
         missing_hours = fp.missing_allocation_during_range_in_hours(
           Date.today.beginning_of_month, end_of_last_week
