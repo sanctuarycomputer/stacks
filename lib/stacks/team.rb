@@ -13,7 +13,7 @@ class Stacks::Team
       AdminUser.core.map do |a|
         {
           admin_user: a,
-          days: (a.full_time_periods.last.ended_at_or_now - a.full_time_periods.first.started_at).to_i,
+          days: (a.full_time_periods.last.period_ended_at - a.full_time_periods.first.started_at).to_i,
           considered_temporary: a.considered_temporary?
         }
       end.sort {|a,b| b[:days] <=> a[:days]}

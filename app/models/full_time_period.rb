@@ -21,11 +21,7 @@ class FullTimePeriod < ApplicationRecord
   end
 
   def include?(date)
-    started_at <= date && date <= ended_at_or_now
-  end
-
-  def ended_at_or_now
-    ended_at_or(Date.today)
+    started_at <= date && date <= period_ended_at
   end
 
   def ended_at_or(date = Date.today)

@@ -59,7 +59,7 @@ class Studio < ApplicationRecord
 
   def current_studio_coordinators
     studio_coordinator_periods
-      .select{|p| p.started_at <= Date.today && p.ended_at_or_now >= Date.today}
+      .select{|p| p.started_at <= Date.today && p.period_ended_at >= Date.today}
       .map(&:admin_user)
       .select(&:active?)
   end

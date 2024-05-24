@@ -5,10 +5,6 @@ class StudioCoordinatorPeriod < ApplicationRecord
   validates_presence_of :started_at
   validate :ended_at_before_started_at?
 
-  def ended_at_or_now
-    ended_at || Date.today
-  end
-
   def ended_at_before_started_at?
     if ended_at.present?
       unless ended_at > started_at
