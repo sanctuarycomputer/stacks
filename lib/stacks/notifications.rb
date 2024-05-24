@@ -195,7 +195,7 @@ class Stacks::Notifications
         } if fp.has_no_explicit_hourly_rate?
       end
 
-      if Rails.env.development?
+      unless Rails.env.production?
         ForecastAssignmentDailyFinancialSnapshot.needs_review.each do |snapshot|
           notifications << {
             subject: snapshot.forecast_assignment.forecast_project,
