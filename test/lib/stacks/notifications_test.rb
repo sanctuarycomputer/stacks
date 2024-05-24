@@ -1,6 +1,6 @@
 require "test_helper"
 
-class ProjectTrackertTest < ActiveSupport::TestCase
+class NotificationstTest < ActiveSupport::TestCase
   test "#make_notifications! creates notifications for cost windows needing review" do
     Stacks::Quickbooks.stubs(:fetch_all_customers).returns([])
     Stacks::Team.stubs(:fetch_from_google_workspace).returns([])
@@ -89,8 +89,9 @@ class ProjectTrackertTest < ActiveSupport::TestCase
     refute_nil(notification, "Expected notification not found")
 
     assert_equal(notification.params[:type], :forecast_project)
-    assert_equal(notification.params[:subject].forecast_id, assignment_two.forecast_id)
+    assert_equal(notification.params[:subject].forecast_id, forecast_project.forecast_id)
     assert_equal(notification.params[:priority], 1)
+    assert_equal(notification.params[:forecast_person_email], person_two.email)
     assert(notification.params[:link].end_with?("/projects/55/edit"))
   end
 end
