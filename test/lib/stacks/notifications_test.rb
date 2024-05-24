@@ -1,6 +1,6 @@
 require "test_helper"
 
-class NotificationstTest < ActiveSupport::TestCase
+class NotificationsTest < ActiveSupport::TestCase
   test "#make_notifications! creates notifications for cost windows needing review" do
     Stacks::Quickbooks.stubs(:fetch_all_customers).returns([])
     Stacks::Team.stubs(:fetch_from_google_workspace).returns([])
@@ -80,11 +80,28 @@ class NotificationstTest < ActiveSupport::TestCase
       needs_review: true
     })
 
+    # Creating a duplicate snapshot to ensure that the notification creation
+    # code correctly deduplicates new notifications in-memory:
+    ForecastAssignmentDailyFinancialSnapshot.create!({
+      forecast_assignment: assignment_two,
+      forecast_person_id: person_two.id,
+      forecast_project_id: forecast_project.id,
+      effective_date: Date.today,
+      studio_id: studio.id,
+      hourly_cost: 0,
+      hours: 8,
+      needs_review: true
+    })
+
     Stacks::Notifications.make_notifications!
 
-    notification = Notification.all.find do |notification|
-      notification.params[:error] == :person_missing_hourly_rate
-    end
+    notifications = Notification.where(
+      "params -> 'error' ->> 'value' = 'person_missing_hourly_rate'"
+    )
+
+    assert_equal(notifications.count, 1)
+
+    notification = notifications.first
 
     refute_nil(notification, "Expected notification not found")
 

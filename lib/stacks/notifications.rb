@@ -195,17 +195,15 @@ class Stacks::Notifications
         } if fp.has_no_explicit_hourly_rate?
       end
 
-      unless Rails.env.production?
-        ForecastAssignmentDailyFinancialSnapshot.needs_review.each do |snapshot|
-          notifications << {
-            subject: snapshot.forecast_assignment.forecast_project,
-            type: :forecast_project,
-            forecast_person_email: snapshot.forecast_assignment.forecast_person.email,
-            link: snapshot.forecast_assignment.forecast_project.edit_link,
-            error: :person_missing_hourly_rate,
-            priority: 1
-          }
-        end
+      ForecastAssignmentDailyFinancialSnapshot.needs_review.each do |snapshot|
+        notifications << {
+          subject: snapshot.forecast_assignment.forecast_project,
+          type: :forecast_project,
+          forecast_person_email: snapshot.forecast_assignment.forecast_person.email,
+          link: snapshot.forecast_assignment.forecast_project.edit_link,
+          error: :person_missing_hourly_rate,
+          priority: 1
+        }
       end
 
       forecast_clients.each do |fc|
@@ -340,23 +338,19 @@ class Stacks::Notifications
       notifications.sort{|a, b| a[:priority] <=> b[:priority] }
 
       notifications_made = 0
-      recent_notifications =
-        System.instance.notifications.where("read_at is NULL OR read_at > ?", 1.week.ago)
+      recent_params = System.instance.notifications
+        .where("read_at is NULL OR read_at > ?", 1.week.ago)
+        .pluck(:params)
 
       notifications.each do |n|
-        recent_notification = recent_notifications.find do |existing|
-          begin
-            (existing.params.to_a - n.to_a | n.to_a - existing.params.to_a) == []
-          rescue => e
-            # In rare cases, Notification might exist that references a deleted user.
-            existing.destroy!
-            false
-          end
+        matching_params = recent_params.find do |params|
+          (params.to_a - n.to_a | n.to_a - params.to_a) == []
         end
 
-        unless recent_notification.present?
+        unless matching_params.present?
           notifications_made += 1
           SystemNotification.with(n).deliver(System.instance)
+          recent_params << n
         end
       end
 
