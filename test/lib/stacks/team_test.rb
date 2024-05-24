@@ -8,7 +8,7 @@ class Stacks::TeamTest < ActiveSupport::TestCase
         email: "fulltime1@sanctuary.computer",
         password: "password",
       }),
-      contributor_type: FullTimePeriod.contributor_types["five_day"]
+      contributor_type: Enum::ContributorType::FIVE_DAY
     })
 
     FullTimePeriod.create!({
@@ -17,7 +17,7 @@ class Stacks::TeamTest < ActiveSupport::TestCase
         email: "fulltime2@sanctuary.computer",
         password: "password",
       }),
-      contributor_type: FullTimePeriod.contributor_types["four_day"]
+      contributor_type: Enum::ContributorType::FOUR_DAY
     })
 
     FullTimePeriod.create!({
@@ -26,7 +26,7 @@ class Stacks::TeamTest < ActiveSupport::TestCase
         email: "not_fulltime@sanctuary.computer",
         password: "password",
       }),
-      contributor_type: FullTimePeriod.contributor_types["variable_hours"]
+      contributor_type: Enum::ContributorType::VARIABLE_HOURS
     })
 
     assert Stacks::Team.admin_users_sorted_by_tenure_in_days.length == 2
@@ -40,7 +40,7 @@ class Stacks::TeamTest < ActiveSupport::TestCase
         email: "fulltime1@sanctuary.computer",
         password: "password",
       }),
-      contributor_type: FullTimePeriod.contributor_types["five_day"]
+      contributor_type: Enum::ContributorType::FIVE_DAY
     })
 
     FullTimePeriod.create!({
@@ -49,7 +49,7 @@ class Stacks::TeamTest < ActiveSupport::TestCase
         email: "fulltime2@sanctuary.computer",
         password: "password",
       }),
-      contributor_type: FullTimePeriod.contributor_types["four_day"]
+      contributor_type: Enum::ContributorType::FOUR_DAY
     })
 
     FullTimePeriod.create!({
@@ -58,7 +58,7 @@ class Stacks::TeamTest < ActiveSupport::TestCase
         email: "not_fulltime@sanctuary.computer",
         password: "password",
       }),
-      contributor_type: FullTimePeriod.contributor_types["four_day"],
+      contributor_type: Enum::ContributorType::FOUR_DAY,
       considered_temporary: true
     })
 

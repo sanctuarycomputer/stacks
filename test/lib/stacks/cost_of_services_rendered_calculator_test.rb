@@ -46,7 +46,7 @@ class Stacks::CostOfServicesRenderedCalculatorTest < ActiveSupport::TestCase
       admin_user: user_one,
       started_at: Date.new(2020, 1, 1),
       ended_at: nil,
-      contributor_type: :five_day,
+      contributor_type: Enum::ContributorType::FIVE_DAY,
       expected_utilization: 0.8
     })
 
@@ -54,7 +54,7 @@ class Stacks::CostOfServicesRenderedCalculatorTest < ActiveSupport::TestCase
       admin_user: user_two,
       started_at: Date.new(2020, 1, 1),
       ended_at: nil,
-      contributor_type: :five_day,
+      contributor_type: Enum::ContributorType::FIVE_DAY,
       expected_utilization: 0.8
     })
 

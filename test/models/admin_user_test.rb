@@ -10,7 +10,7 @@ class AdminUserTest < ActiveSupport::TestCase
       admin_user: admin_user,
       started_at: Date.new(2020, 1, 1),
       ended_at: nil,
-      contributor_type: :five_day,
+      contributor_type: Enum::ContributorType::FIVE_DAY,
       expected_utilization: 0.8
     })
     admin_user.full_time_periods.reload
@@ -41,14 +41,14 @@ class AdminUserTest < ActiveSupport::TestCase
       admin_user: admin_user,
       started_at: Date.new(2020, 1, 1),
       ended_at: Date.new(2020, 12, 31),
-      contributor_type: :five_day,
+      contributor_type: Enum::ContributorType::FIVE_DAY,
       expected_utilization: 0.8
     })
     FullTimePeriod.create!({
       admin_user: admin_user,
       started_at: Date.new(2021, 6, 5),
       ended_at: nil,
-      contributor_type: :five_day,
+      contributor_type: Enum::ContributorType::FIVE_DAY,
       expected_utilization: 0.8
     })
     admin_user.full_time_periods.reload
@@ -80,14 +80,14 @@ class AdminUserTest < ActiveSupport::TestCase
       admin_user: admin_user,
       started_at: Date.new(2020, 1, 1),
       ended_at: Date.new(2020, 12, 31),
-      contributor_type: :five_day,
+      contributor_type: Enum::ContributorType::FIVE_DAY,
       expected_utilization: 0.8
     })
     FullTimePeriod.create!({
       admin_user: admin_user,
       started_at: Date.new(2021, 1, 1),
       ended_at: nil,
-      contributor_type: :four_day,
+      contributor_type: Enum::ContributorType::FOUR_DAY,
       expected_utilization: 0.8
     })
     admin_user.full_time_periods.reload
@@ -106,14 +106,14 @@ class AdminUserTest < ActiveSupport::TestCase
       admin_user: admin_user,
       started_at: Date.new(2020, 1, 1),
       ended_at: Date.new(2020, 12, 15),
-      contributor_type: :five_day,
+      contributor_type: Enum::ContributorType::FIVE_DAY,
       expected_utilization: 0.8
     })
     FullTimePeriod.create!({
       admin_user: admin_user,
       started_at: Date.new(2020, 12, 16),
       ended_at: nil,
-      contributor_type: :four_day,
+      contributor_type: Enum::ContributorType::FOUR_DAY,
       expected_utilization: 0.8
     })
     admin_user.full_time_periods.reload
@@ -134,14 +134,14 @@ class AdminUserTest < ActiveSupport::TestCase
       admin_user: admin_user,
       started_at: Date.new(2020, 1, 1),
       ended_at: Date.new(2020, 12, 15),
-      contributor_type: :five_day,
+      contributor_type: Enum::ContributorType::FIVE_DAY,
       expected_utilization: 0.8
     })
     FullTimePeriod.create!({
       admin_user: admin_user,
       started_at: Date.new(2020, 12, 16),
       ended_at: nil,
-      contributor_type: :five_day,
+      contributor_type: Enum::ContributorType::FIVE_DAY,
       expected_utilization: 0.2 # Utilization is the only thing that changed on the 16th of December
     })
     admin_user.full_time_periods.reload
@@ -221,7 +221,7 @@ class AdminUserTest < ActiveSupport::TestCase
       admin_user: user,
       started_at: start_date,
       ended_at: nil,
-      contributor_type: :five_day,
+      contributor_type: Enum::ContributorType::FIVE_DAY,
       expected_utilization: 0.8
     })
 
@@ -245,7 +245,7 @@ class AdminUserTest < ActiveSupport::TestCase
       admin_user: user,
       started_at: start_date,
       ended_at: nil,
-      contributor_type: :five_day,
+      contributor_type: Enum::ContributorType::FIVE_DAY,
       expected_utilization: 0.8
     })
 

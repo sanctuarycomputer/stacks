@@ -66,6 +66,6 @@ class Stacks::AdminUserSalaryWindowSyncer
       return 1
     end
 
-    ftp.contributor_type == "four_day" ? 0.8 : 1
+    ftp.four_day? ? 0.8 : 1
   end
 end

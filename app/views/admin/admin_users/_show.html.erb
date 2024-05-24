@@ -197,9 +197,11 @@
     </div>
   </div>
 
+  <% ftp = ftp_log[:ftp] %>
+
   <p class="nag" style="margin-right: 6px">
     <strong>
-      <% if ["five_day", "four_day"].include?(ftp_log[:ftp].contributor_type) %>
+      <% if ftp.four_day? || ftp.five_day? %>
         <%= ftp_log[:ftp].expected_utilization * 100 %>% Expected Utilization
       <% else %>
         Does not effect Expected Utilization
@@ -213,9 +215,9 @@
   </p>
   <p class="nag">
     <strong>
-      <% if ftp_log[:ftp].contributor_type == "five_day" %>
+      <% if ftp.five_day? %>
         1 PSU p/month
-      <% elsif ftp_log[:ftp].contributor_type == "four_day" %>
+      <% elsif ftp.four_day? %>
         0.8 PSU p/month
       <% else %>
         Does not accrue PSU
