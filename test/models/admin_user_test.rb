@@ -543,4 +543,108 @@ class AdminUserTest < ActiveSupport::TestCase
 
     assert_in_delta(expected_cost, actual_cost, 0.00001)
   end
+
+  test "#cost_of_employment_on_date correctly tallies effective business days for four-day workers" do
+    user = AdminUser.create!({
+      email: "josh@sanctuary.computer",
+      password: "password",
+      old_skill_tree_level: :senior_2
+    })
+
+    date = Date.new(2022, 1, 1)
+
+    user.full_time_periods.create!({
+      started_at: Date.new(2021, 1, 1),
+      ended_at: nil,
+      contributor_type: Enum::ContributorType::FOUR_DAY,
+      expected_utilization: 0.8
+    })
+
+    actual_cost = user.cost_of_employment_on_date(date)
+
+    business_days = Stacks::Utils.business_days_between(
+      date.beginning_of_year,
+      date.end_of_year
+    )
+
+    tax_benefits_factor = 1.1
+    expected_salary = 105000
+    expected_cost = expected_salary * tax_benefits_factor / (business_days * 0.8)
+
+    assert_in_delta(expected_cost, actual_cost, 0.00001)
+  end
+
+  test "#full_time_period_at returns current full time period if date is in the future" do
+    user = AdminUser.create!({
+      email: "josh@sanctuary.computer",
+      password: "password"
+    })
+
+    user.full_time_periods.create!({
+      started_at: Date.new(2021, 1, 1),
+      ended_at: Date.new(2021, 12, 31),
+      contributor_type: Enum::ContributorType::FIVE_DAY,
+      expected_utilization: 0.8
+    })
+
+    user.full_time_periods.create!({
+      started_at: Date.new(2022, 1, 1),
+      ended_at: Date.new(2022, 12, 31),
+      contributor_type: Enum::ContributorType::FIVE_DAY,
+      expected_utilization: 0.8
+    })
+
+    expected_period = user.full_time_periods.create!({
+      started_at: Date.new(2023, 1, 1),
+      ended_at: nil,
+      contributor_type: Enum::ContributorType::FIVE_DAY,
+      expected_utilization: 0.8
+    })
+
+    period = user.full_time_period_at(Date.today + 5.days)
+    assert_equal(period, expected_period)
+  end
+
+  test "#full_time_period_at returns correct period for date in the past" do
+    user = AdminUser.create!({
+      email: "josh@sanctuary.computer",
+      password: "password"
+    })
+
+    user.full_time_periods.create!({
+      started_at: Date.new(2021, 1, 1),
+      ended_at: Date.new(2021, 12, 31),
+      contributor_type: Enum::ContributorType::FIVE_DAY,
+      expected_utilization: 0.8
+    })
+
+    expected_period = user.full_time_periods.create!({
+      started_at: Date.new(2022, 1, 1),
+      ended_at: Date.new(2022, 12, 31),
+      contributor_type: Enum::ContributorType::FIVE_DAY,
+      expected_utilization: 0.8
+    })
+
+    user.full_time_periods.create!({
+      started_at: Date.new(2023, 1, 1),
+      ended_at: nil,
+      contributor_type: Enum::ContributorType::FIVE_DAY,
+      expected_utilization: 0.8
+    })
+
+    period = user.full_time_period_at(Date.new(2022, 6, 1))
+    assert_equal(period, expected_period)
+  end
+
+  test "#full_time_period_at returns nil if no period is found" do
+    user = AdminUser.create!({
+      email: "josh@sanctuary.computer",
+      password: "password"
+    })
+
+    user.full_time_periods.delete_all
+    period = user.full_time_period_at(Date.new(2022, 6, 1))
+
+    assert_nil(period)
+  end
 end

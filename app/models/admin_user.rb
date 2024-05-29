@@ -369,8 +369,12 @@ class AdminUser < ApplicationRecord
     # project out PSU by the EOY)
     if date > Date.today
       latest = latest_full_time_period
-      return latest if latest.ended_at.nil?
+
+      if latest.present? && latest.ended_at.nil?
+        return latest
+      end
     end
+
     full_time_periods.find do |ftp|
       ftp.started_at <= date && ftp.period_ended_at >= date
     end
@@ -544,8 +548,15 @@ class AdminUser < ApplicationRecord
       salary_window.salary
     end
 
+    ftp = full_time_period_at(date)
+
     business_days =
       Stacks::Utils.business_days_between(date.beginning_of_year, date.end_of_year)
+
+    # TODO: Actually calculate the number of non-Friday business days.
+    if ftp.present? && ftp.four_day?
+      business_days *= 0.8
+    end
 
     (yearly_cost / business_days) * 1.1 # employment taxes & healthcare
   end
