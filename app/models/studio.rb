@@ -315,16 +315,26 @@ class Studio < ApplicationRecord
   end
 
   def core_members_active_on(date)
-    (is_garden3d? ? AdminUser : admin_users)
-      .joins(:full_time_periods, :studio_memberships)
-      .where("
-        full_time_periods.started_at <= :date AND
-        coalesce(full_time_periods.ended_at, 'infinity') >= :date AND
-        full_time_periods.contributor_type IN (0, 1) AND
-        studio_memberships.started_at <= :date AND
-        coalesce(studio_memberships.ended_at, 'infinity') >= :date AND
-        studio_memberships.studio_id = :studio_id
-      ", { date: date, studio_id: self.id })
+    if is_garden3d?
+      AdminUser
+        .joins(:full_time_periods)
+        .where("
+          full_time_periods.started_at <= :date AND
+          coalesce(full_time_periods.ended_at, 'infinity') >= :date AND
+          full_time_periods.contributor_type IN (0, 1)
+        ", { date: date })
+    else
+      admin_users
+        .joins(:full_time_periods, :studio_memberships)
+        .where("
+          full_time_periods.started_at <= :date AND
+          coalesce(full_time_periods.ended_at, 'infinity') >= :date AND
+          full_time_periods.contributor_type IN (0, 1) AND
+          studio_memberships.started_at <= :date AND
+          coalesce(studio_memberships.ended_at, 'infinity') >= :date AND
+          studio_memberships.studio_id = :studio_id
+        ", { date: date, studio_id: self.id })
+    end
   end
 
   def studio_members_that_left_during_period(period)

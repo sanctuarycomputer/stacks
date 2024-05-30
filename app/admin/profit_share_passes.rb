@@ -47,17 +47,20 @@ ActiveAdmin.register ProfitSharePass do
         "$#{resource.make_scenario.actual_value_per_psu.round(2)}"
       end
     end
+    column :total_psu_issued do |resource|
+      resource.total_psu_issued(resource.finalization_day)
+    end
     actions
   end
 
   form do |f|
-    
+
     f.inputs(class: "admin_inputs") do
       f.input :payroll_buffer_months, input_html: { disabled: resource.finalized? }
       f.input :efficiency_cap, input_html: { disabled: resource.finalized? }
       f.input :internals_budget_multiplier, input_html: { disabled: resource.finalized? }
     end
     f.actions unless resource.finalized?
-    
+
   end
 end
