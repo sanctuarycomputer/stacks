@@ -86,6 +86,8 @@ namespace :stacks do
   desc "Sync Contacts"
   task :sync_contacts => :environment do
     begin
+      Contact.all.each(&:dedupe!)
+
       # First ensure that any new mailing list subscribers have a Contact record
       MailingList.includes(:mailing_list_subscribers).each do |ml|
         ml.mailing_list_subscribers.each do |sub|
