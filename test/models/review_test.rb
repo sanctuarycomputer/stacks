@@ -3,7 +3,7 @@ require "test_helper"
 class ReviewTest < ActiveSupport::TestCase
   test "#level returns the greatest matching level whose points are below the review's points" do
     review = Review.new
-    review.expects(:total_points).returns(650)
+    review.expects(:total_points).returns(625)
 
     assert_equal({
       name: "S1",
