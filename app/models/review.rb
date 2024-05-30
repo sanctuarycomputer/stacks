@@ -60,7 +60,7 @@ class Review < ApplicationRecord
     end
 
     descending_levels.each do |level|
-      if level[:min_points] < actual_points
+      if level[:min_points] <= actual_points
         return level
       end
     end
