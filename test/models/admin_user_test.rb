@@ -647,4 +647,17 @@ class AdminUserTest < ActiveSupport::TestCase
 
     assert_nil(period)
   end
+
+  test "#approximate_cost_per_hour_before_studio_expenses returns the expected value" do
+    user = AdminUser.create!({
+      email: "josh@sanctuary.computer",
+      password: "password",
+      old_skill_tree_level: :senior_2
+    })
+
+    actual_cost = user.approximate_cost_per_hour_before_studio_expenses
+    expected_cost = 62.2306
+
+    assert_in_delta(expected_cost, actual_cost, 0.0001)
+  end
 end
