@@ -1,11 +1,16 @@
 ActiveAdmin.register Contact do
   config.filters = true
   config.per_page = [1000, 500, 100]
-  actions :index, :new, :create, :edit, :update
+  actions :index, :show, :new, :create, :edit, :update
   permit_params :email, sources: []
   config.sort_order = "updated_at_desc"
 
   filter :email_cont, as: :string, label: "Email Contains"
+  filter :address_cont, as: :string, label: "Address Contains"
+
+  scope :all, default: true
+  scope :synced_to_apollo
+  scope :not_synced_to_apollo
 
   collection_action :import_contacts, method: :post do
     csv = CSV.parse(File.read(params["file"]), :headers => true)
@@ -29,9 +34,42 @@ ActiveAdmin.register Contact do
     end
   end
 
+  member_action :sync_to_apollo, method: :post do
+    deduped = resource.dedupe!
+    deduped.sync_to_apollo!
+    redirect_to admin_contact_path(deduped), notice: "Success!"
+  end
+
+  action_item :sync_to_apollo, only: :show do
+    link_to "Sync to Apollo", sync_to_apollo_admin_contact_path(resource), method: :post
+  end
+
   index download_links: [:csv] do
     column :email
     column :sources
+    column :last_sync do |contact|
+      "#{ApplicationController.helpers.time_ago_in_words(contact.updated_at)} ago"
+    end
+    column :company do |contact|
+      org_name = contact.apollo_data.dig("organization", "name")
+      org_linkedin = contact.apollo_data.dig("organization", "linkedin_url")
+      org_website = contact.apollo_data.dig("organization", "website_url")
+      if org_linkedin.present? || org_website.present?
+        a(org_name, href: org_linkedin || org_website, target: "_blank")
+      else
+        org_name || "—"
+      end
+    end
+    column :address do |contact|
+      contact.apollo_data.dig("present_raw_address") || "—"
+    end
+    column :apollo do |contact|
+      if contact.apollo_id.present?
+        a("Open↗", href: contact.apollo_link, target: "_blank")
+      else
+        link_to "Sync!", sync_to_apollo_admin_contact_path(contact), method: :post
+      end
+    end
     actions
   end
 end

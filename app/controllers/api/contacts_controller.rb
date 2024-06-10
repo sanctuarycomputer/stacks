@@ -3,7 +3,7 @@ class Api::ContactsController < ApiController
 
   def create
     check_private_api_key!
-    contact = Contact.create_or_find_by!(email: params["email"])
+    contact = Contact.create_or_find_by!(email: params["email"].downcase)
     contact.update(sources: [*contact.sources, *(params["sources"] || [])].uniq)
     head :ok
   end
