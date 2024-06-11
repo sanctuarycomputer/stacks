@@ -15,7 +15,7 @@ class Contact < ApplicationRecord
   end
 
   def self.where_address_contains(value)
-    self.where("apollo_data ->> 'present_raw_address' LIKE :value", value: "%#{value}%") 
+    self.where("apollo_data ->> 'present_raw_address' LIKE :value", value: "%#{value}%")
   end
 
   def apollo_link
@@ -25,7 +25,10 @@ class Contact < ApplicationRecord
   def sync_to_apollo!(apollo = Stacks::Apollo.new)
     existing_contacts = apollo.search_by_email(self.email)
     apollo_contact = existing_contacts.first || apollo.create_contact(self.email)
-    self.update(apollo_id: apollo_contact["id"], apollo_data: apollo_contact)
+
+    if (apollo_contact.dig("email") || "").downcase == self.email.downcase
+      self.update(apollo_id: apollo_contact["id"], apollo_data: apollo_contact)
+    end
   end
 
   def dedupe!
