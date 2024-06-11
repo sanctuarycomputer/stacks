@@ -98,12 +98,19 @@ namespace :stacks do
 
       # Sync each contact to Apollo
       apollo = Stacks::Apollo.new
+      already_synced = Contact.where.not(apollo_id: nil).order("updated_at ASC")
+
+      # Apollo API free plan only allows 50 requests per minute, 200 per hour, and 600 per day,
+      # so I'll schedule this 3 times per day and it will eventually sync all contacts over.
       Contact.where(apollo_id: nil).each do |c|
-        existing_contacts = apollo.search_by_email(c.email)
-        apollo_contact = existing_contacts.first || apollo.create_contact(c.email)
-        c.update(apollo_id: apollo_contact["id"])
-        # Apollo API free plan only allows 50 requests per minute, 200 per hour, and 600 per day,
-        # so I'll schedule this 3 times per day and it will eventually sync all contacts over.
+        c.sync_to_apollo!(apollo)
+        sleep 1.5
+      end
+
+      # We got through all the sync'd contacts, so let's freshen the data on the existing
+      # synced contacts
+      already_synced.each do |c|
+        c.sync_to_apollo!(apollo)
         sleep 1.5
       end
     rescue => e
