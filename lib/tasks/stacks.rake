@@ -114,6 +114,7 @@ namespace :stacks do
         sleep 1.5
       end
     rescue => e
+      puts e
       Sentry.capture_exception(e)
     end
   end
