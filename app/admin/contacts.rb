@@ -51,13 +51,16 @@ ActiveAdmin.register Contact do
       "#{ApplicationController.helpers.time_ago_in_words(contact.updated_at)} ago"
     end
     column :company do |contact|
-      org_name = contact.apollo_data.dig("organization", "name")
+      org_name = contact.apollo_data.dig("organization", "name") || contact.apollo_data.dig("organization_name") || "—"
       org_linkedin = contact.apollo_data.dig("organization", "linkedin_url")
       org_website = contact.apollo_data.dig("organization", "website_url")
-      if org_linkedin.present? || org_website.present?
-        a(org_name, href: org_linkedin || org_website, target: "_blank")
+      org_apollo_id = contact.apollo_data.dig("organization_id")
+      org_link = org_linkedin || org_website || (org_apollo_id && "https://app.apollo.io/#/organizations/#{org_apollo_id}")
+
+      if org_link
+        a(org_name, href: org_link, target: "_blank")
       else
-        org_name || "—"
+        org_name
       end
     end
     column :address do |contact|
