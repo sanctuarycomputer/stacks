@@ -91,7 +91,7 @@ namespace :stacks do
       # First ensure that any new mailing list subscribers have a Contact record
       MailingList.includes(:mailing_list_subscribers).each do |ml|
         ml.mailing_list_subscribers.each do |sub|
-          contact = Contact.create_or_find_by!(email: sub.email)
+          contact = Contact.create_or_find_by!(email: sub.email.downcase)
           contact.update(sources: [*contact.sources, "#{ml.studio.mini_name}:#{ml.provider}:#{ml.name.parameterize(separator: '_')}"].uniq)
         end
       end
