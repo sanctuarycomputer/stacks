@@ -134,11 +134,8 @@ class Stacks::Automator
       end
       return if invoice_pass.complete?
 
-      # Check if it's the first business day of the month (or after)
-      first_business_day_of_month = Date.today.beginning_of_month
-      first_business_day_of_month += 1.days until first_business_day_of_month.wday.between?(1, 5)
-      return unless (first_business_day_of_month <= Date.today)
-
+      # Invoicing happens on the first day of the month
+      return unless Date.today >= Date.today.beginning_of_month
       attempt_invoicing_for_invoice_pass(invoice_pass)
     end
 
