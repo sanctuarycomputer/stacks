@@ -78,12 +78,12 @@ class InvoiceTracker < ApplicationRecord
     }
     forecast_project_ids = forecast_projects.map(&:id)
     forecast_project_codes = forecast_projects.map{|fp| fp.code}.compact.uniq
-    
+
     ((qbo_invoice.try(:line_items) || []).select do |qbo_li|
       corresponding_base_line_item = (base["lines"].values.find{|l| l["id"] == qbo_li["id"]} || {})
-      
-      if corresponding_base_line_item.present?
-        next forecast_project_ids.include?(corresponding_base_line_item["forecast_project"])
+
+      if corresponding_base_line_item&.dig("forecast_project").present?
+        forecast_project_ids.include?(corresponding_base_line_item["forecast_project"])
       else
         forecast_project_codes.any?{|code| (qbo_li["description"] || "").include?(code)}
       end
