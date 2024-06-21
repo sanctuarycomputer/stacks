@@ -54,7 +54,7 @@ class ProjectTracker < ApplicationRecord
     @_forecast_projects ||= super
   end
 
-  def forecast_projects
+  def runn_projects
     @_runn_projects ||= super
   end
 
