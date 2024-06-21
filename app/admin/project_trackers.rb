@@ -36,6 +36,12 @@ ActiveAdmin.register ProjectTracker do
       :_destroy,
       :_edit
     ],
+    project_tracker_runn_projects_attributes: [
+      :id,
+      :runn_project_id,
+      :_destroy,
+      :_edit
+    ],
     project_lead_periods_attributes: [
       :id,
       :admin_user_id,
@@ -74,7 +80,9 @@ ActiveAdmin.register ProjectTracker do
         :project_lead_periods,
         :project_capsule,
         :project_tracker_forecast_projects,
+        :project_tracker_runn_projects,
         :forecast_projects,
+        :runn_projects,
         :adhoc_invoice_trackers,
       ).includes(
         project_lead_periods: :admin_user,
@@ -157,7 +165,18 @@ ActiveAdmin.register ProjectTracker do
           end
         )
       else
-        span("No Forecast Project Connected", class: "pill error")
+        span("No Forecast Project/s Connected", class: "pill error")
+      end
+    end
+    column :runn_projects do |resource|
+      if resource.runn_projects.any?
+        div(
+          resource.forecast_runn_projectsprojects.map do |rp|
+            a(rp.display_name, { href: fp.link, target: "_blank", class: "block", style: "white-space:nowrap" })
+          end
+        )
+      else
+        span("No Runn Project/s Connected", class: "pill error")
       end
     end
     column :project_leads do |resource|
@@ -391,6 +410,14 @@ ActiveAdmin.register ProjectTracker do
           label: "Forecast Project",
           prompt: "Select a Forecast Project",
           collection: ForecastProject.candidates_for_association_with_project_tracker(resource)
+        })
+      end
+
+      f.has_many :project_tracker_runn_projects, heading: false, allow_destroy: true, new_record: 'Connect a Runn.io Project' do |a|
+        a.input(:runn_project, {
+          label: "Runn.io Project",
+          prompt: "Select a Runn.io Project",
+          collection: RunnProject.candidates_for_association_with_project_tracker(resource)
         })
       end
 
