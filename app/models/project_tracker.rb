@@ -57,23 +57,27 @@ class ProjectTracker < ApplicationRecord
     end
   end
 
+  def work_complete?
+    work_status == :complete
+  end
+
   def considered_successful?
-    return nil if work_status != :complete
+    return nil unless work_complete?
     return client_satisfied? && target_profit_margin_satisfied? && target_free_hours_ratio_satisfied?
   end
 
   def client_satisfied?
-    return nil if work_status != :complete
+    return nil unless work_complete?
     project_capsule.client_satisfaction_status == "satisfied"
   end
 
   def target_profit_margin_satisfied?
-    return nil if work_status != :complete
+    return nil unless work_complete?
     profit_margin >= target_profit_margin
   end
 
   def target_free_hours_ratio_satisfied?
-    return nil if work_status != :complete
+    return nil unless work_complete?
     (free_hours_ratio * 100) <= target_free_hours_percent
   end
 
