@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2024_06_10_192904) do
+ActiveRecord::Schema.define(version: 2024_06_21_191316) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -493,6 +493,15 @@ ActiveRecord::Schema.define(version: 2024_06_10_192904) do
     t.index ["project_tracker_id"], name: "index_project_tracker_links_on_project_tracker_id"
   end
 
+  create_table "project_tracker_runn_projects", force: :cascade do |t|
+    t.bigint "project_tracker_id", null: false
+    t.bigint "runn_project_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["project_tracker_id"], name: "index_project_tracker_runn_projects_on_project_tracker_id"
+    t.index ["runn_project_id"], name: "index_project_tracker_runn_projects_on_runn_project_id"
+  end
+
   create_table "project_trackers", force: :cascade do |t|
     t.string "name"
     t.decimal "budget_low_end"
@@ -586,6 +595,34 @@ ActiveRecord::Schema.define(version: 2024_06_10_192904) do
     t.datetime "deleted_at"
     t.index ["admin_user_id"], name: "index_reviews_on_admin_user_id"
     t.index ["deleted_at"], name: "index_reviews_on_deleted_at"
+  end
+
+  create_table "runn_people", force: :cascade do |t|
+    t.string "runn_id"
+    t.string "first_name"
+    t.string "last_name"
+    t.string "email"
+    t.boolean "is_archived"
+    t.datetime "created_at"
+    t.datetime "updated_at"
+    t.jsonb "data"
+    t.index ["runn_id"], name: "index_runn_people_on_runn_id", unique: true
+  end
+
+  create_table "runn_projects", force: :cascade do |t|
+    t.bigint "runn_id"
+    t.string "name"
+    t.boolean "is_template"
+    t.boolean "is_archived"
+    t.boolean "is_confirmed"
+    t.string "pricing_model"
+    t.string "rate_type"
+    t.integer "budget"
+    t.integer "expenses_budget"
+    t.datetime "created_at"
+    t.datetime "updated_at"
+    t.jsonb "data"
+    t.index ["runn_id"], name: "index_runn_projects_on_runn_id", unique: true
   end
 
   create_table "score_trees", force: :cascade do |t|
@@ -732,6 +769,8 @@ ActiveRecord::Schema.define(version: 2024_06_10_192904) do
   add_foreign_key "project_safety_representative_periods", "studios"
   add_foreign_key "project_tracker_forecast_projects", "project_trackers"
   add_foreign_key "project_tracker_links", "project_trackers"
+  add_foreign_key "project_tracker_runn_projects", "project_trackers"
+  add_foreign_key "project_tracker_runn_projects", "runn_projects"
   add_foreign_key "qbo_accounts", "enterprises"
   add_foreign_key "qbo_profit_and_loss_reports", "qbo_accounts"
   add_foreign_key "qbo_purchase_line_items", "expense_groups"

@@ -28,6 +28,10 @@ class ProjectTracker < ApplicationRecord
   has_many :forecast_projects, through: :project_tracker_forecast_projects
   accepts_nested_attributes_for :project_tracker_forecast_projects, allow_destroy: true
 
+  has_many :project_tracker_runn_projects, dependent: :delete_all
+  has_many :runn_projects, through: :project_tracker_runn_projects
+  accepts_nested_attributes_for :project_tracker_runn_projects, allow_destroy: true
+
   has_many :project_lead_periods, dependent: :delete_all
   accepts_nested_attributes_for :project_lead_periods, allow_destroy: true
 
@@ -48,6 +52,10 @@ class ProjectTracker < ApplicationRecord
 
   def forecast_projects
     @_forecast_projects ||= super
+  end
+
+  def forecast_projects
+    @_runn_projects ||= super
   end
 
   def set_targets
