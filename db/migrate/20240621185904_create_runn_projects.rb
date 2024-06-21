@@ -1,7 +1,7 @@
 class CreateRunnProjects < ActiveRecord::Migration[6.0]
   def change
     create_table :runn_projects do |t|
-      t.bigint :runn_id
+      t.bigint :runn_id, null: false
       t.string :name
       t.boolean :is_template
       t.boolean :is_archived

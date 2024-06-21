@@ -1,7 +1,7 @@
 class CreateRunnPeople < ActiveRecord::Migration[6.0]
   def change
     create_table :runn_people do |t|
-      t.bigint :runn_id
+      t.bigint :runn_id, null: false
       t.string :first_name
       t.string :last_name
       t.string :email
