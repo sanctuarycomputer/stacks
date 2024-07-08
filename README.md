@@ -58,6 +58,10 @@ gem install nio4r -v '2.5.5' --source 'https://rubygems.org/' -- --with-cflags="
 
 This may happen for gems other than `nio4r`, but the same steps apply. Good luck! 
 
+## On Windows:
+
+Note: this is probably best run through WSL2 and not Windows. If you do dev on windows, don't check in any Gemfile.lock changes since these will be windows specific
+
 ### Gem installation on Windows
 
 If you have issues installing mimemagic on windows you can follow the accepted answer [here](https://stackoverflow.com/questions/69248078/mimemagic-install-error-could-not-find-mime-type-database-in-the-following-loc)
