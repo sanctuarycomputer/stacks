@@ -58,6 +58,19 @@ gem install nio4r -v '2.5.5' --source 'https://rubygems.org/' -- --with-cflags="
 
 This may happen for gems other than `nio4r`, but the same steps apply. Good luck! 
 
+## On Windows:
+
+Note: this is probably best run through WSL2 and not Windows. If you do dev on windows, don't check in any Gemfile.lock changes since these will be windows specific
+
+### Gem installation on Windows
+
+If you have issues installing mimemagic on windows you can follow the accepted answer [here](https://stackoverflow.com/questions/69248078/mimemagic-install-error-could-not-find-mime-type-database-in-the-following-loc)
+
+The .xml doc linked in the answer might be dead, instead you can grab it's contents [here](https://raw.githubusercontent.com/Rob--W/open-in-browser/master/shared-mime-info/freedesktop.org.xml)
+
+### Parity restore on Windows
+
+Parity doesn't seem to be fully windows compatible for restoring on windows (seemingly different flags for some commands), instead you can follow the restoration steps manually by referencing the [parity restore source code](https://github.com/thoughtbot/parity/blob/0c61821f78e4ad6ae5461f208f056100a84749ab/lib/parity/backup.rb#L40)
 
 ## Prerequisites
 
