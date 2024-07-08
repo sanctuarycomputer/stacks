@@ -141,10 +141,10 @@ class AdminUser < ApplicationRecord
   }
 
   scope :active, -> {
-    joins(:full_time_periods).where("started_at <= ? AND coalesce(ended_at, 'infinity') >= ?", Date.today, Date.today)
+    joins(:full_time_periods).where("full_time_periods.started_at <= ? AND coalesce(full_time_periods.ended_at, 'infinity') >= ?", Date.today, Date.today)
   }
   scope :associates, -> {
-    joins(:associates_award_agreement).where("started_at <= ?", Date.today)
+    joins(:associates_award_agreement).where("associates_award_agreements.started_at <= ?", Date.today)
   }
   scope :inactive, -> {
     where.not(id: active)
