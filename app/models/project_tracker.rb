@@ -28,9 +28,7 @@ class ProjectTracker < ApplicationRecord
   has_many :forecast_projects, through: :project_tracker_forecast_projects
   accepts_nested_attributes_for :project_tracker_forecast_projects, allow_destroy: true
 
-  has_many :project_tracker_runn_projects, dependent: :delete_all
-  has_many :runn_projects, through: :project_tracker_runn_projects
-  accepts_nested_attributes_for :project_tracker_runn_projects, allow_destroy: true
+  belongs_to :runn_project, class_name: "RunnProject", foreign_key: "runn_project_id", primary_key: "runn_id", optional: true
 
   has_many :project_lead_periods, dependent: :delete_all
   accepts_nested_attributes_for :project_lead_periods, allow_destroy: true
@@ -54,8 +52,8 @@ class ProjectTracker < ApplicationRecord
     @_forecast_projects ||= super
   end
 
-  def runn_projects
-    @_runn_projects ||= super
+  def runn_project
+    @_runn_project ||= super
   end
 
   def set_targets

@@ -15,6 +15,7 @@ ActiveAdmin.register ProjectTracker do
     :target_profit_margin,
     :target_free_hours_percent,
     :notes,
+    :runn_project_id,
     adhoc_invoice_trackers_attributes: [
       :id,
       :qbo_invoice_id,
@@ -33,12 +34,6 @@ ActiveAdmin.register ProjectTracker do
     project_tracker_forecast_projects_attributes: [
       :id,
       :forecast_project_id,
-      :_destroy,
-      :_edit
-    ],
-    project_tracker_runn_projects_attributes: [
-      :id,
-      :runn_project_id,
       :_destroy,
       :_edit
     ],
@@ -80,9 +75,7 @@ ActiveAdmin.register ProjectTracker do
         :project_lead_periods,
         :project_capsule,
         :project_tracker_forecast_projects,
-        :project_tracker_runn_projects,
         :forecast_projects,
-        :runn_projects,
         :adhoc_invoice_trackers,
       ).includes(
         project_lead_periods: :admin_user,
@@ -168,15 +161,11 @@ ActiveAdmin.register ProjectTracker do
         span("No Forecast Project/s Connected", class: "pill error")
       end
     end
-    column :runn_projects do |resource|
-      if resource.runn_projects.any?
-        div(
-          resource.forecast_runn_projectsprojects.map do |rp|
-            a(rp.display_name, { href: fp.link, target: "_blank", class: "block", style: "white-space:nowrap" })
-          end
-        )
+    column :runn_project do |resource|
+      if resource.runn_project.present?
+        resource.runn_project
       else
-        span("No Runn Project/s Connected", class: "pill error")
+        span("No Runn.io Project Connected", class: "pill error")
       end
     end
     column :project_leads do |resource|
@@ -413,13 +402,7 @@ ActiveAdmin.register ProjectTracker do
         })
       end
 
-      f.has_many :project_tracker_runn_projects, heading: false, allow_destroy: true, new_record: 'Connect a Runn.io Project' do |a|
-        a.input(:runn_project, {
-          label: "Runn.io Project",
-          prompt: "Select a Runn.io Project",
-          collection: RunnProject.candidates_for_association_with_project_tracker(resource)
-        })
-      end
+      f.input :runn_project, :as => :select, :collection => RunnProject.candidates_for_association_with_project_tracker(resource), :include_blank => false
 
       f.input :notes, label: "Notes (accepts markdown)"
     end

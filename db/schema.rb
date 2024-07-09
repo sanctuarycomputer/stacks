@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2024_06_21_191316) do
+ActiveRecord::Schema.define(version: 2024_06_26_191351) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -513,6 +513,8 @@ ActiveRecord::Schema.define(version: 2024_06_21_191316) do
     t.jsonb "snapshot", default: {}
     t.decimal "target_free_hours_percent", default: "0.0"
     t.decimal "target_profit_margin", default: "0.0"
+    t.bigint "runn_project_id"
+    t.index ["runn_project_id"], name: "index_project_trackers_on_runn_project_id"
   end
 
   create_table "qbo_accounts", force: :cascade do |t|
@@ -771,6 +773,7 @@ ActiveRecord::Schema.define(version: 2024_06_21_191316) do
   add_foreign_key "project_tracker_links", "project_trackers"
   add_foreign_key "project_tracker_runn_projects", "project_trackers"
   add_foreign_key "project_tracker_runn_projects", "runn_projects"
+  add_foreign_key "project_trackers", "runn_projects", primary_key: "runn_id"
   add_foreign_key "qbo_accounts", "enterprises"
   add_foreign_key "qbo_profit_and_loss_reports", "qbo_accounts"
   add_foreign_key "qbo_purchase_line_items", "expense_groups"

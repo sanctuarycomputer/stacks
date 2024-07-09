@@ -11,13 +11,10 @@ class Stacks::Runn
   end
 
   def sync_all!
-    all_people = get_people()
     all_projects = get_projects()
 
     ActiveRecord::Base.transaction do
-      RunnPerson.delete_all
       RunnProject.delete_all
-      sync_people!(all_people)
       sync_projects!(all_projects)
     end
   end
@@ -46,20 +43,16 @@ class Stacks::Runn
     values
   end
 
-  def sync_people!(all_people = get_people())
-    data = all_people.map do |c|
-      {
-        runn_id: c["id"],
-        first_name: c["firstName"],
-        last_name: c["lastName"],
-        email: c["email"],
-        is_archived: c["isArchived"],
-        created_at: c["createdAt"],
-        updated_at: c["UpdatedAt"],
-        data: c,
-      }
+  def get_roles
+    values = []
+    next_cursor = nil
+    loop do
+      response = self.class.get("/roles?cursor=#{next_cursor}", headers: @headers)
+      values = [*values, *response["values"]]
+      next_cursor = response["nextCursor"]
+      break if next_cursor.nil?
     end
-    RunnPerson.upsert_all(data, unique_by: :runn_id)
+    values
   end
 
   def sync_projects!(all_projects = get_projects())
@@ -85,5 +78,21 @@ class Stacks::Runn
       }
     end
     RunnProject.upsert_all(data, unique_by: :runn_id)
+  end
+
+  def create_or_update_actual(date, billable_minutes, runn_person_id, runn_project_id, runn_role_id)
+    response = self.class.post("/actuals", {
+      body: JSON.dump({
+        "date": date,
+        "billableMinutes": billable_minutes,
+        "nonbillableMinutes": 0,
+        "personId": runn_person_id,
+        "projectId": runn_project_id,
+        "roleId": runn_role_id
+      }),
+      headers: @headers
+    })
+    binding.pry
+    response
   end
 end
