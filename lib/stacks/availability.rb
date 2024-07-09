@@ -4,6 +4,15 @@ class Stacks::Availability
       @_notion ||= Stacks::Notion.new
     end
 
+    def get_prop_value(data, fuzzy_key)
+      key = data.dig("properties").keys.find{|k| k.downcase == fuzzy_key}
+      key = data.dig("properties").keys.find{|k| k.downcase.include?(fuzzy_key)} unless key.present?
+      return nil if key.nil?
+
+      bearer = data.dig("properties", key)
+      bearer.dig(bearer.dig("type"))
+    end
+
     def load_allocations_from_notion
       system = System.instance
       results = []
@@ -18,12 +27,12 @@ class Stacks::Availability
       errors = []
       allocations = results.reduce({}) do |acc, a|
         email =
-          (a.dig("properties", "Assign", "people").try(:first) || {}).dig("person", "email")
+          (get_prop_value(a, "assign").try(:first) || {}).dig("person", "email")
         status =
-          (a.dig("properties", "Status", "select", "name") || "")
+          (get_prop_value(a, "status").dig("name") || "")
 
-        starts_at = a.dig("properties", "Date", "date", "start")
-        ends_at = a.dig("properties", "Date", "date", "end")
+        starts_at = get_prop_value(a, "date").dig("start")
+        ends_at = get_prop_value(a, "date").dig("end")
         if (starts_at.nil? || ends_at.nil?)
           errors << { error: :dates, url: a["url"], email: email, status: status }
           next acc
@@ -46,7 +55,7 @@ class Stacks::Availability
           next acc
         end
 
-        allocation = a.dig("properties", "Allocation", "number")
+        allocation = get_prop_value(a, "allocation")
         if allocation.nil?
           errors << { error: :allocation, url: a["url"], email: email, status: status } if allocation.nil?
           next acc

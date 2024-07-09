@@ -10,7 +10,8 @@ class Stacks::Notion::Base
   end
 
   def get_prop_value(fuzzy_key)
-    key = @notion_page.data.dig("properties").keys.find{|k| k.downcase.include?(fuzzy_key)}
+    key = @notion_page.data.dig("properties").keys.find{|k| k.downcase == fuzzy_key}
+    key = @notion_page.data.dig("properties").keys.find{|k| k.downcase.include?(fuzzy_key)} unless key.present?
     return {} if key.nil?
 
     bearer = @notion_page.data.dig("properties", key)

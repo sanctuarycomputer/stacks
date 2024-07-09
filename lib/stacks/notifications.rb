@@ -14,7 +14,25 @@ class Stacks::Notifications
       @_forecast ||= Stacks::Forecast.new
     end
 
-    def make_notifications!
+    def mark_system_notififcations_read_if_irrelevant!(notification_params = stage_notification_params)
+      unread_notifications = System.instance.notifications.send("unread")
+      unread_notifications.filter do |n|
+        matching_params = notification_params.find do |params|
+          (params.to_a - n.params.to_a | n.params.to_a - params.to_a) == []
+        end
+
+        if matching_params.present?
+          true
+        else
+          n.mark_as_read!
+          false
+        end
+      end
+
+      notification_params
+    end
+
+    def stage_notification_params
       # TODO Forecast Client with malformed term?
       notifications = []
 
@@ -65,10 +83,6 @@ class Stacks::Notifications
           acc
         end
 
-      active_users_with_inactive_accounts =
-        user_accounts_report[:active].select do |u, accounts|
-          accounts.values.any?(false)
-        end
       archived_users_with_active_accounts =
         user_accounts_report[:archived].select do |u, accounts|
           accounts.values.any?(true)
@@ -113,10 +127,6 @@ class Stacks::Notifications
         pt.current_project_leads.empty?
       end
 
-      project_trackers_over_budget = active_project_trackers.select do |pt|
-        pt.status == :over_budget
-      end
-
       project_trackers_need_capsule = completed_project_trackers.select do |pt|
         pt.work_status == :capsule_pending
       end
@@ -128,7 +138,8 @@ class Stacks::Notifications
           false
         end
       end.reject do |pt|
-        pt.name.downcase.include?("(ongoing)")
+        downcased_name = pt.name.downcase
+        downcased_name.include?("ongoing") || downcased_name.include?("retainer")
       end
 
       # Load Allocation Data
@@ -258,16 +269,6 @@ class Stacks::Notifications
         } if f.review.status == "finalized"
       end
 
-      project_trackers_over_budget.each do |pt|
-        notifications << {
-          subject: pt,
-          type: :project_tracker,
-          link: admin_project_tracker_path(pt),
-          error: :over_budget,
-          priority: 0
-        }
-      end
-
       project_trackers_need_capsule.each do |pt|
         notifications << {
           subject: pt,
@@ -328,15 +329,6 @@ class Stacks::Notifications
         }
       end
 
-      active_users_with_inactive_accounts.each do |user, report|
-        notifications << {
-          subject: user,
-          type: :user,
-          error: :active_but_missing_accounts,
-          priority: 1
-        }
-      end
-
       archived_users_with_active_accounts.each do |user, report|
         notifications << {
           subject: user,
@@ -348,6 +340,12 @@ class Stacks::Notifications
       end
 
       notifications.sort{|a, b| a[:priority] <=> b[:priority] }
+      notifications
+    end
+
+    def make_notifications!
+      notifications = stage_notification_params
+      mark_system_notififcations_read_if_irrelevant!(notifications)
 
       notifications_made = 0
       recent_params = System.instance.notifications

@@ -92,10 +92,6 @@
                 <strong><%= n.params[:subject].email %></strong> does not have a starting skill tree level set.
               <% when :no_full_time_periods %>
                 <strong><%= n.params[:subject].email %></strong> is marked as a <strong>Core Contributor</strong>, but does not have any employment periods set.
-              <% when :stale_skill_tree %>
-                <strong><%= n.params[:subject].email %></strong> is probably overdue to conduct a skill tree review.
-              <% when :active_but_missing_accounts %>
-                <strong><%= n.params[:subject].email %></strong> is active, but is missing key software accounts. Have they been onboarded, or should they archived?
               <% when :archived_with_active_accounts %>
                 <strong><%= n.params[:subject].email %></strong> is archived, but still has user accounts with our software providers. Have they been offboarded from our systems properly?
               <% else %>
@@ -105,9 +101,7 @@
             <% when :project_tracker %>
               <% case n.params[:error]
                 when :seemingly_complete %>
-                The <strong><%= n.params[:subject].name %></strong> Project Tracker has not registered any new hours for over a month (and is not "ongoing"). Should it be marked as <span class="pill complete">Complete</span>?
-              <% when :over_budget %>
-                The <strong><%= n.params[:subject].name %></strong> Project Tracker is <span class="pill over_budget">Over budget</span>. Can we support them?
+                The <strong><%= n.params[:subject].name %></strong> Project Tracker has not registered any new hours for over a month (and it's title doesn't include the words "ongoing" or "retainer"). Should it be marked as <span class="pill complete">Complete</span>?
               <% when :no_project_lead %>
                 The <strong><%= n.params[:subject].name %></strong> Project Tracker has <span class="pill error">No Project Lead</span>.
               <% when :capsule_pending %>
