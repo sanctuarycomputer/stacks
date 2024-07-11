@@ -55,7 +55,7 @@ class ProfitSharePass < ApplicationRecord
     @_net_revenue_by_reinvestment_studio ||= (
       Studio.reinvestment.reduce({}) do |acc, studio|
         acc[studio] = {
-          net_revenue: studio.net_revenue(accounting_method)
+          net_revenue: studio.net_revenue(accounting_method, created_at)
         }
         acc
       end

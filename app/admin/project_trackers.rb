@@ -99,11 +99,17 @@ ActiveAdmin.register ProjectTracker do
     column :free_hours_ratio do |pt|
       pt.free_hours_ratio * 100
     end
+    column :last_recorded_assignment do |pt|
+      pt.last_recorded_assignment.try(:end_date)
+    end
   end
 
   index download_links: [:csv], title: "Projects" do
     if params["scope"] == "complete"
       column :considered_successful?
+      column :last_recorded_assignment do |pt|
+        pt.last_recorded_assignment.try(:end_date)
+      end
     end
 
     column :name

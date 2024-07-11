@@ -53,8 +53,13 @@ class Studio < ApplicationRecord
     (snapshot["month"] || [{}]).last.dig("cash", "okrs", "Health") || {}
   end
 
-  def net_revenue(accounting_method = "cash")
-    ytd_snapshot.dig(accounting_method, "datapoints", "net_revenue", "value").try(:to_f)
+  def net_revenue(accounting_method = "cash", date = Date.today)
+    rel_snapshot = ytd_snapshot
+    if date.year != Date.today.year
+      rel_snapshot = snapshot["year"].find{|s| s["label"] == "#{date.year}"}
+    end
+
+    rel_snapshot.dig(accounting_method, "datapoints", "net_revenue", "value").try(:to_f)
   end
 
   def current_studio_coordinators
