@@ -37,8 +37,11 @@ class Stacks::ForecastToRunnSyncer
         ) : @project_tracker.start_date
 
         new_forecast_assignments.each do |fa|
-          runn_person = @runn_people.find{|rp| rp["email"].downcase == fa.forecast_person.email.downcase}
-          next unless runn_person.present?
+          runn_person = @runn_people.find{|rp| rp["email"].downcase == (fa.forecast_person.try(:email) || "").downcase}
+          unless runn_person.present?
+            puts "~~~> Could not find a Runn person for Forecast Person with ID: #{fa.forecast_person.id}"
+            next
+          end
           sync_forecast_assignment_to_runn_actual!(fa, runn_person, runn_role)
         end
       end
@@ -63,8 +66,11 @@ class Stacks::ForecastToRunnSyncer
       runn_role = find_or_create_runn_role_for_forecast_project(fp)
       all_forecast_assignments = fp.forecast_assignments.includes(:forecast_person)
       all_forecast_assignments.each do |fa|
-        runn_person = @runn_people.find{|rp| rp["email"].downcase == fa.forecast_person.email.downcase}
-        next unless runn_person.present?
+        runn_person = @runn_people.find{|rp| rp["email"].downcase == (fa.forecast_person.try(:email) || "").downcase}
+        unless runn_person.present?
+          puts "~~~> Could not find a Runn person for Forecast Person with ID: #{fa.forecast_person.id}"
+          next
+        end
         sync_forecast_assignment_to_runn_actual!(fa, runn_person, runn_role)
       end
     end
