@@ -95,7 +95,6 @@ class Stacks::ForecastToRunnSyncer
 
   def reset_all_actuals!
     @runn_actuals.each do |ra|
-      puts @runn_roles.find{|rr| rr["id"] == ra["roleId"]}["name"]
       actual = @runn.create_or_update_actual(
         ra["date"],
         0,
