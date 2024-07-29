@@ -126,6 +126,7 @@ namespace :stacks do
       puts "~~~> DOING SYNC: #{Time.new.localtime}"
       Stacks::Team.discover!
       Stacks::Forecast.new.sync_all!
+      Stacks::Runn.new.sync_all!
       Stacks::Quickbooks.sync_all!
 
       # TODO: When we start using enterprises, freshen this
@@ -142,6 +143,9 @@ namespace :stacks do
       # Now, generate project snapshots
       Parallel.map(ProjectTracker.all, in_threads: 10) { |pt| pt.generate_snapshot! }
       Stacks::DailyFinancialSnapshotter.snapshot_all!
+
+      # Runn is rate limited to 120 calls per minute, so it's important that this is run synchronously
+      Stacks::ForecastToRunnSyncer.sync_all!
 
       puts "~~~> DOING MISC"
       ProfitSharePass.ensure_exists!

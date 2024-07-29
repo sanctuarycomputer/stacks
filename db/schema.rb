@@ -10,9 +10,10 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2024_06_26_191351) do
+ActiveRecord::Schema.define(version: 2024_07_26_193128) do
 
   # These are extensions that must be enabled in order to support this database
+  enable_extension "pg_stat_statements"
   enable_extension "plpgsql"
 
   create_table "active_admin_comments", force: :cascade do |t|
@@ -205,6 +206,15 @@ ActiveRecord::Schema.define(version: 2024_06_26_191351) do
     t.index ["forecast_person_id"], name: "idx_snapshots_on_forecast_person_id"
     t.index ["forecast_project_id"], name: "idx_snapshots_on_forecast_project_id"
     t.index ["needs_review"], name: "idx_snapshots_on_needs_review"
+  end
+
+  create_table "forecast_assignment_runn_actuals", force: :cascade do |t|
+    t.bigint "forecast_assignment_id", null: false
+    t.bigint "runn_actual_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["forecast_assignment_id", "runn_actual_id"], name: "idx_fara_on_fa_id_and_ra_id", unique: true
+    t.index ["forecast_assignment_id"], name: "idx_forecast_assignment_runn_actuals_on_forecast_assignment_id"
   end
 
   create_table "forecast_assignments", force: :cascade do |t|
@@ -493,15 +503,6 @@ ActiveRecord::Schema.define(version: 2024_06_26_191351) do
     t.index ["project_tracker_id"], name: "index_project_tracker_links_on_project_tracker_id"
   end
 
-  create_table "project_tracker_runn_projects", force: :cascade do |t|
-    t.bigint "project_tracker_id", null: false
-    t.bigint "runn_project_id", null: false
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["project_tracker_id"], name: "index_project_tracker_runn_projects_on_project_tracker_id"
-    t.index ["runn_project_id"], name: "index_project_tracker_runn_projects_on_runn_project_id"
-  end
-
   create_table "project_trackers", force: :cascade do |t|
     t.string "name"
     t.decimal "budget_low_end"
@@ -514,7 +515,7 @@ ActiveRecord::Schema.define(version: 2024_06_26_191351) do
     t.decimal "target_free_hours_percent", default: "0.0"
     t.decimal "target_profit_margin", default: "0.0"
     t.bigint "runn_project_id"
-    t.index ["runn_project_id"], name: "index_project_trackers_on_runn_project_id"
+    t.index ["runn_project_id"], name: "index_project_trackers_on_runn_project_id", unique: true
   end
 
   create_table "qbo_accounts", force: :cascade do |t|
@@ -599,20 +600,8 @@ ActiveRecord::Schema.define(version: 2024_06_26_191351) do
     t.index ["deleted_at"], name: "index_reviews_on_deleted_at"
   end
 
-  create_table "runn_people", force: :cascade do |t|
-    t.string "runn_id"
-    t.string "first_name"
-    t.string "last_name"
-    t.string "email"
-    t.boolean "is_archived"
-    t.datetime "created_at"
-    t.datetime "updated_at"
-    t.jsonb "data"
-    t.index ["runn_id"], name: "index_runn_people_on_runn_id", unique: true
-  end
-
   create_table "runn_projects", force: :cascade do |t|
-    t.bigint "runn_id"
+    t.bigint "runn_id", null: false
     t.string "name"
     t.boolean "is_template"
     t.boolean "is_archived"
@@ -750,6 +739,7 @@ ActiveRecord::Schema.define(version: 2024_06_26_191351) do
   add_foreign_key "admin_user_salary_windows", "admin_users"
   add_foreign_key "associates_award_agreements", "admin_users"
   add_foreign_key "finalizations", "reviews"
+  add_foreign_key "forecast_assignment_runn_actuals", "forecast_assignments", primary_key: "forecast_id"
   add_foreign_key "full_time_periods", "admin_users"
   add_foreign_key "gifted_profit_shares", "admin_users"
   add_foreign_key "invoice_trackers", "admin_users"
@@ -771,8 +761,6 @@ ActiveRecord::Schema.define(version: 2024_06_26_191351) do
   add_foreign_key "project_safety_representative_periods", "studios"
   add_foreign_key "project_tracker_forecast_projects", "project_trackers"
   add_foreign_key "project_tracker_links", "project_trackers"
-  add_foreign_key "project_tracker_runn_projects", "project_trackers"
-  add_foreign_key "project_tracker_runn_projects", "runn_projects"
   add_foreign_key "project_trackers", "runn_projects", primary_key: "runn_id"
   add_foreign_key "qbo_accounts", "enterprises"
   add_foreign_key "qbo_profit_and_loss_reports", "qbo_accounts"

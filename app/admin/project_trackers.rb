@@ -402,7 +402,7 @@ ActiveAdmin.register ProjectTracker do
         })
       end
 
-      f.input :runn_project, :as => :select, :collection => RunnProject.candidates_for_association_with_project_tracker(resource), :include_blank => false
+      f.input :runn_project, :as => :select, :collection => RunnProject.candidates_for_association_with_project_tracker(resource)
 
       f.input :notes, label: "Notes (accepts markdown)"
     end
