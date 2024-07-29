@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2024_07_26_193128) do
+ActiveRecord::Schema.define(version: 2024_06_26_191351) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_stat_statements"
@@ -206,15 +206,6 @@ ActiveRecord::Schema.define(version: 2024_07_26_193128) do
     t.index ["forecast_person_id"], name: "idx_snapshots_on_forecast_person_id"
     t.index ["forecast_project_id"], name: "idx_snapshots_on_forecast_project_id"
     t.index ["needs_review"], name: "idx_snapshots_on_needs_review"
-  end
-
-  create_table "forecast_assignment_runn_actuals", force: :cascade do |t|
-    t.bigint "forecast_assignment_id", null: false
-    t.bigint "runn_actual_id", null: false
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["forecast_assignment_id", "runn_actual_id"], name: "idx_fara_on_fa_id_and_ra_id", unique: true
-    t.index ["forecast_assignment_id"], name: "idx_forecast_assignment_runn_actuals_on_forecast_assignment_id"
   end
 
   create_table "forecast_assignments", force: :cascade do |t|
@@ -739,7 +730,6 @@ ActiveRecord::Schema.define(version: 2024_07_26_193128) do
   add_foreign_key "admin_user_salary_windows", "admin_users"
   add_foreign_key "associates_award_agreements", "admin_users"
   add_foreign_key "finalizations", "reviews"
-  add_foreign_key "forecast_assignment_runn_actuals", "forecast_assignments", primary_key: "forecast_id"
   add_foreign_key "full_time_periods", "admin_users"
   add_foreign_key "gifted_profit_shares", "admin_users"
   add_foreign_key "invoice_trackers", "admin_users"
