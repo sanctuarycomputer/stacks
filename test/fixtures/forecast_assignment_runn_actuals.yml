@@ -1,9 +1,0 @@
-# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
-
-one:
-  forecast_assignment: one
-  run_actual_id: 
-
-two:
-  forecast_assignment: two
-  run_actual_id: 

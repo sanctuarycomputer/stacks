@@ -9,7 +9,6 @@ class AdminUser < ApplicationRecord
 
   has_many :invoice_trackers, dependent: :nullify
   has_one :forecast_person, class_name: "ForecastPerson", foreign_key: "email", primary_key: "email"
-  has_one :runn_person, class_name: "RunnPerson", foreign_key: "email", primary_key: "email"
 
   accepts_nested_attributes_for :full_time_periods, allow_destroy: true
 
