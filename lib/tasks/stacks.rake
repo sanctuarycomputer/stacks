@@ -42,6 +42,15 @@ namespace :stacks do
     end
   end
 
+  desc "Sync Runn"
+  task :sync_runn => :environment do
+    begin
+      Stacks::Runn.new.sync_all!
+    rescue => e
+      Sentry.capture_exception(e)
+    end
+  end
+
   desc "Sync Expenses"
   task :sync_expenses => :environment do
     begin
