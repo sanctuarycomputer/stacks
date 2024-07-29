@@ -106,6 +106,8 @@
                 The <strong><%= n.params[:subject].name %></strong> Project Tracker has <span class="pill error">No Project Lead</span>.
               <% when :capsule_pending %>
                 The <strong><%= n.params[:subject].name %></strong> Project Tracker is currently <span class="pill capsule_pending">Capsule pending</span>. Let's finalize a project capsule?
+              <% when :runn_revenue_out_of_sync %>
+                The project tracker <strong><%= n.params[:subject].name %></strong> can not resolve revenue differences between Stacks & Runn.io. Please ask Hugh to fix this.
               <% else %>
                 Unknown Project Tracker Error
               <% end %>

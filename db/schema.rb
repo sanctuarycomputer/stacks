@@ -10,9 +10,10 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2024_06_10_192904) do
+ActiveRecord::Schema.define(version: 2024_06_26_191351) do
 
   # These are extensions that must be enabled in order to support this database
+  enable_extension "pg_stat_statements"
   enable_extension "plpgsql"
 
   create_table "active_admin_comments", force: :cascade do |t|
@@ -504,6 +505,8 @@ ActiveRecord::Schema.define(version: 2024_06_10_192904) do
     t.jsonb "snapshot", default: {}
     t.decimal "target_free_hours_percent", default: "0.0"
     t.decimal "target_profit_margin", default: "0.0"
+    t.bigint "runn_project_id"
+    t.index ["runn_project_id"], name: "index_project_trackers_on_runn_project_id", unique: true
   end
 
   create_table "qbo_accounts", force: :cascade do |t|
@@ -586,6 +589,22 @@ ActiveRecord::Schema.define(version: 2024_06_10_192904) do
     t.datetime "deleted_at"
     t.index ["admin_user_id"], name: "index_reviews_on_admin_user_id"
     t.index ["deleted_at"], name: "index_reviews_on_deleted_at"
+  end
+
+  create_table "runn_projects", force: :cascade do |t|
+    t.bigint "runn_id", null: false
+    t.string "name"
+    t.boolean "is_template"
+    t.boolean "is_archived"
+    t.boolean "is_confirmed"
+    t.string "pricing_model"
+    t.string "rate_type"
+    t.integer "budget"
+    t.integer "expenses_budget"
+    t.datetime "created_at"
+    t.datetime "updated_at"
+    t.jsonb "data"
+    t.index ["runn_id"], name: "index_runn_projects_on_runn_id", unique: true
   end
 
   create_table "score_trees", force: :cascade do |t|
@@ -732,6 +751,7 @@ ActiveRecord::Schema.define(version: 2024_06_10_192904) do
   add_foreign_key "project_safety_representative_periods", "studios"
   add_foreign_key "project_tracker_forecast_projects", "project_trackers"
   add_foreign_key "project_tracker_links", "project_trackers"
+  add_foreign_key "project_trackers", "runn_projects", primary_key: "runn_id"
   add_foreign_key "qbo_accounts", "enterprises"
   add_foreign_key "qbo_profit_and_loss_reports", "qbo_accounts"
   add_foreign_key "qbo_purchase_line_items", "expense_groups"

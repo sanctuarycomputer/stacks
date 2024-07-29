@@ -15,6 +15,7 @@ ActiveAdmin.register ProjectTracker do
     :target_profit_margin,
     :target_free_hours_percent,
     :notes,
+    :runn_project_id,
     adhoc_invoice_trackers_attributes: [
       :id,
       :qbo_invoice_id,
@@ -163,7 +164,14 @@ ActiveAdmin.register ProjectTracker do
           end
         )
       else
-        span("No Forecast Project Connected", class: "pill error")
+        span("No Forecast Project/s Connected", class: "pill error")
+      end
+    end
+    column :runn_project do |resource|
+      if resource.runn_project.present?
+        resource.runn_project
+      else
+        span("No Runn.io Project Connected", class: "pill error")
       end
     end
     column :project_leads do |resource|
@@ -399,6 +407,8 @@ ActiveAdmin.register ProjectTracker do
           collection: ForecastProject.candidates_for_association_with_project_tracker(resource)
         })
       end
+
+      f.input :runn_project, :as => :select, :collection => RunnProject.candidates_for_association_with_project_tracker(resource)
 
       f.input :notes, label: "Notes (accepts markdown)"
     end
