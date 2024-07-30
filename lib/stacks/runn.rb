@@ -146,4 +146,18 @@ class Stacks::Runn
       })
     }
   end
+
+  def create_person(first_name, last_name, email, role_id)
+    handle_response {
+      self.class.post("/people/", {
+        body: JSON.dump({
+          "firstName": first_name,
+          "lastName": last_name,
+          "email": email,
+          "roleId": role_id
+        }),
+        headers: @headers
+      })
+    }
+  end
 end

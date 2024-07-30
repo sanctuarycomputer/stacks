@@ -18,7 +18,7 @@ class Stacks::ForecastToRunnSyncer
   def self.sync_all!
     ProjectTracker.where.not(runn_project: nil).each do |pt|
       puts "~~~> Will sync '#{pt.name}' Forecast Assignments to '#{pt.runn_project.name}' Actuals"
-      Stacks::ForecastToRunnSyncer.new(pt)
+      Stacks::ForecastToRunnSyncer.new(pt).sync!
       puts "~~~> Did sync '#{pt.name}' Forecast Assignments to '#{pt.runn_project.name}' Actuals"
     end
   end
@@ -37,7 +37,7 @@ class Stacks::ForecastToRunnSyncer
         ) : @project_tracker.start_date
 
         new_forecast_assignments.each do |fa|
-          runn_person = @runn_people.find{|rp| rp["email"].downcase == (fa.forecast_person.try(:email) || "").downcase}
+          runn_person = find_or_create_runn_person_for_forecast_person(fa.forecast_person)
           unless runn_person.present?
             puts "~~~> Could not find a Runn person for Forecast Person with ID: #{fa.forecast_person.id}"
             next
@@ -66,7 +66,7 @@ class Stacks::ForecastToRunnSyncer
       runn_role = find_or_create_runn_role_for_forecast_project(fp)
       all_forecast_assignments = fp.forecast_assignments.includes(:forecast_person)
       all_forecast_assignments.each do |fa|
-        runn_person = @runn_people.find{|rp| rp["email"].downcase == (fa.forecast_person.try(:email) || "").downcase}
+        runn_person = find_or_create_runn_person_for_forecast_person(fa.forecast_person)
         unless runn_person.present?
           puts "~~~> Could not find a Runn person for Forecast Person with ID: #{fa.forecast_person.id}"
           next
@@ -93,6 +93,21 @@ class Stacks::ForecastToRunnSyncer
 
   private
 
+  def find_or_create_runn_person_for_forecast_person(fp)
+    runn_person = @runn_people.find{|rp| (rp["email"] || "").downcase == (fp.try(:email) || "").downcase}
+    return runn_person if runn_person.present?
+
+    runn_person = @runn.create_person(
+      fp.first_name,
+      fp.last_name,
+      fp.email,
+      @runn_roles.find{|rr| rr["name"] == "gardener"}["id"]
+    )
+
+    @runn_people << runn_person
+    runn_person
+  end
+
   def calculate_runn_revenue
     @runn_actuals.reduce(0) do |acc, ra|
       acc += (@runn_roles.find{|rr| rr["id"] == ra["roleId"]}["standardRate"] * (ra["billableMinutes"] / 60.0))
@@ -108,6 +123,7 @@ class Stacks::ForecastToRunnSyncer
         ra["projectId"],
         ra["roleId"]
       )
+      puts "~~~> Reset an actual for #{ra["date"]}"
     end
   end
 
@@ -132,6 +148,7 @@ class Stacks::ForecastToRunnSyncer
         @project_tracker.runn_project.runn_id,
         runn_role["id"]
       )
+      puts "~~~> Put an actual for #{date}"
     end
   end
 end
