@@ -34,7 +34,7 @@ class Stacks::Automator
         if a.present?
           ProjectTrackersNeedActionNotification.with(
             digest: v,
-            include_admins: false,
+            include_admins: true,
           ).deliver(a)
         end
       end
