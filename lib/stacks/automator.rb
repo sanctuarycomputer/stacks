@@ -23,7 +23,7 @@ class Stacks::Automator
 
       digest = ProjectTracker.capsule_pending.reduce(digest) do |acc, pt|
         pt.current_project_leads.each do |pl|
-          acc[pl.email] = acc[pl.email] || { likely_finished: [], capsule_pending: [] }
+          acc[pl.email] = acc[pl.email] || { likely_complete: [], capsule_pending: [] }
           acc[pl.email][:capsule_pending] = [*acc[pl.email][:capsule_pending], pt]
         end
         acc
