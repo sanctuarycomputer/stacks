@@ -10,8 +10,8 @@ class Stacks::Automator
       @_twist ||= Stacks::Twist.new
     end
 
-    def send_project_capsule_reminders_every_tuesday
-      return unless Time.now.tuesday?
+    def send_project_capsule_reminders_every_tuesday(force = false)
+      return unless Time.now.tuesday? || force
 
       digest = ProjectTracker.likely_complete.reduce({}) do |acc, pt|
         pt.current_project_leads.each do |pl|
