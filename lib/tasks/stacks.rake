@@ -83,6 +83,15 @@ namespace :stacks do
     end
   end
 
+  desc "Send Project Capsule reminders"
+  task :send_project_capsule_reminders => :environment do
+    begin
+      Stacks::Automator.send_project_capsule_reminders_every_tuesday
+    rescue => e
+      Sentry.capture_exception(e)
+    end
+  end
+
   desc "Sample Social Properties"
   task :sample_social_properties => :environment do
     begin

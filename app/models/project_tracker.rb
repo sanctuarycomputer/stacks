@@ -48,6 +48,25 @@ class ProjectTracker < ApplicationRecord
     where.not(id: complete)
   }
 
+  def self.capsule_pending
+    ProjectTracker.where.not(work_completed_at: nil).select do |pt|
+      pt.work_status == :capsule_pending
+    end
+  end
+
+  def self.likely_complete
+    ProjectTracker.where(work_completed_at: nil).select do |pt|
+      if pt.last_recorded_assignment
+        pt.last_recorded_assignment.end_date < (Date.today -  1.month)
+      else
+        false
+      end
+    end.reject do |pt|
+      downcased_name = pt.name.downcase
+      downcased_name.include?("ongoing") || downcased_name.include?("retainer")
+    end
+  end
+
   def forecast_projects
     @_forecast_projects ||= super
   end

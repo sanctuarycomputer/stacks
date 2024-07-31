@@ -10,6 +10,36 @@ class Stacks::Automator
       @_twist ||= Stacks::Twist.new
     end
 
+    def send_project_capsule_reminders_every_tuesday
+      return unless Time.now.tuesday?
+
+      digest = ProjectTracker.likely_complete.reduce({}) do |acc, pt|
+        pt.current_project_leads.each do |pl|
+          acc[pl.email] = acc[pl.email] || { likely_complete: [], capsule_pending: [] }
+          acc[pl.email][:likely_complete] = [*acc[pl.email][:likely_complete], pt]
+        end
+        acc
+      end
+
+      digest = ProjectTracker.capsule_pending.reduce(digest) do |acc, pt|
+        pt.current_project_leads.each do |pl|
+          acc[pl.email] = acc[pl.email] || { likely_finished: [], capsule_pending: [] }
+          acc[pl.email][:capsule_pending] = [*acc[pl.email][:capsule_pending], pt]
+        end
+        acc
+      end
+
+      digest.each do |k, v|
+        a = AdminUser.find_by(email: k)
+        if a.present?
+          ProjectTrackersNeedActionNotification.with(
+            digest: v,
+            include_admins: false,
+          ).deliver(a)
+        end
+      end
+    end
+
     def send_stale_task_digests_every_thursday
       return unless Time.now.thursday?
 
