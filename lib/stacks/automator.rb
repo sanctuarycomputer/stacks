@@ -30,7 +30,7 @@ class Stacks::Automator
       end
 
       digest.each do |k, v|
-        a = AdminUser.find_by(email: k)
+        a = AdminUser.find_by(email: k) || AdminUser.admin.first
         if a.present?
           ProjectTrackersNeedActionNotification.with(
             digest: v,
