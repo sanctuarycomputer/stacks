@@ -254,7 +254,7 @@ class ProjectTracker < ApplicationRecord
 
   def current_project_safety_representative_periods
     project_safety_representative_periods.select do |p|
-      p.period_started_at <= Date.today && p.period_ended_at.nil?
+      p.period_started_at <= Date.today && p.ended_at.nil?
     end
   end
 
