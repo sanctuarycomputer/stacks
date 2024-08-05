@@ -162,9 +162,6 @@ namespace :stacks do
       Parallel.map(ProjectTracker.all, in_threads: 10) { |pt| pt.generate_snapshot! }
       Stacks::DailyFinancialSnapshotter.snapshot_all!
 
-      # Runn is rate limited to 120 calls per minute, so it's important that this is run synchronously
-      Stacks::ForecastToRunnSyncer.sync_all!
-
       puts "~~~> DOING MISC"
       ProfitSharePass.ensure_exists!
       Stacks::Dei.make_rollup # TODO Remove me
@@ -173,8 +170,10 @@ namespace :stacks do
       Stacks::Automator.remind_people_to_record_hours_weekly
       Stacks::Notifications.make_notifications!
       Stacks::Notifications.notify_admins_of_outstanding_notifications_every_tuesday!
-      puts "~~~> FIN: #{Time.new.localtime}"
 
+      # Runn is rate limited to 120 calls per minute, so it's important that this is run synchronously
+      Stacks::ForecastToRunnSyncer.sync_all!
+      puts "~~~> FIN: #{Time.new.localtime}"
     rescue => e
       puts "~~~> ERROR"
       puts e
