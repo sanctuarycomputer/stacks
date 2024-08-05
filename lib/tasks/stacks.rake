@@ -4,7 +4,7 @@ namespace :stacks do
     begin
       Stacks::Quickbooks.make_and_refresh_qbo_access_token
     rescue => e
-      Sentry.capture_exception(e)
+      Stacks::Notifications.report_exception(e)
     end
   end
 
@@ -13,7 +13,7 @@ namespace :stacks do
     begin
       QboAccount.all.map(&:make_and_refresh_qbo_access_token)
     rescue => e
-      Sentry.capture_exception(e)
+      Stacks::Notifications.report_exception(e)
     end
   end
 
@@ -28,7 +28,7 @@ namespace :stacks do
     begin
       Stacks::Notifications.make_notifications!
     rescue => e
-      Sentry.capture_exception(e)
+      Stacks::Notifications.report_exception(e)
     end
   end
 
@@ -38,7 +38,7 @@ namespace :stacks do
       Stacks::Team.discover!
       Stacks::Forecast.new.sync_all!
     rescue => e
-      Sentry.capture_exception(e)
+      Stacks::Notifications.report_exception(e)
     end
   end
 
@@ -47,7 +47,7 @@ namespace :stacks do
     begin
       Stacks::Runn.new.sync_all!
     rescue => e
-      Sentry.capture_exception(e)
+      Stacks::Notifications.report_exception(e)
     end
   end
 
@@ -57,7 +57,7 @@ namespace :stacks do
       Stacks::Expenses.sync_all! # TODO Remove me?
       Stacks::Expenses.match_all! # TODO Remove me?
     rescue => e
-      Sentry.capture_exception(e)
+      Stacks::Notifications.report_exception(e)
     end
   end
 
@@ -66,7 +66,7 @@ namespace :stacks do
     begin
       Stacks::Biz.sync!
     rescue => e
-      Sentry.capture_exception(e)
+      Stacks::Notifications.report_exception(e)
     end
   end
 
@@ -79,7 +79,7 @@ namespace :stacks do
       end
       Stacks::Automator.send_stale_task_digests_every_thursday
     rescue => e
-      Sentry.capture_exception(e)
+      Stacks::Notifications.report_exception(e)
     end
   end
 
@@ -88,7 +88,7 @@ namespace :stacks do
     begin
       Stacks::Automator.send_project_capsule_reminders_every_tuesday
     rescue => e
-      Sentry.capture_exception(e)
+      Stacks::Notifications.report_exception(e)
     end
   end
 
@@ -97,7 +97,7 @@ namespace :stacks do
     begin
       SocialProperty.all.each(&:generate_snapshot!)
     rescue => e
-      Sentry.capture_exception(e)
+      Stacks::Notifications.report_exception(e)
     end
   end
 
@@ -133,7 +133,16 @@ namespace :stacks do
       end
     rescue => e
       puts e
-      Sentry.capture_exception(e)
+      Stacks::Notifications.report_exception(e)
+    end
+  end
+
+  desc "Test System Exception Notification"
+  task :test_system_exception_notification => :environment do
+    begin
+      5 / 0
+    rescue => e
+      Stacks::Notifications.report_exception(e)
     end
   end
 
@@ -178,7 +187,7 @@ namespace :stacks do
       puts "~~~> ERROR"
       puts e
       puts e.backtrace
-      Sentry.capture_exception(e)
+      Stacks::Notifications.report_exception(e)
     end
   end
 
@@ -187,7 +196,7 @@ namespace :stacks do
     begin
       AdminUser.all.each(&:sync_salary_windows!)
     rescue => e
-      Sentry.capture_exception(e)
+      Stacks::Notifications.report_exception(e)
     end
   end
 end
