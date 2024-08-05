@@ -33,7 +33,6 @@ class Stacks::Runn
     all_projects = get_projects()
 
     ActiveRecord::Base.transaction do
-      RunnProject.delete_all
       sync_projects!(all_projects)
     end
   end
