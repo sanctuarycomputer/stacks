@@ -31,7 +31,7 @@ class SocialProperty < ApplicationRecord
       uri = URI.parse("https://cryingparty.vercel.app/api/instagram/#{profile_url.split("/").last}")
       res = Net::HTTP.get(uri)
       data = JSON.parse(res)
-      if data["follower_count"] > 0
+      if data["follower_count"] && data["follower_count"] > 0
         update!(snapshot: snapshot.merge({ Date.today.iso8601 => data["follower_count"] }))
       end
       return
