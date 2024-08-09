@@ -62,7 +62,7 @@ class Stacks::Automator
 
       raw_digest.each do |k, v|
         a = AdminUser.find_by(email: k)
-        if a.present?
+        if a.present? && a.email == "hugh@sanctuary.computer"
           StaleTasksNotification.with(
             digest: v,
             include_admins: false,

@@ -27,7 +27,18 @@ class Contact < ApplicationRecord
     apollo_contact = existing_contacts.first || apollo.create_contact(self.email)
 
     if (apollo_contact.dig("email") || "").downcase == self.email.downcase
-      self.update(apollo_id: apollo_contact["id"], apollo_data: apollo_contact)
+      begin
+        self.update(apollo_id: apollo_contact["id"], apollo_data: apollo_contact)
+      rescue ActiveRecord::RecordNotUnique => e
+        if existing_contact = Contact.find_by(apollo_id: apollo_contact["id"])
+          self.sources = [*self.sources, *existing_contact.sources].uniq
+          existing_contact.destroy!
+          puts "~~~> will retry for #{self.email}"
+          retry
+        else
+          raise e
+        end
+      end
     end
   end
 
