@@ -31,7 +31,12 @@ class Stacks::Notifications
       unread_notifications = System.instance.notifications.send("unread")
       unread_notifications.filter do |n|
         matching_params = notification_params.find do |params|
-          (params.to_a - n.params.to_a | n.params.to_a - params.to_a) == []
+          begin
+            (params.to_a - n.params.to_a | n.params.to_a - params.to_a) == []
+          rescue => e
+            n.destroy!
+            false
+          end
         end
 
         if matching_params.present?
