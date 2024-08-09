@@ -14,7 +14,7 @@ class SystemExceptionNotification < Noticed::Base
 
       # Backtrace:
       ```
-      #{(params[:exception][:backtrace] || []).first(5).join("\n")}
+      #{(params[:exception][:backtrace] || []).reject{|l| l.include?('/app/vendor/')}.join("\n")}
       ```
     HEREDOC
   end
