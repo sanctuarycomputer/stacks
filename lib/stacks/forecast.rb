@@ -44,7 +44,14 @@ class Stacks::Forecast
     query["start_date"] = start_date if start_date.present?
     query["end_date"] = end_date if end_date.present?
     query["project_id"] = project_id if project_id.present?
-    self.class.get("/assignments", headers: @headers, query: query)
+
+    try = 0
+    begin
+      self.class.get("/assignments", headers: @headers, query: query)
+    rescue Net::OpenTimeout => e
+      try += 1
+      try <= 5 ? retry : raise
+    end
   end
 
   # Date.new(2001,2,25)
