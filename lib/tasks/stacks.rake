@@ -132,7 +132,7 @@ namespace :stacks do
         sleep 1.5
       end
     rescue => e
-      puts e
+      return if e.try(:message).try(:start_with?, "809") # Rate Limiter
       Stacks::Notifications.report_exception(e)
     end
   end
