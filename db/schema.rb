@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2024_06_26_191351) do
+ActiveRecord::Schema.define(version: 2024_08_30_232044) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_stat_statements"
@@ -135,6 +135,35 @@ ActiveRecord::Schema.define(version: 2024_06_26_191351) do
     t.datetime "updated_at", precision: 6, null: false
   end
 
+  create_table "collective_role_holder_periods", force: :cascade do |t|
+    t.bigint "collective_role_id", null: false
+    t.bigint "admin_user_id", null: false
+    t.date "started_at"
+    t.date "ended_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_collective_role_holder_periods_on_admin_user_id"
+    t.index ["collective_role_id"], name: "index_collective_role_holder_periods_on_collective_role_id"
+  end
+
+  create_table "collective_role_periods", force: :cascade do |t|
+    t.bigint "collective_role_id", null: false
+    t.bigint "admin_user_id", null: false
+    t.date "started_at"
+    t.date "ended_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_collective_role_periods_on_admin_user_id"
+    t.index ["collective_role_id"], name: "index_collective_role_periods_on_collective_role_id"
+  end
+
+  create_table "collective_roles", force: :cascade do |t|
+    t.string "name", null: false
+    t.string "notion_link", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+  end
+
   create_table "communities", force: :cascade do |t|
     t.string "name"
     t.datetime "created_at", precision: 6, null: false
@@ -150,6 +179,19 @@ ActiveRecord::Schema.define(version: 2024_06_26_191351) do
     t.jsonb "apollo_data", default: {}
     t.index ["apollo_id"], name: "index_contacts_on_apollo_id", unique: true
     t.index ["email"], name: "index_contacts_on_email", unique: true
+  end
+
+  create_table "creative_lead_periods", force: :cascade do |t|
+    t.bigint "project_tracker_id", null: false
+    t.bigint "admin_user_id", null: false
+    t.bigint "studio_id", null: false
+    t.date "started_at"
+    t.date "ended_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_creative_lead_periods_on_admin_user_id"
+    t.index ["project_tracker_id"], name: "index_creative_lead_periods_on_project_tracker_id"
+    t.index ["studio_id"], name: "index_creative_lead_periods_on_studio_id"
   end
 
   create_table "cultural_backgrounds", force: :cascade do |t|
@@ -679,6 +721,19 @@ ActiveRecord::Schema.define(version: 2024_06_26_191351) do
     t.datetime "updated_at", precision: 6, null: false
   end
 
+  create_table "technical_lead_periods", force: :cascade do |t|
+    t.bigint "project_tracker_id", null: false
+    t.bigint "admin_user_id", null: false
+    t.bigint "studio_id", null: false
+    t.date "started_at"
+    t.date "ended_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_technical_lead_periods_on_admin_user_id"
+    t.index ["project_tracker_id"], name: "index_technical_lead_periods_on_project_tracker_id"
+    t.index ["studio_id"], name: "index_technical_lead_periods_on_studio_id"
+  end
+
   create_table "traits", force: :cascade do |t|
     t.bigint "tree_id", null: false
     t.string "name"
@@ -729,6 +784,13 @@ ActiveRecord::Schema.define(version: 2024_06_26_191351) do
   add_foreign_key "admin_user_racial_backgrounds", "racial_backgrounds"
   add_foreign_key "admin_user_salary_windows", "admin_users"
   add_foreign_key "associates_award_agreements", "admin_users"
+  add_foreign_key "collective_role_holder_periods", "admin_users"
+  add_foreign_key "collective_role_holder_periods", "collective_roles"
+  add_foreign_key "collective_role_periods", "admin_users"
+  add_foreign_key "collective_role_periods", "collective_roles"
+  add_foreign_key "creative_lead_periods", "admin_users"
+  add_foreign_key "creative_lead_periods", "project_trackers"
+  add_foreign_key "creative_lead_periods", "studios"
   add_foreign_key "finalizations", "reviews"
   add_foreign_key "full_time_periods", "admin_users"
   add_foreign_key "gifted_profit_shares", "admin_users"
@@ -768,5 +830,8 @@ ActiveRecord::Schema.define(version: 2024_06_26_191351) do
   add_foreign_key "studio_coordinator_periods", "studios"
   add_foreign_key "studio_memberships", "admin_users"
   add_foreign_key "studio_memberships", "studios"
+  add_foreign_key "technical_lead_periods", "admin_users"
+  add_foreign_key "technical_lead_periods", "project_trackers"
+  add_foreign_key "technical_lead_periods", "studios"
   add_foreign_key "traits", "trees"
 end

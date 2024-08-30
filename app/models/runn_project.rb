@@ -8,4 +8,8 @@ class RunnProject < ApplicationRecord
     unassociated = all.select{|rp| !associated.include?(rp)}
     [project_tracker.runn_project, *unassociated].compact.uniq
   end
+
+  def link
+    "https://app.runn.io/projects/#{runn_id}"
+  end
 end

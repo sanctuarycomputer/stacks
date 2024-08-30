@@ -54,6 +54,24 @@ ActiveAdmin.register ProjectTracker do
       :ended_at,
       :_destroy,
       :_edit
+    ],
+    creative_lead_periods_attributes: [
+      :id,
+      :admin_user_id,
+      :studio_id,
+      :started_at,
+      :ended_at,
+      :_destroy,
+      :_edit
+    ],
+    technical_lead_periods_attributes: [
+      :id,
+      :admin_user_id,
+      :studio_id,
+      :started_at,
+      :ended_at,
+      :_destroy,
+      :_edit
     ]
 
   controller do
@@ -79,6 +97,8 @@ ActiveAdmin.register ProjectTracker do
         :adhoc_invoice_trackers,
       ).includes(
         project_lead_periods: :admin_user,
+        creative_lead_periods: :admin_user,
+        technical_lead_periods: :admin_user,
         adhoc_invoice_trackers: :qbo_invoice
       )
     end
@@ -160,32 +180,46 @@ ActiveAdmin.register ProjectTracker do
       if resource.forecast_projects.any?
         div(
           resource.forecast_projects.map do |fp|
-            a(fp.display_name, { href: fp.link, target: "_blank", class: "block", style: "white-space:nowrap" })
+            a("#{fp.display_name} ↗", { href: fp.link, target: "_blank", class: "block", style: "white-space:nowrap" })
           end
         )
       else
         span("No Forecast Project/s Connected", class: "pill error")
       end
     end
-    column :runn_project do |resource|
+    column "Runn.io Project", :runn_project do |resource|
       if resource.runn_project.present?
-        resource.runn_project
+        a("#{resource.runn_project.name} ↗", { href: resource.runn_project.link, target: "_blank", class: "block", style: "white-space:nowrap" })
       else
         span("No Runn.io Project Connected", class: "pill error")
       end
     end
-    column :project_leads do |resource|
+    column "Project Lead/s (PL)", :project_leads do |resource|
       if resource.current_project_leads.any?
         resource.current_project_leads
       else
-        span("No Project Leads", class: "pill error")
+        span("No Project Lead/s", class: "pill error")
+      end
+    end
+    column "Creative Lead/s (CL)", :creative_leads do |resource|
+      if resource.current_creative_leads.any?
+        resource.current_creative_leads
+      else
+        span("No Creative Lead/s", class: "pill error")
+      end
+    end
+    column "Technical Lead/s (TL)", :technical_leads do |resource|
+      if resource.current_technical_leads.any?
+        resource.current_technical_leads
+      else
+        span("No Technical Lead/s", class: "pill error")
       end
     end
     column :project_safety_reps do |resource|
       if resource.current_project_safety_representatives.any?
         resource.current_project_safety_representatives
       else
-        span("No Project Safety Reps", class: "pill error")
+        span("No Project Safety Rep/s", class: "pill error")
       end
     end
     actions
@@ -372,7 +406,16 @@ ActiveAdmin.register ProjectTracker do
           hint: "Leave blank unless this role was passed off to another person"
       end
 
-      f.has_many :project_safety_representative_periods, heading: false, allow_destroy: true, new_record: 'Add a Project Safety Rep' do |a|
+      f.has_many :creative_lead_periods, heading: false, allow_destroy: true, new_record: 'Add a Creative Lead' do |a|
+        a.input :admin_user
+        a.input :studio
+        a.input :started_at,
+          hint: "Leave blank to default to the date of the first recorded hour"
+        a.input :ended_at,
+          hint: "Leave blank unless this role was passed off to another person"
+      end
+
+      f.has_many :technical_lead_periods, heading: false, allow_destroy: true, new_record: 'Add a Tech Lead' do |a|
         a.input :admin_user
         a.input :studio
         a.input :started_at,

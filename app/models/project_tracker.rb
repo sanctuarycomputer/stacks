@@ -32,10 +32,19 @@ class ProjectTracker < ApplicationRecord
 
   has_many :project_lead_periods, dependent: :delete_all
   accepts_nested_attributes_for :project_lead_periods, allow_destroy: true
+  has_many :project_leads, through: :project_lead_periods, source: :admin_user
 
   has_many :project_safety_representative_periods, dependent: :delete_all
   accepts_nested_attributes_for :project_safety_representative_periods, allow_destroy: true
   has_many :project_safety_representatives, through: :project_safety_representative_periods, source: :admin_user
+
+  has_many :creative_lead_periods, dependent: :delete_all
+  accepts_nested_attributes_for :creative_lead_periods, allow_destroy: true
+  has_many :creative_leads, through: :creative_lead_periods, source: :admin_user
+
+  has_many :technical_lead_periods, dependent: :delete_all
+  accepts_nested_attributes_for :technical_lead_periods, allow_destroy: true
+  has_many :technical_leads, through: :technical_lead_periods, source: :admin_user
 
   scope :complete, -> {
     where.not(work_completed_at: nil)
@@ -264,6 +273,26 @@ class ProjectTracker < ApplicationRecord
 
   def current_project_lead_periods
     project_lead_periods.select do |p|
+      p.period_started_at <= Date.today && p.ended_at.nil?
+    end
+  end
+
+  def current_creative_leads
+    current_creative_lead_periods.map(&:admin_user)
+  end
+
+  def current_creative_lead_periods
+    creative_lead_periods.select do |p|
+      p.period_started_at <= Date.today && p.ended_at.nil?
+    end
+  end
+
+  def current_technical_leads
+    current_technical_lead_periods.map(&:admin_user)
+  end
+
+  def current_technical_lead_periods
+    technical_lead_periods.select do |p|
       p.period_started_at <= Date.today && p.ended_at.nil?
     end
   end
