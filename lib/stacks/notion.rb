@@ -8,6 +8,8 @@ class Stacks::Notion
   DATABASE_IDS = {
     TASKS: "438196bedb11412eb8e737bc1bd75b2b",
     MILESTONES: "16330244ea4b424088a19d5b1987f638",
+    SOCIAL_PROPERTIES: "4f53802c02af4a188c9e74e992346412",
+    SOCIAL_PROPERTY_SAMPLES: "e8de332099894ecba670faf512640f48"
   }
 
   def initialize()
@@ -81,6 +83,18 @@ class Stacks::Notion
     end
     response = https.request(req)
     JSON.parse(response.body)
+  end
+
+  def query_database_all(database_id, start_cursor = nil)
+    results = []
+    next_cursor = nil
+    loop do
+      response = query_database(database_id, next_cursor)
+      results = [*results, *response["results"]]
+      next_cursor = response["next_cursor"]
+      break if next_cursor.nil?
+    end
+    results
   end
 
   def sync_database(database_id)

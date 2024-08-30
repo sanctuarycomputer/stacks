@@ -23,6 +23,25 @@ class Stacks::ForecastToRunnSyncer
     end
   end
 
+  # def self.ensure_zero_hour_actuals!
+  #   ProjectTracker.where.not(runn_project: nil).each do |pt|
+  #     puts "~~~> Starting zeroing missing actuals for '#{pt.name}' ('#{pt.runn_project.name}' in Runn.io)"
+  #     Stacks::ForecastToRunnSyncer.new(pt).ensure_zero_hour_actuals!
+  #     puts "~~~> Finished zeroing out missing actuals for '#{pt.name}' ('#{pt.runn_project.name}' in Runn.io)"
+  #   end
+  # end
+
+  # def ensure_zero_hour_actuals!
+  #   (@project_tracker.start_date..@project_tracker.end_date).each do |day|
+  #     assignments =
+  #       ForecastAssignment
+  #         .includes(:forecast_person)
+  #         .where(project_id: @project_tracker.forecast_projects.map(&:forecast_id))
+  #         .where('end_date >= ? AND start_date <= ?', day, day)
+  #     binding.pry
+  #   end
+  # end
+
   def sync!
     # 1. We attempt to "append only" our assignments starting from the
     # last known date in our actuals list

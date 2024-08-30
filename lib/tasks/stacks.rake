@@ -17,6 +17,55 @@ namespace :stacks do
     end
   end
 
+  desc "Sync in Social Properties and Samples"
+  task :sync_social => :environment do
+    begin
+      notion = Stacks::Notion.new
+
+      all_properties = notion.query_database_all(Stacks::Notion::DATABASE_IDS[:SOCIAL_PROPERTIES]).map do |sp|
+        Stacks::Notion::Base.new(OpenStruct.new({ data: sp }))
+      end
+
+      MailingList.all.each do |sp|
+        p = all_properties.find{|p| p.get_prop_value("Name").try(:first).try(:dig, "plain_text") == sp.name}
+        binding.pry
+        if !p
+          resp = notion.create_page({
+            type: "database_id",
+            database_id: Stacks::Notion::DATABASE_IDS[:SOCIAL_PROPERTIES]
+          }, {
+            "Name": {
+              "title": [{ "text": { "content": sp.name } }]
+            }
+          })
+          p = Stacks::Notion::Base.new(OpenStruct.new({ data: resp }))
+        end
+
+        sp.snapshot.map do |date, count|
+          notion.create_page({
+            type: "database_id",
+            database_id: Stacks::Notion::DATABASE_IDS[:SOCIAL_PROPERTY_SAMPLES]
+          }, {
+            "Name": {
+              "title": [{ "text": { "content": date } }]
+            },
+            "Follower/Subscriber Count": {
+              number: count
+            },
+            "Sample Date":{
+              date: { start: date }
+            },
+            "Social Property": {
+              relation: [{ id: p.data["id"] }]
+            }
+          })
+        end
+      end
+    rescue => e
+      binding.pry
+    end
+  end
+
   desc "Daily Enterprise Tasks"
   task :daily_enterprise_tasks => :environment do
     Parallel.map(QboAccount.all, in_threads: 2) { |e| e.sync_all! }
