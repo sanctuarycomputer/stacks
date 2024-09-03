@@ -15,6 +15,7 @@ class Studio < ApplicationRecord
     client_services: 0,
     internal: 1,
     reinvestment: 2,
+    collective: 3,
   }
 
   HEALTH = {
@@ -94,7 +95,7 @@ class Studio < ApplicationRecord
   )
     snapshot =
       [:year, :month, :quarter, :trailing_3_months, :trailing_4_months, :trailing_6_months, :trailing_12_months].reduce({
-        generated_at: DateTime.now.iso8601,
+        started_at: DateTime.now.iso8601,
       }) do |acc, gradation|
         periods = Stacks::Period.for_gradation(gradation)
 
@@ -123,32 +124,72 @@ class Studio < ApplicationRecord
             utilization: utilization_by_period[period].transform_keys {|fp| fp.email.blank? ? "#{fp.first_name} #{fp.last_name}" : fp.email }
           }
 
-          d[:cash][:datapoints] = self.key_datapoints_for_period(
-            period,
-            prev_period,
-            "cash",
-            preloaded_studios,
-            preloaded_new_biz_notion_pages,
-            utilization_by_period[period],
-            utilization_by_period[prev_period],
-            g3d_utilization_by_period[period],
-            g3d_utilization_by_period[prev_period]
-          )
-          d[:cash][:okrs] = self.okrs_for_period(period, d[:cash][:datapoints])
-          d[:accrual][:datapoints] = self.key_datapoints_for_period(
-            period,
-            prev_period,
-            "accrual",
-            preloaded_studios,
-            preloaded_new_biz_notion_pages,
-            utilization_by_period[period],
-            utilization_by_period[prev_period],
-            g3d_utilization_by_period[period],
-            g3d_utilization_by_period[prev_period]
-          )
-          d[:accrual][:okrs] = self.okrs_for_period(period, d[:accrual][:datapoints])
+          # When we run garden3d, we want to give the end user the option to show OKRs with and
+          # without the reinvestment studios factored in. These passess do that for us.
+          if is_garden3d?
+            cash_base_datapoints, cash_datapoints_excluding_reinvestment = self.key_datapoints_for_period(
+              period,
+              prev_period,
+              "cash",
+              preloaded_studios,
+              preloaded_new_biz_notion_pages,
+              utilization_by_period[period],
+              utilization_by_period[prev_period],
+              g3d_utilization_by_period[period],
+              g3d_utilization_by_period[prev_period],
+            )
+
+            d[:cash][:datapoints] = cash_base_datapoints
+            d[:cash][:okrs] = self.okrs_for_period(period, d[:cash][:datapoints])
+            d[:cash][:datapoints_excluding_reinvestment] = cash_datapoints_excluding_reinvestment
+            d[:cash][:okrs_excluding_reinvestment] = self.okrs_for_period(period, d[:cash][:datapoints_excluding_reinvestment])
+
+            accrual_base_datapoints, accrual_datapoints_excluding_reinvestment = self.key_datapoints_for_period(
+              period,
+              prev_period,
+              "accrual",
+              preloaded_studios,
+              preloaded_new_biz_notion_pages,
+              utilization_by_period[period],
+              utilization_by_period[prev_period],
+              g3d_utilization_by_period[period],
+              g3d_utilization_by_period[prev_period],
+            )
+            d[:accrual][:datapoints] = accrual_base_datapoints
+            d[:accrual][:okrs] = self.okrs_for_period(period, d[:accrual][:datapoints])
+            d[:accrual][:datapoints_excluding_reinvestment] = accrual_datapoints_excluding_reinvestment
+            d[:accrual][:okrs_excluding_reinvestment] = self.okrs_for_period(period, d[:accrual][:datapoints_excluding_reinvestment])
+          else
+            d[:cash][:datapoints] = self.key_datapoints_for_period(
+              period,
+              prev_period,
+              "cash",
+              preloaded_studios,
+              preloaded_new_biz_notion_pages,
+              utilization_by_period[period],
+              utilization_by_period[prev_period],
+              g3d_utilization_by_period[period],
+              g3d_utilization_by_period[prev_period],
+            ).first # The first scenario is base
+            d[:cash][:okrs] = self.okrs_for_period(period, d[:cash][:datapoints])
+
+            d[:accrual][:datapoints] = self.key_datapoints_for_period(
+              period,
+              prev_period,
+              "accrual",
+              preloaded_studios,
+              preloaded_new_biz_notion_pages,
+              utilization_by_period[period],
+              utilization_by_period[prev_period],
+              g3d_utilization_by_period[period],
+              g3d_utilization_by_period[prev_period],
+            ).first # The first scenario is base
+            d[:accrual][:okrs] = self.okrs_for_period(period, d[:accrual][:datapoints])
+          end
+
           d
         end
+        acc[:finished_at] = DateTime.now.iso8601
         acc
       end
 
@@ -163,7 +204,9 @@ class Studio < ApplicationRecord
           idx = snapshot[gradation].index(d)
           if idx < 3
             d[:cash][:okrs]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
+            d[:cash][:okrs_excluding_reinvestment]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
             d[:accrual][:okrs]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
+            d[:accrual][:okrs_excluding_reinvestment]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
             next d
           end
 
@@ -171,7 +214,9 @@ class Studio < ApplicationRecord
           prev_four_periods = [d, snapshot[gradation][idx - 1], snapshot[gradation][idx - 2], snapshot[gradation][idx - 3]]
           unless prev_four_periods.map{|d| d.dig(:cash, :okrs, "Sellable Hours Sold", :value).present? && d.dig(:accrual, :okrs, "Sellable Hours Sold", :value).present? }.all?
             d[:cash][:okrs]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
+            d[:cash][:okrs_excluding_reinvestment]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
             d[:accrual][:okrs]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
+            d[:accrual][:okrs_excluding_reinvestment]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
             next d
           end
 
@@ -179,7 +224,10 @@ class Studio < ApplicationRecord
             .map{|d| d.dig(:cash, :okrs, "Sellable Hours Sold", :health) }
             .count{|v| [:exceptional, :healthy].include?(v) }
 
-          d[:cash][:okrs]["Health"] = d[:accrual][:okrs]["Health"] = {
+          d[:cash][:okrs]["Health"] =
+          d[:cash][:okrs_excluding_reinvestment]["Health"] =
+          d[:accrual][:okrs]["Health"] =
+          d[:accrual][:okrs_excluding_reinvestment]["Health"] = {
             "hint"=>HEALTH[health][:hint],
             "unit"=>"display",
             "value"=>HEALTH[health][:value],
@@ -411,12 +459,12 @@ class Studio < ApplicationRecord
       g3d_utilization_for_period
     )
 
-    cogs = period.report.cogs_for_studio(
+    cogs_scenarios = period.report.cogs_for_studio(
       self,
       preloaded_studios,
       accounting_method,
       period.label,
-      sellable_hours_proportion,
+      sellable_hours_proportion
     )
 
     if prev_period.present?
@@ -425,12 +473,12 @@ class Studio < ApplicationRecord
         g3d_utilization_for_prev_period
       )
 
-      prev_cogs = prev_period.report.cogs_for_studio(
+      prev_cogs_scenarios = prev_period.report.cogs_for_studio(
         self,
         preloaded_studios,
         accounting_method,
         prev_period.label,
-        prev_sellable_hours_proportion,
+        prev_sellable_hours_proportion
       )
     end
 
@@ -449,176 +497,180 @@ class Studio < ApplicationRecord
     biz_won_count =
       biz_leads_status_changed_in_period(preloaded_new_biz_notion_pages, 'Active', period).try(:length) || 0
 
-    data = {
-      attrition: {
-        value: leaving_members.map do |m|
-          {
-            gender_identity_ids: m.gender_identity_ids,
-            cultural_background_ids: m.cultural_background_ids,
-            racial_background_ids: m.racial_background_ids,
-          }
-        end,
-        unit: :compound
-      },
-      revenue: {
-        value: cogs[:revenue],
-        unit: :usd,
-        growth: prev_cogs ? ((cogs[:revenue].to_f / prev_cogs[:revenue].to_f) * 100) - 100 : nil
-      },
-      payroll: {
-        value: cogs[:payroll],
-        unit: :usd
-      },
-      bonuses: {
-        value: cogs[:bonuses],
-        unit: :usd
-      },
-      benefits: {
-        value: cogs[:benefits],
-        unit: :usd
-      },
-      supplies: {
-        value: cogs[:supplies],
-        unit: :usd
-      },
-      total_expenses: {
-        value: cogs[:expenses][:total],
-        unit: :usd
-      },
-      specific_expenses: {
-        value: cogs[:expenses][:specific],
-        unit: :usd
-      },
-      unspecified_split_expenses: {
-        value: cogs[:expenses][:unspecified_split],
-        unit: :usd
-      },
-      internal_split_expenses: {
-        value: cogs[:expenses][:internal_split],
-        unit: :usd
-      },
-      subcontractors: {
-        value: cogs[:subcontractors],
-        unit: :usd
-      },
-      cogs: {
-        value: cogs[:cogs],
-        unit: :usd
-      },
-      net_revenue: {
-        value: cogs[:net_revenue],
-        unit: :usd
-      },
-      profit_margin: {
-        value: cogs[:profit_margin],
-        unit: :percentage
-      },
-      biz_leads: {
-        value: biz_leads_in_period(preloaded_new_biz_notion_pages, period).length,
-        unit: :count
-      },
-      settled_biz_leads: {
-        value: biz_settled_count,
-        unit: :count
-      },
-      social_growth_count: {
-        value: social_growth_count,
-        unit: :count
-      },
-      total_social_growth: {
-        value: social_growth_percentage,
-        unit: :percentage
-      },
-      biz_win_rate: {
-        value: (biz_settled_count > 0) ? ((biz_won_count.to_f / biz_settled_count) * 100) : 0,
-        unit: :percentage
-      },
-      biz_won: {
-        value: biz_won_count,
-        unit: :count
-      },
-      biz_passed: {
-        value: biz_leads_status_changed_in_period(preloaded_new_biz_notion_pages, 'Passed', period).try(:length),
-        unit: :count
-      },
-      biz_lost: {
-        value: biz_leads_status_changed_in_period(preloaded_new_biz_notion_pages, 'Lost/Stale', period).try(:length),
-        unit: :count
-      },
-    }
+    cogs_scenarios.map.with_index do |cogs, idx|
+      prev_cogs = prev_cogs_scenarios[idx] if prev_cogs_scenarios.present?
 
-    data[:free_hours] = { unit: :percentage, value: nil }
-    data[:free_hours_count] = { unit: :count, value: nil }
-    unless v.nil?
-      free_hours_given = v[:billable]["0.0"] || 0
-      data[:free_hours][:value] = v[:sellable] == 0 ? 0 : ((free_hours_given / v[:sellable]) * 100)
-      data[:free_hours_count][:value] = free_hours_given
-    end
+      data = {
+        attrition: {
+          value: leaving_members.map do |m|
+            {
+              gender_identity_ids: m.gender_identity_ids,
+              cultural_background_ids: m.cultural_background_ids,
+              racial_background_ids: m.racial_background_ids,
+            }
+          end,
+          unit: :compound
+        },
+        revenue: {
+          value: cogs[:revenue],
+          unit: :usd,
+          growth: prev_cogs ? ((cogs[:revenue].to_f / prev_cogs[:revenue].to_f) * 100) - 100 : nil
+        },
+        payroll: {
+          value: cogs[:payroll],
+          unit: :usd
+        },
+        bonuses: {
+          value: cogs[:bonuses],
+          unit: :usd
+        },
+        benefits: {
+          value: cogs[:benefits],
+          unit: :usd
+        },
+        supplies: {
+          value: cogs[:supplies],
+          unit: :usd
+        },
+        total_expenses: {
+          value: cogs[:expenses][:total],
+          unit: :usd
+        },
+        specific_expenses: {
+          value: cogs[:expenses][:specific],
+          unit: :usd
+        },
+        unspecified_split_expenses: {
+          value: cogs[:expenses][:unspecified_split],
+          unit: :usd
+        },
+        internal_split_expenses: {
+          value: cogs[:expenses][:internal_split],
+          unit: :usd
+        },
+        subcontractors: {
+          value: cogs[:subcontractors],
+          unit: :usd
+        },
+        cogs: {
+          value: cogs[:cogs],
+          unit: :usd
+        },
+        net_revenue: {
+          value: cogs[:net_revenue],
+          unit: :usd
+        },
+        profit_margin: {
+          value: cogs[:profit_margin],
+          unit: :percentage
+        },
+        biz_leads: {
+          value: biz_leads_in_period(preloaded_new_biz_notion_pages, period).length,
+          unit: :count
+        },
+        settled_biz_leads: {
+          value: biz_settled_count,
+          unit: :count
+        },
+        social_growth_count: {
+          value: social_growth_count,
+          unit: :count
+        },
+        total_social_growth: {
+          value: social_growth_percentage,
+          unit: :percentage
+        },
+        biz_win_rate: {
+          value: (biz_settled_count > 0) ? ((biz_won_count.to_f / biz_settled_count) * 100) : 0,
+          unit: :percentage
+        },
+        biz_won: {
+          value: biz_won_count,
+          unit: :count
+        },
+        biz_passed: {
+          value: biz_leads_status_changed_in_period(preloaded_new_biz_notion_pages, 'Passed', period).try(:length),
+          unit: :count
+        },
+        biz_lost: {
+          value: biz_leads_status_changed_in_period(preloaded_new_biz_notion_pages, 'Lost/Stale', period).try(:length),
+          unit: :count
+        },
+      }
 
-    data[:sellable_hours] = { unit: :hours, value: nil }
-    unless v.nil?
-      data[:sellable_hours][:value] = v[:sellable]
-    end
-
-    data[:non_sellable_hours] = { unit: :hours, value: nil }
-    unless v.nil?
-      data[:non_sellable_hours][:value] = v[:non_sellable]
-    end
-
-    data[:billable_hours] = { unit: :hours, value: nil }
-    unless v.nil?
-      total_billable = v[:billable].values.reduce(&:+) || 0
-      data[:billable_hours][:value] = total_billable
-    end
-
-    data[:non_billable_hours] = { unit: :hours, value: nil }
-    unless v.nil?
-      data[:non_billable_hours][:value] = v[:non_billable]
-    end
-
-    data[:time_off] = { unit: :hours, value: nil }
-    unless v.nil?
-      data[:time_off][:value] = v[:time_off]
-    end
-
-    data[:sellable_hours_sold] = { unit: :percentage, value: nil }
-    unless v.nil?
-      total_billable = v[:billable].values.reduce(&:+) || 0
-      begin
-        data[:sellable_hours_sold][:value] = (total_billable / v[:sellable]) * 100
-      rescue ZeroDivisionError
-        data[:sellable_hours_sold][:value] = 0
+      data[:free_hours] = { unit: :percentage, value: nil }
+      data[:free_hours_count] = { unit: :count, value: nil }
+      unless v.nil?
+        free_hours_given = v[:billable]["0.0"] || 0
+        data[:free_hours][:value] = v[:sellable] == 0 ? 0 : ((free_hours_given / v[:sellable]) * 100)
+        data[:free_hours_count][:value] = free_hours_given
       end
-    end
 
-    data[:sellable_hours_ratio] = { unit: :percentage, value: nil }
-    unless v.nil?
-      begin
-        data[:sellable_hours_ratio][:value] =
-          (v[:sellable] / (v[:sellable] + v[:non_sellable])) * 100
-      rescue ZeroDivisionError
-        data[:sellable_hours_ratio][:value] = 0
+      data[:sellable_hours] = { unit: :hours, value: nil }
+      unless v.nil?
+        data[:sellable_hours][:value] = v[:sellable]
       end
-    end
 
-    data[:average_hourly_rate] = { unit: :usd, value: nil }
-    unless v.nil?
-      data[:average_hourly_rate][:value] =
-        Stacks::Utils.weighted_average(v[:billable].map{|k, v| [k.to_f, v]})
-    end
+      data[:non_sellable_hours] = { unit: :hours, value: nil }
+      unless v.nil?
+        data[:non_sellable_hours][:value] = v[:non_sellable]
+      end
 
-    data[:cost_per_sellable_hour] = { unit: :usd, value: nil }
-    unless v.nil?
-      data[:cost_per_sellable_hour][:value] = cogs[:cogs] / v[:sellable].to_f
-    end
+      data[:billable_hours] = { unit: :hours, value: nil }
+      unless v.nil?
+        total_billable = v[:billable].values.reduce(&:+) || 0
+        data[:billable_hours][:value] = total_billable
+      end
 
-    data[:actual_cost_per_hour_sold] = { unit: :usd, value: nil }
-    unless v.nil?
-      total_billable = v[:billable].values.reduce(&:+) || 0
-      data[:actual_cost_per_hour_sold][:value] = cogs[:cogs] / total_billable
-    end
+      data[:non_billable_hours] = { unit: :hours, value: nil }
+      unless v.nil?
+        data[:non_billable_hours][:value] = v[:non_billable]
+      end
 
-    data
+      data[:time_off] = { unit: :hours, value: nil }
+      unless v.nil?
+        data[:time_off][:value] = v[:time_off]
+      end
+
+      data[:sellable_hours_sold] = { unit: :percentage, value: nil }
+      unless v.nil?
+        total_billable = v[:billable].values.reduce(&:+) || 0
+        begin
+          data[:sellable_hours_sold][:value] = (total_billable / v[:sellable]) * 100
+        rescue ZeroDivisionError
+          data[:sellable_hours_sold][:value] = 0
+        end
+      end
+
+      data[:sellable_hours_ratio] = { unit: :percentage, value: nil }
+      unless v.nil?
+        begin
+          data[:sellable_hours_ratio][:value] =
+            (v[:sellable] / (v[:sellable] + v[:non_sellable])) * 100
+        rescue ZeroDivisionError
+          data[:sellable_hours_ratio][:value] = 0
+        end
+      end
+
+      data[:average_hourly_rate] = { unit: :usd, value: nil }
+      unless v.nil?
+        data[:average_hourly_rate][:value] =
+          Stacks::Utils.weighted_average(v[:billable].map{|k, v| [k.to_f, v]})
+      end
+
+      data[:cost_per_sellable_hour] = { unit: :usd, value: nil }
+      unless v.nil?
+        data[:cost_per_sellable_hour][:value] = cogs[:cogs] / v[:sellable].to_f
+      end
+
+      data[:actual_cost_per_hour_sold] = { unit: :usd, value: nil }
+      unless v.nil?
+        total_billable = v[:billable].values.reduce(&:+) || 0
+        data[:actual_cost_per_hour_sold][:value] = cogs[:cogs] / total_billable
+      end
+
+      data
+    end
   end
 
   def utilization_for_period(period, preloaded_studios = Studio.all)
@@ -681,42 +733,42 @@ class Studio < ApplicationRecord
   end
 
   def qbo_sales_categories
-    return "Total Income" if is_garden3d?
+    return ["Total Income"] if is_garden3d?
     accounting_prefix.split(",").map(&:strip).map do |p|
       "[SC] #{p} Services"
     end
   end
 
   def qbo_bonus_categories
-    return "Total [SC] Profit Share, Bonuses & Misc" if is_garden3d?
+    return ["Total [SC] Profit Share, Bonuses & Misc"] if is_garden3d?
     accounting_prefix.split(",").map(&:strip).map do |p|
       "[SC] #{p} Profit Share, Bonuses & Misc"
     end
   end
 
   def qbo_payroll_categories
-    return "Total [SC] Payroll" if is_garden3d?
+    return ["Total [SC] Payroll"] if is_garden3d?
     accounting_prefix.split(",").map(&:strip).map do |p|
       "[SC] #{p} Payroll"
     end
   end
 
   def qbo_benefits_categories
-    return "Total [SC] Benefits, Contributions & Tax" if is_garden3d?
+    return ["Total [SC] Benefits, Contributions & Tax"] if is_garden3d?
     accounting_prefix.split(",").map(&:strip).map do |p|
       "[SC] #{p} Benefits, Contributions & Tax"
     end
   end
 
   def qbo_supplies_categories
-    return "Total [SC] Supplies & Materials" if is_garden3d?
+    return ["Total [SC] Supplies & Materials"] if is_garden3d?
     accounting_prefix.split(",").map(&:strip).map do |p|
       "[SC] #{p} Supplies & Materials"
     end
   end
 
   def qbo_subcontractors_categories
-    return "Total [SC] Subcontractors" if is_garden3d?
+    return ["Total [SC] Subcontractors"] if is_garden3d?
     accounting_prefix.split(",").map(&:strip).map do |p|
       "[SC] #{p} Subcontractors"
     end

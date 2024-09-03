@@ -1,12 +1,42 @@
+<script>
+function update(a, b) {
+  var searchParams = new URLSearchParams(window.location.search);
+  if (b !== '')
+    searchParams.set(a, b);
+  else
+    searchParams.delete(a);
+  window.location.search = searchParams.toString();
+}
+</script>
+
 <% current_gradation = params["gradation"] || default_gradation %>
+<% include_reinvestment = params["include_reinvestment"].present? %>
+<% okrs_bearer = include_reinvestment ? "okrs" : "okrs_excluding_reinvestment" %>
 <% current_gradation = default_gradation unless all_gradations.include?(current_gradation) %>
 <% accounting_method = session[:accounting_method] || "cash" %>
 <% all_gradations.each do |gradation| %>
-  <a href="?gradation=<%= gradation %>" style="margin-right: 6px">
+  <a onclick='update("gradation", "<%= gradation %>");' style="margin-right: 6px">
     <p class="nag pill <%= current_gradation == gradation ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
       By <%= gradation.humanize %>
     </p>
   </a>
+<% end %>
+
+<% if resource.is_garden3d? %>
+  <div class="flex" style="padding: 20px 0px 0px 0px; max-width: 600px;">
+    <div>
+      <% if include_reinvestment %>
+        <input class="toggle-switch" type="checkbox" id="reinvestment-switch" onclick='update("include_reinvestment", "");' checked />
+      <% else %>
+        <input class="toggle-switch" type="checkbox" id="reinvestment-switch" onclick='update("include_reinvestment", true);' />
+      <% end %>
+      <label class="toggle-switch" for="reinvestment-switch">Toggle</label>
+    </div>
+    <div style="margin-left: 20px;">
+      <p style="font-size: 15px; margin-bottom: 0px;"><strong>Include aggregated <%= link_to "Reinvestment Studios", admin_studios_path(scope: :reinvestment), {style: "font-size: 15px;"} %> sub-P&Ls</strong></p>
+      <p style="font-size: 13px; color: #5E6469; margin-bottom: 0px;">By default, garden3d numbers & OKRs are derived from the global P&L in Quickbooks, but remove Reinvestment Studio specific line items from their sub-P&Ls to give a better view of our core client services business.</p>
+    </div>
+  </div>
 <% end %>
 
 <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
@@ -105,8 +135,8 @@
   <div class="dashboard-module">
     <div class="module-header">
       <p>Studio OKRs</p>
-      <% if @studio.snapshot["generated_at"].present? %>
-        <p>Last generated <%= time_ago_in_words(DateTime.iso8601(@studio.snapshot["generated_at"])) %> ago</p>
+      <% if @studio.snapshot["finished_at"].present? %>
+        <p>Last generated <%= time_ago_in_words(DateTime.iso8601(@studio.snapshot["finished_at"])) %> ago</p>
       <% end %>
     </div>
     <div class="module-body">
@@ -150,7 +180,7 @@
             <tr class="<%= index.even? ? "even" : "odd" %> invert">
               <% all_okrs.each do |okr| %>
                 <td class="col">
-                  <% okr_results = d[accounting_method]["okrs"][okr[:name]] || {} %>
+                  <% okr_results = d[accounting_method][okrs_bearer][okr[:name]] || {} %>
                   <% value = okr_results.dig("value").to_f  %>
                   <% target = (okr_results.dig("target").try(:to_f) || 0).round(2) %>
                   <% health = okr_results.dig("health")  %>
