@@ -34,7 +34,7 @@ function update(a, b) {
     </div>
     <div style="margin-left: 20px;">
       <p style="font-size: 15px; margin-bottom: 0px;"><strong>Include aggregated <%= link_to "Reinvestment Studios", admin_studios_path(scope: :reinvestment), {style: "font-size: 15px;"} %> sub-P&Ls</strong></p>
-      <p style="font-size: 13px; color: #5E6469; margin-bottom: 0px;">By default, garden3d numbers & OKRs are derived from the global P&L in Quickbooks, but remove Reinvestment Studio specific line items from their sub-P&Ls to give a better view of our core client services business.</p>
+      <p style="font-size: 13px; color: #5E6469; margin-bottom: 0px;">The garden3d-level datapoints & OKRs are derived from the global P&L in Quickbooks, but with specific line items from Reinvestment Studio sub-P&Ls removed, to give a better view of our core client services business by default. Toggle this setting on to see the datapoints & OKRs with Reinvestment Studios included.</p>
     </div>
   </div>
 <% end %>
