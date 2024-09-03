@@ -10,8 +10,13 @@ function update(a, b) {
 </script>
 
 <% current_gradation = params["gradation"] || default_gradation %>
+
 <% include_reinvestment = params["include_reinvestment"].present? %>
-<% okrs_bearer = include_reinvestment ? "okrs" : "okrs_excluding_reinvestment" %>
+<% okrs_bearer = "okrs" %>
+<% if resource.is_garden3d? && !include_reinvestment %>
+  <% okrs_bearer = "okrs_excluding_reinvestment" %>
+<% end %>
+
 <% current_gradation = default_gradation unless all_gradations.include?(current_gradation) %>
 <% accounting_method = session[:accounting_method] || "cash" %>
 <% all_gradations.each do |gradation| %>

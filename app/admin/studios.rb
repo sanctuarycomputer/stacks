@@ -148,8 +148,6 @@ ActiveAdmin.register Studio do
 
   show do
     COLORS = Stacks::Utils::COLORS
-    include_reinvestment =
-      params["include_reinvestment"].present?
 
     all_gradations = ["month", "quarter", "year", "trailing_3_months", "trailing_4_months", "trailing_6_months", "trailing_12_months"]
     default_gradation = "month"
@@ -163,8 +161,10 @@ ActiveAdmin.register Studio do
     snapshot_without_ytd = snapshot.reject{|s| s["label"] == "YTD"}
     accounting_method = session[:accounting_method] || "cash"
 
-    datapoints_bearer =
-      include_reinvestment ? "datapoints" : "datapoints_excluding_reinvestment"
+    datapoints_bearer = "datapoints"
+    if resource.is_garden3d? && !params["include_reinvestment"].present?
+      datapoints_bearer = "datapoints_excluding_reinvestment"
+    end
 
     studio_profitability_data = {
       labels: snapshot.map{|s| s["label"]},
