@@ -1,19 +1,25 @@
 namespace :stacks do
   desc "Freshen Qbo Token"
   task :refresh_qbo_token => :environment do
+    system_task = SystemTask.create!(name: "stacks:refresh_qbo_token")
     begin
       Stacks::Quickbooks.make_and_refresh_qbo_access_token
     rescue => e
-      Stacks::Notifications.report_exception(e)
+      system_task.mark_as_error(e)
+    else
+      system_task.mark_as_success
     end
   end
 
   desc "Freshen Enterprise Qbo Tokens"
   task :refresh_enterprise_qbo_tokens => :environment do
+    system_task = SystemTask.create!(name: "stacks:refresh_enterprise_qbo_tokens")
     begin
       QboAccount.all.map(&:make_and_refresh_qbo_access_token)
     rescue => e
-      Stacks::Notifications.report_exception(e)
+      system_task.mark_as_error(e)
+    else
+      system_task.mark_as_success
     end
   end
 
@@ -67,59 +73,82 @@ namespace :stacks do
 
   desc "Daily Enterprise Tasks"
   task :daily_enterprise_tasks => :environment do
-    Parallel.map(QboAccount.all, in_threads: 2) { |e| e.sync_all! }
-    Parallel.map(Enterprise.all, in_threads: 2) { |e| e.generate_snapshot! }
+    system_task = SystemTask.create!(name: "stacks:daily_enterprise_tasks")
+    begin
+      Parallel.map(QboAccount.all, in_threads: 2) { |e| e.sync_all! }
+      Parallel.map(Enterprise.all, in_threads: 2) { |e| e.generate_snapshot! }
+    rescue => e
+      system_task.mark_as_error(e)
+    else
+      system_task.mark_as_success
+    end
   end
 
   desc "Make Notifications"
   task :make_notifications => :environment do
+    system_task = SystemTask.create!(name: "stacks:make_notifications")
     begin
       Stacks::Notifications.make_notifications!
     rescue => e
-      Stacks::Notifications.report_exception(e)
+      system_task.mark_as_error(e)
+    else
+      system_task.mark_as_success
     end
   end
 
   desc "Sync Forecast"
   task :sync_forecast => :environment do
+    system_task = SystemTask.create!(name: "stacks:sync_forecast")
     begin
       Stacks::Team.discover!
       Stacks::Forecast.new.sync_all!
     rescue => e
-      Stacks::Notifications.report_exception(e)
+      system_task.mark_as_error(e)
+    else
+      system_task.mark_as_success
     end
   end
 
   desc "Sync Runn"
   task :sync_runn => :environment do
+    system_task = SystemTask.create!(name: "stacks:sync_runn")
     begin
       Stacks::Runn.new.sync_all!
     rescue => e
-      Stacks::Notifications.report_exception(e)
+      system_task.mark_as_error(e)
+    else
+      system_task.mark_as_success
     end
   end
 
   desc "Sync Expenses"
   task :sync_expenses => :environment do
+    system_task = SystemTask.create!(name: "stacks:sync_expenses")
     begin
       Stacks::Expenses.sync_all! # TODO Remove me?
       Stacks::Expenses.match_all! # TODO Remove me?
     rescue => e
-      Stacks::Notifications.report_exception(e)
+      system_task.mark_as_error(e)
+    else
+      system_task.mark_as_success
     end
   end
 
   desc "Sync Biz"
   task :sync_biz => :environment do
+    system_task = SystemTask.create!(name: "stacks:sync_biz")
     begin
       Stacks::Biz.sync!
     rescue => e
-      Stacks::Notifications.report_exception(e)
+      system_task.mark_as_error(e)
+    else
+      system_task.mark_as_success
     end
   end
 
   desc "Sync Notion"
   task :sync_notion => :environment do
+    system_task = SystemTask.create!(name: "stacks:sync_notion")
     begin
       notion = Stacks::Notion.new
       Parallel.map(Stacks::Notion::DATABASE_IDS.values, in_threads: 3) do |db_id|
@@ -127,30 +156,39 @@ namespace :stacks do
       end
       Stacks::Automator.send_stale_task_digests_every_thursday
     rescue => e
-      Stacks::Notifications.report_exception(e)
+      system_task.mark_as_error(e)
+    else
+      system_task.mark_as_success
     end
   end
 
   desc "Send Project Capsule reminders"
   task :send_project_capsule_reminders => :environment do
+    system_task = SystemTask.create!(name: "stacks:send_project_capsule_reminders")
     begin
       Stacks::Automator.send_project_capsule_reminders_every_tuesday
     rescue => e
-      Stacks::Notifications.report_exception(e)
+      system_task.mark_as_error(e)
+    else
+      system_task.mark_as_success
     end
   end
 
   desc "Sample Social Properties"
   task :sample_social_properties => :environment do
+    system_task = SystemTask.create!(name: "stacks:sample_social_properties")
     begin
       SocialProperty.all.each(&:generate_snapshot!)
     rescue => e
-      Stacks::Notifications.report_exception(e)
+      system_task.mark_as_error(e)
+    else
+      system_task.mark_as_success
     end
   end
 
   desc "Sync Contacts"
   task :sync_contacts => :environment do
+    system_task = SystemTask.create!(name: "stacks:sync_contacts")
     begin
       Contact.all.each(&:dedupe!)
 
@@ -181,23 +219,28 @@ namespace :stacks do
       end
     rescue => e
       return if e.try(:message).try(:start_with?, "809") # Rate Limiter
-      Stacks::Notifications.report_exception(e)
+      system_task.mark_as_error(e)
+    else
+      system_task.mark_as_success
     end
   end
 
   desc "Test System Exception Notification"
   task :test_system_exception_notification => :environment do
+    system_task = SystemTask.create!(name: "stacks:test_system_exception_notification")
     begin
       5 / 0
     rescue => e
-      Stacks::Notifications.report_exception(e)
+      system_task.mark_as_error(e)
+    else
+      system_task.mark_as_success
     end
   end
 
   desc "Daily Tasks"
   task :daily_tasks => :environment do
+    system_task = SystemTask.create!(name: "stacks:daily_tasks")
     begin
-
       puts "~~~> DOING SYNC: #{Time.new.localtime}"
       Stacks::Team.discover!
       Stacks::Forecast.new.sync_all!
@@ -235,16 +278,22 @@ namespace :stacks do
       puts "~~~> ERROR"
       puts e
       puts e.backtrace
-      Stacks::Notifications.report_exception(e)
+
+      system_task.mark_as_error(e)
+    else
+      system_task.mark_as_success
     end
   end
 
   desc "Resync salary windows"
   task :resync_salary_windows => :environment do
+    system_task = SystemTask.create!(name: "stacks:resync_salary_windows")
     begin
       AdminUser.all.each(&:sync_salary_windows!)
     rescue => e
-      Stacks::Notifications.report_exception(e)
+      system_task.mark_as_error(e)
+    else
+      system_task.mark_as_success
     end
   end
 end

@@ -15,16 +15,18 @@ class Stacks::Notifications
     end
 
     def report_exception(exception)
-      SystemExceptionNotification.with(
+      notification = SystemExceptionNotification.with(
         exception: {
           message: exception.try(:to_s),
           klass: exception.try(:class).try(:to_s),
           backtrace: exception.try(:backtrace)
         },
         include_admins: false,
-      ).deliver(AdminUser.find_by(email: "hugh@sanctuary.computer"))
+      )
+      notification.deliver(AdminUser.find_by(email: "hugh@sanctuary.computer"))
 
       Sentry.capture_exception(exception)
+      notification
     end
 
     def mark_system_notififcations_read_if_irrelevant!(notification_params = stage_notification_params)

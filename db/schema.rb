@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2024_08_30_232044) do
+ActiveRecord::Schema.define(version: 2024_09_03_214405) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_stat_statements"
@@ -144,17 +144,6 @@ ActiveRecord::Schema.define(version: 2024_08_30_232044) do
     t.datetime "updated_at", precision: 6, null: false
     t.index ["admin_user_id"], name: "index_collective_role_holder_periods_on_admin_user_id"
     t.index ["collective_role_id"], name: "index_collective_role_holder_periods_on_collective_role_id"
-  end
-
-  create_table "collective_role_periods", force: :cascade do |t|
-    t.bigint "collective_role_id", null: false
-    t.bigint "admin_user_id", null: false
-    t.date "started_at"
-    t.date "ended_at"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["admin_user_id"], name: "index_collective_role_periods_on_admin_user_id"
-    t.index ["collective_role_id"], name: "index_collective_role_periods_on_collective_role_id"
   end
 
   create_table "collective_roles", force: :cascade do |t|
@@ -715,6 +704,15 @@ ActiveRecord::Schema.define(version: 2024_08_30_232044) do
     t.integer "studio_type", default: 0
   end
 
+  create_table "system_tasks", force: :cascade do |t|
+    t.string "name", null: false
+    t.datetime "settled_at"
+    t.bigint "notification_id"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["notification_id"], name: "index_system_tasks_on_notification_id"
+  end
+
   create_table "systems", force: :cascade do |t|
     t.jsonb "settings"
     t.datetime "created_at", precision: 6, null: false
@@ -786,8 +784,6 @@ ActiveRecord::Schema.define(version: 2024_08_30_232044) do
   add_foreign_key "associates_award_agreements", "admin_users"
   add_foreign_key "collective_role_holder_periods", "admin_users"
   add_foreign_key "collective_role_holder_periods", "collective_roles"
-  add_foreign_key "collective_role_periods", "admin_users"
-  add_foreign_key "collective_role_periods", "collective_roles"
   add_foreign_key "creative_lead_periods", "admin_users"
   add_foreign_key "creative_lead_periods", "project_trackers"
   add_foreign_key "creative_lead_periods", "studios"
@@ -830,6 +826,7 @@ ActiveRecord::Schema.define(version: 2024_08_30_232044) do
   add_foreign_key "studio_coordinator_periods", "studios"
   add_foreign_key "studio_memberships", "admin_users"
   add_foreign_key "studio_memberships", "studios"
+  add_foreign_key "system_tasks", "notifications"
   add_foreign_key "technical_lead_periods", "admin_users"
   add_foreign_key "technical_lead_periods", "project_trackers"
   add_foreign_key "technical_lead_periods", "studios"
