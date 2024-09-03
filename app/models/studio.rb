@@ -204,9 +204,17 @@ class Studio < ApplicationRecord
           idx = snapshot[gradation].index(d)
           if idx < 3
             d[:cash][:okrs]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
-            d[:cash][:okrs_excluding_reinvestment]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
+
+            if d[:cash][:okrs_excluding_reinvestment]
+              d[:cash][:okrs_excluding_reinvestment]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
+            end
+
             d[:accrual][:okrs]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
-            d[:accrual][:okrs_excluding_reinvestment]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
+
+            if d[:accrual][:okrs_excluding_reinvestment]
+              d[:accrual][:okrs_excluding_reinvestment]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
+            end
+
             next d
           end
 
