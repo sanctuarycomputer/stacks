@@ -1,5 +1,11 @@
 ActiveAdmin.register SystemTask do
-  menu label: "System Tasks", parent: "System"
+  menu if: -> { current_admin_user.is_admin? },
+        priority: 0,
+        label: -> {
+          div("#{SystemTask.in_progress.count}", class: "notifier")
+          "System Tasks"
+        }
+
   config.filters = false
   config.paginate = true
   actions :index, :show
@@ -27,8 +33,8 @@ ActiveAdmin.register SystemTask do
       end
     end
 
-    column :time_taken do |resource|
-      "#{(resource.time_taken / 60).round(2)} seconds"
+    column :time_taken_in_minutes do |resource|
+      "#{(resource.time_taken_in_minutes).round(2)} minutes"
     end
     actions
   end

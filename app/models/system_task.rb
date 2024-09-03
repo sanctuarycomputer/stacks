@@ -11,9 +11,9 @@ class SystemTask < ApplicationRecord
 
   belongs_to :notification, optional: true
 
-  def time_taken
+  def time_taken_in_minutes
     return Float::INFINITY if settled_at.nil?
-    settled_at - created_at
+    (settled_at - created_at) / 24 / 60
   end
 
   def mark_as_success
