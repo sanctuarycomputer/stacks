@@ -9,15 +9,15 @@ ActiveAdmin.register_page "Dashboard" do
     cc_or_bank_accounts = qbo_accounts.select do |a|
       ["Bank", "Credit Card"].include?(a.account_type)
     end
-    
-    net_cash = cc_or_bank_accounts.map do |a| 
+
+    net_cash = cc_or_bank_accounts.map do |a|
       if a.classification == "Liability"
-        -1 * a.current_balance.abs 
+        -1 * a.current_balance.abs
       else
         a.current_balance
       end
     end.reduce(:+)
-    
+
     burn_rates =
       [1, 2, 3].map do |month|
         report = QboProfitAndLossReport.find_or_fetch_for_range(
@@ -30,9 +30,8 @@ ActiveAdmin.register_page "Dashboard" do
         (
           report.find_row(accounting_method, "Total Cost of Goods Sold") +
           report.find_row(accounting_method, "Total Expenses") -
-          report.find_row(accounting_method, "[SC] Reinvestment Profit Share, Bonuses & Misc") -
-          report.find_row(accounting_method, "[SC] Reinvestment") # TODO: not a thing anymore
-        )        
+          report.find_row(accounting_method, "[SC] Reinvestment Profit Share, Bonuses & Misc")
+        )
       end
     average_burn_rate = burn_rates.sum(0.0) / burn_rates.length
 

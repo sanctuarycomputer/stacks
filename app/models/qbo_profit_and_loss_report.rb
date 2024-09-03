@@ -2,11 +2,11 @@ class QboProfitAndLossReport < ApplicationRecord
   belongs_to :qbo_account, optional: true
 
   TOP_LEVEL_CATEGORIES = {
-    revenue: "Total Income", 
-    cogs: "Total Cost of Goods Sold", 
+    revenue: "Total Income",
+    cogs: "Total Cost of Goods Sold",
     expenses: "Total Expenses"
   }
-  
+
   def find_row(accounting_method, label)
     (data[accounting_method]["rows"].find {|r| r[0] == label } || [nil, 0])[1].to_f
   end
@@ -32,12 +32,12 @@ class QboProfitAndLossReport < ApplicationRecord
     expense_rows = expense_rows.reject{|r| r[1].nil? }
     # Remove section footers (no need for totals in this report)
     expense_rows = expense_rows.reject{|r| r[0].starts_with?("Total") }
-    
+
     expense_data.each do |studio, studio_expense_rows|
       if studio.is_garden3d?
         # Take all expenses that don't match a studio
         expense_data[studio] = expense_rows.select do |row|
-          expense_row_belongs_to_studio = 
+          expense_row_belongs_to_studio =
             studios.map(&:accounting_prefix).select(&:present?).any?{|p| row[0].starts_with?("[SC] #{p}")}
           !expense_row_belongs_to_studio
         end
@@ -53,7 +53,7 @@ class QboProfitAndLossReport < ApplicationRecord
 
   def data_for_enterprise(enterprise, accounting_method, period_label, vertical)
     if vertical == :All
-      dataset = 
+      dataset =
         {
           revenue: find_rows(accounting_method, "Total Income"),
           cogs: find_rows(accounting_method, "Total Cost of Goods Sold"),
@@ -65,7 +65,7 @@ class QboProfitAndLossReport < ApplicationRecord
       return dataset
     end
 
-    dataset = 
+    dataset =
       data[accounting_method]["rows"].reduce({
         revenue: 0,
         cogs: 0,
@@ -82,22 +82,28 @@ class QboProfitAndLossReport < ApplicationRecord
         acc[TOP_LEVEL_CATEGORIES.key(top_level_category_row[0])] += row[1].to_f
         acc
       end
-    
+
       dataset[:net_revenue] = dataset[:revenue] - dataset[:cogs] - dataset[:expenses]
     ((dataset[:net_revenue] / dataset[:revenue]) * 100) if dataset[:revenue] > 0
     dataset
   end
 
-  def cogs_for_studio(studio, preloaded_studios, accounting_method, period_label, sellable_hours_proportion = nil)
+  def cogs_for_studio(
+    studio,
+    preloaded_studios,
+    accounting_method,
+    period_label,
+    sellable_hours_proportion = nil
+  )
     gross_revenue = find_rows(accounting_method, studio.qbo_sales_categories)
 
     # TODO: Include internal studio payroll (UBS) & salary & expenses in COGS expenses
     divided_expenses = expenses_by_studio(preloaded_studios, accounting_method)
     specified_expenses = divided_expenses[studio].reduce(0){|acc, e| acc += e[1].to_f}
-    
+
     total_internal_cost =
       Studio.internal.reduce(0) do |acc, studio|
-        snapshot_period = studio.snapshot["month"].find{|p| p["label"] == period_label} || {}
+        snapshot_period = studio.snapshot.map{|k, v| v}.flatten.find{|p| p["label"] == period_label} || {}
         net_revenue = snapshot_period.dig(accounting_method, "datapoints", "net_revenue", "value").try(:to_f) || 0
         acc += net_revenue.abs if net_revenue < 0
         acc
@@ -119,9 +125,9 @@ class QboProfitAndLossReport < ApplicationRecord
         if sellable_hours_proportion.present?
           # Studios are responsible for a proportion of total expenses based on their
           # own the size of their own sellable pool.
-          unspecified_split_expenses = 
+          unspecified_split_expenses =
             sellable_hours_proportion * unspecified_expenses
-          internal_split_cost = 
+          internal_split_cost =
             sellable_hours_proportion * total_internal_cost
         else
           # In cases where we don't have sellable_hour pool data (predates our use of Forecast)
@@ -133,7 +139,7 @@ class QboProfitAndLossReport < ApplicationRecord
           if g3d_gross_revenue > 0
             unspecified_split_expenses =
               (gross_revenue / g3d_gross_revenue) * unspecified_expenses
-            internal_split_cost = 
+            internal_split_cost =
               (gross_revenue / g3d_gross_revenue) * total_internal_cost
           end
         end
@@ -153,33 +159,76 @@ class QboProfitAndLossReport < ApplicationRecord
       benefits: find_rows(accounting_method, studio.qbo_benefits_categories),
       supplies: find_rows(accounting_method, studio.qbo_supplies_categories),
       expenses: expense_map,
-      subcontractors: find_rows(accounting_method, studio.qbo_subcontractors_categories),
-      profit_share: find_row(accounting_method, "[SC] Profit Share, Bonuses & Misc"), # TODO: What? Is this key used?
-      reinvestment: find_row(accounting_method, "[SC] Reinvestment") # TODO: move me into reinvestment studio?
+      subcontractors: find_rows(accounting_method, studio.qbo_subcontractors_categories)
     }
 
+    scenarios = [base]
+
+    # For garden3d, make a second scenario with the reinvestment numbers excluded
     if studio.is_garden3d?
-      base[:cogs] = (
-        find_row(accounting_method, "Total Cost of Goods Sold") +
-        base[:expenses][:total] -
-        find_row(accounting_method, "[SC] Reinvestment Profit Share, Bonuses & Misc") -
-        find_row(accounting_method, "[SC] Reinvestment")
-        # TODO: Make this the total cost of reinvestment (and toggleable)
-      )
-    else
-      base[:cogs] = (
-        base[:payroll] +
-        base[:bonuses] +
-        base[:supplies] +
-        base[:benefits] +
-        base[:subcontractors] +
-        base[:expenses][:total]
-      )
+      aggregated_reinvestment_cogs =
+        Studio.reinvestment.reduce({
+          revenue: 0,
+          payroll: 0,
+          bonuses: 0,
+          benefits: 0,
+          supplies: 0,
+          expenses: {
+            total: 0,
+            specific: 0,
+            unspecified_split: 0,
+            internal_split: 0
+          },
+          subcontractors: 0
+        }) do |acc, studio|
+          snapshot_period = studio.snapshot.map{|k, v| v}.flatten.find{|p| p["label"] == period_label} || {}
+
+          acc[:revenue] += snapshot_period.dig(accounting_method, "datapoints", "revenue", "value").try(:to_f) || 0
+          acc[:payroll] += snapshot_period.dig(accounting_method, "datapoints", "payroll", "value").try(:to_f) || 0
+          acc[:bonuses] += snapshot_period.dig(accounting_method, "datapoints", "bonuses", "value").try(:to_f) || 0
+          acc[:benefits] += snapshot_period.dig(accounting_method, "datapoints", "benefits", "value").try(:to_f) || 0
+          acc[:supplies] += snapshot_period.dig(accounting_method, "datapoints", "supplies", "value").try(:to_f) || 0
+
+          acc[:expenses][:total] += snapshot_period.dig(accounting_method, "datapoints", "total_expenses", "value").try(:to_f) || 0
+          acc[:expenses][:specific] += snapshot_period.dig(accounting_method, "datapoints", "specific_expenses", "value").try(:to_f) || 0
+          acc[:expenses][:unspecified_split] += snapshot_period.dig(accounting_method, "datapoints", "unspecified_split_expenses", "value").try(:to_f) || 0
+          acc[:expenses][:internal_split] += snapshot_period.dig(accounting_method, "datapoints", "internal_split_expenses", "value").try(:to_f) || 0
+
+          acc[:subcontractors] += snapshot_period.dig(accounting_method, "datapoints", "subcontractors", "value").try(:to_f) || 0
+          acc
+        end
+
+      scenarios = [*scenarios, {
+        revenue: base[:revenue] - aggregated_reinvestment_cogs[:revenue],
+        payroll: base[:payroll] - aggregated_reinvestment_cogs[:payroll],
+        bonuses: base[:bonuses] - aggregated_reinvestment_cogs[:bonuses],
+        benefits: base[:benefits] - aggregated_reinvestment_cogs[:benefits],
+        supplies: base[:supplies] - aggregated_reinvestment_cogs[:supplies],
+        expenses: {
+          total: base[:expenses][:total] - aggregated_reinvestment_cogs[:expenses][:total],
+          specific: base[:expenses][:specific] - aggregated_reinvestment_cogs[:expenses][:specific],
+          unspecified_split: base[:expenses][:unspecified_split] - aggregated_reinvestment_cogs[:expenses][:unspecified_split],
+          internal_split: base[:expenses][:internal_split] - aggregated_reinvestment_cogs[:expenses][:internal_split]
+        },
+        subcontractors: base[:subcontractors] - aggregated_reinvestment_cogs[:subcontractors]
+      }]
     end
 
-    base[:net_revenue] = base[:revenue] - base[:cogs]
-    base[:profit_margin] = (base[:net_revenue] / base[:revenue]) * 100
-    base
+    # Calc COGS, net_revenue, profit_margin for each scenario
+    scenarios.each do |s|
+      s[:cogs] = (
+        s[:payroll] +
+        s[:bonuses] +
+        s[:supplies] +
+        s[:benefits] +
+        s[:subcontractors] +
+        s[:expenses][:total]
+      )
+      s[:net_revenue] = s[:revenue] - s[:cogs]
+      s[:profit_margin] = (s[:net_revenue] / s[:revenue]) * 100
+    end
+
+    scenarios
   end
 
   def self.find_or_fetch_for_range(start_of_range, end_of_range, force = false, qbo_account = nil)

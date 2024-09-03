@@ -1,0 +1,43 @@
+$toggle-width: 50px;
+
+input.toggle-switch[type=checkbox]{
+	height: 0;
+	width: 0;
+	visibility: hidden;
+}
+
+label.toggle-switch {
+	cursor: pointer;
+	text-indent: -9999px;
+	width: $toggle-width;
+	height: $toggle-width/1.5;
+	background: grey;
+	display: block;
+	border-radius: $toggle-width/1.5;
+	position: relative;
+}
+
+label.toggle-switch:after {
+	content: '';
+	position: absolute;
+	top: 5px;
+	left: 5px;
+	width: ($toggle-width/1.5) - 10px;
+	height: ($toggle-width/1.5) - 10px;
+	background: #fff;
+	border-radius: ($toggle-width/1.5) - 10px;
+	transition: 0.3s;
+}
+
+input.toggle-switch:checked + label {
+background: #26bd50;
+}
+
+input.toggle-switch:checked + label:after {
+	left: calc(100% - 5px);
+	transform: translateX(-100%);
+}
+
+label.toggle-switch:active:after {
+	width: ($toggle-width/2) + 10px;
+}

@@ -42,7 +42,7 @@ ActiveAdmin.register Studio do
 
     if request.method == "POST"
       c = ActiveAdmin::Comment.create!(
-        resource: resource, 
+        resource: resource,
         author: current_admin_user,
         body: params["body"],
         namespace: params["namespace"]
@@ -126,7 +126,7 @@ ActiveAdmin.register Studio do
       accounting_method = session[:accounting_method] || "cash"
 
       if resource.client_services?
-        span(class: "pill #{resource.health.dig("health")}") do 
+        span(class: "pill #{resource.health.dig("health")}") do
           span(class: "split") do
             strong(resource.health.dig("value"))
           end
@@ -141,13 +141,15 @@ ActiveAdmin.register Studio do
       end
     end
     column :last_generated do |resource|
-      "#{time_ago_in_words(DateTime.iso8601(resource.snapshot["generated_at"]))} ago"
+      "#{time_ago_in_words(DateTime.iso8601(resource.snapshot["finished_at"] || resource.snapshot["generated_at"]))} ago"
     end
     actions
   end
 
   show do
     COLORS = Stacks::Utils::COLORS
+    include_reinvestment =
+      params["include_reinvestment"].present?
 
     all_gradations = ["month", "quarter", "year", "trailing_3_months", "trailing_4_months", "trailing_6_months", "trailing_12_months"]
     default_gradation = "month"
@@ -161,12 +163,15 @@ ActiveAdmin.register Studio do
     snapshot_without_ytd = snapshot.reject{|s| s["label"] == "YTD"}
     accounting_method = session[:accounting_method] || "cash"
 
+    datapoints_bearer =
+      include_reinvestment ? "datapoints" : "datapoints_excluding_reinvestment"
+
     studio_profitability_data = {
       labels: snapshot.map{|s| s["label"]},
       datasets: [{
         label: "Profit Margin (%)",
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "profit_margin", "value")
+          v.dig(accounting_method, datapoints_bearer, "profit_margin", "value")
         end),
         yAxisID: 'y1',
         fill: true,
@@ -174,56 +179,49 @@ ActiveAdmin.register Studio do
       }, {
         label: "Payroll",
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "payroll", "value")
+          v.dig(accounting_method, datapoints_bearer, "payroll", "value")
         end),
         backgroundColor: COLORS[1],
         stack: 'cogs'
       }, {
         label: "Benefits",
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "benefits", "value")
+          v.dig(accounting_method, datapoints_bearer, "benefits", "value")
         end),
         backgroundColor: COLORS[2],
         stack: 'cogs'
       }, {
         label: "Profit Share, Bonuses & Misc",
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "bonuses", "value")
+          v.dig(accounting_method, datapoints_bearer, "bonuses", "value")
         end),
         backgroundColor: COLORS[2],
         stack: 'cogs'
       }, {
-        label: "Studio Specific Expenses",
+        label: "Total Expenses",
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "specific_expenses", "value")
+          v.dig(accounting_method, datapoints_bearer, "total_expenses", "value")
         end),
         backgroundColor: COLORS[3],
         stack: 'cogs'
       }, {
-        label: "Globally Split Expenses",
-        data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "unspecified_split_expenses", "value")
-        end),
-        backgroundColor: COLORS[6],
-        stack: 'cogs'
-      }, {
         label: "Subcontractors",
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "subcontractors", "value")
+          v.dig(accounting_method, datapoints_bearer, "subcontractors", "value")
         end),
         backgroundColor: COLORS[4],
         stack: 'cogs'
       }, {
         label: "Supplies & Materials",
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "supplies", "value")
+          v.dig(accounting_method, datapoints_bearer, "supplies", "value")
         end),
         backgroundColor: COLORS[5],
         stack: 'cogs'
       }, {
         label: "Revenue",
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "revenue", "value")
+          v.dig(accounting_method, datapoints_bearer, "revenue", "value")
         end),
         backgroundColor: COLORS[0]
       }]
@@ -236,7 +234,7 @@ ActiveAdmin.register Studio do
         label: "Revenue Growth (%)",
         borderColor: COLORS[2],
         data: (snapshot_without_ytd.map do |v|
-          v.dig(accounting_method, "datapoints", "revenue", "growth")
+          v.dig(accounting_method, datapoints_bearer, "revenue", "growth")
         end),
         type: 'line',
         trendlineLinear: {
@@ -254,28 +252,28 @@ ActiveAdmin.register Studio do
         borderColor: COLORS[0],
         type: 'line',
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "average_hourly_rate", "value")
+          v.dig(accounting_method, datapoints_bearer, "average_hourly_rate", "value")
         end)
       }, {
         label: 'Cost per Sellable Hour',
         borderColor: COLORS[1],
         type: 'line',
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "cost_per_sellable_hour", "value")
+          v.dig(accounting_method, datapoints_bearer, "cost_per_sellable_hour", "value")
         end)
       }, {
         label: 'Actual Cost per Hour Sold',
         borderColor: COLORS[2],
         type: 'line',
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "actual_cost_per_hour_sold", "value")
+          v.dig(accounting_method, datapoints_bearer, "actual_cost_per_hour_sold", "value")
         end)
       }, {
         label: 'Free Hours Given (%)',
         backgroundColor: COLORS[4],
         type: 'bar',
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "free_hours", "value")
+          v.dig(accounting_method, datapoints_bearer, "free_hours", "value")
         end),
         yAxisID: 'y1',
       }]
@@ -286,7 +284,7 @@ ActiveAdmin.register Studio do
       datasets: [{
         label: "Win Rate (%)",
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "biz_win_rate", "value")
+          v.dig(accounting_method, datapoints_bearer, "biz_win_rate", "value")
         end),
         yAxisID: 'y1',
         type: 'line',
@@ -296,28 +294,28 @@ ActiveAdmin.register Studio do
         label: 'New',
         backgroundColor: COLORS[0],
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "biz_leads", "value")
+          v.dig(accounting_method, datapoints_bearer, "biz_leads", "value")
         end)
       }, {
         label: 'Won',
         backgroundColor: COLORS[1],
         stack: 'settled',
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "biz_won", "value")
+          v.dig(accounting_method, datapoints_bearer, "biz_won", "value")
         end)
       }, {
         label: 'Lost/Stale',
         backgroundColor: COLORS[2],
         stack: 'settled',
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "biz_lost", "value")
+          v.dig(accounting_method, datapoints_bearer, "biz_lost", "value")
         end)
       }, {
         label: 'Passed',
         backgroundColor: COLORS[3],
         stack: 'settled',
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "biz_passed", "value")
+          v.dig(accounting_method, datapoints_bearer, "biz_passed", "value")
         end)
       }]
     }
@@ -350,7 +348,7 @@ ActiveAdmin.register Studio do
         label: 'Total',
         backgroundColor: COLORS[0],
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "attrition", "value").count
+          v.dig(accounting_method, datapoints_bearer, "attrition", "value").count
         end)
       }]
     }
@@ -361,7 +359,7 @@ ActiveAdmin.register Studio do
         backgroundColor: COLORS[1],
         data: (snapshot.map do |v|
           v
-            .dig(accounting_method, "datapoints", "attrition", "value")
+            .dig(accounting_method, datapoints_bearer, "attrition", "value")
             .reduce(0) do |acc, m|
               acc += m["#{klass.to_s.underscore}_ids"].empty? ? 1 : 0
             end
@@ -376,7 +374,7 @@ ActiveAdmin.register Studio do
           backgroundColor: COLORS[index + 2],
           data: (snapshot.map do |v|
             v
-              .dig(accounting_method, "datapoints", "attrition", "value")
+              .dig(accounting_method, datapoints_bearer, "attrition", "value")
               .reduce(0) do |acc, m|
                 acc +=
                   m["#{klass.to_s.underscore}_ids"].include?(dei_set.id) ? (1.0 / m["#{klass.to_s.underscore}_ids"].count) : 0
@@ -433,7 +431,7 @@ ActiveAdmin.register Studio do
         borderColor: color, # color of dots
         backgroundColor: color, # color of line
         label: sp.profile_url,
-        data: sp.snapshot.map do |k, v| 
+        data: sp.snapshot.map do |k, v|
           { x: k, y: v}
         end
       })
@@ -455,14 +453,14 @@ ActiveAdmin.register Studio do
         label: 'Utilization Rate (%)',
         borderColor: COLORS[4],
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "sellable_hours_sold", "value")
+          v.dig(accounting_method, datapoints_bearer, "sellable_hours_sold", "value")
         end),
         yAxisID: 'y',
       }, {
         label: 'Sellable Ratio (%)',
         borderColor: COLORS[10],
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "sellable_hours_ratio", "value")
+          v.dig(accounting_method, datapoints_bearer, "sellable_hours_ratio", "value")
         end),
         yAxisID: 'y',
         borderDash: [10,5]
@@ -470,7 +468,7 @@ ActiveAdmin.register Studio do
         label: 'Actual Hours Sold',
         backgroundColor: COLORS[8],
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "billable_hours", "value")
+          v.dig(accounting_method, datapoints_bearer, "billable_hours", "value")
         end),
         yAxisID: 'y1',
         type: 'bar',
@@ -479,7 +477,7 @@ ActiveAdmin.register Studio do
         label: 'Non Billable',
         backgroundColor: COLORS[6],
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "non_billable_hours", "value")
+          v.dig(accounting_method, datapoints_bearer, "non_billable_hours", "value")
         end),
         yAxisID: 'y1',
         type: 'bar',
@@ -488,7 +486,7 @@ ActiveAdmin.register Studio do
         label: 'Time Off',
         backgroundColor: COLORS[9],
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "time_off", "value")
+          v.dig(accounting_method, datapoints_bearer, "time_off", "value")
         end),
         yAxisID: 'y1',
         type: 'bar',
@@ -497,7 +495,7 @@ ActiveAdmin.register Studio do
         label: 'Sellable Hours',
         backgroundColor: COLORS[2],
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "sellable_hours", "value")
+          v.dig(accounting_method, datapoints_bearer, "sellable_hours", "value")
         end),
         yAxisID: 'y1',
         type: 'bar',
@@ -506,7 +504,7 @@ ActiveAdmin.register Studio do
         label: 'Non Sellable Hours',
         backgroundColor: COLORS[5],
         data: (snapshot.map do |v|
-          v.dig(accounting_method, "datapoints", "non_sellable_hours", "value")
+          v.dig(accounting_method, datapoints_bearer, "non_sellable_hours", "value")
         end),
         yAxisID: 'y1',
         type: 'bar',
@@ -515,18 +513,18 @@ ActiveAdmin.register Studio do
     }
 
     all_okrs = [*Okr.all, {
-      name: "Profit", 
+      name: "Profit",
       datapoint: "profit",
       operator: "greater_than"
-    }, { 
-      name: "Surplus Profit", 
+    }, {
+      name: "Surplus Profit",
       datapoint: "surplus_profit",
       operator: "greater_than"
     }]
 
     if current_gradation == "month"
       all_okrs = [{
-        name: "Health", 
+        name: "Health",
         datapoint: "health",
         operator: "greater_than"
       }, *all_okrs]
@@ -539,7 +537,7 @@ ActiveAdmin.register Studio do
       all_okrs: all_okrs,
       snapshot: snapshot,
       studio_profitability_data: studio_profitability_data,
-      studio_growth_data: studio_growth_data, 
+      studio_growth_data: studio_growth_data,
       studio_talent_pool_data: studio_talent_pool_data,
       studio_senior_ratio_data: studio_senior_ratio_data,
       studio_economics_data: studio_economics_data,

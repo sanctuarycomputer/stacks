@@ -28,7 +28,6 @@ namespace :stacks do
 
       MailingList.all.each do |sp|
         p = all_properties.find{|p| p.get_prop_value("Name").try(:first).try(:dig, "plain_text") == sp.name}
-        binding.pry
         if !p
           resp = notion.create_page({
             type: "database_id",
