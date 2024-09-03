@@ -204,15 +204,13 @@ class Studio < ApplicationRecord
           idx = snapshot[gradation].index(d)
           if idx < 3
             d[:cash][:okrs]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
-
-            if d[:cash][:okrs_excluding_reinvestment]
-              d[:cash][:okrs_excluding_reinvestment]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
-            end
-
             d[:accrual][:okrs]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
 
+            if d[:cash][:okrs_excluding_reinvestment]
+              d[:cash][:okrs_excluding_reinvestment]["Health"] = d[:cash][:okrs]["Health"]
+            end
             if d[:accrual][:okrs_excluding_reinvestment]
-              d[:accrual][:okrs_excluding_reinvestment]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
+              d[:accrual][:okrs_excluding_reinvestment]["Health"] = d[:accrual][:okrs]["Health"]
             end
 
             next d
@@ -222,13 +220,13 @@ class Studio < ApplicationRecord
           prev_four_periods = [d, snapshot[gradation][idx - 1], snapshot[gradation][idx - 2], snapshot[gradation][idx - 3]]
           unless prev_four_periods.map{|d| d.dig(:cash, :okrs, "Sellable Hours Sold", :value).present? && d.dig(:accrual, :okrs, "Sellable Hours Sold", :value).present? }.all?
             d[:cash][:okrs]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
-            if d[:cash][:okrs_excluding_reinvestment]
-              d[:cash][:okrs_excluding_reinvestment]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
-            end
-
             d[:accrual][:okrs]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
+
+            if d[:cash][:okrs_excluding_reinvestment]
+              d[:cash][:okrs_excluding_reinvestment]["Health"] = d[:cash][:okrs]["Health"]
+            end
             if d[:accrual][:okrs_excluding_reinvestment]
-              d[:accrual][:okrs_excluding_reinvestment]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
+              d[:accrual][:okrs_excluding_reinvestment]["Health"] = d[:accrual][:okrs]["Health"]
             end
             next d
           end
@@ -249,7 +247,6 @@ class Studio < ApplicationRecord
           if d[:cash][:okrs_excluding_reinvestment]
             d[:cash][:okrs_excluding_reinvestment]["Health"] = d[:cash][:okrs]["Health"]
           end
-
           if d[:accrual][:okrs_excluding_reinvestment]
             d[:accrual][:okrs_excluding_reinvestment]["Health"] = d[:accrual][:okrs]["Health"]
           end
