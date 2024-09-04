@@ -6,9 +6,9 @@ ActiveAdmin.register SystemTask do
           "System Tasks"
         }
 
-  config.filters = false
+  config.filters = true
   config.paginate = true
-  actions :index, :show
+  actions :index, :show, :destroy
   config.current_filters = false
 
   scope :in_progress, default: true

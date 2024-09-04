@@ -218,8 +218,11 @@ namespace :stacks do
         sleep 1.5
       end
     rescue => e
-      return if e.try(:message).try(:start_with?, "809") # Rate Limiter
-      system_task.mark_as_error(e)
+      if e.try(:message).try(:start_with?, "809")
+        system_task.mark_as_success
+      else
+        system_task.mark_as_error(e)
+      end
     else
       system_task.mark_as_success
     end

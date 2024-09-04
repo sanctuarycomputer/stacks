@@ -9,11 +9,11 @@ class SystemTask < ApplicationRecord
     where.not(notification: nil, settled_at: nil)
   }
 
-  belongs_to :notification, optional: true
+  belongs_to :notification, optional: true, dependent: :destroy
 
   def time_taken_in_minutes
     return Float::INFINITY if settled_at.nil?
-    (settled_at - created_at) / 24 / 60
+    (settled_at - created_at).to_i / 60.0
   end
 
   def mark_as_success
