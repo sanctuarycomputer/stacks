@@ -898,6 +898,21 @@ p.okr_hint {
   }
 }
 
+h2 {
+  &.failing {
+    color: $color-red;
+  }
+  &.at_risk {
+    color: $color-orange;
+  }
+  &.healthy {
+    color: $color-blue;
+  }
+  &.exceptional {
+    color: $color-green;
+  }
+}
+
 .pill, .status_tag {
   .split {
     background-color: white;

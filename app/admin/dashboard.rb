@@ -5,6 +5,55 @@ ActiveAdmin.register_page "Dashboard" do
     COLORS = Stacks::Utils::COLORS
     accounting_method = session[:accounting_method] || "cash"
 
+    g3d = Studio.garden3d
+    collective_okrs = [{
+      datapoint: :profit_margin,
+      okr: g3d.ytd_snapshot.dig("accrual", "okrs_excluding_reinvestment", "Profit Margin"),
+      role_holders: [*CollectiveRole.find_by(name: "General Manager").current_collective_role_holders]
+    }, {
+      datapoint: :revenue_growth,
+      okr: nil,
+      role_holders: [*CollectiveRole.find_by(name: "General Manager").current_collective_role_holders]
+    }, {
+      datapoint: :successful_design_projects,
+      okr: nil,
+      role_holders: [
+        *CollectiveRole.find_by(name: "Creative Director").current_collective_role_holders,
+        *CollectiveRole.find_by(name: "Apprentice Creative Director").current_collective_role_holders,
+        *CollectiveRole.find_by(name: "Director of Project Delivery").current_collective_role_holders,
+      ]
+    }, {
+      datapoint: :successful_development_projects,
+      okr: nil,
+      role_holders: [
+        *CollectiveRole.find_by(name: "Technical Director").current_collective_role_holders,
+        *CollectiveRole.find_by(name: "Apprentice Technical Director").current_collective_role_holders,
+        *CollectiveRole.find_by(name: "Director of Project Delivery").current_collective_role_holders,
+      ]
+    }, {
+      datapoint: :successful_new_business_proposals,
+      okr: nil,
+      role_holders: [
+        *CollectiveRole.find_by(name: "Director of Business Development").current_collective_role_holders,
+        *CollectiveRole.find_by(name: "Creative Director").current_collective_role_holders,
+        *CollectiveRole.find_by(name: "Technical Director").current_collective_role_holders
+      ]
+    }, {
+      datapoint: :new_business_lead_growth,
+      okr: nil,
+      role_holders: [
+        *CollectiveRole.find_by(name: "Director of Business Development").current_collective_role_holders,
+        *CollectiveRole.find_by(name: "Director of Communications").current_collective_role_holders
+      ]
+    }, {
+      datapoint: :workplace_satisfaction,
+      okr: nil,
+      role_holders: [
+        *CollectiveRole.find_by(name: "Director of Project Delivery").current_collective_role_holders,
+        *CollectiveRole.find_by(name: "Director of People Ops").current_collective_role_holders
+      ]
+    }]
+
     qbo_accounts = Stacks::Quickbooks.fetch_all_accounts
     cc_or_bank_accounts = qbo_accounts.select do |a|
       ["Bank", "Credit Card"].include?(a.account_type)
@@ -78,6 +127,8 @@ ActiveAdmin.register_page "Dashboard" do
     end
 
     render(partial: "dashboard", locals: {
+      g3d: g3d,
+      collective_okrs: collective_okrs,
       accounts: cc_or_bank_accounts,
       runway_data: {
         net_cash: net_cash,

@@ -1,3 +1,84 @@
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">📈 YTD Collective Performance</h2>
+  </div>
+  <div id="titlebar_right">
+    <div class="action_items">
+      <%= link_to "See all garden3d OKRs ↗", admin_studio_path(g3d) %>
+    </div>
+  </div>
+</div>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-body factoid-parent">
+      <p style="margin-bottom: 6px;">🚧 <strong>WIP!</strong> This section will eventually give a full indication of how we're tracking as per the Bottom-Up Leadership Experiment; but for now, some of these metrics are still being incorporated into Stacks.</p>
+      <a href="https://www.notion.so/garden3d/Introducing-Bottom-Up-Leadership-at-garden3d-93cfbd78330245d1a14cb1ad312b0290" target="_blank">
+        Understand the Bottom-up Leadership Experiment here ↗
+      </a>
+    </div>
+  </div>
+</div>
+
+<% collective_okrs.each_slice(2).to_a.each do |set| %>
+  <div class="dashboard-modules table index_table index">
+    <% set.each do |cokr| %>
+
+      <div class="dashboard-module">
+        <div class="module-header">
+          <p><%= cokr[:datapoint].to_s.humanize %></p>
+          <p style="text-align: right;">
+            <% cokr[:role_holders].each do |admin_user| %>
+              <%= link_to admin_user.email, admin_admin_user_path(admin_user) %>
+            <% end %>
+          </p>
+        </div>
+
+        <% okr_results = cokr[:okr] %>
+        <% if okr_results.present? %>
+          <% value = okr_results.dig("value").to_f  %>
+          <% target = (okr_results.dig("target").try(:to_f) || 0).round(2) %>
+          <% health = okr_results.dig("health")  %>
+          <% tolerance = okr_results.dig("tolerance")  %>
+          <% unit = okr_results.dig("unit") %>
+          <% surplus = (okr_results.dig("surplus") || 0).to_f.round(2) %>
+          <% hint = (okr_results.dig("hint") || "No hint given") %>
+
+          <div class="module-body">
+            <div class="flex" style="align-items: baseline;">
+              <% if unit == "usd" %>
+                <h2 style="margin: 0;" class="<%= health %>"><%= number_to_currency(value.round(2)) %></h2> <p>(target: <%= number_to_currency(target) %>±<%= tolerance %>)</p>
+              <% elsif unit == "percentage" %>
+                <h2 style="margin: 0;" class="<%= health %>"><%= value.round(2) %>%</h2> <p>(<%= target.round(2) %>%±<%= tolerance %>)</p>
+              <% elsif unit == "display" %>
+                <h2 style="margin: 0;" class="<%= health %>"><%= okr_results.dig("value") %></h2>
+              <% else %>
+                <h2 style="margin: 0;" class="<%= health %>"><%= value.round(2) %></h2> <p>( <%= target.round(2) %>±<%= tolerance %>)</p>
+              <% end %>
+            </div>
+
+            <p class="okr_hint" style="padding-top: 0px !important"><%= sanitize hint, attributes: ["href", "target"] %></p>
+          </div>
+        <% else %>
+          <div class="module-body">
+            <div class="flex" style="align-items: baseline;">
+              <h2 style="margin: 0;">TBD</h2>
+            </div>
+
+            <p class="okr_hint" style="padding-top: 0px !important">This metric is still being incorporated</p>
+          </div>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+<% end %>
+
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">💸 Money at a Glance</h2>
+  </div>
+</div>
+
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module" style="min-height: 371px">
     <div class="module-body factoid-parent">
@@ -59,6 +140,12 @@
         </tbody>
       </table>
     </div>
+  </div>
+</div>
+
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">⏳ garden3d over time</h2>
   </div>
 </div>
 
