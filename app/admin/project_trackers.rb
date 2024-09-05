@@ -424,6 +424,15 @@ ActiveAdmin.register ProjectTracker do
           hint: "Leave blank unless this role was passed off to another person"
       end
 
+      f.has_many :project_safety_representative_periods, heading: false, allow_destroy: true, new_record: 'Add a Project Safety Rep' do |a|
+        a.input :admin_user
+        a.input :studio
+        a.input :started_at,
+          hint: "Leave blank to default to the date of the first recorded hour"
+        a.input :ended_at,
+          hint: "Leave blank unless this role was passed off to another person"
+      end
+
       f.has_many :project_tracker_links, heading: false, allow_destroy: true, new_record: 'Add a Project URL' do |a|
         a.input(:name, {
           label: "Link Name",
