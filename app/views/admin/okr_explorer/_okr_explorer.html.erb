@@ -46,6 +46,108 @@ function update(a, b) {
   </div>
 <% end %>
 
+<% if current_okr == "successful_projects" %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <p>🏆 <strong>Note:</strong> To calculate the % of successful projects for a given period, we include any project that recorded at least one hour for the given studio.</p>
+        <p style="margin-bottom: 6px;">Projects with a completed project capsule also take into account client satisfaction.</p>
+        <a href="https://www.notion.so/garden3d/Introducing-Bottom-Up-Leadership-at-garden3d-93cfbd78330245d1a14cb1ad312b0290?pvs=4#0f40265bddd740fc8a9837e69222580e" target="_blank">
+          Learn about our definition of Project Success here ↗
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <% all_projects_by_period.reverse_each do |period, project_trackers| %>
+
+    <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+      <div id="titlebar_left">
+        <h2 id="page_title">
+          <%= period.label %>
+        </h2>
+      </div>
+      <div id="titlebar_right">
+        <h2 id="page_title">
+          <%= ((project_trackers.map(&:considered_successful?).count{|v| !!v} / project_trackers.count.to_f) * 100).round(1) %>%
+        </h2>
+      </div>
+    </div>
+
+    <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+      <thead>
+        <tr>
+          <th class="col">Project Tracker</th>
+          <th class="col">Profit Margin</th>
+          <th class="col">Free Hours Given</th>
+          <th class="col">Client Happy?</th>
+          <th class="col text-right">Considered Successful?</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        <% project_trackers.each_with_index do |project_tracker, idx| %>
+          <tr class="<%= idx.even? ? "even" : "odd" %>">
+            <td class="col">
+              <%= link_to "#{project_tracker.name} ↗", admin_project_tracker_path(project_tracker) %>
+            </td>
+
+            <td class="col">
+
+              <div>
+                <span><%= project_tracker.profit_margin.round(1) %>%</span>
+                <p class="okr_hint" style="margin-bottom:0px;padding-top:0px !important"><%= number_to_currency(project_tracker.spend) %> earnt, <%= number_to_currency(project_tracker.estimated_cost("cash")) %> COSR</p>
+              </div>
+
+            </td>
+
+            <td class="col">
+              <% free_hours_percentage = project_tracker.free_hours_ratio * 100 %>
+
+              <% pill_class =
+                if free_hours_percentage == 0
+                  "exceptional"
+                elsif free_hours_percentage < 1
+                  "healthy"
+                elsif free_hours_percentage < 5
+                  "at_risk"
+                else
+                  "failing"
+                end %>
+              <div>
+                <span class="pill <%= pill_class %>">
+                  <span class="split"><strong><%= project_tracker.total_hours.round(2) %> hrs,</strong> <span><%= project_tracker.total_free_hours %> free</span></span>
+                </span>
+                <p class="okr_hint"><%= free_hours_percentage.round(1) %>% hrs billed at $0p/h</p>
+              </div>
+            </td>
+
+            <td class="col">
+              <% if project_tracker.client_satisfied?.present? %>
+                <% if project_tracker.client_satisfied? %>
+                  <span class="status_tag yes">Yes</span>
+                <% else %>
+                  <span class="status_tag no">No</span>
+                <% end %>
+              <% else %>
+                <span class="pill <%= project_tracker.work_status %>"><%= project_tracker.work_status.to_s.humanize.capitalize %></span>
+              <% end %>
+            </td>
+
+            <td class="col text-right">
+              <% if project_tracker.considered_successful? %>
+                <span class="status_tag yes">Yes</span>
+              <% else %>
+                <span class="status_tag no">No</span>
+              <% end %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  <% end %>
+<% end %>
+
 <% if current_okr == "cost_per_sellable_hour" %>
 
   <p class="nag" style="margin-bottom: 20px;">
@@ -68,7 +170,7 @@ function update(a, b) {
     <% specific_expenses = period[accounting_method]["datapoints"]["specific_expenses"]["value"] %>
     <% unspecified_split_expenses = period[accounting_method]["datapoints"]["unspecified_split_expenses"]["value"] %>
     <% internal_split_expenses = period[accounting_method]["datapoints"]["internal_split_expenses"]["value"] %>
-    
+
     <% studio_cogs = period[accounting_method]["datapoints"]["cogs"]["value"] %>
 
     <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
@@ -286,10 +388,10 @@ function update(a, b) {
             </tr>
           <% end %>
 
-          
+
         <% end %>
 
-        
+
         <tr class="even">
           <td class="col">
             <strong>Weighted Average & Total Hours Billed</strong>

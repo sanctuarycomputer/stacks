@@ -8,8 +8,16 @@ class OkrPeriod < ApplicationRecord
   has_many :okr_period_studios, dependent: :delete_all
   accepts_nested_attributes_for :okr_period_studios, allow_destroy: true
 
+  def started_at
+    starts_at
+  end
+
+  def ended_at
+    ends_at
+  end
+
   def health_for_value(value)
-    return { health: nil, surplus: 0 } if value == nil
+    return { health: nil, surplus: 0, tolerance: tolerance } if value == nil
     surplus = value - target
     extreme = surplus.abs > tolerance
 
@@ -28,7 +36,8 @@ class OkrPeriod < ApplicationRecord
     {
       health: tag,
       surplus: surplus,
-      target: target
+      target: target,
+      tolerance: tolerance
     }
   end
 

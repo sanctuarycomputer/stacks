@@ -112,7 +112,7 @@ class Studio < ApplicationRecord
             acc
           end
 
-        acc[gradation] = Parallel.map(periods, in_threads: 5) do |period|
+        acc[gradation] = Parallel.map(periods, in_threads: 20) do |period|
           prev_period = periods[0] == period ? nil : periods[periods.index(period) - 1]
 
           d = {
@@ -334,19 +334,65 @@ class Studio < ApplicationRecord
   end
 
   def new_biz_notion_pages
+    leads = NotionPage.lead.map(&:as_base)
     mini_names = mini_name.split(",").map(&:strip)
+
     if is_garden3d?
-      Stacks::Biz.all_cards
+      leads
     else
-      Stacks::Biz.all_cards.select do |c|
-        c.get_prop("Studio").map{|s| s.dig("name").downcase}.intersection(mini_names).any?
+      leads.select do |l|
+        studios = l.get_prop_value("Projects: Studio").dig("array", 0, "multi_select")
+        studios.map{|s| s["name"].downcase}.intersection(mini_names).any? if studios.present?
       end
     end
   end
 
+  def non_core_forecast_people_involved_with_studio
+    all_studios = Studio.all
+    @_non_core_forecast_people_involved_with_studio ||=
+      ForecastPerson.all.select{|fp| fp.admin_user.nil? && fp.studios(all_studios).include?(self)}
+  end
+
+  def forecast_people_involved_with_studio_in_period(period)
+    core_members_involved_during_period =
+      (period.starts_at..period.ends_at).reduce([]) do |acc, date|
+        [*acc, *core_members_active_on(date)].uniq
+      end
+
+    [*core_members_involved_during_period.map(&:forecast_person), *non_core_forecast_people_involved_with_studio].compact
+  end
+
+  def project_trackers_with_recorded_time_in_period(period)
+    assignments =
+      ForecastAssignment
+        .includes(:forecast_person)
+        .where(
+          'end_date >= ? AND start_date <= ? AND person_id in (?)',
+          period.starts_at,
+          period.ends_at,
+          forecast_people_involved_with_studio_in_period(period).map(&:forecast_id)
+        )
+    forecast_projects = assignments.map(&:forecast_project).uniq
+
+    ProjectTrackerForecastProject
+      .includes(:project_tracker)
+      .where(forecast_project_id: forecast_projects.map(&:forecast_id))
+      .map(&:project_tracker)
+      .uniq
+  end
+
   def biz_leads_in_period(leads = new_biz_notion_pages, period)
+    period = Stacks::Period.new("January 2020", Date.new(2024, 1, 1), Date.new(2024, 1, 31))
     leads.select do |l|
-      period.include?(DateTime.parse(l.data.dig("created_time")).to_date)
+      received = l.get_prop_value("Lead Received")
+      if received.empty?
+        # TODO: Notification
+        false
+      else
+        period.include?(
+          DateTime.parse(received.dig("start")).to_date
+        )
+      end
     end
   end
 
@@ -513,6 +559,8 @@ class Studio < ApplicationRecord
     biz_won_count =
       biz_leads_status_changed_in_period(preloaded_new_biz_notion_pages, 'Active', period).try(:length) || 0
 
+    all_projects = project_trackers_with_recorded_time_in_period(period)
+
     cogs_scenarios.map.with_index do |cogs, idx|
       prev_cogs = prev_cogs_scenarios[idx] if prev_cogs_scenarios.present?
 
@@ -612,6 +660,14 @@ class Studio < ApplicationRecord
           value: biz_leads_status_changed_in_period(preloaded_new_biz_notion_pages, 'Lost/Stale', period).try(:length),
           unit: :count
         },
+        total_projects: {
+          value: all_projects.count,
+          unit: :count
+        },
+        successful_projects: {
+          value: ((all_projects.map(&:considered_successful?).count{|v| !!v} / all_projects.count.to_f) * 100),
+          unit: :percentage
+        }
       }
 
       data[:free_hours] = { unit: :percentage, value: nil }

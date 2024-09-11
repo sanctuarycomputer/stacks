@@ -30,6 +30,8 @@ class Okr < ApplicationRecord
     profit_margin: 13,
     # key_meeting_attendance: 14,
     total_social_growth: 15,
-    free_hours: 16
+    free_hours: 16,
+    total_projects: 17,
+    successful_projects: 18
   }
 end

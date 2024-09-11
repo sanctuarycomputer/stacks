@@ -8,9 +8,20 @@ class NotionPage < ApplicationRecord
     )
   }
 
+  scope :lead, -> {
+    where(
+      notion_parent_type: "database_id",
+      notion_parent_id: Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:LEAD_DATA_TRACKING])
+    )
+  }
+
   scope :biz_plan_2024_milestones, -> {
     milestones.where("page_title LIKE ?", "In 2024,%")
   }
+
+  def as_base
+    Stacks::Notion::Base.new(self)
+  end
 
   def as_task
     Stacks::Notion::Task.new(self)

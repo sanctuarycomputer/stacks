@@ -9,7 +9,8 @@ class Stacks::Notion
     TASKS: "438196bedb11412eb8e737bc1bd75b2b",
     MILESTONES: "16330244ea4b424088a19d5b1987f638",
     SOCIAL_PROPERTIES: "4f53802c02af4a188c9e74e992346412",
-    SOCIAL_PROPERTY_SAMPLES: "e8de332099894ecba670faf512640f48"
+    SOCIAL_PROPERTY_SAMPLES: "e8de332099894ecba670faf512640f48",
+    LEAD_DATA_TRACKING: "4d9b46b8bad542509f144347db37964d"
   }
 
   def initialize()
@@ -113,7 +114,7 @@ class Stacks::Notion
             notion_parent_type: parent_type,
             notion_parent_id: parent_id,
             data: r,
-            page_title: (r.dig("properties", "Name", "title")[0] || {}).dig("plain_text") || ""
+            page_title: (r.dig("properties").values.find{|v| v["type"] == "title"}.dig("title", 0, "plain_text") || "")
           })
         end
       end

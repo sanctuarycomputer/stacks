@@ -2,7 +2,7 @@ ActiveAdmin.register ProjectTracker do
   menu label: "Projects", priority: 2
   config.filters = false
   config.sort_order = "created_at_desc"
-  config.paginate = true
+  config.paginate = false
   actions :index, :new, :show, :edit, :update, :create, :destroy
   config.current_filters = false
 

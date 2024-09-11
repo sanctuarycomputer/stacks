@@ -180,7 +180,7 @@ class ProjectTrackerTest < ActiveSupport::TestCase
     tracker.generate_snapshot!
     current_timestamp = DateTime.now.iso8601
 
-    assert_equal({
+    expected = {
       "generated_at"=> current_timestamp,
       "hours"=> [
         {"x" => "2024-01-01", "y" => 13},
@@ -207,7 +207,8 @@ class ProjectTrackerTest < ActiveSupport::TestCase
         {"x" => "2024-01-10", "y" => 22400}
       ],
       "hours_total" => 104,
-      "spend_total" => 22400,
+      "hours_free" => 0,
+      "spend_total" => 22400.0,
       "cash"=> {
         "cosr"=> [
           {"x" => "2024-01-01", "y" => 638},
@@ -239,8 +240,12 @@ class ProjectTrackerTest < ActiveSupport::TestCase
         # ($44 * 7hrs * 8days) + ($55 * 6hrs * 8days) = $5104
         "cosr_total" => 5104
       }
-    }, tracker.snapshot.merge({
+    }
+
+    actual = tracker.snapshot.merge({
       "generated_at" => current_timestamp
-    }))
+    })
+
+    assert_equal(expected, actual)
   end
 end

@@ -1,11 +1,14 @@
 ActiveAdmin.register_page "Dashboard" do
-  menu label: "Runway", parent: "Money"
+  menu label: "g3d", priority: 0
 
   content title: proc { I18n.t("active_admin.dashboard") } do
     COLORS = Stacks::Utils::COLORS
     accounting_method = session[:accounting_method] || "cash"
 
     g3d = Studio.garden3d
+    xxix = Studio.find_by(mini_name: "xxix")
+    sanctu = Studio.find_by(mini_name: "sanctu")
+
     collective_okrs = [{
       datapoint: :profit_margin,
       okr: g3d.ytd_snapshot.dig("accrual", "okrs_excluding_reinvestment", "Profit Margin"),
@@ -16,7 +19,7 @@ ActiveAdmin.register_page "Dashboard" do
       role_holders: [*CollectiveRole.find_by(name: "General Manager").current_collective_role_holders]
     }, {
       datapoint: :successful_design_projects,
-      okr: nil,
+      okr: xxix.ytd_snapshot.dig("accrual", "okrs", "Successful Projects"),
       role_holders: [
         *CollectiveRole.find_by(name: "Creative Director").current_collective_role_holders,
         *CollectiveRole.find_by(name: "Apprentice Creative Director").current_collective_role_holders,
@@ -24,7 +27,7 @@ ActiveAdmin.register_page "Dashboard" do
       ]
     }, {
       datapoint: :successful_development_projects,
-      okr: nil,
+      okr: sanctu.ytd_snapshot.dig("accrual", "okrs", "Successful Projects"),
       role_holders: [
         *CollectiveRole.find_by(name: "Technical Director").current_collective_role_holders,
         *CollectiveRole.find_by(name: "Apprentice Technical Director").current_collective_role_holders,
