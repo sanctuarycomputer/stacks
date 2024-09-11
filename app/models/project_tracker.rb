@@ -178,7 +178,6 @@ class ProjectTracker < ApplicationRecord
 
   def generate_snapshot!
     cosr = cost_of_services_rendered
-    preloaded_studios = Studio.all
     today = Date.today
 
     invoiced_spend_total = (
