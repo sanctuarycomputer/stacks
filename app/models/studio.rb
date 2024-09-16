@@ -112,7 +112,7 @@ class Studio < ApplicationRecord
             acc
           end
 
-        acc[gradation] = Parallel.map(periods, in_threads: 12) do |period|
+        acc[gradation] = Parallel.map(periods, in_threads: 20) do |period|
           prev_period = periods[0] == period ? nil : periods[periods.index(period) - 1]
 
           d = {
