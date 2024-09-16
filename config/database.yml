@@ -19,13 +19,13 @@ default: &default
   encoding: unicode
   # For details on connection pooling, see Rails configuration guide
   # https://guides.rubyonrails.org/configuring.html#database-pooling
-  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 18 } %>
-  checkout_timeout: 30
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 38 } %>
+  checkout_timeout: 600 # 10 minutes * 60 seconds
+  prepared_statements: false
 
 development:
   <<: *default
   database: stacks_development
-  pool: 50
 
   # The specified database role being used to connect to postgres.
   # To create additional roles in postgres see `$ createuser --help`.
