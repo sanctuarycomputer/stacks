@@ -209,6 +209,8 @@ class ProjectTrackerTest < ActiveSupport::TestCase
       "hours_total" => 104,
       "hours_free" => 0,
       "spend_total" => 22400.0,
+      "invoiced_income_total"=>0.0,
+      "invoiced_with_running_spend_total"=>0.0,
       "cash"=> {
         "cosr"=> [
           {"x" => "2024-01-01", "y" => 638},
