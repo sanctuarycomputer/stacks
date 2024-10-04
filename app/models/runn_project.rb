@@ -6,7 +6,10 @@ class RunnProject < ApplicationRecord
     associated = ProjectTracker.where.not(runn_project: nil).includes(:runn_project).map(&:runn_project)
     all = RunnProject.all
     unassociated = all.select{|rp| !associated.include?(rp)}
-    [project_tracker.runn_project, *unassociated].compact.uniq
+    [
+      project_tracker.runn_project,
+      *unassociated.select{|rp| rp.is_confirmed },
+    ].compact.uniq
   end
 
   def link

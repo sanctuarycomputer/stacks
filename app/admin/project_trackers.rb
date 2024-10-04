@@ -460,7 +460,10 @@ ActiveAdmin.register ProjectTracker do
         })
       end
 
-      f.input :runn_project, :as => :select, :collection => RunnProject.candidates_for_association_with_project_tracker(resource)
+      f.input :runn_project,
+        as: :select,
+        collection: RunnProject.candidates_for_association_with_project_tracker(resource),
+        hint: "Runn.io Project missing? Check first it's not tentative or archived in Runn.io; and it should appear in this list after about 10 minutes."
 
       f.input :notes, label: "Notes (accepts markdown)"
     end
