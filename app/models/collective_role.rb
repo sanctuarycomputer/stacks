@@ -9,7 +9,7 @@ class CollectiveRole < ApplicationRecord
 
   def current_collective_role_holder_periods
     collective_role_holder_periods.select do |p|
-      p.period_started_at <= Date.today && p.ended_at.nil?
+      p.period_started_at <= Date.today && (p.period_ended_at.nil? || p.period_ended_at >= Date.today)
     end
   end
 end

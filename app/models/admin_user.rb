@@ -186,6 +186,10 @@ class AdminUser < ApplicationRecord
     full_time_periods.order("started_at ASC").first.try(:started_at) || created_at.to_date
   end
 
+  def left_at
+    full_time_periods.order("started_at ASC").last.try(:ended_at) || nil
+  end
+
   def met_associates_skill_band_requirement_at
     # Find the first review that was above the requirement
     first_review_above_requirement = archived_reviews.reverse.find do |r|

@@ -34,11 +34,17 @@ ActiveAdmin.register_page "Dashboard" do
         *CollectiveRole.find_by(name: "Director of Project Delivery").current_collective_role_holders,
       ]
     }, {
-      datapoint: :successful_new_business_proposals,
+      datapoint: :successful_design_proposals,
       okr: nil,
       role_holders: [
         *CollectiveRole.find_by(name: "Director of Business Development").current_collective_role_holders,
         *CollectiveRole.find_by(name: "Creative Director").current_collective_role_holders,
+      ]
+    }, {
+      datapoint: :successful_development_proposals,
+      okr: nil,
+      role_holders: [
+        *CollectiveRole.find_by(name: "Director of Business Development").current_collective_role_holders,
         *CollectiveRole.find_by(name: "Technical Director").current_collective_role_holders
       ]
     }, {
