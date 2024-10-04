@@ -148,6 +148,76 @@ function update(a, b) {
   <% end %>
 <% end %>
 
+
+<% if current_okr == "successful_proposals" %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <p>🏆 <strong>Note:</strong> To calculate the % of successful proposals we include any lead where the <code>Settled Date</code> is in a given period, and a <code>✨ Proposal Sent</code> timestamp is present. Leads with  <code>✨ Status: Won</code> timestamp are considered successful.</p>
+        <a href="https://www.notion.so/garden3d/Introducing-Bottom-Up-Leadership-at-garden3d-93cfbd78330245d1a14cb1ad312b0290?pvs=4#0f40265bddd740fc8a9837e69222580e" target="_blank">
+          Learn about our definition of Proposal Success here ↗
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <% all_proposals_by_period.reverse_each do |period, proposals| %>
+
+    <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+      <div id="titlebar_left">
+        <h2 id="page_title">
+          <%= period.label %>
+        </h2>
+      </div>
+      <div id="titlebar_right">
+        <h2 id="page_title">
+          <%= ((proposals.map(&:considered_successful?).count{|v| !!v} / proposals.count.to_f) * 100).round(1) %>%
+        </h2>
+      </div>
+    </div>
+
+    <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+      <thead>
+        <tr>
+          <th class="col">Lead</th>
+          <th class="col">Proposal Sent At</th>
+          <th class="col">Settled At</th>
+          <th class="col">Won At</th>
+          <th class="col text-right">Considered Successful?</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        <% proposals.each_with_index do |proposal, idx| %>
+          <tr class="<%= idx.even? ? "even" : "odd" %>">
+            <td class="col">
+              <a href="<%= proposal.notion_link %>" target="_blank"><%= proposal.name %> ↗</a>
+            </td>
+
+            <td class="col">
+              <%= DateTime.parse(proposal.proposal_sent_at).to_date %>
+            </td>
+            <td class="col">
+              <%= DateTime.parse(proposal.settled_at).to_date %>
+            </td>
+            <td class="col">
+              <%= proposal.won_at ? DateTime.parse(proposal.won_at).to_date : "—" %>
+            </td>
+
+            <td class="col text-right">
+              <% if proposal.considered_successful? %>
+                <span class="status_tag yes">Yes</span>
+              <% else %>
+                <span class="status_tag no">No</span>
+              <% end %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  <% end %>
+<% end %>
+
 <% if current_okr == "cost_per_sellable_hour" %>
 
   <p class="nag" style="margin-bottom: 20px;">

@@ -5,7 +5,7 @@ ActiveAdmin.register_page "OKR Explorer" do
     all_gradations = ["month", "quarter", "year", "trailing_3_months", "trailing_4_months", "trailing_6_months", "trailing_12_months"]
     default_gradation = "month"
 
-    all_okrs = ["average_hourly_rate", "sellable_hours_sold", "cost_per_sellable_hour", "successful_projects"]
+    all_okrs = ["average_hourly_rate", "sellable_hours_sold", "cost_per_sellable_hour", "successful_projects", "successful_proposals"]
     default_okr = "average_hourly_rate"
 
     studio = Studio.find(params[:studio_id])
@@ -25,6 +25,13 @@ ActiveAdmin.register_page "OKR Explorer" do
       end
     end
 
+    all_proposals_by_period = if current_okr == "successful_proposals"
+      periods.reduce({}) do |acc, period|
+        acc[period] = studio.sent_proposals_settled_in_period(period)
+        acc
+      end
+    end
+
     render(partial: "okr_explorer", locals: {
       all_gradations: all_gradations,
       default_gradation: all_gradations.first,
@@ -39,7 +46,8 @@ ActiveAdmin.register_page "OKR Explorer" do
       snapshot: studio.snapshot,
       g3d_snapshot: g3d.snapshot,
 
-      all_projects_by_period: all_projects_by_period
+      all_projects_by_period: all_projects_by_period,
+      all_proposals_by_period: all_proposals_by_period
     })
   end
 end

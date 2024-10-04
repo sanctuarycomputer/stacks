@@ -32,6 +32,7 @@ class Okr < ApplicationRecord
     total_social_growth: 15,
     free_hours: 16,
     total_projects: 17,
-    successful_projects: 18
+    successful_projects: 18,
+    successful_proposals: 19,
   }
 end

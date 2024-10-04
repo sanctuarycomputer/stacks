@@ -334,7 +334,7 @@ class Studio < ApplicationRecord
   end
 
   def new_biz_notion_pages
-    leads = NotionPage.lead.map(&:as_base)
+    leads = NotionPage.lead.map(&:as_lead)
     mini_names = mini_name.split(",").map(&:strip)
 
     if is_garden3d?
@@ -381,32 +381,17 @@ class Studio < ApplicationRecord
       .uniq
   end
 
-  def biz_leads_in_period(leads = new_biz_notion_pages, period)
-    period = Stacks::Period.new("January 2020", Date.new(2024, 1, 1), Date.new(2024, 1, 31))
+  def leads_recieved_in_period(leads = new_biz_notion_pages, period)
     leads.select do |l|
-      received = l.get_prop_value("Lead Received")
-      if received.empty?
-        # TODO: Notification
-        false
-      else
-        period.include?(
-          DateTime.parse(received.dig("start")).to_date
-        )
-      end
+      next false unless l.received_at
+      period.include?(DateTime.parse(l.received_at).to_date)
     end
   end
 
-  def biz_leads_status_changed_in_period(
-    leads = new_biz_notion_pages,
-    to_status,
-    period
-  )
-    return nil unless period.has_new_biz_version_history?
-    to_status = to_status.kind_of?(Array) ? to_status : [to_status]
+  def sent_proposals_settled_in_period(leads = new_biz_notion_pages, period)
     leads.select do |l|
-      l.status_history.select do |h|
-        period.include?(h[:changed_at]) && to_status.include?(h[:current_status])
-      end.any?
+      next false unless (l.settled_at && l.proposal_sent_at)
+      period.include?(DateTime.parse(l.settled_at).to_date)
     end
   end
 
@@ -529,6 +514,8 @@ class Studio < ApplicationRecord
       sellable_hours_proportion
     )
 
+    leads_recieved = leads_recieved_in_period(preloaded_new_biz_notion_pages, period)
+
     if prev_period.present?
       prev_v, prev_g3dv, prev_sellable_hours_proportion = merged_utilization_data(
         utilization_for_prev_period,
@@ -542,6 +529,8 @@ class Studio < ApplicationRecord
         prev_period.label,
         prev_sellable_hours_proportion
       )
+
+      prev_leads_recieved = leads_recieved_in_period(preloaded_new_biz_notion_pages, prev_period)
     end
 
     aggregate_social_following =
@@ -553,13 +542,8 @@ class Studio < ApplicationRecord
     leaving_members =
       studio_members_that_left_during_period(period)
 
-    biz_settled_count =
-      biz_leads_status_changed_in_period(preloaded_new_biz_notion_pages, ['Active', 'Passed', 'Lost/Stale'], period).try(:length) || 0
-
-    biz_won_count =
-      biz_leads_status_changed_in_period(preloaded_new_biz_notion_pages, 'Active', period).try(:length) || 0
-
     all_projects = project_trackers_with_recorded_time_in_period(period)
+    all_proposals = sent_proposals_settled_in_period(preloaded_new_biz_notion_pages, period)
 
     cogs_scenarios.map.with_index do |cogs, idx|
       prev_cogs = prev_cogs_scenarios[idx] if prev_cogs_scenarios.present?
@@ -628,13 +612,10 @@ class Studio < ApplicationRecord
           value: cogs[:profit_margin],
           unit: :percentage
         },
-        biz_leads: {
-          value: biz_leads_in_period(preloaded_new_biz_notion_pages, period).length,
-          unit: :count
-        },
-        settled_biz_leads: {
-          value: biz_settled_count,
-          unit: :count
+        lead_count: {
+          value: leads_recieved.length,
+          unit: :count,
+          growth: prev_period ? ((leads_recieved.length.to_f / prev_leads_recieved.length.to_f) * 100) - 100 : nil
         },
         social_growth_count: {
           value: social_growth_count,
@@ -644,28 +625,16 @@ class Studio < ApplicationRecord
           value: social_growth_percentage,
           unit: :percentage
         },
-        biz_win_rate: {
-          value: (biz_settled_count > 0) ? ((biz_won_count.to_f / biz_settled_count) * 100) : 0,
-          unit: :percentage
-        },
-        biz_won: {
-          value: biz_won_count,
-          unit: :count
-        },
-        biz_passed: {
-          value: biz_leads_status_changed_in_period(preloaded_new_biz_notion_pages, 'Passed', period).try(:length),
-          unit: :count
-        },
-        biz_lost: {
-          value: biz_leads_status_changed_in_period(preloaded_new_biz_notion_pages, 'Lost/Stale', period).try(:length),
-          unit: :count
-        },
         total_projects: {
           value: all_projects.count,
           unit: :count
         },
         successful_projects: {
           value: ((all_projects.map(&:considered_successful?).count{|v| !!v} / all_projects.count.to_f) * 100),
+          unit: :percentage
+        },
+        successful_proposals: {
+          value: ((all_proposals.map(&:considered_successful?).count{|v| !!v} / all_proposals.count.to_f) * 100),
           unit: :percentage
         }
       }

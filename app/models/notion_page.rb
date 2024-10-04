@@ -27,6 +27,10 @@ class NotionPage < ApplicationRecord
     Stacks::Notion::Task.new(self)
   end
 
+  def as_lead
+    Stacks::Notion::Lead.new(self)
+  end
+
   def notion_link
     "https://www.notion.so/garden3d/#{notion_id.gsub('-', '')}"
   end
