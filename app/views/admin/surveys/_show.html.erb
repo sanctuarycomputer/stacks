@@ -1,0 +1,130 @@
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-body factoid-parent">
+      <p style="margin-bottom: 6px;">🤫 <strong>Note!</strong> In order to gather the most honest feedback, Stacks records all survey responses anonymously, recording only a timestamp when a user submitted their response.</p>
+      <a href="https://github.com/sanctuarycomputer/stacks" target="_blank">
+        You can audit the Stacks codebase for anonymity here ↗
+      </a>
+    </div>
+  </div>
+</div>
+
+<% if resource.status == :draft %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <p>🚧 <strong>WIP!</strong> This survey is still being drafted. <%= resource.opens_at.present? ? "It will be open in #{time_ago_in_words(resource.opens_at)}, and you can submit your response then." : "No publish date has been set just yet, but check back soon!" %></p>
+      </div>
+    </div>
+  </div>
+<% end %>
+
+<% if resource.status == :open && survey_responder.nil? %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <p>⌛ <strong>OK!</strong> This survey is open!</p>
+        <%= link_to "Submit your anonymous Response →", new_admin_survey_response_path(survey_id: resource.id) %>
+      </div>
+    </div>
+  </div>
+<% end %>
+
+<% if resource.status == :open && survey_responder.present? %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <p>✅ <strong>Success!</strong> Your anonymous response has been recorded. When the survey is closed, we'll publish results here.</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/confetti-js@0.0.18/dist/index.min.js"></script>
+  <canvas style="position:fixed;left:0;top:0;right:0;bottom:0;pointer-events:none;" id="confetti-canvas"></canvas>
+  <script>
+    function confetti() {
+      var confettiSettings = { target: 'confetti-canvas' };
+      var confetti = new ConfettiGenerator(confettiSettings);
+      confetti.render();
+    };
+    confetti();
+  </script>
+<% end %>
+
+<% if resource.status == :closed %>
+  <h1>Overall: <%= results[:overall].round(2) %></h1>
+
+  <% results[:by_q].each do |question, data| %>
+    <div class="dashboard-modules table index_table index">
+      <div class="dashboard-module">
+        <div class="module-header">
+          <p><%= data[:prompt] %></p>
+        </div>
+
+        <div class="module-body">
+          <div class="flex" style="align-items: baseline;">
+            <h2 style="margin: 0;"><%= data[:average].round(2) %></h2><p>(out of 5)</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="dashboard-module">
+        <div class="module-body factoid-parent">
+          <table style="margin-bottom:0;" border="0" cellspacing="0" cellpadding="0" class="index_table index">
+            <tbody>
+              <% data[:contexts].each_with_index do |context, idx| %>
+                <tr class="<%= idx.even? ? "even" : "odd" %>">
+                  <td class="col">
+                    <%= context %>
+                  </td>
+                </tr>
+              <% end %>
+              <% if data[:contexts].empty? %>
+                <p>No context given.</p>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  <% end %>
+<% end %>
+
+
+<% expected_responder_status.each do |studio, studio_expected_responder_status| %>
+  <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+    <div id="titlebar_left">
+      <h2 id="page_title">
+        <%= studio.name %>
+      </h2>
+    </div>
+  </div>
+
+  <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+    <thead>
+      <tr>
+        <th class="col">Person</th>
+        <th class="col text-right">Responded?</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      <% studio_expected_responder_status.each_with_index do |tuple, idx| %>
+        <% admin_user, has_responded = tuple %>
+        <tr class="<%= idx.even? ? "even" : "odd" %>">
+          <td class="col">
+            <%= link_to admin_user.email, admin_admin_user_path(admin_user) %>
+          </td>
+
+          <td class="col text-right">
+            <% if has_responded %>
+              <span class="status_tag yes">Yes</span>
+            <% else %>
+              <span class="status_tag no">No</span>
+            <% end %>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+<% end %>

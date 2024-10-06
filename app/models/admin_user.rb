@@ -166,6 +166,14 @@ class AdminUser < ApplicationRecord
     ).uniq
   }
 
+  def should_nag_for_survey_responses?
+    survey_needing_response =
+      Survey.open.find do |s|
+        s.expected_responders.include?(self) && SurveyResponder.find_by(survey: s, admin_user: self).nil?
+      end
+    survey_needing_response.present?
+  end
+
   def active?
     AdminUser.active.include?(self)
   end

@@ -291,6 +291,23 @@ form fieldset.inputs {
   padding: 20px;
 }
 
+form fieldset > ol > li.radio fieldset ol {
+  display: flex;
+  justify-content: space-between;
+  padding-left: 0px;
+}
+
+select.display_only {
+  white-space: unset;
+  height: 120px;
+  opacity: 1;
+  color: #414141;
+  border-radius: 8px;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  pointer-events: none;
+}
+
 #dei_admin_inputs {
   ol {
     display: flex;

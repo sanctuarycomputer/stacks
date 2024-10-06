@@ -35,9 +35,9 @@ https://www.loom.com/share/2c4f15512009443bb4e4c92d42e23a46
 
 **You have been warned!**
 
-### Gem installation on a Mac M1 
+### Gem installation on a Mac M1
 
-If you ever see an error upon running `bundle install` along the lines of: 
+If you ever see an error upon running `bundle install` along the lines of:
 
 ```
 Results logged to
@@ -48,15 +48,15 @@ Make sure that `gem install nio4r -v '2.5.5' --source 'https://rubygems.org/'` s
 ```
 
 Open up the `gem_make.out` log file. Search for "error" (there are lots of warnings
-you can ignore). You should see a line that ends in something like "[-Wincompatible-function-pointer-types]". 
+you can ignore). You should see a line that ends in something like "[-Wincompatible-function-pointer-types]".
 The trick is to pass a flag in the `gem install` command that tells the compiler to ignore
-that error. For example: 
+that error. For example:
 
 ```
 gem install nio4r -v '2.5.5' --source 'https://rubygems.org/' -- --with-cflags="-Wno-error=incompatible-function-pointer-types"
 ```
 
-This may happen for gems other than `nio4r`, but the same steps apply. Good luck! 
+This may happen for gems other than `nio4r`, but the same steps apply. Good luck!
 
 ## On Windows:
 

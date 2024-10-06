@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2024_09_03_214405) do
+ActiveRecord::Schema.define(version: 2024_10_05_235553) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_stat_statements"
@@ -704,6 +704,56 @@ ActiveRecord::Schema.define(version: 2024_09_03_214405) do
     t.integer "studio_type", default: 0
   end
 
+  create_table "survey_question_responses", force: :cascade do |t|
+    t.bigint "survey_response_id", null: false
+    t.bigint "survey_question_id", null: false
+    t.integer "sentiment", default: 0
+    t.string "context"
+    t.index ["survey_question_id"], name: "index_survey_question_responses_on_survey_question_id"
+    t.index ["survey_response_id"], name: "index_survey_question_responses_on_survey_response_id"
+  end
+
+  create_table "survey_questions", force: :cascade do |t|
+    t.bigint "survey_id", null: false
+    t.string "prompt", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["survey_id"], name: "index_survey_questions_on_survey_id"
+  end
+
+  create_table "survey_responders", force: :cascade do |t|
+    t.bigint "survey_id", null: false
+    t.bigint "admin_user_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_survey_responders_on_admin_user_id"
+    t.index ["survey_id", "admin_user_id"], name: "idx_survey_responders_on_survey_id_and_admin_user_id", unique: true
+    t.index ["survey_id"], name: "index_survey_responders_on_survey_id"
+  end
+
+  create_table "survey_responses", force: :cascade do |t|
+    t.bigint "survey_id", null: false
+    t.index ["survey_id"], name: "index_survey_responses_on_survey_id"
+  end
+
+  create_table "survey_studios", force: :cascade do |t|
+    t.bigint "survey_id", null: false
+    t.bigint "studio_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["studio_id"], name: "index_survey_studios_on_studio_id"
+    t.index ["survey_id"], name: "index_survey_studios_on_survey_id"
+  end
+
+  create_table "surveys", force: :cascade do |t|
+    t.string "title", null: false
+    t.text "description", null: false
+    t.date "opens_at"
+    t.datetime "closed_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+  end
+
   create_table "system_tasks", force: :cascade do |t|
     t.string "name", null: false
     t.datetime "settled_at"
@@ -826,6 +876,14 @@ ActiveRecord::Schema.define(version: 2024_09_03_214405) do
   add_foreign_key "studio_coordinator_periods", "studios"
   add_foreign_key "studio_memberships", "admin_users"
   add_foreign_key "studio_memberships", "studios"
+  add_foreign_key "survey_question_responses", "survey_questions"
+  add_foreign_key "survey_question_responses", "survey_responses"
+  add_foreign_key "survey_questions", "surveys"
+  add_foreign_key "survey_responders", "admin_users"
+  add_foreign_key "survey_responders", "surveys"
+  add_foreign_key "survey_responses", "surveys"
+  add_foreign_key "survey_studios", "studios"
+  add_foreign_key "survey_studios", "surveys"
   add_foreign_key "system_tasks", "notifications"
   add_foreign_key "technical_lead_periods", "admin_users"
   add_foreign_key "technical_lead_periods", "project_trackers"

@@ -366,6 +366,8 @@ ActiveAdmin::Views::Pages::Base.class_eval do
       div id: "wrapper" do
         build_unsupported_browser
         build_dei_nag if current_admin_user.should_nag_for_dei_data?
+        build_survey_nag if current_admin_user.should_nag_for_survey_responses?
+
         header active_admin_namespace, current_menu
         build_flash_messages
         title_bar title, action_items_for_action
@@ -378,6 +380,13 @@ ActiveAdmin::Views::Pages::Base.class_eval do
   def build_dei_nag
     a("🌎 Your DEI data is missing. Please add it or opt out by clicking here.", {
       href: "/admin/admin_users/#{current_admin_user.id}/edit",
+      class: "flash flash_error block",
+    })
+  end
+
+  def build_survey_nag
+    a("📝 You have survey(s) needing completion. Click here to add your responses.", {
+      href: "/admin/surveys",
       class: "flash flash_error block",
     })
   end

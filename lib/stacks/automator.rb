@@ -149,6 +149,18 @@ class Stacks::Automator
       end
     end
 
+    def remind_people_of_outstanding_surveys_every_thurday
+      #return unless Time.now.thursday?
+
+      AdminUser.active.each do |admin_user|
+        if admin_user.should_nag_for_survey_responses?
+          SurveyReminderNotification.with(
+            include_admins: false,
+          ).deliver(admin_user)
+        end
+      end
+    end
+
     # Designed to run daily, and remind folks to update their hours
     # until everyone has accounted for business_days * 8hrs in the
     # given month.
