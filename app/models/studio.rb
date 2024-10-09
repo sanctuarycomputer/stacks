@@ -281,7 +281,9 @@ class Studio < ApplicationRecord
       next acc if okrp.nil?
 
       acc[okr.name] =
-        okrp.health_for_value(data[:value]).merge(data).merge({ hint: hint_for_okr(okr, datapoints) })
+        okrp.health_for_value(data[:value], period.total_days)
+          .merge(data)
+          .merge({ hint: hint_for_okr(okr, datapoints) })
 
       # HACK: It's helpful for reinvestment to know how much
       # surplus profit we've made in the YTD.
@@ -328,6 +330,10 @@ class Studio < ApplicationRecord
       "#{ActionController::Base.helpers.number_to_currency(datapoints[:cogs][:value])} spent, #{ActionController::Base.helpers.number_to_currency(datapoints[:revenue][:value]  )} earnt"
     when "total_social_growth"
       "#{datapoints[:social_growth_count][:value]} new followers"
+    when "revenue_growth"
+      "#{ActionController::Base.helpers.number_to_currency(datapoints[:revenue][:value])} revenue recieved"
+    when "lead_growth"
+      "#{datapoints[:lead_count][:value]} leads recieved"
     else
       ""
     end
@@ -564,6 +570,10 @@ class Studio < ApplicationRecord
           unit: :usd,
           growth: prev_cogs ? ((cogs[:revenue].to_f / prev_cogs[:revenue].to_f) * 100) - 100 : nil
         },
+        revenue_growth: {
+          value: prev_cogs ? ((cogs[:revenue].to_f / prev_cogs[:revenue].to_f) * 100) - 100 : nil,
+          unit: :percentage
+        },
         payroll: {
           value: cogs[:payroll],
           unit: :usd
@@ -616,6 +626,10 @@ class Studio < ApplicationRecord
           value: leads_recieved.length,
           unit: :count,
           growth: prev_period ? ((leads_recieved.length.to_f / prev_leads_recieved.length.to_f) * 100) - 100 : nil
+        },
+        lead_growth: {
+          value: prev_period ? ((leads_recieved.length.to_f / prev_leads_recieved.length.to_f) * 100) - 100 : nil,
+          unit: :percentage
         },
         social_growth_count: {
           value: social_growth_count,

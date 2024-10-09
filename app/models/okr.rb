@@ -12,7 +12,10 @@ class Okr < ApplicationRecord
   enum operator: {
     less_than: 0,
     greater_than: 1,
+    compounding_annual_rate_less_than: 2,
+    compounding_annual_rate_greater_than: 3,
   }
+
   enum datapoint: {
     sellable_hours_sold: 0,
     average_hourly_rate: 1,
@@ -34,5 +37,7 @@ class Okr < ApplicationRecord
     total_projects: 17,
     successful_projects: 18,
     successful_proposals: 19,
+    revenue_growth: 20,
+    lead_growth: 21,
   }
 end

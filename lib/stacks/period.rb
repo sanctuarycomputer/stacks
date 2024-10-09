@@ -18,6 +18,10 @@ class Stacks::Period
     )
   end
 
+  def total_days
+    (ends_at - starts_at).to_i
+  end
+
   def has_utilization_data?
     @starts_at >= Stacks::System.singleton_class::UTILIZATION_START_AT
   end
@@ -74,7 +78,7 @@ class Stacks::Period
         Date.today.end_of_year
       )
       return periods
-    
+
     when :trailing_3_months
       time = Date.today.last_month
       while time > start_at

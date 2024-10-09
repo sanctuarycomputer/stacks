@@ -16,28 +16,53 @@ class OkrPeriod < ApplicationRecord
     ends_at
   end
 
-  def health_for_value(value)
-    return { health: nil, surplus: 0, tolerance: tolerance } if value == nil
-    surplus = value - target
-    extreme = surplus.abs > tolerance
+  def self.target_growth_rate_for_period(annual_growth_rate, days_in_period)
+    # Convert annual growth rate from percentage to decimal
+    r = annual_growth_rate / 100.0
+
+    # Calculate the daily growth rate using the formula
+    daily_growth = (1 + r) ** (1.0 / 365) - 1
+
+    # Calculate the growth rate for the specified number of days
+    target_growth = (1 + daily_growth) ** days_in_period - 1
+
+    # Convert the result back to percentage
+    target_growth * 100
+  end
+
+  def health_for_value(value, total_days)
+    working_target = target
+    working_tolerance = tolerance
+
+    if okr.operator.starts_with?("compounding_annual_rate")
+      working_target = OkrPeriod.target_growth_rate_for_period(target, total_days)
+      working_tolerance = OkrPeriod.target_growth_rate_for_period(tolerance, total_days)
+    end
+
+    return { health: nil, surplus: 0, tolerance: working_tolerance } if value == nil
+
+    surplus = value - working_target
+    extreme = surplus.abs > working_tolerance
 
     tag =
-      if okr.operator == "greater_than"
-        surplus > 0 ?
-        extreme ? :exceptional : :healthy :
-        extreme ? :failing : :at_risk
-      elsif okr.operator == "less_than"
+      case okr.operator
+      when "less_than", "compounding_annual_rate_less_than"
         surplus < 0 ?
-        extreme ? :exceptional : :healthy :
-        extreme ? :failing : :at_risk
+          extreme ? :exceptional : :healthy :
+          extreme ? :failing : :at_risk
+      when "greater_than", "compounding_annual_rate_greater_than"
+        surplus > 0 ?
+          extreme ? :exceptional : :healthy :
+          extreme ? :failing : :at_risk
       else
         raise "unknown_operator"
       end
+
     {
       health: tag,
       surplus: surplus,
-      target: target,
-      tolerance: tolerance
+      target: working_target,
+      tolerance: working_tolerance
     }
   end
 
