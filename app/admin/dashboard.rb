@@ -13,8 +13,8 @@ ActiveAdmin.register_page "Dashboard" do
     g3d_ytd_revenue_growth_progress = Okr.make_annual_growth_progress_data(
       g3d_ytd_revenue_growth_okr["target"].to_f.round(2),
       g3d_ytd_revenue_growth_okr["tolerance"].to_f.round(2),
-      g3d.last_year_snapshot.dig("accrual", "datapoints", "revenue", "value"),
-      g3d.ytd_snapshot.dig("accrual", "datapoints", "revenue", "value"),
+      g3d.last_year_snapshot.dig("accrual", "datapoints_excluding_reinvestment", "revenue", "value"),
+      g3d.ytd_snapshot.dig("accrual", "datapoints_excluding_reinvestment", "revenue", "value"),
       :usd
     )
 
@@ -22,8 +22,8 @@ ActiveAdmin.register_page "Dashboard" do
     g3d_ytd_lead_growth_progress = Okr.make_annual_growth_progress_data(
       g3d_ytd_lead_growth_okr["target"].to_f.round(2),
       g3d_ytd_lead_growth_okr["tolerance"].to_f.round(2),
-      g3d.last_year_snapshot.dig("accrual", "datapoints", "lead_count", "value"),
-      g3d.ytd_snapshot.dig("accrual", "datapoints", "lead_count", "value"),
+      g3d.last_year_snapshot.dig("accrual", "datapoints_excluding_reinvestment", "lead_count", "value"),
+      g3d.ytd_snapshot.dig("accrual", "datapoints_excluding_reinvestment", "lead_count", "value"),
       :count
     )
 
