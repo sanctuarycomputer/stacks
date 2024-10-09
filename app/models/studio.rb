@@ -50,6 +50,10 @@ class Studio < ApplicationRecord
     (snapshot["year"].find{|p| p["label"] == "YTD"} || {})
   end
 
+  def last_year_snapshot
+    (snapshot["year"].find{|p| p["label"] == (Date.today.year - 1).to_s} || {})
+  end
+
   def health
     (snapshot["month"] || [{}]).last.dig("cash", "okrs", "Health") || {}
   end

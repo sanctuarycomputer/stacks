@@ -39,7 +39,7 @@
           <% value = okr_results.dig("value").to_f  %>
           <% target = (okr_results.dig("target").try(:to_f) || 0).round(2) %>
           <% health = okr_results.dig("health")  %>
-          <% tolerance = okr_results.dig("tolerance")  %>
+          <% tolerance = (okr_results.dig("tolerance").try(:to_f) || 0).round(2)  %>
           <% unit = okr_results.dig("unit") %>
           <% surplus = (okr_results.dig("surplus") || 0).to_f.round(2) %>
           <% hint = (okr_results.dig("hint") || "No hint given") %>
@@ -49,7 +49,18 @@
               <% if unit == "usd" %>
                 <h2 style="margin: 0;" class="<%= health %>"><%= number_to_currency(value.round(2)) %></h2> <p>(target: <%= number_to_currency(target) %>±<%= tolerance %>)</p>
               <% elsif unit == "percentage" %>
-                <h2 style="margin: 0;" class="<%= health %>"><%= value.round(2) %>%</h2> <p>(<%= target.round(2) %>%±<%= tolerance %>)</p>
+                <% if cokr[:growth_progress].present? %>
+                  <div class="okr_growth_progress">
+                    <div class="bar">
+                      <div class="inner_progress_bar <%= cokr[:growth_progress][:health] %>" style="width:<%= (cokr[:growth_progress][:today][:actual] / cokr[:growth_progress][:abs])*100 %>%;"></div>
+                    </div>
+                    <div class="target_indicator low" style="left:<%= (cokr[:growth_progress][:today][:low] / cokr[:growth_progress][:abs])*100 %>%;"></div>
+                    <div class="target_indicator mid" style="left:<%= (cokr[:growth_progress][:today][:mid] / cokr[:growth_progress][:abs])*100 %>%;"></div>
+                    <div class="target_indicator high" style="left:<%= (cokr[:growth_progress][:today][:high] / cokr[:growth_progress][:abs])*100 %>%;"></div>
+                  </div>
+                <% else %>
+                  <h2 style="margin: 0;" class="<%= health %>"><%= value.round(2) %>%</h2> <p>(<%= target.round(2) %>%±<%= tolerance %>)</p>
+                <% end %>
               <% elsif unit == "display" %>
                 <h2 style="margin: 0;" class="<%= health %>"><%= okr_results.dig("value") %></h2>
               <% else %>
@@ -57,7 +68,16 @@
               <% end %>
             </div>
 
-            <p class="okr_hint" style="padding-top: 0px !important"><%= sanitize hint, attributes: ["href", "target"] %></p>
+            <% if cokr[:growth_progress].present? %>
+              <p class="okr_hint" style="padding-top: 0px !important; padding-bottom: 6px;">
+                This year, in order to achieve a <%= cokr[:datapoint].to_s.humanize %> of <%= target.round(2) %>%±<%= tolerance %>, we’re targeting a total of between <%= cokr[:growth_progress][:unit] == :usd ? number_to_currency(cokr[:growth_progress][:eoy][:low]) : cokr[:growth_progress][:eoy][:low].round(2) %> and <%= cokr[:growth_progress][:unit] == :usd ? number_to_currency(cokr[:growth_progress][:eoy][:high]) : cokr[:growth_progress][:eoy][:high].round(2) %>. Today is day <%= cokr[:growth_progress][:elapsed_days_this_year] %> of <%= cokr[:growth_progress][:total_days_this_year] %>, so operating linearly, we should be between <%= cokr[:growth_progress][:unit] == :usd ? number_to_currency(cokr[:growth_progress][:today][:low]) : cokr[:growth_progress][:today][:low].round(2) %> to <%= cokr[:growth_progress][:unit] == :usd ? number_to_currency(cokr[:growth_progress][:today][:high]) : cokr[:growth_progress][:today][:high].round(2) %>
+              </p>
+              <p class="okr_hint" style="padding-top: 0px !important">
+                In actuality we're at <%= cokr[:growth_progress][:unit] == :usd ? number_to_currency(cokr[:growth_progress][:today][:actual]) : cokr[:growth_progress][:today][:actual].round(2) %>, so this OKR is considered <span class="pill <%= cokr[:growth_progress][:health] %>"><%= cokr[:growth_progress][:health] %></span>
+              </p>
+            <% else %>
+              <p class="okr_hint" style="padding-top: 0px !important"><%= sanitize hint, attributes: ["href", "target"] %></p>
+            <% end %>
           </div>
         <% else %>
           <div class="module-body">

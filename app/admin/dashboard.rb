@@ -9,13 +9,32 @@ ActiveAdmin.register_page "Dashboard" do
     xxix = Studio.find_by(mini_name: "xxix")
     sanctu = Studio.find_by(mini_name: "sanctu")
 
+    g3d_ytd_revenue_growth_okr = g3d.ytd_snapshot.dig("accrual", "okrs_excluding_reinvestment", "Revenue Growth")
+    g3d_ytd_revenue_growth_progress = Okr.make_annual_growth_progress_data(
+      g3d_ytd_revenue_growth_okr["target"].to_f.round(2),
+      g3d_ytd_revenue_growth_okr["tolerance"].to_f.round(2),
+      g3d.last_year_snapshot.dig("accrual", "datapoints", "revenue", "value"),
+      g3d.ytd_snapshot.dig("accrual", "datapoints", "revenue", "value"),
+      :usd
+    )
+
+    g3d_ytd_lead_growth_okr = g3d.ytd_snapshot.dig("accrual", "okrs_excluding_reinvestment", "Lead Growth")
+    g3d_ytd_lead_growth_progress = Okr.make_annual_growth_progress_data(
+      g3d_ytd_lead_growth_okr["target"].to_f.round(2),
+      g3d_ytd_lead_growth_okr["tolerance"].to_f.round(2),
+      g3d.last_year_snapshot.dig("accrual", "datapoints", "lead_count", "value"),
+      g3d.ytd_snapshot.dig("accrual", "datapoints", "lead_count", "value"),
+      :count
+    )
+
     collective_okrs = [{
       datapoint: :profit_margin,
       okr: g3d.ytd_snapshot.dig("accrual", "okrs_excluding_reinvestment", "Profit Margin"),
       role_holders: [*CollectiveRole.find_by(name: "General Manager").current_collective_role_holders]
     }, {
       datapoint: :revenue_growth,
-      okr: nil,
+      okr: g3d_ytd_revenue_growth_okr,
+      growth_progress: g3d_ytd_revenue_growth_progress,
       role_holders: [*CollectiveRole.find_by(name: "General Manager").current_collective_role_holders]
     }, {
       datapoint: :successful_design_projects,
@@ -49,7 +68,8 @@ ActiveAdmin.register_page "Dashboard" do
       ]
     }, {
       datapoint: :lead_growth,
-      okr: nil,
+      okr: g3d_ytd_lead_growth_okr,
+      growth_progress: g3d_ytd_lead_growth_progress,
       role_holders: [
         *CollectiveRole.find_by(name: "Director of Business Development").current_collective_role_holders,
         *CollectiveRole.find_by(name: "Director of Communications").current_collective_role_holders

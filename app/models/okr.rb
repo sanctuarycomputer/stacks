@@ -40,4 +40,40 @@ class Okr < ApplicationRecord
     revenue_growth: 20,
     lead_growth: 21,
   }
+
+  def self.make_annual_growth_progress_data(target, tolerance, last_year_value, current_value, base_unit_type)
+    growth_progress = {
+      eoy: {
+        low: last_year_value * (1 + (target - tolerance)/100.0),
+        mid: last_year_value * (1 + (target)/100.0),
+        high: last_year_value * (1 + (target + tolerance)/100.0),
+      },
+      today: {
+        low: 0,
+        mid: 0,
+        high: 0,
+        actual: current_value
+      },
+      abs: 0,
+      total_days_this_year: Date.today.end_of_year.yday,
+      elapsed_days_this_year: Date.today.yday,
+      unit: base_unit_type
+    }
+
+    growth_progress[:today][:low] = ((growth_progress[:eoy][:low] / growth_progress[:total_days_this_year]) * growth_progress[:elapsed_days_this_year])
+    growth_progress[:today][:mid] = ((growth_progress[:eoy][:mid] / growth_progress[:total_days_this_year]) * growth_progress[:elapsed_days_this_year])
+    growth_progress[:today][:high] = ((growth_progress[:eoy][:high] / growth_progress[:total_days_this_year]) * growth_progress[:elapsed_days_this_year])
+    growth_progress[:abs] = [growth_progress[:eoy][:high], growth_progress[:today][:actual]].max
+    growth_progress[:health] = if growth_progress[:today][:actual] >= growth_progress[:today][:high]
+      :exceptional
+    elsif growth_progress[:today][:actual] >= growth_progress[:today][:mid]
+      :healthy
+    elsif growth_progress[:today][:actual] >= growth_progress[:today][:low]
+      :at_risk
+    else
+      :failing
+    end
+
+    growth_progress
+  end
 end

@@ -26,6 +26,54 @@
   display: table;
 }
 
+.okr_growth_progress {
+  width: 100%;
+  position: relative;
+  margin-bottom: 20px;
+  .bar {
+    width: 100%;
+    height: 10px;
+    background-color: $color-light-grey;
+    border-radius: 999px;
+    .inner_progress_bar {
+      height: 100%;
+      background-color: $color-red;
+      border-radius: 999px;
+      &.failing {
+        background-color: $color-red;
+      }
+      &.at_risk {
+        background-color: $color-orange;
+      }
+      &.healthy {
+        background-color: $color-blue;
+      }
+      &.exceptional {
+        background-color: $color-green;
+      }
+    }
+  }
+  .target_indicator {
+    width: 6px;
+    height: 6px;
+    background-color: $color-light-grey;
+    border-radius: 999px;
+    position: absolute;
+    left: 0;
+    margin-left: -3px;
+    top: 14px;
+    &.low {
+      background-color: $color-orange;
+    }
+    &.mid {
+      background-color: $color-blue;
+    }
+    &.high {
+      background-color: $color-green;
+    }
+  }
+}
+
 .comment {
   display: flex;
   max-width: 60%;
@@ -906,7 +954,7 @@ body.logged_in .flash {
 }
 
 p.okr_hint {
-  white-space: nowrap;
+  //white-space: nowrap;
   font-size: 13px !important;
   color: $color-grey;
   padding-top: 8px !important;
