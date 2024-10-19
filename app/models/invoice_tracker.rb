@@ -71,6 +71,10 @@ class InvoiceTracker < ApplicationRecord
     qbo_invoice.try(:total)
   end
 
+  def balance
+    qbo_invoice.try(:balance)
+  end
+
   def qbo_line_items_relating_to_forecast_projects(forecast_projects)
     base = blueprint_diff.try(:clone) || {
       "generated_at" => DateTime.now.to_s,

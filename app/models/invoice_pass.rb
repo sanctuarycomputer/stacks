@@ -18,6 +18,10 @@ class InvoicePass < ApplicationRecord
     invoice_trackers.map(&:value).compact.reduce(&:+)
   end
 
+  def balance
+    invoice_trackers.map(&:balance).compact.reduce(&:+)
+  end
+
   def make_trackers!
     return if statuses == :missing_hours
     clients_served.each do |c|

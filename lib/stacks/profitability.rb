@@ -20,6 +20,7 @@ class Stacks::Profitability
       report = report_service.query("ProfitAndLoss", nil, {
         start_date: time.strftime("%Y-%m-%d"),
         end_date: time.end_of_year.strftime("%Y-%m-%d"),
+        accounting_method: "Cash"
       })
 
       {
@@ -46,13 +47,13 @@ class Stacks::Profitability
       })
 
       {
-        gross_revenue: (report.find_row("Total Income").try(:[], 1) || 0),
-        gross_payroll: (report.find_row("Total [SC] Payroll").try(:[], 1) || 0),
-        gross_benefits: (report.find_row("Total [SC] Benefits, Contributions & Tax").try(:[], 1) || 0),
-        gross_subcontractors: (report.find_row("Total [SC] Subcontractors").try(:[], 1) || 0),
+        gross_revenue: (report.find_row("Total Income").try(:[], 1) || 0).abs,
+        gross_payroll: (report.find_row("Total [SC] Payroll").try(:[], 1) || 0).abs,
+        gross_benefits: (report.find_row("Total [SC] Benefits, Contributions & Tax").try(:[], 1) || 0).abs,
+        gross_subcontractors: (report.find_row("Total [SC] Subcontractors").try(:[], 1) || 0).abs,
         gross_expenses: (
-          (report.find_row("Total Expenses").try(:[], 1) || 0) +
-          (report.find_row("Total [SC] Supplies & Materials").try(:[], 1) || 0)
+          (report.find_row("Total Expenses").try(:[], 1) || 0).abs +
+          (report.find_row("Total [SC] Supplies & Materials").try(:[], 1) || 0).abs
         )
       }
     end
@@ -80,13 +81,13 @@ class Stacks::Profitability
       })
 
       {
-        gross_revenue: (report.find_row("Total Income").try(:[], 1) || 0),
-        gross_payroll: (report.find_row("Total [SC] Payroll").try(:[], 1) || 0),
-        gross_benefits: (report.find_row("Total [SC] Benefits, Contributions & Tax").try(:[], 1) || 0),
-        gross_subcontractors: (report.find_row("Total [SC] Subcontractors").try(:[], 1) || 0),
+        gross_revenue: (report.find_row("Total Income").try(:[], 1) || 0).abs,
+        gross_payroll: (report.find_row("Total [SC] Payroll").try(:[], 1) || 0).abs,
+        gross_benefits: (report.find_row("Total [SC] Benefits, Contributions & Tax").try(:[], 1) || 0).abs,
+        gross_subcontractors: (report.find_row("Total [SC] Subcontractors").try(:[], 1) || 0).abs,
         gross_expenses: (
-          (report.find_row("Total Expenses").try(:[], 1) || 0) +
-          (report.find_row("Total [SC] Supplies & Materials").try(:[], 1) || 0)
+          (report.find_row("Total Expenses").try(:[], 1) || 0).abs +
+          (report.find_row("Total [SC] Supplies & Materials").try(:[], 1) || 0).abs
         )
       }
     end
