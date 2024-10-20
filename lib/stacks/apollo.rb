@@ -26,6 +26,7 @@ class Stacks::Apollo
       body: JSON.dump({ "q_keywords": email }),
       headers: @headers
     })
+    raise ((resp || {}).dig("message") || "No message") unless resp.success?
     resp.parsed_response["contacts"]
   end
 end

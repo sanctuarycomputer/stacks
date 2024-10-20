@@ -220,6 +220,8 @@ namespace :stacks do
     rescue => e
       if e.try(:message).try(:start_with?, "809")
         system_task.mark_as_success
+      elsif e.try(:message).try(:start_with?, "The maximum number of api calls allowed")
+        system_task.mark_as_success
       else
         system_task.mark_as_error(e)
       end

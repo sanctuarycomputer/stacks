@@ -23,7 +23,7 @@ class Contact < ApplicationRecord
   end
 
   def sync_to_apollo!(apollo = Stacks::Apollo.new)
-    existing_contacts = apollo.search_by_email(self.email)
+    existing_contacts = apollo.search_by_email(self.email) || []
     apollo_contact = existing_contacts.first || apollo.create_contact(self.email)
 
     if (apollo_contact.dig("email") || "").downcase == self.email.downcase
