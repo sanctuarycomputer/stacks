@@ -415,7 +415,7 @@ Budget: <%= number_to_currency(budget_high_end) %>
     <div class="module-body text-center">
       <% if @project_tracker.runn_project.present? %>
         <% if @project_tracker.project_tracker_forecast_to_runn_sync_tasks.empty? %>
-          <p>This project tracker is not connected to Runn.io project.</p>
+          <p>This Project Tracker is connected to Runn.io, but has not yet performed a sync (they run twice daily!).</p>
         <% else %>
           <% latest_runn_sync = @project_tracker.latest_forecast_to_runn_sync_task %>
           <% if latest_runn_sync.success? %>
