@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2024_10_05_235553) do
+ActiveRecord::Schema.define(version: 2024_10_20_221706) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_stat_statements"
@@ -515,6 +515,16 @@ ActiveRecord::Schema.define(version: 2024_10_05_235553) do
     t.index ["project_tracker_id"], name: "index_project_tracker_forecast_projects_on_project_tracker_id"
   end
 
+  create_table "project_tracker_forecast_to_runn_sync_tasks", force: :cascade do |t|
+    t.bigint "project_tracker_id"
+    t.datetime "settled_at"
+    t.bigint "notification_id"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["notification_id"], name: "idx_pt_forecast_to_runn_sync_tasks_on_notification_id"
+    t.index ["project_tracker_id"], name: "idx_pt_forecast_to_runn_sync_tasks_on_pt_id"
+  end
+
   create_table "project_tracker_links", force: :cascade do |t|
     t.string "name", null: false
     t.string "url", null: false
@@ -858,6 +868,8 @@ ActiveRecord::Schema.define(version: 2024_10_05_235553) do
   add_foreign_key "project_safety_representative_periods", "project_trackers"
   add_foreign_key "project_safety_representative_periods", "studios"
   add_foreign_key "project_tracker_forecast_projects", "project_trackers"
+  add_foreign_key "project_tracker_forecast_to_runn_sync_tasks", "notifications"
+  add_foreign_key "project_tracker_forecast_to_runn_sync_tasks", "project_trackers"
   add_foreign_key "project_tracker_links", "project_trackers"
   add_foreign_key "project_trackers", "runn_projects", primary_key: "runn_id"
   add_foreign_key "qbo_accounts", "enterprises"

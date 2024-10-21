@@ -400,6 +400,37 @@ Budget: <%= number_to_currency(budget_high_end) %>
       </a>
     </div>
   </div>
+
+  <div class="dashboard-module">
+    <div class="module-header">
+      <div class="icon-and-text">
+        <%= image_tag("runn-logo-icon.png") %>
+        <p>Runn.io Sync Status</p>
+      </div>
+
+      <a href="https://app.runn.io/projects/<%= @project_tracker.runn_project.runn_id %>" target="_blank">
+        Open in Runn.io ↗
+      </a>
+    </div>
+    <div class="module-body text-center">
+      <% if @project_tracker.runn_project.present? %>
+        <% if @project_tracker.project_tracker_forecast_to_runn_sync_tasks.empty? %>
+          <p>This project tracker is not connected to Runn.io project.</p>
+        <% else %>
+          <% latest_runn_sync = @project_tracker.latest_forecast_to_runn_sync_task %>
+          <% if latest_runn_sync.success? %>
+            <p>This Project Tracker's Forecast hours were successfully synced to Runn.io <%= time_ago_in_words latest_runn_sync.settled_at %> ago.</p>
+          <% else %>
+            <p style="margin-bottom: 6px;">This Project Tracker <span class="color-red"><strong>failed</strong></span> to synced to Runn.io <%= time_ago_in_words latest_runn_sync.settled_at %> ago.</p>
+            <%= link_to "Inspect Sync Error ↗", admin_notification_path(latest_runn_sync.notification) %>
+          <% end %>
+        <% end %>
+      <% else %>
+        <p style="margin-bottom: 6px;">This project tracker is not connected to Runn.io project.</p>
+        <%= link_to "Connect a Runn.io Project ↗", edit_admin_project_tracker_path(@project_tracker) %>
+      <% end %>
+    </div>
+  </div>
 </div>
 
 <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom:20px;">

@@ -279,8 +279,13 @@ namespace :stacks do
       Stacks::Notifications.make_notifications!
       Stacks::Notifications.notify_admins_of_outstanding_notifications_every_tuesday!
 
-      # Runn is rate limited to 120 calls per minute, so it's important that this is run synchronously
-      Stacks::ForecastToRunnSyncer.sync_all!
+      runn_instance = Stacks::Runn.new
+      ProjectTracker.where.not(runn_project: nil).each do |pt|
+        puts "~~~> Will sync '#{pt.name}' Forecast Assignments to '#{pt.runn_project.name}' Runn Actuals"
+        ProjectTrackerForecastToRunnSyncTask.create!(project_tracker: pt).run!(runn_instance)
+        puts "~~~> Did sync '#{pt.name}' Forecast Assignments to '#{pt.runn_project.name}' Runn Actuals"
+      end
+
       puts "~~~> FIN: #{Time.new.localtime}"
     rescue => e
       puts "~~~> ERROR"

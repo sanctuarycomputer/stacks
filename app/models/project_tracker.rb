@@ -21,12 +21,16 @@ class ProjectTracker < ApplicationRecord
   has_many :project_tracker_links, dependent: :delete_all
   accepts_nested_attributes_for :project_tracker_links, allow_destroy: true
 
+  has_many :project_tracker_forecast_to_runn_sync_tasks, dependent: :delete_all
+
   has_many :adhoc_invoice_trackers, dependent: :delete_all
   accepts_nested_attributes_for :adhoc_invoice_trackers, allow_destroy: true
 
   has_many :project_tracker_forecast_projects, dependent: :delete_all
   has_many :forecast_projects, through: :project_tracker_forecast_projects
   accepts_nested_attributes_for :project_tracker_forecast_projects, allow_destroy: true
+
+  has_many :forecast_assignments, through: :forecast_projects
 
   belongs_to :runn_project, class_name: "RunnProject", foreign_key: "runn_project_id", primary_key: "runn_id", optional: true
 
@@ -82,6 +86,10 @@ class ProjectTracker < ApplicationRecord
 
   def runn_project
     @_runn_project ||= super
+  end
+
+  def latest_forecast_to_runn_sync_task
+    project_tracker_forecast_to_runn_sync_tasks.where.not(settled_at: nil).order('settled_at DESC').first
   end
 
   def set_targets
