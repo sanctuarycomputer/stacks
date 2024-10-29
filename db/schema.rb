@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2024_10_20_221706) do
+ActiveRecord::Schema.define(version: 2024_10_29_202246) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_stat_statements"
@@ -714,6 +714,22 @@ ActiveRecord::Schema.define(version: 2024_10_20_221706) do
     t.integer "studio_type", default: 0
   end
 
+  create_table "survey_free_text_question_responses", force: :cascade do |t|
+    t.bigint "survey_response_id", null: false
+    t.bigint "survey_free_text_question_id", null: false
+    t.string "response"
+    t.index ["survey_free_text_question_id"], name: "idx_sftqr_on_sftq_id"
+    t.index ["survey_response_id"], name: "index_survey_free_text_question_responses_on_survey_response_id"
+  end
+
+  create_table "survey_free_text_questions", force: :cascade do |t|
+    t.bigint "survey_id", null: false
+    t.string "prompt", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["survey_id"], name: "index_survey_free_text_questions_on_survey_id"
+  end
+
   create_table "survey_question_responses", force: :cascade do |t|
     t.bigint "survey_response_id", null: false
     t.bigint "survey_question_id", null: false
@@ -888,6 +904,9 @@ ActiveRecord::Schema.define(version: 2024_10_20_221706) do
   add_foreign_key "studio_coordinator_periods", "studios"
   add_foreign_key "studio_memberships", "admin_users"
   add_foreign_key "studio_memberships", "studios"
+  add_foreign_key "survey_free_text_question_responses", "survey_free_text_questions"
+  add_foreign_key "survey_free_text_question_responses", "survey_responses"
+  add_foreign_key "survey_free_text_questions", "surveys"
   add_foreign_key "survey_question_responses", "survey_questions"
   add_foreign_key "survey_question_responses", "survey_responses"
   add_foreign_key "survey_questions", "surveys"

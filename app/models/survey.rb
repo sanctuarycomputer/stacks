@@ -13,6 +13,9 @@ class Survey < ApplicationRecord
   has_many :survey_questions
   accepts_nested_attributes_for :survey_questions, allow_destroy: true
 
+  has_many :survey_free_text_questions
+  accepts_nested_attributes_for :survey_free_text_questions, allow_destroy: true
+
   has_many :survey_studios
   accepts_nested_attributes_for :survey_studios, allow_destroy: true
 
@@ -47,7 +50,7 @@ class Survey < ApplicationRecord
   end
 
   def results
-    survey_responses.reduce({ by_q: {} }) do |acc, sr|
+    survey_responses.reduce({ by_q: {}, by_free_text_q: {} }) do |acc, sr|
       sr.survey_question_responses.each do |sqr|
         acc[:by_q][sqr.survey_question] =
           acc[:by_q][sqr.survey_question] || { sentiments: [], contexts: [], prompt: sqr.survey_question.prompt }
@@ -56,6 +59,14 @@ class Survey < ApplicationRecord
         end
         if sqr.context.present?
           acc[:by_q][sqr.survey_question][:contexts] << sqr.context
+        end
+      end
+
+      sr.survey_free_text_question_responses.each do |sftqr|
+        acc[:by_free_text_q][sftqr.survey_free_text_question] =
+          acc[:by_free_text_q][sftqr.survey_free_text_question] || { responses: [], prompt: sftqr.survey_free_text_question.prompt }
+        if sftqr.response.present?
+          acc[:by_free_text_q][sftqr.survey_free_text_question][:responses] << sftqr.response
         end
       end
 
@@ -75,6 +86,12 @@ class Survey < ApplicationRecord
       new_survey.closed_at = nil
 
       prev_survey.survey_questions.each do |sq|
+        n = sq.dup
+        n.survey = new_survey
+        new_survey.survey_questions << n
+      end
+
+      prev_survey.survey_free_text_questions.each do |sq|
         n = sq.dup
         n.survey = new_survey
         new_survey.survey_questions << n

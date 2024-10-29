@@ -54,6 +54,8 @@
 <% if resource.status == :closed %>
   <h1>Overall: <%= results[:overall].round(2) %></h1>
 
+  <h2>Scored Questions</h2>
+
   <% results[:by_q].each do |question, data| %>
     <div class="dashboard-modules table index_table index">
       <div class="dashboard-module">
@@ -80,7 +82,7 @@
                 </tr>
               <% end %>
               <% if data[:contexts].empty? %>
-                <p>No context given.</p>
+                <p>No additional contexts given.</p>
               <% end %>
             </tbody>
           </table>
@@ -88,6 +90,43 @@
       </div>
     </div>
   <% end %>
+
+  <h2>Free Text Questions</h2>
+  <% results[:by_free_text_q].each do |question, data| %>
+    <div class="dashboard-modules table index_table index">
+      <div class="dashboard-module">
+        <div class="module-header">
+          <p><%= data[:prompt] %></p>
+        </div>
+
+        <div class="module-body">
+          <div class="flex" style="align-items: baseline;">
+            <h2 style="margin: 0;"><%= data[:responses].count %></h2><p>responses given</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="dashboard-module">
+        <div class="module-body factoid-parent">
+          <table style="margin-bottom:0;" border="0" cellspacing="0" cellpadding="0" class="index_table index">
+            <tbody>
+              <% data[:responses].each_with_index do |context, idx| %>
+                <tr class="<%= idx.even? ? "even" : "odd" %>">
+                  <td class="col">
+                    <%= context %>
+                  </td>
+                </tr>
+              <% end %>
+              <% if data[:responses].empty? %>
+                <p>No responses given.</p>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  <% end %>
+
 <% end %>
 
 

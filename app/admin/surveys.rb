@@ -18,6 +18,13 @@ ActiveAdmin.register Survey do
       :_destroy,
       :_edit
     ],
+    survey_free_text_questions_attributes: [
+      :id,
+      :survey_id,
+      :prompt,
+      :_destroy,
+      :_edit
+    ],
     survey_studios_attributes: [
       :id,
       :survey_id,
@@ -74,6 +81,9 @@ ActiveAdmin.register Survey do
           hint: "This is the date members in the studios selected will be able to start recording their responses."
 
         f.has_many :survey_questions, heading: false, allow_destroy: true, new_record: 'Add a Question' do |a|
+          a.input :prompt
+        end
+        f.has_many :survey_free_text_questions, heading: false, allow_destroy: true, new_record: 'Add a Free Text Question Prompt' do |a|
           a.input :prompt
         end
         f.has_many :survey_studios, heading: false, allow_destroy: true, new_record: 'Add a Studio' do |a|

@@ -11,6 +11,13 @@ ActiveAdmin.register SurveyResponse do
       :context,
       :_destroy,
       :_edit
+    ],
+    survey_free_text_question_responses_attributes: [
+      :id,
+      :survey_free_text_question_id,
+      :response,
+      :_destroy,
+      :_edit
     ]
 
     controller do
@@ -29,6 +36,11 @@ ActiveAdmin.register SurveyResponse do
         survey.survey_questions.each do |sq|
           resource.survey_question_responses << SurveyQuestionResponse.new({
             survey_question: sq
+          })
+        end
+        survey.survey_free_text_questions.each do |sftq|
+          resource.survey_free_text_question_responses << SurveyFreeTextQuestionResponse.new({
+            survey_free_text_question: sftq
           })
         end
         new!
@@ -59,7 +71,12 @@ ActiveAdmin.register SurveyResponse do
       f.has_many :survey_question_responses, heading: false, allow_destroy: false, new_record: false do |a|
         a.input :survey_question, input_html: { class: "display_only" }, collection: [a.object.survey_question], include_blank: false
         a.input :sentiment, as: :radio
-        a.input :context, as: :text
+        a.input :context, as: :text, label: "Additional Context", placeholder: "(Optional) Add an explaination for your score"
+      end
+
+      f.has_many :survey_free_text_question_responses, heading: false, allow_destroy: false, new_record: false do |a|
+        a.input :survey_free_text_question, input_html: { class: "display_only" }, collection: [a.object.survey_free_text_question], include_blank: false
+        a.input :response, as: :text, label: "Response", placeholder: "(Optional) Let us know what you think"
       end
 
       f.actions
