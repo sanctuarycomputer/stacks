@@ -13,6 +13,10 @@ class ProjectLeadPeriod < ApplicationRecord
     ended_at || project_tracker.last_recorded_assignment&.end_date || Date.today
   end
 
+  def effective_days_in_role_during_range(start_range, end_range)
+    project_tracker.dates_with_recorded_assignments_in_range(start_range, end_range)
+  end
+
   def current?
     period_ended_at >= Date.today - 14.days
   end
