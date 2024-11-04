@@ -71,7 +71,7 @@ ActiveAdmin.register SurveyResponse do
       f.has_many :survey_question_responses, heading: false, allow_destroy: false, new_record: false do |a|
         a.input :survey_question, input_html: { class: "display_only" }, collection: [a.object.survey_question], include_blank: false
         a.input :sentiment, as: :radio
-        a.input :context, as: :text, label: "Additional Context", placeholder: "(Optional) Add an explaination for your score"
+        a.input :context, as: :text, label: "Additional Context", placeholder: "(Optional) Add an explanation for your score"
       end
 
       f.has_many :survey_free_text_question_responses, heading: false, allow_destroy: false, new_record: false do |a|
