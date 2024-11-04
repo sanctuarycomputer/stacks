@@ -104,10 +104,14 @@ ActiveAdmin.register Survey do
       if resource.status == :draft
         # No options
       elsif resource.status == :open
-        if SurveyResponder.find_by(survey: resource, admin_user: current_admin_user).present?
-          span("✓ Responded", class: "pill yes")
+        if resource.expected_responders.include?(current_admin_user)
+          if SurveyResponder.find_by(survey: resource, admin_user: current_admin_user).present?
+            span("✓ Responded", class: "pill yes")
+          else
+            link_to "Submit Response →", new_admin_survey_response_path(survey_id: resource.id)
+          end
         else
-          link_to "Submit Response →", new_admin_survey_response_path(survey_id: resource.id)
+          "You aren't required to respond to this survey"
         end
       else
         # Closed

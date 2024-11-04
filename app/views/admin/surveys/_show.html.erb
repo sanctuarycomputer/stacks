@@ -19,7 +19,17 @@
   </div>
 <% end %>
 
-<% if resource.status == :open && survey_responder.nil? %>
+<% unless resource.expected_responders.include?(current_admin_user) %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <p>🍃 <strong>Note!</strong> You aren't required to respond to this survey.</p>
+      </div>
+    </div>
+  </div>
+<% end %>
+
+<% if resource.expected_responders.include?(current_admin_user) && resource.status == :open && survey_responder.nil? %>
   <div class="dashboard-modules table index_table index">
     <div class="dashboard-module">
       <div class="module-body factoid-parent">
