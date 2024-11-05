@@ -408,9 +408,11 @@ Budget: <%= number_to_currency(budget_high_end) %>
         <p>Runn.io Sync Status</p>
       </div>
 
-      <a href="https://app.runn.io/projects/<%= @project_tracker.runn_project.runn_id %>" target="_blank">
-        Open in Runn.io ↗
-      </a>
+      <% if @project_tracker.runn_project.present? %>
+        <a href="https://app.runn.io/projects/<%= @project_tracker.runn_project.runn_id %>" target="_blank">
+          Open in Runn.io ↗
+        </a>
+      <% end %>
     </div>
     <div class="module-body text-center">
       <% if @project_tracker.runn_project.present? %>
