@@ -84,6 +84,14 @@
                 An assignment for <strong><%= n.params[:subject] || "(No User)" %></strong> is missing <%= n.params[:error] %>.
               <% end %>
 
+            <% when :system %>
+              <% case n.params[:error]
+                when :data_integrity_problems_present %>
+                <strong><%= n.params[:subject] %></strong> These can cause big problems in our OKRs if not corrected.
+              <% else %>
+                Unknown System Error
+              <% end %>
+
             <% when :user %>
               <% case n.params[:error]
                 when :no_dei_response %>

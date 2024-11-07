@@ -61,8 +61,8 @@ class ForecastProject < ApplicationRecord
     name == "Time Off" && forecast_client.nil?
   end
 
-  def is_internal?
-    is_time_off? || forecast_client && forecast_client.is_internal?
+  def is_internal?(preloaded_studios = Studio.all)
+    is_time_off? || forecast_client && forecast_client.is_internal?(preloaded_studios)
   end
 
   def display_name
@@ -73,6 +73,10 @@ class ForecastProject < ApplicationRecord
 
   def edit_link
     "https://forecastapp.com/864444/projects/#{forecast_id}/edit"
+  end
+
+  def external_link
+    link
   end
 
   def link

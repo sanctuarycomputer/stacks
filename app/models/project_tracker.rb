@@ -88,6 +88,24 @@ class ProjectTracker < ApplicationRecord
     @_runn_project ||= super
   end
 
+  def external_link
+    "https://stacks.garden3d.net/admin/project_trackers/#{id}"
+  end
+
+  def considered_ongoing?
+    downcased_name = name.downcase
+    downcased_name.include?("ongoing") || downcased_name.include?("retainer")
+  end
+
+  def likely_should_be_marked_as_completed?
+    return false if considered_ongoing?
+    if last_recorded_assignment
+      last_recorded_assignment.end_date < (Date.today -  1.month)
+    else
+      false
+    end
+  end
+
   def latest_forecast_to_runn_sync_task
     project_tracker_forecast_to_runn_sync_tasks.where.not(settled_at: nil).order('settled_at DESC').first
   end

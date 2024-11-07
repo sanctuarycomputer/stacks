@@ -3,8 +3,9 @@ ActiveAdmin.register SystemTask do
         priority: 0,
         label: -> {
           div("#{SystemTask.in_progress.count}", class: "notifier")
-          "System Tasks"
-        }
+          "Tasks"
+        },
+        parent: "System"
 
   config.filters = true
   config.paginate = true

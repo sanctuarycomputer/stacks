@@ -75,16 +75,7 @@ class Stacks::Notifications
       google_users = [*sanctu_google_users, *xxix_google_users]
       latest_forecast_people = forecast.people["people"]
 
-      users = AdminUser
-        .includes([
-          :full_time_periods,
-          :admin_user_racial_backgrounds,
-          :racial_backgrounds,
-          :admin_user_cultural_backgrounds,
-          :cultural_backgrounds,
-          :admin_user_gender_identities,
-          :gender_identities,
-        ]).not_ignored
+      users = AdminUser.not_ignored
 
       user_accounts_report =
         users.reduce({
@@ -108,74 +99,6 @@ class Stacks::Notifications
           accounts.values.any?(true)
         end
 
-      users_without_full_time_periods = users.select do |u|
-        u.full_time_periods.empty?
-      end
-
-      active_users = users.select(&:active?)
-
-      users_without_dei_response = active_users.select do |u|
-        next false unless [
-          Enum::ContributorType::FOUR_DAY,
-          Enum::ContributorType::FIVE_DAY
-        ].include?(u.current_contributor_type)
-
-        u.should_nag_for_dei_data?
-      end
-
-      users_with_unknown_salary = active_users.select do |u|
-        next false unless [
-          Enum::ContributorType::FOUR_DAY,
-          Enum::ContributorType::FIVE_DAY
-        ].include?(u.current_contributor_type)
-
-        u.skill_tree_level_without_salary == "No Reviews Yet"
-      end
-
-      active_project_trackers = ProjectTracker
-        .includes([
-          :project_lead_periods,
-          :adhoc_invoice_trackers,
-          :forecast_projects
-        ]).where(work_completed_at: nil)
-      completed_project_trackers = ProjectTracker
-        .includes([
-          :project_capsule
-        ]).where.not(work_completed_at: nil)
-
-      project_trackers_no_project_lead = active_project_trackers.select do |pt|
-        pt.current_project_leads.empty?
-      end
-
-      project_trackers_need_capsule = completed_project_trackers.select do |pt|
-        pt.work_status == :capsule_pending
-      end
-
-      project_trackers_seemingly_complete = active_project_trackers.select do |pt|
-        if pt.last_recorded_assignment
-          pt.last_recorded_assignment.end_date < (Date.today -  1.month)
-        else
-          false
-        end
-      end.reject do |pt|
-        downcased_name = pt.name.downcase
-        downcased_name.include?("ongoing") || downcased_name.include?("retainer")
-      end
-
-      # Load Allocation Data
-      allocations_thread = Thread.new do
-        allocations, allocation_errors =
-          Stacks::Availability.load_allocations_from_notion
-        allocations_today =
-          Stacks::Availability.allocations_on_date(allocations, Date.today)
-        [allocations, allocation_errors, allocations_today]
-      end
-
-      # Load QBO Customers
-      qbo_customers_thread = Thread.new do
-        Stacks::Quickbooks.fetch_all_customers
-      end
-
       invoice_trackers = InvoiceTracker.includes(:qbo_invoice).all
       invoice_statuses_need_action =
         invoice_trackers.map do |it|
@@ -188,10 +111,6 @@ class Stacks::Notifications
           h
         end
 
-      qbo_customers, allocation_data =
-        [qbo_customers_thread, allocations_thread].map(&:value)
-      allocations, allocation_errors, allocations_today = allocation_data
-
       notifications << {
         subject: invoice_statuses_need_action,
         type: :invoice_tracker,
@@ -199,44 +118,6 @@ class Stacks::Notifications
         error: :need_action,
         priority: 0
       } if invoice_statuses_need_action.any?
-
-      allocations_today.each do |k, v|
-        notifications << {
-          subject: k,
-          type: :assignment,
-          link: Stacks::System.singleton_class::NOTION_ASSIGNMENTS_LINK,
-          error: :over_assigned,
-          priority: 0
-        } if v > 1.0
-      end
-
-      allocation_errors.each do |ae|
-        notifications << {
-          subject: ae[:email],
-          type: :assignment,
-          link: ae[:url],
-          error: ae[:error],
-          priority: 2
-        }
-      end
-
-      forecast_projects.each do |fp|
-        notifications << {
-          subject: fp,
-          type: :forecast_project,
-          link: fp.edit_link,
-          error: :multiple_hourly_rates,
-          priority: 1
-        } if fp.has_multiple_hourly_rates?
-
-        notifications << {
-          subject: fp,
-          type: :forecast_project,
-          link: fp.edit_link,
-          error: :no_explicit_hourly_rate,
-          priority: 0
-        } if fp.has_no_explicit_hourly_rate?
-      end
 
       ForecastAssignmentDailyFinancialSnapshot.needs_review.each do |snapshot|
         notifications << {
@@ -256,27 +137,7 @@ class Stacks::Notifications
           link: fc.edit_link,
           error: :no_qbo_customer,
           priority: 1
-        } if fc.qbo_customer(qbo_customers).nil?
-      end
-
-      forecast_people.each do |fp|
-        next if fp.archived
-
-        notifications << {
-          subject: fp,
-          type: :forecast_person,
-          link: fp.edit_link,
-          error: :multiple_studios,
-          priority: 2
-        } if fp.studios.count > 1
-
-        notifications << {
-          subject: fp,
-          type: :forecast_person,
-          link: fp.edit_link,
-          error: :no_studio,
-          priority: 0
-        } if fp.studios.count == 0
+        } if fc.qbo_customer(Stacks::Quickbooks.fetch_all_customers).nil?
       end
 
       finalizations.each do |f|
@@ -287,66 +148,6 @@ class Stacks::Notifications
           error: :needs_archiving,
           priority: 0
         } if f.review.status == "finalized"
-      end
-
-      project_trackers_need_capsule.each do |pt|
-        notifications << {
-          subject: pt,
-          type: :project_tracker,
-          link: admin_project_tracker_path(pt),
-          error: :capsule_pending,
-          priority: 2
-        }
-      end
-
-      project_trackers_seemingly_complete.each do |pt|
-        notifications << {
-          subject: pt,
-          type: :project_tracker,
-          link: admin_project_tracker_path(pt),
-          error: :seemingly_complete,
-          priority: 2
-        }
-      end
-
-      project_trackers_no_project_lead.each do |pt|
-        notifications << {
-          subject: pt,
-          type: :project_tracker,
-          link: admin_project_tracker_path(pt),
-          error: :no_project_lead,
-          priority: 2
-        }
-      end
-
-      users_without_dei_response.each do |u|
-        notifications << {
-          subject: u,
-          type: :user,
-          link: edit_admin_admin_user_path(u),
-          error: :no_dei_response,
-          priority: 2
-        }
-      end
-
-      users_with_unknown_salary.each do |u|
-        notifications << {
-          subject: u,
-          type: :user,
-          link: edit_admin_admin_user_path(u),
-          error: :unknown_salary,
-          priority: 2
-        }
-      end
-
-      users_without_full_time_periods.each do |u|
-        notifications << {
-          subject: u,
-          type: :user,
-          link: edit_admin_admin_user_path(u),
-          error: :no_full_time_periods,
-          priority: 0
-        }
       end
 
       archived_users_with_active_accounts.each do |user, report|
@@ -364,6 +165,10 @@ class Stacks::Notifications
     end
 
     def make_notifications!
+      # The new school
+      Stacks::DataIntegrityManager.new.notify!
+
+      # The old school, eventually will be deprecated.
       notifications = stage_notification_params
       mark_system_notififcations_read_if_irrelevant!(notifications)
 

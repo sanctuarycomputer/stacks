@@ -50,6 +50,18 @@ function update(a, b) {
   </div>
 </div>
 
+<% data_integrity_problem_count = Stacks::DataIntegrityManager.new.problem_count %>
+<% if data_integrity_problem_count > 0 %>
+  <div class="dashboard-module" style="margin-bottom: 20px;">
+    <div class="module-body factoid-parent">
+      <p style="margin-bottom: 6px;">❗ <strong>Warning!</strong> There are <%= data_integrity_problem_count %>x known data integrity problems. These problems can cause big fluctuations on OKR reporting. Please work to rectify those issues first, then <a href="https://stacks.garden3d.net/admin/system_tasks?q%5Bname_contains%5D=stacks%3Adaily_tasks&commit=Filter&scope=success&order=id_desc" target="_blank">wait for the next <code>stacks:daily_tasks</code> job to settle</a> to ensure you have a correct view of the data below.</p>
+      <a href="https://stacks.garden3d.net/admin/data_integrity_explorer" target="_blank">
+        See all Data Integrity issues here ↗
+      </a>
+    </div>
+  </div>
+<% end %>
+
 <a href="https://www.notion.so/garden3d/The-Operating-Modes-of-garden3d-6eefbe5c5f5c463bb5e4679f977a46fa" target="_blank">
   <p class="pill nag <%= resource.health.dig("health") %>" style="margin-bottom: 20px;margin-right: 6px;">
       <strong><%= resource.health.dig("value") %></strong>

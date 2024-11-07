@@ -35,6 +35,10 @@ class NotionPage < ApplicationRecord
     "https://www.notion.so/garden3d/#{notion_id.gsub('-', '')}"
   end
 
+  def external_link
+    notion_link
+  end
+
   # For active admin to set the title on the show page
   def name
     page_title

@@ -18,6 +18,18 @@
       </a>
     </div>
   </div>
+
+  <% data_integrity_problem_count = Stacks::DataIntegrityManager.new.problem_count %>
+  <% if data_integrity_problem_count > 0 %>
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <p style="margin-bottom: 6px;">❗ <strong>Warning!</strong> There are <%= data_integrity_problem_count %>x known data integrity problems. These problems can cause big fluctuations on OKR reporting. Please work to rectify those issues first, then <a href="https://stacks.garden3d.net/admin/system_tasks?q%5Bname_contains%5D=stacks%3Adaily_tasks&commit=Filter&scope=success&order=id_desc" target="_blank">wait for the next <code>stacks:daily_tasks</code> job to settle</a> to ensure you have a correct view of the data below.</p>
+        <a href="https://stacks.garden3d.net/admin/data_integrity_explorer" target="_blank">
+          See all Data Integrity issues here ↗
+        </a>
+      </div>
+    </div>
+  <% end %>
 </div>
 
 <% collective_okrs.each_slice(2).to_a.each do |set| %>

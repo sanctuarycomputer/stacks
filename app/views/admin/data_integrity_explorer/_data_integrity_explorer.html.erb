@@ -1,0 +1,61 @@
+<script>
+function update(a, b) {
+  var searchParams = new URLSearchParams(window.location.search);
+  if (b !== '')
+    searchParams.set(a, b);
+  else
+    searchParams.delete(a);
+  window.location.search = searchParams.toString();
+}
+</script>
+
+<% current_data_type = params["data_type"] || default_data_type %>
+<% current_data_type = default_data_type unless all_data_types.include?(current_data_type) %>
+<div style="margin-bottom: 20px">
+  <% all_data_types.each do |data_type| %>
+    <% problem_count = eval(data_type).count %>
+
+    <a onclick='update("data_type", "<%= data_type %>");' style="margin-right: 6px; position: relative;">
+      <% if problem_count > 0 %>
+        <div class="notifier"><%= problem_count %></div>
+      <% end %>
+      <p class="nag pill <%= current_data_type == data_type ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
+        <%= data_type.humanize %>
+      </p>
+    </a>
+  <% end %>
+</div>
+
+<div class="dashboard-module" style="margin-bottom: 20px;">
+  <div class="module-body factoid-parent">
+    <p>💡 <strong>Note!</strong> After rectifying data integrity problems, you'll need to <a href="https://stacks.garden3d.net/admin/system_tasks?q%5Bname_contains%5D=stacks%3Adaily_tasks&commit=Filter&scope=success&order=id_desc" target="_blank">wait for the next <code>stacks:daily_tasks</code> job to settle</a> before the view below reflects your changes in external systems.</p>
+  </div>
+</div>
+
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+  <thead>
+    <tr>
+      <th class="col"><%= current_data_type.humanize %></th>
+      <th class="col text-right">Problems</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <% eval(current_data_type).each_with_index do |tuple, idx| %>
+      <% data_object, problems = tuple %>
+
+      <tr class="<%= idx.even? ? "even" : "odd" %>">
+        <td class="col">
+          <%= link_to "#{data_object.name} ↗", data_object.external_link, target: "_blank" %>
+        </td>
+
+        <td class="col text-right">
+          <% problems.map do |p| %>
+            <span class="pill at_risk"><%= p.to_s.humanize %></span>
+          <% end %>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
+
