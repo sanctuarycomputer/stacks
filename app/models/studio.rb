@@ -372,17 +372,21 @@ class Studio < ApplicationRecord
     [*core_members_involved_during_period.map(&:forecast_person), *non_core_forecast_people_involved_with_studio].compact
   end
 
-  def project_trackers_with_recorded_time_in_period(period)
+  def project_trackers_with_recorded_time_in_period(period, preloaded_studios = Studio.all)
     assignments =
       ForecastAssignment
-        .includes(:forecast_person)
-        .where(
+        .includes(
+          forecast_person: [:admin_user],
+          forecast_project: [:forecast_client]
+        ).where(
           'end_date >= ? AND start_date <= ? AND person_id in (?)',
           period.starts_at,
           period.ends_at,
           forecast_people_involved_with_studio_in_period(period).map(&:forecast_id)
         )
-    forecast_projects = assignments.map(&:forecast_project).uniq
+    forecast_projects = assignments.map(&:forecast_project).uniq.reject do |fp|
+      fp.is_internal?(preloaded_studios)
+    end
 
     ProjectTrackerForecastProject
       .includes(:project_tracker)
@@ -552,7 +556,7 @@ class Studio < ApplicationRecord
     leaving_members =
       studio_members_that_left_during_period(period)
 
-    all_projects = project_trackers_with_recorded_time_in_period(period)
+    all_projects = project_trackers_with_recorded_time_in_period(period, preloaded_studios)
     all_proposals = sent_proposals_settled_in_period(preloaded_new_biz_notion_pages, period)
 
     cogs_scenarios.map.with_index do |cogs, idx|

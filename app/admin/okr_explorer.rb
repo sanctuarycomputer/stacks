@@ -18,9 +18,10 @@ ActiveAdmin.register_page "OKR Explorer" do
 
     periods = Stacks::Period.for_gradation(current_gradation.to_sym)
 
+    preloaded_studios = Studio.all
     all_projects_by_period = if current_okr == "successful_projects"
       periods.reduce({}) do |acc, period|
-        acc[period] = studio.project_trackers_with_recorded_time_in_period(period)
+        acc[period] = studio.project_trackers_with_recorded_time_in_period(period, preloaded_studios)
         acc
       end
     end

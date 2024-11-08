@@ -10,7 +10,7 @@ class ForecastClient < ApplicationRecord
   end
 
   def is_internal?(preloaded_studios = Studio.all)
-    [*preloaded_studios.map(&:name), 'garden3d'].include?(name)
+    [*preloaded_studios.map(&:name), 'garden3d', 'Index Space LLC'].include?(name)
   end
 
   def qbo_term
