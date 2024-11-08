@@ -1,5 +1,5 @@
 ActiveAdmin.register_page "Data Integrity Explorer" do
-  menu label: "Data Integrity Explorer", parent: "System"
+  menu label: "Data Integrity Explorer", parent: "Dashboard"
 
   content title: proc { I18n.t("active_admin.data_integrity_explorer") } do
     problems = Stacks::DataIntegrityManager.new.discover_problems

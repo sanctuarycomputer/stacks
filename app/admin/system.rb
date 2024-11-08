@@ -5,7 +5,8 @@ ActiveAdmin.register System do
           div("#{System.instance.notifications.unread.count}", class: "notifier")
           "System"
         },
-        url: -> { url_for [:admin, :system] }
+        url: -> { url_for [:admin, :system] },
+        parent: "Dashboard"
 
   actions :show, :edit, :update
   permit_params settings: [System.storext_definitions.keys]

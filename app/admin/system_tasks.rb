@@ -5,7 +5,7 @@ ActiveAdmin.register SystemTask do
           div("#{SystemTask.in_progress.count}", class: "notifier")
           "Tasks"
         },
-        parent: "System"
+        parent: "Dashboard"
 
   config.filters = true
   config.paginate = true
