@@ -99,28 +99,50 @@ class Stacks::Notion
   end
 
   def sync_database(database_id)
+    database_entries_touched = []
     next_cursor = nil
     loop do
       response = query_database(database_id, next_cursor)
       response["results"].each do |r|
+        page_title = (r.dig("properties").values.find{|v| v["type"] == "title"}.dig("title", 0, "plain_text") || "")
+
         r.delete("icon") # Custom icons have an AWS Expiry that break our diff
         r.delete("cover") # Cover images have an AWS Expiry that break our diff
+        notion_id = r.dig("id")
         parent_type = r.dig("parent", "type")
         parent_id = r.dig("parent", parent_type)
+
+        database_entries_touched << {
+          notion_id: notion_id,
+          notion_parent_type: parent_type,
+          notion_parent_id: parent_id,
+        }
+
         page =
-          NotionPage.find_or_initialize_by(notion_id: r.dig("id"))
+          NotionPage.with_deleted.find_or_initialize_by(notion_id: notion_id)
+        # If someone accidentally trashed this page, recover it
+        page.recover! if page.deleted?
         if !page.persisted? || Hashdiff.diff(r, page.data).any?
           page.update_attributes!({
             notion_parent_type: parent_type,
             notion_parent_id: parent_id,
             data: r,
-            page_title: (r.dig("properties").values.find{|v| v["type"] == "title"}.dig("title", 0, "plain_text") || "")
+            page_title: page_title
           })
         end
       end
       next_cursor = response["next_cursor"]
       break if next_cursor.nil?
     end
+
+    return if database_entries_touched.empty?
+    NotionPage
+      .where(
+        notion_parent_type: database_entries_touched.first[:notion_parent_type],
+        notion_parent_id: database_entries_touched.first[:notion_parent_id]
+      ).where.not(
+        notion_id: database_entries_touched.map{|n| n[:notion_id]}
+      ).delete_all
   end
 end
 
