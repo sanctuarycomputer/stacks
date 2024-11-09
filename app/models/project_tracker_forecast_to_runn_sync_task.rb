@@ -35,7 +35,6 @@ class ProjectTrackerForecastToRunnSyncTask < ApplicationRecord
     runn(runn_instance)
     # TODO: Ensure we're requesting max page size
     runn_actuals_did_change = false
-    runn_actuals = runn.get_actuals_for_project(project_tracker.runn_project.runn_id)
     forecast_assignments = project_tracker.forecast_assignments.includes(:forecast_person, :forecast_project)
 
     # 1. Expand our multi-day forecast_assignments as single day Runn.io actuals for easy diffing
@@ -45,16 +44,32 @@ class ProjectTrackerForecastToRunnSyncTask < ApplicationRecord
 
       (fa.start_date..fa.end_date).each do |date|
         allocation_in_minutes = (fa.allocation_during_range_in_seconds(date, date, false) / 60.0)
-        acc << {
+
+        # Runn rounds to the nearest minute - no seconds are permitted.
+        if allocation_in_minutes % 1 != 0
+          raise Stacks::Errors::Base.new("A Forecast Assignment for '#{fa.forecast_person.email}' on #{date.to_s} for Forecast Project '#{fa.forecast_project.name}' includes seconds. Runn.io only accepts minutes (and we should never bill our clients in seconds). Please update that Forecast Assignment to the nearest minute.")
+        end
+
+        ra = {
           "date" => date.to_s,
           "billableMinutes" => allocation_in_minutes,
           "roleId" => runn_role["id"],
-          "personId" => runn_person["id"]
+          "personId" => runn_person["id"],
         }
+
+        if existing = acc.find{|era| era == ra}
+          # If someone has recorded work to two associated forecast projects,
+          # (and they share) the same billable rate, we simply collapse those
+          # forecast assignments into a single Runn actual.
+          existing["billableMinutes"] += ra["billableMinutes"]
+        else
+          acc << ra
+        end
       end
       acc
     end
 
+    runn_actuals = runn.get_actuals_for_project(project_tracker.runn_project.runn_id)
     # 2. Find Forecast Assignments that don't have a corresponding Runn actual & write them
     forecast_assigments_as_runn_actuals.each do |faara|
       matches = runn_actuals.select do |ra|
@@ -136,7 +151,7 @@ class ProjectTrackerForecastToRunnSyncTask < ApplicationRecord
     project_tracker_ltv = project_tracker.lifetime_value
     unless calculated_runn_revenue == project_tracker_ltv
       puts "~~~> Failure, even after sync, Runn revenue is different to project_tracker.lifetime_value"
-      raise Stacks::Errors::Base.new("Failed Runn sync for Project Tracker (ID: #{project_tracker.id}), Runn Revenue: #{calculated_runn_revenue}, Project Tracker LTV: #{project_tracker_ltv}")
+      raise Stacks::Errors::Base.new("Failed Runn sync for Project Tracker (#{project_tracker.name} ID: #{project_tracker.id}), Runn Revenue: #{calculated_runn_revenue}, Project Tracker LTV: #{project_tracker_ltv}")
     end
 
     puts "~~~> Worked! Stacks lifetime_value and runn_actuals revenue are in sync!"

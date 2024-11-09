@@ -42,7 +42,7 @@ class Stacks::Runn
     next_cursor = nil
     loop do
       response = handle_response {
-        self.class.get("/people?cursor=#{next_cursor}", headers: @headers)
+        self.class.get("/people?limit=200&cursor=#{next_cursor}", headers: @headers)
       }
       values = [*values, *response["values"]]
       next_cursor = response["nextCursor"]
@@ -56,7 +56,7 @@ class Stacks::Runn
     next_cursor = nil
     loop do
       response = handle_response {
-        self.class.get("/projects?cursor=#{next_cursor}", headers: @headers)
+        self.class.get("/projects?limit=200&cursor=#{next_cursor}", headers: @headers)
       }
       values = [*values, *response["values"]]
       next_cursor = response["nextCursor"]
@@ -69,7 +69,7 @@ class Stacks::Runn
     values = []
     next_cursor = nil
     loop do
-      response = self.class.get("/roles?cursor=#{next_cursor}", headers: @headers)
+      response = self.class.get("/roles?limit=200&cursor=#{next_cursor}", headers: @headers)
       raise response.to_s unless response.success?
       values = [*values, *response["values"]]
       next_cursor = response["nextCursor"]
@@ -83,7 +83,7 @@ class Stacks::Runn
     next_cursor = nil
     loop do
       response = handle_response {
-        self.class.get("/actuals?projectId=#{project_id}&cursor=#{next_cursor}", headers: @headers)
+        self.class.get("/actuals?limit=500&projectId=#{project_id}&cursor=#{next_cursor}", headers: @headers)
       }
       values = [*values, *response["values"]]
       next_cursor = response["nextCursor"]

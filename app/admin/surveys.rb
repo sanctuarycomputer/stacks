@@ -119,6 +119,10 @@ ActiveAdmin.register Survey do
       end
     end
 
+    column :responses do |resource|
+      "#{resource.survey_responses.count} responses (#{resource.expected_responders.count} expected)"
+    end
+
     actions
   end
 
