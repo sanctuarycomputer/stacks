@@ -37,8 +37,9 @@
           <tr>
             <th class="col">Project</th>
             <th class="col text-center">Considered Successful?</th>
-            <th class="col text-center">Foo</th>
-            <th class="col text-right">Foo</th>
+            <th class="col text-center">Days in Role</th>
+            <th class="col text-center">Prorated % Award of Leadership PSU Pool</th>
+            <th class="col text-right">Awarded Leadership PSU</th>
           </tr>
         </thead>
         <tbody>
@@ -55,10 +56,13 @@
                 <% end %>
               </td>
               <td class="col text-center">
-                Foo
+                <%= plr["days_in_role_this_year"] %> of <%= profit_share_pass.total_effective_project_leadership_days %> days
+              </td>
+              <td class="col text-center">
+                <%= (plr["award_percentage"] * 100).round(2) %>%
               </td>
               <td class="col text-right">
-                Foo PSU
+                <%= plr["awarded_psu"].to_f.round(2) %> PSU
               </td>
             </tr>
           <% end %>

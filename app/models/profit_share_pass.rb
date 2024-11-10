@@ -77,6 +77,7 @@ class ProfitSharePass < ApplicationRecord
   end
 
   def leadership_psu_pool
+    return @_leadership_psu_pool if @_leadership_psu_pool.present?
     g3d = Studio.garden3d
     xxix = Studio.find_by(mini_name: "xxix")
     sanctu = Studio.find_by(mini_name: "sanctu")
@@ -170,7 +171,7 @@ class ProfitSharePass < ApplicationRecord
       )
     end
 
-    {
+    @_leadership_psu_pool = {
       "datapoints" => collective_okrs,
       "total_awarded" => collective_okrs.map{|dp| dp["awarded_psu"] }.reduce(&:+),
       "max" => MAX_LEADERSHIP_PSU
@@ -181,9 +182,41 @@ class ProfitSharePass < ApplicationRecord
     created_at.end_of_year.yday
   end
 
-  def leadership_psu_pool_awards_for_admin_user(admin_user, total_leadership_pool)
+  def make_period
+    Stacks::Period.new(
+      "#{created_at.beginning_of_quarter.year}",
+      created_at.beginning_of_year,
+      created_at.end_of_year
+    )
+  end
+
+  def project_leadership_days_by_admin_user
+    period = make_period
+    @_project_leadership_days_by_admin_user ||= Studio.garden3d.core_members_active_on(finalization_day).includes(
+      technical_lead_periods: [project_tracker: [:forecast_assignments]],
+      creative_lead_periods: [project_tracker: [:forecast_assignments]],
+      project_lead_periods: [project_tracker: [:forecast_assignments]]
+    ).reduce({}) do |acc, a|
+      acc[a] = a.roles_in_period(period).reduce({}) do |axx, r|
+        axx[r] = r.effective_days_in_role_during_range(period.starts_at, period.ends_at)
+        axx
+      end
+      acc
+    end
+  end
+
+  def total_effective_project_leadership_days
+    @_total_effective_project_leadership_days ||= project_leadership_days_by_admin_user.reduce(0) do |acc, tuple|
+      admin_user, data = tuple
+      acc += data.values.reduce(&:+) || 0
+      acc
+    end
+  end
+
+  def leadership_psu_pool_awards_for_admin_user(admin_user, total_leadership_pool, project_leadership_data, total_effective_project_leadership_days)
     # Check how many CollectiveRoles this individual has held this
     # year, and what percentage of the year it's been held * 10%
+    # (TODO) remove Portfolio Manager
     collective_roles = CollectiveRoleHolderPeriod.where(admin_user: admin_user).map do |crhp|
       ended_at = crhp.period_ended_at || created_at.end_of_year
       next nil if ended_at < created_at.beginning_of_year
@@ -199,19 +232,24 @@ class ProfitSharePass < ApplicationRecord
       }
     end
 
-    project_leadership_roles = [
-      *ProjectLeadPeriod.where(admin_user: admin_user)
-    ].map do |prp|
+    # TODO: Remove internal projects from this list
+    # TODO: Take into account considered_successful?
+    project_leadership_roles = project_leadership_data[admin_user].map do |tuple|
+      prp, days = tuple
+      award_percentage = (0.3 * (days.to_f / total_effective_project_leadership_days))
       {
         "project_tracker_id" => prp.project_tracker_id,
         "role_type" => prp.class.to_s,
         "considered_successful?" => prp.project_tracker.considered_successful?,
+        "days_in_role_this_year" => days,
+        "award_percentage" => award_percentage,
+        "awarded_psu" => award_percentage * total_leadership_pool
       }
     end
 
     {
-      "collective_roles" => collective_roles,
-      "project_leadership_roles" => project_leadership_roles
+      "collective_roles" => collective_roles.compact,
+      "project_leadership_roles" => project_leadership_roles.compact
     }
   end
 
@@ -219,12 +257,26 @@ class ProfitSharePass < ApplicationRecord
     #return [] unless finalized? || (Date.today >= finalization_day)
     psu_value = scenario.actual_value_per_psu
     leadership_psu_pool_data = leadership_psu_pool
+    project_leadership_data = project_leadership_days_by_admin_user
+    total_effective_project_leadership_days = project_leadership_data.reduce(0) do |acc, tuple|
+      admin_user, data = tuple
+      acc += data.values.reduce(&:+) || 0
+      acc
+    end
 
     Studio.garden3d.core_members_active_on(finalization_day).map do |a|
       psu_earnt = a.psu_earned_by(finalization_day)
       psu_earnt = 0 if psu_earnt == nil
-      leadership_psu_breakdown = leadership_psu_pool_awards_for_admin_user(a, leadership_psu_pool_data["total_awarded"])
-      leadership_psu_earnt = leadership_psu_breakdown["collective_roles"].map{|r| r["awarded_psu"].to_f}.reduce(&:+) || 0
+      leadership_psu_breakdown = leadership_psu_pool_awards_for_admin_user(
+        a,
+        leadership_psu_pool_data["total_awarded"],
+        project_leadership_data,
+        total_effective_project_leadership_days
+      )
+      leadership_psu_earnt = (
+        (leadership_psu_breakdown["collective_roles"].map{|r| r["awarded_psu"].to_f}.reduce(&:+) || 0) +
+        (leadership_psu_breakdown["project_leadership_roles"].map{|r| r["awarded_psu"].to_f}.reduce(&:+) || 0)
+      )
       pre_spent_profit_share = a.pre_profit_share_spent_during(finalization_day.year)
       {
         admin_user: a,
@@ -233,7 +285,7 @@ class ProfitSharePass < ApplicationRecord
         leadership_psu_breakdown: leadership_psu_breakdown,
         leadership_psu_earnt: leadership_psu_earnt,
         pre_spent_profit_share: pre_spent_profit_share,
-        total_payout: (psu_value * psu_earnt) - pre_spent_profit_share
+        total_payout: (psu_value * (psu_earnt + leadership_psu_earnt)) - pre_spent_profit_share
       }
     end
   end
@@ -242,7 +294,11 @@ class ProfitSharePass < ApplicationRecord
     if finalized?
       snapshot["inputs"]["total_psu_issued"].to_f
     else
-      Studio.garden3d.core_members_active_on(finalization_day).map{|a| a.psu_earned_by(psu_earned_by_date) }.reject{|v| v == nil}.reduce(:+) || 0
+      tenured_psu = Studio.garden3d.core_members_active_on(finalization_day).map do |a|
+        a.psu_earned_by(psu_earned_by_date)
+      end.reject{|v| v == nil}.reduce(:+) || 0
+
+      tenured_psu + leadership_psu_pool["total_awarded"]
     end
   end
 
