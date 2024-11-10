@@ -1,0 +1,71 @@
+<div class="full-screen-modal hidden">
+  <div class="full-screen-modal__contents">
+    <div class="full-screen-modal__contents__body" style="padding: 0px 20px;">
+      <h2>Collective Roles</h2>
+      <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+        <thead>
+          <tr>
+            <th class="col">Role</th>
+            <th class="col text-center">Days in Role</th>
+            <th class="col text-center">Prorated % Award of Leadership PSU Pool</th>
+            <th class="col text-right">Awarded Leadership PSU</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% share[:leadership_psu_breakdown]["collective_roles"].each_with_index do |crhp, index| %>
+            <tr class="<%= index.even? ? "even" : "odd" %>">
+              <td class="col">
+                <%= CollectiveRole.find(crhp["collective_role_id"]).name %>
+              </td>
+              <td class="col text-center">
+                <%= crhp["days_in_role_this_year"] %> of <%= profit_share_pass.days_this_year %> days
+              </td>
+              <td class="col text-center">
+                <%= (crhp["award_percentage"].to_f * 100).round(2) %>%
+              </td>
+              <td class="col text-right">
+                <%= crhp["awarded_psu"].to_f.round(2) %> PSU
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+
+      <h2>PL/CL/TL Roles</h2>
+      <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+        <thead>
+          <tr>
+            <th class="col">Project</th>
+            <th class="col text-center">Considered Successful?</th>
+            <th class="col text-center">Foo</th>
+            <th class="col text-right">Foo</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% share[:leadership_psu_breakdown]["project_leadership_roles"].each_with_index do |plr, index| %>
+            <tr class="<%= index.even? ? "even" : "odd" %>">
+              <td class="col">
+                <%= ProjectTracker.find(plr["project_tracker_id"]).name %> (<%= plr["role_type"] %>)
+              </td>
+              <td class="col text-center">
+                <% if plr["considered_successful?"] %>
+                  <span class="status_tag yes">Yes</span>
+                <% else %>
+                  <span class="status_tag no">No</span>
+                <% end %>
+              </td>
+              <td class="col text-center">
+                Foo
+              </td>
+              <td class="col text-right">
+                Foo PSU
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+
+
+    </div>
+  </div>
+</div>

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2024_11_08_110258) do
+ActiveRecord::Schema.define(version: 2024_11_10_180811) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_stat_statements"
@@ -466,6 +466,7 @@ ActiveRecord::Schema.define(version: 2024_11_08_110258) do
     t.decimal "efficiency_cap", default: "1.6"
     t.jsonb "snapshot"
     t.decimal "internals_budget_multiplier", default: "0.5"
+    t.text "description"
   end
 
   create_table "project_capsules", force: :cascade do |t|

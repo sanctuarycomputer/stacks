@@ -23,6 +23,7 @@ class Stacks::DataIntegrityManager
       notion_leads: discover_notion_lead_problems,
       forecast_projects: discover_forecast_project_problems,
       forecast_people: discover_forecast_people_problems,
+      forecast_assignments: discover_forecast_assignment_problems,
       admin_users: discover_admin_user_problems,
       project_trackers: discover_project_tracker_problems
     }
@@ -79,6 +80,18 @@ class Stacks::DataIntegrityManager
       else
         acc[fp] = [*acc[fp], :multiple_studios_in_forecast]
       end
+      acc
+    end
+  end
+
+  def discover_forecast_assignment_problems
+    forecast_assignments = ForecastAssignment.where('end_date > ?', Date.today).reduce({}) do |acc, o|
+      acc[o] = [*(acc[o] || []), :date_in_future]
+      acc
+    end
+
+    ForecastAssignment.where('mod(allocation / 60.0, 1) != 0').reduce(forecast_assignments) do |acc, o|
+      acc[o] = [*(acc[o] || []), :allocation_needs_rounding_to_nearest_minute]
       acc
     end
   end
