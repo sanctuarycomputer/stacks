@@ -1,0 +1,38 @@
+<% admin_user.roles_by_year.each do |period, roles| %>
+  <h1><%= period.label %></h1>
+
+  <%= total_role_days_by_period[period.label] %>
+
+  <table border="0" cellspacing="0" cellpadding="0" class="index_table index mb2">
+    <thead>
+      <tr>
+        <th class="col">Project</th>
+        <th class="col">Role</th>
+        <th class="col">Role Started At</th>
+        <th class="col">Role Ended At</th>
+        <th class="col text-right">Time Held in Days</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% roles.each_with_index do |p, index| %>
+        <tr class="<%= index.even? ? "even" : "odd" %>">
+          <td class="col">
+            <%= link_to p.project_tracker.name, admin_project_tracker_path(p.project_tracker) %>
+          </td>
+          <td class="col">
+            <%= p.class.to_s %>
+          </td>
+          <td class="col">
+            <%= [p.period_started_at, period.starts_at].max %>
+          </td>
+          <td class="col">
+            <%= [p.period_ended_at, period.ends_at].min %>
+          </td>
+          <td class="col text-right">
+            <%= p.effective_days_in_role_during_range(period.starts_at, period.ends_at) %> days
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+<% end %>

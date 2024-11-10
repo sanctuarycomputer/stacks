@@ -445,6 +445,20 @@ class ProjectTracker < ApplicationRecord
     (profit / spend) * 100
   end
 
+  def dates_with_recorded_assignments_in_range(start_range, end_range)
+    assignments = forecast_assignments
+        .where('forecast_assignments.end_date >= ? AND forecast_assignments.start_date <= ?', start_range, end_range)
+    assignments.reduce({}) do |acc, fa|
+      (fa.start_date..fa.end_date).each do |date|
+        if date >= start_range && date <= end_range
+          acc[date] = acc[date] ||= 0
+          acc[date] += 1
+        end
+      end
+      acc
+    end.keys.count
+  end
+
   def total_hours_during_range_by_studio(preloaded_studios = Studio.all, start_range, end_range)
     assignments =
       ForecastAssignment
