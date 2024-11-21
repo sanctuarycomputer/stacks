@@ -2,7 +2,7 @@ class ProfitSharePass < ApplicationRecord
   MAX_LEADERSHIP_PSU = 240
 
   def self.this_year
-    ProfitSharePass.all.select{|p| p.created_at.year == Time.now.year}
+    ProfitSharePass.all.select{|p| p.created_at.year == Time.now.year}.first
   end
 
   scope :finalized , -> {
@@ -39,8 +39,7 @@ class ProfitSharePass < ApplicationRecord
   end
 
   def self.ensure_exists!
-    return ProfitSharePass.this_year.first if ProfitSharePass.this_year.any?
-    ProfitSharePass.create!
+    ProfitSharePass.this_year || ProfitSharePass.create!
   end
 
   def is_projection?
@@ -198,17 +197,35 @@ class ProfitSharePass < ApplicationRecord
       project_lead_periods: [project_tracker: [:forecast_assignments]]
     ).reduce({}) do |acc, a|
       acc[a] = a.roles_in_period(period).reduce({}) do |axx, r|
-        axx[r] = r.effective_days_in_role_during_range(period.starts_at, period.ends_at)
+        axx[r] = {
+          days: r.effective_days_in_role_during_range(period.starts_at, period.ends_at),
+          considered_successful: r.project_tracker.considered_successful?
+        }
         axx
       end
       acc
     end
   end
 
+  def includes_leadership_psu_pool?
+    created_at.year >= 2024
+  end
+
+  def total_effective_successful_project_leadership_days
+    @_total_effective_successful_project_leadership_days ||= project_leadership_days_by_admin_user.reduce(0) do |acc, tuple|
+      admin_user, data = tuple
+      acc += data.values.map do |d|
+        d[:considered_successful] ? d[:days] : 0
+      end.reduce(&:+) || 0
+      acc
+    end
+  end
+
+
   def total_effective_project_leadership_days
     @_total_effective_project_leadership_days ||= project_leadership_days_by_admin_user.reduce(0) do |acc, tuple|
       admin_user, data = tuple
-      acc += data.values.reduce(&:+) || 0
+      acc += data.values.map{|d| d[:days]}.reduce(&:+) || 0
       acc
     end
   end
