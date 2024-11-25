@@ -393,22 +393,3 @@ if (button) {
   })
 }
 </script>
-
-<script>
-function openLeadershipPSUBreakdownModal(e) {
-  e.parentNode.querySelector('.full-screen-modal').classList.remove('hidden');
-}
-
-function closeFullScreenModal(modalEl) {
-  modalEl.dataset.namespace = null;
-  const parent = modalEl.querySelector('.full-screen-modal__contents__body');
-  modalEl.classList.add('hidden');
-}
-
-document.querySelectorAll('.full-screen-modal').forEach(e => {
-  e.addEventListener("click", function(event) {
-    if (event.target !== this) return;
-    closeFullScreenModal(this);
-  });
-});
-</script>
