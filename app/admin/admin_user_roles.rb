@@ -8,12 +8,8 @@ ActiveAdmin.register_page "Admin User Roles" do
 
     psp = current_year.downcase.start_with?("ytd") ? ProfitSharePass.this_year : ProfitSharePass.all.find{|p| p.created_at.year.to_s == current_year}
 
-    # TODO: What if a very old user
     admin_user = AdminUser.find(params["admin_user_id"])
-    _, project_role_days = psp.project_leadership_days_by_admin_user.find do |a, data|
-      a == admin_user
-    end
-    project_role_days = {} if project_role_days.nil?
+    project_role_days = psp.project_leadership_days_by_admin_user[admin_user] || {}
 
     individual_total_effective_project_leadership_days = project_role_days.reduce(0) do |acc, tuple|
       role, d = tuple
@@ -35,6 +31,7 @@ ActiveAdmin.register_page "Admin User Roles" do
 
       admin_user: admin_user,
       psp: psp,
+      project_role_days: project_role_days,
       individual_total_effective_project_leadership_days: individual_total_effective_project_leadership_days,
       individual_total_effective_successful_project_leadership_days: individual_total_effective_successful_project_leadership_days,
     })

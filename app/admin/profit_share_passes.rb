@@ -8,7 +8,9 @@ ActiveAdmin.register ProfitSharePass do
   permit_params :payroll_buffer_months,
     :efficiency_cap,
     :internals_budget_multiplier,
-    :description
+    :description,
+    :leadership_psu_pool_cap,
+    :leadership_psu_pool_project_role_holders_percentage
 
   action_item :finalize, only: :edit, if: proc { current_admin_user.is_admin? } do
     if resource.finalized?
@@ -61,6 +63,8 @@ ActiveAdmin.register ProfitSharePass do
       f.input :payroll_buffer_months, input_html: { disabled: resource.finalized? }
       f.input :efficiency_cap, input_html: { disabled: resource.finalized? }
       f.input :internals_budget_multiplier, input_html: { disabled: resource.finalized? }
+      f.input :leadership_psu_pool_cap, input_html: { disabled: resource.finalized? }
+      f.input :leadership_psu_pool_project_role_holders_percentage, input_html: { disabled: resource.finalized? }
       f.input :description, label: "❗Important Notes (accepts markdown)"
     end
     f.actions

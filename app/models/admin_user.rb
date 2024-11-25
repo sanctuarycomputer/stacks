@@ -204,9 +204,9 @@ class AdminUser < ApplicationRecord
     !AdminUser.active.include?(self)
   end
 
-  def full_time_periods
-    @_full_time_periods ||= super
-  end
+  # def full_time_periods
+  #   @_full_time_periods ||= super
+  # end
 
   def considered_temporary?
     full_time_periods.map(&:considered_temporary).all?

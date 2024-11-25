@@ -13,7 +13,10 @@ class TechnicalLeadPeriod < ApplicationRecord
   end
 
   def effective_days_in_role_during_range(start_range, end_range)
-    project_tracker.dates_with_recorded_assignments_in_range(start_range, end_range)
+    project_tracker.dates_with_recorded_assignments_in_range(
+      [start_range, period_started_at].max,
+      [period_ended_at, end_range].min
+    )
   end
 
   def sibling_periods

@@ -1,6 +1,4 @@
 class ProfitSharePass < ApplicationRecord
-  MAX_LEADERSHIP_PSU = 240
-
   def self.this_year
     ProfitSharePass.all.select{|p| p.created_at.year == Time.now.year}.first
   end
@@ -76,7 +74,6 @@ class ProfitSharePass < ApplicationRecord
   end
 
   def leadership_psu_pool
-    return @_leadership_psu_pool if @_leadership_psu_pool.present?
     g3d = Studio.garden3d
     xxix = Studio.find_by(mini_name: "xxix")
     sanctu = Studio.find_by(mini_name: "sanctu")
@@ -100,58 +97,58 @@ class ProfitSharePass < ApplicationRecord
     )
 
     collective_okrs = [{
-      "datapoint" => :profit_margin,
+      "datapoint" => "profit_margin",
       "okr" => g3d.ytd_snapshot.dig("accrual", "okrs_excluding_reinvestment", "Profit Margin"),
-      "role_holders" => [*CollectiveRole.find_by(name: "General Manager").current_collective_role_holders]
+      "role_holders" => [*CollectiveRole.find_by(name: "General Manager").try(:current_collective_role_holders)]
     }, {
-      "datapoint" => :revenue_growth,
+      "datapoint" => "revenue_growth",
       "okr" => g3d_ytd_revenue_growth_okr,
       "growth_progress" => g3d_ytd_revenue_growth_progress,
-      "role_holders" => [*CollectiveRole.find_by(name: "General Manager").current_collective_role_holders]
+      "role_holders" => [*CollectiveRole.find_by(name: "General Manager").try(:current_collective_role_holders)]
     }, {
-      "datapoint" => :successful_design_projects,
+      "datapoint" => "successful_design_projects",
       "okr" => xxix.ytd_snapshot.dig("accrual", "okrs", "Successful Projects"),
       "role_holders" => [
-        *CollectiveRole.find_by(name: "Creative Director").current_collective_role_holders,
-        *CollectiveRole.find_by(name: "Apprentice Creative Director").current_collective_role_holders,
-        *CollectiveRole.find_by(name: "Director of Project Delivery").current_collective_role_holders,
+        *CollectiveRole.find_by(name: "Creative Director").try(:current_collective_role_holders),
+        *CollectiveRole.find_by(name: "Apprentice Creative Director").try(:current_collective_role_holders),
+        *CollectiveRole.find_by(name: "Director of Project Delivery").try(:current_collective_role_holders),
       ]
     }, {
-      "datapoint" => :successful_development_projects,
+      "datapoint" => "successful_development_projects",
       "okr" => sanctu.ytd_snapshot.dig("accrual", "okrs", "Successful Projects"),
       "role_holders" => [
-        *CollectiveRole.find_by(name: "Technical Director").current_collective_role_holders,
-        *CollectiveRole.find_by(name: "Apprentice Technical Director").current_collective_role_holders,
-        *CollectiveRole.find_by(name: "Director of Project Delivery").current_collective_role_holders,
+        *CollectiveRole.find_by(name: "Technical Director").try(:current_collective_role_holders),
+        *CollectiveRole.find_by(name: "Apprentice Technical Director").try(:current_collective_role_holders),
+        *CollectiveRole.find_by(name: "Director of Project Delivery").try(:current_collective_role_holders),
       ]
     }, {
-      "datapoint" => :successful_design_proposals,
+      "datapoint" => "successful_design_proposals",
       "okr" => xxix.ytd_snapshot.dig("accrual", "okrs", "Successful Proposals"),
       "role_holders" => [
-        *CollectiveRole.find_by(name: "Director of Business Development").current_collective_role_holders,
-        *CollectiveRole.find_by(name: "Creative Director").current_collective_role_holders,
+        *CollectiveRole.find_by(name: "Director of Business Development").try(:current_collective_role_holders),
+        *CollectiveRole.find_by(name: "Creative Director").try(:current_collective_role_holders),
       ]
     }, {
-      "datapoint" => :successful_development_proposals,
+      "datapoint" => "successful_development_proposals",
       "okr" => sanctu.ytd_snapshot.dig("accrual", "okrs", "Successful Proposals"),
       "role_holders" => [
-        *CollectiveRole.find_by(name: "Director of Business Development").current_collective_role_holders,
-        *CollectiveRole.find_by(name: "Technical Director").current_collective_role_holders
+        *CollectiveRole.find_by(name: "Director of Business Development").try(:current_collective_role_holders),
+        *CollectiveRole.find_by(name: "Technical Director").try(:current_collective_role_holders)
       ]
     }, {
-      "datapoint" => :lead_growth,
+      "datapoint" => "lead_growth",
       "okr" => g3d_ytd_lead_growth_okr,
       "growth_progress" => g3d_ytd_lead_growth_progress,
       "role_holders" => [
-        *CollectiveRole.find_by(name: "Director of Business Development").current_collective_role_holders,
-        *CollectiveRole.find_by(name: "Director of Communications").current_collective_role_holders
+        *CollectiveRole.find_by(name: "Director of Business Development").try(:current_collective_role_holders),
+        *CollectiveRole.find_by(name: "Director of Communications").try(:current_collective_role_holders)
       ]
     }, {
-      "datapoint" => :workplace_satisfaction,
-      "okr" => nil,
+      "datapoint" => "workplace_satisfaction",
+      "okr" => g3d.ytd_snapshot.dig("accrual", "okrs_excluding_reinvestment", "Workplace Satisfaction"),
       "role_holders" => [
-        *CollectiveRole.find_by(name: "Director of Project Delivery").current_collective_role_holders,
-        *CollectiveRole.find_by(name: "Director of People Ops").current_collective_role_holders
+        *CollectiveRole.find_by(name: "Director of Project Delivery").try(:current_collective_role_holders),
+        *CollectiveRole.find_by(name: "Director of People Ops").try(:current_collective_role_holders)
       ]
     }]
 
@@ -166,15 +163,15 @@ class ProfitSharePass < ApplicationRecord
         dp.dig("okr", "target").to_f - dp.dig("okr", "tolerance").to_f,
         dp.dig("okr", "target").to_f + dp.dig("okr", "tolerance").to_f,
         0,
-        (MAX_LEADERSHIP_PSU.to_f / collective_okrs.count)*2
+        (leadership_psu_pool_cap.to_f / collective_okrs.count)*2
       )
     end
 
-    @_leadership_psu_pool = {
-      "datapoints" => collective_okrs,
-      "total_awarded" => collective_okrs.map{|dp| dp["awarded_psu"] }.reduce(&:+),
-      "max" => MAX_LEADERSHIP_PSU
-    }
+    {
+      "collective_okrs" => collective_okrs,
+      "total_awarded" => collective_okrs.map{|dp| dp["awarded_psu"] }.reduce(&:+).clamp(0, leadership_psu_pool_cap),
+      "max" => leadership_psu_pool_cap
+    }.deep_stringify_keys
   end
 
   def days_this_year
@@ -208,7 +205,7 @@ class ProfitSharePass < ApplicationRecord
   end
 
   def includes_leadership_psu_pool?
-    created_at.year >= 2024
+    leadership_psu_pool_cap > 0
   end
 
   def total_effective_successful_project_leadership_days
@@ -221,7 +218,6 @@ class ProfitSharePass < ApplicationRecord
     end
   end
 
-
   def total_effective_project_leadership_days
     @_total_effective_project_leadership_days ||= project_leadership_days_by_admin_user.reduce(0) do |acc, tuple|
       admin_user, data = tuple
@@ -230,79 +226,40 @@ class ProfitSharePass < ApplicationRecord
     end
   end
 
-  def leadership_psu_pool_awards_for_admin_user(admin_user, total_leadership_pool, project_leadership_data, total_effective_project_leadership_days)
-    # Check how many CollectiveRoles this individual has held this
-    # year, and what percentage of the year it's been held * 10%
-    # (TODO) remove Portfolio Manager
-    collective_roles = CollectiveRoleHolderPeriod.where(admin_user: admin_user).map do |crhp|
-      ended_at = crhp.period_ended_at || created_at.end_of_year
-      next nil if ended_at < created_at.beginning_of_year
-      next nil if crhp.period_started_at > created_at.end_of_year
-      days_in_role_this_year = (crhp.period_started_at..ended_at.to_date).count
-      award_percentage = (crhp.collective_role.name.downcase.include?("apprentice") ? 0.05 : 0.1) * (days_in_role_this_year / 366.0)
+  def awarded_project_leadership_psu_proportion_for_admin_user(admin_user)
+    project_role_days = project_leadership_days_by_admin_user[admin_user] || {}
 
-      {
-        "collective_role_id" => crhp.collective_role.id,
-        "days_in_role_this_year" => days_in_role_this_year,
-        "award_percentage" => award_percentage,
-        "awarded_psu" => award_percentage * total_leadership_pool
-      }
+    individual_total_effective_successful_project_leadership_days = project_role_days.reduce(0) do |acc, tuple|
+      role, d = tuple
+      acc += d[:considered_successful] ? d[:days] : 0
+      acc
     end
 
-    # TODO: Remove internal projects from this list
-    # TODO: Take into account considered_successful?
-    project_leadership_roles = project_leadership_data[admin_user].map do |tuple|
-      prp, days = tuple
-      award_percentage = (0.3 * (days.to_f / total_effective_project_leadership_days))
-      {
-        "project_tracker_id" => prp.project_tracker_id,
-        "role_type" => prp.class.to_s,
-        "considered_successful?" => prp.project_tracker.considered_successful?,
-        "days_in_role_this_year" => days,
-        "award_percentage" => award_percentage,
-        "awarded_psu" => award_percentage * total_leadership_pool
-      }
-    end
-
-    {
-      "collective_roles" => collective_roles.compact,
-      "project_leadership_roles" => project_leadership_roles.compact
-    }
+    (individual_total_effective_successful_project_leadership_days / total_effective_successful_project_leadership_days.to_f)
   end
 
   def payments(scenario = make_scenario)
     #return [] unless finalized? || (Date.today >= finalization_day)
     psu_value = scenario.actual_value_per_psu
-    leadership_psu_pool_data = leadership_psu_pool
-    project_leadership_data = project_leadership_days_by_admin_user
-    total_effective_project_leadership_days = project_leadership_data.reduce(0) do |acc, tuple|
-      admin_user, data = tuple
-      acc += data.values.reduce(&:+) || 0
-      acc
-    end
+
+    lpp = leadership_psu_pool
 
     Studio.garden3d.core_members_active_on(finalization_day).map do |a|
-      psu_earnt = a.psu_earned_by(finalization_day)
-      psu_earnt = 0 if psu_earnt == nil
-      leadership_psu_breakdown = leadership_psu_pool_awards_for_admin_user(
-        a,
-        leadership_psu_pool_data["total_awarded"],
-        project_leadership_data,
-        total_effective_project_leadership_days
+      tenured_psu_earnt = a.psu_earned_by(finalization_day) || 0
+
+      # TODO: Add in collective_leadership_psu_earnt
+      project_leadership_psu_earnt = (
+        awarded_project_leadership_psu_proportion_for_admin_user(a) * lpp["total_awarded"] * (leadership_psu_pool_project_role_holders_percentage / 100)
       )
-      leadership_psu_earnt = (
-        (leadership_psu_breakdown["collective_roles"].map{|r| r["awarded_psu"].to_f}.reduce(&:+) || 0) +
-        (leadership_psu_breakdown["project_leadership_roles"].map{|r| r["awarded_psu"].to_f}.reduce(&:+) || 0)
-      )
+
       pre_spent_profit_share = a.pre_profit_share_spent_during(finalization_day.year)
       {
         admin_user: a,
         psu_value: psu_value,
-        psu_earnt: psu_earnt,
-        leadership_psu_breakdown: leadership_psu_breakdown,
-        leadership_psu_earnt: leadership_psu_earnt,
+        psu_earnt: tenured_psu_earnt,
+        leadership_psu_earnt: project_leadership_psu_earnt,
         pre_spent_profit_share: pre_spent_profit_share,
-        total_payout: (psu_value * (psu_earnt + leadership_psu_earnt)) - pre_spent_profit_share
+        total_payout: (psu_value * (tenured_psu_earnt + project_leadership_psu_earnt)) - pre_spent_profit_share
       }
     end
   end

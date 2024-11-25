@@ -55,8 +55,8 @@ class Okr < ApplicationRecord
         actual: current_value
       },
       abs: 0,
-      total_days_this_year: Date.today.end_of_year.yday,
-      elapsed_days_this_year: Date.today.yday,
+      total_days_this_year: Date.today.end_of_year.yday.to_f,
+      elapsed_days_this_year: Date.today.yday.to_f,
       unit: base_unit_type
     }
 

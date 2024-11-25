@@ -8,6 +8,7 @@ ActiveAdmin.register CollectiveRole do
 
   permit_params :name,
     :notion_link,
+    :leadership_psu_pool_weighting,
     collective_role_holder_periods_attributes: [
       :id,
       :admin_user_id,
@@ -41,6 +42,7 @@ ActiveAdmin.register CollectiveRole do
       f.semantic_errors
       f.input :name
       f.input :notion_link
+      f.input :leadership_psu_pool_weighting
 
       f.has_many :collective_role_holder_periods, heading: false, allow_destroy: true, new_record: 'Add a Collective Role Holder' do |a|
         a.input :admin_user

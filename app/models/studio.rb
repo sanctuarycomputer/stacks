@@ -410,7 +410,7 @@ class Studio < ApplicationRecord
   end
 
   def self.garden3d
-    @@g3d_instance ||= Studio.find_by(name: "garden3d", mini_name: "g3d")
+    Studio.find_by(name: "garden3d", mini_name: "g3d")
   end
 
   def skill_levels_on(date)
@@ -448,6 +448,29 @@ class Studio < ApplicationRecord
           coalesce(studio_memberships.ended_at, 'infinity') >= :date AND
           studio_memberships.studio_id = :studio_id
         ", { date: date, studio_id: self.id })
+    end
+  end
+
+  def core_members_active_during_range(start_range, end_range)
+    if is_garden3d?
+      AdminUser
+        .joins(:full_time_periods)
+        .where("
+          coalesce(full_time_periods.ended_at, 'infinity') >= :start_range AND
+          full_time_periods.started_at <= :end_range AND
+          full_time_periods.contributor_type IN (0, 1)
+        ", { start_range: start_range, end_range: end_range })
+    else
+      admin_users
+        .joins(:full_time_periods, :studio_memberships)
+        .where("
+          coalesce(full_time_periods.ended_at, 'infinity') >= :start_range AND
+          full_time_periods.started_at <= :end_range AND
+          full_time_periods.contributor_type IN (0, 1) AND
+          coalesce(studio_memberships.ended_at, 'infinity') >= :start_range AND
+          studio_memberships.started_at <= :end_range AND
+          studio_memberships.studio_id = :studio_id
+        ", { start_range: start_range, end_range: end_range, studio_id: self.id })
     end
   end
 

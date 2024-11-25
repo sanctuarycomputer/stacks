@@ -44,3 +44,41 @@ function update(a, b) {
     </div>
   </div>
 </div>
+
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom: 0px;">
+  <thead>
+    <tr>
+      <th class="col">Project</th>
+      <th class="col text-center">Role</th>
+      <th class="col text-center">Considered Successful?</th>
+      <th class="col text-right">Role Days</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% project_role_days.each_with_index do |tuple, idx| %>
+      <% role, data = tuple %>
+      <tr class="<%= idx.even? ? "even" : "odd" %>">
+        <td class="col text-left">
+          <%= link_to role.project_tracker.name, admin_project_tracker_path(role.project_tracker) %>
+        </td>
+        <td class="col text-center">
+          <%= role.class.to_s %>
+        </td>
+        <td class="col text-center">
+          <% if data[:considered_successful] %>
+            <span class="status_tag yes">Yes</span>
+          <% else %>
+            <span class="status_tag no">No</span>
+          <% end %>
+        </td>
+        <td class="col text-right">
+          <% if data[:considered_successful] %>
+            <%= data[:days] %>
+          <% else %>
+            <strike><%= data[:days] %></strike> 0
+          <% end %>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>

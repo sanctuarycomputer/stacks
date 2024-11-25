@@ -302,7 +302,7 @@
     </tr>
   </thead>
   <tbody>
-    <% profit_share_pass.leadership_psu_pool["datapoints"].each_with_index do |dp, index| %>
+    <% profit_share_pass.leadership_psu_pool["collective_okrs"].each_with_index do |dp, index| %>
       <tr class="<%= index.even? ? "even" : "odd" %>">
         <td class="col">
           <%= dp["datapoint"].to_s.humanize %>
@@ -325,7 +325,7 @@
       <td></td>
       <td></td>
       <td class="col text-right">
-        <%= profit_share_pass.leadership_psu_pool["total_awarded"].round(2) %> of <%= ProfitSharePass::MAX_LEADERSHIP_PSU %>
+        <%= profit_share_pass.leadership_psu_pool["total_awarded"].round(2) %> of <%= profit_share_pass.leadership_psu_pool_cap %>
       </td>
     </tr>
   </tbody>
@@ -358,8 +358,7 @@
         </td>
         <td class="col text-center">
           <%= share[:leadership_psu_earnt].round(2) || 'N/A' %>
-          <a onclick="openLeadershipPSUBreakdownModal(this)">Explain</a>
-          <%= render partial: 'leadership_psu_breakdown_modal', locals: { share: share, profit_share_pass: profit_share_pass } %>
+          <%= link_to "Explain ↗", admin_admin_user_admin_user_roles_path(share[:admin_user]) %>
         </td>
         <td class="col text-center">
           <%= number_to_currency(share[:psu_value]) %>
