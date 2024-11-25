@@ -6,6 +6,10 @@ class AdminUser < ApplicationRecord
 
   has_many :project_lead_periods, dependent: :delete_all
   has_many :studio_coordinator_periods, dependent: :delete_all
+  has_many :creative_lead_periods
+  has_many :technical_lead_periods
+  has_many :project_safety_representative_periods
+
 
   has_many :invoice_trackers, dependent: :nullify
   has_one :forecast_person, class_name: "ForecastPerson", foreign_key: "email", primary_key: "email"
@@ -80,6 +84,24 @@ class AdminUser < ApplicationRecord
       email: email,
       provider: "google_oauth2"
     )
+  end
+
+  def roles_in_period(period)
+    [
+      project_lead_periods,
+      creative_lead_periods,
+      technical_lead_periods,
+    ].flatten.select do |p|
+      p.effective_days_in_role_during_range(period.starts_at, period.ends_at) > 0
+    end
+  end
+
+  def roles_by_year
+    periods = Stacks::Period.for_gradation(:year)
+    periods.reduce({}) do |acc, p|
+      acc[p] = roles_in_period(p)
+      acc
+    end
   end
 
   def approximate_cost_per_hour_before_studio_expenses
@@ -182,9 +204,9 @@ class AdminUser < ApplicationRecord
     !AdminUser.active.include?(self)
   end
 
-  def full_time_periods
-    @_full_time_periods ||= super
-  end
+  # def full_time_periods
+  #   @_full_time_periods ||= super
+  # end
 
   def considered_temporary?
     full_time_periods.map(&:considered_temporary).all?

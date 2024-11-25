@@ -85,7 +85,7 @@ class Stacks::Utils
     end
 
     def clamp(x, in_min, in_max, out_min, out_max)
-      (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+      ((x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min).clamp(out_min, out_max)
     end
 
     def full_months_between(date2, date1)

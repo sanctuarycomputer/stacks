@@ -47,7 +47,7 @@ class ProjectTrackerForecastToRunnSyncTask < ApplicationRecord
 
         # Runn rounds to the nearest minute - no seconds are permitted.
         if allocation_in_minutes % 1 != 0
-          raise Stacks::Errors::Base.new("A Forecast Assignment for '#{fa.forecast_person.email}' on #{date.to_s} for Forecast Project '#{fa.forecast_project.name}' includes seconds. Runn.io only accepts minutes (and we should never bill our clients in seconds). Please update that Forecast Assignment to the nearest minute.")
+          raise Stacks::Errors::Base.new("A Forecast Assignment for '#{fa.forecast_person.email}' on #{date.to_s} for Forecast Project '#{fa.forecast_project.name}' includes seconds. Runn.io only accepts minutes (and we should never bill our clients in seconds). Please update that Forecast Assignment to the nearest minute: #{fa.external_link}")
         end
 
         ra = {

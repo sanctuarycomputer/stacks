@@ -21,6 +21,18 @@
 
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
+    <div class="module-header">
+      <p>Description</p>
+    </div>
+
+    <div class="module-body">
+      <%= sanitize RDiscount.new(profit_share_pass.description || "").to_html %>
+    </div>
+  </div>
+</div>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
     <div class="module-body factoid-parent">
       <div class="factoid">
         <h2><%= number_to_currency(profit_share_pass.prespent_profit_share) %></h2>
@@ -214,7 +226,7 @@
           <tr class="odd">
             <td class="col">Total PSU Issued</td>
             <td class="col">
-              <%= scenario.total_psu_issued %>
+              <%= scenario.total_psu_issued.round(2) %>
             </td>
           </tr>
         </tbody>
@@ -280,16 +292,56 @@
   </div>
 </div>
 
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index mb2">
+  <thead>
+    <tr>
+      <th class="col">Datapoint</th>
+      <th class="col text-center">Target</th>
+      <th class="col text-center">Actual</th>
+      <th class="col text-right">Awarded PSU</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% profit_share_pass.leadership_psu_pool["collective_okrs"].each_with_index do |dp, index| %>
+      <tr class="<%= index.even? ? "even" : "odd" %>">
+        <td class="col">
+          <%= dp["datapoint"].to_s.humanize %>
+        </td>
+        <td class="col text-center">
+          <%= dp.dig("okr", "target").to_f.round(2) %> (±<%= dp.dig("okr", "tolerance").to_f.round(2) %>)
+        </td>
+        <td class="col text-center">
+          <%= dp.dig("okr", "value").to_f.round(2) %>
+        </td>
+        <td class="col text-right">
+          <%= dp.dig("awarded_psu").to_f.round(2) %>
+        </td>
+      </tr>
+    <% end %>
+    <tr class="odd">
+      <td class="col">
+        <strong>Total Leadership PSU</strong>
+      </td>
+      <td></td>
+      <td></td>
+      <td class="col text-right">
+        <%= profit_share_pass.leadership_psu_pool["total_awarded"].round(2) %> of <%= profit_share_pass.leadership_psu_pool_cap %>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
 <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
   <div id="titlebar_left">
-    <h2 id="page_title">🤝 Profit Shares</h2>
+    <h2 id="page_title">🤝 Tenured PSU</h2>
   </div>
 </div>
 <table border="0" cellspacing="0" cellpadding="0" class="index_table index mb2">
   <thead>
     <tr>
       <th class="col">Profit Shares</th>
-      <th class="col text-center">PSU</th>
+      <th class="col text-center">Tenured PSU</th>
+      <th class="col text-center">Leadership PSU</th>
       <th class="col text-center">Value</th>
       <th class="col text-center">Pre-spent</th>
       <th class="col text-right">Payout</th>
@@ -302,7 +354,11 @@
           <%= share[:admin_user].email %>
         </td>
         <td class="col text-center">
-          <%= share[:psu_earnt] %>
+          <%= share[:psu_earnt].round(2) %>
+        </td>
+        <td class="col text-center">
+          <%= share[:leadership_psu_earnt].round(2) || 'N/A' %>
+          <%= link_to "Explain ↗", admin_admin_user_admin_user_roles_path(share[:admin_user]) %>
         </td>
         <td class="col text-center">
           <%= number_to_currency(share[:psu_value]) %>
@@ -324,9 +380,9 @@ if (button) {
   button.addEventListener('click', function(e) {
     e.preventDefault();
     var searchParams = new URLSearchParams(window.location.search);
-    
+
     document.querySelectorAll('input').forEach(function(e) {
-      if (e.value) { 
+      if (e.value) {
         searchParams.set(e.name, e.value);
       } else {
         searchParams.delete(e.name);

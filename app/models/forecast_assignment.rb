@@ -18,6 +18,14 @@ class ForecastAssignment < ApplicationRecord
     )
   end
 
+  def name
+    "#{forecast_person.email} | #{forecast_project.name} | #{start_date} to #{end_date}"
+  end
+
+  def external_link
+    "https://forecastapp.com/864444/schedule/projects/#{forecast_project.forecast_id}/assignments/#{forecast_id}/edit"
+  end
+
   def raw_resourcing_cost_during_range_in_usd(start_of_range, end_of_range)
     cost = 0
     admin_user = self.forecast_person.try(:admin_user)

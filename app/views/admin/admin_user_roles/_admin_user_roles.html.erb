@@ -1,0 +1,84 @@
+<script>
+function update(a, b) {
+  var searchParams = new URLSearchParams(window.location.search);
+  if (b !== '')
+    searchParams.set(a, b);
+  else
+    searchParams.delete(a);
+  window.location.search = searchParams.toString();
+}
+</script>
+
+<% current_year = params["year"] || default_year %>
+<% current_year = default_year unless all_years.include?(current_year) %>
+<div style="margin-bottom: 20px">
+  <% all_years.each do |year| %>
+    <a onclick='update("year", "<%= year %>");' style="margin-right: 6px">
+      <p class="nag pill <%= current_year == year ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
+        <%= year.humanize %>
+      </p>
+    </a>
+  <% end %>
+</div>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Summary</p>
+      <p>
+        <a href="hhttps://www.notion.so/garden3d/Introducing-Bottom-Up-Leadership-at-garden3d-93cfbd78330245d1a14cb1ad312b0290" target="_blank">
+          Understand the Bottom Up Leadership Structure here ↗
+        </a>
+      </p>
+    </div>
+    <div class="module-body">
+      <% if psp.includes_leadership_psu_pool? %>
+        <p style="margin-bottom: 6px;"><%= current_year %>, garden3d members spent <code><%= psp.total_effective_project_leadership_days %></code> days in PL/CL/TL roles*, of which <code><%= psp.total_effective_successful_project_leadership_days %></code> were for projects considered <span class="pill yes">✓ Successful</span></p>
+        <p style="margin-bottom: 6px;"><%= admin_user.email %> spent <code><%= individual_total_effective_project_leadership_days %></code> in PL/CL/TL roles*, of which <code><%= individual_total_effective_successful_project_leadership_days %></code> were for projects considered <span class="pill yes">✓ Successful</span></p>
+        <p>So <%= admin_user.email %> will be awarded <code><%= individual_total_effective_successful_project_leadership_days %> / <%= psp.total_effective_successful_project_leadership_days %> = <%= ((individual_total_effective_successful_project_leadership_days.to_f / psp.total_effective_successful_project_leadership_days).round(2) * 100) %>%</code> of the PL/CL/TL leadership PSU pool.</p>
+        <p class="okr_hint">*A "role day" is recorded when on a given day, at least one hour is billed (by anyone on the project team) to a project tracker in the period that this role holder was assigned to it.</p>
+      <% else %>
+        <p style="margin-bottom: 6px;">🚧 <strong>Note!</strong> The selected year does not include the Bottom Up Leadership PSU bonuses, so the role days listed below do not impact the respective profit share distrubtion.</p>
+        <p style="margin-bottom: 6px;">However! It's still important to check that your PL/CL/TL roles are recorded correctly, as these will eventually be used as experience markers to better quantify career growth.</p>
+      <% end %>
+    </div>
+  </div>
+</div>
+
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom: 0px;">
+  <thead>
+    <tr>
+      <th class="col">Project</th>
+      <th class="col text-center">Role</th>
+      <th class="col text-center">Considered Successful?</th>
+      <th class="col text-right">Role Days</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% project_role_days.each_with_index do |tuple, idx| %>
+      <% role, data = tuple %>
+      <tr class="<%= idx.even? ? "even" : "odd" %>">
+        <td class="col text-left">
+          <%= link_to role.project_tracker.name, admin_project_tracker_path(role.project_tracker) %>
+        </td>
+        <td class="col text-center">
+          <%= role.class.to_s %>
+        </td>
+        <td class="col text-center">
+          <% if data[:considered_successful] %>
+            <span class="status_tag yes">Yes</span>
+          <% else %>
+            <span class="status_tag no">No</span>
+          <% end %>
+        </td>
+        <td class="col text-right">
+          <% if data[:considered_successful] %>
+            <%= data[:days] %>
+          <% else %>
+            <strike><%= data[:days] %></strike> 0
+          <% end %>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>

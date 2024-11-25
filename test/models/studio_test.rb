@@ -324,4 +324,43 @@ class StudioTest < ActiveSupport::TestCase
       "L2" => 0
     }, levels)
   end
+
+  test "it can find all of the studio members active during a given range" do
+    studio, g3d = make_studio!
+
+    # Chad quit in May
+    chad = make_admin_user!(studio, Date.new(2020, 1, 1), Date.new(2020, 5, 1))
+    # Tonya started after Chad but did not quite
+    tonya = make_admin_user!(g3d, Date.new(2021, 1, 1), nil, "tonya@thoughtbot.com")
+
+    # g3d finds both Chad and Tonya
+    assert_includes(
+      g3d.core_members_active_during_range(Date.new(2020, 1, 1), Date.today),
+      chad
+    )
+    assert_includes(
+      g3d.core_members_active_during_range(Date.new(2020, 1, 1), Date.today),
+      tonya
+    )
+
+    # Tonya isn't a member of the studio though
+    assert_includes(
+      studio.core_members_active_during_range(Date.new(2020, 1, 1), Date.today),
+      chad
+    )
+    refute_includes(
+      studio.core_members_active_during_range(Date.new(2020, 1, 1), Date.today),
+      tonya
+    )
+
+    # g3d Tonya doesn't join until 2021
+    assert_includes(
+      g3d.core_members_active_during_range(Date.new(2020, 1, 1), Date.new(2020, 12, 31)),
+      chad
+    )
+    refute_includes(
+      g3d.core_members_active_during_range(Date.new(2020, 1, 1), Date.new(2020, 12, 31)),
+      tonya
+    )
+  end
 end

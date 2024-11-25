@@ -5,84 +5,6 @@ ActiveAdmin.register_page "Dashboard" do
     COLORS = Stacks::Utils::COLORS
     accounting_method = session[:accounting_method] || "cash"
 
-    g3d = Studio.garden3d
-    xxix = Studio.find_by(mini_name: "xxix")
-    sanctu = Studio.find_by(mini_name: "sanctu")
-
-    g3d_ytd_revenue_growth_okr = g3d.ytd_snapshot.dig("accrual", "okrs_excluding_reinvestment", "Revenue Growth")
-    g3d_ytd_revenue_growth_progress = Okr.make_annual_growth_progress_data(
-      g3d_ytd_revenue_growth_okr["target"].to_f.round(2),
-      g3d_ytd_revenue_growth_okr["tolerance"].to_f.round(2),
-      g3d.last_year_snapshot.dig("accrual", "datapoints_excluding_reinvestment", "revenue", "value"),
-      g3d.ytd_snapshot.dig("accrual", "datapoints_excluding_reinvestment", "revenue", "value"),
-      :usd
-    )
-
-    g3d_ytd_lead_growth_okr = g3d.ytd_snapshot.dig("accrual", "okrs_excluding_reinvestment", "Lead Growth")
-    g3d_ytd_lead_growth_progress = Okr.make_annual_growth_progress_data(
-      g3d_ytd_lead_growth_okr["target"].to_f.round(2),
-      g3d_ytd_lead_growth_okr["tolerance"].to_f.round(2),
-      g3d.last_year_snapshot.dig("accrual", "datapoints_excluding_reinvestment", "lead_count", "value"),
-      g3d.ytd_snapshot.dig("accrual", "datapoints_excluding_reinvestment", "lead_count", "value"),
-      :count
-    )
-
-    collective_okrs = [{
-      datapoint: :profit_margin,
-      okr: g3d.ytd_snapshot.dig("accrual", "okrs_excluding_reinvestment", "Profit Margin"),
-      role_holders: [*CollectiveRole.find_by(name: "General Manager").current_collective_role_holders]
-    }, {
-      datapoint: :revenue_growth,
-      okr: g3d_ytd_revenue_growth_okr,
-      growth_progress: g3d_ytd_revenue_growth_progress,
-      role_holders: [*CollectiveRole.find_by(name: "General Manager").current_collective_role_holders]
-    }, {
-      datapoint: :successful_design_projects,
-      okr: xxix.ytd_snapshot.dig("accrual", "okrs", "Successful Projects"),
-      role_holders: [
-        *CollectiveRole.find_by(name: "Creative Director").current_collective_role_holders,
-        *CollectiveRole.find_by(name: "Apprentice Creative Director").current_collective_role_holders,
-        *CollectiveRole.find_by(name: "Director of Project Delivery").current_collective_role_holders,
-      ]
-    }, {
-      datapoint: :successful_development_projects,
-      okr: sanctu.ytd_snapshot.dig("accrual", "okrs", "Successful Projects"),
-      role_holders: [
-        *CollectiveRole.find_by(name: "Technical Director").current_collective_role_holders,
-        *CollectiveRole.find_by(name: "Apprentice Technical Director").current_collective_role_holders,
-        *CollectiveRole.find_by(name: "Director of Project Delivery").current_collective_role_holders,
-      ]
-    }, {
-      datapoint: :successful_design_proposals,
-      okr: xxix.ytd_snapshot.dig("accrual", "okrs", "Successful Proposals"),
-      role_holders: [
-        *CollectiveRole.find_by(name: "Director of Business Development").current_collective_role_holders,
-        *CollectiveRole.find_by(name: "Creative Director").current_collective_role_holders,
-      ]
-    }, {
-      datapoint: :successful_development_proposals,
-      okr: sanctu.ytd_snapshot.dig("accrual", "okrs", "Successful Proposals"),
-      role_holders: [
-        *CollectiveRole.find_by(name: "Director of Business Development").current_collective_role_holders,
-        *CollectiveRole.find_by(name: "Technical Director").current_collective_role_holders
-      ]
-    }, {
-      datapoint: :lead_growth,
-      okr: g3d_ytd_lead_growth_okr,
-      growth_progress: g3d_ytd_lead_growth_progress,
-      role_holders: [
-        *CollectiveRole.find_by(name: "Director of Business Development").current_collective_role_holders,
-        *CollectiveRole.find_by(name: "Director of Communications").current_collective_role_holders
-      ]
-    }, {
-      datapoint: :workplace_satisfaction,
-      okr: nil,
-      role_holders: [
-        *CollectiveRole.find_by(name: "Director of Project Delivery").current_collective_role_holders,
-        *CollectiveRole.find_by(name: "Director of People Ops").current_collective_role_holders
-      ]
-    }]
-
     qbo_accounts = Stacks::Quickbooks.fetch_all_accounts
     cc_or_bank_accounts = qbo_accounts.select do |a|
       ["Bank", "Credit Card"].include?(a.account_type)
@@ -155,9 +77,11 @@ ActiveAdmin.register_page "Dashboard" do
     else
     end
 
+    leadership_psu_pool = ProfitSharePass.ensure_exists!.leadership_psu_pool
+
     render(partial: "dashboard", locals: {
-      g3d: g3d,
-      collective_okrs: collective_okrs,
+      g3d: Studio.garden3d,
+      leadership_psu_pool: leadership_psu_pool,
       accounts: cc_or_bank_accounts,
       runway_data: {
         net_cash: net_cash,
