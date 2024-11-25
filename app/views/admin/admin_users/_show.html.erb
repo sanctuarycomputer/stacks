@@ -96,52 +96,6 @@
   </tbody>
 </table>
 
-<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
-  <div id="titlebar_left">
-    <h2 id="page_title">📏 Project Lead Roles</h2>
-  </div>
-</div>
-<table border="0" cellspacing="0" cellpadding="0" class="index_table index mb2">
-  <thead>
-    <tr>
-      <th class="col">Studio</th>
-      <th class="col">Project Tracker</th>
-      <th class="col">Current?</th>
-      <th class="col">Started At</th>
-      <th class="col">Ended At</th>
-      <th class="col text-right">Time Held in Days</th>
-    </tr>
-  </thead>
-  <tbody>
-    <% resource.project_lead_periods.each_with_index do |plp, index| %>
-      <tr class="<%= index.even? ? "even" : "odd" %>">
-        <td class="col">
-          <%= link_to plp.studio.name, admin_studio_path(plp.studio) %>
-        </td>
-        <td class="col">
-          <%= link_to plp.project_tracker.name, admin_project_tracker_path(plp.project_tracker) %>
-        </td>
-        <td class="col">
-          <% if plp.current? %>
-            <span class="status_tag yes">Yes</span>
-          <% else %>
-            <span class="status_tag no">No</span>
-          <% end %>
-        </td>
-        <td class="col">
-          <%= plp.period_started_at.strftime("%B %d, %Y") %>
-        </td>
-        <td class="col">
-          <%= plp.period_ended_at.strftime("%B %d, %Y") %>
-        </td>
-        <td class="col text-right">
-          <%= plp.time_held_in_days %> days
-        </td>
-      </tr>
-    <% end %>
-  </tbody>
-</table>
-
 <!-- Profit Share -->
 
 <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">

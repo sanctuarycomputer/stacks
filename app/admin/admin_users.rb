@@ -78,6 +78,10 @@ ActiveAdmin.register AdminUser do
     end
   end
 
+  action_item :toggle_admin, only: :show do
+    link_to "Roles Explorer", admin_admin_user_admin_user_roles_path(resource)
+  end
+
   member_action :demote_admin_user, method: :post do
     resource.update!(roles: [])
     redirect_to admin_admin_user_path(resource), notice: "Success!"
