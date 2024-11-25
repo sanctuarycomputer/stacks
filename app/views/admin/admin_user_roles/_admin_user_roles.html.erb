@@ -50,6 +50,8 @@ function update(a, b) {
     <tr>
       <th class="col">Project</th>
       <th class="col text-center">Role</th>
+      <th class="col text-center">Role Started At</th>
+      <th class="col text-center">Role Ended At</th>
       <th class="col text-center">Considered Successful?</th>
       <th class="col text-right">Role Days</th>
     </tr>
@@ -63,6 +65,12 @@ function update(a, b) {
         </td>
         <td class="col text-center">
           <%= role.class.to_s %>
+        </td>
+        <td class="col text-center">
+          <%= role.period_started_at.strftime("%B %d, %Y") %>
+        </td>
+        <td class="col text-center">
+          <%= role.period_ended_at.strftime("%B %d, %Y") %>
         </td>
         <td class="col text-center">
           <% if data[:considered_successful] %>
