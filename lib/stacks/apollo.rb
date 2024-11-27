@@ -29,5 +29,23 @@ class Stacks::Apollo
     raise ((resp || {}).dig("message") || "No message") unless resp.success?
     resp.parsed_response["contacts"]
   end
+
+  def search_organizations(query_params)
+    resp = self.class.post("/mixed_companies/search", {
+      body: JSON.dump(query_params),
+      headers: @headers
+    })
+    raise ((resp || {}).dig("message") || (resp || {}).dig("error") || "No message") unless resp.success?
+    resp.parsed_response["organizations"]
+  end
+
+  def search_people(query_params)
+    resp = self.class.post("/mixed_people/search", {
+      body: JSON.dump(query_params),
+      headers: @headers
+    })
+    raise ((resp || {}).dig("message") || (resp || {}).dig("error") || "No message") unless resp.success?
+    resp.parsed_response["people"]
+  end
 end
 

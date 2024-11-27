@@ -39,6 +39,7 @@ class Okr < ApplicationRecord
     successful_proposals: 19,
     revenue_growth: 20,
     lead_growth: 21,
+    workplace_satisfaction: 22,
   }
 
   def self.make_annual_growth_progress_data(target, tolerance, last_year_value, current_value, base_unit_type)

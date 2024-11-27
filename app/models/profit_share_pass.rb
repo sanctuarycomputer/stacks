@@ -186,6 +186,39 @@ class ProfitSharePass < ApplicationRecord
     )
   end
 
+  def collective_leadership_days_by_admin_user
+    period = make_period
+
+    @_collective_leadership_days_by_admin_user ||= Studio.garden3d.core_members_active_on(finalization_day).includes(
+      technical_lead_periods: [project_tracker: [:forecast_assignments]],
+      creative_lead_periods: [project_tracker: [:forecast_assignments]],
+      project_lead_periods: [project_tracker: [:forecast_assignments]]
+    ).reduce({}) do |acc, a|
+      acc[a] = a.collective_roles_in_period(period).reduce({}) do |axx, r|
+        axx[r] = {
+          days: r.effective_days_in_role_during_range(period.starts_at, period.ends_at),
+          weight: r.leadership_psu_pool_weighting
+        }
+        axx
+      end
+      acc
+    end
+  end
+
+  def awarded_collective_leadership_psu_proportion_for_admin_user(admin_user)
+    # Find all of the roles that
+
+    # project_role_days = project_leadership_days_by_admin_user[admin_user] || {}
+
+    # individual_total_effective_successful_project_leadership_days = project_role_days.reduce(0) do |acc, tuple|
+    #   role, d = tuple
+    #   acc += d[:considered_successful] ? d[:days] : 0
+    #   acc
+    # end
+
+    # (individual_total_effective_successful_project_leadership_days / total_effective_successful_project_leadership_days.to_f)
+  end
+
   def project_leadership_days_by_admin_user
     period = make_period
     @_project_leadership_days_by_admin_user ||= Studio.garden3d.core_members_active_on(finalization_day).includes(
@@ -193,7 +226,7 @@ class ProfitSharePass < ApplicationRecord
       creative_lead_periods: [project_tracker: [:forecast_assignments]],
       project_lead_periods: [project_tracker: [:forecast_assignments]]
     ).reduce({}) do |acc, a|
-      acc[a] = a.roles_in_period(period).reduce({}) do |axx, r|
+      acc[a] = a.project_roles_in_period(period).reduce({}) do |axx, r|
         axx[r] = {
           days: r.effective_days_in_role_during_range(period.starts_at, period.ends_at),
           considered_successful: r.project_tracker.considered_successful?
@@ -247,10 +280,9 @@ class ProfitSharePass < ApplicationRecord
     Studio.garden3d.core_members_active_on(finalization_day).map do |a|
       tenured_psu_earnt = a.psu_earned_by(finalization_day) || 0
 
-      # TODO: Add in collective_leadership_psu_earnt
-      project_leadership_psu_earnt = (
-        awarded_project_leadership_psu_proportion_for_admin_user(a) * lpp["total_awarded"] * (leadership_psu_pool_project_role_holders_percentage / 100)
-      )
+      # TODO: Add in collective_leadership_psu_earnt ala https://chatgpt.com/c/67467fef-ab4c-8006-8136-323848788318
+      # TODO collective_leadership_psu_earnt = awarded_collective_leadership_psu_proportion_for_admin_user(a) * lpp["total_awarded"] * ((100 - leadership_psu_pool_project_role_holders_percentage) / 100)
+      project_leadership_psu_earnt = awarded_project_leadership_psu_proportion_for_admin_user(a) * lpp["total_awarded"] * (leadership_psu_pool_project_role_holders_percentage / 100)
 
       pre_spent_profit_share = a.pre_profit_share_spent_during(finalization_day.year)
       {

@@ -11,6 +11,9 @@ class Studio < ApplicationRecord
   has_many :mailing_lists, dependent: :destroy
   has_many :okr_period_studios, dependent: :delete_all
 
+  has_many :survey_studios
+  has_many :surveys, through: :survey_studios
+
   enum studio_type: {
     client_services: 0,
     internal: 1,
@@ -581,6 +584,11 @@ class Studio < ApplicationRecord
 
     all_projects = project_trackers_with_recorded_time_in_period(period, preloaded_studios)
     all_proposals = sent_proposals_settled_in_period(preloaded_new_biz_notion_pages, period)
+    latest_survey_closed =
+      surveys.where.not(closed_at: nil).order(closed_at: :desc).find do |s|
+        # Assume we only do one of these a year, and it's results apply for that full year
+        s.closed_at.beginning_of_year <= period.starts_at
+      end
 
     cogs_scenarios.map.with_index do |cogs, idx|
       prev_cogs = prev_cogs_scenarios[idx] if prev_cogs_scenarios.present?
@@ -681,6 +689,10 @@ class Studio < ApplicationRecord
         successful_proposals: {
           value: ((all_proposals.map(&:considered_successful?).count{|v| !!v} / all_proposals.count.to_f) * 100),
           unit: :percentage
+        },
+        workplace_satisfaction: {
+          value: latest_survey_closed.try(:results).try(:dig, :overall),
+          unit: :count
         }
       }
 
