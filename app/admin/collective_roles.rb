@@ -33,6 +33,7 @@ ActiveAdmin.register CollectiveRole do
         span("No #{resource.name}", class: "pill error")
       end
     end
+    column :leadership_psu_pool_weighting
     actions
   end
 

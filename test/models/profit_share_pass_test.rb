@@ -39,6 +39,89 @@ class ProfitSharePassTest < ActiveSupport::TestCase
     assert_equal(profit_share_pass.total_effective_successful_project_leadership_days, 8)
   end
 
+  test "if an AdminUser starts their employment after a project begins, their role days do not count from before they joined" do
+    profit_share_pass = ProfitSharePass.create!({
+      created_at: Date.new(2024, 1, 1),
+      leadership_psu_pool_cap: 100,
+      leadership_psu_pool_project_role_holders_percentage: 30
+    })
+
+    studio, g3d = make_studio!
+    admin_user = make_admin_user!(studio, profit_share_pass.created_at.to_date + 1.month, nil, "ilana@thoughtbot.com")
+    admin_user_2 = make_admin_user!(studio, profit_share_pass.created_at.to_date)
+    forecast_project, forecast_client = make_forecast_project!
+    project_tracker = make_project_tracker!([forecast_project])
+
+    # Assign the user from the start of the project
+    project_kickoff = profit_share_pass.created_at.to_date
+    ProjectLeadPeriod.create!({
+      project_tracker: project_tracker,
+      admin_user: admin_user,
+      studio: studio,
+      started_at: nil
+    })
+
+    assignment_one = ForecastAssignment.create!({
+      forecast_id: 1,
+      start_date: project_kickoff,
+      end_date: project_kickoff + 1.day,
+      forecast_person: admin_user_2.forecast_person,
+      forecast_project: forecast_project
+    })
+
+    assignment_two = ForecastAssignment.create!({
+      forecast_id: 2,
+      start_date: admin_user.start_date,
+      end_date: admin_user.start_date + 1.day,
+      forecast_person: admin_user_2.forecast_person,
+      forecast_project: forecast_project
+    })
+
+    pldbau = profit_share_pass.project_leadership_days_by_admin_user[admin_user]
+    assert_equal(pldbau.values.first[:days], (assignment_two.start_date..assignment_two.end_date).count)
+  end
+
+  test "if an AdminUser quites their employment before a project ends, they aren't counted" do
+    profit_share_pass = ProfitSharePass.create!({
+      created_at: Date.new(2024, 1, 1),
+      leadership_psu_pool_cap: 100,
+      leadership_psu_pool_project_role_holders_percentage: 30
+    })
+
+    studio, g3d = make_studio!
+    admin_user = make_admin_user!(studio, profit_share_pass.created_at.to_date, profit_share_pass.created_at.to_date + 1.month, "ilana@thoughtbot.com")
+    admin_user_2 = make_admin_user!(studio, profit_share_pass.created_at.to_date)
+    forecast_project, forecast_client = make_forecast_project!
+    project_tracker = make_project_tracker!([forecast_project])
+
+    # Assign the user from the start of the project
+    project_kickoff = profit_share_pass.created_at.to_date
+    ProjectLeadPeriod.create!({
+      project_tracker: project_tracker,
+      admin_user: admin_user,
+      studio: studio,
+      started_at: nil
+    })
+
+    assignment_one = ForecastAssignment.create!({
+      forecast_id: 1,
+      start_date: project_kickoff,
+      end_date: project_kickoff + 1.day,
+      forecast_person: admin_user_2.forecast_person,
+      forecast_project: forecast_project
+    })
+
+    assignment_two = ForecastAssignment.create!({
+      forecast_id: 2,
+      start_date: profit_share_pass.created_at.to_date + 1.month,
+      end_date: profit_share_pass.created_at.to_date + 1.month + 1.day,
+      forecast_person: admin_user_2.forecast_person,
+      forecast_project: forecast_project
+    })
+
+    assert_nil profit_share_pass.project_leadership_days_by_admin_user[admin_user]
+  end
+
   test "it only counts role days from the day the role started (not previous assignments)" do
     profit_share_pass = ProfitSharePass.ensure_exists!
 
@@ -577,6 +660,349 @@ class ProfitSharePassTest < ActiveSupport::TestCase
     assert_equal(profit_share_pass.leadership_psu_pool["total_awarded"], profit_share_pass.leadership_psu_pool_cap)
   end
 
+  test "it correctly distributes project leadership PSU based on percentage split" do
+    profit_share_pass = ProfitSharePass.create!({
+      leadership_psu_pool_cap: 100,
+      leadership_psu_pool_project_role_holders_percentage: 30  # 30% to project leaders
+    })
 
+    xxix, sanctu, g3d = make_g3d_studios!
+    project_lead = make_admin_user!(xxix, Date.new(2020, 1, 1))
 
+    # Setup a successful project
+    forecast_project, _ = make_forecast_project!
+    project_tracker = make_project_tracker!([forecast_project])
+
+    # Create project lead role for entire year
+    ProjectLeadPeriod.create!({
+      project_tracker: project_tracker,
+      admin_user: project_lead,
+      studio: xxix,
+      started_at: profit_share_pass.created_at.beginning_of_year
+    })
+
+    assignment_one = ForecastAssignment.create!({
+      forecast_id: 1,
+      start_date: profit_share_pass.created_at.beginning_of_year,
+      end_date: profit_share_pass.created_at.beginning_of_year + 1.day,
+      forecast_person: project_lead.forecast_person,
+      forecast_project: forecast_project
+    })
+
+    # Setup successful project conditions
+    project_tracker.generate_snapshot!
+    project_tracker.update!(
+      snapshot: project_tracker.snapshot.merge({
+        "invoiced_with_running_spend_total" => project_tracker.snapshot["spend_total"]
+      })
+    )
+
+    Stacks::Profitability.stub(:pull_actuals_for_year, yearly_actuals) do
+      Stacks::Profitability.stub(:pull_actuals_for_latest_month, monthly_actuals) do
+        payments = profit_share_pass.payments
+        project_lead_payment = payments.find { |p| p[:admin_user] == project_lead }
+        assert_equal project_lead_payment[:project_leadership_psu_earnt], 30.0 # Should get 30% of the leadership pool (30 PSU)
+      end
+    end
+  end
+
+  test "it correctly distributes collective leadership PSU based on percentage split" do
+    profit_share_pass = ProfitSharePass.create!({
+      leadership_psu_pool_cap: 100,
+      leadership_psu_pool_project_role_holders_percentage: 30  # 70% to collective leaders
+    })
+
+    xxix, sanctu, g3d = make_g3d_studios!
+    collective_leader = make_admin_user!(xxix, Date.new(2020, 1, 1))
+
+    # Setup collective role for entire year
+    role = CollectiveRole.create!(
+      name: "General Manager",
+      leadership_psu_pool_weighting: 1.0,
+      notion_link: "https://notion.so/123"
+    )
+    CollectiveRoleHolderPeriod.create!({
+      collective_role: role,
+      admin_user: collective_leader,
+      started_at: profit_share_pass.created_at.beginning_of_year
+    })
+
+    Stacks::Profitability.stub(:pull_actuals_for_year, yearly_actuals) do
+      Stacks::Profitability.stub(:pull_actuals_for_latest_month, monthly_actuals) do
+        payments = profit_share_pass.payments
+        leader_payment = payments.find { |p| p[:admin_user] == collective_leader }
+        # Should get 70% of the leadership pool (70 PSU)
+        assert_equal leader_payment[:collective_leadership_psu_earnt], 70.0
+      end
+    end
+  end
+
+  test "it correctly splits PSU between multiple collective leaders based on role weighting" do
+    profit_share_pass = ProfitSharePass.create!({
+      leadership_psu_pool_cap: 100,
+      leadership_psu_pool_project_role_holders_percentage: 30
+    })
+
+    xxix, sanctu, g3d = make_g3d_studios!
+    leader_1 = make_admin_user!(sanctu, Date.new(2020, 1, 1), nil, "michael@sanctuary.computer")
+    leader_2 = make_admin_user!(xxix, Date.new(2020, 1, 1), nil, "jacob@xxix.co")
+
+    # Setup two collective roles with different weightings
+    role_1 = CollectiveRole.create!(
+      name: "General Manager",
+      leadership_psu_pool_weighting: 1.0,
+      notion_link: "https://notion.so/123"
+    )
+    role_2 = CollectiveRole.create!(
+      name: "Director",
+      leadership_psu_pool_weighting: 0.5,
+      notion_link: "https://notion.so/123"
+    )
+
+    CollectiveRoleHolderPeriod.create!({
+      collective_role: role_1,
+      admin_user: leader_1,
+      started_at: profit_share_pass.created_at.beginning_of_year
+    })
+
+    CollectiveRoleHolderPeriod.create!({
+      collective_role: role_2,
+      admin_user: leader_2,
+      started_at: profit_share_pass.created_at.beginning_of_year
+    })
+
+    Stacks::Profitability.stub(:pull_actuals_for_year, yearly_actuals) do
+      Stacks::Profitability.stub(:pull_actuals_for_latest_month, monthly_actuals) do
+        payments = profit_share_pass.payments
+        leader_1_payment = payments.find { |p| p[:admin_user] == leader_1 }
+        leader_2_payment = payments.find { |p| p[:admin_user] == leader_2 }
+
+        # Leader 1 should get 2/3 of the 70% collective pool (46.67 PSU)
+        # Leader 2 should get 1/3 of the 70% collective pool (23.33 PSU)
+        assert_equal leader_1_payment[:collective_leadership_psu_earnt].round(2), 46.67
+        assert_equal leader_2_payment[:collective_leadership_psu_earnt].round(2), 23.33
+      end
+    end
+  end
+
+  test "it correctly calculates maximum possible collective leadership weighted days" do
+    profit_share_pass = ProfitSharePass.create!({
+      created_at: Date.new(2024, 1, 1),
+      leadership_psu_pool_cap: 100,
+      leadership_psu_pool_project_role_holders_percentage: 30
+    })
+
+    # Create collective roles with different weightings
+    gm_role = CollectiveRole.create!(
+      name: "General Manager",
+      leadership_psu_pool_weighting: 1.0,
+      created_at: Date.new(2023, 1, 1),
+      notion_link: "https://notion.so/123"
+    )
+
+    director_role = CollectiveRole.create!(
+      name: "Director",
+      leadership_psu_pool_weighting: 0.5,
+      created_at: Date.new(2023, 1, 1),
+      notion_link: "https://notion.so/123"
+    )
+
+    # For a non-leap year, should be:
+    # (365 days * 1.0 weighting) + (365 days * 0.5 weighting) = 547.5 weighted days
+    days_in_year = Date.new(profit_share_pass.created_at.year, 12, 31).yday
+    expected_max_days = (days_in_year * 1.0) + (days_in_year * 0.5)
+
+    assert_equal(
+      profit_share_pass.send(:max_possible_collective_leadership_weighted_days_for_year),
+      expected_max_days
+    )
+  end
+
+  test "it does not redistribute unclaimed collective role PSU to other role holders" do
+    profit_share_pass = ProfitSharePass.create!({
+      leadership_psu_pool_cap: 100,
+      leadership_psu_pool_project_role_holders_percentage: 30
+    })
+
+    xxix, sanctu, g3d = make_g3d_studios!
+    leader = make_admin_user!(sanctu, Date.new(2020, 1, 1))
+
+    # Create two roles, but only assign one
+    gm_role = CollectiveRole.create!(
+      name: "General Manager",
+      leadership_psu_pool_weighting: 1.0,
+      notion_link: "https://notion.so/123"
+    )
+
+    # Create another role that no one claims
+    unclaimed_role = CollectiveRole.create!(
+      name: "Unclaimed Role",
+      leadership_psu_pool_weighting: 1.0,
+      notion_link: "https://notion.so/123"
+    )
+
+    CollectiveRoleHolderPeriod.create!({
+      collective_role: gm_role,
+      admin_user: leader,
+      started_at: profit_share_pass.created_at.beginning_of_year
+    })
+
+    Stacks::Profitability.stub(:pull_actuals_for_year, yearly_actuals) do
+      Stacks::Profitability.stub(:pull_actuals_for_latest_month, monthly_actuals) do
+        payments = profit_share_pass.payments
+        leader_payment = payments.find { |p| p[:admin_user] == leader }
+
+        # Leader should only get their share of the 70% collective pool based on their role's weighting
+        # With two equal-weighted roles (1.0 each), they should get 35 PSU (half of 70)
+        assert_equal leader_payment[:collective_leadership_psu_earnt].round(2), 35.0
+      end
+    end
+  end
+
+  test "it correctly sums non-contiguous periods for collective role holders" do
+    profit_share_pass = ProfitSharePass.create!({
+      created_at: Date.new(2024, 1, 1),
+      leadership_psu_pool_cap: 100,
+      leadership_psu_pool_project_role_holders_percentage: 30
+    })
+
+    xxix, sanctu, g3d = make_g3d_studios!
+    leader = make_admin_user!(sanctu, Date.new(2020, 1, 1))
+
+    role = CollectiveRole.create!(
+      name: "General Manager",
+      leadership_psu_pool_weighting: 1.0,
+      notion_link: "https://notion.so/123"
+    )
+
+    # First period: January through March
+    CollectiveRoleHolderPeriod.create!({
+      collective_role: role,
+      admin_user: leader,
+      started_at: Date.new(2024, 1, 1),
+      ended_at: Date.new(2024, 3, 31)
+    })
+
+    # Second period: July through September
+    CollectiveRoleHolderPeriod.create!({
+      collective_role: role,
+      admin_user: leader,
+      started_at: Date.new(2024, 7, 1),
+      ended_at: Date.new(2024, 9, 30)
+    })
+
+    # Total days: 91 (Jan-Mar) + 92 (Jul-Sep) = 183 days
+    expected_days = 91 + 92
+
+    Stacks::Profitability.stub(:pull_actuals_for_year, yearly_actuals) do
+      Stacks::Profitability.stub(:pull_actuals_for_latest_month, monthly_actuals) do
+        payments = profit_share_pass.payments
+        leader_payment = payments.find { |p| p[:admin_user] == leader }
+
+        # Leader should get (183/366) * 70 PSU = ~35 PSU
+        # (assuming 2024 is a leap year with 366 days)
+        expected_psu = (expected_days.to_f / (Date.new(2024).leap? ? 366 : 365)) * 70
+        assert_equal leader_payment[:collective_leadership_psu_earnt].round(2), expected_psu.round(2)
+      end
+    end
+  end
+
+  private
+
+  def make_g3d_studios!
+    xxix = Studio.create!({
+      name: "XXIX",
+      accounting_prefix: "Design",
+      mini_name: "xxix",
+      snapshot: {
+        "year": [{
+          "label": "YTD",
+          "accrual": {
+            "okrs": {
+              "Successful Projects":
+                {"value": 85, "target": "85.0", "tolerance": "15.0"},
+              "Successful Proposals":
+                {"value": 34, "target": "34.0", "tolerance": "10.0"}
+            }
+          }
+        }]
+      }
+    })
+
+    sanctu = Studio.create!({
+      name: "Sanctuary Computer",
+      accounting_prefix: "Development",
+      mini_name: "sanctu",
+      snapshot: {
+        "year": [{
+          "label": "YTD",
+          "accrual": {
+            "okrs": {
+              "Successful Projects":
+                {"value": 85, "target": "85.0", "tolerance": "15.0"},
+              "Successful Proposals":
+                {"value": 34, "target": "34.0", "tolerance": "10.0"}
+            }
+          }
+        }]
+      }
+    })
+
+    g3d = Studio.create!({
+      name: "garden3d",
+      accounting_prefix: "",
+      mini_name: "g3d",
+      snapshot: {
+        "year": [{
+          "label": "YTD",
+          "accrual": {
+            "okrs_excluding_reinvestment": {
+              "Revenue Growth":
+                {"value": 10, "target": "10", "tolerance": "5"},
+              "Lead Growth":
+                {"value": 10, "target": "10", "tolerance": "5"},
+              "Profit Margin":
+                {"value": 32, "target": "32.0", "tolerance": "15.0"},
+              "Workplace Satisfaction":
+                {"value": 4, "target": "4", "tolerance": "1"}
+            },
+            "datapoints_excluding_reinvestment": {
+              "revenue": { "value": 0 },
+              "lead_count": { "value": 0 }
+            }
+          }
+        }, {
+          "label": (Date.today.year - 1).to_s,
+          "accrual": {
+            "datapoints_excluding_reinvestment": {
+              "revenue": { "value": 5804947.0 },
+              "lead_count": { "value": 184 }
+            }
+          }
+        }]
+      }
+    })
+
+    [xxix, sanctu, g3d]
+  end
+
+  def yearly_actuals
+    {
+      gross_revenue: 6_000_000,
+      gross_payroll: 2_500_000,
+      gross_benefits: 350_000,
+      gross_subcontractors: 1_800_000,
+      gross_expenses: 400_000
+    }
+  end
+
+  def monthly_actuals
+    {
+      gross_revenue: yearly_actuals[:gross_revenue] / 12,
+      gross_payroll: yearly_actuals[:gross_payroll] / 12,
+      gross_benefits: yearly_actuals[:gross_benefits] / 12,
+      gross_subcontractors: yearly_actuals[:gross_subcontractors] / 12,
+      gross_expenses: yearly_actuals[:gross_expenses] / 12
+    }
+  end
 end

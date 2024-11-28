@@ -190,14 +190,12 @@ class ProfitSharePass < ApplicationRecord
     period = make_period
 
     @_collective_leadership_days_by_admin_user ||= Studio.garden3d.core_members_active_on(finalization_day).includes(
-      technical_lead_periods: [project_tracker: [:forecast_assignments]],
-      creative_lead_periods: [project_tracker: [:forecast_assignments]],
-      project_lead_periods: [project_tracker: [:forecast_assignments]]
+      :collective_role_holder_periods
     ).reduce({}) do |acc, a|
       acc[a] = a.collective_roles_in_period(period).reduce({}) do |axx, r|
         axx[r] = {
           days: r.effective_days_in_role_during_range(period.starts_at, period.ends_at),
-          weight: r.leadership_psu_pool_weighting
+          weight: r.collective_role.leadership_psu_pool_weighting
         }
         axx
       end
@@ -206,17 +204,26 @@ class ProfitSharePass < ApplicationRecord
   end
 
   def awarded_collective_leadership_psu_proportion_for_admin_user(admin_user)
-    # Find all of the roles that
+    collective_role_days = collective_leadership_days_by_admin_user[admin_user] || {}
 
-    # project_role_days = project_leadership_days_by_admin_user[admin_user] || {}
+    # Calculate this admin user's weighted days
+    individual_weighted_days = collective_role_days.values.reduce(0) do |acc, data|
+      acc + (data[:days] * data[:weight])
+    end
 
-    # individual_total_effective_successful_project_leadership_days = project_role_days.reduce(0) do |acc, tuple|
-    #   role, d = tuple
-    #   acc += d[:considered_successful] ? d[:days] : 0
-    #   acc
-    # end
+    total_possible_days = max_possible_collective_leadership_weighted_days_for_year
+    return 0 if total_possible_days == 0
 
-    # (individual_total_effective_successful_project_leadership_days / total_effective_successful_project_leadership_days.to_f)
+    # Calculate proportion based on maximum possible days
+    individual_weighted_days / total_possible_days.to_f
+  end
+
+  def max_possible_collective_leadership_weighted_days_for_year
+    @_max_possible_collective_leadership_weighted_days_for_year ||= CollectiveRole.where(
+      "created_at <= ?", finalization_day
+    ).reduce(0) do |acc, role|
+      acc + (days_this_year * role.leadership_psu_pool_weighting)
+    end
   end
 
   def project_leadership_days_by_admin_user
@@ -260,13 +267,14 @@ class ProfitSharePass < ApplicationRecord
   end
 
   def awarded_project_leadership_psu_proportion_for_admin_user(admin_user)
+    return 0 if total_effective_successful_project_leadership_days == 0
     project_role_days = project_leadership_days_by_admin_user[admin_user] || {}
 
-    individual_total_effective_successful_project_leadership_days = project_role_days.reduce(0) do |acc, tuple|
+    individual_total_effective_successful_project_leadership_days = (project_role_days.reduce(0) do |acc, tuple|
       role, d = tuple
       acc += d[:considered_successful] ? d[:days] : 0
       acc
-    end
+    end || 0)
 
     (individual_total_effective_successful_project_leadership_days / total_effective_successful_project_leadership_days.to_f)
   end
@@ -280,18 +288,27 @@ class ProfitSharePass < ApplicationRecord
     Studio.garden3d.core_members_active_on(finalization_day).map do |a|
       tenured_psu_earnt = a.psu_earned_by(finalization_day) || 0
 
-      # TODO: Add in collective_leadership_psu_earnt ala https://chatgpt.com/c/67467fef-ab4c-8006-8136-323848788318
-      # TODO collective_leadership_psu_earnt = awarded_collective_leadership_psu_proportion_for_admin_user(a) * lpp["total_awarded"] * ((100 - leadership_psu_pool_project_role_holders_percentage) / 100)
-      project_leadership_psu_earnt = awarded_project_leadership_psu_proportion_for_admin_user(a) * lpp["total_awarded"] * (leadership_psu_pool_project_role_holders_percentage / 100)
+      collective_leadership_psu_earnt = (
+        awarded_collective_leadership_psu_proportion_for_admin_user(a) *
+        lpp["total_awarded"] *
+        ((100 - leadership_psu_pool_project_role_holders_percentage) / 100)
+      ) || 0
+
+      project_leadership_psu_earnt = (
+        awarded_project_leadership_psu_proportion_for_admin_user(a) *
+        lpp["total_awarded"] *
+        (leadership_psu_pool_project_role_holders_percentage / 100)
+      ) || 0
 
       pre_spent_profit_share = a.pre_profit_share_spent_during(finalization_day.year)
       {
         admin_user: a,
         psu_value: psu_value,
         psu_earnt: tenured_psu_earnt,
-        leadership_psu_earnt: project_leadership_psu_earnt,
+        project_leadership_psu_earnt: project_leadership_psu_earnt,
+        collective_leadership_psu_earnt: collective_leadership_psu_earnt,
         pre_spent_profit_share: pre_spent_profit_share,
-        total_payout: (psu_value * (tenured_psu_earnt + project_leadership_psu_earnt)) - pre_spent_profit_share
+        total_payout: (psu_value * (tenured_psu_earnt + project_leadership_psu_earnt + collective_leadership_psu_earnt)) - pre_spent_profit_share
       }
     end
   end

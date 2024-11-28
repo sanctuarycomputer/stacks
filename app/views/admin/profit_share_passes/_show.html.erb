@@ -333,7 +333,7 @@
 
 <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
   <div id="titlebar_left">
-    <h2 id="page_title">🤝 Tenured PSU</h2>
+    <h2 id="page_title">🤝 Payments</h2>
   </div>
 </div>
 <table border="0" cellspacing="0" cellpadding="0" class="index_table index mb2">
@@ -341,7 +341,9 @@
     <tr>
       <th class="col">Profit Shares</th>
       <th class="col text-center">Tenured PSU</th>
-      <th class="col text-center">Leadership PSU</th>
+      <th class="col text-center">Project Leadership PSU</th>
+      <th class="col text-center">Collective Leadership PSU</th>
+      <th class="col text-center">Total PSU</th>
       <th class="col text-center">Value</th>
       <th class="col text-center">Pre-spent</th>
       <th class="col text-right">Payout</th>
@@ -355,10 +357,22 @@
         </td>
         <td class="col text-center">
           <%= share[:psu_earnt].round(2) %>
+          <%= link_to "Explore ↗", admin_admin_user_admin_user_psu_explorer_path(share[:admin_user], { psu_type: "tenure" }) %>
         </td>
         <td class="col text-center">
-          <%= share[:leadership_psu_earnt].round(2) || 'N/A' %>
-          <%= link_to "Explain ↗", admin_admin_user_admin_user_roles_path(share[:admin_user]) %>
+          <%= share[:project_leadership_psu_earnt].round(2) || 'N/A' %>
+          <%= link_to "Explore ↗", admin_admin_user_admin_user_psu_explorer_path(share[:admin_user], { psu_type: "project_leadership", year: Date.today.year == profit_share_pass.created_at.year ? "YTD" : profit_share_pass.created_at.year }) %>
+        </td>
+        <td class="col text-center">
+          <%= share[:collective_leadership_psu_earnt].round(2) || 'N/A' %>
+          <%= link_to "Explore ↗", admin_admin_user_admin_user_psu_explorer_path(share[:admin_user], { psu_type: "collective_leadership", year: Date.today.year == profit_share_pass.created_at.year ? "YTD" : profit_share_pass.created_at.year }) %>
+        </td>
+        <td class="col text-center">
+          <%= [
+            share[:psu_earnt],
+            share[:project_leadership_psu_earnt] || 0,
+            share[:collective_leadership_psu_earnt] || 0
+          ].sum.round(2) %>
         </td>
         <td class="col text-center">
           <%= number_to_currency(share[:psu_value]) %>

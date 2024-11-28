@@ -1,0 +1,260 @@
+<script>
+function update(a, b) {
+  var searchParams = new URLSearchParams(window.location.search);
+  if (b !== '')
+    searchParams.set(a, b);
+  else
+    searchParams.delete(a);
+  window.location.search = searchParams.toString();
+}
+</script>
+
+<% psu_type = params["psu_type"] || default_psu_type %>
+<% psu_type = default_psu_type unless all_psu_types.include?(psu_type) %>
+<div style="margin-bottom: 20px">
+    <% all_psu_types.each do |pt| %>
+    <a onclick='update("psu_type", "<%= pt %>");' style="margin-right: 6px">
+      <p class="nag pill <%= psu_type == pt ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
+        <%= pt.humanize %>
+      </p>
+    </a>
+  <% end %>
+</div>
+
+<% if current_psu_type != "tenure" %>
+  <% current_year = params["year"] || default_year %>
+  <% current_year = default_year unless all_years.include?(current_year) %>
+  <div style="margin-bottom: 20px">
+    <% all_years.each do |year| %>
+      <a onclick='update("year", "<%= year %>");' style="margin-right: 6px">
+        <p class="nag pill <%= current_year == year ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
+          <%= year.humanize %>
+        </p>
+      </a>
+    <% end %>
+  </div>
+<% end %>
+
+<% if current_psu_type == "tenure" %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-header">
+        <p>Summary</p>
+        <p>
+          <a href="https://profit.sanctuary.computer" target="_blank">
+            Learn about our tenured Profit Share here ↗
+          </a>
+        </p>
+      </div>
+      <div class="module-body">
+        <p style="margin-bottom: 6px;">Every garden3d full-time member earns one Profit Share Unit (PSU) per month*, (capped after four years at 48).</p>
+        <p style="margin-bottom: 6px;">PSU units are the core atomic unit of our profit share, representing a proportional share in our yearly Profit Share Pool†.</p>
+        <p><%= admin_user.email %> is expected to have earnt <code><%= admin_user.projected_psu_by_eoy %> PSU</code> by EOY.</p>
+        <p class="okr_hint">*Our <a href="https://www.notion.so/garden3d/Optional-4-day-Employment-16473774415b4846b5b426b4abdfa6b5" target="_blank">four-day workers</a> earn 0.8 PSU per month.</p>
+        <p class="okr_hint">†The actual Profit Share Pool is calculated and distributed at the end of the year, around the 15th of December.</p>
+      </div>
+    </div>
+  </div>
+
+  <% admin_user.psu_audit_log.reverse.each_with_index do |ftp_log, index| %>
+    <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+      <div id="titlebar_left">
+        <h2 id="page_title">
+          <%= ftp_log[:ftp].started_at.strftime("%b %d, %Y") %> ->
+          <% if ftp_log[:ftp].ended_at %>
+            <%= ftp_log[:ftp].ended_at.strftime("%b %d, %Y") %>
+          <% else %>
+            <span class="color-blue">Current</span>
+          <% end %>
+        </h2>
+      </div>
+    </div>
+
+    <% ftp = ftp_log[:ftp] %>
+
+    <p class="nag" style="margin-right: 6px">
+      <strong>
+        <% if ftp.four_day? || ftp.five_day? %>
+          <%= ftp_log[:ftp].expected_utilization * 100 %>% Expected Utilization
+        <% else %>
+          Does not effect Expected Utilization
+        <% end %>
+      </strong>
+    </p>
+    <p class="nag" style="margin-right: 6px">
+      <strong>
+        <%= ftp_log[:ftp].contributor_type.humanize %> Worker
+      </strong>
+    </p>
+    <p class="nag">
+      <strong>
+        <% if ftp.five_day? %>
+          1 PSU p/month
+        <% elsif ftp.four_day? %>
+          0.8 PSU p/month
+        <% else %>
+          Does not accrue PSU
+        <% end %>
+      </strong>
+    </p>
+
+    <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+      <thead>
+        <tr>
+          <th class="col">Date</th>
+          <th class="col text-right">PSU</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% ftp_log[:log].map{|k,v| [k, v]}.reverse.each_with_index do |log_entry_tuple, index| %>
+          <tr class="<%= index.even? ? "even" : "odd" %>">
+            <td class="col">
+              <%= log_entry_tuple[1][:date].strftime("%b %d, %Y") %>
+            </td>
+            <td class="col text-right">
+              <%= log_entry_tuple[0] %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  <% end %>
+  <% end %>
+
+<% if current_psu_type == "project_leadership" %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-header">
+        <p>Summary</p>
+        <p>
+          <a href="https://www.notion.so/garden3d/Introducing-Bottom-Up-Leadership-at-garden3d-93cfbd78330245d1a14cb1ad312b0290" target="_blank">
+            Understand the Bottom Up Leadership Structure here ↗
+          </a>
+        </p>
+      </div>
+      <div class="module-body">
+        <% if psp.includes_leadership_psu_pool? %>
+          <p style="margin-bottom: 6px;"><%= current_year %>, garden3d members spent <code><%= psp.total_effective_project_leadership_days %></code> days in PL/CL/TL roles*, of which <code><%= psp.total_effective_successful_project_leadership_days %></code> were for projects considered <span class="pill yes">✓ Successful</span></p>
+          <p style="margin-bottom: 6px;"><%= admin_user.email %> spent <code><%= individual_total_effective_project_leadership_days %></code> in PL/CL/TL roles*, of which <code><%= individual_total_effective_successful_project_leadership_days %></code> were for projects considered <span class="pill yes">✓ Successful</span></p>
+          <p style="margin-bottom: 6px;">So <%= admin_user.email %> will be awarded <code><%= individual_total_effective_successful_project_leadership_days %> / <%= psp.total_effective_successful_project_leadership_days %> = <%= ((individual_total_effective_successful_project_leadership_days.to_f / psp.total_effective_successful_project_leadership_days) * 100).round(2) %>%</code> of the Project Leadership PSU pool.</p>
+          <p style="margin-bottom: 6px;">The Project Leadership PSU pool is allocated <code><%= psp.leadership_psu_pool_project_role_holders_percentage %>%</code> of the total Leadership PSU pool.</p>
+          <p style="margin-bottom: 6px;">Based <%= link_to "g3d's performance", admin_dashboard_path %>, we're projecting a total Leadership pool of <code><%= psp.leadership_psu_pool["total_awarded"].round(2) %> PSU</code>†.</p>
+          <p>Provided performance doesn't dip, <%= admin_user.email %> will likely be awarded <code> <%= psp.awarded_project_leadership_psu_proportion_for_admin_user(admin_user).round(4) %> * <%= (psp.leadership_psu_pool_project_role_holders_percentage.to_f) / 100 %> * <%= psp.leadership_psu_pool["total_awarded"].round(2) %> = <%= (psp.awarded_project_leadership_psu_proportion_for_admin_user(admin_user) * psp.leadership_psu_pool["total_awarded"]).round(2) * ((psp.leadership_psu_pool_project_role_holders_percentage.to_f) / 100) %> PSU</code>.</p>
+          <p class="okr_hint">*A "role day" is recorded when on a given day, at least one hour is billed (by anyone on the project team) to a project tracker in the period that this role holder was assigned to it.</p>
+          <p class="okr_hint">†This is a real-time projection based on current performance and will likely fluctuate (wildly). The actual Leadership PSU pool will be calculated at the end of the year.</p>
+        <% else %>
+          <p style="margin-bottom: 6px;">🚧 <strong>Note!</strong> The selected year does not include the Bottom Up Leadership PSU bonuses, so the role days listed below do not impact the respective profit share distrubtion.</p>
+          <p style="margin-bottom: 6px;">However! It's still important to check that your PL/CL/TL roles are recorded correctly, as these will eventually be used as experience markers to better quantify career growth.</p>
+        <% end %>
+      </div>
+    </div>
+  </div>
+
+  <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom: 0px;">
+    <thead>
+      <tr>
+        <th class="col">Project</th>
+        <th class="col text-center">Role</th>
+        <th class="col text-center">Role Started At</th>
+        <th class="col text-center">Role Ended At</th>
+        <th class="col text-center">Considered Successful?</th>
+        <th class="col text-right">Role Days</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% project_role_days.each_with_index do |tuple, idx| %>
+        <% role, data = tuple %>
+        <tr class="<%= idx.even? ? "even" : "odd" %>">
+          <td class="col text-left">
+            <%= link_to role.project_tracker.name, admin_project_tracker_path(role.project_tracker) %>
+          </td>
+          <td class="col text-center">
+            <%= role.class.to_s %>
+          </td>
+          <td class="col text-center">
+            <%= role.period_started_at.strftime("%B %d, %Y") %>
+          </td>
+          <td class="col text-center">
+            <%= role.period_ended_at.strftime("%B %d, %Y") %>
+          </td>
+          <td class="col text-center">
+            <% if data[:considered_successful] %>
+              <span class="status_tag yes">Yes</span>
+            <% else %>
+              <span class="status_tag no">No</span>
+            <% end %>
+          </td>
+          <td class="col text-right">
+            <% if data[:considered_successful] %>
+              <%= data[:days] %>
+            <% else %>
+              <strike><%= data[:days] %></strike> 0
+            <% end %>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+<% end %>
+
+<% if current_psu_type == "collective_leadership" %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-header">
+        <p>Summary</p>
+        <p>
+          <a href="https://www.notion.so/garden3d/Introducing-Bottom-Up-Leadership-at-garden3d-93cfbd78330245d1a14cb1ad312b0290" target="_blank">
+            Understand the Bottom Up Leadership Structure here ↗
+          </a>
+        </p>
+      </div>
+        <div class="module-body">
+          <% if psp.includes_leadership_psu_pool? %>
+            <p style="margin-bottom: 6px;"><%= current_year %>, garden3d allocated a maximum of <code><%= psp.max_possible_collective_leadership_weighted_days_for_year %></code> "weighted days"* for holders of our <%= link_to "Collective Roles", admin_collective_roles_path %>.</p>
+            <p style="margin-bottom: 6px;"><%= admin_user.email %> earnt <code><%= individual_total_weighted_collective_leadership_days %></code> "weighted days" by serving in these various Collective Roles.
+            <p style="margin-bottom: 6px;">So <%= admin_user.email %> will be awarded <code><%= individual_total_weighted_collective_leadership_days %> / <%= psp.max_possible_collective_leadership_weighted_days_for_year %> = <%= (psp.awarded_collective_leadership_psu_proportion_for_admin_user(admin_user) * 100).round(2) %>%</code> of the Collective leadership PSU pool.</p>
+            <p style="margin-bottom: 6px;">The Project Leadership PSU pool is allocated <code><%= 100 - psp.leadership_psu_pool_project_role_holders_percentage %>%</code> of the total Leadership PSU pool.</p>
+            <p style="margin-bottom: 6px;">Based <%= link_to "g3d's performance", admin_dashboard_path %>, we're projecting a total Leadership pool of <code><%= psp.leadership_psu_pool["total_awarded"].round(2) %> PSU</code>†.</p>
+            <p>Provided performance doesn't dip, <%= admin_user.email %> will likely be awarded <code> <%= psp.awarded_collective_leadership_psu_proportion_for_admin_user(admin_user).round(4) %> * <%= (100 - psp.leadership_psu_pool_project_role_holders_percentage.to_f) / 100 %> * <%= psp.leadership_psu_pool["total_awarded"].round(2) %> = <%= (psp.awarded_collective_leadership_psu_proportion_for_admin_user(admin_user) * psp.leadership_psu_pool["total_awarded"]).round(2) * ((100 - psp.leadership_psu_pool_project_role_holders_percentage.to_f) / 100) %> PSU</code>.</p>
+            <p class="okr_hint">*Not all Collective Roles take on the same level of responsibility, so they're weighted differently. A "weighted day" is calculated as <code>days served in role * role weighting</code>.</p>
+            <p class="okr_hint">†This is a real-time projection based on current performance and will likely fluctuate (wildly). The actual Leadership PSU pool will be calculated at the end of the year.</p>
+          <% else %>
+            <p style="margin-bottom: 6px;">🚧 <strong>Note!</strong> The selected year does not include the Bottom Up Leadership PSU bonuses, so the Collective Roles listed below do not impact the respective profit share distrubtion.</p>
+            <p style="margin-bottom: 6px;">However! It's still important to check that your Collective Roles roles are recorded correctly, as these will eventually be used as experience markers to better quantify career growth.</p>
+          <% end %>
+        </div>
+    </div>
+  </div>
+
+  <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom: 0px;">
+    <thead>
+      <tr>
+        <th class="col">Collective Role</th>
+        <th class="col text-center">Role Started At</th>
+        <th class="col text-center">Role Ended At</th>
+        <th class="col text-right">Weighted Days</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% collective_role_days.each_with_index do |tuple, idx| %>
+        <% role, data = tuple %>
+        <tr class="<%= idx.even? ? "even" : "odd" %>">
+          <td class="col text-left">
+            <%= link_to role.collective_role.name, admin_collective_roles_path %>
+          </td>
+          <td class="col text-center">
+            <%= role.period_started_at.strftime("%B %d, %Y") %>
+          </td>
+          <td class="col text-center">
+            <%= (role.period_ended_at || psp.created_at.end_of_year).strftime("%B %d, %Y") %>
+          </td>
+          <td class="col text-right">
+            <%= (data[:days] * data[:weight]).round(2) %>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+
+
+<% end %>

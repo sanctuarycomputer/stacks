@@ -8,11 +8,11 @@ class CollectiveRoleHolderPeriod < ApplicationRecord
   end
 
   def period_ended_at
-    [ended_at, admin_user.left_at].compact.min || Date.today
+    [ended_at, admin_user.left_at].compact.min
   end
 
   def effective_days_in_role_during_range(start_range, end_range)
-    [period_ended_at, end_range].min - [start_range, period_started_at].max
+    ([start_range.to_date, period_started_at.to_date].max..[period_ended_at.try(:to_date), end_range.to_date].compact.min).count
   end
 
   def sibling_periods
