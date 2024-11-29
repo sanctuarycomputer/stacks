@@ -3,6 +3,10 @@ class ProfitSharePass < ApplicationRecord
     ProfitSharePass.all.select{|p| p.created_at.year == Time.now.year}.first
   end
 
+  def loosen_considered_successful_requirement_for_project_leadership_psu?
+    return false
+  end
+
   scope :finalized , -> {
     ProfitSharePass.where.not(snapshot: nil)
   }
@@ -270,13 +274,21 @@ class ProfitSharePass < ApplicationRecord
     return 0 if total_effective_successful_project_leadership_days == 0
     project_role_days = project_leadership_days_by_admin_user[admin_user] || {}
 
-    individual_total_effective_successful_project_leadership_days = (project_role_days.reduce(0) do |acc, tuple|
+    project_leadership_days = (project_role_days.reduce(0) do |acc, tuple|
       role, d = tuple
-      acc += d[:considered_successful] ? d[:days] : 0
+      if loosen_considered_successful_requirement_for_project_leadership_psu?
+        acc += d[:days]
+      else
+        acc += d[:considered_successful] ? d[:days] : 0
+      end
       acc
     end || 0)
 
-    (individual_total_effective_successful_project_leadership_days / total_effective_successful_project_leadership_days.to_f)
+    if loosen_considered_successful_requirement_for_project_leadership_psu?
+      project_leadership_days / total_effective_project_leadership_days.to_f
+    else
+      project_leadership_days / total_effective_successful_project_leadership_days.to_f
+    end
   end
 
   def payments(scenario = make_scenario)

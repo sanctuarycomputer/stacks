@@ -1,7 +1,7 @@
 ActiveAdmin.register_page "Admin User PSU Explorer" do
   belongs_to :admin_user
 
-  content title: "Roles" do
+  content title: "PSU Explorer" do
     periods = Stacks::Period.for_gradation(:year).reverse
     default_year = periods.first.label
     current_year = params["year"] || default_year

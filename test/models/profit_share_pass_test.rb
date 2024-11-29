@@ -907,6 +907,73 @@ class ProfitSharePassTest < ActiveSupport::TestCase
     end
   end
 
+  test "distributes project leadership PSU based on all days served when loosen flag is enabled" do
+    profit_share_pass = ProfitSharePass.create!({
+      created_at: Date.new(2023, 1, 1),
+      leadership_psu_pool_cap: 100,
+      leadership_psu_pool_project_role_holders_percentage: 30
+    })
+
+    xxix, sanctu, g3d = make_g3d_studios!
+    project_leader_1 = make_admin_user!(sanctu, Date.new(2020, 1, 1))
+
+    # Unsuccessful project
+    forecast_project, forecast_client = make_forecast_project!
+    project_tracker = make_project_tracker!([forecast_project])
+
+    project_kickoff = profit_share_pass.created_at.beginning_of_year
+    ProjectLeadPeriod.create!({
+      project_tracker: project_tracker,
+      admin_user: project_leader_1,
+      studio: xxix,
+      started_at: project_kickoff
+    })
+    ForecastAssignment.create!({
+      forecast_id: 1,
+      start_date: project_kickoff - 1.week,
+      end_date: project_kickoff + 2.days,
+      forecast_person: project_leader_1.forecast_person,
+      forecast_project: forecast_project
+    })
+    assert_equal(false, project_tracker.considered_successful?)
+
+    # Successful project
+    project_leader_2 = make_admin_user!(sanctu, Date.new(2020, 1, 1), nil, "yoni@thoughtbot.com")
+    forecast_project, forecast_client = make_forecast_project!
+    project_tracker = make_project_tracker!([forecast_project])
+
+    project_kickoff = profit_share_pass.created_at.beginning_of_year
+    ProjectLeadPeriod.create!({
+      project_tracker: project_tracker,
+      admin_user: project_leader_2,
+      studio: xxix,
+      started_at: project_kickoff
+    })
+    ForecastAssignment.create!({
+      forecast_id: 2,
+      start_date: project_kickoff - 1.week,
+      end_date: project_kickoff + 2.days,
+      forecast_person: project_leader_2.forecast_person,
+      forecast_project: forecast_project
+    })
+    # Setup successful project conditions
+    project_tracker.generate_snapshot!
+    project_tracker.update!(
+      snapshot: project_tracker.snapshot.merge({
+        "invoiced_with_running_spend_total" => project_tracker.snapshot["spend_total"]
+      })
+    )
+    assert_equal(true, project_tracker.considered_successful?)
+
+    assert_equal(0, profit_share_pass.awarded_project_leadership_psu_proportion_for_admin_user(project_leader_1))
+    assert_equal(1, profit_share_pass.awarded_project_leadership_psu_proportion_for_admin_user(project_leader_2))
+
+    profit_share_pass.stubs(:loosen_considered_successful_requirement_for_project_leadership_psu?).returns(true)
+
+    assert_equal(0.5, profit_share_pass.awarded_project_leadership_psu_proportion_for_admin_user(project_leader_1))
+    assert_equal(0.5, profit_share_pass.awarded_project_leadership_psu_proportion_for_admin_user(project_leader_2))
+  end
+
   private
 
   def make_g3d_studios!
