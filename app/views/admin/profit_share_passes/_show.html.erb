@@ -325,7 +325,7 @@
       <td></td>
       <td></td>
       <td class="col text-right">
-        <%= profit_share_pass.leadership_psu_pool["total_awarded"].round(2) %> of <%= profit_share_pass.leadership_psu_pool_cap %>
+        <%= profit_share_pass.leadership_psu_pool["total_claimable"].round(2) %> of <%= profit_share_pass.leadership_psu_pool_cap %>
       </td>
     </tr>
   </tbody>
@@ -356,7 +356,7 @@
           <%= share[:admin_user].email %>
         </td>
         <td class="col text-center">
-          <%= share[:psu_earnt].round(2) %>
+          <%= share[:tenured_psu_earnt].round(2) %>
           <%= link_to "Explore ↗", admin_admin_user_admin_user_psu_explorer_path(share[:admin_user], { psu_type: "tenure" }) %>
         </td>
         <td class="col text-center">
@@ -369,7 +369,7 @@
         </td>
         <td class="col text-center">
           <%= [
-            share[:psu_earnt],
+            share[:tenured_psu_earnt],
             share[:project_leadership_psu_earnt] || 0,
             share[:collective_leadership_psu_earnt] || 0
           ].sum.round(2) %>

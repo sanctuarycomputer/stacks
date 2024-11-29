@@ -410,7 +410,7 @@ class ProfitSharePassTest < ActiveSupport::TestCase
       }
     })
 
-    assert_equal(profit_share_pass.leadership_psu_pool["total_awarded"].to_i, 125)
+    assert_equal(profit_share_pass.leadership_psu_pool["total_claimable"].to_i, 125)
   end
 
   test "it doesn't award PSU when all OKRs fail" do
@@ -492,7 +492,7 @@ class ProfitSharePassTest < ActiveSupport::TestCase
       }
     })
 
-    assert_equal(profit_share_pass.leadership_psu_pool["total_awarded"], 0)
+    assert_equal(profit_share_pass.leadership_psu_pool["total_claimable"], 0)
   end
 
   test "it awards the full leadership_psu_pool_cap when all OKRs are met" do
@@ -574,7 +574,7 @@ class ProfitSharePassTest < ActiveSupport::TestCase
       }
     })
 
-    assert_equal(profit_share_pass.leadership_psu_pool["total_awarded"], profit_share_pass.leadership_psu_pool_cap)
+    assert_equal(profit_share_pass.leadership_psu_pool["total_claimable"], profit_share_pass.leadership_psu_pool_cap)
   end
 
 
@@ -657,7 +657,7 @@ class ProfitSharePassTest < ActiveSupport::TestCase
       }
     })
 
-    assert_equal(profit_share_pass.leadership_psu_pool["total_awarded"], profit_share_pass.leadership_psu_pool_cap)
+    assert_equal(profit_share_pass.leadership_psu_pool["total_claimable"], profit_share_pass.leadership_psu_pool_cap)
   end
 
   test "it correctly distributes project leadership PSU based on percentage split" do
@@ -972,6 +972,58 @@ class ProfitSharePassTest < ActiveSupport::TestCase
 
     assert_equal(0.5, profit_share_pass.awarded_project_leadership_psu_proportion_for_admin_user(project_leader_1))
     assert_equal(0.5, profit_share_pass.awarded_project_leadership_psu_proportion_for_admin_user(project_leader_2))
+  end
+
+  test "finalize! creates ProfitSharePayment records for each payment" do
+    profit_share_pass = ProfitSharePass.create!({
+      created_at: Date.new(2024, 1, 1),
+      leadership_psu_pool_cap: 100,
+      leadership_psu_pool_project_role_holders_percentage: 30
+    })
+
+    xxix, sanctu, g3d = make_g3d_studios!
+    user1 = make_admin_user!(sanctu, Date.new(2020, 1, 1))
+    user2 = make_admin_user!(sanctu, Date.new(2020, 1, 1), nil, "yoni@thoughtbot.com")
+
+    # Set up some role holders to ensure we have payments to process
+    role = CollectiveRole.create!(
+      name: "General Manager",
+      leadership_psu_pool_weighting: 1.0,
+      notion_link: "https://notion.so/123"
+    )
+
+    CollectiveRoleHolderPeriod.create!({
+      collective_role: role,
+      admin_user: user1,
+      started_at: Date.new(2024, 1, 1),
+      ended_at: Date.new(2024, 12, 31)
+    })
+
+    Stacks::Profitability.stub(:pull_actuals_for_year, yearly_actuals) do
+      Stacks::Profitability.stub(:pull_actuals_for_latest_month, monthly_actuals) do
+        # Get the payments that should be created
+        expected_payments = profit_share_pass.payments
+
+        assert_difference 'ProfitSharePayment.count', expected_payments.length do
+          profit_share_pass.finalize!
+        end
+
+        # Verify each payment was created correctly
+        expected_payments.each do |expected_payment|
+          payment = ProfitSharePayment.find_by(
+            profit_share_pass: profit_share_pass,
+            admin_user: expected_payment[:admin_user]
+          )
+
+          assert payment.present?
+          assert_equal expected_payment[:tenured_psu_earnt].round(2), payment.tenured_psu_earnt.round(2)
+          assert_equal expected_payment[:project_leadership_psu_earnt].to_f.round(2), payment.project_leadership_psu_earnt.round(2)
+          assert_equal expected_payment[:collective_leadership_psu_earnt].to_f.round(2), payment.collective_leadership_psu_earnt.round(2)
+          assert_equal expected_payment[:pre_spent_profit_share].round(2), payment.pre_spent_profit_share.round(2)
+          assert_equal expected_payment[:total_payout].round(2), payment.total_payout.round(2)
+        end
+      end
+    end
   end
 
   private

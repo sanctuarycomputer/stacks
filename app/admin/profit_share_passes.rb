@@ -26,7 +26,7 @@ ActiveAdmin.register ProfitSharePass do
   end
 
   member_action :unfinalize, method: :post do
-    resource.update!(snapshot: nil)
+    resource.unfinalize!
     redirect_to edit_admin_profit_share_pass_path(resource), notice: "Unfinalized!"
   end
 

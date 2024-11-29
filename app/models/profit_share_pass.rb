@@ -1,4 +1,6 @@
 class ProfitSharePass < ApplicationRecord
+  has_many :profit_share_payments
+
   def self.this_year
     ProfitSharePass.all.select{|p| p.created_at.year == Time.now.year}.first
   end
@@ -23,21 +25,47 @@ class ProfitSharePass < ApplicationRecord
     snapshot && DateTime.parse(snapshot["finalized_at"])
   end
 
-  def finalize!(scenario)
-    update!(snapshot: {
-      finalized_at: DateTime.now,
-      inputs: {
-        actuals: scenario.actuals,
-        total_psu_issued: scenario.total_psu_issued,
-        pre_spent: scenario.pre_spent,
-        desired_buffer_months: scenario.desired_buffer_months,
-        efficiency_cap: scenario.efficiency_cap,
-        internals_budget_multiplier: scenario.internals_budget_multiplier,
-        projected_monthly_cost_of_doing_business: scenario.projected_monthly_cost_of_doing_business,
-        fica_tax_rate: scenario.fica_tax_rate,
-        pre_spent_reinvestment: scenario.pre_spent_reinvestment
-      }
-    })
+  def unfinalize!
+    ActiveRecord::Base.transaction do
+      profit_share_payments.destroy_all
+      update!(snapshot: nil)
+    end
+  end
+
+  def finalize!(scenario = make_scenario, force = false)
+    if finalized? && !force
+      raise "Profit share pass already finalized"
+    end
+
+    ActiveRecord::Base.transaction do
+      profit_share_payments.destroy_all
+
+      update!(snapshot: {
+        finalized_at: DateTime.now,
+        inputs: {
+          actuals: scenario.actuals,
+          total_psu_issued: scenario.total_psu_issued,
+          pre_spent: scenario.pre_spent,
+          desired_buffer_months: scenario.desired_buffer_months,
+          efficiency_cap: scenario.efficiency_cap,
+          internals_budget_multiplier: scenario.internals_budget_multiplier,
+          projected_monthly_cost_of_doing_business: scenario.projected_monthly_cost_of_doing_business,
+          fica_tax_rate: scenario.fica_tax_rate,
+          pre_spent_reinvestment: scenario.pre_spent_reinvestment
+        }
+      })
+
+      payments(scenario).each do |payment|
+        profit_share_payments.create!({
+          admin_user: payment[:admin_user],
+          tenured_psu_earnt: payment[:tenured_psu_earnt],
+          project_leadership_psu_earnt: payment[:project_leadership_psu_earnt],
+          collective_leadership_psu_earnt: payment[:collective_leadership_psu_earnt],
+          pre_spent_profit_share: payment[:pre_spent_profit_share],
+          total_payout: payment[:total_payout]
+        })
+      end
+    end
   end
 
   def self.ensure_exists!
@@ -173,7 +201,7 @@ class ProfitSharePass < ApplicationRecord
 
     {
       "collective_okrs" => collective_okrs,
-      "total_awarded" => collective_okrs.map{|dp| dp["awarded_psu"] }.reduce(&:+).clamp(0, leadership_psu_pool_cap),
+      "total_claimable" => collective_okrs.map{|dp| dp["awarded_psu"] }.reduce(&:+).clamp(0, leadership_psu_pool_cap),
       "max" => leadership_psu_pool_cap
     }.deep_stringify_keys
   end
@@ -291,36 +319,62 @@ class ProfitSharePass < ApplicationRecord
     end
   end
 
+  def psu_distributions
+    @_psu_distributions ||= begin
+      lpp = leadership_psu_pool
+
+      Studio.garden3d.core_members_active_on(finalization_day).map do |a|
+        tenured_psu_earnt = a.psu_earned_by(finalization_day) || 0
+
+        collective_leadership_psu_earnt = (
+          awarded_collective_leadership_psu_proportion_for_admin_user(a) *
+          lpp["total_claimable"] *
+          ((100 - leadership_psu_pool_project_role_holders_percentage) / 100)
+        ) || 0
+
+        project_leadership_psu_earnt = (
+          awarded_project_leadership_psu_proportion_for_admin_user(a) *
+          lpp["total_claimable"] *
+          (leadership_psu_pool_project_role_holders_percentage / 100)
+        ) || 0
+
+        {
+          admin_user: a,
+          tenured: tenured_psu_earnt,
+          project_leadership: project_leadership_psu_earnt,
+          collective_leadership: collective_leadership_psu_earnt,
+          total: tenured_psu_earnt + project_leadership_psu_earnt + collective_leadership_psu_earnt
+        }
+      end
+    end
+  end
+
   def payments(scenario = make_scenario)
-    #return [] unless finalized? || (Date.today >= finalization_day)
+    if profit_share_payments.any?
+      return profit_share_payments.map do |payment|
+        {
+          admin_user: payment.admin_user,
+          psu_value: scenario.actual_value_per_psu,
+          tenured_psu_earnt: payment.tenured_psu_earnt,
+          project_leadership_psu_earnt: payment.project_leadership_psu_earnt,
+          collective_leadership_psu_earnt: payment.collective_leadership_psu_earnt,
+          pre_spent_profit_share: payment.pre_spent_profit_share,
+          total_payout: payment.total_payout
+        }
+      end
+    end
+
     psu_value = scenario.actual_value_per_psu
-
-    lpp = leadership_psu_pool
-
-    Studio.garden3d.core_members_active_on(finalization_day).map do |a|
-      tenured_psu_earnt = a.psu_earned_by(finalization_day) || 0
-
-      collective_leadership_psu_earnt = (
-        awarded_collective_leadership_psu_proportion_for_admin_user(a) *
-        lpp["total_awarded"] *
-        ((100 - leadership_psu_pool_project_role_holders_percentage) / 100)
-      ) || 0
-
-      project_leadership_psu_earnt = (
-        awarded_project_leadership_psu_proportion_for_admin_user(a) *
-        lpp["total_awarded"] *
-        (leadership_psu_pool_project_role_holders_percentage / 100)
-      ) || 0
-
-      pre_spent_profit_share = a.pre_profit_share_spent_during(finalization_day.year)
+    psu_distributions.map do |psud|
+      pre_spent_profit_share = psud[:admin_user].pre_profit_share_spent_during(finalization_day.year)
       {
-        admin_user: a,
+        admin_user: psud[:admin_user],
         psu_value: psu_value,
-        psu_earnt: tenured_psu_earnt,
-        project_leadership_psu_earnt: project_leadership_psu_earnt,
-        collective_leadership_psu_earnt: collective_leadership_psu_earnt,
+        tenured_psu_earnt: psud[:tenured],
+        project_leadership_psu_earnt: psud[:project_leadership],
+        collective_leadership_psu_earnt: psud[:collective_leadership],
         pre_spent_profit_share: pre_spent_profit_share,
-        total_payout: (psu_value * (tenured_psu_earnt + project_leadership_psu_earnt + collective_leadership_psu_earnt)) - pre_spent_profit_share
+        total_payout: (psu_value * psud[:total]) - pre_spent_profit_share
       }
     end
   end
@@ -329,11 +383,7 @@ class ProfitSharePass < ApplicationRecord
     if finalized?
       snapshot["inputs"]["total_psu_issued"].to_f
     else
-      tenured_psu = Studio.garden3d.core_members_active_on(finalization_day).map do |a|
-        a.psu_earned_by(psu_earned_by_date)
-      end.reject{|v| v == nil}.reduce(:+) || 0
-
-      tenured_psu + leadership_psu_pool["total_awarded"]
+      psu_distributions.map{|d| d[:total]}.reduce(&:+) || 0
     end
   end
 

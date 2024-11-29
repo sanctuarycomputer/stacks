@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2024_11_24_203438) do
+ActiveRecord::Schema.define(version: 2024_11_29_204607) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_stat_statements"
@@ -472,6 +472,20 @@ ActiveRecord::Schema.define(version: 2024_11_24_203438) do
     t.decimal "leadership_psu_pool_project_role_holders_percentage", default: "0.0"
   end
 
+  create_table "profit_share_payments", force: :cascade do |t|
+    t.bigint "admin_user_id", null: false
+    t.bigint "profit_share_pass_id", null: false
+    t.float "tenured_psu_earnt", default: 0.0
+    t.float "project_leadership_psu_earnt", default: 0.0
+    t.float "collective_leadership_psu_earnt", default: 0.0
+    t.float "pre_spent_profit_share", default: 0.0
+    t.float "total_payout", default: 0.0
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_profit_share_payments_on_admin_user_id"
+    t.index ["profit_share_pass_id"], name: "index_profit_share_payments_on_profit_share_pass_id"
+  end
+
   create_table "project_capsules", force: :cascade do |t|
     t.bigint "project_tracker_id", null: false
     t.text "postpartum_notes"
@@ -882,6 +896,8 @@ ActiveRecord::Schema.define(version: 2024_11_24_203438) do
   add_foreign_key "peer_reviews", "admin_users"
   add_foreign_key "peer_reviews", "reviews"
   add_foreign_key "pre_profit_share_purchases", "admin_users"
+  add_foreign_key "profit_share_payments", "admin_users"
+  add_foreign_key "profit_share_payments", "profit_share_passes"
   add_foreign_key "project_capsules", "project_trackers"
   add_foreign_key "project_lead_periods", "admin_users"
   add_foreign_key "project_lead_periods", "project_trackers"
