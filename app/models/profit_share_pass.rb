@@ -261,9 +261,10 @@ class ProfitSharePass < ApplicationRecord
   def project_leadership_days_by_admin_user
     period = make_period
     @_project_leadership_days_by_admin_user ||= Studio.garden3d.core_members_active_on(finalization_day).includes(
-      technical_lead_periods: [project_tracker: [:forecast_assignments]],
-      creative_lead_periods: [project_tracker: [:forecast_assignments]],
-      project_lead_periods: [project_tracker: [:forecast_assignments]]
+      full_time_periods: [],
+      technical_lead_periods: [project_tracker: [:forecast_assignments, :project_capsule]],
+      creative_lead_periods: [project_tracker: [:forecast_assignments, :project_capsule]],
+      project_lead_periods: [project_tracker: [:forecast_assignments, :project_capsule]]
     ).reduce({}) do |acc, a|
       acc[a] = a.project_roles_in_period(period).reduce({}) do |axx, r|
         axx[r] = {
