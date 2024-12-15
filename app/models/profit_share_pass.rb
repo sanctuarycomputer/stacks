@@ -380,7 +380,7 @@ class ProfitSharePass < ApplicationRecord
     end
   end
 
-  def total_psu_issued(psu_earned_by_date)
+  def total_psu_issued
     if finalized?
       snapshot["inputs"]["total_psu_issued"].to_f
     else
@@ -409,14 +409,12 @@ class ProfitSharePass < ApplicationRecord
       )
     else
       ytd = Stacks::Profitability.pull_actuals_for_year(created_at.year)
-      latest_month = Stacks::Profitability.pull_actuals_for_latest_month
 
-      projected_monthly_cost_of_doing_business = (
-        latest_month[:gross_payroll] +
-        latest_month[:gross_expenses] +
-        latest_month[:gross_benefits] +
-        latest_month[:gross_subcontractors]
-      )
+      g3d = Studio.garden3d
+      projected_monthly_cost_of_doing_business = ((
+        (g3d.ytd_snapshot.dig("cash", "datapoints_excluding_reinvestment", "cogs", "value") / Date.parse(g3d.snapshot["started_at"]).yday) *
+        created_at.end_of_year.yday
+      ) / 12)
 
       days_elapsed = Date.today.yday
       days_this_year = finalization_day.yday
@@ -444,8 +442,6 @@ class ProfitSharePass < ApplicationRecord
       actuals[:gross_benefits] = gross_benefits_override.to_f if gross_benefits_override.present?
       actuals[:gross_expenses] = gross_expenses_override.to_f if gross_expenses_override.present?
       actuals[:gross_subcontractors] = gross_subcontractors_override.to_f if gross_subcontractors_override.present?
-
-      total_psu_issued = total_psu_issued((Date.new(Date.today.year, 12, 15)))
 
       Stacks::ProfitShare::Scenario.new(
         actuals,
