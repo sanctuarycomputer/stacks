@@ -53,7 +53,7 @@ ActiveAdmin.register ProfitSharePass do
       end
     end
     column :total_psu_issued do |resource|
-      resource.total_psu_issued(resource.finalization_day)
+      resource.total_psu_issued
     end
     actions
   end

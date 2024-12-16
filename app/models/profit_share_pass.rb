@@ -388,6 +388,45 @@ class ProfitSharePass < ApplicationRecord
     end
   end
 
+  def projected_monthly_cost_of_doing_business
+    Studio.garden3d.snapshot["trailing_6_months"].last.dig("cash", "datapoints_excluding_reinvestment", "cogs", "value") / 6
+  end
+
+  def pull_outstanding_invoices
+    access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
+
+    invoice_service = Quickbooks::Service::Invoice.new
+    invoice_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
+    invoice_service.access_token = access_token
+    invoice_service.query("Select * From Invoice Where Balance > '0.0'")
+  end
+
+  def pull_actuals_for_year
+    year = created_at.year
+    qbo_access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
+    report_service = Quickbooks::Service::Reports.new
+    report_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
+    report_service.access_token = qbo_access_token
+
+    time = DateTime.parse("1st Jan #{year}")
+    report = report_service.query("ProfitAndLoss", nil, {
+      start_date: time.strftime("%Y-%m-%d"),
+      end_date: time.end_of_year.strftime("%Y-%m-%d"),
+      accounting_method: "Cash"
+    })
+
+    {
+      gross_revenue: (report.find_row("Total Income").try(:[], 1) || 0),
+      gross_payroll: (report.find_row("Total [SC] Payroll").try(:[], 1) || 0),
+      gross_benefits: (report.find_row("Total [SC] Benefits, Contributions & Tax").try(:[], 1) || 0),
+      gross_subcontractors: (report.find_row("Total [SC] Subcontractors").try(:[], 1) || 0),
+      gross_expenses: (
+        (report.find_row("Total Expenses").try(:[], 1) || 0) +
+        (report.find_row("Total [SC] Supplies & Materials").try(:[], 1) || 0)
+      )
+    }
+  end
+
   def make_scenario(
     gross_revenue_override = nil,
     gross_payroll_override = nil,
@@ -408,22 +447,14 @@ class ProfitSharePass < ApplicationRecord
         snapshot["inputs"]["pre_spent_reinvestment"].to_f
       )
     else
-      ytd = Stacks::Profitability.pull_actuals_for_year(created_at.year)
-
-      g3d = Studio.garden3d
-      projected_monthly_cost_of_doing_business = ((
-        (g3d.ytd_snapshot.dig("cash", "datapoints_excluding_reinvestment", "cogs", "value") / Date.parse(g3d.snapshot["started_at"]).yday) *
-        created_at.end_of_year.yday
-      ) / 12)
-
+      ytd = pull_actuals_for_year
       days_elapsed = Date.today.yday
       days_this_year = finalization_day.yday
 
       actuals =
         if Date.today >= finalization_day
-          outstanding = Stacks::Profitability.pull_outstanding_invoices
           remaining_revenue_due_this_year =
-            outstanding.filter{|iv| (iv.due_date <= Date.today.end_of_year + 15.days) && iv.due_date >= Date.today.beginning_of_year}.map(&:balance).reduce(:+)
+            pull_outstanding_invoices.filter{|iv| (iv.due_date <= Date.today.end_of_year + 15.days) && iv.due_date >= Date.today.beginning_of_year}.map(&:balance).reduce(:+)
           ytd[:gross_revenue] += remaining_revenue_due_this_year
           ytd
         else

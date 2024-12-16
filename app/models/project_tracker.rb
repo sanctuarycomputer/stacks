@@ -202,7 +202,7 @@ class ProjectTracker < ApplicationRecord
     end
   end
 
-  def generate_snapshot!
+  def generate_snapshot!(bing = false)
     cosr = cost_of_services_rendered
     today = Date.today
 
@@ -276,6 +276,7 @@ class ProjectTracker < ApplicationRecord
         cosr_total: 0,
       }
     }) do |acc, date|
+
       acc[:spend].push({
         x: date.iso8601,
         y: acc[:spend_total] +=
