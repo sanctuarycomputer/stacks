@@ -37,6 +37,7 @@ gem 'ferrum'
 gem 'parity'
 gem 'active_model_serializers', '~> 0.10.2'
 gem 'rack-cors', '~> 1.1', '>= 1.1.1'
+gem 'octokit'
 
 group :development, :test do
   gem 'pry'

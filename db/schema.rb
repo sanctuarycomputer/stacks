@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2024_11_29_204607) do
+ActiveRecord::Schema.define(version: 2024_12_24_072036) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_stat_statements"
@@ -327,6 +327,38 @@ ActiveRecord::Schema.define(version: 2024_11_29_204607) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.index ["admin_user_id"], name: "index_gifted_profit_shares_on_admin_user_id"
+  end
+
+  create_table "github_pull_requests", force: :cascade do |t|
+    t.string "title", default: "", null: false
+    t.bigint "time_to_merge"
+    t.bigint "github_id", null: false
+    t.bigint "github_repo_id", null: false
+    t.bigint "github_user_id", null: false
+    t.jsonb "data", null: false
+    t.datetime "merged_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["github_id"], name: "index_github_pull_requests_on_github_id", unique: true
+    t.index ["github_repo_id"], name: "index_github_pull_requests_on_github_repo_id"
+    t.index ["github_user_id"], name: "index_github_pull_requests_on_github_user_id"
+    t.index ["merged_at"], name: "index_github_pull_requests_on_merged_at"
+  end
+
+  create_table "github_repos", force: :cascade do |t|
+    t.bigint "github_id", null: false
+    t.string "name", null: false
+    t.jsonb "data", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["github_id"], name: "index_github_repos_on_github_id", unique: true
+  end
+
+  create_table "github_users", force: :cascade do |t|
+    t.bigint "github_id", null: false
+    t.string "login", null: false
+    t.jsonb "data", null: false
+    t.index ["github_id"], name: "index_github_users_on_github_id", unique: true
   end
 
   create_table "interests", force: :cascade do |t|

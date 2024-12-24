@@ -162,6 +162,20 @@ namespace :stacks do
     end
   end
 
+  desc "Sync Github"
+  task :sync_github => :environment do
+    system_task = SystemTask.create!(name: "stacks:sync_github")
+    begin
+      github = Stacks::Github.new
+      github.sync_repos
+      github.sync_pull_requests
+    rescue => e
+      system_task.mark_as_error(e)
+    else
+      system_task.mark_as_success
+    end
+  end
+
   desc "Send Project Capsule reminders"
   task :send_project_capsule_reminders => :environment do
     system_task = SystemTask.create!(name: "stacks:send_project_capsule_reminders")

@@ -119,7 +119,7 @@ class Studio < ApplicationRecord
             acc
           end
 
-        acc[gradation] = Parallel.map(periods, in_threads: 6) do |period|
+        acc[gradation] = Parallel.map(periods, in_threads: 20) do |period|
           prev_period = periods[0] == period ? nil : periods[periods.index(period) - 1]
 
           d = {
@@ -327,6 +327,8 @@ class Studio < ApplicationRecord
 
   def hint_for_okr(okr, datapoints)
     case okr.datapoint
+    when "time_to_merge_pr"
+      "#{datapoints[:prs_merged][:value].try(:round, 0)} PRs merged, taking #{datapoints[:time_to_merge_pr][:value].try(:round, 2)} days (on average)"
     when "sellable_hours_sold"
       "#{datapoints[:billable_hours][:value].try(:round, 0)} hrs sold of #{datapoints[:sellable_hours][:value].try(:round, 0)} sellable hrs"
     when "free_hours"
@@ -767,6 +769,15 @@ class Studio < ApplicationRecord
         data[:actual_cost_per_hour_sold][:value] = cogs[:cogs] / total_billable
       end
 
+      data[:prs_merged] = { unit: :count, value: nil }
+      data[:time_to_merge_pr] = { unit: :days, value: nil }
+      if is_sanctuary?
+        prs = GithubPullRequest.merged.where(merged_at: period.starts_at..period.ends_at)
+        data[:prs_merged][:value] = prs.count
+        ttm = prs.average(:time_to_merge)
+        (data[:time_to_merge_pr][:value] = ttm / 86400.to_f) if ttm.present?
+      end
+
       data
     end
   end
@@ -828,6 +839,10 @@ class Studio < ApplicationRecord
 
   def is_garden3d?
     name == "garden3d" && mini_name == "g3d"
+  end
+
+  def is_sanctuary?
+    name == "Sanctuary Computer" && mini_name == "sanctu"
   end
 
   def qbo_sales_categories
