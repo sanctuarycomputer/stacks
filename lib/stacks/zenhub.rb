@@ -79,6 +79,7 @@ class Stacks::Zenhub
             createdAt
             updatedAt
             title
+            number
             closedAt
             user {
               ghId
@@ -130,6 +131,7 @@ class Stacks::Zenhub
           updatedAt
           title
           closedAt
+          number
           user {
             ghId
           }
@@ -249,6 +251,7 @@ class Stacks::Zenhub
             issue_type: n.type,
             issue_state: n.state,
             estimate: n.estimate&.value,
+            number: n.number,
             github_issue_id: n.gh_id,
             github_issue_node_id: n.gh_node_id,
             title: n.title,
@@ -308,6 +311,7 @@ class Stacks::Zenhub
             issue_type: n.type,
             issue_state: n.state,
             estimate: n.estimate&.value,
+            number: n.number,
             github_issue_id: n.gh_id,
             github_issue_node_id: n.gh_node_id,
             title: n.title,

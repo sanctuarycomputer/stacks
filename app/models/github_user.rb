@@ -8,6 +8,10 @@ class GithubUser < ApplicationRecord
     login
   end
 
+  def total_story_points
+    zenhub_issues.has_estimate.sum(:estimate)
+  end
+
   def average_time_to_merge_in_days
     av = github_pull_requests.merged.average(:time_to_merge)
     return nil unless av.present?

@@ -3,7 +3,7 @@ ActiveAdmin.register ZenhubIssue do
   config.filters = true
   config.paginate = true
   actions :index, :show
-  belongs_to :github_repo
+  belongs_to :zenhub_workspace
 
   scope :all, default: true
   scope :has_estimate

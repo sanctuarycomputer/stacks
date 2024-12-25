@@ -25,6 +25,6 @@ class ZenhubIssue < ApplicationRecord
   }
 
   def html_url
-    zenhub_workspace.html_url
+    "https://app.zenhub.com/workspaces/#{zenhub_workspace.zenhub_id}/issues/gh/sanctuarycomputer/#{github_repo.name}/#{number}"
   end
 end

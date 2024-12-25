@@ -22,7 +22,6 @@ ActiveAdmin.register GithubRepo do
     end
 
     column :zenhub_workspaces
-    column :total_estimate
 
     actions defaults: false do |repo|
       text_node link_to("Pull Requests ↗", admin_github_repo_github_pull_requests_path(repo))

@@ -13,6 +13,8 @@ ActiveAdmin.register GithubUser do
       user.github_pull_requests.count
     end
 
+    column :total_story_points
+
     column :average_time_to_merge_in_days do |user|
       user.average_time_to_merge_in_days.try(:round, 2)
     end
