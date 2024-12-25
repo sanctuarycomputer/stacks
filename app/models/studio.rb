@@ -328,7 +328,11 @@ class Studio < ApplicationRecord
   def hint_for_okr(okr, datapoints)
     case okr.datapoint
     when "time_to_merge_pr"
-      "#{datapoints[:prs_merged][:value].try(:round, 0)} PRs merged, taking #{datapoints[:time_to_merge_pr][:value].try(:round, 2)} days (on average)"
+      "#{datapoints[:prs_merged][:value].try(:round, 0)} PRs merged, taking #{datapoints[:time_to_merge_pr][:value].try(:round, 2)} days (average)"
+    when "story_points_per_billable_week"
+      "#{datapoints[:story_points][:value].try(:round, 0)} story points closed, #{((datapoints[:billable_hours][:value] || 0) / 40.0).try(:round, 2)} weeks sold"
+    when "cost_per_story_point"
+      "#{ActionController::Base.helpers.number_to_currency(datapoints[:cogs][:value])} spent, #{datapoints[:story_points][:value].try(:round, 0)} story points closed"
     when "sellable_hours_sold"
       "#{datapoints[:billable_hours][:value].try(:round, 0)} hrs sold of #{datapoints[:sellable_hours][:value].try(:round, 0)} sellable hrs"
     when "free_hours"
@@ -336,7 +340,7 @@ class Studio < ApplicationRecord
     when "cost_per_sellable_hour"
       "#{ActionController::Base.helpers.number_to_currency(datapoints[:cogs][:value])} spent over #{datapoints[:sellable_hours][:value]} sellable hrs"
     when "profit_margin"
-      "#{ActionController::Base.helpers.number_to_currency(datapoints[:cogs][:value])} spent, #{ActionController::Base.helpers.number_to_currency(datapoints[:revenue][:value]  )} earnt"
+      "#{ActionController::Base.helpers.number_to_currency(datapoints[:cogs][:value])} spent, #{ActionController::Base.helpers.number_to_currency(datapoints[:revenue][:value])} earnt"
     when "total_social_growth"
       "#{datapoints[:social_growth_count][:value]} new followers"
     when "revenue_growth"
@@ -769,9 +773,21 @@ class Studio < ApplicationRecord
         data[:actual_cost_per_hour_sold][:value] = cogs[:cogs] / total_billable
       end
 
+      data[:story_points] = { unit: :count, value: nil }
+      data[:story_points_per_billable_week] = { unit: :count, value: nil }
+      data[:cost_per_story_point] = { unit: :usd, value: nil }
       data[:prs_merged] = { unit: :count, value: nil }
       data[:time_to_merge_pr] = { unit: :days, value: nil }
       if is_sanctuary?
+        closed_issues = ZenhubIssue.closed.where(closed_at: period.starts_at..period.ends_at)
+        data[:story_points][:value] = closed_issues.sum(:estimate) || 0
+        data[:cost_per_story_point][:value] = ((data[:cogs][:value] || 0) / data[:story_points][:value])
+
+        unless v.nil?
+          total_billable = v[:billable].values.reduce(&:+) || 0
+          data[:story_points_per_billable_week][:value] = (data[:story_points][:value] / (total_billable / 40)) if total_billable > 0
+        end
+
         prs = GithubPullRequest.merged.where(merged_at: period.starts_at..period.ends_at)
         data[:prs_merged][:value] = prs.count
         ttm = prs.average(:time_to_merge)

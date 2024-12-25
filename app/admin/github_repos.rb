@@ -1,5 +1,5 @@
 ActiveAdmin.register GithubRepo do
-  menu label: "Repos", parent: "Github"
+  menu label: "Github Repos", parent: "Github & Zenhub"
   config.filters = true
   config.paginate = false
   actions :index, :show
@@ -20,6 +20,9 @@ ActiveAdmin.register GithubRepo do
     column :average_time_to_merge_in_days do |repo|
       repo.average_time_to_merge_in_days.try(:round, 2)
     end
+
+    column :zenhub_workspaces
+    column :total_estimate
 
     actions defaults: false do |repo|
       text_node link_to("Pull Requests ↗", admin_github_repo_github_pull_requests_path(repo))

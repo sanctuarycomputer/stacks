@@ -216,6 +216,8 @@ function update(a, b) {
                             <strong style="font-size: 15px"><%= value.round(2) %>%</strong> (target: <%= target.round(2) %>%)
                           <% elsif unit == "display" %>
                             <strong style="font-size: 15px"><%= okr_results.dig("value") %></strong>
+                          <% elsif unit == "days" %>
+                            <strong style="font-size: 15px"><%= value.round(2) %> days</strong> (target: <%= target.round(2) %>)
                           <% else %>
                             <strong style="font-size: 15px"><%= value.round(2) %></strong> (target: <%= target.round(2) %>)
                           <% end %>
@@ -234,6 +236,11 @@ function update(a, b) {
     </div>
   </div>
 </div>
+
+<script>
+  var columnWidth = document.querySelector('#main_content > div:nth-child(15) > div > div.module-body > table.index_table.index.info').clientWidth;
+  document.querySelector('#main_content > div:nth-child(15) > div > div.module-body > table.index_table.index.right-scrolling').style.paddingLeft = `${columnWidth}px`;
+</script>
 
 <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
   <div id="titlebar_left">

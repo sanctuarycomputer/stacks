@@ -1,5 +1,5 @@
 ActiveAdmin.register GithubPullRequest do
-  menu label: "Pull Requests"
+  menu label: "Github Pull Requests"
   config.filters = true
   config.paginate = true
   actions :index, :show

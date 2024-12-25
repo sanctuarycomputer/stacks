@@ -41,6 +41,8 @@ class Okr < ApplicationRecord
     lead_growth: 21,
     workplace_satisfaction: 22,
     time_to_merge_pr: 23,
+    story_points_per_billable_week: 24,
+    cost_per_story_point: 25,
   }
 
   def self.make_annual_growth_progress_data(target, tolerance, last_year_value, current_value, base_unit_type)

@@ -166,9 +166,8 @@ namespace :stacks do
   task :sync_github => :environment do
     system_task = SystemTask.create!(name: "stacks:sync_github")
     begin
-      github = Stacks::Github.new
-      github.sync_repos
-      github.sync_pull_requests
+      Stacks::Github.sync_all!
+      Stacks::Zenhub.sync_all!
     rescue => e
       system_task.mark_as_error(e)
     else

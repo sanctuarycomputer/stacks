@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2024_12_24_072036) do
+ActiveRecord::Schema.define(version: 2024_12_25_102707) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_stat_statements"
@@ -895,6 +895,54 @@ ActiveRecord::Schema.define(version: 2024_12_24_072036) do
     t.datetime "deleted_at"
     t.index ["deleted_at"], name: "index_workspaces_on_deleted_at"
     t.index ["reviewable_type", "reviewable_id"], name: "index_workspaces_on_reviewable_type_and_reviewable_id"
+  end
+
+  create_table "zenhub_issue_assignees", force: :cascade do |t|
+    t.string "zenhub_issue_id", null: false
+    t.integer "github_user_id", null: false
+    t.index ["zenhub_issue_id", "github_user_id"], name: "idx_zenhub_issue_assignees", unique: true
+  end
+
+  create_table "zenhub_issue_connected_pull_requests", force: :cascade do |t|
+    t.string "zenhub_issue_id", null: false
+    t.string "zenhub_pull_request_issue_id", null: false
+    t.index ["zenhub_issue_id", "zenhub_pull_request_issue_id"], name: "idx_zenhub_issue_connected_pull_requests", unique: true
+  end
+
+  create_table "zenhub_issues", force: :cascade do |t|
+    t.string "zenhub_id", null: false
+    t.string "zenhub_workspace_id", null: false
+    t.integer "github_repo_id", null: false
+    t.integer "github_user_id"
+    t.integer "issue_type", default: 0, null: false
+    t.integer "issue_state", default: 0, null: false
+    t.integer "estimate"
+    t.integer "number"
+    t.integer "github_issue_id"
+    t.string "github_issue_node_id"
+    t.string "title"
+    t.boolean "is_pull_request", default: false, null: false
+    t.datetime "closed_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["closed_at"], name: "index_zenhub_issues_on_closed_at"
+    t.index ["zenhub_id"], name: "index_zenhub_issues_on_zenhub_id", unique: true
+  end
+
+  create_table "zenhub_workspace_github_repository_connections", force: :cascade do |t|
+    t.string "zenhub_id"
+    t.string "zenhub_workspace_id"
+    t.integer "github_repo_id"
+    t.index ["zenhub_id"], name: "idx_zenhub_workspace_github_repo_connections_zenhub_id", unique: true
+    t.index ["zenhub_workspace_id", "github_repo_id"], name: "idx_zenhub_workspace_github_repo_connections", unique: true
+  end
+
+  create_table "zenhub_workspaces", force: :cascade do |t|
+    t.string "zenhub_id"
+    t.string "name"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["zenhub_id"], name: "index_zenhub_workspaces_on_zenhub_id", unique: true
   end
 
   add_foreign_key "adhoc_invoice_trackers", "project_trackers"

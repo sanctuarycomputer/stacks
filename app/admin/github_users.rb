@@ -1,5 +1,5 @@
 ActiveAdmin.register GithubUser do
-  menu label: "Users", parent: "Github"
+  menu label: "Github Users", parent: "Github & Zenhub"
   config.filters = false
   config.paginate = false
   actions :index, :show

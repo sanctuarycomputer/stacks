@@ -5,6 +5,17 @@ class Stacks::Github
     @client = Octokit::Client.new(access_token: access_token)
   end
 
+  def self.sync_all!
+    ActiveRecord::Base.transaction do
+      GithubRepo.delete_all
+      GithubPullRequest.delete_all
+      GithubUser.delete_all
+
+      new.sync_repos
+      new.sync_pull_requests
+    end
+  end
+
   def sync_repos
     data = []
     page = 1
