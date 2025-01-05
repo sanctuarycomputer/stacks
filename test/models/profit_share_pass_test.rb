@@ -29,14 +29,19 @@ class ProfitSharePassTest < ActiveSupport::TestCase
     project_tracker.generate_snapshot!
     assert_equal(project_tracker.considered_successful?, true)
 
+    expected_effective_role_days = (
+      assignment_one.end_date -
+      [assignment_one.start_date, profit_share_pass.created_at.to_date.beginning_of_year].max
+    ) + 1 # Add one because we're including the end date as a working day
+
     pldbau = profit_share_pass.project_leadership_days_by_admin_user[admin_user]
     assert_equal(pldbau.values.first, {
-      days: 8,
+      days: expected_effective_role_days,
       considered_successful: true
     })
 
-    assert_equal(profit_share_pass.total_effective_project_leadership_days, 8)
-    assert_equal(profit_share_pass.total_effective_successful_project_leadership_days, 8)
+    assert_equal(profit_share_pass.total_effective_project_leadership_days, expected_effective_role_days)
+    assert_equal(profit_share_pass.total_effective_successful_project_leadership_days, expected_effective_role_days)
   end
 
   test "if an AdminUser starts their employment after a project begins, their role days do not count from before they joined" do
@@ -124,7 +129,7 @@ class ProfitSharePassTest < ActiveSupport::TestCase
 
   test "it only counts role days from the day the role started (not previous assignments)" do
     profit_share_pass = ProfitSharePass.create!({
-      created_at: DateTime.now - 2.years,
+      created_at: DateTime.new(Date.today.year, 3, 1) - 2.years,
       leadership_psu_pool_cap: 240,
       leadership_psu_pool_project_role_holders_percentage: 30
     })
@@ -174,7 +179,7 @@ class ProfitSharePassTest < ActiveSupport::TestCase
 
   test "it only counts role days up until the role ended (not future assignments)" do
     profit_share_pass = ProfitSharePass.create!({
-      created_at: DateTime.now - 2.years,
+      created_at: DateTime.new(Date.today.year, 3, 1) - 2.years,
       leadership_psu_pool_cap: 240,
       leadership_psu_pool_project_role_holders_percentage: 30
     })
@@ -204,6 +209,12 @@ class ProfitSharePassTest < ActiveSupport::TestCase
     })
 
     project_tracker.generate_snapshot!
+
+    project_tracker.update!(
+      snapshot: project_tracker.snapshot.merge({
+        "invoiced_with_running_spend_total" => project_tracker.snapshot["spend_total"]
+      })
+    )
     assert_equal(project_tracker.considered_successful?, true)
 
     expected_effective_role_days = (assignment_one.start_date..role.ended_at).count
@@ -245,7 +256,7 @@ class ProfitSharePassTest < ActiveSupport::TestCase
 
   test "it does not distribute PSU to leads of unsuccessful projects" do
     profit_share_pass = ProfitSharePass.create!({
-      created_at: DateTime.now - 2.years,
+      created_at: DateTime.new(Date.today.year, 3, 1) - 2.years,
       leadership_psu_pool_cap: 240,
       leadership_psu_pool_project_role_holders_percentage: 30
     })
@@ -302,7 +313,7 @@ class ProfitSharePassTest < ActiveSupport::TestCase
     # Mock that we've invoiced the spend completely for successful_project
     successful_project.update!(
       snapshot: successful_project.snapshot.merge({
-        "invoiced_with_running_spend_total" => successful_project.snapshot["spend_total"]
+        "invoiced_with_running_spend_total" => successful_project.snapshot["spend_total"] * 1.5
       })
     )
 

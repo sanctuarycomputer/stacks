@@ -446,7 +446,7 @@ class ProjectTracker < ApplicationRecord
     (profit / spend) * 100
   end
 
-  def dates_with_recorded_assignments_in_range(start_range, end_range)
+  def dates_with_recorded_assignments_in_range(start_range, end_range, foo = false)
     assignments = forecast_assignments
         .where('forecast_assignments.end_date >= ? AND forecast_assignments.start_date <= ?', start_range, end_range)
     assignments.reduce({}) do |acc, fa|
@@ -456,6 +456,7 @@ class ProjectTracker < ApplicationRecord
           acc[date] += 1
         end
       end
+      binding.pry if foo
       acc
     end.keys.count
   end
