@@ -123,7 +123,11 @@ class ProfitSharePassTest < ActiveSupport::TestCase
   end
 
   test "it only counts role days from the day the role started (not previous assignments)" do
-    profit_share_pass = ProfitSharePass.ensure_exists!
+    profit_share_pass = ProfitSharePass.create!({
+      created_at: DateTime.now - 2.years,
+      leadership_psu_pool_cap: 240,
+      leadership_psu_pool_project_role_holders_percentage: 30
+    })
 
     studio, g3d = make_studio!
     admin_user = make_admin_user!(studio, Date.new(2020, 1, 1), nil)
@@ -131,7 +135,7 @@ class ProfitSharePassTest < ActiveSupport::TestCase
     project_tracker = make_project_tracker!([forecast_project])
 
     # Assign the user from the start of the project
-    project_kickoff = Date.today - 1.week
+    project_kickoff = profit_share_pass.created_at.to_date - 1.week
     role = ProjectLeadPeriod.create!({
       project_tracker: project_tracker,
       admin_user: admin_user,
@@ -148,6 +152,12 @@ class ProfitSharePassTest < ActiveSupport::TestCase
     })
 
     project_tracker.generate_snapshot!
+
+    project_tracker.update!(
+      snapshot: project_tracker.snapshot.merge({
+        "invoiced_with_running_spend_total" => project_tracker.snapshot["spend_total"]
+      })
+    )
     assert_equal(project_tracker.considered_successful?, true)
 
     expected_effective_role_days = (role.started_at..assignment_one.end_date).count
@@ -163,7 +173,11 @@ class ProfitSharePassTest < ActiveSupport::TestCase
   end
 
   test "it only counts role days up until the role ended (not future assignments)" do
-    profit_share_pass = ProfitSharePass.ensure_exists!
+    profit_share_pass = ProfitSharePass.create!({
+      created_at: DateTime.now - 2.years,
+      leadership_psu_pool_cap: 240,
+      leadership_psu_pool_project_role_holders_percentage: 30
+    })
 
     studio, g3d = make_studio!
     admin_user = make_admin_user!(studio, Date.new(2020, 1, 1), nil)
@@ -171,7 +185,7 @@ class ProfitSharePassTest < ActiveSupport::TestCase
     project_tracker = make_project_tracker!([forecast_project])
 
     # Assign the user from the start of the project
-    project_kickoff = Date.today - 1.month
+    project_kickoff = profit_share_pass.created_at.to_date - 1.month
     role = ProjectLeadPeriod.create!({
       project_tracker: project_tracker,
       admin_user: admin_user,

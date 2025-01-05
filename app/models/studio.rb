@@ -445,7 +445,7 @@ class Studio < ApplicationRecord
           full_time_periods.started_at <= :date AND
           coalesce(full_time_periods.ended_at, 'infinity') >= :date AND
           full_time_periods.contributor_type IN (0, 1)
-        ", { date: date })
+        ", { date: date }).distinct
     else
       admin_users
         .joins(:full_time_periods, :studio_memberships)
@@ -456,7 +456,7 @@ class Studio < ApplicationRecord
           studio_memberships.started_at <= :date AND
           coalesce(studio_memberships.ended_at, 'infinity') >= :date AND
           studio_memberships.studio_id = :studio_id
-        ", { date: date, studio_id: self.id })
+        ", { date: date, studio_id: self.id }).distinct
     end
   end
 

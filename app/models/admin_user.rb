@@ -43,7 +43,7 @@ class AdminUser < ApplicationRecord
 
   has_many :admin_user_salary_windows, dependent: :delete_all
 
-  belongs_to :github_user, class_name: "GithubUser", foreign_key: "github_user_id"
+  belongs_to :github_user, class_name: "GithubUser", foreign_key: "github_user_id", optional: true
   has_many :github_pull_requests, through: :github_user
   has_many :zenhub_issues, through: :github_user
 
