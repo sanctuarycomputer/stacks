@@ -72,6 +72,14 @@ class Stacks::Zenhub
             ghNodeId
             repository {
               ghId
+              workspace {
+                id
+              }
+              workspacesConnection {
+                nodes {
+                  id
+                }
+              }
             }
             type
             state
@@ -104,14 +112,12 @@ class Stacks::Zenhub
   GRAPHQL
 
   ZenhubWorkspaceClosedIssuesQuery = Client.parse <<-'GRAPHQL'
-    query($workspace_id: ID!, $zenhub_repository_ids: [ID!], $issues_end_cursor: String) {
+    query($workspace_id: ID!, $issues_end_cursor: String) {
       searchClosedIssues(
         first: 100,
         after: $issues_end_cursor,
         workspaceId: $workspace_id,
-        filters: {
-          repositoryIds: $zenhub_repository_ids
-        }
+        filters: {}
       ) {
         pageInfo {
           hasNextPage
@@ -123,6 +129,14 @@ class Stacks::Zenhub
           ghNodeId
           repository {
             ghId
+            workspace {
+              id
+            }
+            workspacesConnection {
+              nodes {
+                id
+              }
+            }
           }
           type
           state
@@ -154,17 +168,60 @@ class Stacks::Zenhub
     }
   GRAPHQL
 
+  ZenhubIssueByInfoQuery = Client.parse <<-'GRAPHQL'
+    query($github_repo_id: Int!, $issue_number: Int!) {
+      issueByInfo(
+        repositoryGhId: $github_repo_id,
+        issueNumber: $issue_number
+      ) {
+          id
+          ghId
+          ghNodeId
+          repository {
+            ghId
+            workspace {
+              id
+            }
+            workspacesConnection {
+              nodes {
+                id
+              }
+            }
+          }
+          type
+          state
+          pullRequest
+          createdAt
+          updatedAt
+          title
+          closedAt
+          number
+          user {
+            ghId
+          }
+          assignees {
+            nodes {
+              ghId
+            }
+          }
+          estimate {
+            value
+          }
+          connectedPrs {
+            nodes {
+              id
+          }
+        }
+      }
+    }
+  GRAPHQL
+
   def self.sync_all!
     ActiveRecord::Base.transaction do
-      ZenhubWorkspace.delete_all
-      ZenhubWorkspaceGithubRepositoryConnection.delete_all
-      ZenhubIssue.delete_all
-      ZenhubIssueConnectedPullRequest.delete_all
-      ZenhubIssueAssignee.delete_all
-
       sync_workspaces
       sync_github_repositories_for_workspaces
       sync_zenhub_issues_for_workspaces
+      sync_orphaned_github_issues
     end
   end
 
@@ -231,6 +288,7 @@ class Stacks::Zenhub
         connected_pull_request_issue_data = []
         assignee_data = []
         data = result.data.workspace.issues.nodes.map do |n|
+          #binding.pry if n.number == 8738
           n.connected_prs.nodes.each do |pr|
             connected_pull_request_issue_data << {
               zenhub_issue_id: n.id,
@@ -284,13 +342,13 @@ class Stacks::Zenhub
           ZenhubWorkspaceClosedIssuesQuery,
           variables: {
             workspace_id: workspace.zenhub_id,
-            zenhub_repository_ids: workspace.zenhub_workspace_github_repository_connections.pluck(:zenhub_id),
             issues_end_cursor: end_cursor
           }
         )
         connected_pull_request_issue_data = []
         assignee_data = []
         data = result.data.search_closed_issues.nodes.map do |n|
+          # binding.pry if n.number == 8738
           n.connected_prs.nodes.each do |pr|
             connected_pull_request_issue_data << {
               zenhub_issue_id: n.id,
@@ -340,4 +398,74 @@ class Stacks::Zenhub
 
     end
   end
+
+  def self.sync_orphaned_github_issues
+    Parallel.each(GithubIssue.without_zenhub_issue, in_threads: 10) do |github_issue|
+      sync_from_github_issue(github_issue)
+    end
+  end
+
+  def self.sync_from_github_issue(github_issue)
+    result = Client.query(
+      ZenhubIssueByInfoQuery,
+      variables: {
+        github_repo_id: github_issue.github_repo_id,
+        issue_number: github_issue.data["number"]
+      }
+    )
+
+    connected_pull_request_issue_data = []
+    assignee_data = []
+    n = result.data.issue_by_info
+    n.connected_prs.nodes.each do |pr|
+      connected_pull_request_issue_data << {
+        zenhub_issue_id: n.id,
+        zenhub_pull_request_issue_id: pr.id
+      }
+    end
+    n.assignees.nodes.each do |assignee|
+      assignee_data << {
+        zenhub_issue_id: n.id,
+        github_user_id: assignee.gh_id
+      }
+    end
+
+    if n.repository.workspaces_connection.nodes.count > 1
+      raise "More than one workspace found for issue #{n.id}"
+    end
+
+    data = [{
+      zenhub_id: n.id,
+      zenhub_workspace_id: n.repository.workspaces_connection.nodes.first.id,
+      github_repo_id: n.repository.gh_id,
+      github_user_id: n.user.gh_id,
+      issue_type: n.type,
+      issue_state: n.state,
+      estimate: n.estimate&.value,
+      number: n.number,
+      github_issue_id: n.gh_id,
+      github_issue_node_id: n.gh_node_id,
+      title: n.title,
+      is_pull_request: n.pull_request,
+      created_at: n.created_at,
+      updated_at: n.updated_at,
+      closed_at: n.closed_at,
+    }]
+
+    ZenhubIssue.upsert_all(
+      data,
+      unique_by: [:zenhub_id],
+    ) if data.any?
+    ZenhubIssueConnectedPullRequest.upsert_all(
+      connected_pull_request_issue_data,
+      unique_by: [:zenhub_issue_id, :zenhub_pull_request_issue_id],
+    ) if connected_pull_request_issue_data.any?
+    ZenhubIssueAssignee.upsert_all(
+      assignee_data,
+      unique_by: [:zenhub_issue_id, :github_user_id],
+    ) if assignee_data.any?
+
+    puts "Synced: #{github_issue.title}"
+  end
 end
+

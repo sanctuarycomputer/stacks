@@ -191,7 +191,7 @@ class ProfitSharePass < ApplicationRecord
       end
 
       dp["awarded_psu"] = Stacks::Utils.clamp(
-        dp.dig("okr", "value"),
+        dp.dig("okr", "value") || 0,
         dp.dig("okr", "target").to_f - dp.dig("okr", "tolerance").to_f,
         dp.dig("okr", "target").to_f + dp.dig("okr", "tolerance").to_f,
         0,

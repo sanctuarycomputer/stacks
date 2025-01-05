@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2024_12_25_102707) do
+ActiveRecord::Schema.define(version: 2025_01_05_005900) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_stat_statements"
@@ -110,7 +110,9 @@ ActiveRecord::Schema.define(version: 2024_12_25_102707) do
     t.text "profit_share_notes"
     t.jsonb "info", default: {}
     t.boolean "ignore", default: false
+    t.integer "github_user_id"
     t.index ["email"], name: "index_admin_users_on_email", unique: true
+    t.index ["github_user_id"], name: "index_admin_users_on_github_user_id", unique: true
     t.index ["reset_password_token"], name: "index_admin_users_on_reset_password_token", unique: true
   end
 
@@ -327,6 +329,19 @@ ActiveRecord::Schema.define(version: 2024_12_25_102707) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.index ["admin_user_id"], name: "index_gifted_profit_shares_on_admin_user_id"
+  end
+
+  create_table "github_issues", force: :cascade do |t|
+    t.bigint "github_id", null: false
+    t.string "github_node_id", null: false
+    t.string "title", null: false
+    t.jsonb "data", null: false
+    t.bigint "github_repo_id", null: false
+    t.bigint "github_user_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["github_id"], name: "index_github_issues_on_github_id", unique: true
+    t.index ["github_node_id"], name: "index_github_issues_on_github_node_id", unique: true
   end
 
   create_table "github_pull_requests", force: :cascade do |t|

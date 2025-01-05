@@ -7,12 +7,9 @@ class Stacks::Github
 
   def self.sync_all!
     ActiveRecord::Base.transaction do
-      GithubRepo.delete_all
-      GithubPullRequest.delete_all
-      GithubUser.delete_all
-
       new.sync_repos
       new.sync_pull_requests
+      new.sync_issues
     end
   end
 
@@ -80,6 +77,48 @@ class Stacks::Github
     end
 
     GithubPullRequest.upsert_all(data, unique_by: [:github_id])
+    GithubUser.upsert_all(user_data.values, unique_by: [:github_id])
+    data
+  end
+
+  def sync_issues
+    data = []
+    page = 1
+    user_data = {}
+
+    Parallel.each(GithubRepo.all, in_threads: 10) do |repo|
+      repo_name = repo.data["full_name"]
+
+      loop do
+        current_page_issues = @client.issues(repo_name, state: 'all', page: page, per_page: 100)
+        puts "Fetched #{current_page_issues.count} issues for #{repo_name}"
+        data.concat(current_page_issues.map do |issue|
+          issue.user.to_hash.tap do |data|
+            user_data[issue.user.id] = {
+              github_id: issue.user.id,
+              login: issue.user.login,
+              data: data
+            }
+          end
+
+          {
+            github_id: issue.id,
+            github_node_id: issue.node_id,
+            title: issue.title,
+            data: issue.to_hash,
+            created_at: issue.created_at,
+            updated_at: issue.updated_at,
+            github_repo_id: repo.github_id,
+            github_user_id: issue.user.id
+          }
+        end)
+
+        break if current_page_issues.empty? || current_page_issues.count < 100
+        page += 1
+      end
+    end
+
+    GithubIssue.upsert_all(data, unique_by: [:github_id])
     GithubUser.upsert_all(user_data.values, unique_by: [:github_id])
     data
   end

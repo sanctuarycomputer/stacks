@@ -43,6 +43,10 @@ class AdminUser < ApplicationRecord
 
   has_many :admin_user_salary_windows, dependent: :delete_all
 
+  belongs_to :github_user, class_name: "GithubUser", foreign_key: "github_user_id"
+  has_many :github_pull_requests, through: :github_user
+  has_many :zenhub_issues, through: :github_user
+
   enum old_skill_tree_level: {
     junior_1: 0,
     junior_2: 1,
@@ -539,18 +543,31 @@ class AdminUser < ApplicationRecord
   end
 
   def skill_tree_level_on_date(date)
-    latest_review_before_date =
-      archived_reviews
-        .order(archived_at: :desc)
-        .where("archived_at <= ?", date)
-        .first
-
-    if latest_review_before_date.present?
-      latest_review_before_date.level
+    latest_review = latest_review_before_date(date)
+    if latest_review.present?
+      latest_review.level
     elsif old_skill_tree_level.present?
       Stacks::SkillLevelFinder.find!(date, old_skill_tree_level)
     else
       AdminUser.default_skill_level
+    end
+  end
+
+  def latest_review_before_date(date)
+    archived_reviews
+      .order(archived_at: :desc)
+      .where("archived_at <= ?", date)
+      .first
+  end
+
+  def skill_tree_points_on_date(date)
+    latest_review = latest_review_before_date(date)
+    if latest_review.present?
+      latest_review.total_points
+    elsif old_skill_tree_level.present?
+      Stacks::SkillLevelFinder.find!(date, old_skill_tree_level)[:min_points]
+    else
+      AdminUser.default_skill_level[:min_points]
     end
   end
 
@@ -631,5 +648,81 @@ class AdminUser < ApplicationRecord
   def sync_salary_windows!
     syncer = Stacks::AdminUserSalaryWindowSyncer.new(self)
     syncer.sync!
+  end
+
+  def key_metrics_for_period(period, gradation)
+    closed_issues = zenhub_issues.closed.where(closed_at: period.starts_at..period.ends_at)
+
+    prs = github_pull_requests.merged.where(merged_at: period.starts_at..period.ends_at)
+    ttm = prs.average(:time_to_merge)
+    g3d = Studio.garden3d
+    g3d_data = g3d.snapshot[gradation].find{|g| g["label"] == period.label}
+
+    data = {
+      skill_points: {
+        value: skill_tree_points_on_date(period.ends_at),
+        unit: :count
+      },
+      story_points: {
+        value: closed_issues.sum(:estimate),
+        unit: :count
+      },
+      prs_merged: {
+        value: prs.count,
+        unit: :count
+      },
+      time_to_merge_pr: {
+        value: ttm.present? ? (ttm / 86400.to_f) : nil,
+        unit: :days
+      },
+      billable: {
+        value: nil,
+        unit: :hours
+      },
+      sellable: {
+        value: nil,
+        unit: :hours
+      },
+      time_off: {
+        value: nil,
+        unit: :hours
+      },
+      non_billable: {
+        value: nil,
+        unit: :hours
+      },
+      non_sellable: {
+        value: nil,
+        unit: :hours
+      },
+    }
+
+    _email, v = g3d_data["utilization"].find{|k,v| k == self.email}
+    if v.present?
+      data = data.merge({
+        billable: {
+          value: v["billable"].values.reduce(0){|acc, d| acc += d.to_f },
+          unit: :hours
+        },
+        sellable: {
+          value: v["sellable"].try(:to_f),
+          unit: :hours
+        },
+        time_off: {
+          value: v["time_off"].try(:to_f),
+          unit: :hours
+        },
+        non_billable: {
+          value: v["non_billable"].try(:to_f),
+          unit: :hours
+        },
+        non_sellable: {
+          value: v["non_sellable"].try(:to_f),
+          unit: :hours
+        },
+      })
+    end
+
+    data
   end
 end

@@ -3,6 +3,7 @@ class ZenhubIssue < ApplicationRecord
   belongs_to :zenhub_workspace, class_name: "ZenhubWorkspace", foreign_key: "zenhub_workspace_id"
   belongs_to :github_repo, class_name: "GithubRepo", foreign_key: "github_repo_id"
   belongs_to :github_user, class_name: "GithubUser", foreign_key: "github_user_id"
+  belongs_to :github_issue, class_name: "GithubIssue", foreign_key: "github_issue_id"
   # has_many :zenhub_issue_connected_pull_requests, class_name: "ZenhubIssueConnectedPullRequest", foreign_key: "zenhub_issue_id"
   # has_many :zenhub_pull_request_issues, through: :zenhub_issue_connected_pull_requests, source: :zenhub_pull_request_issue
   has_many :zenhub_issue_assignees, class_name: "ZenhubIssueAssignee", foreign_key: "zenhub_issue_id"

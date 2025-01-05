@@ -4,6 +4,7 @@ ActiveAdmin.register AdminUser do
     :ignore,
     :old_skill_tree_level,
     :profit_share_notes,
+    :github_user_id,
     racial_background_ids: [],
     cultural_background_ids: [],
     gender_identity_ids: [],
@@ -218,6 +219,10 @@ ActiveAdmin.register AdminUser do
         }
       JS
 ).html_safe
+
+    f.input :github_user,
+      as: :select,
+      collection: GithubUser.all
 
     if current_admin_user.is_admin?
       hr
