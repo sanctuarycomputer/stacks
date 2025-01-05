@@ -4,6 +4,7 @@ class GithubRepo < ApplicationRecord
   has_many :zenhub_workspace_github_repository_connections, class_name: "ZenhubWorkspaceGithubRepositoryConnection", foreign_key: "github_repo_id"
   has_many :zenhub_workspaces, through: :zenhub_workspace_github_repository_connections
   has_many :zenhub_issues, class_name: "ZenhubIssue", foreign_key: "github_repo_id"
+  has_many :github_issues, class_name: "GithubIssue", foreign_key: "github_repo_id"
 
   def average_time_to_merge_in_days
     av = github_pull_requests.merged.average(:time_to_merge)

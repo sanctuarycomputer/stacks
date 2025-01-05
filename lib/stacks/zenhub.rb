@@ -287,6 +287,7 @@ class Stacks::Zenhub
         )
         connected_pull_request_issue_data = []
         assignee_data = []
+        workspace_connection_data = []
         data = result.data.workspace.issues.nodes.map do |n|
           n.connected_prs.nodes.each do |pr|
             connected_pull_request_issue_data << {
@@ -300,9 +301,14 @@ class Stacks::Zenhub
               github_user_id: assignee.gh_id
             }
           end
+          n.repository.workspaces_connection.nodes.each do |workspace|
+            workspace_connection_data << {
+              zenhub_issue_id: n.id,
+              zenhub_workspace_id: workspace.id
+            }
+          end
           {
             zenhub_id: n.id,
-            zenhub_workspace_id: workspace.zenhub_id,
             github_repo_id: n.repository.gh_id,
             github_user_id: n.user.gh_id,
             issue_type: n.type,
@@ -330,6 +336,10 @@ class Stacks::Zenhub
           assignee_data,
           unique_by: [:zenhub_issue_id, :github_user_id],
         ) if assignee_data.any?
+        ZenhubWorkspaceIssueConnection.upsert_all(
+          workspace_connection_data,
+          unique_by: [:zenhub_workspace_id, :zenhub_issue_id],
+        ) if workspace_connection_data.any?
         puts "Synced #{data.count} issues for workspace #{workspace.name}"
         break unless result.data.workspace.issues.page_info.has_next_page
         end_cursor = result.data.workspace.issues.page_info.end_cursor
@@ -346,6 +356,7 @@ class Stacks::Zenhub
         )
         connected_pull_request_issue_data = []
         assignee_data = []
+        workspace_connection_data = []
         data = result.data.search_closed_issues.nodes.map do |n|
           n.connected_prs.nodes.each do |pr|
             connected_pull_request_issue_data << {
@@ -359,9 +370,14 @@ class Stacks::Zenhub
               github_user_id: assignee.gh_id
             }
           end
+          n.repository.workspaces_connection.nodes.each do |workspace|
+            workspace_connection_data << {
+              zenhub_issue_id: n.id,
+              zenhub_workspace_id: workspace.id
+            }
+          end
           {
             zenhub_id: n.id,
-            zenhub_workspace_id: workspace.zenhub_id,
             github_repo_id: n.repository.gh_id,
             github_user_id: n.user.gh_id,
             issue_type: n.type,
@@ -389,6 +405,10 @@ class Stacks::Zenhub
           assignee_data,
           unique_by: [:zenhub_issue_id, :github_user_id],
         ) if assignee_data.any?
+        ZenhubWorkspaceIssueConnection.upsert_all(
+          workspace_connection_data,
+          unique_by: [:zenhub_workspace_id, :zenhub_issue_id],
+        ) if workspace_connection_data.any?
         puts "Synced #{data.count} CLOSED issues for workspace #{workspace.name}"
         break unless result.data.search_closed_issues.page_info.has_next_page
         end_cursor = result.data.search_closed_issues.page_info.end_cursor
@@ -414,6 +434,7 @@ class Stacks::Zenhub
 
     connected_pull_request_issue_data = []
     assignee_data = []
+    workspace_connection_data = []
     n = result.data.issue_by_info
     n.connected_prs.nodes.each do |pr|
       connected_pull_request_issue_data << {
@@ -427,14 +448,15 @@ class Stacks::Zenhub
         github_user_id: assignee.gh_id
       }
     end
-
-    if n.repository.workspaces_connection.nodes.count > 1
-      raise "More than one workspace found for issue #{n.id}"
+    n.repository.workspaces_connection.nodes.each do |workspace|
+      workspace_connection_data << {
+        zenhub_issue_id: n.id,
+        zenhub_workspace_id: workspace.id
+      }
     end
 
     data = [{
       zenhub_id: n.id,
-      zenhub_workspace_id: n.repository.workspaces_connection.nodes.first.id,
       github_repo_id: n.repository.gh_id,
       github_user_id: n.user.gh_id,
       issue_type: n.type,
@@ -462,6 +484,10 @@ class Stacks::Zenhub
       assignee_data,
       unique_by: [:zenhub_issue_id, :github_user_id],
     ) if assignee_data.any?
+    ZenhubWorkspaceIssueConnection.upsert_all(
+      workspace_connection_data,
+      unique_by: [:zenhub_workspace_id, :zenhub_issue_id],
+    ) if workspace_connection_data.any?
 
     puts "Synced: #{github_issue.title}"
   end

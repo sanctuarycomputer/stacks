@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2025_01_05_005900) do
+ActiveRecord::Schema.define(version: 2025_01_05_165025) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_stat_statements"
@@ -926,7 +926,6 @@ ActiveRecord::Schema.define(version: 2025_01_05_005900) do
 
   create_table "zenhub_issues", force: :cascade do |t|
     t.string "zenhub_id", null: false
-    t.string "zenhub_workspace_id", null: false
     t.integer "github_repo_id", null: false
     t.integer "github_user_id"
     t.integer "issue_type", default: 0, null: false
@@ -950,6 +949,12 @@ ActiveRecord::Schema.define(version: 2025_01_05_005900) do
     t.integer "github_repo_id"
     t.index ["zenhub_id"], name: "idx_zenhub_workspace_github_repo_connections_zenhub_id", unique: true
     t.index ["zenhub_workspace_id", "github_repo_id"], name: "idx_zenhub_workspace_github_repo_connections", unique: true
+  end
+
+  create_table "zenhub_workspace_issue_connections", force: :cascade do |t|
+    t.string "zenhub_workspace_id", null: false
+    t.string "zenhub_issue_id", null: false
+    t.index ["zenhub_workspace_id", "zenhub_issue_id"], name: "idx_zenhub_workspace_issue_connections_on_workspace_and_issue", unique: true
   end
 
   create_table "zenhub_workspaces", force: :cascade do |t|

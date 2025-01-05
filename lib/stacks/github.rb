@@ -35,7 +35,8 @@ class Stacks::Github
     end
 
     GithubRepo.upsert_all(data, unique_by: [:github_id])
-    data
+
+    puts "Upserted #{data.count} repositories"
   end
 
   def sync_pull_requests
@@ -78,16 +79,17 @@ class Stacks::Github
 
     GithubPullRequest.upsert_all(data, unique_by: [:github_id])
     GithubUser.upsert_all(user_data.values, unique_by: [:github_id])
-    data
+
+    puts "Upserted #{data.count} pull requests"
   end
 
   def sync_issues
     data = []
-    page = 1
     user_data = {}
 
     Parallel.each(GithubRepo.all, in_threads: 10) do |repo|
       repo_name = repo.data["full_name"]
+      page = 1
 
       loop do
         current_page_issues = @client.issues(repo_name, state: 'all', page: page, per_page: 100)
@@ -120,6 +122,7 @@ class Stacks::Github
 
     GithubIssue.upsert_all(data, unique_by: [:github_id])
     GithubUser.upsert_all(user_data.values, unique_by: [:github_id])
-    data
+
+    puts "Upserted #{data.count} issues"
   end
 end

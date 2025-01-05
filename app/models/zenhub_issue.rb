@@ -1,9 +1,10 @@
 class ZenhubIssue < ApplicationRecord
   self.primary_key = "zenhub_id"
-  belongs_to :zenhub_workspace, class_name: "ZenhubWorkspace", foreign_key: "zenhub_workspace_id"
+  has_many :zenhub_workspace_issue_connections, class_name: "ZenhubWorkspaceIssueConnection", foreign_key: "zenhub_issue_id"
+  has_many :zenhub_workspaces, through: :zenhub_workspace_issue_connections
   belongs_to :github_repo, class_name: "GithubRepo", foreign_key: "github_repo_id"
   belongs_to :github_user, class_name: "GithubUser", foreign_key: "github_user_id"
-  belongs_to :github_issue, class_name: "GithubIssue", foreign_key: "github_issue_id"
+  belongs_to :github_issue, ->(issue) { where("github_id = ? OR github_node_id = ?", issue.github_issue_id, issue.github_issue_node_id) }, class_name: "GithubIssue"
   # has_many :zenhub_issue_connected_pull_requests, class_name: "ZenhubIssueConnectedPullRequest", foreign_key: "zenhub_issue_id"
   # has_many :zenhub_pull_request_issues, through: :zenhub_issue_connected_pull_requests, source: :zenhub_pull_request_issue
   has_many :zenhub_issue_assignees, class_name: "ZenhubIssueAssignee", foreign_key: "zenhub_issue_id"
@@ -26,6 +27,6 @@ class ZenhubIssue < ApplicationRecord
   }
 
   def html_url
-    "https://app.zenhub.com/workspaces/#{zenhub_workspace.zenhub_id}/issues/gh/sanctuarycomputer/#{github_repo.name}/#{number}"
+    "https://app.zenhub.com/workspaces/#{zenhub_workspaces.first.zenhub_id}/issues/gh/sanctuarycomputer/#{github_repo.name}/#{number}"
   end
 end
