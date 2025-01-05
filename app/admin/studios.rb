@@ -447,6 +447,35 @@ ActiveAdmin.register Studio do
       })
     end
 
+    studio_dev_data = {
+      labels: snapshot.map{|s| s["label"]},
+      datasets: [{
+        label: 'PRs Merged',
+        borderColor: COLORS[0],
+        type: 'line',
+        data: (snapshot.map do |v|
+          v.dig(accounting_method, datapoints_bearer, "prs_merged", "value")
+        end),
+        yAxisID: 'y',
+      }, {
+        label: 'Story Points Closed',
+        borderColor: COLORS[0],
+        type: 'bar',
+        data: (snapshot.map do |v|
+          v.dig(accounting_method, datapoints_bearer, "story_points", "value")
+        end),
+        yAxisID: 'y',
+      }, {
+        label: 'Time to Merge PR',
+        borderColor: COLORS[2],
+        type: 'line',
+        data: (snapshot.map do |v|
+          v.dig(accounting_method, datapoints_bearer, "time_to_merge_pr", "value")
+        end),
+        yAxisID: 'y1',
+      }]
+    }
+
     studio_utilization_data = {
       labels: snapshot.map{|s| s["label"]},
       datasets: [{
@@ -536,6 +565,7 @@ ActiveAdmin.register Studio do
       default_gradation: default_gradation,
       all_okrs: all_okrs,
       snapshot: snapshot,
+      studio_dev_data: studio_dev_data,
       studio_profitability_data: studio_profitability_data,
       studio_growth_data: studio_growth_data,
       studio_talent_pool_data: studio_talent_pool_data,
