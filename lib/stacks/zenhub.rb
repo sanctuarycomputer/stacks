@@ -288,7 +288,6 @@ class Stacks::Zenhub
         connected_pull_request_issue_data = []
         assignee_data = []
         data = result.data.workspace.issues.nodes.map do |n|
-          #binding.pry if n.number == 8738
           n.connected_prs.nodes.each do |pr|
             connected_pull_request_issue_data << {
               zenhub_issue_id: n.id,
@@ -348,7 +347,6 @@ class Stacks::Zenhub
         connected_pull_request_issue_data = []
         assignee_data = []
         data = result.data.search_closed_issues.nodes.map do |n|
-          # binding.pry if n.number == 8738
           n.connected_prs.nodes.each do |pr|
             connected_pull_request_issue_data << {
               zenhub_issue_id: n.id,

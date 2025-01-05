@@ -103,6 +103,9 @@ ActiveAdmin.register AdminUser do
     column :contributor_type do |resource|
       resource.current_contributor_type.try(:humanize)
     end
+    column :github do |resource|
+      resource.github_user
+    end
     column :has_dei_response? do |resource|
       !resource.should_nag_for_dei_data?
     end
