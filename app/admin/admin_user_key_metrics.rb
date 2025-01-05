@@ -51,13 +51,18 @@ ActiveAdmin.register_page "Admin User Key Metrics" do
         end),
         yAxisID: 'y1',
       }, {
-        label: 'Time to Merge PR',
+        label: 'Average Time to Merge PR (Days)',
         borderColor: COLORS[2],
         type: 'line',
         data: (key_metrics_by_period.values.map do |v|
           v[:time_to_merge_pr][:value].to_f.round(2)
         end),
         yAxisID: 'y2',
+        trendlineLinear: {
+          colorMin: COLORS[2],
+          lineStyle: "dotted",
+          width: 1,
+        }
       }]
     }
 

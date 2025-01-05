@@ -65,7 +65,8 @@ function update(a, b) {
           type: 'linear',
           display: true,
           position: 'left',
-          beginAtZero: true
+          beginAtZero: true,
+          min: 0,
         },
         y1: {
           type: 'linear',
@@ -73,8 +74,8 @@ function update(a, b) {
           position: 'right',
           beginAtZero: true,
           stacked: true,
-          max: 870,
           min: 0,
+          max: 870,
           grid: {
             drawOnChartArea: false, // only want the grid lines for one axis to show up
           },

@@ -462,17 +462,22 @@ ActiveAdmin.register Studio do
         borderColor: COLORS[0],
         type: 'bar',
         data: (snapshot.map do |v|
-          v.dig(accounting_method, datapoints_bearer, "story_points", "value")
+          v.dig(accounting_method, datapoints_bearer, "story_points", "value").to_f
         end),
         yAxisID: 'y',
       }, {
-        label: 'Time to Merge PR',
+        label: 'Average Time to Merge PR (Days)',
         borderColor: COLORS[2],
         type: 'line',
         data: (snapshot.map do |v|
-          v.dig(accounting_method, datapoints_bearer, "time_to_merge_pr", "value")
+          v.dig(accounting_method, datapoints_bearer, "time_to_merge_pr", "value").to_f
         end),
         yAxisID: 'y1',
+        trendlineLinear: {
+          colorMin: COLORS[2],
+          lineStyle: "dotted",
+          width: 1,
+        }
       }]
     }
 

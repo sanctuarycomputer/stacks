@@ -573,9 +573,13 @@ function update(a, b) {
   new Chart(document.getElementById('social-properties'), <%= social_properties_data.to_json.html_safe %>);
 
   new Chart(document.getElementById('dev-data'), {
-    type: 'line',
+    type: 'bar',
     data: <%= studio_dev_data.to_json.html_safe %>,
     options: {
+      interaction: {
+        intersect: false,
+        mode: 'index',
+      },
       tension: 0.3,
       scales: {
         y: {
@@ -594,7 +598,7 @@ function update(a, b) {
           grid: {
             drawOnChartArea: false, // only want the grid lines for one axis to show up
           },
-        },
+        }
       }
     }
   })
