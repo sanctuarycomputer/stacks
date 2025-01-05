@@ -404,8 +404,8 @@ class Stacks::DailyFinancialSnapshotterTest < ActiveSupport::TestCase
   end
 
   test "#snapshot! uses the current date as the effective date if no explicit date is supplied" do
-    start_date = Date.today - 1.day
-    end_date = Date.today + 1.day
+    start_date = Date.new(2024, 2, 2) - 1.day
+    end_date = Date.new(2024, 2, 2) + 1.day
 
     studio = Studio.create!({
       name: "Sanctuary Computer",
@@ -450,14 +450,14 @@ class Stacks::DailyFinancialSnapshotterTest < ActiveSupport::TestCase
       forecast_project: forecast_project
     })
 
-    snapshotter = Stacks::DailyFinancialSnapshotter.new
+    snapshotter = Stacks::DailyFinancialSnapshotter.new(start_date)
     snapshotter.snapshot!
 
     assert_snapshot_attributes([
       {
         forecast_person_id: forecast_person.id,
         forecast_project_id: forecast_project.id,
-        effective_date: Date.today,
+        effective_date: start_date,
         studio_id: studio.id,
         hourly_cost: 56.49,
         hours: 8,
@@ -467,8 +467,8 @@ class Stacks::DailyFinancialSnapshotterTest < ActiveSupport::TestCase
   end
 
   test "#snapshot! with more complicated case, using multiple people and projects" do
-    start_date = Date.today - 1.day
-    end_date = Date.today + 1.day
+    start_date = Date.new(2024, 2, 2)
+    end_date = Date.new(2024, 2, 2) + 1.day
 
     studio_one = Studio.create!({
       name: "Sanctuary Computer",
@@ -583,14 +583,14 @@ class Stacks::DailyFinancialSnapshotterTest < ActiveSupport::TestCase
       })
     end
 
-    snapshotter = Stacks::DailyFinancialSnapshotter.new
+    snapshotter = Stacks::DailyFinancialSnapshotter.new(start_date)
     snapshotter.snapshot!
 
     assert_snapshot_attributes([
       {
         forecast_person_id: person_one.id,
         forecast_project_id: current_project_one.id,
-        effective_date: Date.today,
+        effective_date: start_date,
         studio_id: studio_one.id,
         hourly_cost: 56.49,
         hours: 4,
@@ -599,7 +599,7 @@ class Stacks::DailyFinancialSnapshotterTest < ActiveSupport::TestCase
       {
         forecast_person_id: person_two.id,
         forecast_project_id: current_project_one.id,
-        effective_date: Date.today,
+        effective_date: start_date,
         studio_id: studio_two.id,
         hourly_cost: 56.49,
         hours: 4,
@@ -608,7 +608,7 @@ class Stacks::DailyFinancialSnapshotterTest < ActiveSupport::TestCase
       {
         forecast_person_id: person_one.id,
         forecast_project_id: current_project_two.id,
-        effective_date: Date.today,
+        effective_date: start_date,
         studio_id: studio_one.id,
         hourly_cost: 56.49,
         hours: 4,
@@ -617,7 +617,7 @@ class Stacks::DailyFinancialSnapshotterTest < ActiveSupport::TestCase
       {
         forecast_person_id: person_two.id,
         forecast_project_id: current_project_two.id,
-        effective_date: Date.today,
+        effective_date: start_date,
         studio_id: studio_two.id,
         hourly_cost: 56.49,
         hours: 4,
@@ -629,7 +629,7 @@ class Stacks::DailyFinancialSnapshotterTest < ActiveSupport::TestCase
   test "#snapshot_all! creates snapshot records for all historical projects" do
     ForecastAssignment.delete_all
 
-    today = Date.today
+    today = Date.new(2024, 2, 2)
 
     studio_one = Studio.create!({
       name: "Sanctuary Computer",
@@ -744,7 +744,7 @@ class Stacks::DailyFinancialSnapshotterTest < ActiveSupport::TestCase
       })
     end
 
-    Stacks::DailyFinancialSnapshotter.snapshot_all!
+    Stacks::DailyFinancialSnapshotter.snapshot_all!(today)
 
     assert_snapshot_attributes([
       {

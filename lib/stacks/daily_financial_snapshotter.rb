@@ -1,7 +1,7 @@
 class Stacks::DailyFinancialSnapshotter
-  def self.snapshot_all!
+  def self.snapshot_all!(effective_date = nil)
     current_date = Stacks::System.singleton_class::UTILIZATION_START_AT
-    end_date = Date.today
+    end_date = effective_date || Date.today
     studios = Studio.all
 
     while current_date <= end_date
