@@ -11,7 +11,7 @@ class SurveyReminderNotification < Noticed::Base
     <<~HEREDOC
       👋 Hi #{(recipient.info || {}).dig("first_name")}!
 
-      There's survey(s) in Stacks awaiting your response! It should only take ~5 minutes or so.
+      There's survey(s) in Stacks awaiting your response! Please try to carve at least ~15 minutes for each survey, your responses will inform how we evolve our business.
 
       📝 Head over [here](https://stacks.garden3d.net/admin/surveys) to fill it out.
 
