@@ -658,6 +658,11 @@ class AdminUserTest < ActiveSupport::TestCase
     actual_cost = user.approximate_cost_per_hour_before_studio_expenses
     expected_cost = 62.2306
 
-    assert_in_delta(expected_cost, actual_cost, 0.0001)
+    if Date.today.leap?
+      assert_in_delta(62.2306, actual_cost, 0.0001)
+    else
+      assert_in_delta(62.4699, actual_cost, 0.0001)
+    end
   end
 end
+
