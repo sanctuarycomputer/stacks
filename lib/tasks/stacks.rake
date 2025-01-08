@@ -260,13 +260,21 @@ namespace :stacks do
     system_task = SystemTask.create!(name: "stacks:daily_tasks")
     begin
       puts "~~~> DOING SYNC: #{Time.new.localtime}"
+      # No dependencies, so we can do this first
+      ProfitSharePass.ensure_exists!
+
+      # These are all dependencies for the rest of the tasks
       Stacks::Team.discover!
       Stacks::Forecast.new.sync_all!
       Stacks::Runn.new.sync_all!
       Stacks::Quickbooks.sync_all!
 
-      # TODO: When we start using enterprises, freshen this
-      # QboAccount.all.map(&:sync_all!)
+      # We can do this as soon as we sync the forecast
+      Stacks::Automator.attempt_invoicing_for_previous_month
+      Stacks::Automator.remind_people_to_record_hours_weekly
+
+      # No dependencies, so we can do this next
+      Stacks::Automator.remind_people_of_outstanding_surveys_every_thurday
 
       puts "~~~> DOING SNAPSHOTS"
       Parallel.map(ProjectTracker.all, in_threads: 10) { |pt| pt.generate_snapshot! }
@@ -282,12 +290,7 @@ namespace :stacks do
       Stacks::DailyFinancialSnapshotter.snapshot_all!
 
       puts "~~~> DOING MISC"
-      ProfitSharePass.ensure_exists!
       Stacks::Dei.make_rollup # TODO Remove me
-
-      Stacks::Automator.attempt_invoicing_for_previous_month
-      Stacks::Automator.remind_people_to_record_hours_weekly
-      Stacks::Automator.remind_people_of_outstanding_surveys_every_thurday
 
       Stacks::Notifications.make_notifications!
       Stacks::Notifications.notify_admins_of_outstanding_notifications_every_tuesday!

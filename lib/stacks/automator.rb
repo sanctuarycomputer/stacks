@@ -150,7 +150,7 @@ class Stacks::Automator
     end
 
     def remind_people_of_outstanding_surveys_every_thurday
-      #return unless Time.now.thursday?
+      return unless Time.now.thursday?
 
       AdminUser.active.each do |admin_user|
         if admin_user.should_nag_for_survey_responses?
