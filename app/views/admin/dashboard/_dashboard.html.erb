@@ -19,7 +19,6 @@
     </div>
   </div>
 
-  <% data_integrity_problem_count = Stacks::DataIntegrityManager.new.problem_count %>
   <% if data_integrity_problem_count > 0 %>
     <div class="dashboard-module">
       <div class="module-body factoid-parent">
