@@ -10,9 +10,10 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2025_01_05_165025) do
+ActiveRecord::Schema.define(version: 2025_01_17_002427) do
 
   # These are extensions that must be enabled in order to support this database
+  enable_extension "btree_gist"
   enable_extension "pg_stat_statements"
   enable_extension "plpgsql"
 
@@ -256,9 +257,16 @@ ActiveRecord::Schema.define(version: 2025_01_05_165025) do
     t.integer "repeated_assignment_set_id"
     t.boolean "active_on_days_off"
     t.jsonb "data"
+    t.index ["allocation"], name: "index_forecast_assignments_on_allocation"
+    t.index ["end_date"], name: "index_forecast_assignments_on_end_date"
     t.index ["forecast_id"], name: "index_forecast_assignments_on_forecast_id", unique: true
+    t.index ["person_id", "project_id", "start_date", "end_date"], name: "idx_assignments_on_person_project_and_daterange", using: :gist
+    t.index ["person_id", "start_date", "end_date"], name: "idx_assignments_on_person_and_daterange", using: :gist
     t.index ["person_id"], name: "index_forecast_assignments_on_person_id"
+    t.index ["project_id", "start_date", "end_date"], name: "idx_assignments_on_project_and_daterange", using: :gist
     t.index ["project_id"], name: "index_forecast_assignments_on_project_id"
+    t.index ["start_date", "end_date"], name: "idx_assignments_on_daterange", using: :gist
+    t.index ["start_date"], name: "index_forecast_assignments_on_start_date"
   end
 
   create_table "forecast_clients", force: :cascade do |t|
