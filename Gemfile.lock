@@ -253,6 +253,7 @@ GEM
     multipart-post (2.1.1)
     net-http-persistent (4.0.1)
       connection_pool (~> 2.2)
+    newrelic_rpm (9.16.1)
     nio4r (2.5.5)
     nokogiri (1.11.1)
       mini_portile2 (~> 2.5.0)
@@ -483,6 +484,7 @@ DEPENDENCIES
   listen (~> 3.2)
   mini_portile2 (= 2.5.0)
   mocha
+  newrelic_rpm
   noticed (~> 1.5)
   octokit
   omniauth-google-oauth2
