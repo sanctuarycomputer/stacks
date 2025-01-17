@@ -19,14 +19,16 @@ class Stacks::DataIntegrityManager
   end
 
   def discover_problems
-    @_problems ||= {
-      notion_leads: discover_notion_lead_problems,
-      forecast_projects: discover_forecast_project_problems,
-      forecast_people: discover_forecast_people_problems,
-      forecast_assignments: discover_forecast_assignment_problems,
-      admin_users: discover_admin_user_problems,
-      project_trackers: discover_project_tracker_problems
-    }
+    Rails.cache.fetch("Stacks::DataIntegrityManager#discover_problems", expires_in: 24.hours) do
+      {
+        notion_leads: discover_notion_lead_problems,
+        forecast_projects: discover_forecast_project_problems,
+        forecast_people: discover_forecast_people_problems,
+        forecast_assignments: discover_forecast_assignment_problems,
+        admin_users: discover_admin_user_problems,
+        project_trackers: discover_project_tracker_problems
+      }
+    end
   end
 
   def discover_notion_lead_problems
