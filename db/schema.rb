@@ -264,6 +264,7 @@ ActiveRecord::Schema.define(version: 2025_01_17_002427) do
     t.index ["person_id", "start_date", "end_date"], name: "idx_assignments_on_person_and_daterange", using: :gist
     t.index ["person_id"], name: "index_forecast_assignments_on_person_id"
     t.index ["project_id", "start_date", "end_date"], name: "idx_assignments_on_project_and_daterange", using: :gist
+    t.index ["project_id", "start_date"], name: "index_forecast_assignments_on_project_id_and_start_date"
     t.index ["project_id"], name: "index_forecast_assignments_on_project_id"
     t.index ["start_date", "end_date"], name: "idx_assignments_on_daterange", using: :gist
     t.index ["start_date"], name: "index_forecast_assignments_on_start_date"
