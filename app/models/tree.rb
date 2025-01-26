@@ -26,4 +26,13 @@ class Tree < ApplicationRecord
     Trait.create!(name: "Project Management", tree: tree)
     Trait.create!(name: "Client Relationship", tree: tree)
   end
+
+  def self.seed_business_development
+    tree = Tree.create!(name: "Business Development")
+    Trait.create!(name: "Business Strategy & Positioning", tree: tree)
+    Trait.create!(name: "Prospecting & Lead Generation", tree: tree)
+    Trait.create!(name: "Process Management", tree: tree)
+    Trait.create!(name: "Prospective Clients", tree: tree)
+    Trait.create!(name: "Existing Clients", tree: tree)
+  end
 end
