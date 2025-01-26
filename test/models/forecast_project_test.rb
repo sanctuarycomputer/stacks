@@ -8,6 +8,7 @@ class ForecastProjectTest < ActiveSupport::TestCase
       id: 1,
       forecast_client: client,
       code: "ABCD-1",
+      name: "Test project 1",
       data: {
         archived: false
       }
@@ -44,6 +45,6 @@ class ForecastProjectTest < ActiveSupport::TestCase
 
     candidates = ForecastProject.candidates_for_association_with_project_tracker(newer_project_tracker)
 
-    assert_includes(candidates, forecast_project)
+    assert_includes(candidates, [forecast_project.display_name, forecast_project.id, {disabled: false}])
   end
 end

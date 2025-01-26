@@ -19,28 +19,30 @@ class ForecastProject < ApplicationRecord
     forecast_codes_for_other_trackers = self.forecast_codes_already_associated_to_project_tracker(project_tracker.id)
     forecast_codes_for_this_tracker = project_tracker.forecast_projects.map(&:code)
 
-    forecast_projects_to_display = with_archived_at_bottom.select do |fp|
-      next true if forecast_codes_for_other_trackers.exclude?(fp.code)
-      # We always want to display project forecasts that are already associated
-      # with the current project tracker, even if their code is associated
-      # with a separate project tracker (which shouldn't happen anymore, but
-      # there are some historical cases of this in the database).
-      next true if forecast_codes_for_this_tracker.include?(fp.code)
+    not_archived = with_archived_at_bottom.active
+    archived = with_archived_at_bottom.archived
 
-      false
-    end
-
-    not_archived = forecast_projects_to_display.select{|fp| !fp.data.dig("archived") }
-    archived = forecast_projects_to_display.select{|fp| fp.data.dig("archived") }
-
-    [
+   [
       nil,
       *not_archived.select{|fp| fp.code.present?}.sort_by(&:code),
       nil,
       *not_archived.select{|fp| !fp.code.present?}.sort_by{|fp| fp.data.dig("name") },
       nil,
       *archived.sort_by.sort_by{|fp| fp.code || "" }
-    ]
+    ].map do |fp|
+      next ["------------------", 0, {disabled: true}] if fp.nil?
+
+      [
+        fp.display_name,
+        fp.id,
+        {
+          disabled: !(
+            forecast_codes_for_other_trackers.exclude?(fp.code) ||
+            forecast_codes_for_this_tracker.include?(fp.code)
+          )
+        }
+      ]
+    end
   end
 
   def self.forecast_codes_already_associated_to_project_tracker(except_project_tracker_id = nil)
@@ -66,7 +68,7 @@ class ForecastProject < ApplicationRecord
   end
 
   def display_name
-    title = "[#{data['code'] || '????'}] #{data['name']}"
+    title = "[#{data['code'] || code || '????'}] #{data['name'] || name || 'Untitled'}"
     title = "*ARCHIVED* #{title}" if data["archived"]
     title
   end

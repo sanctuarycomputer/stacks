@@ -456,7 +456,8 @@ ActiveAdmin.register ProjectTracker do
         a.input(:forecast_project, {
           label: "Forecast Project",
           prompt: "Select a Forecast Project",
-          collection: ForecastProject.candidates_for_association_with_project_tracker(resource)
+          collection: ForecastProject.candidates_for_association_with_project_tracker(resource),
+          hint: "Is your project disabled? That's likely because it's Forecast Project Code is claimed by another Stacks Project Tracker. Choose a unique code for Forecast Projects associated with this Project Tracker. We sync with Forecast every ~10 minutes or so, so if you make changes there, check back here after 10 minutes."
         })
       end
 
