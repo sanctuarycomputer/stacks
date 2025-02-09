@@ -23,7 +23,7 @@ class ZenhubWorkspace < ApplicationRecord
       .merged
 
     ttm = prs.average(:time_to_merge)
-    (ttm.present? ? (ttm / 86400.to_f) : nil).round(2)
+    (ttm.present? ? (ttm / 86400.to_f) : nil).try(:round, 2)
   end
 
   def average_time_to_merge_pr_in_days_during_range(start_range, end_range)
@@ -33,6 +33,6 @@ class ZenhubWorkspace < ApplicationRecord
       .merged
 
     ttm = prs.average(:time_to_merge)
-    (ttm.present? ? (ttm / 86400.to_f) : nil).round(2)
+    (ttm.present? ? (ttm / 86400.to_f) : nil).try(:round, 2)
   end
 end

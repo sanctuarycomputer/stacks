@@ -459,13 +459,13 @@ Budget: <%= number_to_currency(budget_high_end) %>
           <%= link_to zw.name, admin_zenhub_workspace_path(zw) %>
         </td>
         <td class="col">
-          <%= zw.average_time_to_merge_pr_in_days_during_range(Date.today - 1.month, Date.today) %> days
+          <%= zw.average_time_to_merge_pr_in_days_during_range(Date.today - 1.month, Date.today) || "?" %> days
         </td>
         <td class="col">
-          <%= zw.average_time_to_merge_pr_in_days_during_range(Date.today - 3.months, Date.today) %> days
+          <%= zw.average_time_to_merge_pr_in_days_during_range(Date.today - 3.months, Date.today) || "?" %> days
         </td>
         <td class="col">
-          <%= zw.average_time_to_merge_pr %> days
+          <%= zw.average_time_to_merge_pr || "?" %> days
         </td>
       </tr>
     <% end %>

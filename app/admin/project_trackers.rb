@@ -209,7 +209,7 @@ ActiveAdmin.register ProjectTracker do
         arr = resource.zenhub_workspaces.map do |zw|
           zw.average_time_to_merge_pr_in_days_during_range(Date.today - 3.months, Date.today)
         end
-        "#{(arr.inject{ |sum, el| sum + el }.to_f / arr.size).round(2)} days"
+        "#{(arr.compact.inject{ |sum, el| sum + el }.to_f / arr.size).round(2) || '?'} days"
       end
     end
     column "Runn.io Project", :runn_project do |resource|
