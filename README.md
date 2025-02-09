@@ -1,6 +1,5 @@
 # Stacks
 
-
 ## Warning
 
 Stacks was originally developed very quickly, as a hack on top of
