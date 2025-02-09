@@ -55,6 +55,12 @@ ActiveAdmin.register ProjectTracker do
       :_destroy,
       :_edit
     ],
+    project_tracker_zenhub_workspaces_attributes: [
+      :id,
+      :zenhub_workspace_id,
+      :_destroy,
+      :_edit
+    ],
     creative_lead_periods_attributes: [
       :id,
       :admin_user_id,
@@ -185,6 +191,25 @@ ActiveAdmin.register ProjectTracker do
         )
       else
         span("No Forecast Project/s Connected", class: "pill error")
+      end
+    end
+    column "Zenhub Workspaces", :zenhub_workspaces do |resource|
+      if resource.zenhub_workspaces.any?
+        div(
+          resource.zenhub_workspaces.map do |zw|
+            link_to zw.name, admin_zenhub_workspace_path(zw)
+          end
+        )
+      else
+        span("No Zenhub Workspace/s Connected", class: "pill error")
+      end
+    end
+    column "TTM PR (Last 3 Months)", :zenhub_workspaces do |resource|
+      if resource.zenhub_workspaces.any?
+        arr = resource.zenhub_workspaces.map do |zw|
+          zw.average_time_to_merge_pr_in_days_during_range(Date.today - 3.months, Date.today)
+        end
+        "#{(arr.inject{ |sum, el| sum + el }.to_f / arr.size).round(2)} days"
       end
     end
     column "Runn.io Project", :runn_project do |resource|
@@ -465,6 +490,14 @@ ActiveAdmin.register ProjectTracker do
         as: :select,
         collection: RunnProject.candidates_for_association_with_project_tracker(resource),
         hint: "Runn.io Project missing? Check first it's not tentative or archived in Runn.io; and it should appear in this list after about 10 minutes."
+
+      f.has_many :project_tracker_zenhub_workspaces, heading: false, allow_destroy: true, new_record: 'Connect a Zenhub Workspace' do |a|
+        a.input(:zenhub_workspace, {
+          label: "Zenhub Workspace",
+          prompt: "Select a Zenhub Workspace",
+          collection: ZenhubWorkspace.all,
+        })
+      end
 
       f.input :notes, label: "Notes (accepts markdown)"
     end

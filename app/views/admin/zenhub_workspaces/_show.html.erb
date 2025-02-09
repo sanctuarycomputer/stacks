@@ -1,0 +1,73 @@
+<script>
+function update(a, b) {
+  var searchParams = new URLSearchParams(window.location.search);
+  if (b !== '')
+    searchParams.set(a, b);
+  else
+    searchParams.delete(a);
+  window.location.search = searchParams.toString();
+}
+</script>
+
+<% current_gradation = params["gradation"] || default_gradation %>
+
+<% current_gradation = default_gradation unless all_gradations.include?(current_gradation) %>
+<% accounting_method = session[:accounting_method] || "cash" %>
+<% all_gradations.each do |gradation| %>
+  <a onclick='update("gradation", "<%= gradation %>");' style="margin-right: 6px">
+    <p class="nag pill <%= current_gradation == gradation ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
+      By <%= gradation.humanize %>
+    </p>
+  </a>
+<% end %>
+
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">💾 Dev Data</h2>
+  </div>
+</div>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Dev Data</p>
+    </div>
+    <div class="module-body">
+      <canvas id="dev-data"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+  luxon.Settings.defaultLocale = "en";
+
+  new Chart(document.getElementById('dev-data'), {
+    type: 'bar',
+    data: <%= dev_data.to_json.html_safe %>,
+    options: {
+      interaction: {
+        intersect: false,
+        mode: 'index',
+      },
+      tension: 0.3,
+      scales: {
+        y: {
+          type: 'linear',
+          display: true,
+          position: 'left',
+          beginAtZero: true
+        },
+        y1: {
+          type: 'linear',
+          display: true,
+          position: 'right',
+          beginAtZero: true,
+          min: 0,
+          grid: {
+            drawOnChartArea: false, // only want the grid lines for one axis to show up
+          },
+        }
+      }
+    }
+  })
+</script>

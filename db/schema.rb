@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2025_01_17_002427) do
+ActiveRecord::Schema.define(version: 2025_02_09_202713) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -609,6 +609,15 @@ ActiveRecord::Schema.define(version: 2025_01_17_002427) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.index ["project_tracker_id"], name: "index_project_tracker_links_on_project_tracker_id"
+  end
+
+  create_table "project_tracker_zenhub_workspaces", force: :cascade do |t|
+    t.bigint "project_tracker_id", null: false
+    t.string "zenhub_workspace_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["project_tracker_id", "zenhub_workspace_id"], name: "idx_project_tracker_zenhub_workspace", unique: true
+    t.index ["project_tracker_id"], name: "index_project_tracker_zenhub_workspaces_on_project_tracker_id"
   end
 
   create_table "project_trackers", force: :cascade do |t|

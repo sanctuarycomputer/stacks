@@ -30,6 +30,10 @@ class ProjectTracker < ApplicationRecord
   has_many :forecast_projects, through: :project_tracker_forecast_projects
   accepts_nested_attributes_for :project_tracker_forecast_projects, allow_destroy: true
 
+  has_many :project_tracker_zenhub_workspaces, dependent: :delete_all
+  has_many :zenhub_workspaces, through: :project_tracker_zenhub_workspaces
+  accepts_nested_attributes_for :project_tracker_zenhub_workspaces, allow_destroy: true
+
   has_many :forecast_assignments, through: :forecast_projects
 
   belongs_to :runn_project, class_name: "RunnProject", foreign_key: "runn_project_id", primary_key: "runn_id", optional: true
@@ -585,5 +589,16 @@ class ProjectTracker < ApplicationRecord
 
   def income
     snapshot["invoiced_income_total"].to_f
+  end
+
+  def average_time_to_merge_pr_in_days_during_range(start_range, end_range)
+    gh_repo_ids = zenhub_workspaces.map(&:github_repos).flatten.map(&:id)
+    prs = GithubPullRequest
+      .where(merged_at: start_range..end_range)
+      .where(github_repo: gh_repo_ids)
+      .merged
+
+    ttm = prs.average(:time_to_merge)
+    ttm.present? ? (ttm / 86400.to_f) : nil
   end
 end
