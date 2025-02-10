@@ -201,15 +201,23 @@ ActiveAdmin.register ProjectTracker do
           end
         )
       else
-        span("No Zenhub Workspace/s Connected", class: "pill error")
+        span("No Zenhub/s Connected", class: "pill error")
       end
     end
-    column "TTM PR (Last 3 Months)", :zenhub_workspaces do |resource|
+    column "TTM (Trailing 3 Months)", :zenhub_workspaces do |resource|
       if resource.zenhub_workspaces.any?
         arr = resource.zenhub_workspaces.map do |zw|
           zw.average_time_to_merge_pr_in_days_during_range(Date.today - 3.months, Date.today)
         end
-        "#{(arr.compact.inject{ |sum, el| sum + el }.to_f / arr.size).round(2) || '?'} days"
+        span("#{(arr.compact.inject{ |sum, el| sum + el }.to_f / arr.size).round(2) || '?'} days", style: "white-space:nowrap")
+      end
+    end
+    column "Lifetime TTM", :zenhub_workspaces do |resource|
+      if resource.zenhub_workspaces.any?
+        arr = resource.zenhub_workspaces.map do |zw|
+          zw.average_time_to_merge_pr
+        end
+        span("#{(arr.compact.inject{ |sum, el| sum + el }.to_f / arr.size).round(2) || '?'} days", style: "white-space:nowrap")
       end
     end
     column "Runn.io Project", :runn_project do |resource|

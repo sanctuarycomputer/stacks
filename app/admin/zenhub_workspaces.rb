@@ -52,9 +52,10 @@ ActiveAdmin.register ZenhubWorkspace do
     workspace_data = Stacks::Period.for_gradation(current_gradation.to_sym).map do |period|
       period_prs = prs.where(merged_at: period.starts_at..period.ends_at)
       ttm = period_prs.average(:time_to_merge)
+      ttms = period_prs.map{|pr| (pr.time_to_merge / 86400.to_f)}
       {
         prs_merged: prs.count,
-        time_to_merge_pr: ttm.present? ? (ttm / 86400.to_f) : nil
+        time_to_merge_pr: ttm.present? ? (ttm / 86400.to_f) : nil,
       }
     end
 
@@ -67,7 +68,7 @@ ActiveAdmin.register ZenhubWorkspace do
         data: (snapshot.map do |v|
           v.dig(accounting_method, datapoints_bearer, "time_to_merge_pr", "value").to_f
         end),
-        yAxisID: 'y1',
+        yAxisID: 'y',
       }, {
         label: "#{zenhub_workspace.name} Average Time to Merge PR (Days)",
         borderColor: COLORS[1],
@@ -75,7 +76,7 @@ ActiveAdmin.register ZenhubWorkspace do
         data: (workspace_data.map do |v|
           v[:time_to_merge_pr]
         end),
-        yAxisID: 'y1',
+        yAxisID: 'y',
       }]
     }
 
