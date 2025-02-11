@@ -52,7 +52,7 @@ class ForecastProject < ApplicationRecord
       ptfp.project_tracker_id == except_project_tracker_id
     end
 
-    filtered_ptfps.map(&:forecast_project).map(&:code).flatten
+    filtered_ptfps.map(&:forecast_project).compact.map(&:code).flatten
   end
 
   def forecast_assignments
