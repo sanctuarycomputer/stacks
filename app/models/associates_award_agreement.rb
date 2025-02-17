@@ -8,6 +8,10 @@ class AssociatesAwardAgreement < ApplicationRecord
     month: 0
   }
 
+  scope :active, -> {
+    joins(:admin_user).merge(AdminUser.active)
+  }
+
   def self.total_award_units_issued_on(date = Date.today)
     AssociatesAwardAgreement.all.map do |a|
       a.vested_units_on(date)
@@ -20,6 +24,7 @@ class AssociatesAwardAgreement < ApplicationRecord
 
   def vested_units_on(date = Date.today)
     return 0 if date < started_at
+    return 0 unless admin_user.is_employed_on_date?(date)
 
     full_months = Stacks::Utils.full_months_between(date, started_at)
     if full_months < vesting_periods

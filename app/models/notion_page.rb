@@ -12,7 +12,7 @@ class NotionPage < ApplicationRecord
   scope :lead, -> {
     where(
       notion_parent_type: "database_id",
-      notion_parent_id: Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:LEAD_DATA_TRACKING])
+      notion_parent_id: Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:LEADS])
     )
   }
 
@@ -55,16 +55,6 @@ class NotionPage < ApplicationRecord
       FROM notion_pages
       WHERE data -> 'properties' -> 'Status' -> 'select' ->> 'name' = '#{status}'
     ")
-  end
-
-  def self.status_changed_to_during_range(status, start_range, end_range)
-    NotionPage.includes(:versions).all.select do |page|
-      page.status_history.find do |diff|
-        diff[:current_status] == status &&
-        diff[:changed_at] >= start_range &&
-        diff[:changed_at] <= end_range
-      end.present?
-    end
   end
 
   def get_prop(name)

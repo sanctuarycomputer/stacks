@@ -6,6 +6,15 @@ class AssociatesAwardAgreementTest < ActiveSupport::TestCase
       email: "jacob@xxix.co",
       password: "passw0rd",
     })
+    FullTimePeriod.create!({
+      admin_user: admin_user,
+      started_at: Date.new(2020, 1, 1),
+      ended_at: nil,
+      contributor_type: Enum::ContributorType::FIVE_DAY,
+      expected_utilization: 0.8
+    })
+    admin_user.full_time_periods.reload
+
     award_agreement = AssociatesAwardAgreement.create!({
       admin_user: admin_user,
       started_at: Date.new(2020, 1, 1),
@@ -29,6 +38,15 @@ class AssociatesAwardAgreementTest < ActiveSupport::TestCase
       email: "jacob@xxix.co",
       password: "passw0rd",
     })
+    FullTimePeriod.create!({
+      admin_user: admin_user,
+      started_at: Date.new(2020, 1, 1),
+      ended_at: nil,
+      contributor_type: Enum::ContributorType::FIVE_DAY,
+      expected_utilization: 0.8
+    })
+    admin_user.full_time_periods.reload
+
     award_agreement = AssociatesAwardAgreement.create!({
       admin_user: admin_user,
       started_at: Date.new(2020, 1, 1),
@@ -49,6 +67,15 @@ class AssociatesAwardAgreementTest < ActiveSupport::TestCase
       email: "jacob@xxix.co",
       password: "passw0rd",
     })
+    FullTimePeriod.create!({
+      admin_user: admin_user,
+      started_at: Date.new(2020, 1, 1),
+      ended_at: nil,
+      contributor_type: Enum::ContributorType::FIVE_DAY,
+      expected_utilization: 0.8
+    })
+    admin_user.full_time_periods.reload
+
     award_agreement = AssociatesAwardAgreement.create!({
       admin_user: admin_user,
       started_at: Date.new(2020, 1, 1),
@@ -71,6 +98,14 @@ class AssociatesAwardAgreementTest < ActiveSupport::TestCase
         email: "user-#{i}@xxix.co",
         password: "passw0rd",
       })
+      FullTimePeriod.create!({
+        admin_user: admin_user,
+        started_at: Date.new(2020, 1, 1),
+        ended_at: nil,
+        contributor_type: Enum::ContributorType::FIVE_DAY,
+        expected_utilization: 0.8
+      })
+      admin_user.full_time_periods.reload
       award_agreement = AssociatesAwardAgreement.create!({
         admin_user: admin_user,
         started_at: Date.new(2020, 1, 1),
@@ -94,8 +129,39 @@ class AssociatesAwardAgreementTest < ActiveSupport::TestCase
 
     # Ensure the diluted ppl + pool owner === 1
     assert (
-      AssociatesAwardAgreement.pool_owner_percentage_of_pool_on(Date.new(2025, 12, 1)) + 
+      AssociatesAwardAgreement.pool_owner_percentage_of_pool_on(Date.new(2025, 12, 1)) +
       AssociatesAwardAgreement.all.map{|a| a.percentage_of_pool_on(Date.new(2025, 12, 1))}.reduce(:+)
     ) == 1
+  end
+
+  test "It returns 0 vested units when admin user's full time period has ended" do
+    admin_user = AdminUser.create!({
+      email: "expired@xxix.co",
+      password: "passw0rd",
+    })
+
+    FullTimePeriod.create!({
+      admin_user: admin_user,
+      started_at: Date.new(2020, 1, 1),
+      ended_at: Date.new(2022, 1, 1),  # Employment ended
+      contributor_type: Enum::ContributorType::FIVE_DAY,
+      expected_utilization: 0.8
+    })
+    admin_user.full_time_periods.reload
+
+    award_agreement = AssociatesAwardAgreement.create!({
+      admin_user: admin_user,
+      started_at: Date.new(2020, 1, 1),
+      initial_unit_grant: 69_476,
+      vesting_unit_increments: 69_444,
+      vesting_periods: 71,
+      vesting_period_type: :month,
+    })
+
+    # Should have vested units during employment
+    assert award_agreement.vested_units_on(Date.new(2021, 1, 1)) > 0
+
+    # Should have 0 vested units after employment ended
+    assert_equal 0, award_agreement.vested_units_on(Date.new(2022, 1, 2))
   end
 end

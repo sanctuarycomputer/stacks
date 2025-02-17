@@ -48,7 +48,13 @@ class Stacks::Github
       page = 1
 
       loop do
-        current_page_prs = @client.pull_requests(repo_name, state: 'all', page: page, per_page: 100)
+        begin
+          current_page_prs = @client.pull_requests(repo_name, state: 'all', page: page, per_page: 100)
+        rescue => e
+          next if e.response_status == 404
+          raise e
+        end
+
         puts "Fetched #{current_page_prs.count} pull requests for #{repo_name}"
         data.concat(current_page_prs.map do |pr|
           pr.user.to_hash.tap do |data|
@@ -92,7 +98,13 @@ class Stacks::Github
       page = 1
 
       loop do
-        current_page_issues = @client.issues(repo_name, state: 'all', page: page, per_page: 100)
+        begin
+          current_page_issues = @client.issues(repo_name, state: 'all', page: page, per_page: 100)
+        rescue => e
+          next if e.response_status == 404
+          raise e
+        end
+
         puts "Fetched #{current_page_issues.count} issues for #{repo_name}"
         data.concat(current_page_issues.map do |issue|
           issue.user.to_hash.tap do |data|

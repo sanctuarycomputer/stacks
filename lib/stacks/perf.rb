@@ -10,5 +10,10 @@ class Stacks::Perf
     elapsed = now - @last_marker_time
     @markers[label] = elapsed
     @last_marker_time = now
+    report
+  end
+
+  def report
+    @markers.each{|k,v| puts "#{k}: #{v.round(2)} seconds"}
   end
 end

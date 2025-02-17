@@ -499,17 +499,17 @@ function update(a, b) {
       <thead>
         <tr>
           <th class="col">Person</th>
-          <th class="col">Sellable</th>
-          <th class="col">Non Sellable</th>
-          <th class="col">Time Off</th>
-          <th class="col">Non Billable</th>
-          <th class="col">Actual Hours Sold</th>
+          <th class="col">Expected: Sellable</th>
+          <th class="col">Expected: Non Sellable (Time Off & Internal)</th>
+          <th class="col">Actual: Time Off</th>
+          <th class="col">Actual: Internal</th>
+          <th class="col">Actual: Sold</th>
           <th class="col">Sellable Hours Sold %</th>
           <th class="col text-right">Health</th>
         </tr>
       </thead>
       <tbody>
-        <% period["utilization"].each_with_index do |tuple, index| %>
+        <% period["utilization"].select{|k, v| v["sellable"].to_f.round(2) > 0 || v["non_sellable"].to_f.round(2) > 0}.each_with_index do |tuple, index| %>
           <% email, d = tuple %>
           <% total_billable = (d["billable"].values.map(&:to_f).reduce(&:+) || 0).round(2) %>
 

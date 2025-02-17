@@ -13,7 +13,7 @@ class StudioTest < ActiveSupport::TestCase
       last_name: "Francis",
       email: "hugh@sanctuary.computer",
       archived: false,
-      roles: [],
+      roles: ["Sanctuary Computer"],
       updated_at: Date.today,
     })
     admin_user = AdminUser.create!({
@@ -34,8 +34,9 @@ class StudioTest < ActiveSupport::TestCase
     })
     admin_user.full_time_periods.reload
 
+    ForecastPerson.all.each{ |fp| fp.sync_utilization_reports! }
     jan = Stacks::Period.new("January 2020", Date.new(2021, 6, 1), Date.new(2021, 6, 30))
-    u = studio.utilization_for_period(jan, [studio])[forecast_person]
+    u = studio.utilization_for_period(jan, studio.forecast_people)[forecast_person]
 
     assert (u[:sellable] / (u[:sellable] + u[:non_sellable])) == ftp.expected_utilization
   end
@@ -52,7 +53,7 @@ class StudioTest < ActiveSupport::TestCase
       last_name: "Francis",
       email: "hugh@sanctuary.computer",
       archived: false,
-      roles: [],
+      roles: ["Sanctuary Computer"],
       updated_at: Date.today,
     })
     admin_user = AdminUser.create!({
@@ -73,8 +74,10 @@ class StudioTest < ActiveSupport::TestCase
     })
     admin_user.full_time_periods.reload
 
+    ForecastPerson.all.each{ |fp| fp.sync_utilization_reports! }
+
     jan = Stacks::Period.new("January 2020", Date.new(2021, 6, 1), Date.new(2021, 6, 30))
-    u = studio.utilization_for_period(jan, [studio])[forecast_person]
+    u = studio.utilization_for_period(jan, studio.forecast_people)[forecast_person]
 
     assert (u[:sellable] / (u[:sellable] + u[:non_sellable])) == ftp.expected_utilization
   end
@@ -91,7 +94,7 @@ class StudioTest < ActiveSupport::TestCase
       last_name: "Francis",
       email: "hugh@sanctuary.computer",
       archived: false,
-      roles: [],
+      roles: ["Sanctuary Computer"],
       updated_at: Date.today,
     })
     admin_user = AdminUser.create!({
@@ -112,8 +115,9 @@ class StudioTest < ActiveSupport::TestCase
     })
     admin_user.full_time_periods.reload
 
+    ForecastPerson.all.each{ |fp| fp.sync_utilization_reports! }
     jan = Stacks::Period.new("January 2020", Date.new(2021, 6, 1), Date.new(2021, 6, 30))
-    u = studio.utilization_for_period(jan, [studio])[forecast_person]
+    u = studio.utilization_for_period(jan, studio.forecast_people)[forecast_person]
 
     assert u[:sellable] == 0
     assert u[:non_sellable] == 0

@@ -113,6 +113,10 @@ class AdminUser < ApplicationRecord
     cost_of_employment_on_date(date) / hours_per_day
   end
 
+  def is_employed_on_date?(date)
+    full_time_period_at(date).present?
+  end
+
   def sellable_hours_for_date(date)
     ftp = full_time_period_at(date)
     return nil unless ftp.present?

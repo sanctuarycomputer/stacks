@@ -1,7 +1,4 @@
 class Studio < ApplicationRecord
-  has_many :social_properties, dependent: :delete_all
-  accepts_nested_attributes_for :social_properties, allow_destroy: true
-
   has_many :studio_memberships, dependent: :delete_all
   has_many :admin_users, through: :studio_memberships, dependent: :delete_all
 
@@ -77,38 +74,34 @@ class Studio < ApplicationRecord
       .select(&:active?)
   end
 
-  def sub_studios(preloaded_studios = Studio.all)
-    # If this is an "aggregated studio view" (ie, design@garden3d), split and
-    # aggregate the sub studios by matching mini_names
-    @_sub_studios ||= (preloaded_studios.select{|s| self.mini_name.split(",").map(&:strip).include?(s.mini_name) })
-  end
-
-  def forecast_people(preloaded_studios = Studio.all)
+  def forecast_people(all_studios = Studio.all)
     @_forecast_people ||= (
       people =
         ForecastPerson.includes(admin_user: [:studios, :full_time_periods]).all
       return people if is_garden3d?
-
       people.select do |fp|
-        next true if (fp.try(:admin_user).try(:studios) || []).to_a.intersection(sub_studios(preloaded_studios)).any?
-        fp.studios.to_a.intersection(sub_studios(preloaded_studios)).any?
+        next true if fp.admin_user&.studios&.include?(self)
+        fp.studios(all_studios).include?(self)
       end
     )
   end
 
   def generate_snapshot!(
     preloaded_studios = Studio.all,
-    preloaded_new_biz_notion_pages = new_biz_notion_pages
+    preloaded_new_biz_leads = new_biz_leads
   )
+    all_forecast_people = forecast_people(preloaded_studios)
+    all_okrs = Okr.includes({ okr_periods: { okr_period_studios: :studio }}).all
+
     snapshot =
       [:year, :month, :quarter, :trailing_3_months, :trailing_4_months, :trailing_6_months, :trailing_12_months].reduce({
         started_at: DateTime.now.iso8601,
       }) do |acc, gradation|
         periods = Stacks::Period.for_gradation(gradation)
 
-        utilization_by_period  =
+        utilization_by_period =
           periods.reduce({}) do |acc, period|
-            acc[period] = utilization_for_period(period, preloaded_studios)
+            acc[period] = utilization_for_period(period, all_forecast_people)
             acc
           end
 
@@ -139,7 +132,7 @@ class Studio < ApplicationRecord
               prev_period,
               "cash",
               preloaded_studios,
-              preloaded_new_biz_notion_pages,
+              preloaded_new_biz_leads,
               utilization_by_period[period],
               utilization_by_period[prev_period],
               g3d_utilization_by_period[period],
@@ -147,51 +140,51 @@ class Studio < ApplicationRecord
             )
 
             d[:cash][:datapoints] = cash_base_datapoints
-            d[:cash][:okrs] = self.okrs_for_period(period, d[:cash][:datapoints])
+            d[:cash][:okrs] = self.okrs_for_period(period, d[:cash][:datapoints], all_okrs)
             d[:cash][:datapoints_excluding_reinvestment] = cash_datapoints_excluding_reinvestment
-            d[:cash][:okrs_excluding_reinvestment] = self.okrs_for_period(period, d[:cash][:datapoints_excluding_reinvestment])
+            d[:cash][:okrs_excluding_reinvestment] = self.okrs_for_period(period, d[:cash][:datapoints_excluding_reinvestment], all_okrs)
 
             accrual_base_datapoints, accrual_datapoints_excluding_reinvestment = self.key_datapoints_for_period(
               period,
               prev_period,
               "accrual",
               preloaded_studios,
-              preloaded_new_biz_notion_pages,
+              preloaded_new_biz_leads,
               utilization_by_period[period],
               utilization_by_period[prev_period],
               g3d_utilization_by_period[period],
               g3d_utilization_by_period[prev_period],
             )
             d[:accrual][:datapoints] = accrual_base_datapoints
-            d[:accrual][:okrs] = self.okrs_for_period(period, d[:accrual][:datapoints])
+            d[:accrual][:okrs] = self.okrs_for_period(period, d[:accrual][:datapoints], all_okrs)
             d[:accrual][:datapoints_excluding_reinvestment] = accrual_datapoints_excluding_reinvestment
-            d[:accrual][:okrs_excluding_reinvestment] = self.okrs_for_period(period, d[:accrual][:datapoints_excluding_reinvestment])
+            d[:accrual][:okrs_excluding_reinvestment] = self.okrs_for_period(period, d[:accrual][:datapoints_excluding_reinvestment], all_okrs)
           else
             d[:cash][:datapoints] = self.key_datapoints_for_period(
               period,
               prev_period,
               "cash",
               preloaded_studios,
-              preloaded_new_biz_notion_pages,
+              preloaded_new_biz_leads,
               utilization_by_period[period],
               utilization_by_period[prev_period],
               g3d_utilization_by_period[period],
               g3d_utilization_by_period[prev_period],
             ).first # The first scenario is base
-            d[:cash][:okrs] = self.okrs_for_period(period, d[:cash][:datapoints])
+            d[:cash][:okrs] = self.okrs_for_period(period, d[:cash][:datapoints], all_okrs)
 
             d[:accrual][:datapoints] = self.key_datapoints_for_period(
               period,
               prev_period,
               "accrual",
               preloaded_studios,
-              preloaded_new_biz_notion_pages,
+              preloaded_new_biz_leads,
               utilization_by_period[period],
               utilization_by_period[prev_period],
               g3d_utilization_by_period[period],
               g3d_utilization_by_period[prev_period],
             ).first # The first scenario is base
-            d[:accrual][:okrs] = self.okrs_for_period(period, d[:accrual][:datapoints])
+            d[:accrual][:okrs] = self.okrs_for_period(period, d[:accrual][:datapoints], all_okrs)
           end
 
           d
@@ -266,14 +259,15 @@ class Studio < ApplicationRecord
     update!(snapshot: snapshot)
   end
 
-  def okrs_for_period(period, datapoints)
-    okrs = Okr.includes({ okr_periods: { okr_period_studios: :studio }}).all
+  def okrs_for_period(period, datapoints, okrs)
     okrs.reduce({}) do |acc, okr|
+      # Find all OKR periods that are associated with this studio
       okrps_for_studio = okr.okr_periods
         .select{|okrp| okrp.okr_period_studios.map(&:studio).include?(self)}
         .sort_by{|okrp| okrp.period_starts_at}
       next acc if okrps_for_studio.empty?
 
+      # Find the OKR period that has the most overlap with the period
       period_range = period.starts_at..period.ends_at
       okrp_candidate = okrps_for_studio.reduce({ overlap_days: nil, okrp: nil }) do |agg, okrp|
         okrp_range = okrp.period_starts_at..okrp.period_ends_at
@@ -341,8 +335,6 @@ class Studio < ApplicationRecord
       "#{ActionController::Base.helpers.number_to_currency(datapoints[:cogs][:value])} spent over #{datapoints[:sellable_hours][:value]} sellable hrs"
     when "profit_margin"
       "#{ActionController::Base.helpers.number_to_currency(datapoints[:cogs][:value])} spent, #{ActionController::Base.helpers.number_to_currency(datapoints[:revenue][:value])} earnt"
-    when "total_social_growth"
-      "#{datapoints[:social_growth_count][:value]} new followers"
     when "revenue_growth"
       "#{ActionController::Base.helpers.number_to_currency(datapoints[:revenue][:value])} revenue recieved"
     when "lead_growth"
@@ -352,36 +344,34 @@ class Studio < ApplicationRecord
     end
   end
 
-  def new_biz_notion_pages
-    leads = NotionPage.lead.map(&:as_lead)
-    mini_names = mini_name.split(",").map(&:strip)
+  def new_biz_leads
+    @_new_biz_leads ||= (
+      leads = NotionPage.lead.map(&:as_lead)
+      mini_names = mini_name.split(",").map(&:strip)
 
-    if is_garden3d?
-      leads
-    else
-      leads.select do |l|
-        studios = l.get_prop_value("Projects: Studio").dig("array", 0, "multi_select")
-        studios.map{|s| s["name"].downcase}.intersection(mini_names).any? if studios.present?
+      if is_garden3d?
+        leads
+      else
+        leads.select do |l|
+          studios = l.get_prop_value("Projects: Studio").dig("array", 0, "multi_select")
+          studios.map{|s| s["name"].downcase}.intersection(mini_names).any? if studios.present?
+        end
       end
+    )
+  end
+
+  def non_core_forecast_people_involved_with_studio(all_studios = Studio.all)
+    @_non_core_forecast_people_involved_with_studio ||= forecast_people(all_studios).select do |fp|
+      fp.admin_user.nil?
     end
   end
 
-  def non_core_forecast_people_involved_with_studio
-    all_studios = Studio.all
-    @_non_core_forecast_people_involved_with_studio ||=
-      ForecastPerson.all.select{|fp| fp.admin_user.nil? && fp.studios(all_studios).include?(self)}
+  def forecast_people_involved_with_studio_in_period(period, all_studios = Studio.all)
+    core_members_involved_during_period = core_members_active_during_range(period.starts_at, period.ends_at)
+    [*core_members_involved_during_period.map(&:forecast_person), *non_core_forecast_people_involved_with_studio(all_studios)].compact
   end
 
-  def forecast_people_involved_with_studio_in_period(period)
-    core_members_involved_during_period =
-      (period.starts_at..period.ends_at).reduce([]) do |acc, date|
-        [*acc, *core_members_active_on(date)].uniq
-      end
-
-    [*core_members_involved_during_period.map(&:forecast_person), *non_core_forecast_people_involved_with_studio].compact
-  end
-
-  def project_trackers_with_recorded_time_in_period(period, preloaded_studios = Studio.all)
+  def project_trackers_with_recorded_time_in_period(period, all_studios = Studio.all)
     assignments =
       ForecastAssignment
         .includes(
@@ -391,10 +381,10 @@ class Studio < ApplicationRecord
           'end_date >= ? AND start_date <= ? AND person_id in (?)',
           period.starts_at,
           period.ends_at,
-          forecast_people_involved_with_studio_in_period(period).map(&:forecast_id)
+          forecast_people_involved_with_studio_in_period(period, all_studios).map(&:forecast_id)
         )
     forecast_projects = assignments.map(&:forecast_project).uniq.reject do |fp|
-      fp.is_internal?(preloaded_studios)
+      fp.is_internal?
     end
 
     ProjectTrackerForecastProject
@@ -404,14 +394,14 @@ class Studio < ApplicationRecord
       .uniq
   end
 
-  def leads_recieved_in_period(leads = new_biz_notion_pages, period)
+  def leads_recieved_in_period(leads = new_biz_leads, period)
     leads.select do |l|
       next false unless l.received_at
       period.include?(DateTime.parse(l.received_at).to_date)
     end
   end
 
-  def sent_proposals_settled_in_period(leads = new_biz_notion_pages, period)
+  def sent_proposals_settled_in_period(leads = new_biz_leads, period)
     leads.select do |l|
       next false unless (l.settled_at && l.proposal_sent_at)
       period.include?(DateTime.parse(l.settled_at).to_date)
@@ -440,6 +430,7 @@ class Studio < ApplicationRecord
   def core_members_active_on(date)
     if is_garden3d?
       AdminUser
+        .includes(:forecast_person)
         .joins(:full_time_periods)
         .where("
           full_time_periods.started_at <= :date AND
@@ -448,6 +439,7 @@ class Studio < ApplicationRecord
         ", { date: date }).distinct
     else
       admin_users
+        .includes(:forecast_person)
         .joins(:full_time_periods, :studio_memberships)
         .where("
           full_time_periods.started_at <= :date AND
@@ -463,23 +455,27 @@ class Studio < ApplicationRecord
   def core_members_active_during_range(start_range, end_range)
     if is_garden3d?
       AdminUser
+        .includes(:forecast_person)
         .joins(:full_time_periods)
         .where("
           coalesce(full_time_periods.ended_at, 'infinity') >= :start_range AND
           full_time_periods.started_at <= :end_range AND
           full_time_periods.contributor_type IN (0, 1)
-        ", { start_range: start_range, end_range: end_range })
+        ", { start_range: start_range, end_range: end_range }).distinct
     else
       admin_users
-        .joins(:full_time_periods, :studio_memberships)
+        .includes(:forecast_person)
+        .joins(:full_time_periods)
         .where("
           coalesce(full_time_periods.ended_at, 'infinity') >= :start_range AND
           full_time_periods.started_at <= :end_range AND
           full_time_periods.contributor_type IN (0, 1) AND
           coalesce(studio_memberships.ended_at, 'infinity') >= :start_range AND
           studio_memberships.started_at <= :end_range AND
-          studio_memberships.studio_id = :studio_id
-        ", { start_range: start_range, end_range: end_range, studio_id: self.id })
+          studio_memberships.studio_id = :studio_id AND
+          full_time_periods.started_at <= coalesce(studio_memberships.ended_at, 'infinity') AND
+          studio_memberships.started_at <= coalesce(full_time_periods.ended_at, 'infinity')
+        ", { start_range: start_range, end_range: end_range, studio_id: self.id }).distinct
     end
   end
 
@@ -489,39 +485,6 @@ class Studio < ApplicationRecord
 
     studio_members_at_start_of_period.reject do |sm|
       studio_members_at_end_of_period.include?(sm)
-    end
-  end
-
-  def aggregate_social_growth_for_period(aggregate_social_following, period)
-    closest_period_start_date_sample =
-      aggregate_social_following.keys.sort.reduce(nil) do |closest, sample_date|
-        next closest if sample_date > period.starts_at
-        next sample_date if closest.nil?
-        closest < sample_date ? sample_date : closest
-      end
-
-    closest_period_end_date_sample =
-      aggregate_social_following.keys.sort.reduce(nil) do |closest, sample_date|
-        next closest if sample_date > period.ends_at
-        next sample_date if closest.nil?
-        closest < sample_date ? sample_date : closest
-      end
-
-    return nil unless closest_period_start_date_sample && closest_period_end_date_sample
-
-    diff = aggregate_social_following[closest_period_end_date_sample] - aggregate_social_following[closest_period_start_date_sample]
-    percent_change = ((
-      aggregate_social_following[closest_period_end_date_sample].to_f /
-      aggregate_social_following[closest_period_start_date_sample].to_f
-    ) * 100.0) - 100
-    [diff, percent_change]
-  end
-
-  def all_social_properties
-    if is_garden3d?
-      SocialProperty.all
-    else
-      social_properties
     end
   end
 
@@ -538,7 +501,7 @@ class Studio < ApplicationRecord
     prev_period,
     accounting_method,
     preloaded_studios = Studio.all,
-    preloaded_new_biz_notion_pages = new_biz_notion_pages,
+    preloaded_new_biz_leads = new_biz_leads,
     utilization_for_period = utilization_for_period(period, preloaded_studios),
     utilization_for_prev_period = utilization_for_period(prev_period, preloaded_studios),
     g3d_utilization_for_period = preloaded_studios.find(&:is_garden3d?).utilization_for_period(period, preloaded_studios),
@@ -546,7 +509,6 @@ class Studio < ApplicationRecord
   )
     # TODO: Fix me - right now I return nil if this period predates utilization data OR
     # there's just no one there
-
     v, g3dv, sellable_hours_proportion = merged_utilization_data(
       utilization_for_period,
       g3d_utilization_for_period
@@ -560,7 +522,7 @@ class Studio < ApplicationRecord
       sellable_hours_proportion
     )
 
-    leads_recieved = leads_recieved_in_period(preloaded_new_biz_notion_pages, period)
+    leads_recieved = leads_recieved_in_period(preloaded_new_biz_leads, period)
 
     if prev_period.present?
       prev_v, prev_g3dv, prev_sellable_hours_proportion = merged_utilization_data(
@@ -576,20 +538,14 @@ class Studio < ApplicationRecord
         prev_sellable_hours_proportion
       )
 
-      prev_leads_recieved = leads_recieved_in_period(preloaded_new_biz_notion_pages, prev_period)
+      prev_leads_recieved = leads_recieved_in_period(preloaded_new_biz_leads, prev_period)
     end
-
-    aggregate_social_following =
-      SocialProperty.aggregate!(all_social_properties)
-
-    social_growth_count, social_growth_percentage =
-      aggregate_social_growth_for_period(aggregate_social_following, period)
 
     leaving_members =
       studio_members_that_left_during_period(period)
-
     all_projects = project_trackers_with_recorded_time_in_period(period, preloaded_studios)
-    all_proposals = sent_proposals_settled_in_period(preloaded_new_biz_notion_pages, period)
+
+    all_proposals = sent_proposals_settled_in_period(preloaded_new_biz_leads, period)
     latest_survey_closed =
       surveys.where.not(closed_at: nil).order(closed_at: :desc).find do |s|
         # Assume we only do one of these a year, and it's results apply for that full year
@@ -674,14 +630,6 @@ class Studio < ApplicationRecord
         },
         lead_growth: {
           value: prev_period ? ((leads_recieved.length.to_f / prev_leads_recieved.length.to_f) * 100) - 100 : nil,
-          unit: :percentage
-        },
-        social_growth_count: {
-          value: social_growth_count,
-          unit: :count
-        },
-        total_social_growth: {
-          value: social_growth_percentage,
           unit: :percentage
         },
         total_projects: {
@@ -798,27 +746,21 @@ class Studio < ApplicationRecord
     end
   end
 
-  def utilization_for_period(period, preloaded_studios = Studio.all)
+  def utilization_for_period(period, forecast_people)
     return {} unless period.has_utilization_data?
 
-    forecast_people(preloaded_studios).reduce({}) do |acc, fp|
-      acc[fp] = fp.utilization_during_range(
-        period.starts_at,
-        period.ends_at,
-        preloaded_studios
-      )
-
-      if fp.admin_user.present?
-        acc[fp] = acc[fp].merge(
-          fp.admin_user.sellable_hours_for_period(period)
-        )
-      else
-        # Probably a contractor with an external email address
-        acc[fp] = acc[fp].merge({
-          sellable: acc[fp][:billable].values.reduce(:+) || 0,
-          non_sellable: 0
-        })
-      end
+    ForecastPersonUtilizationReport.where(
+      forecast_person_id: forecast_people.map(&:id),
+      starts_at: period.starts_at,
+      ends_at: period.ends_at
+    ).includes(:forecast_person).reduce({}) do |acc, report|
+      acc[report.forecast_person] = {
+        time_off: report.actual_hours_time_off,
+        billable: report.actual_hours_sold_by_rate,
+        non_billable: report.actual_hours_internal, # Internal
+        non_sellable: report.expected_hours_unsold,
+        sellable: report.expected_hours_sold,
+      }
       acc
     end
   end

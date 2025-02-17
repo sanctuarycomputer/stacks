@@ -63,8 +63,8 @@ class ForecastProject < ApplicationRecord
     name == "Time Off" && forecast_client.nil?
   end
 
-  def is_internal?(preloaded_studios = Studio.all)
-    is_time_off? || forecast_client && forecast_client.is_internal?(preloaded_studios)
+  def is_internal?
+    is_time_off? || forecast_client&.is_internal?
   end
 
   def display_name

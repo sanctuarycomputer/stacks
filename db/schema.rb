@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2025_02_09_202713) do
+ActiveRecord::Schema.define(version: 2025_02_16_194045) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -129,15 +129,6 @@ ActiveRecord::Schema.define(version: 2025_02_09_202713) do
     t.index ["admin_user_id"], name: "index_associates_award_agreements_on_admin_user_id"
   end
 
-  create_table "budgets", force: :cascade do |t|
-    t.string "name", null: false
-    t.text "notes"
-    t.decimal "amount", default: "0.0", null: false
-    t.integer "budget_type", default: 0, null: false
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-  end
-
   create_table "collective_role_holder_periods", force: :cascade do |t|
     t.bigint "collective_role_id", null: false
     t.bigint "admin_user_id", null: false
@@ -206,15 +197,6 @@ ActiveRecord::Schema.define(version: 2025_02_09_202713) do
     t.jsonb "snapshot", default: {}
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
-  end
-
-  create_table "expense_groups", force: :cascade do |t|
-    t.string "name"
-    t.string "matcher"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["matcher"], name: "index_expense_groups_on_matcher", unique: true
-    t.index ["name"], name: "index_expense_groups_on_name", unique: true
   end
 
   create_table "finalizations", force: :cascade do |t|
@@ -292,6 +274,23 @@ ActiveRecord::Schema.define(version: 2025_02_09_202713) do
     t.integer "updated_by_id"
     t.jsonb "data"
     t.index ["forecast_id"], name: "index_forecast_people_on_forecast_id", unique: true
+  end
+
+  create_table "forecast_person_utilization_reports", force: :cascade do |t|
+    t.integer "forecast_person_id", null: false
+    t.date "starts_at", null: false
+    t.date "ends_at", null: false
+    t.decimal "expected_hours_sold", precision: 10, scale: 2, null: false
+    t.decimal "expected_hours_unsold", precision: 10, scale: 2, null: false
+    t.decimal "actual_hours_sold", precision: 10, scale: 2, null: false
+    t.decimal "actual_hours_internal", precision: 10, scale: 2, null: false
+    t.decimal "actual_hours_time_off", precision: 10, scale: 2, null: false
+    t.jsonb "actual_hours_sold_by_rate", null: false
+    t.decimal "utilization_rate", precision: 10, scale: 2, null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["forecast_person_id", "starts_at", "ends_at"], name: "idx_forecast_person_utilization", unique: true
+    t.index ["forecast_person_id"], name: "index_forecast_person_utilization_reports_on_forecast_person_id"
   end
 
   create_table "forecast_projects", force: :cascade do |t|
@@ -506,16 +505,6 @@ ActiveRecord::Schema.define(version: 2025_02_09_202713) do
     t.index ["admin_user_id"], name: "index_pre_profit_share_purchases_on_admin_user_id"
   end
 
-  create_table "pre_spent_budgetary_purchases", force: :cascade do |t|
-    t.decimal "amount", null: false
-    t.string "note"
-    t.date "spent_at", null: false
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.bigint "budget_id"
-    t.index ["budget_id"], name: "index_pre_spent_budgetary_purchases_on_budget_id"
-  end
-
   create_table "profit_share_passes", force: :cascade do |t|
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
@@ -661,17 +650,6 @@ ActiveRecord::Schema.define(version: 2025_02_09_202713) do
     t.index ["qbo_account_id"], name: "index_qbo_profit_and_loss_reports_on_qbo_account_id"
   end
 
-  create_table "qbo_purchase_line_items", id: :string, force: :cascade do |t|
-    t.date "txn_date"
-    t.string "qbo_purchase_id"
-    t.string "description"
-    t.float "amount"
-    t.bigint "expense_group_id"
-    t.jsonb "data", default: {}
-    t.index ["expense_group_id"], name: "index_qbo_purchase_line_items_on_expense_group_id"
-    t.index ["id"], name: "index_qbo_purchase_line_items_on_id", unique: true
-  end
-
   create_table "qbo_tokens", force: :cascade do |t|
     t.string "token", null: false
     t.string "refresh_token", null: false
@@ -755,15 +733,6 @@ ActiveRecord::Schema.define(version: 2025_02_09_202713) do
     t.index ["deleted_at"], name: "index_scores_on_deleted_at"
     t.index ["score_tree_id"], name: "index_scores_on_score_tree_id"
     t.index ["trait_id"], name: "index_scores_on_trait_id"
-  end
-
-  create_table "social_properties", force: :cascade do |t|
-    t.bigint "studio_id", null: false
-    t.string "profile_url"
-    t.jsonb "snapshot", default: {}
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["studio_id"], name: "index_social_properties_on_studio_id"
   end
 
   create_table "studio_coordinator_periods", force: :cascade do |t|
@@ -1030,7 +999,6 @@ ActiveRecord::Schema.define(version: 2025_02_09_202713) do
   add_foreign_key "project_trackers", "runn_projects", primary_key: "runn_id"
   add_foreign_key "qbo_accounts", "enterprises"
   add_foreign_key "qbo_profit_and_loss_reports", "qbo_accounts"
-  add_foreign_key "qbo_purchase_line_items", "expense_groups"
   add_foreign_key "qbo_tokens", "qbo_accounts"
   add_foreign_key "review_trees", "reviews"
   add_foreign_key "review_trees", "trees"
@@ -1039,7 +1007,6 @@ ActiveRecord::Schema.define(version: 2025_02_09_202713) do
   add_foreign_key "score_trees", "workspaces"
   add_foreign_key "scores", "score_trees"
   add_foreign_key "scores", "traits"
-  add_foreign_key "social_properties", "studios"
   add_foreign_key "studio_coordinator_periods", "admin_users"
   add_foreign_key "studio_coordinator_periods", "studios"
   add_foreign_key "studio_memberships", "admin_users"

@@ -286,27 +286,6 @@ select {
   background-color: #e8e8e8;
 }
 
-body.admin_availability {
-  span.over-resourced {
-    font-weight: 600;
-    color: $color-red !important;
-  }
-  span.under-resourced {
-    font-weight: 600;
-    color: $color-green !important;
-  }
-  span.fully-resourced {
-    color: $color-grey !important;
-  }
-  span.increase {
-    font-weight: 600;
-    color: $color-green;
-  }
-  span.decrease {
-    color: $color-grey;
-  }
-}
-
 ::selection {
   background: $color-blue; /* WebKit/Blink Browsers */
   color: white;

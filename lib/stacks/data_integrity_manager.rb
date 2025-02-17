@@ -55,7 +55,7 @@ class Stacks::DataIntegrityManager
   def discover_forecast_project_problems
     preloaded_studios = Studio.all
     all_forecast_projects = ForecastProject.includes(:forecast_client).active.reject do |fp|
-      fp.is_internal?(preloaded_studios)
+      fp.is_internal?
     end
     forecast_projects = all_forecast_projects.reduce({}) do |acc, fp|
       next acc unless fp.has_no_explicit_hourly_rate?

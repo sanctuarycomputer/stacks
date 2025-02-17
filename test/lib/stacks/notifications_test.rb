@@ -9,7 +9,6 @@ class NotificationsTest < ActiveSupport::TestCase
     })
 
     Stacks::Notion.any_instance.stubs(:get_users).returns([])
-    Stacks::Availability.stubs(:load_allocations_from_notion).returns([[], []])
 
     Stacks::Twist.any_instance.stubs(:get_workspace_users).returns(
       Struct.new(:parsed_response).new([])

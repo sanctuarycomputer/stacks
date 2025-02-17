@@ -18,6 +18,12 @@ class Stacks::Period
     )
   end
 
+  def self.all
+    @_all ||= [:year, :month, :quarter, :trailing_3_months, :trailing_4_months, :trailing_6_months, :trailing_12_months].map do |gradation|
+      Stacks::Period.for_gradation(gradation)
+    end.flatten
+  end
+
   def total_days
     (ends_at - starts_at).to_i
   end

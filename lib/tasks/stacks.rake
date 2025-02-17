@@ -23,72 +23,12 @@ namespace :stacks do
     end
   end
 
-  desc "Sync in Social Properties and Samples"
-  task :sync_social => :environment do
-    begin
-      notion = Stacks::Notion.new
-
-      all_properties = notion.query_database_all(Stacks::Notion::DATABASE_IDS[:SOCIAL_PROPERTIES]).map do |sp|
-        Stacks::Notion::Base.new(OpenStruct.new({ data: sp }))
-      end
-
-      MailingList.all.each do |sp|
-        p = all_properties.find{|p| p.get_prop_value("Name").try(:first).try(:dig, "plain_text") == sp.name}
-        if !p
-          resp = notion.create_page({
-            type: "database_id",
-            database_id: Stacks::Notion::DATABASE_IDS[:SOCIAL_PROPERTIES]
-          }, {
-            "Name": {
-              "title": [{ "text": { "content": sp.name } }]
-            }
-          })
-          p = Stacks::Notion::Base.new(OpenStruct.new({ data: resp }))
-        end
-
-        sp.snapshot.map do |date, count|
-          notion.create_page({
-            type: "database_id",
-            database_id: Stacks::Notion::DATABASE_IDS[:SOCIAL_PROPERTY_SAMPLES]
-          }, {
-            "Name": {
-              "title": [{ "text": { "content": date } }]
-            },
-            "Follower/Subscriber Count": {
-              number: count
-            },
-            "Sample Date":{
-              date: { start: date }
-            },
-            "Social Property": {
-              relation: [{ id: p.data["id"] }]
-            }
-          })
-        end
-      end
-    rescue => e
-      binding.pry
-    end
-  end
-
   desc "Daily Enterprise Tasks"
   task :daily_enterprise_tasks => :environment do
     system_task = SystemTask.create!(name: "stacks:daily_enterprise_tasks")
     begin
       Parallel.map(QboAccount.all, in_threads: 2) { |e| e.sync_all! }
       Parallel.map(Enterprise.all, in_threads: 2) { |e| e.generate_snapshot! }
-    rescue => e
-      system_task.mark_as_error(e)
-    else
-      system_task.mark_as_success
-    end
-  end
-
-  desc "Make Notifications"
-  task :make_notifications => :environment do
-    system_task = SystemTask.create!(name: "stacks:make_notifications")
-    begin
-      Stacks::Notifications.make_notifications!
     rescue => e
       system_task.mark_as_error(e)
     else
@@ -121,31 +61,6 @@ namespace :stacks do
     end
   end
 
-  desc "Sync Expenses"
-  task :sync_expenses => :environment do
-    system_task = SystemTask.create!(name: "stacks:sync_expenses")
-    begin
-      Stacks::Expenses.sync_all! # TODO Remove me?
-      Stacks::Expenses.match_all! # TODO Remove me?
-    rescue => e
-      system_task.mark_as_error(e)
-    else
-      system_task.mark_as_success
-    end
-  end
-
-  desc "Sync Biz"
-  task :sync_biz => :environment do
-    system_task = SystemTask.create!(name: "stacks:sync_biz")
-    begin
-      Stacks::Biz.sync!
-    rescue => e
-      system_task.mark_as_error(e)
-    else
-      system_task.mark_as_success
-    end
-  end
-
   desc "Sync Notion"
   task :sync_notion => :environment do
     system_task = SystemTask.create!(name: "stacks:sync_notion")
@@ -168,30 +83,6 @@ namespace :stacks do
     begin
       Stacks::Github.sync_all!
       Stacks::Zenhub.sync_all!
-    rescue => e
-      system_task.mark_as_error(e)
-    else
-      system_task.mark_as_success
-    end
-  end
-
-  desc "Send Project Capsule reminders"
-  task :send_project_capsule_reminders => :environment do
-    system_task = SystemTask.create!(name: "stacks:send_project_capsule_reminders")
-    begin
-      Stacks::Automator.send_project_capsule_reminders_every_tuesday
-    rescue => e
-      system_task.mark_as_error(e)
-    else
-      system_task.mark_as_success
-    end
-  end
-
-  desc "Sample Social Properties"
-  task :sample_social_properties => :environment do
-    system_task = SystemTask.create!(name: "stacks:sample_social_properties")
-    begin
-      SocialProperty.all.each(&:generate_snapshot!)
     rescue => e
       system_task.mark_as_error(e)
     else
@@ -243,18 +134,6 @@ namespace :stacks do
     end
   end
 
-  desc "Test System Exception Notification"
-  task :test_system_exception_notification => :environment do
-    system_task = SystemTask.create!(name: "stacks:test_system_exception_notification")
-    begin
-      5 / 0
-    rescue => e
-      system_task.mark_as_error(e)
-    else
-      system_task.mark_as_success
-    end
-  end
-
   desc "Daily Tasks"
   task :daily_tasks => :environment do
     system_task = SystemTask.create!(name: "stacks:daily_tasks")
@@ -275,6 +154,13 @@ namespace :stacks do
 
       # No dependencies, so we can do this next
       Stacks::Automator.remind_people_of_outstanding_surveys_every_thurday
+      Stacks::Automator.send_project_capsule_reminders_every_tuesday
+
+      # This one is quick, so we can do it next
+      AdminUser.all.each(&:sync_salary_windows!)
+
+      # This one takes about ~5 - 10 minutes to run
+      Parallel.map(ForecastPerson.all, in_threads: 10) { |fp| fp.sync_utilization_reports! }
 
       puts "~~~> DOING SNAPSHOTS"
       Parallel.map(ProjectTracker.all, in_threads: 10) { |pt| pt.generate_snapshot! }
@@ -308,18 +194,6 @@ namespace :stacks do
       puts e
       puts e.backtrace
 
-      system_task.mark_as_error(e)
-    else
-      system_task.mark_as_success
-    end
-  end
-
-  desc "Resync salary windows"
-  task :resync_salary_windows => :environment do
-    system_task = SystemTask.create!(name: "stacks:resync_salary_windows")
-    begin
-      AdminUser.all.each(&:sync_salary_windows!)
-    rescue => e
       system_task.mark_as_error(e)
     else
       system_task.mark_as_success

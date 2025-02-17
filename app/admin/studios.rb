@@ -86,13 +86,6 @@ ActiveAdmin.register Studio do
       :ended_at,
       :_destroy,
       :_edit
-    ],
-    social_properties_attributes: [
-      :id,
-      :profile_url,
-      :studio_id,
-      :_destroy,
-      :_edit
     ]
 
   form do |f|
@@ -108,10 +101,6 @@ ActiveAdmin.register Studio do
         a.input :admin_user
         a.input :started_at
         a.input :ended_at
-      end
-
-      f.has_many :social_properties, heading: false, allow_destroy: true, new_record: 'Add a Social Property' do |a|
-        a.input :profile_url
       end
     end
     f.actions
@@ -386,67 +375,6 @@ ActiveAdmin.register Studio do
       end
     end
 
-    social_properties = resource.all_social_properties
-    mailing_lists = resource.all_mailing_lists
-    social_properties_data = {
-      type: 'line',
-      data: {
-        datasets: [{
-          borderDash: [10,5],
-          borderColor: COLORS[1], # color of dots
-          backgroundColor: COLORS[1], # color of line
-          label: "Aggregate",
-          data: SocialProperty.aggregate!([*social_properties, *mailing_lists]).map do |k, v|
-            case current_gradation
-            when "month"
-              k == k.beginning_of_month ? {x: k.iso8601, y: v} : nil
-            when "quarter"
-              k == k.beginning_of_quarter ? {x: k.iso8601, y: v} : nil
-            when "year"
-              k == k.beginning_of_year ? {x: k.iso8601, y: v} : nil
-            else
-              nil
-            end
-          end.compact
-        }]
-      },
-      options: {
-        scales: {
-          x: {
-            type: 'time',
-            time: {
-              unit: 'month'
-            }
-          },
-          y: {
-            beginAtZero: true
-          }
-        }
-      },
-    }
-
-    social_properties.each_with_index do |sp, idx|
-      color = COLORS[idx + 2]
-      social_properties_data[:data][:datasets].push({
-        borderColor: color, # color of dots
-        backgroundColor: color, # color of line
-        label: sp.profile_url,
-        data: sp.snapshot.map do |k, v|
-          { x: k, y: v}
-        end
-      })
-    end
-
-    mailing_lists.each_with_index do |ml, idx|
-      color = COLORS[idx + 2]
-      social_properties_data[:data][:datasets].push({
-        borderColor: color, # color of dots
-        backgroundColor: color, # color of line
-        label: ml.name,
-        data: ml.snapshot.map{|k, v| { x: k, y: v}}
-      })
-    end
-
     studio_dev_data = {
       labels: snapshot.map{|s| s["label"]},
       datasets: [{
@@ -579,7 +507,6 @@ ActiveAdmin.register Studio do
       studio_utilization_data: studio_utilization_data,
       studio_new_biz_data: studio_new_biz_data,
       studio_attrition_data: studio_attrition_data,
-      social_properties_data: social_properties_data
     })
   end
 end

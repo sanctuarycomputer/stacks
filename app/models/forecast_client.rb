@@ -9,8 +9,17 @@ class ForecastClient < ApplicationRecord
     "https://forecastapp.com/864444/clients/#{forecast_id}/edit"
   end
 
-  def is_internal?(preloaded_studios = Studio.all)
-    [*preloaded_studios.map(&:name), 'garden3d', 'Index Space LLC'].include?(name)
+  INTERNAL_CLIENTS = [
+    "garden3d",
+    "Sanctuary Computer",
+    "Seaborne",
+    "XXIX",
+    "XXXI",
+    "Crystalizer",
+  ]
+
+  def is_internal?
+    INTERNAL_CLIENTS.include?(name)
   end
 
   def qbo_term
