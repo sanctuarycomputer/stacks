@@ -40,6 +40,7 @@ gem 'rack-cors', '~> 1.1', '>= 1.1.1'
 gem 'octokit'
 gem 'graphql-client'
 gem 'newrelic_rpm'
+gem 'retriable'
 
 group :development, :test do
   gem 'pry'

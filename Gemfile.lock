@@ -500,6 +500,7 @@ DEPENDENCIES
   rack-cors (~> 1.1, >= 1.1.1)
   rails (~> 6.0.3, >= 6.0.3.4)
   rdiscount
+  retriable
   sass-rails (>= 6)
   selenium-webdriver
   sentry-rails
