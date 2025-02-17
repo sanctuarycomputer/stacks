@@ -271,41 +271,25 @@ ActiveAdmin.register Studio do
     studio_new_biz_data = {
       labels: snapshot.map{|s| s["label"]},
       datasets: [{
-        label: "Win Rate (%)",
+        label: "Successful Proposals (%)",
         data: (snapshot.map do |v|
-          v.dig(accounting_method, datapoints_bearer, "biz_win_rate", "value")
+          v.dig(accounting_method, datapoints_bearer, "successful_proposals", "value")
         end),
         yAxisID: 'y1',
         type: 'line',
-        borderColor: COLORS[4],
+        borderColor: COLORS[1],
         borderDash: [10,5]
       }, {
-        label: 'New',
+        label: 'Leads',
         backgroundColor: COLORS[0],
         data: (snapshot.map do |v|
-          v.dig(accounting_method, datapoints_bearer, "biz_leads", "value")
-        end)
-      }, {
-        label: 'Won',
-        backgroundColor: COLORS[1],
-        stack: 'settled',
-        data: (snapshot.map do |v|
-          v.dig(accounting_method, datapoints_bearer, "biz_won", "value")
-        end)
-      }, {
-        label: 'Lost/Stale',
-        backgroundColor: COLORS[2],
-        stack: 'settled',
-        data: (snapshot.map do |v|
-          v.dig(accounting_method, datapoints_bearer, "biz_lost", "value")
-        end)
-      }, {
-        label: 'Passed',
-        backgroundColor: COLORS[3],
-        stack: 'settled',
-        data: (snapshot.map do |v|
-          v.dig(accounting_method, datapoints_bearer, "biz_passed", "value")
-        end)
+          v.dig(accounting_method, datapoints_bearer, "lead_count", "value")
+        end),
+        trendlineLinear: {
+          colorMin: COLORS[2],
+          lineStyle: "dotted",
+          width: 3,
+        }
       }]
     }
 

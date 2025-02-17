@@ -33,6 +33,24 @@ ActiveAdmin.register_page "OKR Explorer" do
       end
     end
 
+    # all_repos = GithubRepo.all
+    # all_prs_by_period = if current_okr == "time_to_merge_pr"
+    #   periods.reduce({}) do |acc, period|
+    #     all_prs = GithubPullRequest.includes(:github_repo).merged.where(merged_at: period.starts_at..period.ends_at)
+
+    #     acc[period] = all_repos.reduce({}) do |acc, repo|
+    #       all_prs_for_repo = all_prs.where(github_repo: repo)
+    #       acc[repo] = {
+    #         prs: all_prs_for_repo.count,
+    #         average_time_to_merge: all_prs_for_repo.average(:time_to_merge)
+    #       }
+    #       acc
+    #     end
+
+    #     acc
+    #   end
+    # end
+
     render(partial: "okr_explorer", locals: {
       all_gradations: all_gradations,
       default_gradation: all_gradations.first,
