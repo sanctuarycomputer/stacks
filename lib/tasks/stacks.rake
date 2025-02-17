@@ -143,10 +143,12 @@ namespace :stacks do
       ProfitSharePass.ensure_exists!
 
       # These are all dependencies for the rest of the tasks
-      Stacks::Team.discover!
-      Stacks::Forecast.new.sync_all!
+      Retriable.retriable(tries: 5, base_interval: 1, multiplier: 2, max_interval: 10) do
+        Stacks::Team.discover!
+      end
+      Stacks::Forecast.new.sync_all! # Has internal retry counter
       Stacks::Runn.new.sync_all!
-      Stacks::Quickbooks.sync_all!
+      Stacks::Quickbooks.sync_all! # Has internal retry counter
 
       # We can do this as soon as we sync the forecast
       Stacks::Automator.attempt_invoicing_for_previous_month
