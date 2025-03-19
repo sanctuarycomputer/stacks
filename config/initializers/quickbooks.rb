@@ -1,0 +1,1 @@
+Quickbooks.minorversion = '75'
