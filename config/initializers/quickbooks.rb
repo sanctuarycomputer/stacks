@@ -35,7 +35,7 @@ module Quickbooks
           end
         end
 
-        { "rows" => data }
+        data
       end
 
       private

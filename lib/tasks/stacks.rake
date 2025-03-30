@@ -149,8 +149,7 @@ namespace :stacks do
       Stacks::Forecast.new.sync_all! # Has internal retry counter
       Stacks::Runn.new.sync_all!
 
-      # TODO FIX ME
-      # Stacks::Quickbooks.sync_all! # Has internal retry counter
+      Stacks::Quickbooks.sync_all! # Has internal retry counter
 
       # We can do this as soon as we sync the forecast
       Stacks::Automator.attempt_invoicing_for_previous_month
