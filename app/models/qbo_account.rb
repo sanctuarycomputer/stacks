@@ -64,7 +64,7 @@ class QboAccount < ApplicationRecord
 
   def fetch_profit_and_loss_report_for_range(start_of_range, end_of_range, accounting_method = "Cash")
     qbo_access_token = make_and_refresh_qbo_access_token
-    report_service = Quickbooks::Service::Reports.new
+    report_service = Quickbooks::Service::ReportsJSON.new
     report_service.company_id = realm_id
     report_service.access_token = qbo_access_token
 
