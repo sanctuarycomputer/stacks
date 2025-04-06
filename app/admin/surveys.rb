@@ -68,12 +68,11 @@ ActiveAdmin.register Survey do
     f.inputs(class: "admin_inputs") do
       f.semantic_errors
 
-      #if f.object.survey_responses.any?
-      if false
+      if f.object.survey_responses.any?
         h6 "This survey has already recorded #{f.object.survey_responses.count} responses, and it's questions or studio recipients can no longer be changed."
         f.input :title
         f.input :description
-        f.input :opens_at,
+        f.input :opens_at, disabled: true,
           hint: "This is the date members in the studios selected will be able to start recording their responses."
       else
         f.input :title

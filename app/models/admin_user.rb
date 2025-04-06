@@ -203,6 +203,14 @@ class AdminUser < ApplicationRecord
     survey_needing_response.present?
   end
 
+  def name
+    email
+  end
+
+  def external_link
+    "/admin/admin_users/#{id}"
+  end
+
   def active?
     AdminUser.active.include?(self)
   end

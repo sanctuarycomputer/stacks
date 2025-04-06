@@ -87,7 +87,8 @@ class Stacks::DataIntegrityManager
   end
 
   def discover_forecast_assignment_problems
-    forecast_assignments = ForecastAssignment.where('end_date > ?', Date.today).reduce({}) do |acc, o|
+    forecast_assignments = ForecastAssignment.includes(:forecast_project).where('end_date > ?', Date.today).reduce({}) do |acc, o|
+      next acc if o.forecast_project.is_time_off?
       acc[o] = [*(acc[o] || []), :date_in_future]
       acc
     end

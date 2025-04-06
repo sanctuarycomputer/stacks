@@ -32,6 +32,10 @@ class ForecastPerson < ApplicationRecord
     edit_link
   end
 
+  def name
+    email
+  end
+
   def sync_utilization_reports!
     Stacks::Period.all.each do |period|
       make_utilization_report_for_period!(period)
