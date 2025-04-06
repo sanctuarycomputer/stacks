@@ -42,7 +42,7 @@ class Stacks::DataIntegrityManager
     end
 
     notion_leads = all_notion_leads.reduce(notion_leads) do |acc, l|
-      studios = l.get_prop_value("Projects: Studio").dig("array", 0, "multi_select")
+      studios = l.studios
       next acc if (studios.present? && studios.any?)
       acc[l] = acc[l] || []
       acc[l] = [*acc[l], :no_studios_set]

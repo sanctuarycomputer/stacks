@@ -412,6 +412,10 @@ class Studio < ApplicationRecord
     Studio.find_by(name: "garden3d", mini_name: "g3d")
   end
 
+  def self.all_studios
+    @all_studios ||= Studio.all
+  end
+
   def skill_levels_on(date)
     archetypal_levels = Stacks::SkillLevelFinder.find_all!(date)
 

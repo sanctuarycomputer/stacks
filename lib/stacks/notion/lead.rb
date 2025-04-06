@@ -8,6 +8,12 @@ class Stacks::Notion::Lead < Stacks::Notion::Base
     end
   end
 
+  def studios
+    all_studios = Studio.all_studios
+    matches = (get_prop_value("studio") || []).map{|s| s["name"]}.intersection(all_studios.map(&:name))
+    matches.map{|m| all_studios.find{|s| s.name == m}}
+  end
+
   def received_at
     get_prop_value("✨ Lead Received").dig("start")
   end
