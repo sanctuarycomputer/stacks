@@ -41,8 +41,9 @@ ActiveAdmin.register ProjectSatisfactionSurvey do
   member_action :close_survey, method: :post do
     resource.update!({ closed_at: DateTime.now })
 
-    # No need to update project capsule status as project_satisfaction_survey_status_valid?
-    # now checks if the survey is closed
+    # The project_satisfaction_survey_status_valid? method in ProjectCapsule
+    # automatically checks the closed? status of the survey, so we don't need
+    # to explicitly update the project_capsule status here
 
     redirect_to admin_project_satisfaction_survey_path(resource), notice: "Survey closed."
   end
@@ -50,8 +51,9 @@ ActiveAdmin.register ProjectSatisfactionSurvey do
   member_action :reopen_survey, method: :post do
     resource.update!({ closed_at: nil })
 
-    # No need to update project capsule status as project_satisfaction_survey_status_valid?
-    # now checks if the survey is closed
+    # The project_satisfaction_survey_status_valid? method in ProjectCapsule
+    # automatically checks the closed? status of the survey, so we don't need
+    # to explicitly update the project_capsule status here
 
     redirect_to admin_project_satisfaction_survey_path(resource), notice: "Survey reopened!"
   end
@@ -75,6 +77,8 @@ ActiveAdmin.register ProjectSatisfactionSurvey do
           a.input :prompt
         end
 
+        # This captures the project_capsule_id from the URL parameter
+        # It's hidden because it's pre-determined from the context and not user-editable
         f.input :project_capsule_id, as: :hidden
       end
 

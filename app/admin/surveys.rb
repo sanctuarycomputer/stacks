@@ -71,8 +71,8 @@ ActiveAdmin.register Survey do
 
       if f.object.survey_responses.any?
         h6 "This survey has already recorded #{f.object.survey_responses.count} responses, and it's questions or studio recipients can no longer be changed."
-        f.input :title, disabled: true
-        f.input :description, disabled: true
+        f.input :title
+        f.input :description
         f.input :opens_at, disabled: true,
           hint: "This is the date members in the studios selected will be able to start recording their responses."
       else

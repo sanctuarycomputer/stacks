@@ -1,15 +1,17 @@
 class ProjectSatisfactionSurvey < ApplicationRecord
-  scope :draft, -> {
-    where("1=0") # No surveys are in draft state anymore
-  }
+  # Only two states are used: open and closed
   scope :open, -> {
     where(closed_at: nil)
   }
   scope :closed, -> {
     where.not(closed_at: nil)
   }
+  scope :all, -> { unscope(:where) }
 
   belongs_to :project_capsule
+  validates :project_capsule, presence: true
+  validates :title, presence: true
+  validates :description, presence: true
 
   has_many :project_satisfaction_survey_questions
   accepts_nested_attributes_for :project_satisfaction_survey_questions, allow_destroy: true
@@ -29,6 +31,7 @@ class ProjectSatisfactionSurvey < ApplicationRecord
     closed_at.present?
   end
 
+  # Get all team members who are expected to respond to this survey
   def expected_responders
     return [] if project_capsule.project_tracker.blank?
 
@@ -44,6 +47,7 @@ class ProjectSatisfactionSurvey < ApplicationRecord
     end
   end
 
+  # Returns a hash of admin users and whether they've responded
   def expected_responder_status
     expected_responders.keys.reduce({}) do |acc, admin_user|
       acc[admin_user] = ProjectSatisfactionSurveyResponder.find_by(
@@ -54,6 +58,7 @@ class ProjectSatisfactionSurvey < ApplicationRecord
     end
   end
 
+  # Calculate the survey results, including scores and free text responses
   def results
     return nil if project_satisfaction_survey_responses.empty?
 
