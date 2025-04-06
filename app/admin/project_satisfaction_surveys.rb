@@ -74,6 +74,8 @@ ActiveAdmin.register ProjectSatisfactionSurvey do
         f.has_many :project_satisfaction_survey_free_text_questions, heading: false, allow_destroy: true, new_record: 'Add a Free Text Question Prompt' do |a|
           a.input :prompt
         end
+
+        f.input :project_capsule_id, as: :hidden
       end
 
       f.actions
