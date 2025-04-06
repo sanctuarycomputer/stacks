@@ -24,7 +24,7 @@ ActiveAdmin.register ProjectCapsule do
     end
   end
 
-  action_item :create_project_satisfaction_survey, only: [:edit], if: proc { current_admin_user.is_admin? } do
+  action_item :create_project_satisfaction_survey, only: [:edit] do
     if resource.project_satisfaction_survey.nil?
       link_to "Create Project Satisfaction Survey", create_project_satisfaction_survey_admin_project_capsule_path(resource), method: :post
     else
@@ -33,9 +33,7 @@ ActiveAdmin.register ProjectCapsule do
   end
 
   member_action :create_project_satisfaction_survey, method: :post do
-    survey = resource.ensure_project_satisfaction_survey_exists!
-    resource.update!(project_satisfaction_survey_status: :project_satisfaction_survey_in_progress)
-    redirect_to admin_project_satisfaction_survey_path(survey), notice: "Project satisfaction survey created!"
+    redirect_to new_admin_project_satisfaction_survey_path(project_capsule_id: resource.id), notice: "Please confirm the survey questions before creating the survey."
   end
 
   form do |f|

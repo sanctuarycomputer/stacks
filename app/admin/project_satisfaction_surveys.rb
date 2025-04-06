@@ -2,16 +2,14 @@ ActiveAdmin.register ProjectSatisfactionSurvey do
   config.filters = false
   config.paginate = false
   actions :index, :new, :show, :create, :edit, :update, :delete
-  menu false
+  menu label: "Project Satisfaction Surveys", parent: "All Surveys", priority: 2
 
   scope :open, default: true
   scope :closed
-  scope :draft
   scope :all
 
   permit_params :title,
     :description,
-    :opens_at,
     :project_capsule_id,
     project_satisfaction_survey_questions_attributes: [
       :id,
@@ -28,34 +26,23 @@ ActiveAdmin.register ProjectSatisfactionSurvey do
       :_edit
     ]
 
-  action_item :duplicate_survey, only: [:show, :edit], if: proc { current_admin_user.is_admin? } do
-    link_to "Duplicate", clone_survey_admin_project_satisfaction_survey_path(resource), method: :post
-  end
-
-  action_item :close_survey, only: [:show, :edit], if: proc { current_admin_user.is_admin? } do
+  action_item :close_survey, only: [:show, :edit] do
     if resource.status == :open
       link_to "Close Survey", close_survey_admin_project_satisfaction_survey_path(resource), method: :post
     end
   end
 
-  action_item :reopen_survey, only: [:show, :edit], if: proc { current_admin_user.is_admin? } do
+  action_item :reopen_survey, only: [:show, :edit] do
     if resource.status == :closed
       link_to "Reopen Survey", reopen_survey_admin_project_satisfaction_survey_path(resource), method: :post
     end
   end
 
-  member_action :clone_survey, method: :post do
-    new_survey = ProjectSatisfactionSurvey.clone_from(resource)
-    redirect_to edit_admin_project_satisfaction_survey_path(new_survey), notice: "Success!"
-  end
-
   member_action :close_survey, method: :post do
     resource.update!({ closed_at: DateTime.now })
 
-    # Update project capsule status if all expected responses have been submitted
-    if resource.project_satisfaction_survey_responses.count >= resource.expected_responders.count
-      resource.project_capsule.update!(project_satisfaction_survey_status: :project_satisfaction_survey_completed)
-    end
+    # No need to update project capsule status as project_satisfaction_survey_status_valid?
+    # now checks if the survey is closed
 
     redirect_to admin_project_satisfaction_survey_path(resource), notice: "Survey closed."
   end
@@ -63,8 +50,8 @@ ActiveAdmin.register ProjectSatisfactionSurvey do
   member_action :reopen_survey, method: :post do
     resource.update!({ closed_at: nil })
 
-    # Update project capsule status to in progress
-    resource.project_capsule.update!(project_satisfaction_survey_status: :project_satisfaction_survey_in_progress)
+    # No need to update project capsule status as project_satisfaction_survey_status_valid?
+    # now checks if the survey is closed
 
     redirect_to admin_project_satisfaction_survey_path(resource), notice: "Survey reopened!"
   end
@@ -77,13 +64,9 @@ ActiveAdmin.register ProjectSatisfactionSurvey do
         h6 "This survey has already recorded #{f.object.project_satisfaction_survey_responses.count} responses, and its questions can no longer be changed."
         f.input :title
         f.input :description
-        f.input :opens_at,
-          hint: "This is the date project members will be able to start recording their responses."
       else
         f.input :title
         f.input :description
-        f.input :opens_at,
-          hint: "This is the date project members will be able to start recording their responses."
 
         f.has_many :project_satisfaction_survey_questions, heading: false, allow_destroy: true, new_record: 'Add a Question' do |a|
           a.input :prompt
@@ -93,7 +76,7 @@ ActiveAdmin.register ProjectSatisfactionSurvey do
         end
       end
 
-      f.actions if current_admin_user.is_admin?
+      f.actions
     end
   end
 
@@ -104,9 +87,7 @@ ActiveAdmin.register ProjectSatisfactionSurvey do
     end
 
     column :respond do |resource|
-      if resource.status == :draft
-        # No options
-      elsif resource.status == :open
+      if resource.status == :open
         if resource.expected_responders.include?(current_admin_user)
           if ProjectSatisfactionSurveyResponder.find_by(project_satisfaction_survey: resource, admin_user: current_admin_user).present?
             span("✓ Responded", class: "pill yes")
@@ -135,5 +116,69 @@ ActiveAdmin.register ProjectSatisfactionSurvey do
       expected_responder_status: resource.expected_responder_status,
       results: resource.results
     }
+  end
+
+  controller do
+    def new
+      build_resource
+
+      # If we have a project_capsule_id, set up default questions
+      if params[:project_capsule_id].present?
+        project_capsule = ProjectCapsule.find(params[:project_capsule_id])
+
+        # Set the project capsule and default title/description
+        resource.project_capsule = project_capsule
+        resource.title = "Project Satisfaction Survey: #{project_capsule.project_tracker.name}"
+        resource.description = "Please provide your feedback on the #{project_capsule.project_tracker.name} project."
+
+        # Add default questions
+        resource.project_satisfaction_survey_questions.build(
+          prompt: "I felt the project was well organized"
+        )
+
+        resource.project_satisfaction_survey_questions.build(
+          prompt: "I had the resources I needed to complete my work on this project"
+        )
+
+        resource.project_satisfaction_survey_questions.build(
+          prompt: "Communication within the team was effective"
+        )
+
+        resource.project_satisfaction_survey_questions.build(
+          prompt: "The project goals were clear to me"
+        )
+
+        resource.project_satisfaction_survey_questions.build(
+          prompt: "I had enough time to complete my tasks"
+        )
+
+        # Add free text questions
+        resource.project_satisfaction_survey_free_text_questions.build(
+          prompt: "What went well on this project?"
+        )
+
+        resource.project_satisfaction_survey_free_text_questions.build(
+          prompt: "What could be improved for future projects?"
+        )
+
+        resource.project_satisfaction_survey_free_text_questions.build(
+          prompt: "Any additional comments about the project?"
+        )
+      end
+
+      new!
+    end
+
+    def create
+      super do |success, failure|
+        if success.present?
+          # Update the project capsule status when the survey is created
+          resource.project_capsule.update!(project_satisfaction_survey_status: :project_satisfaction_survey_created)
+
+          # Redirect to the show page with a success message
+          redirect_to admin_project_satisfaction_survey_path(resource), notice: "Project satisfaction survey created!" and return
+        end
+      end
+    end
   end
 end

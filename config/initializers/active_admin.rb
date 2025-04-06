@@ -386,7 +386,7 @@ ActiveAdmin::Views::Pages::Base.class_eval do
 
   def build_survey_nag
     a("📝 You have survey(s) needing completion. Click here to add your responses.", {
-      href: "/admin/surveys",
+      href: "/admin/all_surveys",
       class: "flash flash_error block",
     })
   end

@@ -10,16 +10,6 @@
   </div>
 </div>
 
-<% if resource.status == :draft %>
-  <div class="dashboard-modules table index_table index">
-    <div class="dashboard-module">
-      <div class="module-body factoid-parent">
-        <p>🚧 <strong>WIP!</strong> This survey is still being drafted. <%= resource.opens_at.present? ? "It will be open in #{time_ago_in_words(resource.opens_at)}, and you can submit your response then." : "No publish date has been set just yet, but check back soon!" %></p>
-      </div>
-    </div>
-  </div>
-<% end %>
-
 <% unless resource.expected_responders.include?(current_admin_user) %>
   <div class="dashboard-modules table index_table index">
     <div class="dashboard-module">
@@ -41,77 +31,148 @@
   </div>
 <% end %>
 
-<% if (resource.expected_responders.include?(current_admin_user) && project_satisfaction_survey_responder.present?) || resource.status == :closed %>
+<% if resource.status == :open && project_satisfaction_survey_responder.present? %>
   <div class="dashboard-modules table index_table index">
     <div class="dashboard-module">
       <div class="module-body factoid-parent">
-        <% if project_satisfaction_survey_responder.present? %>
-          <p>✓ <strong>Thank you!</strong> We've registered your anonymous response to this survey.</p>
-        <% end %>
+        <p>✅ <strong>Success!</strong> Your anonymous response has been recorded. When the survey is closed, we'll publish results here.</p>
+      </div>
+    </div>
+  </div>
 
-        <% if results.present? && current_admin_user.is_admin? %>
-          <h5>Summary</h5>
-          <p><%= results[:response_count] %> / <%= results[:expected_response_count] %> responses have been recorded (<%= ((results[:response_count].to_f / results[:expected_response_count]) * 100).round %>% response rate).</p>
+  <script src="https://cdn.jsdelivr.net/npm/confetti-js@0.0.18/dist/index.min.js"></script>
+  <canvas style="position:fixed;left:0;top:0;right:0;bottom:0;pointer-events:none;" id="confetti-canvas"></canvas>
+  <script>
+    function confetti() {
+      var confettiSettings = { target: 'confetti-canvas' };
+      var confetti = new ConfettiGenerator(confettiSettings);
+      confetti.render();
+    };
+    confetti();
+  </script>
+<% end %>
 
-          <h5>Question Results</h5>
-          <% if results[:question_results].any? %>
-            <div class="">
-              <table class="index_table">
-                <thead>
-                  <tr>
-                    <th>Question</th>
-                    <th>Average Sentiment (0-5)</th>
-                    <th>Responses</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <% results[:question_results].each do |question, result| %>
-                    <tr>
-                      <td><%= question.prompt %></td>
-                      <td><%= result[:average_sentiment].round(2) %></td>
-                      <td><%= result[:response_count] %></td>
-                    </tr>
-                  <% end %>
-                </tbody>
-              </table>
-            </div>
-          <% else %>
-            <p>No question responses recorded yet.</p>
-          <% end %>
-
-          <h5>Free Text Responses</h5>
-          <% if results[:free_text_results].any? %>
-            <% results[:free_text_results].each do |question, responses| %>
-              <h6><%= question.prompt %></h6>
-              <ul>
-                <% responses.each do |response| %>
-                  <li><%= response %></li>
-                <% end %>
-              </ul>
-            <% end %>
-          <% else %>
-            <p>No free text responses recorded yet.</p>
-          <% end %>
+<% if resource.project_satisfaction_survey_responses.empty? %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <p>📊 <strong>No responses yet!</strong> This survey hasn't received any responses so far.</p>
+        <% if resource.status == :open %>
+          <p>Once team members submit their responses, you'll be able to view the results here after the survey is closed.</p>
+        <% else %>
+          <p>The survey is closed, but no responses were recorded during the open period.</p>
         <% end %>
       </div>
     </div>
   </div>
 <% end %>
 
-<% if resource.status == :open && current_admin_user.is_admin? %>
-  <div class="dashboard-modules table index_table index">
-    <div class="dashboard-module">
-      <div class="module-header">
-        <h3>Current Responder Status</h3>
-      </div>
-      <div class="module-body">
-        <% expected_responder_status.each do |admin_user, responder| %>
-          <div>
-            <span><%= admin_user.full_name %></span>
-            <span style="float: right;"><%= responder.present? ? "✓" : "⌛ Pending Response" %></span>
+<% if resource.status == :closed %>
+  <% if results.present? %>
+    <% if results[:response_count] > 0 %>
+      <h1>Overall: <%= results[:overall].round(2) %></h1>
+      <h2>Response Rate: <%= ((results[:response_count].to_f / results[:expected_response_count]) * 100).round %>%</h2>
+    <% end %>
+
+    <h2>Scored Questions</h2>
+
+    <% if results[:question_results].any? %>
+      <% results[:question_results].each do |question, result| %>
+        <div class="dashboard-modules table index_table index">
+          <div class="dashboard-module">
+            <div class="module-header">
+              <p><%= question.prompt %></p>
+            </div>
+
+            <div class="module-body">
+              <div class="flex" style="align-items: baseline;">
+                <h2 style="margin: 0;"><%= result[:average_sentiment].round(2) %></h2><p>(out of 5)</p>
+              </div>
+            </div>
           </div>
-        <% end %>
+
+          <div class="dashboard-module">
+            <div class="module-body factoid-parent">
+              <table style="margin-bottom:0;" border="0" cellspacing="0" cellpadding="0" class="index_table index">
+                <tbody>
+                  <% result[:contexts].each_with_index do |context, idx| %>
+                    <tr class="<%= idx.even? ? "even" : "odd" %>">
+                      <td class="col">
+                        <%= context %>
+                      </td>
+                    </tr>
+                  <% end %>
+                  <% if result[:contexts].empty? %>
+                    <p>No additional contexts given.</p>
+                  <% end %>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      <% end %>
+    <% else %>
+      <div class="dashboard-modules table index_table index">
+        <div class="dashboard-module">
+          <div class="module-body">
+            <p>No question responses recorded yet.</p>
+          </div>
+        </div>
       </div>
-    </div>
-  </div>
+    <% end %>
+
+    <h2>Free Text Questions</h2>
+
+    <% if results[:free_text_results].any? %>
+      <% results[:free_text_results].each do |question, responses| %>
+        <div class="dashboard-modules table index_table index">
+          <div class="dashboard-module">
+            <div class="module-header">
+              <p><%= question.prompt %></p>
+            </div>
+
+            <div class="module-body">
+              <div class="flex" style="align-items: baseline;">
+                <h2 style="margin: 0;"><%= responses.count %></h2><p>responses given</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="dashboard-module">
+            <div class="module-body factoid-parent">
+              <table style="margin-bottom:0;" border="0" cellspacing="0" cellpadding="0" class="index_table index">
+                <tbody>
+                  <% responses.each_with_index do |response, idx| %>
+                    <tr class="<%= idx.even? ? "even" : "odd" %>">
+                      <td class="col">
+                        <%= response %>
+                      </td>
+                    </tr>
+                  <% end %>
+                  <% if responses.empty? %>
+                    <p>No responses given.</p>
+                  <% end %>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      <% end %>
+    <% else %>
+      <div class="dashboard-modules table index_table index">
+        <div class="dashboard-module">
+          <div class="module-body">
+            <p>No free text responses recorded yet.</p>
+          </div>
+        </div>
+      </div>
+    <% end %>
+  <% end %>
+<% end %>
+
+<% if expected_responder_status.any? %>
+  <%= render partial: 'response_status_table', locals: {
+    expected_responder_status: expected_responder_status,
+    survey: resource
+  } %>
 <% end %>

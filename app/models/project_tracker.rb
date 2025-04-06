@@ -130,8 +130,7 @@ class ProjectTracker < ApplicationRecord
   end
 
   def client_satisfied?
-    return nil if work_status != :complete
-    project_capsule.client_satisfaction_status == "satisfied"
+    project_capsule&.client_satisfaction_status == "satisfied"
   end
 
   def target_profit_margin_satisfied?
@@ -331,6 +330,68 @@ class ProjectTracker < ApplicationRecord
 
   def total_free_hours
     snapshot["hours_free"].to_f
+  end
+
+  def all_contributors
+    forecast_assignments
+      .includes(forecast_person: :admin_user)
+      .map(&:forecast_person)
+      .compact
+      .map(&:admin_user)
+      .compact
+      .uniq
+  end
+
+  def all_contributors_with_roles
+    # Get all admin users who were assigned to this project
+    project_members = {}
+
+    # Add all contributors
+    all_contributors.reduce(project_members) do |acc, admin_user|
+      acc[admin_user] = acc[admin_user] || {
+        roles: []
+      }
+      acc[admin_user][:roles] << { name: :contributor }
+      acc
+    end
+
+    # Add project leads
+    project_lead_periods.reduce(project_members) do |acc, period|
+      acc[period.admin_user] = acc[period.admin_user] || {
+        roles: []
+      }
+      acc[period.admin_user][:roles] << { name: :project_lead, started_at: period.started_at, ended_at: period.ended_at }
+      acc
+    end
+
+    # Add creative leads
+    creative_lead_periods.reduce(project_members) do |acc, period|
+      acc[period.admin_user] = acc[period.admin_user] || {
+        roles: []
+      }
+      acc[period.admin_user][:roles] << { name: :creative_lead, started_at: period.started_at, ended_at: period.ended_at }
+      acc
+    end
+
+    # Add technical leads
+    technical_lead_periods.reduce(project_members) do |acc, period|
+      acc[period.admin_user] = acc[period.admin_user] || {
+        roles: []
+      }
+      acc[period.admin_user][:roles] << { name: :technical_lead, started_at: period.started_at, ended_at: period.ended_at }
+      acc
+    end
+
+    # Add project safety representatives
+    project_safety_representative_periods.reduce(project_members) do |acc, period|
+      acc[period.admin_user] = acc[period.admin_user] || {
+        roles: []
+      }
+      acc[period.admin_user][:roles] << { name: :project_safety_representative, started_at: period.started_at, ended_at: period.ended_at }
+      acc
+    end
+
+    project_members
   end
 
   def current_project_safety_representatives

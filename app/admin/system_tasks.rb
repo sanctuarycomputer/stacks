@@ -2,7 +2,11 @@ ActiveAdmin.register SystemTask do
   menu if: -> { current_admin_user.is_admin? },
         priority: 0,
         label: -> {
-          div("#{SystemTask.in_progress.count}", class: "notifier")
+          count = SystemTask.in_progress.count
+          if count > 0
+            display_count = count > 99 ? "99+" : count.to_s
+            div("#{display_count}", class: "notifier")
+          end
           "Tasks"
         },
         parent: "Dashboard"

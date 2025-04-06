@@ -1,0 +1,53 @@
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">
+      Response Status
+    </h2>
+  </div>
+</div>
+
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+  <thead>
+    <tr>
+      <th class="col">Person</th>
+      <th class="col">Roles</th>
+      <th class="col text-right">Responded?</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <% expected_responder_status.each_with_index do |(admin_user, responder), idx| %>
+      <tr class="<%= idx.even? ? "even" : "odd" %>">
+        <td class="col">
+          <%= link_to admin_user.email, admin_admin_user_path(admin_user) %>
+        </td>
+
+        <td class="col">
+          <% if survey.expected_responders[admin_user] && survey.expected_responders[admin_user][:roles].any? %>
+            <% roles = survey.expected_responders[admin_user][:roles].map { |r| r[:name].to_s }.uniq %>
+            <% roles.each do |role| %>
+              <% pill_class = case role
+                when "project_lead" then "project_lead"
+                when "creative_lead" then "creative_lead"
+                when "technical_lead" then "technical_lead"
+                when "project_safety_representative" then "project_safety_representative"
+                else "contributor"
+                end %>
+              <span class="pill <%= pill_class %>" style="margin-right: 4px;"><%= role.to_s.humanize %></span>
+            <% end %>
+          <% else %>
+            <span class="pill contributor">Contributor</span>
+          <% end %>
+        </td>
+
+        <td class="col text-right">
+          <% if responder.present? %>
+            <span class="status_tag yes">Yes</span>
+          <% else %>
+            <span class="status_tag no">No</span>
+          <% end %>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>

@@ -2,7 +2,11 @@ ActiveAdmin.register System do
   menu if: -> { current_admin_user.is_admin? },
         priority: 0,
         label: -> {
-          div("#{System.instance.notifications.unread.count}", class: "notifier")
+          count = System.instance.notifications.unread.count
+          if count > 0
+            display_count = count > 99 ? "99+" : count.to_s
+            div("#{display_count}", class: "notifier")
+          end
           "System"
         },
         url: -> { url_for [:admin, :system] },

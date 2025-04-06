@@ -1,9 +1,9 @@
 class ProjectSatisfactionSurvey < ApplicationRecord
   scope :draft, -> {
-    where(closed_at: nil).where("opens_at IS NULL OR opens_at > ?", Date.today)
+    where("1=0") # No surveys are in draft state anymore
   }
   scope :open, -> {
-    where(closed_at: nil).where("opens_at <= ?", Date.today)
+    where(closed_at: nil)
   }
   scope :closed, -> {
     where.not(closed_at: nil)
@@ -22,38 +22,30 @@ class ProjectSatisfactionSurvey < ApplicationRecord
 
   def status
     return :closed if closed_at.present?
+    :open
+  end
 
-    if opens_at.nil? || opens_at > Date.today
-      :draft
-    else
-      :open
-    end
+  def closed?
+    closed_at.present?
   end
 
   def expected_responders
-    if project_capsule.project_tracker.present?
-      project_tracker = project_capsule.project_tracker
-      # Get all admin users who were assigned to this project
-      project_members = []
+    return [] if project_capsule.project_tracker.blank?
 
-      # Add project leads
-      project_members += project_tracker.project_lead_periods.map(&:admin_user)
+    # Get all contributors with roles from the project tracker
+    project_members = project_capsule.project_tracker.all_contributors_with_roles
 
-      # Add creative leads
-      project_members += project_tracker.creative_lead_periods.map(&:admin_user)
+    # Get the list of active admin users
+    active_admin_users = AdminUser.active
 
-      # Add technical leads
-      project_members += project_tracker.technical_lead_periods.map(&:admin_user)
-
-      # Return unique list of admin users
-      project_members.uniq
-    else
-      []
+    # Filter to include only active users
+    project_members.select do |admin_user, _|
+      active_admin_users.include?(admin_user)
     end
   end
 
   def expected_responder_status
-    expected_responders.reduce({}) do |acc, admin_user|
+    expected_responders.keys.reduce({}) do |acc, admin_user|
       acc[admin_user] = ProjectSatisfactionSurveyResponder.find_by(
         project_satisfaction_survey: self,
         admin_user: admin_user
@@ -62,47 +54,41 @@ class ProjectSatisfactionSurvey < ApplicationRecord
     end
   end
 
-  def self.clone_from(original_survey)
-    new_survey = ProjectSatisfactionSurvey.create!({
-      project_capsule: original_survey.project_capsule,
-      title: "#{original_survey.title} (Copy)",
-      description: original_survey.description,
-    })
-
-    original_survey.project_satisfaction_survey_questions.each do |question|
-      new_survey.project_satisfaction_survey_questions << ProjectSatisfactionSurveyQuestion.create!({
-        project_satisfaction_survey: new_survey,
-        prompt: question.prompt
-      })
-    end
-
-    original_survey.project_satisfaction_survey_free_text_questions.each do |question|
-      new_survey.project_satisfaction_survey_free_text_questions << ProjectSatisfactionSurveyFreeTextQuestion.create!({
-        project_satisfaction_survey: new_survey,
-        prompt: question.prompt
-      })
-    end
-
-    new_survey
-  end
-
   def results
     return nil if project_satisfaction_survey_responses.empty?
 
     # Calculate average sentiment by question
     question_results = {}
+    total_score_sum = 0.0
+    total_responses = 0
+
     project_satisfaction_survey_questions.each do |q|
       responses = ProjectSatisfactionSurveyQuestionResponse.where(project_satisfaction_survey_question: q)
 
       if responses.any?
+        # Get context responses for this question
+        context_responses = responses.map(&:context).reject(&:blank?)
+
+        question_score_sum = responses.reduce(0.0) do |sum, response|
+          sum + ProjectSatisfactionSurveyQuestionResponse.sentiment_to_score(response.sentiment.to_s)
+        end
+
+        average_sentiment = question_score_sum / responses.count
+
+        # Add to overall totals
+        total_score_sum += question_score_sum
+        total_responses += responses.count
+
         question_results[q] = {
-          average_sentiment: responses.reduce(0.0) do |sum, response|
-            sum + ProjectSatisfactionSurveyQuestionResponse.sentiment_to_score(response.sentiment.to_s)
-          end / responses.count,
-          response_count: responses.count
+          average_sentiment: average_sentiment,
+          response_count: responses.count,
+          contexts: context_responses
         }
       end
     end
+
+    # Calculate overall average
+    overall_score = total_responses > 0 ? (total_score_sum / total_responses) : 0
 
     # Collect free text responses
     free_text_results = {}
@@ -117,6 +103,7 @@ class ProjectSatisfactionSurvey < ApplicationRecord
     end
 
     {
+      overall: overall_score,
       question_results: question_results,
       free_text_results: free_text_results,
       response_count: project_satisfaction_survey_responses.count,

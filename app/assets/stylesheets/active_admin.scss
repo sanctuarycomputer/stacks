@@ -991,6 +991,7 @@ h2 {
   &.on_hold_needs_follow_up,
   &.paused,
   &.upcoming_legal_review,
+  &.project_lead,
   &.no_attendance_record,
   {
     background-color: $color-orange;
@@ -1003,6 +1004,8 @@ h2 {
   &.added,
   &.exceptional,
   &.active,
+  &.creative_lead,
+  &.technical_lead,
   &.attended
   {
     background-color: $color-green;
@@ -1028,6 +1031,7 @@ h2 {
   &.missing_hours,
   &.voided,
   &.passed,
+  &.project_safety_representative,
   &.complete
   {
     background-color: $color-purple;
@@ -1040,6 +1044,7 @@ h2 {
   &.complete,
   &.completed,
   &.healthy,
+  &.contributor,
   {
     background-color: $color-blue;
     color: white;

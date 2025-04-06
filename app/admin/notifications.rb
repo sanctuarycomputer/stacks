@@ -1,7 +1,10 @@
 ActiveAdmin.register Notification do
   menu priority: 1, label: proc {
     count = current_admin_user.notifications.unread.count
-    div(count, class: "notifier") if count > 0
+    if count > 0
+      display_count = count > 99 ? "99+" : count.to_s
+      div(display_count, class: "notifier")
+    end
     "Inbox"
   }
 

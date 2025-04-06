@@ -196,11 +196,29 @@ class AdminUser < ApplicationRecord
   }
 
   def should_nag_for_survey_responses?
-    survey_needing_response =
-      Survey.open.find do |s|
-        s.expected_responders.include?(self) && SurveyResponder.find_by(survey: s, admin_user: self).nil?
+    pending_survey_count > 0
+  end
+
+  def pending_survey_count
+    count = 0
+
+    # Count pending regular surveys
+    Survey.open.each do |s|
+      if s.expected_responders.include?(self) &&
+         SurveyResponder.find_by(survey: s, admin_user: self).nil?
+        count += 1
       end
-    survey_needing_response.present?
+    end
+
+    # Count pending project satisfaction surveys
+    ProjectSatisfactionSurvey.open.each do |pss|
+      if pss.expected_responders.keys.include?(self) &&
+         ProjectSatisfactionSurveyResponder.find_by(project_satisfaction_survey: pss, admin_user: self).nil?
+        count += 1
+      end
+    end
+
+    count
   end
 
   def active?

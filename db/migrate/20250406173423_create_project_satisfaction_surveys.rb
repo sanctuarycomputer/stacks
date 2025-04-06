@@ -4,7 +4,6 @@ class CreateProjectSatisfactionSurveys < ActiveRecord::Migration[6.0]
       t.references :project_capsule, null: false, foreign_key: true
       t.string :title, null: false
       t.text :description, null: false
-      t.date :opens_at
       t.datetime :closed_at
       t.timestamps
     end

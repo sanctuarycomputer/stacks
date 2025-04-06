@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2025_02_16_194045) do
+ActiveRecord::Schema.define(version: 2025_04_06_174428) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -542,6 +542,7 @@ ActiveRecord::Schema.define(version: 2025_02_16_194045) do
     t.datetime "updated_at", precision: 6, null: false
     t.integer "client_satisfaction_status"
     t.text "client_satisfaction_detail"
+    t.integer "project_satisfaction_survey_status"
     t.index ["project_tracker_id"], name: "index_project_capsules_on_project_tracker_id"
   end
 
@@ -569,6 +570,66 @@ ActiveRecord::Schema.define(version: 2025_02_16_194045) do
     t.index ["admin_user_id"], name: "idx_project_safety_rep_periods_on_admin_user_id"
     t.index ["project_tracker_id"], name: "idx_project_safety_rep_periods_on_project_tracker_id"
     t.index ["studio_id"], name: "idx_project_safety_rep_periods_on_studio_id"
+  end
+
+  create_table "project_satisfaction_survey_free_text_question_responses", force: :cascade do |t|
+    t.bigint "project_satisfaction_survey_response_id", null: false
+    t.bigint "project_satisfaction_survey_free_text_question_id", null: false
+    t.string "response"
+    t.index ["project_satisfaction_survey_free_text_question_id"], name: "idx_pssftqr_on_pssftq_id"
+    t.index ["project_satisfaction_survey_response_id"], name: "idx_pssftqr_on_pssr_id"
+  end
+
+  create_table "project_satisfaction_survey_free_text_questions", force: :cascade do |t|
+    t.bigint "project_satisfaction_survey_id", null: false
+    t.string "prompt", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["project_satisfaction_survey_id"], name: "idx_pssftq_on_pss_id"
+  end
+
+  create_table "project_satisfaction_survey_question_responses", force: :cascade do |t|
+    t.bigint "project_satisfaction_survey_response_id", null: false
+    t.bigint "project_satisfaction_survey_question_id", null: false
+    t.integer "sentiment", default: 0
+    t.string "context"
+    t.index ["project_satisfaction_survey_question_id"], name: "idx_pssqr_on_pssq_id"
+    t.index ["project_satisfaction_survey_response_id"], name: "idx_pssqr_on_pssr_id"
+  end
+
+  create_table "project_satisfaction_survey_questions", comment: "Table for project satisfaction survey questions", force: :cascade do |t|
+    t.bigint "project_satisfaction_survey_id", null: false
+    t.string "prompt", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["project_satisfaction_survey_id"], name: "idx_pssq_on_pss_id"
+  end
+
+  create_table "project_satisfaction_survey_responders", force: :cascade do |t|
+    t.bigint "project_satisfaction_survey_id", null: false
+    t.bigint "admin_user_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_project_satisfaction_survey_responders_on_admin_user_id"
+    t.index ["project_satisfaction_survey_id", "admin_user_id"], name: "idx_ps_survey_responders_on_survey_id_and_admin_user_id", unique: true
+    t.index ["project_satisfaction_survey_id"], name: "idx_pssr_on_ps_survey_id"
+  end
+
+  create_table "project_satisfaction_survey_responses", force: :cascade do |t|
+    t.bigint "project_satisfaction_survey_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["project_satisfaction_survey_id"], name: "idx_pssr_on_pss_id"
+  end
+
+  create_table "project_satisfaction_surveys", force: :cascade do |t|
+    t.bigint "project_capsule_id", null: false
+    t.string "title", null: false
+    t.text "description", null: false
+    t.datetime "closed_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["project_capsule_id"], name: "index_project_satisfaction_surveys_on_project_capsule_id"
   end
 
   create_table "project_tracker_forecast_projects", force: :cascade do |t|
@@ -992,6 +1053,16 @@ ActiveRecord::Schema.define(version: 2025_02_16_194045) do
   add_foreign_key "project_safety_representative_periods", "admin_users"
   add_foreign_key "project_safety_representative_periods", "project_trackers"
   add_foreign_key "project_safety_representative_periods", "studios"
+  add_foreign_key "project_satisfaction_survey_free_text_question_responses", "project_satisfaction_survey_free_text_questions"
+  add_foreign_key "project_satisfaction_survey_free_text_question_responses", "project_satisfaction_survey_responses"
+  add_foreign_key "project_satisfaction_survey_free_text_questions", "project_satisfaction_surveys"
+  add_foreign_key "project_satisfaction_survey_question_responses", "project_satisfaction_survey_questions"
+  add_foreign_key "project_satisfaction_survey_question_responses", "project_satisfaction_survey_responses"
+  add_foreign_key "project_satisfaction_survey_questions", "project_satisfaction_surveys"
+  add_foreign_key "project_satisfaction_survey_responders", "admin_users"
+  add_foreign_key "project_satisfaction_survey_responders", "project_satisfaction_surveys"
+  add_foreign_key "project_satisfaction_survey_responses", "project_satisfaction_surveys"
+  add_foreign_key "project_satisfaction_surveys", "project_capsules"
   add_foreign_key "project_tracker_forecast_projects", "project_trackers"
   add_foreign_key "project_tracker_forecast_to_runn_sync_tasks", "notifications"
   add_foreign_key "project_tracker_forecast_to_runn_sync_tasks", "project_trackers"

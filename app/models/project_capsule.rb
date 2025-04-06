@@ -34,9 +34,8 @@ class ProjectCapsule < ApplicationRecord
   }
 
   enum project_satisfaction_survey_status: {
-    project_satisfaction_survey_completed: 0,
-    project_satisfaction_survey_in_progress: 1,
-    opt_out_of_project_satisfaction_survey: 2
+    project_satisfaction_survey_created: 0,
+    opt_out_of_project_satisfaction_survey: 1
   }
 
   def complete?
@@ -44,20 +43,38 @@ class ProjectCapsule < ApplicationRecord
     internal_marketing_status.present? &&
     capsule_status.present? &&
     project_satisfaction_survey_status.present? &&
+    project_satisfaction_survey_status_valid? &&
     postpartum_notes.present? &&
     client_satisfaction_status.present? &&
     client_satisfaction_detail.present?
   end
 
+  def project_satisfaction_survey_status_valid?
+    # Survey is valid if it's opted out
+    return true if opt_out_of_project_satisfaction_survey?
+
+    # Survey is valid if it's created but also the survey is closed
+    if project_satisfaction_survey_created? && project_satisfaction_survey.present?
+      return project_satisfaction_survey.closed?
+    end
+
+    # Otherwise, it's not valid (e.g., survey is open)
+    false
+  end
+
   def ensure_project_satisfaction_survey_exists!
     return project_satisfaction_survey if project_satisfaction_survey.present?
 
+    # This method is now only used as a fallback or by other systems
+    # The UI now uses the form-based approach for better user experience
     survey = ProjectSatisfactionSurvey.create!(
       project_capsule: self,
       title: "Project Satisfaction Survey: #{project_tracker.name}",
-      description: "Please provide your feedback on the #{project_tracker.name} project.",
-      opens_at: Date.today
+      description: "Please provide your feedback on the #{project_tracker.name} project."
     )
+
+    # Update the project capsule status to indicate a survey has been created
+    update!(project_satisfaction_survey_status: :project_satisfaction_survey_created)
 
     # Add default questions
     survey.project_satisfaction_survey_questions.create!(
