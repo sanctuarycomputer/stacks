@@ -40,6 +40,14 @@ class Stacks::Period
     date >= @starts_at && date <= @ends_at
   end
 
+  def self.last_month
+    Stacks::Period.new(
+      "Last Month",
+      Date.today.last_month.beginning_of_month,
+      Date.today.last_month.end_of_month
+    )
+  end
+
   def self.for_gradation(gradation, start_at = Date.new(2020, 1, 1))
     periods = []
     case gradation

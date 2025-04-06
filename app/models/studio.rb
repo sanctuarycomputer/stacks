@@ -353,8 +353,8 @@ class Studio < ApplicationRecord
         leads
       else
         leads.select do |l|
-          studios = l.get_prop_value("Projects: Studio").dig("array", 0, "multi_select")
-          studios.map{|s| s["name"].downcase}.intersection(mini_names).any? if studios.present?
+          studios = l.get_prop_value("studio")
+          studios.find{|s| s["name"] == self.name} if studios.present?
         end
       end
     )
