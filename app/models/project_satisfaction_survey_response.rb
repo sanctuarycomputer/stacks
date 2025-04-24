@@ -1,0 +1,9 @@
+class ProjectSatisfactionSurveyResponse < ApplicationRecord
+  belongs_to :project_satisfaction_survey
+
+  has_many :project_satisfaction_survey_question_responses
+  accepts_nested_attributes_for :project_satisfaction_survey_question_responses, allow_destroy: true
+
+  has_many :project_satisfaction_survey_free_text_question_responses
+  accepts_nested_attributes_for :project_satisfaction_survey_free_text_question_responses, allow_destroy: true
+end

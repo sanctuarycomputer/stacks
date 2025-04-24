@@ -82,6 +82,26 @@
                 <%= project_capsule.capsule_status.try(:humanize) %>
               </td>
             </tr>
+            <tr class="even">
+              <td class="col"><strong>Project Satisfaction</strong></td>
+              <td class="col text-right">
+                <% if project_capsule.project_satisfaction_survey.present? %>
+                  <% if project_capsule.project_satisfaction_survey.closed? %>
+                    <% survey = project_capsule.project_satisfaction_survey %>
+                    <% results = survey.results %>
+                    <% if results.present? && results[:response_count] > 0 %>
+                      <%= link_to "Survey complete (#{results[:overall].round(2)}/5) →", admin_project_satisfaction_survey_path(survey) %>
+                    <% else %>
+                      <%= link_to "Survey complete (no responses) →", admin_project_satisfaction_survey_path(survey) %>
+                    <% end %>
+                  <% else %>
+                    <%= link_to "Survey pending →", admin_project_satisfaction_survey_path(project_capsule.project_satisfaction_survey) %>
+                  <% end %>
+                <% else %>
+                  <%= project_capsule.project_satisfaction_survey_status.try(:humanize) || link_to("Create Survey →", new_admin_project_satisfaction_survey_path(project_capsule_id: project_capsule.id)) %>
+                <% end %>
+              </td>
+            </tr>
           </tbody>
         </table>
 
@@ -96,7 +116,7 @@
               </tr>
             <% end %>
             <tr class="even">
-              <td class="col"><%= link_to "Estimated COSR ↗", admin_project_tracker_project_cosr_explorer_path(@project_tracker) %></td>
+              <td class="col"><%= link_to "Estimated COSR →", admin_project_tracker_project_cosr_explorer_path(@project_tracker) %></td>
               <td class="col text-right">
                 <%= number_to_currency(estimated_cost) %>
               </td>
@@ -169,7 +189,9 @@
 
         <p style="padding-top: 20px;"><strong>Client Satisfaction Detail</strong></p>
         <hr />
-        <%= sanitize RDiscount.new(project_capsule.client_satisfaction_detail || "").to_html %>
+        <div class="markdown-body">
+          <%= sanitize RDiscount.new(project_capsule.client_satisfaction_detail || "").to_html %>
+        </div>
 
       </div>
     </div>
@@ -214,26 +236,17 @@
 
 <div class="skill_tree_hint markdown-body" style="margin-top: 40px; margin-bottom:40px;">
   <%= sanitize RDiscount.new(@project_tracker.notes).to_html %>
+</div>
 
-  <% if @project_tracker.current_project_leads.any? %>
-    <p style="margin-top:80px;"><strong>Project Safety Reps: </strong>
-      <% @project_tracker.current_project_leads.each do |pl| %>
-        <%= link_to pl.email, admin_admin_user_path(pl) %>
-      <% end %>
-    </p>
-  <% else %>
-    <span class="pill error">No Project Leads</span>
-  <% end %>
-
-  <% if @project_tracker.current_project_safety_representatives.any? %>
-    <p style="margin-top:80px;"><strong>Project Safety Reps: </strong>
-      <% @project_tracker.current_project_safety_representatives.each do |rep| %>
-        <%= link_to rep.email, admin_admin_user_path(rep) %>
-      <% end %>
-    </p>
-  <% else %>
-    <span class="pill error">No Project Safety Reps</span>
-  <% end %>
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Project Contributors</p>
+    </div>
+    <div class="module-body">
+      <%= render 'contributor_table', contributors: @project_tracker.all_contributors_with_roles %>
+    </div>
+  </div>
 </div>
 
 <div class="dashboard-modules table index_table index">
@@ -394,7 +407,7 @@ Budget: <%= number_to_currency(budget_high_end) %>
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
     <div class="module-body factoid-parent">
-      <p style="margin-bottom: 6px;">🤔 <strong>Remember!</strong> Don’t artificially adjust your hours to meet a budget, or we won't get the data we need to improve our proposals.</p>
+      <p style="margin-bottom: 6px;">🤔 <strong>Remember!</strong> Don't artificially adjust your hours to meet a budget, or we won't get the data we need to improve our proposals.</p>
       <a href="https://www.notion.so/garden3d/How-to-Record-your-Hours-ff971848f66d40cf818b930f05cfc533" target="_blank">
         How to Record your Hours ↗
       </a>

@@ -11,9 +11,9 @@ class SurveyReminderNotification < Noticed::Base
     <<~HEREDOC
       👋 Hi #{(recipient.info || {}).dig("first_name")}!
 
-      There's survey(s) in Stacks awaiting your response! Please try to carve at least ~15 minutes for each survey, your responses will inform how we evolve our business.
+      There's survey(s) in Stacks awaiting your response!
 
-      📝 Head over [here](https://stacks.garden3d.net/admin/surveys) to fill it out.
+      📝 Head over [here](https://stacks.garden3d.net/admin/all_surveys) to fill it out.
 
       🙏 Thank you!
     HEREDOC

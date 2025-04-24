@@ -2,6 +2,7 @@ ActiveAdmin.register Survey do
   config.filters = false
   config.paginate = false
   actions :index, :new, :show, :create, :edit, :update, :delete
+  menu label: "Studio Surveys", parent: "All Surveys", priority: 1
 
   scope :open, default: true
   scope :closed

@@ -134,6 +134,26 @@ ActiveAdmin.register ProjectTracker do
   index download_links: [:csv], title: "Projects" do
     if params["scope"] == "complete"
       column :considered_successful?
+      column :project_satisfaction_survey do |pt|
+
+        if pt&.project_capsule&.project_satisfaction_survey&.closed_at&.present?
+          score = pt.project_capsule.project_satisfaction_survey.results[:overall].round(1)
+          pill_class =
+            if score >= 4.5
+              "exceptional"
+            elsif score >= 3.5
+              "healthy"
+            elsif score >= 2.5
+              "at_risk"
+            else
+              "failing"
+            end
+
+          span("#{score} / 5", class: "pill #{pill_class}")
+        else
+          "No survey"
+        end
+      end
       column :last_recorded_assignment do |pt|
         pt.last_recorded_assignment.try(:end_date)
       end
