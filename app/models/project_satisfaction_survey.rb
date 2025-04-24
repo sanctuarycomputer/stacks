@@ -6,7 +6,6 @@ class ProjectSatisfactionSurvey < ApplicationRecord
   scope :closed, -> {
     where.not(closed_at: nil)
   }
-  scope :all, -> { unscope(:where) }
 
   belongs_to :project_capsule
   validates :project_capsule, presence: true
@@ -21,6 +20,27 @@ class ProjectSatisfactionSurvey < ApplicationRecord
 
   has_many :project_satisfaction_survey_responses
   has_many :project_satisfaction_survey_responders
+
+  DEFAULT_RATING_QUESTIONS = [
+    "The budget was realistic",
+    "The timeline was realistic",
+    "The team resourced on this project was appropriate",
+    "The project was well managed",
+    "Our design output was strong",
+    "Our development output was strong",
+    "Design & development collaborated effectively",
+    "Our development work accurately matched the designs",
+    "Our QA &/or client feedback cycles went well",
+    "I was able to find opportunities to learn & grow in this project",
+    "We were able to establish and maintain client trust"
+  ]
+
+  DEFAULT_FREE_TEXT_QUESTIONS = [
+    "What should we start doing?",
+    "What should we stop doing?",
+    "What should we continue doing?",
+    "Any wins, shoutouts, or additional comments?"
+  ]
 
   def status
     return :closed if closed_at.present?

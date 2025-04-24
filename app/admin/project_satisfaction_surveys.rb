@@ -138,40 +138,20 @@ ActiveAdmin.register ProjectSatisfactionSurvey do
         resource.description = "Please provide your feedback on the #{project_capsule.project_tracker.name} project."
 
         # Add default questions
-        resource.project_satisfaction_survey_questions.build(
-          prompt: "I felt the project was well organized"
-        )
+        ProjectSatisfactionSurvey::DEFAULT_RATING_QUESTIONS.each do |prompt|
+          resource.project_satisfaction_survey_questions.build(
+            prompt: prompt
+          )
+        end
 
-        resource.project_satisfaction_survey_questions.build(
-          prompt: "I had the resources I needed to complete my work on this project"
-        )
-
-        resource.project_satisfaction_survey_questions.build(
-          prompt: "Communication within the team was effective"
-        )
-
-        resource.project_satisfaction_survey_questions.build(
-          prompt: "The project goals were clear to me"
-        )
-
-        resource.project_satisfaction_survey_questions.build(
-          prompt: "I had enough time to complete my tasks"
-        )
-
-        # Add free text questions
-        resource.project_satisfaction_survey_free_text_questions.build(
-          prompt: "What went well on this project?"
-        )
-
-        resource.project_satisfaction_survey_free_text_questions.build(
-          prompt: "What could be improved for future projects?"
-        )
-
-        resource.project_satisfaction_survey_free_text_questions.build(
-          prompt: "Any additional comments about the project?"
-        )
+        ProjectSatisfactionSurvey::DEFAULT_FREE_TEXT_QUESTIONS.each do |prompt|
+          resource.project_satisfaction_survey_free_text_questions.build(
+            prompt: prompt
+          )
+        end
       end
 
+      flash[:notice] = "Please review the default questions (below) are relevant for your project."
       new!
     end
 
