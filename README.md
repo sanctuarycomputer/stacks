@@ -11,7 +11,6 @@ to clean it up one day (refactor to use service objects and
 fix the myriad of n+1 issues there are) but that day very well
 may never come.
 
-
 ## Gotchas
 
 ### OAuth2::Error (invalid_grant)
