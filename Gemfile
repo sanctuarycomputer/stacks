@@ -1,17 +1,16 @@
 source 'https://rubygems.org'
 git_source(:github) { |repo| "https://github.com/#{repo}.git" }
 
-ruby '2.7.2'
+ruby '3.1.7'
 
-gem 'mini_portile2', '2.5.0'
-gem 'rails', '~> 6.0.3', '>= 6.0.3.4'
+gem 'rails', '~> 6.1'
 gem 'pg', '>= 0.18', '< 2.0'
 gem 'parallel'
 gem 'puma', '~> 4.1'
 gem 'sass-rails', '>= 6'
-gem 'webpacker', '~> 4.0'
+gem 'webpacker'
 gem 'turbolinks', '~> 5'
-gem 'bootsnap', '>= 1.4.2', require: false
+gem 'bootsnap', '>= 1.9.0', require: false
 gem 'activeadmin'
 gem 'devise', github: 'heartcombo/devise', branch: 'ca-omniauth-2'
 gem 'omniauth-google-oauth2'

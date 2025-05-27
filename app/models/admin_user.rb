@@ -668,10 +668,10 @@ class AdminUser < ApplicationRecord
   def self.from_omniauth(auth)
     uid = auth.info.email.split("@")[0]
     user = where(email: "#{uid}@sanctuary.computer").first || where(email: "#{uid}@xxix.co").first || where(auth.slice(:provider, :uid).to_h).first || new
-    user.update_attributes provider: auth.provider,
-                           uid: auth.uid,
-                           email: auth.info.email,
-                           info: auth.dig("info")
+    user.update(provider: auth.provider,
+                uid: auth.uid,
+                email: auth.info.email,
+                info: auth.dig("info"))
     user
   end
 

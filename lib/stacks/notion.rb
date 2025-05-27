@@ -121,7 +121,7 @@ class Stacks::Notion
         # If someone accidentally trashed this page, recover it
         page.recover! if page.deleted?
         if !page.persisted? || Hashdiff.diff(r, page.data).any?
-          page.update_attributes!({
+          page.update!({
             notion_parent_type: parent_type,
             notion_parent_id: parent_id,
             data: r,
