@@ -40,6 +40,7 @@ gem 'octokit'
 gem 'graphql-client'
 gem 'newrelic_rpm'
 gem 'retriable'
+gem 'concurrent-ruby', '1.3.4'
 
 group :development, :test do
   gem 'pry'

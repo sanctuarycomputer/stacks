@@ -121,7 +121,7 @@ GEM
     coderay (1.1.3)
     coercible (1.0.0)
       descendants_tracker (~> 0.0.1)
-    concurrent-ruby (1.3.5)
+    concurrent-ruby (1.3.4)
     connection_pool (2.2.5)
     crass (1.0.6)
     date (3.4.1)
@@ -493,6 +493,7 @@ DEPENDENCIES
   bootsnap (>= 1.9.0)
   bullet
   capybara (>= 2.15)
+  concurrent-ruby (= 1.3.4)
   devise!
   ferrum
   google-apis-admin_directory_v1
