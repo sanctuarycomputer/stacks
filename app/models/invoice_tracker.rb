@@ -2,12 +2,24 @@
 # TODO: Surface system errors
 # TODO: I should be able to attach an invoice to a Project Tracker that's non-generated
 
+# TODO --
+# TODO: Payouts should not exceed 70% of the the total invoice amount
+# TODO: I should be able to easily see if payouts are "dirty"
+# TODO: Support Payout Descriptions
+# TODO: Payouts should be acceptable
+# TODO: Payouts should show on the Admin's page
+# TODO: Deel integration
+# TODO: Support internal projects
+# TODO: Tests
+
 class InvoiceTracker < ApplicationRecord
   belongs_to :admin_user, optional: true
   belongs_to :invoice_pass
   belongs_to :forecast_client, class_name: "ForecastClient", foreign_key: "forecast_client_id", primary_key: "forecast_id"
 
   belongs_to :qbo_invoice, class_name: "QboInvoice", foreign_key: "qbo_invoice_id", primary_key: "qbo_id", optional: true
+
+  has_many :contributor_payouts, dependent: :destroy
 
   def display_name
     "#{qbo_invoice.try(:display_name)}"
@@ -186,6 +198,87 @@ class InvoiceTracker < ApplicationRecord
         acc
       end
     update!(blueprint: snapshot)
+  end
+
+  def make_contributor_payouts!
+    return [] if qbo_invoice.nil?
+    ActiveRecord::Base.transaction do
+      payouts = {}
+
+      qbo_invoice.line_items.each do |line_item|
+        metadata = (blueprint["lines"] || {}).values.find{|l| l["id"] == line_item["id"]}
+        next unless metadata.present?
+        ptfps = ProjectTrackerForecastProject.includes(:project_tracker).where(forecast_project_id: metadata["forecast_project"])
+        if ptfps.length > 1
+          raise "Multiple project trackers found for forecast project #{metadata["forecast_project"]}"
+        end
+        pt = ptfps.first.project_tracker
+
+        account_lead = pt.account_lead_for_month(invoice_pass.start_of_month)
+        if account_lead.present?
+          payouts[account_lead] ||= {
+            blueprint: {
+              AccountLead: [],
+              TeamLead: [],
+              IndividualContributor: []
+            }
+          }
+          payouts[account_lead][:blueprint][:AccountLead] << {
+            qbo_line_item: line_item,
+            blueprint_metadata: metadata,
+            amount: line_item["amount"].to_f * 0.08
+          }
+        end
+
+        team_lead = pt.team_lead_for_month(invoice_pass.start_of_month)
+        if team_lead.present?
+          payouts[team_lead] ||= {
+            blueprint: {
+              AccountLead: [],
+              TeamLead: [],
+              IndividualContributor: []
+            }
+          }
+          payouts[team_lead][:blueprint][:TeamLead] << {
+            qbo_line_item: line_item,
+            blueprint_metadata: metadata,
+            amount: line_item["amount"].to_f * 0.05
+          }
+        end
+
+        individual_contributor = ForecastPerson.includes(:admin_user).find(metadata["forecast_person"])
+        individual_contributor = individual_contributor.admin_user || individual_contributor
+
+        if individual_contributor.present?
+          payouts[individual_contributor] ||= {
+            blueprint: {
+              AccountLead: [],
+              TeamLead: [],
+              IndividualContributor: []
+            }
+          }
+          payouts[individual_contributor][:blueprint][:IndividualContributor] << {
+            qbo_line_item: line_item,
+            blueprint_metadata: metadata,
+            amount: line_item["amount"].to_f * (1 - 0.3 - (account_lead.present? ? 0.08 : 0) - (team_lead.present? ? 0.05 : 0))
+          }
+        end
+      end
+
+      synced = payouts.map do |payee, payee_data|
+        contributor_payouts.find_or_initialize_by(
+          contributor: payee,
+        ).tap do |cp|
+          amount = payee_data[:blueprint].values.flatten.sum{|l| l[:amount]}
+          cp.update!(
+            amount: amount.round(2),
+            blueprint: payee_data[:blueprint]
+          )
+        end
+      end
+
+      (contributor_payouts - synced).each(&:destroy)
+    end
   end
 
   def make_invoice!

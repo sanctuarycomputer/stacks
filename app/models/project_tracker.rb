@@ -54,6 +54,14 @@ class ProjectTracker < ApplicationRecord
   accepts_nested_attributes_for :technical_lead_periods, allow_destroy: true
   has_many :technical_leads, through: :technical_lead_periods, source: :admin_user
 
+  has_many :account_lead_periods, dependent: :delete_all
+  accepts_nested_attributes_for :account_lead_periods, allow_destroy: true
+  has_many :account_leads, through: :account_lead_periods, source: :admin_user
+
+  has_many :team_lead_periods, dependent: :delete_all
+  accepts_nested_attributes_for :team_lead_periods, allow_destroy: true
+  has_many :team_leads, through: :team_lead_periods, source: :admin_user
+
   scope :complete, -> {
     where.not(work_completed_at: nil)
       .includes(:project_capsule).where(
@@ -401,6 +409,38 @@ class ProjectTracker < ApplicationRecord
   def current_project_safety_representative_periods
     project_safety_representative_periods.select do |p|
       p.period_started_at <= Date.today && p.ended_at.nil?
+    end
+  end
+
+  def current_account_leads
+    current_account_lead_periods.map(&:admin_user)
+  end
+
+  def current_account_lead_periods
+    account_lead_periods.select do |p|
+      p.period_started_at <= Date.today && p.period_ended_at >= Date.today
+    end
+  end
+
+  def team_lead_for_month(date)
+    team_lead_periods.find do |p|
+      p.period_started_at <= date && p.period_ended_at >= date
+    end.try(:admin_user)
+  end
+
+  def account_lead_for_month(date)
+    account_lead_periods.find do |p|
+      p.period_started_at <= date && p.period_ended_at >= date
+    end.try(:admin_user)
+  end
+
+  def current_team_leads
+    current_team_lead_periods.map(&:admin_user)
+  end
+
+  def current_team_lead_periods
+    team_lead_periods.select do |p|
+      p.period_started_at <= Date.today && p.period_ended_at >= Date.today
     end
   end
 

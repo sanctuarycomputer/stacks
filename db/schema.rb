@@ -2,20 +2,31 @@
 # of editing this file, please use the migrations feature of Active Record to
 # incrementally modify your database, and then regenerate this schema definition.
 #
-# This file is the source Rails uses to define your schema when running `rails
-# db:schema:load`. When creating a new database, `rails db:schema:load` tends to
+# This file is the source Rails uses to define your schema when running `bin/rails
+# db:schema:load`. When creating a new database, `bin/rails db:schema:load` tends to
 # be faster and is potentially less error prone than running all of your
 # migrations from scratch. Old migrations may fail to apply correctly if those
 # migrations use external dependencies or application code.
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2025_04_06_174428) do
+ActiveRecord::Schema.define(version: 2025_05_28_222149) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_stat_statements"
   enable_extension "plpgsql"
+
+  create_table "account_lead_periods", force: :cascade do |t|
+    t.bigint "project_tracker_id", null: false
+    t.bigint "admin_user_id", null: false
+    t.date "started_at"
+    t.date "ended_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_account_lead_periods_on_admin_user_id"
+    t.index ["project_tracker_id"], name: "index_account_lead_periods_on_project_tracker_id"
+  end
 
   create_table "active_admin_comments", force: :cascade do |t|
     t.string "namespace"
@@ -163,6 +174,18 @@ ActiveRecord::Schema.define(version: 2025_04_06_174428) do
     t.jsonb "apollo_data", default: {}
     t.index ["apollo_id"], name: "index_contacts_on_apollo_id", unique: true
     t.index ["email"], name: "index_contacts_on_email", unique: true
+  end
+
+  create_table "contributor_payouts", force: :cascade do |t|
+    t.bigint "invoice_tracker_id", null: false
+    t.string "contributor_type", null: false
+    t.bigint "contributor_id", null: false
+    t.decimal "amount", default: "0.0", null: false
+    t.jsonb "blueprint", default: {}, null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["contributor_type", "contributor_id"], name: "index_contributor_payouts_on_contributor"
+    t.index ["invoice_tracker_id"], name: "index_contributor_payouts_on_invoice_tracker_id"
   end
 
   create_table "creative_lead_periods", force: :cascade do |t|
@@ -910,6 +933,17 @@ ActiveRecord::Schema.define(version: 2025_04_06_174428) do
     t.datetime "updated_at", precision: 6, null: false
   end
 
+  create_table "team_lead_periods", force: :cascade do |t|
+    t.bigint "project_tracker_id", null: false
+    t.bigint "admin_user_id", null: false
+    t.date "started_at"
+    t.date "ended_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_team_lead_periods_on_admin_user_id"
+    t.index ["project_tracker_id"], name: "index_team_lead_periods_on_project_tracker_id"
+  end
+
   create_table "technical_lead_periods", force: :cascade do |t|
     t.bigint "project_tracker_id", null: false
     t.bigint "admin_user_id", null: false
@@ -1013,6 +1047,8 @@ ActiveRecord::Schema.define(version: 2025_04_06_174428) do
     t.index ["zenhub_id"], name: "index_zenhub_workspaces_on_zenhub_id", unique: true
   end
 
+  add_foreign_key "account_lead_periods", "admin_users"
+  add_foreign_key "account_lead_periods", "project_trackers"
   add_foreign_key "adhoc_invoice_trackers", "project_trackers"
   add_foreign_key "admin_user_communities", "admin_users"
   add_foreign_key "admin_user_communities", "communities"
@@ -1028,6 +1064,7 @@ ActiveRecord::Schema.define(version: 2025_04_06_174428) do
   add_foreign_key "associates_award_agreements", "admin_users"
   add_foreign_key "collective_role_holder_periods", "admin_users"
   add_foreign_key "collective_role_holder_periods", "collective_roles"
+  add_foreign_key "contributor_payouts", "invoice_trackers"
   add_foreign_key "creative_lead_periods", "admin_users"
   add_foreign_key "creative_lead_periods", "project_trackers"
   add_foreign_key "creative_lead_periods", "studios"
@@ -1094,6 +1131,8 @@ ActiveRecord::Schema.define(version: 2025_04_06_174428) do
   add_foreign_key "survey_studios", "studios"
   add_foreign_key "survey_studios", "surveys"
   add_foreign_key "system_tasks", "notifications"
+  add_foreign_key "team_lead_periods", "admin_users"
+  add_foreign_key "team_lead_periods", "project_trackers"
   add_foreign_key "technical_lead_periods", "admin_users"
   add_foreign_key "technical_lead_periods", "project_trackers"
   add_foreign_key "technical_lead_periods", "studios"
