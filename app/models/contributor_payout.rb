@@ -1,9 +1,27 @@
 class ContributorPayout < ApplicationRecord
+  acts_as_paranoid
+  has_paper_trail
+
   belongs_to :invoice_tracker
   belongs_to :contributor, polymorphic: true
+  belongs_to :created_by, class_name: 'AdminUser'
+
   validates :amount, presence: true
   validates :blueprint, presence: true
   validate :contributor_payouts_within_seventy_percent
+
+  # accepted_at: datetime
+
+
+  def status
+    if deleted_at.present?
+      "deleted"
+    elsif blueprint.empty?
+      "manual"
+    else
+      "calculated"
+    end
+  end
 
   def contributor_payouts_within_seventy_percent
     cps =  invoice_tracker.contributor_payouts.include?(self) ? invoice_tracker.contributor_payouts : [*invoice_tracker.contributor_payouts, self]

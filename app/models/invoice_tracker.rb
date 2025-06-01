@@ -10,6 +10,7 @@
 # TODO: Payouts should show on the Admin's page
 # TODO: Deel integration
 # TODO: Support internal projects
+# TODO: Payouts MUST have account lead & team lead?
 # TODO: Tests
 
 class InvoiceTracker < ApplicationRecord
@@ -200,7 +201,7 @@ class InvoiceTracker < ApplicationRecord
     update!(blueprint: snapshot)
   end
 
-  def make_contributor_payouts!
+  def make_contributor_payouts!(created_by)
     return [] if qbo_invoice.nil?
     ActiveRecord::Base.transaction do
       payouts = {}
@@ -260,7 +261,7 @@ class InvoiceTracker < ApplicationRecord
           payouts[individual_contributor][:blueprint][:IndividualContributor] << {
             qbo_line_item: line_item,
             blueprint_metadata: metadata,
-            amount: line_item["amount"].to_f * (1 - 0.3 - (account_lead.present? ? 0.08 : 0) - (team_lead.present? ? 0.05 : 0))
+            amount: line_item["amount"].to_f * (1 - 0.3 - (account_lead.present? ? 0.08 : 0) - (team_lead.present? ? 0.05 : 0)),
           }
         end
       end
@@ -272,12 +273,27 @@ class InvoiceTracker < ApplicationRecord
           amount = payee_data[:blueprint].values.flatten.sum{|l| l[:amount]}
           cp.update!(
             amount: amount.round(2),
-            blueprint: payee_data[:blueprint]
+            blueprint: payee_data[:blueprint],
+            description: description_from_blueprint(payee_data[:blueprint]),
+            created_by: created_by
           )
         end
       end
 
       (contributor_payouts - synced).each(&:destroy)
+    end
+  end
+
+  def description_from_blueprint(blueprint)
+    blueprint.reduce("") do |acc, (role, data)|
+
+      acc << "#{role.to_s}\n"
+      if data.empty?
+        acc << "No time in role\n\n"
+        next acc
+      end
+      #acc << "#{description} (#{data[:quantity]} hours @ #{data[:unit_price]}/hour)\n"
+      acc
     end
   end
 

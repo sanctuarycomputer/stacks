@@ -173,7 +173,8 @@
   <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
     <thead>
       <tr>
-        <th class="col">Contributor</th>
+        <th class="col"></th>
+        <th class="col">Status</th>
         <th class="col">Account Lead</th>
         <th class="col">Team Lead</th>
         <th class="col">Individual Contributor</th>
@@ -181,22 +182,47 @@
       </tr>
     </thead>
     <tbody>
-      <% invoice_tracker.contributor_payouts.each_with_index do |cp, index| %>
+      <% invoice_tracker.contributor_payouts.with_deleted.each_with_index do |cp, index| %>
         <tr class="<%= index.even? ? "even" : "odd" %>">
           <td class="col">
-            <%= link_to cp.contributor.email, admin_admin_user_path(cp.contributor) %>
+            <span class="pill <%= cp.status %>">
+              <%= cp.status.humanize %>
+            </span>
           </td>
           <td class="col">
-            <%= number_to_currency(cp.as_account_lead) %>
+            <% if cp.deleted_at.present? %>
+              <del><%= link_to cp.contributor.email, admin_admin_user_path(cp.contributor) %></del>
+            <% else %>
+              <%= link_to cp.contributor.email, admin_admin_user_path(cp.contributor) %>
+            <% end %>
           </td>
           <td class="col">
-            <%= number_to_currency(cp.as_team_lead) %>
+            <% if cp.deleted_at.present? %>
+              <del><%= number_to_currency(cp.as_account_lead) %></del>
+            <% else %>
+              <%= number_to_currency(cp.as_account_lead) %>
+            <% end %>
           </td>
           <td class="col">
-            <%= number_to_currency(cp.as_individual_contributor) %>
+            <% if cp.deleted_at.present? %>
+              <del><%= number_to_currency(cp.as_team_lead) %></del>
+            <% else %>
+              <%= number_to_currency(cp.as_team_lead) %>
+            <% end %>
+          </td>
+          <td class="col">
+            <% if cp.deleted_at.present? %>
+              <del><%= number_to_currency(cp.as_individual_contributor) %></del>
+            <% else %>
+              <%= number_to_currency(cp.as_individual_contributor) %>
+            <% end %>
           </td>
           <td class="col text-right">
-            <%= number_to_currency(cp.amount) %>
+            <% if cp.deleted_at.present? %>
+              <del><%= number_to_currency(cp.amount) %></del>
+            <% else %>
+              <%= number_to_currency(cp.amount) %>
+            <% end %>
           </td>
         </tr>
       <% end %>

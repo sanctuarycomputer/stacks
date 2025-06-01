@@ -1,7 +1,7 @@
 ActiveAdmin.register ContributorPayout do
   config.filters = false
   config.paginate = false
-  actions :index, :new, :create, :edit, :update, :destroy
+  actions :index, :new, :create, :destroy
   permit_params :contributor_id, :contributor_type, :amount
   menu false
 
@@ -15,7 +15,7 @@ ActiveAdmin.register ContributorPayout do
 
   collection_action :make_payouts, method: :post do
     invoice_tracker = InvoiceTracker.find(params["invoice_tracker_id"])
-    invoice_tracker.make_contributor_payouts!
+    invoice_tracker.make_contributor_payouts!(current_admin_user)
     redirect_to admin_invoice_tracker_contributor_payouts_path(invoice_tracker), notice: "Payouts processed!"
   end
 
@@ -27,12 +27,13 @@ ActiveAdmin.register ContributorPayout do
     column :as_team_lead do |cp|
       number_to_currency(cp.as_team_lead)
     end
-    column :as_individual_contributor do |cp|
+    column :as_ic do |cp|
       number_to_currency(cp.as_individual_contributor)
     end
     column :amount do |cp|
       number_to_currency(cp.amount)
     end
+    column :created_by
     actions
   end
 

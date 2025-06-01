@@ -1006,6 +1006,7 @@ h2 {
   &.active,
   &.creative_lead,
   &.technical_lead,
+  &.manual,
   &.attended
   {
     background-color: $color-green;
@@ -1019,6 +1020,7 @@ h2 {
   &.removed,
   &.failing,
   &.lost_stale,
+  &.deleted,
   &.not_sent,
   {
     background-color: $color-red;
@@ -1040,6 +1042,7 @@ h2 {
   &.finalized,
   &.sanctu,
   &.unchanged,
+  &.calculated,
   &.in_progress,
   &.complete,
   &.completed,
