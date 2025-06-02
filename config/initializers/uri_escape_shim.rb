@@ -10,3 +10,11 @@ unless URI.respond_to?(:escape)
     end
   end
 end
+
+unless URI.respond_to?(:unescape)
+  module URI
+    def self.unescape(str)
+      URI::DEFAULT_PARSER.unescape(str.to_s)
+    end
+  end
+end
