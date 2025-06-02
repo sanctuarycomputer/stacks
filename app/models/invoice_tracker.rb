@@ -247,8 +247,7 @@ class InvoiceTracker < ApplicationRecord
           }
         end
 
-        individual_contributor = ForecastPerson.includes(:admin_user).find(metadata["forecast_person"])
-        individual_contributor = individual_contributor.admin_user || individual_contributor
+        individual_contributor = ForecastPerson.find(metadata["forecast_person"])
 
         if individual_contributor.present?
           payouts[individual_contributor] ||= {

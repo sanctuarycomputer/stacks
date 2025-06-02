@@ -178,8 +178,7 @@ ActiveRecord::Schema.define(version: 2025_05_28_222149) do
 
   create_table "contributor_payouts", force: :cascade do |t|
     t.bigint "invoice_tracker_id", null: false
-    t.string "contributor_type", null: false
-    t.bigint "contributor_id", null: false
+    t.bigint "forecast_person_id", null: false
     t.bigint "created_by_id", null: false
     t.decimal "amount", default: "0.0", null: false
     t.jsonb "blueprint", default: {}, null: false
@@ -188,9 +187,9 @@ ActiveRecord::Schema.define(version: 2025_05_28_222149) do
     t.datetime "deleted_at"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
-    t.index ["contributor_type", "contributor_id"], name: "index_contributor_payouts_on_contributor"
     t.index ["created_by_id"], name: "index_contributor_payouts_on_created_by_id"
     t.index ["deleted_at"], name: "index_contributor_payouts_on_deleted_at"
+    t.index ["forecast_person_id"], name: "index_contributor_payouts_on_forecast_person_id"
     t.index ["invoice_tracker_id"], name: "index_contributor_payouts_on_invoice_tracker_id"
   end
 
