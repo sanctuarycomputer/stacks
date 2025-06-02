@@ -105,6 +105,9 @@ ActiveAdmin.register ProjectTracker do
         project_lead_periods: :admin_user,
         creative_lead_periods: :admin_user,
         technical_lead_periods: :admin_user,
+        project_safety_representative_periods: :admin_user,
+        account_lead_periods: :admin_user,
+        team_lead_periods: :admin_user,
         adhoc_invoice_trackers: :qbo_invoice
       )
     end
@@ -213,6 +216,22 @@ ActiveAdmin.register ProjectTracker do
         span("No Forecast Project/s Connected", class: "pill error")
       end
     end
+
+    column "Account Lead (AL)", :account_leads do |resource|
+      if resource.current_account_leads.any?
+        resource.current_account_leads
+      else
+        span("No Account Lead", class: "pill error")
+      end
+    end
+    column "Team Lead (TL)", :team_leads do |resource|
+      if resource.current_team_leads.any?
+        resource.current_team_leads
+      else
+        span("No Team Lead", class: "pill error")
+      end
+    end
+
     column "Zenhub Workspaces", :zenhub_workspaces do |resource|
       if resource.zenhub_workspaces.any?
         div(

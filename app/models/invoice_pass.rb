@@ -36,6 +36,10 @@ class InvoicePass < ApplicationRecord
     Stacks::System.clients_served_since(start_of_month, start_of_month.end_of_month)
   end
 
+  def period
+    Stacks::Period.new(invoice_month, start_of_month, start_of_month.end_of_month)
+  end
+
   def invoice_month
     start_of_month.strftime("%B %Y")
   end

@@ -40,6 +40,7 @@
       <th class="col">Item</th>
       <th class="col">Hours</th>
       <th class="col">Rate</th>
+      <th class="col text-right">Total</th>
     </tr>
   </thead>
   <tbody>
@@ -86,6 +87,14 @@
             <% end %>
           <% end %>
         </td>
+        <td class="col text-right">
+          <% quantity = blueprint_diff.dig("lines", line, "quantity") %>
+          <% unit_price = blueprint_diff.dig("lines", line, "unit_price") %>
+          <%= number_to_currency(
+            (quantity.kind_of?(Array) ? quantity[1] : quantity) *
+            (unit_price.kind_of?(Array) ? unit_price[1] : unit_price)
+          ) %>
+        </td>
       </tr>
     <% end %>
   </tbody>
@@ -100,7 +109,9 @@
             Project Trackers
           </div>
         </th>
-        <th class="col">Status</th>
+        <th class="col">Account Lead</th>
+        <th class="col">Team Lead</th>
+        <th class="col text-right">Status</th>
       </tr>
     </thead>
     <tbody>
@@ -109,7 +120,26 @@
           <td class="col">
             <%= link_to pt.name, admin_project_tracker_path(pt) %>
           </td>
+
           <td class="col">
+            <% account_lead = pt.account_lead_for_month(invoice_tracker.invoice_pass.start_of_month) %>
+            <% if account_lead.present? %>
+              <%= link_to account_lead.email, admin_admin_user_path(account_lead) %>
+            <% else %>
+              <span class="pill error" style="pointer-events: auto;">No Account Lead</span>
+            <% end %>
+          </td>
+
+          <td class="col">
+            <% team_lead = pt.team_lead_for_month(invoice_tracker.invoice_pass.start_of_month) %>
+            <% if team_lead.present? %>
+              <%= link_to team_lead.email, admin_admin_user_path(team_lead) %>
+            <% else %>
+              <span class="pill error" style="pointer-events: auto;">No Team Lead</span>
+            <% end %>
+          </td>
+
+          <td class="col text-right">
             <span class="pill <%= pt.status %>">
               <%= pt.status.to_s.humanize %>
             </span>
@@ -122,7 +152,87 @@
   <div class="dashboard-modules table index_table index">
     <div class="dashboard-module">
       <div class="module-body factoid-parent">
-        <p>🤔 <strong>Hmmm...</strong> This project doesn't have a Project Tracker. Have you checked if this ATC is managing the client's budget properly?</p>
+        <p>🤔 <strong>Hmmm...</strong> This invoice doesn't have a Project Tracker. Have you checked if this ATC is managing the client's budget properly?</p>
+      </div>
+    </div>
+  </div>
+<% end %>
+
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">🏓 Payouts</h2>
+  </div>
+  <div id="titlebar_right">
+    <div class="action_items">
+      <%= link_to "Edit Payouts ↗", admin_invoice_tracker_contributor_payouts_path(invoice_tracker) %>
+    </div>
+  </div>
+</div>
+
+<% if invoice_tracker.contributor_payouts.any? %>
+  <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+    <thead>
+      <tr>
+        <th class="col"></th>
+        <th class="col">Status</th>
+        <th class="col">Account Lead</th>
+        <th class="col">Team Lead</th>
+        <th class="col">Individual Contributor</th>
+        <th class="col text-right">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% invoice_tracker.contributor_payouts.with_deleted.each_with_index do |cp, index| %>
+        <tr class="<%= index.even? ? "even" : "odd" %>">
+          <td class="col">
+            <span class="pill <%= cp.status %>">
+              <%= cp.status.humanize %>
+            </span>
+          </td>
+          <td class="col">
+            <% if cp.deleted_at.present? %>
+              <del><%= link_to cp.contributor.email, admin_admin_user_path(cp.contributor) %></del>
+            <% else %>
+              <%= link_to cp.contributor.email, admin_admin_user_path(cp.contributor) %>
+            <% end %>
+          </td>
+          <td class="col">
+            <% if cp.deleted_at.present? %>
+              <del><%= number_to_currency(cp.as_account_lead) %></del>
+            <% else %>
+              <%= number_to_currency(cp.as_account_lead) %>
+            <% end %>
+          </td>
+          <td class="col">
+            <% if cp.deleted_at.present? %>
+              <del><%= number_to_currency(cp.as_team_lead) %></del>
+            <% else %>
+              <%= number_to_currency(cp.as_team_lead) %>
+            <% end %>
+          </td>
+          <td class="col">
+            <% if cp.deleted_at.present? %>
+              <del><%= number_to_currency(cp.as_individual_contributor) %></del>
+            <% else %>
+              <%= number_to_currency(cp.as_individual_contributor) %>
+            <% end %>
+          </td>
+          <td class="col text-right">
+            <% if cp.deleted_at.present? %>
+              <del><%= number_to_currency(cp.amount) %></del>
+            <% else %>
+              <%= number_to_currency(cp.amount) %>
+            <% end %>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+<% else %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <p>This invoice doesn't have any payouts.</p>
       </div>
     </div>
   </div>

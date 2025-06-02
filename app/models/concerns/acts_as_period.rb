@@ -35,7 +35,7 @@ module ActsAsPeriod
   def does_not_overlap
     overlapping_period = sibling_periods.reject{|p| p == self || p.id.nil?}.find{|p| self.overlaps?(p)}
     if overlapping_period.present?
-      errors.add(:base, "Overlapping periods")
+      errors.add(:base, "This period overlaps with another.")
     end
   end
 
