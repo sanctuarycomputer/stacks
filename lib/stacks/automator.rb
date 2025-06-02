@@ -206,7 +206,7 @@ class Stacks::Automator
       if send_twist_reminders
         needed_reminding.each do |person|
           sc_twist_users =
-            studio_coordinator_twist_users[person[:forecast_data].studio(studios)]
+            studio_coordinator_twist_users[person[:forecast_data].studio(studios)] || []
           participant_ids = [
             *(sc_twist_users.any? ? sc_twist_users : admin_twist_users).map{|tu| tu["id"]},
             person[:twist_data]["id"]
