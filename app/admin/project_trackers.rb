@@ -305,6 +305,14 @@ ActiveAdmin.register ProjectTracker do
     end
   end
 
+  action_item :edit_account_leads, only: [:show, :edit] do
+    link_to "Edit Account Lead", admin_project_tracker_account_lead_periods_path(resource)
+  end
+
+  action_item :edit_team_leads, only: [:show, :edit] do
+    link_to "Edit Team Lead", admin_project_tracker_team_lead_periods_path(resource)
+  end
+
   member_action :complete_work, method: :post do
     resource.update_column(:work_completed_at, DateTime.now)
     resource.ensure_project_capsule_exists!

@@ -363,6 +363,22 @@ class ProjectTracker < ApplicationRecord
       acc
     end
 
+    account_lead_periods.reduce(project_members) do |acc, period|
+      acc[period.admin_user] = acc[period.admin_user] || {
+        roles: []
+      }
+      acc[period.admin_user][:roles] << { name: :account_lead, started_at: period.started_at, ended_at: period.ended_at }
+      acc
+    end
+
+    team_lead_periods.reduce(project_members) do |acc, period|
+      acc[period.admin_user] = acc[period.admin_user] || {
+        roles: []
+      }
+      acc[period.admin_user][:roles] << { name: :team_lead, started_at: period.started_at, ended_at: period.ended_at }
+      acc
+    end
+
     # Add project leads
     project_lead_periods.reduce(project_members) do |acc, period|
       acc[period.admin_user] = acc[period.admin_user] || {
@@ -418,7 +434,7 @@ class ProjectTracker < ApplicationRecord
 
   def current_account_lead_periods
     account_lead_periods.select do |p|
-      p.period_started_at <= Date.today && p.period_ended_at >= Date.today
+      p.period_started_at <= Date.today && p.ended_at.nil?
     end
   end
 
@@ -440,7 +456,7 @@ class ProjectTracker < ApplicationRecord
 
   def current_team_lead_periods
     team_lead_periods.select do |p|
-      p.period_started_at <= Date.today && p.period_ended_at >= Date.today
+      p.period_started_at <= Date.today && p.ended_at.nil?
     end
   end
 
