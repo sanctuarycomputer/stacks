@@ -197,14 +197,6 @@ ActiveAdmin.register ProjectTracker do
     column :work_status do |resource|
       span(resource.work_status.to_s.humanize.capitalize, class: "pill #{resource.work_status}")
     end
-    column :profit_margin do |resource|
-      div([
-        span("#{resource.profit_margin.round(1)}%"),
-        para(class: "okr_hint", style: "margin-bottom:0px;padding-top:0px !important") do
-          "#{number_to_currency resource.spend} earnt, #{number_to_currency resource.estimated_cost("cash")} COSR"
-        end
-      ])
-    end
     column :forecast_projects do |resource|
       if resource.forecast_projects.any?
         div(
@@ -232,33 +224,6 @@ ActiveAdmin.register ProjectTracker do
       end
     end
 
-    column "Zenhub Workspaces", :zenhub_workspaces do |resource|
-      if resource.zenhub_workspaces.any?
-        div(
-          resource.zenhub_workspaces.map do |zw|
-            link_to zw.name, admin_zenhub_workspace_path(zw)
-          end
-        )
-      else
-        span("No Zenhub/s Connected", class: "pill error")
-      end
-    end
-    column "TTM (Trailing 3 Months)", :zenhub_workspaces do |resource|
-      if resource.zenhub_workspaces.any?
-        arr = resource.zenhub_workspaces.map do |zw|
-          zw.average_time_to_merge_pr_in_days_during_range(Date.today - 3.months, Date.today)
-        end
-        span("#{(arr.compact.inject{ |sum, el| sum + el }.to_f / arr.size).round(2) || '?'} days", style: "white-space:nowrap")
-      end
-    end
-    column "Lifetime TTM", :zenhub_workspaces do |resource|
-      if resource.zenhub_workspaces.any?
-        arr = resource.zenhub_workspaces.map do |zw|
-          zw.average_time_to_merge_pr
-        end
-        span("#{(arr.compact.inject{ |sum, el| sum + el }.to_f / arr.size).round(2) || '?'} days", style: "white-space:nowrap")
-      end
-    end
     column "Runn.io Project", :runn_project do |resource|
       if resource.runn_project.present?
         a("#{resource.runn_project.name} ↗", { href: resource.runn_project.link, target: "_blank", class: "block", style: "white-space:nowrap" })
@@ -266,34 +231,7 @@ ActiveAdmin.register ProjectTracker do
         span("No Runn.io Project Connected", class: "pill error")
       end
     end
-    column "Project Lead/s (PL)", :project_leads do |resource|
-      if resource.current_project_leads.any?
-        resource.current_project_leads
-      else
-        span("No Project Lead/s", class: "pill error")
-      end
-    end
-    column "Creative Lead/s (CL)", :creative_leads do |resource|
-      if resource.current_creative_leads.any?
-        resource.current_creative_leads
-      else
-        span("No Creative Lead/s", class: "pill error")
-      end
-    end
-    column "Technical Lead/s (TL)", :technical_leads do |resource|
-      if resource.current_technical_leads.any?
-        resource.current_technical_leads
-      else
-        span("No Technical Lead/s", class: "pill error")
-      end
-    end
-    column :project_safety_reps do |resource|
-      if resource.current_project_safety_representatives.any?
-        resource.current_project_safety_representatives
-      else
-        span("No Project Safety Rep/s", class: "pill error")
-      end
-    end
+
     actions
   end
 

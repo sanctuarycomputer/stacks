@@ -101,6 +101,7 @@ class Stacks::Automator
             ((invoice_pass.data || {})["reminder_passes"] || {}).merge(new_reminder_pass),
         })
       )
+
       return if needed_reminding.any?
 
       invoice_pass.make_trackers!
