@@ -365,7 +365,7 @@ ActiveAdmin::Views::Pages::Base.class_eval do
     within body(class: body_classes) do
       div id: "wrapper" do
         build_unsupported_browser
-        build_dei_nag if current_admin_user.should_nag_for_dei_data?
+        # build_dei_nag if current_admin_user.should_nag_for_dei_data?
         build_survey_nag if current_admin_user.should_nag_for_survey_responses?
 
         header active_admin_namespace, current_menu
