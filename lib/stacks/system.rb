@@ -1,7 +1,7 @@
 class Stacks::System
   class << self
     # The first date of the New Deal
-    NEW_DEAL_START_AT = Date.new(2025, 5, 1) # TODO: change this to 2021, 6, 1
+    NEW_DEAL_START_AT = Date.new(2025, 6, 1)
 
     # This is the first date that every fulltimer at
     # garden3d was required to start accounting for
