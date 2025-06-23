@@ -1,16 +1,4 @@
-# TODO: Malformed hourly rate?
-# TODO: Surface system errors
-# TODO: I should be able to attach an invoice to a Project Tracker that's non-generated
-
-# TODO --
-# TODO: Payouts should not exceed 70% of the the total invoice amount
-# TODO: I should be able to easily see if payouts are "dirty"
-# TODO: Support Payout Descriptions
-# TODO: Payouts should be acceptable
-# TODO: Payouts should show on the Admin's page
 # TODO: Deel integration
-# TODO: Support internal projects
-# TODO: Payouts MUST have account lead & team lead?
 # TODO: Tests
 
 class InvoiceTracker < ApplicationRecord
@@ -105,6 +93,15 @@ class InvoiceTracker < ApplicationRecord
         forecast_project_codes.any?{|code| (qbo_li["description"] || "").include?(code)}
       end
     end || [])
+  end
+
+  def contributor_payouts_status
+    return nil unless invoice_pass.allows_payment_splits?
+    if contributor_payouts.any?
+      contributor_payouts.all?(&:accepted?) ? :all_accepted : :some_pending
+    else
+      :no_payouts
+    end
   end
 
   def status
@@ -202,6 +199,7 @@ class InvoiceTracker < ApplicationRecord
   end
 
   def make_contributor_payouts!(created_by)
+    raise "Payment splits are not supported for this invoice pass" unless invoice_pass.allows_payment_splits?
     return [] if qbo_invoice.nil?
     ActiveRecord::Base.transaction do
       payouts = {}
@@ -209,13 +207,40 @@ class InvoiceTracker < ApplicationRecord
       qbo_invoice.line_items.each do |line_item|
         metadata = (blueprint["lines"] || {}).values.find{|l| l["id"] == line_item["id"]}
         next unless metadata.present?
+
+        forecast_project = ForecastProject.includes(:forecast_client).find(metadata["forecast_project"])
+        next unless forecast_project.present?
+
+        # Handle Internal Project
+        if forecast_project.forecast_client.is_internal?
+          individual_contributor = ForecastPerson.find(metadata["forecast_person"])
+          next unless individual_contributor.present?
+          payouts[individual_contributor] ||= {
+            blueprint: {
+              AccountLead: [],
+              TeamLead: [],
+              IndividualContributor: []
+            }
+          }
+          payouts[individual_contributor][:blueprint][:IndividualContributor] << {
+            qbo_line_item: line_item,
+            blueprint_metadata: metadata,
+            amount: line_item["amount"].to_f,
+          }
+          next
+        end
+
+        # Handle Client Project
         ptfps = ProjectTrackerForecastProject.includes(:project_tracker).where(forecast_project_id: metadata["forecast_project"])
         if ptfps.length > 1
           raise "Multiple project trackers found for forecast project #{metadata["forecast_project"]}"
         end
+        if ptfps.length == 0
+          raise "No project trackers found for forecast project #{metadata["forecast_project"]}"
+        end
         pt = ptfps.first.project_tracker
 
-        account_lead = pt.account_lead_for_month(invoice_pass.start_of_month)
+        account_lead = pt.account_lead_for_month(invoice_pass.start_of_month).try(:forecast_person)
         if account_lead.present?
           payouts[account_lead] ||= {
             blueprint: {
@@ -231,7 +256,7 @@ class InvoiceTracker < ApplicationRecord
           }
         end
 
-        team_lead = pt.team_lead_for_month(invoice_pass.start_of_month)
+        team_lead = pt.team_lead_for_month(invoice_pass.start_of_month).try(:forecast_person)
         if team_lead.present?
           payouts[team_lead] ||= {
             blueprint: {
@@ -266,17 +291,18 @@ class InvoiceTracker < ApplicationRecord
       end
 
       synced = payouts.map do |payee, payee_data|
-        contributor_payouts.find_or_initialize_by(
-          contributor: payee,
-        ).tap do |cp|
-          amount = payee_data[:blueprint].values.flatten.sum{|l| l[:amount]}
-          cp.update!(
-            amount: amount.round(2),
-            blueprint: payee_data[:blueprint],
-            description: description_from_blueprint(payee_data[:blueprint]),
-            created_by: created_by
-          )
-        end
+        amount = payee_data[:blueprint].values.flatten.sum{|l| l[:amount]}
+        next if amount == 0
+        cp = contributor_payouts.with_deleted.find_or_initialize_by(
+          forecast_person: payee.is_a?(ForecastPerson) ? payee : payee.forecast_person,
+        )
+        cp.update!(
+          deleted_at: nil,
+          amount: amount.round(2),
+          blueprint: payee_data[:blueprint],
+          created_by: created_by
+        )
+        cp
       end
 
       (contributor_payouts - synced).each(&:destroy)

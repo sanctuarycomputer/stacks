@@ -977,6 +977,7 @@ h2 {
   color: $color-black;
   &.draft,
   &.pending,
+  &.some_pending,
   &.waiting,
   &.no,
   &.at_budget,
@@ -1001,11 +1002,14 @@ h2 {
   &.yes,
   &.under_budget,
   &.paid,
+  &.accepted,
+  &.early_payouts_approved,
   &.added,
   &.exceptional,
   &.active,
   &.creative_lead,
   &.technical_lead,
+  &.all_accepted,
   &.manual,
   &.attended
   {
@@ -1033,6 +1037,9 @@ h2 {
   &.missing_hours,
   &.voided,
   &.passed,
+  &.contractor,
+  &.no_payouts,
+  &.misc,
   &.project_safety_representative,
   &.complete
   {

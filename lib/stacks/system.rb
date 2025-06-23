@@ -1,5 +1,8 @@
 class Stacks::System
   class << self
+    # The first date of the New Deal
+    NEW_DEAL_START_AT = Date.new(2025, 5, 1) # TODO: change this to 2021, 6, 1
+
     # This is the first date that every fulltimer at
     # garden3d was required to start accounting for
     # all of their hours in Harvest Forecast
@@ -56,8 +59,7 @@ class Stacks::System
           .includes(forecast_project: :forecast_client)
         .where('end_date >= ? AND start_date <= ?', start_of_period, end_of_period)
 
-      internal_client_names =
-        [*Studio.all.map(&:name), 'garden3d']
+      internal_client_names = Studio.all.map(&:name)
 
       clients =
         assignments

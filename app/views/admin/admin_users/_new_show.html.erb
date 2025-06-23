@@ -1,0 +1,24 @@
+<figure class="text-center">
+  <div>
+    <img class="rounded-full" src="<%= (resource.info || {}).dig("image") %>" />
+    <% if resource.is_admin? %>
+      <span class="pill ready absolute">Stacks Admin</span>
+    <% end %>
+  </div>
+  <h1>
+    <%= (resource.info || {}).dig("name") %>
+  </h1>
+</figure>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-body factoid-parent">
+      <% if resource.forecast_person.present? %>
+        <p style="margin-bottom: 6px;">💸 <strong>Note!</strong> This user's payments ledger is available here:</p>
+        <%= link_to "Payments Ledger ↗", admin_forecast_person_path(resource.forecast_person) %>
+      <% else %>
+        <p>🚧 <strong>Important!</strong> This user has no Harvest Forecast user associated. Please add them in Harvest Forecast (with the same email address) and then their payment ledger will show here.</p>
+      <% end %>
+    </div>
+  </div>
+</div>

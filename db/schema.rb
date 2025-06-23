@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2025_05_28_222149) do
+ActiveRecord::Schema.define(version: 2025_06_22_231954) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -212,6 +212,29 @@ ActiveRecord::Schema.define(version: 2025_05_28_222149) do
     t.boolean "opt_out"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+  end
+
+  create_table "deel_contracts", force: :cascade do |t|
+    t.string "deel_id", null: false
+    t.jsonb "data", null: false
+    t.string "deel_person_id", null: false
+    t.index ["deel_id"], name: "index_deel_contracts_on_deel_id", unique: true
+  end
+
+  create_table "deel_off_cycle_payments", force: :cascade do |t|
+    t.string "deel_id"
+    t.string "deel_contract_id"
+    t.jsonb "data"
+    t.datetime "created_at", null: false
+    t.datetime "submitted_at"
+    t.index ["deel_contract_id"], name: "index_deel_off_cycle_payments_on_deel_contract_id"
+    t.index ["deel_id"], name: "index_deel_off_cycle_payments_on_deel_id", unique: true
+  end
+
+  create_table "deel_people", force: :cascade do |t|
+    t.string "deel_id", null: false
+    t.jsonb "data", null: false
+    t.index ["deel_id"], name: "index_deel_people_on_deel_id", unique: true
   end
 
   create_table "dei_rollups", force: :cascade do |t|
@@ -436,6 +459,7 @@ ActiveRecord::Schema.define(version: 2025_05_28_222149) do
     t.datetime "updated_at", precision: 6, null: false
     t.bigint "admin_user_id"
     t.text "notes"
+    t.date "allow_early_contributor_payouts_on"
     t.index ["admin_user_id"], name: "index_invoice_trackers_on_admin_user_id"
     t.index ["forecast_client_id", "invoice_pass_id"], name: "idx_invoice_trackers_on_forecast_client_id_and_invoice_pass_id", unique: true
     t.index ["forecast_client_id"], name: "index_invoice_trackers_on_forecast_client_id"
@@ -458,6 +482,18 @@ ActiveRecord::Schema.define(version: 2025_05_28_222149) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.index ["studio_id"], name: "index_mailing_lists_on_studio_id"
+  end
+
+  create_table "misc_payments", force: :cascade do |t|
+    t.integer "forecast_person_id", null: false
+    t.decimal "amount", precision: 10, scale: 2, null: false
+    t.text "remittance"
+    t.datetime "deleted_at"
+    t.date "paid_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["deleted_at"], name: "index_misc_payments_on_deleted_at"
+    t.index ["forecast_person_id"], name: "index_misc_payments_on_forecast_person_id"
   end
 
   create_table "notifications", force: :cascade do |t|

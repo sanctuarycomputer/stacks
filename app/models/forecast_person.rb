@@ -3,8 +3,72 @@ class ForecastPerson < ApplicationRecord
   has_many :forecast_assignments, class_name: "ForecastAssignment", foreign_key: "person_id"
   has_one :admin_user, class_name: "AdminUser", foreign_key: "email", primary_key: "email"
 
+  has_many :misc_payments
+  has_many :contributor_payouts
+
   def display_name
     email
+  end
+
+  def misc_payments_in_date_range(start_date, end_date)
+    misc_payments
+      .joins({ invoice_tracker: :invoice_pass })
+      .where('invoice_passes.start_of_month >= ? AND invoice_passes.start_of_month <= ?', start_date, end_date)
+      .distinct
+  end
+
+  def new_deal_balance(ledger_items = new_deal_ledger_items())
+    new_deal_ledger_items[:all].reduce({ balance: 0, unsettled: 0 }) do |acc, li|
+      next acc if li.deleted_at.present?
+
+      if li.is_a?(MiscPayment)
+        acc[:balance] -= li.amount
+      elsif li.is_a?(ContributorPayout)
+        if li.payable?
+          acc[:balance] += li.amount
+        else
+          acc[:unsettled] += li.amount
+        end
+      end
+      acc
+    end
+  end
+
+  def new_deal_ledger_items
+    preloaded_contributor_payouts = contributor_payouts.includes({ invoice_tracker: :invoice_pass }).with_deleted
+    preloaded_misc_payments = misc_payments.with_deleted
+
+    latest_date = [*preloaded_misc_payments, *preloaded_contributor_payouts].reduce(Date.today) do |acc, li|
+      if li.is_a?(MiscPayment)
+        acc = li.paid_at if li.paid_at > acc
+      elsif li.is_a?(ContributorPayout)
+        acc = li.invoice_tracker.invoice_pass.start_of_month if li.invoice_tracker.invoice_pass.start_of_month > acc
+      end
+      acc
+    end
+
+    periods = Stacks::Period.for_gradation(:month, Stacks::System.singleton_class::NEW_DEAL_START_AT, latest_date + 1.month).reverse
+    periods.reduce({ all: [], by_month: {} }) do |acc, period|
+      contributor_payouts_in_period = preloaded_contributor_payouts.select do |cp|
+        cp.invoice_tracker.invoice_pass.start_of_month >= period.starts_at &&
+        cp.invoice_tracker.invoice_pass.start_of_month <= period.ends_at
+      end
+
+      contractor_payouts_in_period = misc_payments.with_deleted.select do |cp|
+        cp.paid_at >= period.starts_at &&
+        cp.paid_at <= period.ends_at
+      end
+
+      sorted = [*contributor_payouts_in_period, *contractor_payouts_in_period].sort do |a, b|
+        date_a = a.is_a?(MiscPayment) ? a.paid_at : a.invoice_tracker.invoice_pass.start_of_month
+        date_b = b.is_a?(MiscPayment) ? b.paid_at : b.invoice_tracker.invoice_pass.start_of_month
+        date_b <=> date_a
+      end
+
+      acc[:all] = [*acc[:all], *sorted]
+      acc[:by_month][period] = sorted
+      acc
+    end
   end
 
   def missing_allocation_during_range_in_hours(start_of_range, end_of_range)

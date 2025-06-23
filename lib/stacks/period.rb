@@ -48,13 +48,13 @@ class Stacks::Period
     )
   end
 
-  def self.for_gradation(gradation, start_at = Date.new(2020, 1, 1))
+  def self.for_gradation(gradation, start_at = Date.new(2020, 1, 1), through = Date.today)
     periods = []
     case gradation
     when nil
     when :month
       time = start_at
-      while time < Date.today.last_month.end_of_month
+      while time < through.last_month.end_of_month
         periods << Stacks::Period.new(
           time.strftime("%B, %Y"),
           time.beginning_of_month,
@@ -66,7 +66,7 @@ class Stacks::Period
 
     when :quarter
       time = start_at
-      while time < Date.today.last_quarter.end_of_quarter
+      while time < through.last_quarter.end_of_quarter
         periods << Stacks::Period.new(
           "Q#{(time.beginning_of_quarter.month / 3) + 1}, #{time.beginning_of_quarter.year}",
           time.beginning_of_quarter,
@@ -78,7 +78,7 @@ class Stacks::Period
 
     when :year
       time = start_at
-      while time < Date.today.last_year.end_of_year
+      while time < through.last_year.end_of_year
         periods << Stacks::Period.new(
           "#{time.beginning_of_quarter.year}",
           time.beginning_of_year,
@@ -94,7 +94,7 @@ class Stacks::Period
       return periods
 
     when :trailing_3_months
-      time = Date.today.last_month
+      time = through.last_month
       while time > start_at
         starts_at = (time - 2.months).beginning_of_month
         ends_at = time.end_of_month
@@ -108,7 +108,7 @@ class Stacks::Period
       return periods.reverse
 
     when :trailing_4_months
-      time = Date.today.last_month
+      time = through.last_month
       while time > start_at
         starts_at = (time - 3.months).beginning_of_month
         ends_at = time.end_of_month
@@ -122,7 +122,7 @@ class Stacks::Period
       return periods.reverse
 
     when :trailing_6_months
-      time = Date.today.last_month
+      time = through.last_month
       while time > start_at
         starts_at = (time - 5.months).beginning_of_month
         ends_at = time.end_of_month
@@ -136,7 +136,7 @@ class Stacks::Period
       return periods.reverse
 
     when :trailing_12_months
-      time = Date.today.last_month
+      time = through.last_month
       while time > start_at
         starts_at = (time - 11.months).beginning_of_month
         ends_at = time.end_of_month

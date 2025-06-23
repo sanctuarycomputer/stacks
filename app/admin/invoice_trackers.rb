@@ -4,13 +4,23 @@ ActiveAdmin.register InvoiceTracker do
   config.paginate = false
   actions :index, :show, :edit, :update
   belongs_to :invoice_pass
-  permit_params :notes
+  permit_params :notes, :allow_early_contributor_payouts_on
 
   action_item :attempt_generate, only: :show, if: proc { current_admin_user.is_admin? } do
     link_to(
       "Regenerate",
       attempt_generate_admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource),
       method: :post
+    )
+  end
+
+  member_action :toggle_contributor_payout_acceptance, method: :post do
+    cp = ContributorPayout.find(params[:contributor_payout_id])
+    return unless cp.forecast_person.try(:admin_user) == current_admin_user
+    cp.toggle_acceptance!
+    return redirect_to(
+      admin_invoice_pass_invoice_tracker_path(params[:invoice_pass_id], params[:id], format: :html),
+      notice: "Success",
     )
   end
 
@@ -66,8 +76,11 @@ ActiveAdmin.register InvoiceTracker do
     column :value do |resource|
       number_to_currency(resource.value)
     end
-    column :status do |resource|
+    column :invoicing_status do |resource|
       span(resource.status.to_s.humanize, class: "pill #{resource.status}")
+    end
+    column :payout_status do |resource|
+      span(resource.contributor_payouts_status.to_s.humanize, class: "pill #{resource.contributor_payouts_status}")
     end
     column :owner do |resource|
       if resource.admin_user.present?
@@ -100,12 +113,20 @@ ActiveAdmin.register InvoiceTracker do
       end
       super
     end
+
+    def update
+      if params[:invoice_tracker][:allow_early_contributor_payouts_on].present?
+        raise "Only admins can schedule early contributor payouts" unless current_admin_user.is_admin?
+      end
+      super
+    end
   end
 
   form do |f|
     f.inputs(class: "admin_inputs") do
+      f.input :forecast_client, input_html: { disabled: true }
+      f.input :allow_early_contributor_payouts_on, as: :date_picker
       f.input :notes, label: "❗Important Notes (accepts markdown)"
-      f.input :forecast_client
     end
     f.actions
   end
