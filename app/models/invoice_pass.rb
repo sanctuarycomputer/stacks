@@ -5,6 +5,10 @@ class InvoicePass < ApplicationRecord
     completed_at.present?
   end
 
+  def allows_payment_splits?
+    start_of_month >= Stacks::System.singleton_class::NEW_DEAL_START_AT
+  end
+
   def statuses
     if (data || {})["reminder_passes"].present? && latest_reminder_pass.any?
       :missing_hours
@@ -12,6 +16,12 @@ class InvoicePass < ApplicationRecord
       status = invoice_trackers.map(&:status)
       status.inject(Hash.new(0)) { |h, e| h[e] += 1 ; h }
     end
+  end
+
+  def payout_statuses
+    return [] unless allows_payment_splits?
+    status = invoice_trackers.map(&:contributor_payouts_status)
+    status.inject(Hash.new(0)) { |h, e| h[e] += 1 ; h }
   end
 
   def value

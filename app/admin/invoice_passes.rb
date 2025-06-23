@@ -33,7 +33,8 @@ ActiveAdmin.register InvoicePass do
     column :outstanding_balance do |resource|
       number_to_currency(resource.balance)
     end
-    column :statuses do |resource|
+
+    column :invoicing_statuses do |resource|
       div do
         if resource.statuses == :missing_hours
           span("Missing hours", class: "pill missing_hours")
@@ -45,10 +46,21 @@ ActiveAdmin.register InvoicePass do
       end
     end
 
-    column :invoices do |resource|
-      link_to "View Invoices", admin_invoice_pass_invoice_trackers_path(resource)
+    column :payout_statuses do |resource|
+      div do
+        if resource.payout_statuses == :missing_hours
+          span("Missing hours", class: "pill missing_hours")
+        else
+          resource.payout_statuses.each do |status, count|
+            span("#{count}x #{status.to_s.humanize}", class: "pill #{status}")
+          end
+        end
+      end
     end
-    actions
+
+    actions do |resource|
+      link_to "Invoice Trackers →", admin_invoice_pass_invoice_trackers_path(resource)
+    end
   end
 
   show title: :invoice_month do

@@ -152,7 +152,7 @@
   <div class="dashboard-modules table index_table index">
     <div class="dashboard-module">
       <div class="module-body factoid-parent">
-        <p>🤔 <strong>Hmmm...</strong> This invoice doesn't have a Project Tracker. Have you checked if this ATC is managing the client's budget properly?</p>
+        <p>🤔 <strong>Hmmm...</strong> This invoice doesn't have any Project Trackers.</p>
       </div>
     </div>
   </div>
@@ -162,11 +162,13 @@
   <div id="titlebar_left">
     <h2 id="page_title">🏓 Payouts</h2>
   </div>
-  <div id="titlebar_right">
-    <div class="action_items">
-      <%= link_to "Edit Payouts ↗", admin_invoice_tracker_contributor_payouts_path(invoice_tracker) %>
+  <% if invoice_tracker.invoice_pass.allows_payment_splits? %>
+    <div id="titlebar_right">
+      <div class="action_items">
+        <%= link_to "Edit Payouts ↗", admin_invoice_tracker_contributor_payouts_path(invoice_tracker) %>
+      </div>
     </div>
-  </div>
+  <% end %>
 </div>
 
 <% if invoice_tracker.contributor_payouts.any? %>
@@ -174,10 +176,11 @@
     <thead>
       <tr>
         <th class="col"></th>
-        <th class="col">Status</th>
+        <th class="col">Payee</th>
         <th class="col">Account Lead</th>
         <th class="col">Team Lead</th>
         <th class="col">Individual Contributor</th>
+        <th class="col">Accepted?</th>
         <th class="col text-right">Total</th>
       </tr>
     </thead>
@@ -191,9 +194,9 @@
           </td>
           <td class="col">
             <% if cp.deleted_at.present? %>
-              <del><%= link_to cp.contributor.email, admin_admin_user_path(cp.contributor) %></del>
+              <del><%= link_to cp.forecast_person.email, admin_forecast_person_path(cp.forecast_person) %></del>
             <% else %>
-              <%= link_to cp.contributor.email, admin_admin_user_path(cp.contributor) %>
+              <%= link_to cp.forecast_person.email, admin_forecast_person_path(cp.forecast_person) %>
             <% end %>
           </td>
           <td class="col">
@@ -217,6 +220,16 @@
               <%= number_to_currency(cp.as_individual_contributor) %>
             <% end %>
           </td>
+          <td class="col">
+            <% if cp.accepted? %>
+              <span class="status_tag yes">Yes</span>
+            <% else %>
+              <span class="status_tag no">No</span>
+            <% end %>
+            <% if current_admin_user.forecast_person == cp.forecast_person %>
+              <%= link_to cp.accepted? ? "Unaccept" : "Accept", toggle_contributor_payout_acceptance_admin_invoice_pass_invoice_tracker_path(cp.invoice_tracker.invoice_pass, cp.invoice_tracker, {contributor_payout_id: cp.id}), method: :post %>
+            <% end %>
+          </td>
           <td class="col text-right">
             <% if cp.deleted_at.present? %>
               <del><%= number_to_currency(cp.amount) %></del>
@@ -232,7 +245,7 @@
   <div class="dashboard-modules table index_table index">
     <div class="dashboard-module">
       <div class="module-body factoid-parent">
-        <p>This invoice doesn't have any payouts.</p>
+        <p> <%= invoice_tracker.invoice_pass.allows_payment_splits? ? "This invoice doesn't have any payouts yets." : "This invoice pass was prior to the New Deal, and thus does not support payment splits." %></p>
       </div>
     </div>
   </div>

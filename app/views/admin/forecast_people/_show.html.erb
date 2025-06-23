@@ -1,0 +1,104 @@
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+  <tbody>
+    <tr class="even">
+      <td class="col">
+        <strong>Balance</strong>
+      </td>
+      <td class="col text-right">
+        <%= number_to_currency(balance[:balance]) %>
+      </td>
+    </tr>
+    <tr class="odd">
+      <td class="col">
+        <strong>Unsettled</strong>
+      </td>
+      <td class="col text-right">
+        <%= number_to_currency(balance[:unsettled]) %>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<% forecast_person.new_deal_ledger_items[:by_month].each do |period, ledger_items| %>
+  <h2><%= period.starts_at.strftime("%B %Y") %></h2>
+
+  <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+    <thead>
+      <tr>
+        <th class="col">Date</th>
+        <th class="col">Type</th>
+        <th class="col">Status</th>
+        <th class="col">Amount</th>
+        <th class="col text-right">Details</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% ledger_items.each_with_index do |li, index| %>
+        <tr class="<%= index.even? ? "even" : "odd" %>">
+          <td class="col">
+            <% if li.is_a?(MiscPayment) %>
+              <%= li.paid_at.strftime("%B %d, %Y") %>
+            <% elsif li.is_a?(ContributorPayout) %>
+              <%= li.invoice_tracker.invoice_pass.start_of_month.strftime("%B %d, %Y") %>
+            <% end %>
+          </td>
+          <td class="col">
+            <span class="pill <%= li.model_name.human.downcase %>">
+              <%= li.model_name.human %>
+            </span>
+          </td>
+          <td class="col">
+            <% if li.is_a?(MiscPayment) %>
+              <span class="pill <%= li.deleted_at.present? ? "deleted" : "paid" %>">
+                <%= li.deleted_at.present? ? "deleted" : "scheduled" %>
+              </span>
+            <% elsif li.is_a?(ContributorPayout) %>
+
+              <span class="pill <%= li.invoice_tracker.contributor_payouts_status.to_s.humanize %>" style="margin-right: 6px;">
+                Payout Acceptance
+                <span class="split">
+                  <%= link_to "#{li.invoice_tracker.contributor_payouts_status.to_s.humanize} ↗", admin_invoice_tracker_contributor_payouts_path(li.invoice_tracker), style: "font-size: unset;" %>
+                </span>
+              </span>
+
+              <% status = li.invoice_tracker.status == :paid ? :paid : li.invoice_tracker.allow_early_contributor_payouts_on.present? && li.invoice_tracker.allow_early_contributor_payouts_on <= Date.today ? :early_payouts_approved : li.invoice_tracker.status %>
+              <span class="pill <%= status %>" style="margin-right: 6px;">
+                Invoice
+                <span class="split">
+                  <%= link_to "#{status.to_s.humanize} ↗", admin_invoice_pass_invoice_tracker_path(li.invoice_tracker.invoice_pass, li.invoice_tracker), style: "font-size: unset;" %>
+                </span>
+              </span>
+            <% end %>
+          </td>
+          <td class="col">
+            <% if li.is_a?(MiscPayment) %>
+
+              <% if li.deleted_at.present? %>
+                <del><%= number_to_currency(li.amount) %></del>
+              <% else %>
+                - <%= number_to_currency(li.amount) %>
+              <% end %>
+
+            <% elsif li.is_a?(ContributorPayout) %>
+              <% if li.deleted_at.present? %>
+                <del><%= number_to_currency(li.amount) %></del>
+              <% else %>
+                + <%= number_to_currency(li.amount) %>
+              <% end %>
+            <% end %>
+          </td>
+          <td class="col text-right">
+            <% unless li.deleted_at.present? %>
+              <% if li.is_a?(MiscPayment) %>
+                <%= link_to "Info ↗", admin_forecast_person_misc_payment_path(forecast_person, li) %>
+              <% elsif li.is_a?(ContributorPayout) %>
+                <%= link_to "#{li.invoice_tracker.display_name} ↗", admin_invoice_pass_invoice_tracker_path(li.invoice_tracker.invoice_pass, li.invoice_tracker) %>
+              <% end %>
+            <% end %>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+
+<% end %>

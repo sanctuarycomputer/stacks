@@ -97,28 +97,13 @@ ActiveAdmin.register AdminUser do
     column :team_member do |resource|
       resource
     end
-    column :skill_tree_level do |resource|
-      resource.skill_tree_level_without_salary
-    end
-    column :contributor_type do |resource|
-      resource.current_contributor_type.try(:humanize)
+    column :forecast_person do |resource|
+      resource.forecast_person
     end
     column :github do |resource|
       resource.github_user
     end
-    column :has_dei_response? do |resource|
-      !resource.should_nag_for_dei_data?
-    end
-    column :has_current_skill_tree? do |resource|
-      !resource.should_nag_for_skill_tree?
-    end
-    column :projected_psu_by_eoy do |resource|
-      resource.projected_psu_by_eoy
-    end
     if current_admin_user.is_admin?
-      column :expected_utilization do |resource|
-        "#{(resource.expected_utilization * 100)}%"
-      end
       column :approximate_cost_per_hour_before_studio_expenses do |resource|
         number_to_currency(resource.approximate_cost_per_hour_before_studio_expenses)
       end
@@ -163,7 +148,8 @@ ActiveAdmin.register AdminUser do
       end
     end
 
-    render(partial: "show", locals: { data: data })
+    #render(partial: "show", locals: { data: data })
+    render(partial: "new_show", locals: { resource: resource })
   end
 
   form do |f|
@@ -238,6 +224,8 @@ ActiveAdmin.register AdminUser do
         f.input :profit_share_notes
 
         f.has_many :full_time_periods, heading: false, allow_destroy: true do |a|
+          a.semantic_errors
+
           a.input :started_at, hint: "The date this employment period started."
           a.input :ended_at, hint: "Leave blank until the nature of employment changes (termination or a move to 4-day work week, which requires an additional employment period to be added here)."
           a.input :considered_temporary, hint: "Check this box if this period was considered temporary (like an internship)."
