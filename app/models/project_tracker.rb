@@ -434,7 +434,7 @@ class ProjectTracker < ApplicationRecord
 
   def current_account_lead_periods
     account_lead_periods.select do |p|
-      p.period_started_at <= Date.today && p.ended_at.nil?
+      p.period_started_at <= Date.today && (p.ended_at.nil? || p.ended_at >= Date.today)
     end
   end
 
@@ -456,7 +456,7 @@ class ProjectTracker < ApplicationRecord
 
   def current_team_lead_periods
     team_lead_periods.select do |p|
-      p.period_started_at <= Date.today && p.ended_at.nil?
+      p.period_started_at <= Date.today && (p.ended_at.nil? || p.ended_at >= Date.today)
     end
   end
 
