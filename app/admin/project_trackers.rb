@@ -411,44 +411,7 @@ ActiveAdmin.register ProjectTracker do
       f.input :budget_high_end
 
       if current_admin_user.is_admin?
-        f.input :target_profit_margin
-        f.input :target_free_hours_percent
-      end
-
-      f.has_many :project_lead_periods, heading: false, allow_destroy: true, new_record: 'Add a Project Lead' do |a|
-        a.input :admin_user
-        a.input :studio
-        a.input :started_at,
-          hint: "Leave blank to default to the date of the first recorded hour"
-        a.input :ended_at,
-          hint: "Leave blank unless this role was passed off to another person"
-      end
-
-      f.has_many :creative_lead_periods, heading: false, allow_destroy: true, new_record: 'Add a Creative Lead' do |a|
-        a.input :admin_user
-        a.input :studio
-        a.input :started_at,
-          hint: "Leave blank to default to the date of the first recorded hour"
-        a.input :ended_at,
-          hint: "Leave blank unless this role was passed off to another person"
-      end
-
-      f.has_many :technical_lead_periods, heading: false, allow_destroy: true, new_record: 'Add a Tech Lead' do |a|
-        a.input :admin_user
-        a.input :studio
-        a.input :started_at,
-          hint: "Leave blank to default to the date of the first recorded hour"
-        a.input :ended_at,
-          hint: "Leave blank unless this role was passed off to another person"
-      end
-
-      f.has_many :project_safety_representative_periods, heading: false, allow_destroy: true, new_record: 'Add a Project Safety Rep' do |a|
-        a.input :admin_user
-        a.input :studio
-        a.input :started_at,
-          hint: "Leave blank to default to the date of the first recorded hour"
-        a.input :ended_at,
-          hint: "Leave blank unless this role was passed off to another person"
+        f.input :company_treasury_split, hint: "The percentage of the project's profit that will be allocated to the company treasury. This is used to calculate the project's profit margin."
       end
 
       f.has_many :project_tracker_links, heading: false, allow_destroy: true, new_record: 'Add a Project URL' do |a|

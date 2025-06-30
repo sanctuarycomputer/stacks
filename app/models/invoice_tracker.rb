@@ -201,6 +201,7 @@ class InvoiceTracker < ApplicationRecord
   def make_contributor_payouts!(created_by)
     raise "Payment splits are not supported for this invoice pass" unless invoice_pass.allows_payment_splits?
     return [] if qbo_invoice.nil?
+
     ActiveRecord::Base.transaction do
       payouts = {}
 
@@ -285,7 +286,7 @@ class InvoiceTracker < ApplicationRecord
           payouts[individual_contributor][:blueprint][:IndividualContributor] << {
             qbo_line_item: line_item,
             blueprint_metadata: metadata,
-            amount: line_item["amount"].to_f * (1 - 0.3 - (account_lead.present? ? 0.08 : 0) - (team_lead.present? ? 0.05 : 0)),
+            amount: line_item["amount"].to_f * (1 - pt.company_treasury_split - (account_lead.present? ? 0.08 : 0) - (team_lead.present? ? 0.05 : 0)),
           }
         end
       end

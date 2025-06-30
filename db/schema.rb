@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2025_06_22_231954) do
+ActiveRecord::Schema.define(version: 2025_06_30_223026) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -746,7 +746,9 @@ ActiveRecord::Schema.define(version: 2025_06_22_231954) do
     t.decimal "target_free_hours_percent", default: "0.0"
     t.decimal "target_profit_margin", default: "0.0"
     t.bigint "runn_project_id"
+    t.decimal "company_treasury_split", default: "0.3"
     t.index ["runn_project_id"], name: "index_project_trackers_on_runn_project_id", unique: true
+    t.check_constraint "(company_treasury_split >= (0)::numeric) AND (company_treasury_split <= (1)::numeric)", name: "check_company_treasury_split_range"
   end
 
   create_table "qbo_accounts", force: :cascade do |t|

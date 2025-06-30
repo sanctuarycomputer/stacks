@@ -4,6 +4,17 @@ class TeamLeadPeriod < ApplicationRecord
   belongs_to :project_tracker
   belongs_to :admin_user
 
+  validate :full_months_only
+
+  def full_months_only
+    if started_at && started_at.day != started_at.beginning_of_month.day
+      errors.add(:started_at, "must be the first day of the month")
+    end
+    if ended_at && ended_at.day != ended_at.end_of_month.day
+      errors.add(:ended_at, "must be the last day of the month")
+    end
+  end
+
   def period_started_at
     started_at || project_tracker.first_recorded_assignment&.start_date || Date.today
   end

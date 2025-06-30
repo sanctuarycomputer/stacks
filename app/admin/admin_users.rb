@@ -69,6 +69,10 @@ ActiveAdmin.register AdminUser do
         :interests,
       )
     end
+
+    # def update
+    #   binding.pry
+    # end
   end
 
   action_item :toggle_admin, only: :show, if: proc { current_admin_user.is_admin? } do
