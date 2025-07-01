@@ -242,15 +242,36 @@ class Stacks::Automator
 
     def discover_people_missing_hours_for_month(twist_users, start_of_month)
       ForecastPerson.all.reject(&:archived).map do |fp|
+        next nil if fp.roles.include?("Subcontractor")
+        next nil unless fp.email.ends_with?("@sanctuary.computer") || fp.email.ends_with?("@xxix.co")
+
         twist_user = twist_users.find do |twist_user|
           twist_user["email"].downcase == fp.email.try(:downcase) ||
           twist_user["name"].downcase == "#{fp.first_name} #{fp.last_name}".downcase
         end
 
-        missing_hours = fp.missing_allocation_during_range_in_hours(
-          start_of_month.beginning_of_month,
-          start_of_month.end_of_month,
-        )
+        missing_hours = 0
+
+        if fp.admin_user.present? && fp.admin_user.full_time_periods.any?
+          expected_hours_recorded = 0
+          (start_of_month.beginning_of_month..start_of_month.end_of_month).each do |date|
+            next unless (1..5).include?(date.wday)
+            ftp = fp.admin_user.full_time_period_at(date)
+            next unless ftp.present? && (ftp.four_day? || ftp.five_day?)
+            expected_hours_recorded += 8.0
+          end
+          hours_actually_recorded = fp.recorded_allocation_during_range_in_seconds(
+            start_of_month.beginning_of_month,
+            start_of_month.end_of_month,
+          ) / 60 / 60.0
+          missing_hours = expected_hours_recorded - hours_actually_recorded
+        else
+          missing_hours = fp.missing_allocation_during_range_in_hours(
+            start_of_month.beginning_of_month,
+            start_of_month.end_of_month,
+          )
+        end
+
         next nil unless missing_hours > 0
 
         reminder = <<~HEREDOC
