@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2025_06_30_223026) do
+ActiveRecord::Schema.define(version: 2025_07_01_224236) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -460,10 +460,12 @@ ActiveRecord::Schema.define(version: 2025_06_30_223026) do
     t.bigint "admin_user_id"
     t.text "notes"
     t.date "allow_early_contributor_payouts_on"
+    t.decimal "company_treasury_split", default: "0.3"
     t.index ["admin_user_id"], name: "index_invoice_trackers_on_admin_user_id"
     t.index ["forecast_client_id", "invoice_pass_id"], name: "idx_invoice_trackers_on_forecast_client_id_and_invoice_pass_id", unique: true
     t.index ["forecast_client_id"], name: "index_invoice_trackers_on_forecast_client_id"
     t.index ["invoice_pass_id"], name: "index_invoice_trackers_on_invoice_pass_id"
+    t.check_constraint "(company_treasury_split >= (0)::numeric) AND (company_treasury_split <= (1)::numeric)", name: "check_company_treasury_split_range"
   end
 
   create_table "mailing_list_subscribers", force: :cascade do |t|

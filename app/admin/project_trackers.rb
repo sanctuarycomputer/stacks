@@ -430,7 +430,9 @@ ActiveAdmin.register ProjectTracker do
       end
 
       f.has_many :adhoc_invoice_trackers, heading: false, allow_destroy: true, new_record: 'Connect an Adhoc Invoice' do |a|
-        a.input :qbo_invoice
+        a.input :qbo_invoice,
+          as: :select,
+          collection: QboInvoice.orphans
       end
 
       f.has_many :project_tracker_forecast_projects, heading: false, allow_destroy: true, new_record: 'Connect a Forecast Project' do |a|

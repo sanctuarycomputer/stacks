@@ -59,12 +59,7 @@ class Stacks::System
           .includes(forecast_project: :forecast_client)
         .where('end_date >= ? AND start_date <= ?', start_of_period, end_of_period)
 
-      internal_client_names = Studio.all.map(&:name)
-
-      clients =
-        assignments
-          .map{|a| a.forecast_project.forecast_client}.compact.uniq
-          .reject{|c| internal_client_names.include?(c.name)}
+      assignments.map{|a| a.forecast_project.forecast_client}.compact.uniq
     end
   end
 end

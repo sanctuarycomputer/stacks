@@ -440,13 +440,13 @@ class ProjectTracker < ApplicationRecord
 
   def team_lead_for_month(date)
     team_lead_periods.find do |p|
-      p.period_started_at <= date && p.period_ended_at >= date
+      p.period_started_at.beginning_of_month <= date && p.period_ended_at.end_of_month >= date
     end.try(:admin_user)
   end
 
   def account_lead_for_month(date)
     account_lead_periods.find do |p|
-      p.period_started_at <= date && p.period_ended_at >= date
+      p.period_started_at.beginning_of_month <= date && p.period_ended_at.end_of_month >= date
     end.try(:admin_user)
   end
 

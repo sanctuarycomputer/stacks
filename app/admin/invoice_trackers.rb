@@ -4,7 +4,7 @@ ActiveAdmin.register InvoiceTracker do
   config.paginate = false
   actions :index, :show, :edit, :update
   belongs_to :invoice_pass
-  permit_params :notes, :allow_early_contributor_payouts_on
+  permit_params :notes, :allow_early_contributor_payouts_on, :company_treasury_split, :qbo_invoice_id
 
   action_item :attempt_generate, only: :show, if: proc { current_admin_user.is_admin? } do
     link_to(
@@ -125,6 +125,13 @@ ActiveAdmin.register InvoiceTracker do
   form do |f|
     f.inputs(class: "admin_inputs") do
       f.input :forecast_client, input_html: { disabled: true }
+      f.input :qbo_invoice,
+        as: :select,
+        collection: QboInvoice.orphans,
+        input_html: { disabled: !current_admin_user.is_admin? }
+      if current_admin_user.is_admin?
+        f.input :company_treasury_split, as: :number, input_html: { step: 0.01 }
+      end
       f.input :allow_early_contributor_payouts_on, as: :date_picker
       f.input :notes, label: "❗Important Notes (accepts markdown)"
     end

@@ -1,14 +1,38 @@
 class QboInvoice < ApplicationRecord
   self.primary_key = "qbo_id"
 
+  scope :orphans, -> {
+    where.not(id: [*InvoiceTracker.pluck(:qbo_invoice_id).compact, *AdhocInvoiceTracker.pluck(:qbo_invoice_id).compact])
+      .order(Arel.sql("data->>'doc_number'"))
+  }
+
+  def status
+    if email_status == "EmailSent"
+      overdue = (due_date - Date.today) < 0
+      if balance == 0
+        :paid
+      elsif balance == total
+        overdue ? :unpaid_overdue : :unpaid
+      else
+        overdue ? :partially_paid_overdue : :partially_paid
+      end
+    else
+      if data["private_note"].present? && data["private_note"].downcase.include?("voided")
+        :voided
+      else
+        :not_sent
+      end
+    end
+  end
+
   def data
     existing = super
     return existing if existing.present?
-    sync! ? data : nil
+    sync! ? data : {}
   end
 
   def display_name
-    "##{data.dig("doc_number")} (#{ActionController::Base.helpers.number_to_currency(data.dig("total"))}) - #{data.dig("customer_ref", "name")}"
+    "##{data.dig("doc_number")} (#{ActionController::Base.helpers.number_to_currency(data.dig("total"))}) - #{data.dig("customer_ref", "name")} (#{status.to_s.humanize})"
   end
 
   def qbo_invoice_link
@@ -36,7 +60,7 @@ class QboInvoice < ApplicationRecord
   end
 
   def customer_ref
-    data.dig("customer_ref")
+    data.dig("customer_ref") || {}
   end
 
   def sync!

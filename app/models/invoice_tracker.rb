@@ -115,22 +115,7 @@ class InvoiceTracker < ApplicationRecord
       if blueprint.nil?
         :impossible
       else
-        if qbo_invoice.email_status == "EmailSent"
-          overdue = (qbo_invoice.due_date - Date.today) < 0
-          if qbo_invoice.balance == 0
-            :paid
-          elsif qbo_invoice.balance == qbo_invoice.total
-            overdue ? :unpaid_overdue : :unpaid
-          else
-            overdue ? :partially_paid_overdue : :partially_paid
-          end
-        else
-          if qbo_invoice.data["private_note"].downcase.include?("voided")
-            :voided
-          else
-            :not_sent
-          end
-        end
+        qbo_invoice.status
       end
     end
   end

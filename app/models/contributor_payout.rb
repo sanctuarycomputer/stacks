@@ -45,11 +45,16 @@ class ContributorPayout < ApplicationRecord
   end
 
   def contributor_payouts_within_seventy_percent
-    return if invoice_tracker.forecast_client.is_internal?
-
     cps = invoice_tracker.contributor_payouts.include?(self) ? invoice_tracker.contributor_payouts : [*invoice_tracker.contributor_payouts, self]
-    if cps.sum(&:amount) > ((invoice_tracker.qbo_invoice.data.dig("total").to_f * 0.7) + 1) # Add a dollar to account for rounding errors
-      errors.add(:base, "Contributor Payouts may not exceed 70% of invoice total.")
+
+    if invoice_tracker.forecast_client.is_internal?
+      max_amount = invoice_tracker.qbo_invoice.data.dig("total").to_f
+    else
+      max_amount = invoice_tracker.qbo_invoice.data.dig("total").to_f * (1 - invoice_tracker.company_treasury_split)
+    end
+
+    if cps.sum(&:amount) > (max_amount + 1) # Add a dollar to account for rounding errors
+      errors.add(:base, "Contributor Payouts may not exceed #{ActionController::Base.helpers.number_to_currency(max_amount)} (#{100 * (1 - invoice_tracker.company_treasury_split)}% of invoice total).")
     end
   end
 
