@@ -7,6 +7,12 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
       else
         true
       end
+    when normalized(ContributorPayout)
+      if action == :edit || action == :update || action == :create || action == :new || action == :destroy
+        user.is_admin?
+      else
+        true
+      end
     when normalized(Survey)
       if action == :update
         user.is_admin?

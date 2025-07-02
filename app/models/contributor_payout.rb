@@ -24,7 +24,7 @@ class ContributorPayout < ApplicationRecord
 
   def payable?
     accepted? &&
-    (invoice_tracker.status == :paid || invoice_tracker.allow_early_contributor_payouts_on <= Date.today) &&
+    (invoice_tracker.status == :paid || (invoice_tracker.allow_early_contributor_payouts_on.present? && invoice_tracker.allow_early_contributor_payouts_on <= Date.today)) &&
     (invoice_tracker.contributor_payouts_status == :all_accepted)
   end
 

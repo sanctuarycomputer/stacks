@@ -1,13 +1,13 @@
 ActiveAdmin.register ContributorPayout do
   config.filters = false
   config.paginate = false
-  actions :index, :new, :create, :destroy
+  actions :index, :new, :show, :edit, :update, :create, :destroy
   permit_params :forecast_person_id, :amount, :description, :created_by_id, :blueprint
   menu false
 
   belongs_to :invoice_tracker
 
-  action_item :make_payouts, only: :index do
+  action_item :make_payouts, only: :index, if: proc { current_admin_user.is_admin? } do
     link_to "Calculate Default Payouts", make_payouts_admin_invoice_tracker_contributor_payouts_path(invoice_tracker),
       method: :post,
       data: { confirm: "Are you sure you want to re-calculate the payouts for this invoice? This will delete/overwrite any custom payouts previously configured." }
@@ -89,8 +89,15 @@ ActiveAdmin.register ContributorPayout do
       f.input :forecast_person
       f.input :amount
       f.input :description
+      f.input :blueprint, as: :text, input_html: { rows: 10 }
     end
 
     f.actions
+  end
+
+  show do
+    render(partial: 'show', locals: {
+      resource: resource
+    })
   end
 end

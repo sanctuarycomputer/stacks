@@ -87,7 +87,7 @@ class Stacks::DailyFinancialSnapshotter
     if forecast_person.admin_user.present?
       employee_hourly_cost(forecast_person, forecast_project)
     else
-      subcontractor_hourly_cost(forecast_person, forecast_project)
+      Stacks::DailyFinancialSnapshotter.subcontractor_hourly_cost(forecast_person, forecast_project)
     end
   end
 
@@ -99,7 +99,7 @@ class Stacks::DailyFinancialSnapshotter
     (daily_cost / hours_per_day).round(2)
   end
 
-  def subcontractor_hourly_cost(forecast_person, forecast_project)
+  def self.subcontractor_hourly_cost(forecast_person, forecast_project)
     if forecast_project.notes.nil?
       return 0
     end

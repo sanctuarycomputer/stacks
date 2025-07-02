@@ -1,0 +1,10 @@
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Payout Details</p>
+    </div>
+    <div class="module-body markdown-body">
+      <%= sanitize RDiscount.new(resource.description || "").to_html %>
+    </div>
+  </div>
+</div>

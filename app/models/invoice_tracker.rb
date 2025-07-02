@@ -226,6 +226,26 @@ class InvoiceTracker < ApplicationRecord
         end
         pt = ptfps.first.project_tracker
 
+        working_amount = line_item["amount"].to_f
+        working_hours = metadata["quantity"].to_f
+        working_rate = metadata["unit_price"].to_f
+
+        is_first_month_of_new_deal = invoice_pass.start_of_month == Date.new(2025, 6, 1)
+        if is_first_month_of_new_deal
+          working_hours =
+            ForecastAssignment
+              .where(
+                'end_date >= ? AND start_date <= ? AND project_id = ? AND person_id = ?',
+                Date.new(2025, 6, 16),
+                Date.new(2025, 6, 30),
+                metadata["forecast_project"],
+                metadata["forecast_person"]
+              ).map do |a|
+                a.allocation_during_range_in_hours(Date.new(2025, 6, 16), Date.new(2025, 6, 30))
+              end.compact.sum
+          working_amount = working_hours * working_rate
+        end
+
         account_lead = pt.account_lead_for_month(invoice_pass.start_of_month).try(:forecast_person)
         if account_lead.present?
           payouts[account_lead] ||= {
@@ -235,10 +255,13 @@ class InvoiceTracker < ApplicationRecord
               IndividualContributor: []
             }
           }
+
+          amount = working_amount * 0.08
           payouts[account_lead][:blueprint][:AccountLead] << {
             qbo_line_item: line_item,
             blueprint_metadata: metadata,
-            amount: line_item["amount"].to_f * 0.08
+            amount: amount,
+            description_line: "- #{working_hours} hrs * #{ActionController::Base.helpers.number_to_currency(working_rate)} p/h * 8% = #{ActionController::Base.helpers.number_to_currency(amount)}",
           }
         end
 
@@ -248,17 +271,20 @@ class InvoiceTracker < ApplicationRecord
             blueprint: {
               AccountLead: [],
               TeamLead: [],
-              IndividualContributor: []
+              IndividualContributor: [],
             }
           }
+          amount = working_amount * 0.05
           payouts[team_lead][:blueprint][:TeamLead] << {
             qbo_line_item: line_item,
             blueprint_metadata: metadata,
-            amount: line_item["amount"].to_f * 0.05
+            amount: amount,
+            description_line: "- #{working_hours} hrs * #{ActionController::Base.helpers.number_to_currency(working_rate)} p/h * 5% = #{ActionController::Base.helpers.number_to_currency(amount)}",
           }
         end
 
         individual_contributor = ForecastPerson.find(metadata["forecast_person"])
+        hourly_rate_of_pay_override = Stacks::DailyFinancialSnapshotter.subcontractor_hourly_cost(individual_contributor, forecast_project)
 
         if individual_contributor.present?
           payouts[individual_contributor] ||= {
@@ -268,43 +294,58 @@ class InvoiceTracker < ApplicationRecord
               IndividualContributor: []
             }
           }
-          payouts[individual_contributor][:blueprint][:IndividualContributor] << {
-            qbo_line_item: line_item,
-            blueprint_metadata: metadata,
-            amount: line_item["amount"].to_f * (1 - pt.company_treasury_split - (account_lead.present? ? 0.08 : 0) - (team_lead.present? ? 0.05 : 0)),
-          }
+          if hourly_rate_of_pay_override > 0
+            amount = working_hours * hourly_rate_of_pay_override
+            payouts[individual_contributor][:blueprint][:IndividualContributor] << {
+              qbo_line_item: line_item,
+              blueprint_metadata: metadata,
+              amount: amount,
+              description_line: "- #{working_hours} hrs * #{ActionController::Base.helpers.number_to_currency(hourly_rate_of_pay_override)} p/h = #{ActionController::Base.helpers.number_to_currency(amount)}",
+            }
+          else
+            amount = working_amount * (1 - pt.company_treasury_split - (account_lead.present? ? 0.08 : 0) - (team_lead.present? ? 0.05 : 0))
+            payouts[individual_contributor][:blueprint][:IndividualContributor] << {
+              qbo_line_item: line_item,
+              blueprint_metadata: metadata,
+              amount: amount,
+              description_line: "- #{working_hours} hrs * #{ActionController::Base.helpers.number_to_currency(working_rate)} p/h * #{100 * (1 - pt.company_treasury_split - (account_lead.present? ? 0.08 : 0) - (team_lead.present? ? 0.05 : 0))}% = #{ActionController::Base.helpers.number_to_currency(amount)}",
+            }
+          end
         end
       end
 
       synced = payouts.map do |payee, payee_data|
-        amount = payee_data[:blueprint].values.flatten.sum{|l| l[:amount]}
+        amount = payee_data[:blueprint].values.flatten.sum{|l| l[:amount]}.round(2)
         next if amount == 0
         cp = contributor_payouts.with_deleted.find_or_initialize_by(
           forecast_person: payee.is_a?(ForecastPerson) ? payee : payee.forecast_person,
         )
-        cp.update!(
-          deleted_at: nil,
-          amount: amount.round(2),
-          blueprint: payee_data[:blueprint],
-          created_by: created_by
-        )
+
+        # Only schedule payouts for variable hours people, as they're likely on the new deal
+        if payee.admin_user.full_time_period_at(invoice_pass.start_of_month.end_of_month).variable_hours?
+          description =
+            payee_data[:blueprint].reduce("") do |acc, (role, data)|
+              next acc if data.empty?
+              acc << "# #{role.to_s.underscore.humanize}\n"
+              acc << data.map{|vv| vv[:description_line]}.join("\n")
+              acc << "\n\n"
+              acc
+            end
+
+          description = description << "# Total: #{ActionController::Base.helpers.number_to_currency(amount)}"
+
+          cp.update!(
+            deleted_at: nil,
+            amount: amount,
+            blueprint: payee_data[:blueprint],
+            created_by: created_by,
+            description: description
+          )
+        end
         cp
       end
 
       (contributor_payouts - synced).each(&:destroy)
-    end
-  end
-
-  def description_from_blueprint(blueprint)
-    blueprint.reduce("") do |acc, (role, data)|
-
-      acc << "#{role.to_s}\n"
-      if data.empty?
-        acc << "No time in role\n\n"
-        next acc
-      end
-      #acc << "#{description} (#{data[:quantity]} hours @ #{data[:unit_price]}/hour)\n"
-      acc
     end
   end
 
