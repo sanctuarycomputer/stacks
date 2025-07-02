@@ -322,7 +322,7 @@ class InvoiceTracker < ApplicationRecord
         )
 
         # Only schedule payouts for variable hours people, as they're likely on the new deal
-        if payee.admin_user.full_time_period_at(invoice_pass.start_of_month.end_of_month).variable_hours?
+        if payee.admin_user.nil? || payee.admin_user.full_time_periods.empty? || payee.admin_user.full_time_period_at(invoice_pass.start_of_month.end_of_month).variable_hours?
           description =
             payee_data[:blueprint].reduce("") do |acc, (role, data)|
               next acc if data.empty?
@@ -339,7 +339,8 @@ class InvoiceTracker < ApplicationRecord
             amount: amount,
             blueprint: payee_data[:blueprint],
             created_by: created_by,
-            description: description
+            description: description,
+            accepted_at: payee.admin_user.present? ? nil : DateTime.now
           )
         end
         cp

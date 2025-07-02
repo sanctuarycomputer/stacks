@@ -162,10 +162,10 @@
   <div id="titlebar_left">
     <h2 id="page_title">🏓 Payouts</h2>
   </div>
-  <% if invoice_tracker.invoice_pass.allows_payment_splits? %>
+  <% if invoice_tracker.invoice_pass.allows_payment_splits? && current_admin_user.is_admin? %>
     <div id="titlebar_right">
       <div class="action_items">
-        <%= link_to "Edit Payouts ↗", admin_invoice_tracker_contributor_payouts_path(invoice_tracker) %>
+        <%= link_to "All Payouts ↗", admin_invoice_tracker_contributor_payouts_path(invoice_tracker) %>
       </div>
     </div>
   <% end %>
@@ -177,11 +177,9 @@
       <tr>
         <th class="col"></th>
         <th class="col">Payee</th>
-        <th class="col">Account Lead</th>
-        <th class="col">Team Lead</th>
-        <th class="col">Individual Contributor</th>
-        <th class="col">Accepted?</th>
-        <th class="col text-right">Total</th>
+        <th class="col">Status</th>
+        <th class="col">Amount</th>
+        <th class="col text-right">Details</th>
       </tr>
     </thead>
     <tbody>
@@ -200,42 +198,40 @@
             <% end %>
           </td>
           <td class="col">
-            <% if cp.deleted_at.present? %>
-              <del><%= number_to_currency(cp.as_account_lead) %></del>
-            <% else %>
-              <%= number_to_currency(cp.as_account_lead) %>
-            <% end %>
+            <span class="pill <%= invoice_tracker.contributor_payouts_status.to_s.humanize %>" style="margin-right: 6px;">
+              Payout Acceptance
+              <span class="split">
+                <%= invoice_tracker.contributor_payouts_status.to_s.humanize %>
+              </span>
+            </span>
+
+            <% status = invoice_tracker.status == :paid ? :paid : invoice_tracker.allow_early_contributor_payouts_on.present? && invoice_tracker.allow_early_contributor_payouts_on <= Date.today ? :early_payouts_approved : invoice_tracker.status %>
+            <span class="pill <%= status %>" style="margin-right: 6px;">
+              Invoice
+              <span class="split">
+                <%= status.to_s.humanize %>
+              </span>
+            </span>
           </td>
           <td class="col">
             <% if cp.deleted_at.present? %>
-              <del><%= number_to_currency(cp.as_team_lead) %></del>
+              <del>+ <%= number_to_currency(cp.amount) %></del>
             <% else %>
-              <%= number_to_currency(cp.as_team_lead) %>
+              + <%= number_to_currency(cp.amount) %>
             <% end %>
-          </td>
-          <td class="col">
-            <% if cp.deleted_at.present? %>
-              <del><%= number_to_currency(cp.as_individual_contributor) %></del>
-            <% else %>
-              <%= number_to_currency(cp.as_individual_contributor) %>
-            <% end %>
-          </td>
-          <td class="col">
-            <% if cp.accepted? %>
-              <span class="status_tag yes">Yes</span>
-            <% else %>
-              <span class="status_tag no">No</span>
-            <% end %>
-            <% if current_admin_user.forecast_person == cp.forecast_person %>
-              <%= link_to cp.accepted? ? "Unaccept" : "Accept", toggle_contributor_payout_acceptance_admin_invoice_pass_invoice_tracker_path(cp.invoice_tracker.invoice_pass, cp.invoice_tracker, {contributor_payout_id: cp.id}), method: :post %>
-            <% end %>
+
+            <span class="pill <%= cp.accepted? ? "accepted" : "pending" %>" style="margin-right: 6px;">
+              <%= cp.accepted? ? "Accepted" : "Pending" %>
+              <% if current_admin_user.forecast_person == cp.forecast_person || current_admin_user.is_admin? %>
+              <span class="split">
+                  <%= link_to cp.accepted? ? "Unaccept ↗" : "Accept ↗", toggle_contributor_payout_acceptance_admin_invoice_pass_invoice_tracker_path(cp.invoice_tracker.invoice_pass, cp.invoice_tracker, {contributor_payout_id: cp.id}), method: :post, style: "font-size: unset;" %>
+                </span>
+              <% end %>
+            </span>
+
           </td>
           <td class="col text-right">
-            <% if cp.deleted_at.present? %>
-              <del><%= number_to_currency(cp.amount) %></del>
-            <% else %>
-              <%= number_to_currency(cp.amount) %>
-            <% end %>
+            <%= link_to "Breakdown ↗", admin_invoice_tracker_contributor_payout_path(invoice_tracker, cp) %>
           </td>
         </tr>
       <% end %>

@@ -57,7 +57,7 @@
               <span class="pill <%= li.invoice_tracker.contributor_payouts_status.to_s.humanize %>" style="margin-right: 6px;">
                 Payout Acceptance
                 <span class="split">
-                  <%= link_to "#{li.invoice_tracker.contributor_payouts_status.to_s.humanize} ↗", admin_invoice_tracker_contributor_payouts_path(li.invoice_tracker), style: "font-size: unset;" %>
+                  <%= li.invoice_tracker.contributor_payouts_status.to_s.humanize %>
                 </span>
               </span>
 
@@ -65,7 +65,7 @@
               <span class="pill <%= status %>" style="margin-right: 6px;">
                 Invoice
                 <span class="split">
-                  <%= link_to "#{status.to_s.humanize} ↗", admin_invoice_pass_invoice_tracker_path(li.invoice_tracker.invoice_pass, li.invoice_tracker), style: "font-size: unset;" %>
+                  <%= status.to_s.humanize %>
                 </span>
               </span>
             <% end %>
@@ -85,6 +85,16 @@
               <% else %>
                 + <%= number_to_currency(li.amount) %>
               <% end %>
+
+              <span class="pill <%= li.accepted? ? "accepted" : "pending" %>" style="margin-right: 6px;">
+                <%= li.accepted? ? "Accepted" : "Pending" %>
+                <% if current_admin_user.forecast_person == li.forecast_person || current_admin_user.is_admin? %>
+                <span class="split">
+                    <%= link_to li.accepted? ? "Unaccept ↗" : "Accept ↗", toggle_contributor_payout_acceptance_admin_forecast_person_path(li.forecast_person, {contributor_payout_id: li.id}), method: :post, style: "font-size: unset;" %>
+                  </span>
+                <% end %>
+              </span>
+
             <% end %>
           </td>
           <td class="col text-right">

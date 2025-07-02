@@ -13,9 +13,16 @@ ActiveAdmin.register ContributorPayout do
       data: { confirm: "Are you sure you want to re-calculate the payouts for this invoice? This will delete/overwrite any custom payouts previously configured." }
   end
 
+  action_item :toggle_acceptance, only: :show do
+    if current_admin_user == resource.forecast_person.admin_user || current_admin_user.is_admin?
+      link_to resource.accepted? ? "Unaccept" : "Accept", toggle_contributor_payout_acceptance_admin_invoice_pass_invoice_tracker_path(resource.invoice_tracker.invoice_pass.id, resource.invoice_tracker, {contributor_payout_id: resource.id}),
+        method: :post
+    end
+  end
+
   member_action :toggle_acceptance, method: :post do
     cp = ContributorPayout.find(params[:id])
-    return unless cp.forecast_person.try(:admin_user) == current_admin_user
+    return unless cp.forecast_person.try(:admin_user) == current_admin_user || current_admin_user.is_admin?
     cp.toggle_acceptance!
     return redirect_to(
       admin_invoice_tracker_contributor_payouts_path(cp.invoice_tracker, cp, format: :html),
@@ -64,7 +71,7 @@ ActiveAdmin.register ContributorPayout do
     column :accepted?
 
     actions do |resource|
-      if resource.forecast_person.try(:admin_user) == current_admin_user
+      if resource.forecast_person.try(:admin_user) == current_admin_user || current_admin_user.is_admin?
         if resource.accepted?
           link_to(
             "Unaccept",

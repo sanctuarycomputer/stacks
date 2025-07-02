@@ -4,10 +4,20 @@ ActiveAdmin.register ForecastPerson do
   menu false
   actions :index, :show
 
-  action_item :attempt_generate, only: :show, if: proc { current_admin_user.is_admin? } do
+  action_item :record_misc_payment, only: :show, if: proc { current_admin_user.is_admin? } do
     link_to(
       "Record Misc Payment",
       new_admin_forecast_person_misc_payment_path(resource)
+    )
+  end
+
+  member_action :toggle_contributor_payout_acceptance, method: :post do
+    cp = ContributorPayout.find(params[:contributor_payout_id])
+    return unless cp.forecast_person.try(:admin_user) == current_admin_user || current_admin_user.is_admin?
+    cp.toggle_acceptance!
+    return redirect_to(
+      admin_forecast_person_path(params[:id], format: :html),
+      notice: "Success",
     )
   end
 

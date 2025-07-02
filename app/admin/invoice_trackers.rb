@@ -16,7 +16,7 @@ ActiveAdmin.register InvoiceTracker do
 
   member_action :toggle_contributor_payout_acceptance, method: :post do
     cp = ContributorPayout.find(params[:contributor_payout_id])
-    return unless cp.forecast_person.try(:admin_user) == current_admin_user
+    return unless cp.forecast_person.try(:admin_user) == current_admin_user || current_admin_user.is_admin?
     cp.toggle_acceptance!
     return redirect_to(
       admin_invoice_pass_invoice_tracker_path(params[:invoice_pass_id], params[:id], format: :html),
