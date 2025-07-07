@@ -69,8 +69,16 @@ class ProjectTracker < ApplicationRecord
       )
   }
 
-  scope :in_progress , -> {
+  scope :in_progress, -> {
+    where.not(id: [*complete, *dormant])
+  }
+
+  scope :dormant, -> {
     where.not(id: complete)
+      .joins(forecast_projects: :forecast_assignments)
+      .where('forecast_assignments.end_date = (SELECT MAX(end_date) FROM forecast_assignments fa2 INNER JOIN project_tracker_forecast_projects ptfp2 ON fa2.project_id = ptfp2.forecast_project_id WHERE ptfp2.project_tracker_id = project_trackers.id)')
+      .where('forecast_assignments.end_date < ?', Date.today - 1.month)
+      .distinct
   }
 
   def self.capsule_pending
@@ -80,7 +88,7 @@ class ProjectTracker < ApplicationRecord
   end
 
   def self.likely_complete
-    ProjectTracker.where(work_completed_at: nil).select do |pt|
+    ProjectTracker.dormant.select do |pt|
       if pt.last_recorded_assignment
         pt.last_recorded_assignment.end_date < (Date.today -  1.month)
       else
@@ -613,7 +621,11 @@ class ProjectTracker < ApplicationRecord
 
   def work_status
     if work_completed_at.nil?
-      :in_progress
+      if ProjectTracker.likely_complete.include?(self)
+        :likely_complete
+      else
+        :in_progress
+      end
     else
       if (
         project_capsule.present? &&

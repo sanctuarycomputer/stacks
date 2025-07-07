@@ -7,6 +7,7 @@ ActiveAdmin.register ProjectTracker do
   config.current_filters = false
 
   scope :in_progress, default: true
+  scope :dormant
   scope :complete
 
   permit_params :name,
