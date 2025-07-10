@@ -45,6 +45,8 @@ class ContributorPayout < ApplicationRecord
   end
 
   def contributor_payouts_within_seventy_percent
+    return if changes.keys == ["accepted_at"] # Don't check if the payout is being accepted or unaccepted
+
     cps = invoice_tracker.contributor_payouts.include?(self) ? invoice_tracker.contributor_payouts : [*invoice_tracker.contributor_payouts, self]
 
     if invoice_tracker.forecast_client.is_internal?

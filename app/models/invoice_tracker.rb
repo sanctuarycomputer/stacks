@@ -11,7 +11,7 @@ class InvoiceTracker < ApplicationRecord
   has_many :contributor_payouts, dependent: :destroy
 
   def display_name
-    "#{qbo_invoice.try(:display_name)}"
+    "#{qbo_invoice.try(:display_name) || forecast_client.name} (#{status})"
   end
 
   def qbo_invoice
