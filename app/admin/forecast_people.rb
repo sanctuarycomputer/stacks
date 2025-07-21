@@ -4,6 +4,9 @@ ActiveAdmin.register ForecastPerson do
   menu false
   actions :index, :show
 
+  scope :active, default: true
+  scope :archived
+
   action_item :record_misc_payment, only: :show, if: proc { current_admin_user.is_admin? } do
     link_to(
       "Record Misc Payment",
@@ -23,6 +26,14 @@ ActiveAdmin.register ForecastPerson do
 
   index download_links: false do
     column :email
+    column :balance do |fp|
+      balance = fp.new_deal_balance
+      if balance[:unsettled] > 0
+        "#{number_to_currency(balance[:balance])} (#{number_to_currency(balance[:unsettled])} unsettled)"
+      else
+        number_to_currency(balance[:balance])
+      end
+    end
     actions
   end
 

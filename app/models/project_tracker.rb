@@ -646,7 +646,7 @@ class ProjectTracker < ApplicationRecord
     total = spend
     if total < budget_low_end
       :under_budget
-    elsif (total >= budget_low_end && total < budget_high_end)
+    elsif (total >= budget_low_end && total <= budget_high_end)
       :at_budget
     else
       :over_budget

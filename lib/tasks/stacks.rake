@@ -180,9 +180,7 @@ namespace :stacks do
 
       puts "~~~> DOING MISC"
       Stacks::Dei.make_rollup # TODO Remove me
-
       Stacks::Notifications.make_notifications!
-      Stacks::Notifications.notify_admins_of_outstanding_notifications_every_tuesday!
 
       runn_instance = Stacks::Runn.new
       ProjectTracker.where.not(runn_project: nil).each do |pt|

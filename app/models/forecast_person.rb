@@ -6,6 +6,9 @@ class ForecastPerson < ApplicationRecord
   has_many :misc_payments
   has_many :contributor_payouts
 
+  scope :active, -> { where.not(archived: true) }
+  scope :archived, -> { where(archived: true) }
+
   def display_name
     email
   end

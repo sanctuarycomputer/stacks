@@ -113,6 +113,8 @@ class Stacks::DataIntegrityManager
 
     all_admin_users.reduce({}) do |acc, o|
       acc[o] = [*(acc[o] || []), :no_full_time_periods_set] if o.full_time_periods.empty?
+      acc[o] = [*(acc[o] || []), :missing_survey_responses] if o.should_nag_for_survey_responses?
+
       if o.active?
         # Active Users
         if [Enum::ContributorType::FOUR_DAY, Enum::ContributorType::FIVE_DAY].include?(o.current_contributor_type)
@@ -137,7 +139,8 @@ class Stacks::DataIntegrityManager
     all_project_trackers.reduce({}) do |acc, o|
       if o.work_completed_at.nil?
         # Active Projects
-        acc[o] = [*(acc[o] || []), :no_project_lead_set] if o.current_project_leads.empty?
+        acc[o] = [*(acc[o] || []), :no_team_lead_set] if o.current_team_leads.empty?
+        acc[o] = [*(acc[o] || []), :no_account_lead_set] if o.current_account_leads.empty?
         acc[o] = [*(acc[o] || []), :likely_should_mark_as_work_complete?] if o.likely_should_be_marked_as_completed?
       else
         # Completed Projects
