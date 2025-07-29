@@ -72,7 +72,7 @@ class Stacks::Automator
     end
 
     def message_operations_channel_thread(thread_title, message)
-      channel = twist.get_channel("467805")
+      channel = twist.get_channel("352129") # General Channel
       thread = twist.get_all_threads(channel["id"]).find do |t|
         t["title"] == thread_title
       end
