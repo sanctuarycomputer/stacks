@@ -16,6 +16,7 @@ class ForecastClient < ApplicationRecord
     "XXIX",
     "XXXI",
     "Crystalizer",
+    "Index Space LLC"
   ]
 
   def is_internal?
