@@ -5,6 +5,7 @@ class ForecastPerson < ApplicationRecord
 
   has_many :misc_payments
   has_many :contributor_payouts
+  has_many :trueups
 
   scope :active, -> { where.not(archived: true) }
   scope :archived, -> { where(archived: true) }
@@ -32,6 +33,8 @@ class ForecastPerson < ApplicationRecord
         else
           acc[:unsettled] += li.amount
         end
+      elsif li.is_a?(Trueup)
+        acc[:balance] += li.amount
       end
       acc
     end
@@ -40,12 +43,15 @@ class ForecastPerson < ApplicationRecord
   def new_deal_ledger_items
     preloaded_contributor_payouts = contributor_payouts.includes({ invoice_tracker: :invoice_pass }).with_deleted
     preloaded_misc_payments = misc_payments.with_deleted
+    preloaded_trueups = trueups.includes(:invoice_pass).with_deleted
 
-    latest_date = [*preloaded_misc_payments, *preloaded_contributor_payouts].reduce(Date.today) do |acc, li|
+    latest_date = [*preloaded_misc_payments, *preloaded_contributor_payouts, *preloaded_trueups].reduce(Date.today) do |acc, li|
       if li.is_a?(MiscPayment)
         acc = li.paid_at if li.paid_at > acc
       elsif li.is_a?(ContributorPayout)
         acc = li.invoice_tracker.invoice_pass.start_of_month if li.invoice_tracker.invoice_pass.start_of_month > acc
+      elsif li.is_a?(Trueup)
+        acc = li.payment_date if li.payment_date > acc
       end
       acc
     end
@@ -62,9 +68,31 @@ class ForecastPerson < ApplicationRecord
         cp.paid_at <= period.ends_at
       end
 
-      sorted = [*contributor_payouts_in_period, *contractor_payouts_in_period].sort do |a, b|
-        date_a = a.is_a?(MiscPayment) ? a.paid_at : a.invoice_tracker.invoice_pass.start_of_month
-        date_b = b.is_a?(MiscPayment) ? b.paid_at : b.invoice_tracker.invoice_pass.start_of_month
+      trueups_in_period = preloaded_trueups.select do |tu|
+        tu.payment_date >= period.starts_at &&
+        tu.payment_date <= period.ends_at
+      end
+
+      sorted = [*contributor_payouts_in_period, *contractor_payouts_in_period, *trueups_in_period].sort do |a, b|
+
+        date_a = nil
+        if a.is_a?(Trueup)
+          date_a = a.payment_date
+        elsif a.is_a?(MiscPayment)
+          date_a = a.paid_at
+        elsif a.is_a?(ContributorPayout)
+          date_a = a.invoice_tracker.invoice_pass.start_of_month
+        end
+
+        date_b = nil
+        if b.is_a?(Trueup)
+          date_b = b.payment_date
+        elsif b.is_a?(MiscPayment)
+          date_b = b.paid_at
+        elsif b.is_a?(ContributorPayout)
+          date_b = b.invoice_tracker.invoice_pass.start_of_month
+        end
+
         date_b <=> date_a
       end
 

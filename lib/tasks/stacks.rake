@@ -134,6 +134,16 @@ namespace :stacks do
     end
   end
 
+  desc "Sync Founder Trueups"
+  task :sync_founder_trueups => :environment do
+    system_task = SystemTask.create!(name: "stacks:sync_founder_trueups")
+    begin
+      Stacks::System.sync_founder_trueups!
+    rescue => e
+      system_task.mark_as_error(e)
+    end
+  end
+
   desc "Daily Tasks"
   task :daily_tasks => :environment do
     system_task = SystemTask.create!(name: "stacks:daily_tasks")

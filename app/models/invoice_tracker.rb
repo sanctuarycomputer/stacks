@@ -98,6 +98,7 @@ class InvoiceTracker < ApplicationRecord
   def contributor_payouts_status
     return nil unless invoice_pass.allows_payment_splits?
     if contributor_payouts.any?
+      :all_accepted
       contributor_payouts.all?(&:accepted?) ? :all_accepted : :some_pending
     else
       :no_payouts

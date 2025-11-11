@@ -64,6 +64,21 @@ class QboInvoice < ApplicationRecord
   end
 
   def sync!
+    if qbo_id == ""
+      ActiveRecord::Base.transaction do
+        InvoiceTracker
+          .where(qbo_invoice_id: id)
+          .update_all(qbo_invoice_id: nil)
+
+        AdhocInvoiceTracker
+          .where(qbo_invoice_id: id)
+          .update_all(qbo_invoice_id: nil)
+
+        self.destroy!
+      end
+      return false
+    end
+
     begin
       invoice = Stacks::Quickbooks.fetch_invoice_by_id(qbo_id)
       update! data: invoice.as_json

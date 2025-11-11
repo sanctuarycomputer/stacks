@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2025_07_01_224236) do
+ActiveRecord::Schema.define(version: 2025_11_11_224743) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -766,7 +766,7 @@ ActiveRecord::Schema.define(version: 2025_07_01_224236) do
   create_table "qbo_invoices", force: :cascade do |t|
     t.string "qbo_id", null: false
     t.jsonb "data"
-    t.index ["qbo_id"], name: "index_qbo_invoices_on_qbo_id", unique: true
+    t.index ["qbo_id"], name: "index_qbo_invoices_on_qbo_id", unique: true, where: "(qbo_id IS NOT NULL)"
   end
 
   create_table "qbo_profit_and_loss_reports", force: :cascade do |t|
@@ -1016,6 +1016,18 @@ ActiveRecord::Schema.define(version: 2025_07_01_224236) do
     t.datetime "updated_at", precision: 6, null: false
   end
 
+  create_table "trueups", force: :cascade do |t|
+    t.bigint "invoice_pass_id", null: false
+    t.bigint "forecast_person_id", null: false
+    t.decimal "amount", default: "0.0", null: false
+    t.text "description"
+    t.datetime "deleted_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["forecast_person_id"], name: "index_trueups_on_forecast_person_id"
+    t.index ["invoice_pass_id"], name: "index_trueups_on_invoice_pass_id"
+  end
+
   create_table "versions", force: :cascade do |t|
     t.string "item_type", null: false
     t.bigint "item_id", null: false
@@ -1183,4 +1195,5 @@ ActiveRecord::Schema.define(version: 2025_07_01_224236) do
   add_foreign_key "technical_lead_periods", "project_trackers"
   add_foreign_key "technical_lead_periods", "studios"
   add_foreign_key "traits", "trees"
+  add_foreign_key "trueups", "invoice_passes"
 end
