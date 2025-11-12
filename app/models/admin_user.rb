@@ -493,6 +493,25 @@ class AdminUser < ApplicationRecord
       .reduce(:+) || 0
   end
 
+  def self.candidates_for_role
+    active = AdminUser.active.sort_by(&:display_name)
+    inactive = AdminUser.inactive.sort_by(&:display_name)
+
+   [
+      "Current Team Members",
+      *active,
+      "Previous / Inactive Team Members",
+      *inactive,
+    ].map do |u|
+      next ["----- #{u} -----", 0, {disabled: true}] if u.is_a?(String)
+      [
+        u.display_name,
+        u.id,
+      ]
+    end
+  end
+
+
   def total_amount_paid
     ausw = admin_user_salary_windows.all
 

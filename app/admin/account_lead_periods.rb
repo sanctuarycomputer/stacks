@@ -21,7 +21,7 @@ ActiveAdmin.register AccountLeadPeriod do
     f.inputs do
       f.semantic_errors
       f.input :project_tracker, input_html: { disabled: true }
-      f.input :admin_user
+      f.input :admin_user, collection: AdminUser.candidates_for_role
       f.input :started_at, as: :date_select, hint: "Leave blank to default to the date of the first recorded hour"
       f.input :ended_at, as: :date_select, hint: "Leave blank unless this role was passed off to another person."
     end
