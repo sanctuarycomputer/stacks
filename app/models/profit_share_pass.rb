@@ -1,5 +1,5 @@
 class ProfitSharePass < ApplicationRecord
-  has_many :profit_share_payments
+  has_many :profit_share_payments, dependent: :destroy
 
   def self.this_year
     ProfitSharePass.all.select{|p| p.created_at.year == Time.now.year}.first
@@ -69,6 +69,7 @@ class ProfitSharePass < ApplicationRecord
   end
 
   def self.ensure_exists!
+    return nil if Time.now.year >= 2025
     ProfitSharePass.this_year || ProfitSharePass.create!
   end
 
