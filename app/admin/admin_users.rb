@@ -107,9 +107,9 @@ ActiveAdmin.register AdminUser do
     column :github do |resource|
       resource.github_user
     end
-    if current_admin_user.is_admin?
-      column :approximate_cost_per_hour_before_studio_expenses do |resource|
-        number_to_currency(resource.approximate_cost_per_hour_before_studio_expenses)
+    if current_admin_user.is_hugh?
+      column :total_amount_paid do |resource|
+        number_to_currency(resource.total_amount_paid[:total])
       end
     end
     actions
