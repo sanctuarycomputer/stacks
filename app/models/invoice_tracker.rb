@@ -367,6 +367,8 @@ class InvoiceTracker < ApplicationRecord
     qbo_inv.customer_memo =
       Stacks::System.singleton_class::DEFAULT_CUSTOMER_MEMO
 
+    qbo_inv.txn_date = invoice_pass.start_of_month.end_of_month
+
     snapshot =
       assignments.reduce({
         generated_at: DateTime.now,
