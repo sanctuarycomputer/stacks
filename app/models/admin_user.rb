@@ -533,7 +533,10 @@ class AdminUser < ApplicationRecord
     fp = forecast_person
     return d unless fp.present?
 
-    d[:contract] = ContributorPayout.where(forecast_person: fp).sum(:amount)
+    d[:contract] = 0
+    if contributor = Contributor.find_by(forecast_person: fp)
+      d[:contract] = contributor.contributor_payouts.sum(:amount)
+    end
     d[:total] = d[:salary] + d[:contract]
     d
   end
