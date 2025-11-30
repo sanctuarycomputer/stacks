@@ -14,10 +14,24 @@ ActiveAdmin.register ContributorPayout do
   end
 
   action_item :toggle_acceptance, only: :show do
-    if current_admin_user == resource.forecast_person.admin_user || current_admin_user.is_admin?
+    if current_admin_user == resource.contributor.forecast_person.admin_user || current_admin_user.is_admin?
       link_to resource.accepted? ? "Unaccept" : "Accept", toggle_contributor_payout_acceptance_admin_invoice_pass_invoice_tracker_path(resource.invoice_tracker.invoice_pass.id, resource.invoice_tracker, {contributor_payout_id: resource.id}),
         method: :post
     end
+  end
+
+  action_item :sync_qbo_bill, only: :show do
+    link_to "Sync QBO Bill", sync_qbo_bill_admin_invoice_tracker_contributor_payout_path(resource.invoice_tracker, resource),
+      method: :post
+  end
+
+  member_action :sync_qbo_bill, method: :post do
+    cp = ContributorPayout.find(params[:id])
+    cp.sync_qbo_bill!
+    return redirect_to(
+      admin_invoice_tracker_contributor_payout_path(cp.invoice_tracker, cp),
+      notice: "Success",
+    )
   end
 
   member_action :toggle_acceptance, method: :post do

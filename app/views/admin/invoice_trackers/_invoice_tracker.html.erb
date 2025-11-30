@@ -192,9 +192,9 @@
           </td>
           <td class="col">
             <% if cp.deleted_at.present? %>
-              <del><%= link_to cp.forecast_person.email, admin_forecast_person_path(cp.forecast_person) %></del>
+              <del><%= link_to cp.contributor.forecast_person.email, admin_forecast_person_path(cp.contributor.forecast_person) %></del>
             <% else %>
-              <%= link_to cp.forecast_person.email, admin_forecast_person_path(cp.forecast_person) %>
+              <%= link_to cp.contributor.forecast_person.email, admin_forecast_person_path(cp.contributor.forecast_person) %>
             <% end %>
           </td>
           <td class="col">
@@ -222,7 +222,7 @@
 
             <span class="pill <%= cp.accepted? ? "accepted" : "pending" %>" style="margin-right: 6px;">
               <%= cp.accepted? ? "Accepted" : "Pending" %>
-              <% if current_admin_user.forecast_person == cp.forecast_person || current_admin_user.is_admin? %>
+              <% if current_admin_user.forecast_person == cp.contributor.forecast_person || current_admin_user.is_admin? %>
               <span class="split">
                   <%= link_to cp.accepted? ? "Unaccept ↗" : "Accept ↗", toggle_contributor_payout_acceptance_admin_invoice_pass_invoice_tracker_path(cp.invoice_tracker.invoice_pass, cp.invoice_tracker, {contributor_payout_id: cp.id}), method: :post, style: "font-size: unset;" %>
                 </span>

@@ -19,6 +19,10 @@ class Stacks::Quickbooks
       Retriable.retriable(tries: 5, base_interval: 1, multiplier: 2, max_interval: 10) do
         sync_all_invoices!
       end
+
+      Retriable.retriable(tries: 5, base_interval: 1, multiplier: 2, max_interval: 10) do
+        sync_all_vendors!
+      end
     end
 
     def sync_all_invoices!
@@ -70,6 +74,29 @@ class Stacks::Quickbooks
       end
     end
 
+    def sync_all_vendors!
+      data = fetch_all_vendors.map do |v|
+        {
+          qbo_id: v["id"],
+          data: v.as_json,
+        }
+      end
+      QboVendor.upsert_all(data, unique_by: :qbo_id)
+      QboVendor.where.not(qbo_id: data.map{|t| t[:qbo_id]}).delete_all
+    end
+
+    def sync_all_bills!
+      data = fetch_all_bills.map do |b|
+        {
+          qbo_id: b["id"],
+          data: b.as_json,
+          qbo_vendor_id: b.vendor_ref.value
+        }
+      end
+      QboBill.upsert_all(data, unique_by: :qbo_id)
+      QboBill.where.not(qbo_id: data.map{|t| t[:qbo_id]}).delete_all
+    end
+
     def make_and_refresh_qbo_access_token(force_refresh = false)
       oauth2_client = OAuth2::Client.new(Stacks::Utils.config[:quickbooks][:client_id], Stacks::Utils.config[:quickbooks][:client_secret], {
         site: "https://appcenter.intuit.com/connect/oauth2",
@@ -95,6 +122,15 @@ class Stacks::Quickbooks
       end
 
       access_token
+    end
+
+    def fetch_all_vendors
+      access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
+
+      service = Quickbooks::Service::Vendor.new
+      service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
+      service.access_token = access_token
+      service.all
     end
 
     def fetch_all_invoices
@@ -146,6 +182,25 @@ class Stacks::Quickbooks
       service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
       service.access_token = access_token
       qbo_customers = service.all
+    end
+
+    def fetch_all_bills
+      access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
+
+      # Get all Bills
+      service = Quickbooks::Service::Bill.new
+      service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
+      service.access_token = access_token
+      qbo_bills = service.all
+    end
+
+    def fetch_bill_by_id(id)
+      access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
+
+      bill_service = Quickbooks::Service::Bill.new
+      bill_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
+      bill_service.access_token = access_token
+      bill_service.fetch_by_id(id)
     end
 
     def fetch_invoice_by_id(id)

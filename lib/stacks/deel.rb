@@ -83,10 +83,6 @@ class Stacks::Deel
     DeelContract.upsert_all(data, unique_by: :deel_id)
   end
 
-  def noah
-    DeelPerson.all.find{|dp| dp.data["full_name"].include?("Noah")}
-  end
-
   def get_off_cycle_payments(contract_id)
     response = self.class.get("/contracts/#{contract_id}/off-cycle-payments", headers: @headers)
     raise response unless response.success?
