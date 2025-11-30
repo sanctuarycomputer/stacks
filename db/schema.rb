@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2025_11_29_204718) do
+ActiveRecord::Schema.define(version: 2025_11_30_175130) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -1052,17 +1052,6 @@ ActiveRecord::Schema.define(version: 2025_11_29_204718) do
     t.bigint "contributor_id", null: false
     t.index ["contributor_id"], name: "index_trueups_on_contributor_id"
     t.index ["invoice_pass_id"], name: "index_trueups_on_invoice_pass_id"
-  end
-
-  create_table "versions", force: :cascade do |t|
-    t.string "item_type", null: false
-    t.bigint "item_id", null: false
-    t.string "event", null: false
-    t.string "whodunnit"
-    t.text "object"
-    t.datetime "created_at"
-    t.text "object_changes"
-    t.index ["item_type", "item_id"], name: "index_versions_on_item_type_and_item_id"
   end
 
   create_table "workspaces", force: :cascade do |t|
