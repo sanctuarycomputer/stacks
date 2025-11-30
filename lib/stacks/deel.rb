@@ -19,9 +19,9 @@ class Stacks::Deel
       sync_contracts!
 
       # TODO: Parallelize this
-      # DeelContract.all.each do |dc|
-      #   sync_off_cycle_payments!(dc.deel_id)
-      # end
+      DeelContract.all.each do |dc|
+        sync_off_cycle_payments!(dc.deel_id)
+      end
     end
   end
 
