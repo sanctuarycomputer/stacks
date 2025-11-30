@@ -19,7 +19,7 @@
   </tbody>
 </table>
 
-<% forecast_person.new_deal_ledger_items[:by_month].each do |period, ledger_items| %>
+<% contributor.new_deal_ledger_items[:by_month].each do |period, ledger_items| %>
   <h2><%= period.starts_at.strftime("%B %Y") %></h2>
 
   <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
@@ -94,9 +94,9 @@
 
               <span class="pill <%= li.accepted? ? "accepted" : "pending" %>" style="margin-right: 6px;">
                 <%= li.accepted? ? "Accepted" : "Pending" %>
-                <% if current_admin_user.forecast_person == li.forecast_person || current_admin_user.is_admin? %>
+                <% if current_admin_user.forecast_person == li.contributor.forecast_person || current_admin_user.is_admin? %>
                 <span class="split">
-                    <%= link_to li.accepted? ? "Unaccept ↗" : "Accept ↗", toggle_contributor_payout_acceptance_admin_forecast_person_path(li.forecast_person, {contributor_payout_id: li.id}), method: :post, style: "font-size: unset;" %>
+                    <%= link_to li.accepted? ? "Unaccept ↗" : "Accept ↗", toggle_contributor_payout_acceptance_admin_contributor_path(li.contributor, {contributor_payout_id: li.id}), method: :post, style: "font-size: unset;" %>
                   </span>
                 <% end %>
               </span>
@@ -113,11 +113,11 @@
           <td class="col text-right">
             <% unless li.deleted_at.present? %>
               <% if li.is_a?(MiscPayment) %>
-                <%= link_to "Info ↗", admin_forecast_person_misc_payment_path(forecast_person, li) %>
+                <%= link_to "Info ↗", admin_contributor_misc_payment_path(contributor, li) %>
               <% elsif li.is_a?(ContributorPayout) %>
                 <%= link_to "#{li.invoice_tracker.display_name} ↗", admin_invoice_pass_invoice_tracker_path(li.invoice_tracker.invoice_pass, li.invoice_tracker) %>
               <% elsif li.is_a?(Trueup) %>
-                <%= link_to "Info ↗", admin_forecast_person_trueup_path(forecast_person, li) %>
+                <%= link_to "Info ↗", admin_contributor_trueup_path(contributor, li) %>
               <% end %>
             <% end %>
           </td>

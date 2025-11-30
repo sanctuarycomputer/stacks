@@ -15,7 +15,7 @@
     <div class="module-body factoid-parent">
       <% if resource.forecast_person.present? %>
         <p style="margin-bottom: 6px;">💸 <strong>Note!</strong> This user's payments ledger is available here:</p>
-        <%= link_to "Payments Ledger ↗", admin_forecast_person_path(resource.forecast_person) %>
+        <%= link_to "Payments Ledger ↗", admin_contributor_path(resource.forecast_person.contributor) %>
       <% else %>
         <p>🚧 <strong>Important!</strong> This user has no Harvest Forecast user associated. Please add them in Harvest Forecast (with the same email address) and then their payment ledger will show here.</p>
       <% end %>

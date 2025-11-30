@@ -72,6 +72,14 @@ class InvoiceTracker < ApplicationRecord
     qbo_invoice.try(:total)
   end
 
+  def total
+    (value || blueprint_total).try(:to_f)
+  end
+
+  def blueprint_total
+    ((blueprint || {})["lines"] || []).reduce(0){|acc, l| acc += l[1]["quantity"]*l[1]["unit_price"]}
+  end
+
   def balance
     qbo_invoice.try(:balance)
   end

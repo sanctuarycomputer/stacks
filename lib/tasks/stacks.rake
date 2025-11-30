@@ -160,6 +160,7 @@ namespace :stacks do
       Stacks::Runn.new.sync_all!
 
       Stacks::Quickbooks.sync_all! # Has internal retry counter
+      Stacks::Deel.new.sync_all!
 
       # We can do this as soon as we sync the forecast
       Stacks::Automator.attempt_invoicing_for_previous_month

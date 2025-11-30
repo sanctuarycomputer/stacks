@@ -19,9 +19,9 @@ class Stacks::Deel
       sync_contracts!
 
       # TODO: Parallelize this
-      DeelContract.all.each do |dc|
-        sync_off_cycle_payments!(dc.deel_id)
-      end
+      # DeelContract.all.each do |dc|
+      #   sync_off_cycle_payments!(dc.deel_id)
+      # end
     end
   end
 
@@ -81,10 +81,6 @@ class Stacks::Deel
       }
     end.compact
     DeelContract.upsert_all(data, unique_by: :deel_id)
-  end
-
-  def noah
-    DeelPerson.all.find{|dp| dp.data["full_name"].include?("Noah")}
   end
 
   def get_off_cycle_payments(contract_id)
