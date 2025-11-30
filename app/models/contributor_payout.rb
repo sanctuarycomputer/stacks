@@ -46,7 +46,7 @@ class ContributorPayout < ApplicationRecord
     bill = load_qbo_bill! || Quickbooks::Model::Bill.new
     bill.txn_date = invoice_tracker.invoice_pass.start_of_month.end_of_month
     bill.due_date = invoice_tracker.invoice_pass.start_of_month.end_of_month
-    bill.doc_number = "Stacks_Contributor_Payout_#{id}"
+    bill.doc_number = "Stacks_#{id}"
 
     bill.vendor_ref = Quickbooks::Model::BaseReference.new(contributor.qbo_vendor.id)
 
