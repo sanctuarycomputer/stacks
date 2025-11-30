@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2025_11_11_224743) do
+ActiveRecord::Schema.define(version: 2025_11_29_204718) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -178,7 +178,6 @@ ActiveRecord::Schema.define(version: 2025_11_11_224743) do
 
   create_table "contributor_payouts", force: :cascade do |t|
     t.bigint "invoice_tracker_id", null: false
-    t.bigint "forecast_person_id", null: false
     t.bigint "created_by_id", null: false
     t.decimal "amount", default: "0.0", null: false
     t.jsonb "blueprint", default: {}, null: false
@@ -187,10 +186,23 @@ ActiveRecord::Schema.define(version: 2025_11_11_224743) do
     t.datetime "deleted_at"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.bigint "contributor_id", null: false
+    t.string "qbo_bill_id"
+    t.index ["contributor_id"], name: "index_contributor_payouts_on_contributor_id"
     t.index ["created_by_id"], name: "index_contributor_payouts_on_created_by_id"
     t.index ["deleted_at"], name: "index_contributor_payouts_on_deleted_at"
-    t.index ["forecast_person_id"], name: "index_contributor_payouts_on_forecast_person_id"
     t.index ["invoice_tracker_id"], name: "index_contributor_payouts_on_invoice_tracker_id"
+    t.index ["qbo_bill_id"], name: "index_contributor_payouts_on_qbo_bill_id"
+  end
+
+  create_table "contributors", force: :cascade do |t|
+    t.bigint "forecast_person_id", null: false
+    t.bigint "qbo_vendor_id"
+    t.string "deel_person_id"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["forecast_person_id"], name: "index_contributors_on_forecast_person_id"
+    t.index ["qbo_vendor_id"], name: "index_contributors_on_qbo_vendor_id"
   end
 
   create_table "creative_lead_periods", force: :cascade do |t|
@@ -487,15 +499,15 @@ ActiveRecord::Schema.define(version: 2025_11_11_224743) do
   end
 
   create_table "misc_payments", force: :cascade do |t|
-    t.integer "forecast_person_id", null: false
     t.decimal "amount", precision: 10, scale: 2, null: false
     t.text "remittance"
     t.datetime "deleted_at"
     t.date "paid_at"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.bigint "contributor_id", null: false
+    t.index ["contributor_id"], name: "index_misc_payments_on_contributor_id"
     t.index ["deleted_at"], name: "index_misc_payments_on_deleted_at"
-    t.index ["forecast_person_id"], name: "index_misc_payments_on_forecast_person_id"
   end
 
   create_table "notifications", force: :cascade do |t|
@@ -763,6 +775,14 @@ ActiveRecord::Schema.define(version: 2025_11_11_224743) do
     t.index ["enterprise_id"], name: "index_qbo_accounts_on_enterprise_id"
   end
 
+  create_table "qbo_bills", force: :cascade do |t|
+    t.string "qbo_id", null: false
+    t.jsonb "data"
+    t.string "qbo_vendor_id", null: false
+    t.index ["qbo_id"], name: "index_qbo_bills_on_qbo_id", unique: true
+    t.index ["qbo_vendor_id"], name: "index_qbo_bills_on_qbo_vendor_id"
+  end
+
   create_table "qbo_invoices", force: :cascade do |t|
     t.string "qbo_id", null: false
     t.jsonb "data"
@@ -786,6 +806,12 @@ ActiveRecord::Schema.define(version: 2025_11_11_224743) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.index ["qbo_account_id"], name: "index_qbo_tokens_on_qbo_account_id"
+  end
+
+  create_table "qbo_vendors", force: :cascade do |t|
+    t.string "qbo_id", null: false
+    t.jsonb "data"
+    t.index ["qbo_id"], name: "index_qbo_vendors_on_qbo_id", unique: true
   end
 
   create_table "quickbooks_tokens", force: :cascade do |t|
@@ -1018,13 +1044,13 @@ ActiveRecord::Schema.define(version: 2025_11_11_224743) do
 
   create_table "trueups", force: :cascade do |t|
     t.bigint "invoice_pass_id", null: false
-    t.bigint "forecast_person_id", null: false
     t.decimal "amount", default: "0.0", null: false
     t.text "description"
     t.datetime "deleted_at"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
-    t.index ["forecast_person_id"], name: "index_trueups_on_forecast_person_id"
+    t.bigint "contributor_id", null: false
+    t.index ["contributor_id"], name: "index_trueups_on_contributor_id"
     t.index ["invoice_pass_id"], name: "index_trueups_on_invoice_pass_id"
   end
 
@@ -1122,7 +1148,9 @@ ActiveRecord::Schema.define(version: 2025_11_11_224743) do
   add_foreign_key "collective_role_holder_periods", "admin_users"
   add_foreign_key "collective_role_holder_periods", "collective_roles"
   add_foreign_key "contributor_payouts", "admin_users", column: "created_by_id"
+  add_foreign_key "contributor_payouts", "contributors"
   add_foreign_key "contributor_payouts", "invoice_trackers"
+  add_foreign_key "contributor_payouts", "qbo_bills", primary_key: "qbo_id"
   add_foreign_key "creative_lead_periods", "admin_users"
   add_foreign_key "creative_lead_periods", "project_trackers"
   add_foreign_key "creative_lead_periods", "studios"
@@ -1133,6 +1161,7 @@ ActiveRecord::Schema.define(version: 2025_11_11_224743) do
   add_foreign_key "invoice_trackers", "invoice_passes"
   add_foreign_key "mailing_list_subscribers", "mailing_lists"
   add_foreign_key "mailing_lists", "studios"
+  add_foreign_key "misc_payments", "contributors"
   add_foreign_key "okr_period_studios", "okr_periods"
   add_foreign_key "okr_period_studios", "studios"
   add_foreign_key "okr_periods", "okrs"
@@ -1195,5 +1224,6 @@ ActiveRecord::Schema.define(version: 2025_11_11_224743) do
   add_foreign_key "technical_lead_periods", "project_trackers"
   add_foreign_key "technical_lead_periods", "studios"
   add_foreign_key "traits", "trees"
+  add_foreign_key "trueups", "contributors"
   add_foreign_key "trueups", "invoice_passes"
 end

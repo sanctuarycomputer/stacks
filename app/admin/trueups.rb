@@ -4,10 +4,10 @@ ActiveAdmin.register Trueup do
   actions :index, :show, :destroy
   menu false
 
-  belongs_to :forecast_person
+  belongs_to :contributor
 
   index download_links: false do
-    column :forecast_person
+    column :contributor
     column :amount
     column :payment_date
     actions

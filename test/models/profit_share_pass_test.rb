@@ -2,7 +2,7 @@ require 'test_helper'
 
 class ProfitSharePassTest < ActiveSupport::TestCase
   test "it works when the users are still employed and the project tracker is successful" do
-    profit_share_pass = ProfitSharePass.ensure_exists!
+    profit_share_pass = ProfitSharePass.create!
 
     studio, g3d = make_studio!
     admin_user = make_admin_user!(studio, Date.new(2020, 1, 1), nil)
@@ -230,7 +230,7 @@ class ProfitSharePassTest < ActiveSupport::TestCase
   end
 
   test "it does not include admin users who've left the company this year" do
-    profit_share_pass = ProfitSharePass.ensure_exists!
+    profit_share_pass = ProfitSharePass.create!
     studio, g3d = make_studio!
 
     # Project Lead quits in February of the current year
