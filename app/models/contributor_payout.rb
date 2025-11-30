@@ -43,10 +43,7 @@ class ContributorPayout < ApplicationRecord
   def sync_qbo_bill!
     return unless contributor.qbo_vendor.present?
 
-    # 561
-
     bill = load_qbo_bill! || Quickbooks::Model::Bill.new
-
     bill.txn_date = invoice_tracker.invoice_pass.start_of_month.end_of_month
     bill.due_date = invoice_tracker.invoice_pass.start_of_month.end_of_month
     bill.doc_number = "Stacks_Contributor_Payout_#{id}"
