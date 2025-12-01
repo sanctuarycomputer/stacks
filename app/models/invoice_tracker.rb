@@ -164,31 +164,43 @@ class InvoiceTracker < ApplicationRecord
     err
   end
 
-  def backfill_blueprint!
-    snapshot =
-      assignments.reduce({
-        generated_at: DateTime.now,
-        lines: {}
-      }) do |acc, a|
-        person = a.forecast_person
-        project = a.forecast_project
-        hours = a.allocation_during_range_in_hours(
-          invoice_pass.start_of_month,
-          invoice_pass.start_of_month.end_of_month
-        )
-        description =
-          "#{project.code} #{project.name} (#{invoice_pass.invoice_month}) #{person.first_name} #{person.last_name}".strip
-        acc[:lines][description] = acc[:lines][description] || {
-          id: nil,
-          forecast_project: project.forecast_id,
-          forecast_person: person.forecast_id,
-          quantity: 0,
-          unit_price: project.hourly_rate,
-        }
-        acc[:lines][description][:quantity] += hours
-        acc
-      end
-    update!(blueprint: snapshot)
+  def make_blueprint!
+    assignments.reduce({
+      generated_at: DateTime.now,
+      lines: {}
+    }) do |acc, a|
+      person = a.forecast_person
+      project = a.forecast_project
+      hours = a.allocation_during_range_in_hours(
+        invoice_pass.start_of_month,
+        invoice_pass.start_of_month.end_of_month
+      )
+      description =
+        "#{project.code} #{project.name} (#{invoice_pass.invoice_month}) #{person.first_name} #{person.last_name}".strip
+      acc[:lines][description] = acc[:lines][description] || {
+        id: nil,
+        forecast_project: project.forecast_id,
+        forecast_person: person.forecast_id,
+        quantity: 0,
+        unit_price: project.hourly_rate,
+      }
+      acc[:lines][description][:quantity] += hours
+      acc
+    end
+  end
+
+  def changes_in_forecast
+    return false if blueprint.nil?
+    latest_lines = (make_blueprint![:lines] || {}).deep_stringify_keys.reduce({}) do |acc, (k, v)|
+      acc[k] = v.except("id")
+      acc
+    end
+    blueprinted_lines = (blueprint["lines"] || {}).reduce({}) do |acc, (k, v)|
+      acc[k] = v.except("id")
+      acc
+    end
+
+    Hashdiff.diff(blueprinted_lines, latest_lines)
   end
 
   def make_contributor_payouts!(created_by)

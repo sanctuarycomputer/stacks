@@ -33,7 +33,6 @@ ActiveAdmin.register InvoicePass do
     column :outstanding_balance do |resource|
       number_to_currency(resource.balance)
     end
-
     column :invoicing_statuses do |resource|
       div do
         if resource.statuses == :missing_hours

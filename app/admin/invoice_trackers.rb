@@ -76,6 +76,10 @@ ActiveAdmin.register InvoiceTracker do
     column :value do |resource|
       number_to_currency(resource.value)
     end
+    column :stale? do |resource|
+      stale = resource.changes_in_forecast.any?
+      span(stale ? "Stale" : "In sync", class: "pill #{stale ? "changed" : "unchanged"}")
+    end
     column :invoicing_status do |resource|
       span(resource.status.to_s.humanize, class: "pill #{resource.status}")
     end

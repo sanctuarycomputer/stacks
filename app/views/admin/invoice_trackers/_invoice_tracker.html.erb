@@ -1,11 +1,16 @@
 <% qbo_invoice = invoice_tracker.qbo_invoice %>
 <% status = invoice_tracker.status %>
+<% changes_in_forecast = invoice_tracker.changes_in_forecast %>
+<% stale = invoice_tracker.changes_in_forecast.any? %>
 
 <p class="pill nag" style="margin-right: 6px">
   <%= invoice_tracker.invoice_pass.invoice_month %>
 </p>
 <p class="pill nag <%= status %>" style="margin-right: 6px">
   <%= status.to_s.humanize %>
+</p>
+<p class="pill nag <%= stale ? "changed" : "unchanged" %>" style="margin-right: 6px">
+  <%= stale ? "Stale" : "In sync" %>
 </p>
 <% if qbo_invoice.present? %>
   <a href="https://app.qbo.intuit.com/app/invoice?txnId=<%= qbo_invoice.id %>" target="_blank">
@@ -18,6 +23,32 @@
       QBO Customer ↗
     </p>
   </a>
+<% end %>
+
+<% if changes_in_forecast.any? %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-header">
+        <p>⚠️ This invoice is out of sync with the Forecast</p>
+      </div>
+      <div class="module-body">
+        <p>This means that someone has their hours in Forecast <strong>after</strong> the invoice was generated. If the invoice is not yet sent, please delete it in Quickbooks and press the <code>Regenerate</code> button.</p>
+        <hr />
+
+        <% changes_in_forecast.each do |change| %>
+          <% case change[0] %>
+          <% when "~" %>
+            <p><code><%= change[1] %></code> changed from <code><%= change[2] %></code> to <code><%= change[3] %></code></p>
+          <% when "-" %>
+            <p><code><%= change[1] %></code> was removed from the invoice</p>
+          <% when "+" %>
+            <p><code><%= change[1] %></code> was added to the invoice</p>
+          <% end %>
+        <% end %>
+
+      </div>
+    </div>
+  </div>
 <% end %>
 
 <% if invoice_tracker.notes.present? %>
