@@ -1,3 +1,7 @@
+<%= link_to "← Invoice Tracker", admin_invoice_pass_invoice_tracker_path(resource.invoice_tracker.invoice_pass, resource.invoice_tracker), class: "nag", style: "margin-right: 6px;" %>
+<%= link_to resource.contributor.forecast_person.email, admin_contributor_path(resource.contributor), class: "nag" %>
+
+
 <% if resource.qbo_bill.present? %>
   <a href="https://qbo.intuit.com/app/bill?&txnId=<%= resource.qbo_bill.qbo_id %>" target="_blank">
     <p class="nag" style="margin-bottom: 0px;margin-right: 6px;">

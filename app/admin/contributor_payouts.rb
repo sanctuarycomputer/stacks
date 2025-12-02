@@ -66,9 +66,7 @@ ActiveAdmin.register ContributorPayout do
     column :status do |cp|
       span(cp.status.to_s.humanize, class: "pill #{cp.status}")
     end
-    column :payee do |cp|
-      cp.forecast_person
-    end
+    column :contributor
     column :as_account_lead do |cp|
       number_to_currency(cp.as_account_lead)
     end
