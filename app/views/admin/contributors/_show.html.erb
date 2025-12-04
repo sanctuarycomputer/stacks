@@ -19,8 +19,17 @@
   </tbody>
 </table>
 
-<% contributor.new_deal_ledger_items[:by_month].each do |period, ledger_items| %>
-  <h2><%= period.starts_at.strftime("%B %Y") %></h2>
+<% contributor.new_deal_ledger_items[:by_month].each do |period, metadata| %>
+  <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+    <div id="titlebar_left">
+      <h2 id="page_title"><%= period.starts_at.strftime("%B %Y") %></h2>
+    </div>
+    <div id="titlebar_right">
+      <span class="pill <%= metadata[:elevated_service] ? 'misc' : '' %>">
+        <%= metadata[:elevated_service] ? 'Elevated' : 'Standard' %> Service <span class="split"><strong><%= metadata[:total_hours] %>hrs </strong><span><%= number_to_currency(metadata[:total_income]) %></span></span>
+      </span>
+    </div>
+  </div>
 
   <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
     <thead>
@@ -33,7 +42,7 @@
       </tr>
     </thead>
     <tbody>
-      <% ledger_items.each_with_index do |li, index| %>
+      <% metadata[:items].each_with_index do |li, index| %>
         <tr class="<%= index.even? ? "even" : "odd" %>">
           <td class="col">
             <% if li.is_a?(MiscPayment) %>

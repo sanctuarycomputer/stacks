@@ -9,40 +9,14 @@
   </div>
 </div>
 
-<div class="dashboard-modules table index_table index">
-  <div class="dashboard-module">
-    <div class="module-body factoid-parent">
-      <p style="margin-bottom: 6px;">Based on the current performance of garden3d, we're expecting that <code><%= leadership_psu_pool["total_claimable"].round(2) %> PSU</code> will be allocated to be split by Directors and successful PL/CL/TLs.</p>
-      <a href="https://www.notion.so/garden3d/Introducing-Bottom-Up-Leadership-at-garden3d-93cfbd78330245d1a14cb1ad312b0290" target="_blank">
-        Understand the Bottom-up Leadership Experiment here ↗
-      </a>
-    </div>
-  </div>
 
-  <% if data_integrity_problem_count > 0 %>
-    <div class="dashboard-module">
-      <div class="module-body factoid-parent">
-        <p style="margin-bottom: 6px;">❗ <strong>Warning!</strong> There are <%= data_integrity_problem_count %>x known data integrity problems. These problems can cause big fluctuations on OKR reporting. Please work to rectify those issues first, then <a href="https://stacks.garden3d.net/admin/system_tasks?q%5Bname_contains%5D=stacks%3Adaily_tasks&commit=Filter&scope=success&order=id_desc" target="_blank">wait for the next <code>stacks:daily_tasks</code> job to settle</a> to ensure you have a correct view of the data below.</p>
-        <a href="https://stacks.garden3d.net/admin/data_integrity_explorer" target="_blank">
-          See all Data Integrity issues here ↗
-        </a>
-      </div>
-    </div>
-  <% end %>
-</div>
-
-<% leadership_psu_pool["collective_okrs"].each_slice(2).to_a.each do |set| %>
+<% collective_okrs.each_slice(2).to_a.each do |set| %>
   <div class="dashboard-modules table index_table index">
     <% set.each do |cokr| %>
 
       <div class="dashboard-module">
         <div class="module-header">
           <p><%= cokr["datapoint"].to_s.humanize %></p>
-          <p style="text-align: right;">
-            <% cokr["role_holders"].each do |admin_user| %>
-              <%= link_to admin_user.email, admin_admin_user_path(admin_user) %>
-            <% end %>
-          </p>
         </div>
 
         <% okr_results = cokr["okr"] %>
@@ -173,47 +147,3 @@
     </div>
   </div>
 </div>
-
-<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
-  <div id="titlebar_left">
-    <h2 id="page_title">⏳ garden3d over time</h2>
-  </div>
-</div>
-
-<div class="dashboard-modules table index_table index">
-  <div class="dashboard-module">
-    <div class="module-header">
-      <p>Garden3d over Time</p>
-      <p>
-        <a href="?g3d=psu" class="<%= (params["g3d"] == "psu" || params["g3d"] == nil) ? "underline" : "" %>">
-          PSU Value
-        </a>
-      </p>
-      <p>
-        <a href="?g3d=psp" class="<%= params["g3d"] == "psp" ? "underline" : "" %>">
-          Profit Share Pool
-        </a>
-      </p>
-      <p>
-        <a href="?g3d=revenue" class="<%= params["g3d"] == "revenue" ? "underline" : "" %>">
-          Revenue
-        </a>
-      </p>
-      <p>
-        <a href="?g3d=margin" class="<%= params["g3d"] == "margin" ? "underline" : "" %>">
-          Profit Margin
-        </a>
-      </p>
-    </div>
-    <div class="module-body">
-      <canvas id="g3d-over-time"></canvas>
-    </div>
-  </div>
-</div>
-
-<script>
-  new Chart(document.getElementById('g3d-over-time'), {
-    type: 'bar',
-    data: <%= g3d_over_time_data.to_json.html_safe %>,
-  })
-</script>

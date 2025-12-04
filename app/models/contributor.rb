@@ -136,7 +136,24 @@ class Contributor < ApplicationRecord
       end
 
       acc[:all] = [*acc[:all], *sorted]
-      acc[:by_month][period] = sorted
+
+
+      total_hours = forecast_person.recorded_allocation_during_range_in_hours(period.starts_at, period.ends_at)
+      total_income = (sorted.reduce(0) do |acc, item|
+        if item.is_a?(Trueup)
+          next acc += item.amount
+        elsif item.is_a?(ContributorPayout)
+          next acc += item.amount
+        end
+        acc
+      end)
+
+      acc[:by_month][period] = {
+        items: sorted,
+        total_hours: total_hours,
+        total_income: total_income,
+        elevated_service: total_hours >= 120 || total_income >= 9000
+      }
       acc
     end
   end

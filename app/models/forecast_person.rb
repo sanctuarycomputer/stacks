@@ -39,6 +39,14 @@ class ForecastPerson < ApplicationRecord
     end || 0
   end
 
+  def recorded_allocation_during_range_in_hours(start_of_range, end_of_range)
+    forecast_assignments.includes(:forecast_project).where(
+      'end_date >= ? AND start_date <= ?', start_of_range, end_of_range
+    ).reduce(0) do |acc, fa|
+      acc += fa.allocation_during_range_in_hours(start_of_range, end_of_range)
+    end || 0
+  end
+
   def edit_link
     "https://forecastapp.com/864444/team/#{forecast_id}/edit"
   end
