@@ -65,8 +65,6 @@ class Stacks::System
       loop do
         break if working_date.month == Date.today.month
 
-        hugh = ForecastPerson.find_by(email: "hugh@sanctuary.computer")
-
         invoice_pass = InvoicePass.includes(invoice_trackers: :contributor_payouts).where(start_of_month: working_date).first
         raise "No invoice pass found for #{working_date}" unless invoice_pass.present?
 
@@ -80,7 +78,9 @@ class Stacks::System
         end
 
         highest_contributor, highest_contributor_data = contributor_payouts_by_contributor.max_by{|k, v| v[:amount]}
-        trueup = Trueup.find_or_initialize_by(invoice_pass: invoice_pass, forecast_person: hugh)
+
+        hugh = ForecastPerson.find_by(email: "hugh@sanctuary.computer").contributor
+        trueup = Trueup.find_or_initialize_by(invoice_pass: invoice_pass, contributor: hugh)
 
         founder_trueup_amount = highest_contributor_data[:amount] - contributor_payouts_by_contributor[hugh][:amount]
 
