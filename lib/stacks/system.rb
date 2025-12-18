@@ -70,9 +70,9 @@ class Stacks::System
 
         contributor_payouts_by_contributor = invoice_pass.invoice_trackers.reduce({}) do |acc, invoice_tracker|
           invoice_tracker.contributor_payouts.each do |contributor_payout|
-            acc[contributor_payout.forecast_person] ||= { payouts: [], amount: 0 }
-            acc[contributor_payout.forecast_person][:payouts] << contributor_payout
-            acc[contributor_payout.forecast_person][:amount] += contributor_payout.amount
+            acc[contributor_payout.contributor] ||= { payouts: [], amount: 0 }
+            acc[contributor_payout.contributor][:payouts] << contributor_payout
+            acc[contributor_payout.contributor][:amount] += contributor_payout.amount
           end
           acc
         end
@@ -81,14 +81,13 @@ class Stacks::System
 
         hugh = ForecastPerson.find_by(email: "hugh@sanctuary.computer").contributor
         trueup = Trueup.find_or_initialize_by(invoice_pass: invoice_pass, contributor: hugh)
-
         founder_trueup_amount = highest_contributor_data[:amount] - contributor_payouts_by_contributor[hugh][:amount]
 
         trueup.update!(
           amount: founder_trueup_amount,
           description: <<~HEREDOC
           # Trueup for #{working_date.strftime("%B %Y")}
-          - **Highest Paid Contributor:** #{highest_contributor.email}
+          - **Highest Paid Contributor:** #{highest_contributor.forecast_person.email}
           - **Amount:** #{ActionController::Base.helpers.number_to_currency(highest_contributor_data[:amount])}
           - **Trueup Amount:** #{ActionController::Base.helpers.number_to_currency(founder_trueup_amount)}
           HEREDOC
