@@ -78,7 +78,8 @@ class ContributorPayout < ApplicationRecord
           qbo_vendor_id: contributor.qbo_vendor.id
         )
       end
-      update!(qbo_bill_id: bill.id)
+      update_attribute(:qbo_bill_id, bill.id)
+      self.reload
     end
   end
 
