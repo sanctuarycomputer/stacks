@@ -32,7 +32,8 @@ class ContributorPayout < ApplicationRecord
       if e.message.starts_with?("Object Not Found:")
         ActiveRecord::Base.transaction do
           b = qbo_bill
-          update!(qbo_bill_id: nil)
+          update_attribute(:qbo_bill_id, nil)
+          self.reload
           b.destroy!
         end
       end
