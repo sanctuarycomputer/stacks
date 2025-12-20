@@ -39,7 +39,11 @@ class OkrPeriod < ApplicationRecord
       working_tolerance = OkrPeriod.target_growth_rate_for_period(tolerance, total_days)
     end
 
-    return { health: nil, surplus: 0, tolerance: working_tolerance } if value == nil
+    return {
+      health: nil,
+      surplus: 0,
+      tolerance: working_tolerance.round(2)
+    } if value == nil
 
     surplus = value - working_target
     extreme = surplus.abs > working_tolerance
@@ -58,11 +62,11 @@ class OkrPeriod < ApplicationRecord
         raise "unknown_operator"
       end
 
-    {
+    return {
       health: tag,
-      surplus: surplus,
-      target: working_target,
-      tolerance: working_tolerance
+      surplus: surplus.round(2),
+      target: working_target.round(2),
+      tolerance: working_tolerance.round(2)
     }
   end
 

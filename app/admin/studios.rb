@@ -77,16 +77,7 @@ ActiveAdmin.register Studio do
   permit_params :name,
     :accounting_prefix,
     :mini_name,
-    :studio_type,
-    studio_coordinator_periods_attributes: [
-      :id,
-      :admin_user_id,
-      :studio_id,
-      :started_at,
-      :ended_at,
-      :_destroy,
-      :_edit
-    ]
+    :studio_type
 
   form do |f|
     f.inputs(class: "admin_inputs") do
@@ -96,12 +87,6 @@ ActiveAdmin.register Studio do
       f.input :studio_type,
         include_blank: false,
         as: :select
-
-      f.has_many :studio_coordinator_periods, heading: false, allow_destroy: true, new_record: 'Add a Studio Coorindator' do |a|
-        a.input :admin_user
-        a.input :started_at
-        a.input :ended_at
-      end
     end
     f.actions
   end
@@ -111,24 +96,6 @@ ActiveAdmin.register Studio do
     column :accounting_prefix
     column :mini_name
     column :studio_type
-    column :health do |resource|
-      accounting_method = session[:accounting_method] || "cash"
-
-      if resource.client_services?
-        span(class: "pill #{resource.health.dig("health")}") do
-          span(class: "split") do
-            strong(resource.health.dig("value"))
-          end
-        end
-      else
-        div([
-          span("#{number_to_currency resource.net_revenue(accounting_method)}"),
-          para(class: "okr_hint", style: "margin-bottom:0px;padding-top:0px !important") do
-            "YTD Net revenue"
-          end
-        ])
-      end
-    end
     column :last_generated do |resource|
       "#{time_ago_in_words(DateTime.iso8601(resource.snapshot["finished_at"] || resource.snapshot["generated_at"]))} ago"
     end
@@ -244,13 +211,6 @@ ActiveAdmin.register Studio do
           v.dig(accounting_method, datapoints_bearer, "average_hourly_rate", "value")
         end)
       }, {
-        label: 'Cost per Sellable Hour',
-        borderColor: COLORS[1],
-        type: 'line',
-        data: (snapshot.map do |v|
-          v.dig(accounting_method, datapoints_bearer, "cost_per_sellable_hour", "value")
-        end)
-      }, {
         label: 'Actual Cost per Hour Sold',
         borderColor: COLORS[2],
         type: 'line',
@@ -293,116 +253,9 @@ ActiveAdmin.register Studio do
       }]
     }
 
-    band_tallies = resource.skill_levels_on(Date.today)
-
-    studio_senior_ratio_data =
-      band_tallies.reduce({ senior: 0, total: 0 }) do |acc, band_tally|
-        name, count = band_tally
-
-        if name.starts_with?("S") || name.starts_with?("L")
-          acc[:senior] += count
-        end
-        acc[:total] += count
-        acc
-      end
-
-    studio_talent_pool_data = {
-      labels: band_tallies.keys,
-      datasets: [{
-        label: 'Total',
-        backgroundColor: COLORS[0],
-        data: band_tallies.values
-      }]
-    }
-
-    studio_attrition_data = {
-      labels: snapshot.map{|s| s["label"]},
-      datasets: [{
-        label: 'Total',
-        backgroundColor: COLORS[0],
-        data: (snapshot.map do |v|
-          v.dig(accounting_method, datapoints_bearer, "attrition", "value").count
-        end)
-      }]
-    }
-
-    [RacialBackground, CulturalBackground, GenderIdentity].each do |klass|
-      studio_attrition_data[:datasets] << {
-        label: "#{klass.to_s.underscore.humanize} — No Response",
-        backgroundColor: COLORS[1],
-        data: (snapshot.map do |v|
-          v
-            .dig(accounting_method, datapoints_bearer, "attrition", "value")
-            .reduce(0) do |acc, m|
-              acc += m["#{klass.to_s.underscore}_ids"].empty? ? 1 : 0
-            end
-        end),
-        type: 'bar',
-        stack: klass.to_s.underscore,
-      }
-
-      klass.all.each_with_index do |dei_set, index|
-        studio_attrition_data[:datasets] << {
-          label: "#{klass.to_s.underscore.humanize} — #{dei_set.name}",
-          backgroundColor: COLORS[index + 2],
-          data: (snapshot.map do |v|
-            v
-              .dig(accounting_method, datapoints_bearer, "attrition", "value")
-              .reduce(0) do |acc, m|
-                acc +=
-                  m["#{klass.to_s.underscore}_ids"].include?(dei_set.id) ? (1.0 / m["#{klass.to_s.underscore}_ids"].count) : 0
-              end
-          end),
-          type: 'bar',
-          stack: klass.to_s.underscore,
-        }
-      end
-    end
-
-    studio_dev_data = {
-      labels: snapshot.map{|s| s["label"]},
-      datasets: [{
-        label: 'PRs Merged',
-        borderColor: COLORS[0],
-        type: 'line',
-        data: (snapshot.map do |v|
-          v.dig(accounting_method, datapoints_bearer, "prs_merged", "value")
-        end),
-        yAxisID: 'y',
-      }, {
-        label: 'Story Points Closed',
-        borderColor: COLORS[0],
-        type: 'bar',
-        data: (snapshot.map do |v|
-          v.dig(accounting_method, datapoints_bearer, "story_points", "value").to_f
-        end),
-        yAxisID: 'y',
-      }, {
-        label: 'Average Time to Merge PR (Days)',
-        borderColor: COLORS[2],
-        type: 'line',
-        data: (snapshot.map do |v|
-          v.dig(accounting_method, datapoints_bearer, "time_to_merge_pr", "value").to_f
-        end),
-        yAxisID: 'y1',
-        trendlineLinear: {
-          colorMin: COLORS[2],
-          lineStyle: "dotted",
-          width: 1,
-        }
-      }]
-    }
-
     studio_utilization_data = {
       labels: snapshot.map{|s| s["label"]},
       datasets: [{
-        label: 'Utilization Rate (%)',
-        borderColor: COLORS[4],
-        data: (snapshot.map do |v|
-          v.dig(accounting_method, datapoints_bearer, "sellable_hours_sold", "value")
-        end),
-        yAxisID: 'y',
-      }, {
         label: 'Sellable Ratio (%)',
         borderColor: COLORS[10],
         data: (snapshot.map do |v|
@@ -468,29 +321,17 @@ ActiveAdmin.register Studio do
       operator: "greater_than"
     }]
 
-    if current_gradation == "month"
-      all_okrs = [{
-        name: "Health",
-        datapoint: "health",
-        operator: "greater_than"
-      }, *all_okrs]
-    end
-
     render(partial: "show", locals: {
       comments: ActiveAdmin::Comment.where(resource: resource),
       all_gradations: all_gradations,
       default_gradation: default_gradation,
       all_okrs: all_okrs,
       snapshot: snapshot,
-      studio_dev_data: studio_dev_data,
       studio_profitability_data: studio_profitability_data,
       studio_growth_data: studio_growth_data,
-      studio_talent_pool_data: studio_talent_pool_data,
-      studio_senior_ratio_data: studio_senior_ratio_data,
       studio_economics_data: studio_economics_data,
       studio_utilization_data: studio_utilization_data,
-      studio_new_biz_data: studio_new_biz_data,
-      studio_attrition_data: studio_attrition_data,
+      studio_new_biz_data: studio_new_biz_data
     })
   end
 end

@@ -456,40 +456,6 @@ Budget: <%= number_to_currency(budget_high_end) %>
     <tr>
       <th class="col">
         <div class="icon-and-text">
-          <%= image_tag("zenhub-logo-icon.png") %>
-          Zenhub Data
-        </div>
-      </th>
-      <th class="col">TTM PR (Last Month)</th>
-      <th class="col">TTM PR (Last 3 Months)</th>
-      <th class="col">All-time TTM PR</th>
-    </tr>
-  </thead>
-  <tbody>
-    <% @project_tracker.zenhub_workspaces.each_with_index do |zw, index| %>
-      <tr class="<%= index.even? ? "even" : "odd" %>">
-        <td class="col">
-          <%= link_to zw.name, admin_zenhub_workspace_path(zw) %>
-        </td>
-        <td class="col">
-          <%= zw.average_time_to_merge_pr_in_days_during_range(Date.today - 1.month, Date.today) || "?" %> days
-        </td>
-        <td class="col">
-          <%= zw.average_time_to_merge_pr_in_days_during_range(Date.today - 3.months, Date.today) || "?" %> days
-        </td>
-        <td class="col">
-          <%= zw.average_time_to_merge_pr || "?" %> days
-        </td>
-      </tr>
-    <% end %>
-  </tbody>
-</table>
-
-<table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom:20px;">
-  <thead>
-    <tr>
-      <th class="col">
-        <div class="icon-and-text">
           <%= image_tag("forecast-logo-icon.webp") %>
           Hours
         </div>

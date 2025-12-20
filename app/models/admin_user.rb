@@ -5,12 +5,9 @@ class AdminUser < ApplicationRecord
   validate :all_but_latest_full_time_periods_are_closed?
 
   has_many :project_lead_periods, dependent: :delete_all
-  has_many :studio_coordinator_periods, dependent: :delete_all # TODO Remove me
   has_many :creative_lead_periods
   has_many :technical_lead_periods
   has_many :project_safety_representative_periods
-
-  has_many :collective_role_holder_periods
 
   has_many :invoice_trackers, dependent: :nullify
   has_one :forecast_person, class_name: "ForecastPerson", foreign_key: "email", primary_key: "email"
@@ -26,26 +23,7 @@ class AdminUser < ApplicationRecord
   has_many :studio_memberships, dependent: :delete_all
   has_many :studios, through: :studio_memberships
 
-  has_many :admin_user_gender_identities, dependent: :delete_all
-  has_many :gender_identities, through: :admin_user_gender_identities
-
-  has_many :admin_user_communities, dependent: :delete_all
-  has_many :communities, through: :admin_user_communities
-
-  has_many :admin_user_racial_backgrounds, dependent: :delete_all
-  has_many :racial_backgrounds, through: :admin_user_racial_backgrounds
-
-  has_many :admin_user_cultural_backgrounds, dependent: :delete_all
-  has_many :cultural_backgrounds, through: :admin_user_cultural_backgrounds
-
-  has_many :admin_user_interests, dependent: :delete_all
-  has_many :interests, through: :admin_user_interests
-
   has_many :admin_user_salary_windows, dependent: :delete_all
-
-  belongs_to :github_user, class_name: "GithubUser", foreign_key: "github_user_id", optional: true
-  has_many :github_pull_requests, through: :github_user
-  has_many :zenhub_issues, through: :github_user
 
   enum old_skill_tree_level: {
     junior_1: 0,
@@ -237,10 +215,6 @@ class AdminUser < ApplicationRecord
     !AdminUser.active.include?(self)
   end
 
-  # def full_time_periods
-  #   @_full_time_periods ||= super
-  # end
-
   def considered_temporary?
     full_time_periods.map(&:considered_temporary).all?
   end
@@ -251,45 +225,6 @@ class AdminUser < ApplicationRecord
 
   def left_at
     full_time_periods.order("started_at ASC").last.try(:ended_at) || nil
-  end
-
-  def met_associates_skill_band_requirement_at
-    # Find the first review that was above the requirement
-    first_review_above_requirement = archived_reviews.reverse.find do |r|
-      level = Stacks::SkillLevelFinder.find!(r.archived_at, :senior_2)
-      r.total_points >= level[:min_points]
-    end
-
-    if first_review_above_requirement.try(:archived_at)
-      return first_review_above_requirement.archived_at
-    end
-
-    # Check if the old_skill_tree_level counts.
-    if old_skill_tree_level.blank?
-      return nil
-    end
-
-    min_level = Stacks::SkillLevelFinder.find!(start_date, :senior_2)
-    actual_level = Stacks::SkillLevelFinder.find!(start_date, old_skill_tree_level)
-
-    if actual_level[:min_points] >= min_level[:min_points]
-      start_date
-    end
-  end
-
-  def met_associates_psu_requirement_at
-    psu_required = 48
-
-    achieved_at = nil
-    full_time_periods.order("started_at ASC").each do |ftp|
-      next if achieved_at.present?
-      day = ftp.started_at
-      until achieved_at.present? || day == ftp.period_ended_at do
-        achieved_at = day if psu_earned_by(day) == psu_required
-        day += 1.days
-      end
-    end
-    achieved_at
   end
 
   def contiguous_psu_earning_periods_until(date = Date.today)
@@ -379,43 +314,6 @@ class AdminUser < ApplicationRecord
     end
   end
 
-  def met_associates_requirements_at
-    skill_band_met_at = met_associates_skill_band_requirement_at
-    return nil unless skill_band_met_at
-
-    psu_requirement_met_at = met_associates_psu_requirement_at
-    return nil unless psu_requirement_met_at
-
-    [psu_requirement_met_at, skill_band_met_at].max.to_date
-  end
-
-  def time_in_days_since_last_project_lead_role
-    return Float::INFINITY if project_lead_periods.empty?
-    (Date.today - project_lead_periods.map(&:period_ended_at).max).to_i
-  end
-
-  def total_time_in_days_holding_project_lead_role
-    project_lead_periods.reduce(0) do |acc, plp|
-      acc += plp.time_held_in_days
-    end
-  end
-
-  def project_lead_months
-    # TODO: Take into account wether this user is active or not
-    project_lead_periods.reduce(0.0) do |acc, p|
-      acc +=
-        (((p.period_ended_at).to_time - p.period_started_at.to_time)/1.month.second)
-    end
-  end
-
-  def studio_coordinator_months
-    # TODO: Take into account wether this user is active or not
-    studio_coordinator_periods.reduce(0.0) do |acc, scp|
-      acc +=
-        ((scp.period_ended_at.to_time - scp.started_at.to_time)/1.month.second)
-    end
-  end
-
   def current_contributor_type
     latest_full_time_period.try(:contributor_type)
   end
@@ -468,12 +366,6 @@ class AdminUser < ApplicationRecord
       full_time_ranges.reduce([]){|acc, r| [*acc, *(r.to_a & period_range.to_a)]}
 
     overlaps.select do |d|
-      #unless consider_freedom_friday_a_working_day
-      #  last_friday_of_month = Date.new(d.year, d.month, -1)
-      #  last_friday_of_month -= (last_friday_of_month.wday - 5) % 7
-      #  next false if d == last_friday_of_month
-      #end
-
       ftp = full_time_periods.find do |ftp|
         (ftp.started_at <= d) && (ftp.ended_at == nil || ftp.ended_at >= d)
       end
@@ -573,12 +465,6 @@ class AdminUser < ApplicationRecord
     end
 
     data
-  end
-
-  def should_nag_for_dei_data?
-    (racial_backgrounds.length === 0 ||
-     cultural_backgrounds.length === 0 ||
-     gender_identities.length === 0)
   end
 
   def should_nag_for_skill_tree?
@@ -732,11 +618,11 @@ class AdminUser < ApplicationRecord
     syncer.sync!
   end
 
-  def key_metrics_for_period(period, gradation)
-    closed_issues = zenhub_issues.closed.where(closed_at: period.starts_at..period.ends_at)
+  def latest_key_metrics
+    key_metrics_for_period(Stacks::Period.for_gradation(:month).last, "month")
+  end
 
-    prs = github_pull_requests.merged.where(merged_at: period.starts_at..period.ends_at)
-    ttm = prs.average(:time_to_merge)
+  def key_metrics_for_period(period, gradation)
     g3d = Studio.garden3d
     g3d_data = g3d.snapshot[gradation].find{|g| g["label"] == period.label}
 
@@ -744,18 +630,6 @@ class AdminUser < ApplicationRecord
       skill_points: {
         value: skill_tree_points_on_date(period.ends_at),
         unit: :count
-      },
-      story_points: {
-        value: closed_issues.sum(:estimate),
-        unit: :count
-      },
-      prs_merged: {
-        value: prs.count,
-        unit: :count
-      },
-      time_to_merge_pr: {
-        value: ttm.present? ? (ttm / 86400.to_f) : nil,
-        unit: :days
       },
       billable: {
         value: nil,

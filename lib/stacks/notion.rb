@@ -6,8 +6,6 @@ class Stacks::Notion
   base_uri 'https://api.notion.com/v1'
 
   DATABASE_IDS = {
-    TASKS: "438196bedb11412eb8e737bc1bd75b2b",
-    MILESTONES: "16330244ea4b424088a19d5b1987f638",
     LEADS: "4d9b46b8bad542509f144347db37964d"
   }
 

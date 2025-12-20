@@ -128,10 +128,6 @@ class InvoiceTracker < ApplicationRecord
     end
   end
 
-  def flush!
-    update!(qbo_invoice_id: nil, blueprint: nil)
-  end
-
   def forecast_project_ids
     return [] if blueprint.nil?
     blueprint["lines"].values.map{|l| l["forecast_project"]}

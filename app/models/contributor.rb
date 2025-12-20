@@ -17,7 +17,6 @@ class Contributor < ApplicationRecord
   }
 
   def sync_qbo_bills!
-    # ForecastPerson.all.find{|fp| fp.email == "zachary@sanctuary.computer"}.contributor.sync_qbo_bills!
     contributor_payouts.each do |cp|
       cp.sync_qbo_bill!
     end
@@ -51,13 +50,6 @@ class Contributor < ApplicationRecord
 
   def display_name
     forecast_person.email
-  end
-
-  def misc_payments_in_date_range(start_date, end_date)
-    misc_payments
-      .joins({ invoice_tracker: :invoice_pass })
-      .where('invoice_passes.start_of_month >= ? AND invoice_passes.start_of_month <= ?', start_date, end_date)
-      .distinct
   end
 
   def new_deal_balance(ledger_items = new_deal_ledger_items())
@@ -136,7 +128,6 @@ class Contributor < ApplicationRecord
       end
 
       acc[:all] = [*acc[:all], *sorted]
-
 
       total_hours = forecast_person.recorded_allocation_during_range_in_hours(period.starts_at, period.ends_at)
       total_income = (sorted.reduce(0) do |acc, item|

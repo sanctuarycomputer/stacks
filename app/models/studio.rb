@@ -18,44 +18,12 @@ class Studio < ApplicationRecord
     collective: 3,
   }
 
-  HEALTH = {
-    0 => {
-      health: :failing,
-      value: "🚒 Emergency, Break Glass",
-      hint: "<a href='https://www.notion.so/garden3d/The-Operating-Modes-of-garden3d-6eefbe5c5f5c463bb5e4679f977a46fa?pvs=4#002d71afc74c468381b5f300b81921fb' target='_blank'>Guidance ↗</a>"
-    },
-    1 => {
-      health: :at_risk,
-      value: "😾 White Knuckling",
-      hint: "<a href='https://www.notion.so/garden3d/The-Operating-Modes-of-garden3d-6eefbe5c5f5c463bb5e4679f977a46fa?pvs=4#82d23c1330a240f7aff1a7926efc6e6d' target='_blank'>Guidance ↗</a>"
-    },
-    2 => {
-      health: :at_risk,
-      value: "😾 White Knuckling",
-      hint: "<a href='https://www.notion.so/garden3d/The-Operating-Modes-of-garden3d-6eefbe5c5f5c463bb5e4679f977a46fa?pvs=4#82d23c1330a240f7aff1a7926efc6e6d' target='_blank'>Guidance ↗</a>"
-    },
-    3 => {
-      health: :healthy,
-      value: "🐻‍❄️ Solid Ice",
-      hint: "<a href='https://www.notion.so/garden3d/The-Operating-Modes-of-garden3d-6eefbe5c5f5c463bb5e4679f977a46fa?pvs=4#4472c136ff994809b135de8dc7e2a224' target='_blank'>Guidance ↗</a>"
-    },
-    4 => {
-      health: :exceptional,
-      value: "🏝️ Chillin' Island",
-      hint: "<a href='https://www.notion.so/garden3d/The-Operating-Modes-of-garden3d-6eefbe5c5f5c463bb5e4679f977a46fa?pvs=4#93b1857723fb44a7a9c721cfa597dd6b' target='_blank'>Guidance ↗</a>"
-    }
-  }
-
   def ytd_snapshot
     (snapshot["year"].find{|p| p["label"] == "YTD"} || {})
   end
 
   def last_year_snapshot
     (snapshot["year"].find{|p| p["label"] == (Date.today.year - 1).to_s} || {})
-  end
-
-  def health
-    (snapshot["month"] || [{}]).last.dig("cash", "okrs", "Health") || {}
   end
 
   def net_revenue(accounting_method = "cash", date = Date.today)
@@ -99,6 +67,7 @@ class Studio < ApplicationRecord
       }) do |acc, gradation|
         periods = Stacks::Period.for_gradation(gradation)
 
+
         utilization_by_period =
           periods.reduce({}) do |acc, period|
             acc[period] = utilization_for_period(period, all_forecast_people)
@@ -112,7 +81,7 @@ class Studio < ApplicationRecord
             acc
           end
 
-        acc[gradation] = Parallel.map(periods, in_threads: 6) do |period|
+        acc[gradation] = Parallel.map(periods, in_threads: 15) do |period|
           prev_period = periods[0] == period ? nil : periods[periods.index(period) - 1]
 
           d = {
@@ -138,7 +107,6 @@ class Studio < ApplicationRecord
               g3d_utilization_by_period[period],
               g3d_utilization_by_period[prev_period],
             )
-
             d[:cash][:datapoints] = cash_base_datapoints
             d[:cash][:okrs] = self.okrs_for_period(period, d[:cash][:datapoints], all_okrs)
             d[:cash][:datapoints_excluding_reinvestment] = cash_datapoints_excluding_reinvestment
@@ -190,69 +158,6 @@ class Studio < ApplicationRecord
           d
         end
         acc[:finished_at] = DateTime.now.iso8601
-        acc
-      end
-
-    # HACK: Here we use sellable_hours_sold to bolt on
-    # another faux OKR that gives an aggregate studio health.
-    # We need to do it in this context because it has to look
-    # back at multiple periods
-    snapshot =
-      [:month].reduce(snapshot) do |acc, gradation|
-        acc[gradation] = snapshot[gradation].map do |d|
-          # We need at least 4 periods to make this datapoint
-          idx = snapshot[gradation].index(d)
-          if idx < 3
-            d[:cash][:okrs]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
-            d[:accrual][:okrs]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
-
-            if d[:cash][:okrs_excluding_reinvestment]
-              d[:cash][:okrs_excluding_reinvestment]["Health"] = d[:cash][:okrs]["Health"]
-            end
-            if d[:accrual][:okrs_excluding_reinvestment]
-              d[:accrual][:okrs_excluding_reinvestment]["Health"] = d[:accrual][:okrs]["Health"]
-            end
-
-            next d
-          end
-
-          # We need to ensure those periods actually have sellable_hours_sold data
-          prev_four_periods = [d, snapshot[gradation][idx - 1], snapshot[gradation][idx - 2], snapshot[gradation][idx - 3]]
-          unless prev_four_periods.map{|d| d.dig(:cash, :okrs, "Sellable Hours Sold", :value).present? && d.dig(:accrual, :okrs, "Sellable Hours Sold", :value).present? }.all?
-            d[:cash][:okrs]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
-            d[:accrual][:okrs]["Health"] = {:health=>nil, :surplus=>0, :unit=>:display, :value=>nil, :hint=>""}
-
-            if d[:cash][:okrs_excluding_reinvestment]
-              d[:cash][:okrs_excluding_reinvestment]["Health"] = d[:cash][:okrs]["Health"]
-            end
-            if d[:accrual][:okrs_excluding_reinvestment]
-              d[:accrual][:okrs_excluding_reinvestment]["Health"] = d[:accrual][:okrs]["Health"]
-            end
-            next d
-          end
-
-          health = prev_four_periods
-            .map{|d| d.dig(:cash, :okrs, "Sellable Hours Sold", :health) }
-            .count{|v| [:exceptional, :healthy].include?(v) }
-
-          d[:cash][:okrs]["Health"] = d[:accrual][:okrs]["Health"] = {
-            "hint"=>HEALTH[health][:hint],
-            "unit"=>"display",
-            "value"=>HEALTH[health][:value],
-            "health"=>HEALTH[health][:health],
-            "target"=>4,
-            "surplus"=>1
-          }
-
-          if d[:cash][:okrs_excluding_reinvestment]
-            d[:cash][:okrs_excluding_reinvestment]["Health"] = d[:cash][:okrs]["Health"]
-          end
-          if d[:accrual][:okrs_excluding_reinvestment]
-            d[:accrual][:okrs_excluding_reinvestment]["Health"] = d[:accrual][:okrs]["Health"]
-          end
-
-          d
-        end
         acc
       end
 
@@ -331,8 +236,6 @@ class Studio < ApplicationRecord
       "#{datapoints[:billable_hours][:value].try(:round, 0)} hrs sold of #{datapoints[:sellable_hours][:value].try(:round, 0)} sellable hrs"
     when "free_hours"
       "#{datapoints[:free_hours_count][:value].try(:round, 0)} free hrs of #{datapoints[:sellable_hours][:value].try(:round, 0)} sellable hrs"
-    when "cost_per_sellable_hour"
-      "#{ActionController::Base.helpers.number_to_currency(datapoints[:cogs][:value])} spent over #{datapoints[:sellable_hours][:value]} sellable hrs"
     when "profit_margin"
       "#{ActionController::Base.helpers.number_to_currency(datapoints[:cogs][:value])} spent, #{ActionController::Base.helpers.number_to_currency(datapoints[:revenue][:value])} earnt"
     when "revenue_growth"
@@ -545,8 +448,6 @@ class Studio < ApplicationRecord
       prev_leads_recieved = leads_recieved_in_period(preloaded_new_biz_leads, prev_period)
     end
 
-    leaving_members =
-      studio_members_that_left_during_period(period)
     all_projects = project_trackers_with_recorded_time_in_period(period, preloaded_studios)
 
     all_proposals = sent_proposals_settled_in_period(preloaded_new_biz_leads, period)
@@ -560,16 +461,6 @@ class Studio < ApplicationRecord
       prev_cogs = prev_cogs_scenarios[idx] if prev_cogs_scenarios.present?
 
       data = {
-        attrition: {
-          value: leaving_members.map do |m|
-            {
-              gender_identity_ids: m.gender_identity_ids,
-              cultural_background_ids: m.cultural_background_ids,
-              racial_background_ids: m.racial_background_ids,
-            }
-          end,
-          unit: :compound
-        },
         revenue: {
           value: cogs[:revenue],
           unit: :usd,
@@ -714,36 +605,10 @@ class Studio < ApplicationRecord
           Stacks::Utils.weighted_average(v[:billable].map{|k, v| [k.to_f, v]})
       end
 
-      data[:cost_per_sellable_hour] = { unit: :usd, value: nil }
-      unless v.nil?
-        data[:cost_per_sellable_hour][:value] = cogs[:cogs] / v[:sellable].to_f
-      end
-
       data[:actual_cost_per_hour_sold] = { unit: :usd, value: nil }
       unless v.nil?
         total_billable = v[:billable].values.reduce(&:+) || 0
         data[:actual_cost_per_hour_sold][:value] = cogs[:cogs] / total_billable
-      end
-
-      data[:story_points] = { unit: :count, value: nil }
-      data[:story_points_per_billable_week] = { unit: :count, value: nil }
-      data[:cost_per_story_point] = { unit: :usd, value: nil }
-      data[:prs_merged] = { unit: :count, value: nil }
-      data[:time_to_merge_pr] = { unit: :days, value: nil }
-      if is_sanctuary?
-        closed_issues = ZenhubIssue.closed.where(closed_at: period.starts_at..period.ends_at)
-        data[:story_points][:value] = closed_issues.sum(:estimate) || 0
-        data[:cost_per_story_point][:value] = ((data[:cogs][:value] || 0) / data[:story_points][:value])
-
-        unless v.nil?
-          total_billable = v[:billable].values.reduce(&:+) || 0
-          data[:story_points_per_billable_week][:value] = (data[:story_points][:value] / (total_billable / 40)) if total_billable > 0
-        end
-
-        prs = GithubPullRequest.merged.where(merged_at: period.starts_at..period.ends_at)
-        data[:prs_merged][:value] = prs.count
-        ttm = prs.average(:time_to_merge)
-        (data[:time_to_merge_pr][:value] = ttm / 86400.to_f) if ttm.present?
       end
 
       data

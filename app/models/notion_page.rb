@@ -1,31 +1,12 @@
 class NotionPage < ApplicationRecord
   acts_as_paranoid
 
-  scope :milestones, -> {
-    where(
-      notion_parent_type: "database_id",
-      notion_parent_id: Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:MILESTONES])
-    )
-  }
-
   scope :lead, -> {
     where(
       notion_parent_type: "database_id",
       notion_parent_id: Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:LEADS])
     )
   }
-
-  scope :biz_plan_2024_milestones, -> {
-    milestones.where("page_title LIKE ?", "In 2024,%")
-  }
-
-  def as_base
-    Stacks::Notion::Base.new(self)
-  end
-
-  def as_task
-    Stacks::Notion::Task.new(self)
-  end
 
   def as_lead
     Stacks::Notion::Lead.new(self)
@@ -44,31 +25,9 @@ class NotionPage < ApplicationRecord
     page_title
   end
 
-  def self.where_page_title(name)
-    NotionPage.where(page_title: name)
-  end
-
-  def self.where_status(status)
-    NotionPage.find_by_sql("
-      SELECT *
-      FROM notion_pages
-      WHERE data -> 'properties' -> 'Status' -> 'select' ->> 'name' = '#{status}'
-    ")
-  end
-
   def get_prop(name)
     prop_type = data.dig("properties", name, "type")
     data.dig("properties", name, prop_type)
-  end
-
-  def status
-    if notion_parent_id == Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:MILESTONES])
-      data.dig("properties", "✳️ Status (New)", "status", "name")
-    elsif Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:TASKS])
-      data.dig("properties", "✳️ Status 🚦", "status", "name")
-    else
-      data.dig("properties", "Status", "select", "name")
-    end
   end
 
   def created_at

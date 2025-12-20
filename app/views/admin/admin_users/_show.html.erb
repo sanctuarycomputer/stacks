@@ -8,146 +8,17 @@
   <h1>
     <%= (resource.info || {}).dig("name") %>
   </h1>
-  <div class="flex justify-center">
-    <div class="p2 border-right">
-      <h2 class="m0"><%= resource.skill_tree_level_without_salary %></h2>
-      <p>Skill Tree Level</p>
-    </div>
-    <div class="p2 border-right">
-      <h2 class="m0"><%= resource.psu_earned_by || "?" %></h2>
-      <p>Profit Share Units</p>
-    </div>
-    <div class="p2">
-      <h2 class="m0"><%= resource.expected_utilization * 100 %>%</h2>
-      <p>Expected Utilization</p>
-    <div>
-    </div>
-  </div>
 </figure>
 
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
-    <div class="module-header">
-      <p>Skill Tree</p>
-    </div>
-    <div class="module-body">
-      <% if data[:datasets].any? %>
-        <canvas id="skill-chart" width="500" height="500"></canvas>
+    <div class="module-body factoid-parent">
+      <% if resource.forecast_person.present? %>
+        <p style="margin-bottom: 6px;">💸 <strong>Note!</strong> This user's payments ledger is available here:</p>
+        <%= link_to "Payments Ledger ↗", admin_contributor_path(resource.forecast_person.contributor) %>
       <% else %>
-        <p>No Reviews (yet)</p>
+        <p>🚧 <strong>Important!</strong> This user has no Harvest Forecast user associated. Please add them in Harvest Forecast (with the same email address) and then their payment ledger will show here.</p>
       <% end %>
     </div>
   </div>
-  <div class="dashboard-module">
-    <div class="module-header">
-      <p>Overview</p>
-    </div>
-    <div class="module-body">
-      <% if resource.met_associates_requirements_at.present? %>
-        <p><strong>Met Associates Requirements At:</strong> <%= resource.met_associates_requirements_at.strftime("%B %d, %Y") %></p>
-      <% end %>
-      <p><strong>Projected PSU by EOY:</strong> <%= resource.projected_psu_by_eoy %></p>
-    </div>
-  </div>
 </div>
-
-<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
-  <div id="titlebar_left">
-    <h2 id="page_title">🏓 Studio Memberships</h2>
-  </div>
-  <div id="titlebar_right">
-    <div class="action_items">
-      <%= link_to "Studio Memberships ↗", admin_admin_user_studio_memberships_path(resource) %>
-    </div>
-  </div>
-</div>
-<table border="0" cellspacing="0" cellpadding="0" class="index_table index mb2">
-  <thead>
-    <tr>
-      <th class="col">Studio</th>
-      <th class="col">Current?</th>
-      <th class="col">Started At</th>
-      <th class="col text-right">Ended At</th>
-    </tr>
-  </thead>
-  <tbody>
-    <% resource.studio_memberships.each_with_index do |sm, index| %>
-      <tr class="<%= index.even? ? "even" : "odd" %>">
-        <td class="col">
-          <%= link_to sm.studio.name, admin_studio_path(sm.studio) %>
-        </td>
-        <td class="col">
-          <% if sm.current? %>
-            <span class="status_tag yes">Yes</span>
-          <% else %>
-            <span class="status_tag no">No</span>
-          <% end %>
-        </td>
-        <td class="col">
-          <%= sm.period_started_at.strftime("%B %d, %Y") %>
-        </td>
-        <td class="col text-right">
-          <%= sm.period_ended_at.strftime("%B %d, %Y") %>
-        </td>
-      </tr>
-    <% end %>
-  </tbody>
-</table>
-
-<!-- Profit Share -->
-
-<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
-  <div id="titlebar_left">
-    <h2 id="page_title">🤝 Profit Shares</h2>
-  </div>
-</div>
-<table border="0" cellspacing="0" cellpadding="0" class="index_table index mb2">
-  <thead>
-    <tr>
-      <th class="col">Profit Shares</th>
-      <th class="col text-center">PSU</th>
-      <th class="col text-center">Value</th>
-      <th class="col text-center">Pre-spent</th>
-      <th class="col text-right">Payout</th>
-    </tr>
-  </thead>
-  <tbody>
-    <% resource.profit_shares.each_with_index do |share, index| %>
-      <tr class="<%= index.even? ? "even" : "odd" %>">
-        <td class="col">
-          <%= share[:year] %>
-        </td>
-        <td class="col text-center">
-          <%= share[:tenured_psu_earnt] %>
-        </td>
-        <td class="col text-center">
-          <%= number_to_currency(share[:psu_value]) %>
-        </td>
-        <td class="col text-center">
-          <%= number_to_currency(share[:pre_spent_profit_share]) %>
-        </td>
-        <td class="col text-right">
-          <%= number_to_currency(share[:total_payout]) %>
-        </td>
-      </tr>
-    <% end %>
-  </tbody>
-</table>
-
-<script>
-  var ctx = document.getElementById('skill-chart');
-  if (ctx) {
-    new Chart(document.getElementById('skill-chart'), {
-      type: 'radar',
-      data: <%= data.to_json.html_safe %>,
-      options: {
-        scales: {
-          r: {
-            suggestedMin: 0,
-            suggestedMax:58
-          }
-        },
-      }
-    });
-  }
-</script>

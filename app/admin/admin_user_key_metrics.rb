@@ -27,22 +27,6 @@ ActiveAdmin.register_page "Admin User Key Metrics" do
     skill_data = {
       labels: key_metrics_by_period.keys.map(&:label),
       datasets: [{
-        label: 'PRs Merged',
-        borderColor: COLORS[0],
-        type: 'line',
-        data: (key_metrics_by_period.values.map do |v|
-          v[:prs_merged][:value]
-        end),
-        yAxisID: 'y',
-      }, {
-        label: 'Story Points Closed',
-        borderColor: COLORS[0],
-        type: 'bar',
-        data: (key_metrics_by_period.values.map do |v|
-          v[:story_points][:value]
-        end),
-        yAxisID: 'y',
-      }, {
         label: 'Skill Band Points',
         borderColor: COLORS[1],
         type: 'line',
@@ -50,19 +34,6 @@ ActiveAdmin.register_page "Admin User Key Metrics" do
           v[:skill_points][:value]
         end),
         yAxisID: 'y1',
-      }, {
-        label: 'Average Time to Merge PR (Days)',
-        borderColor: COLORS[2],
-        type: 'line',
-        data: (key_metrics_by_period.values.map do |v|
-          v[:time_to_merge_pr][:value].to_f.round(2)
-        end),
-        yAxisID: 'y2',
-        trendlineLinear: {
-          colorMin: COLORS[2],
-          lineStyle: "dotted",
-          width: 1,
-        }
       }]
     }
 
