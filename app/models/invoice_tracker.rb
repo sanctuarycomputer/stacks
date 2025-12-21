@@ -300,7 +300,7 @@ class InvoiceTracker < ApplicationRecord
         end
 
         individual_contributor = ForecastPerson.find(metadata["forecast_person"])
-        hourly_rate_of_pay_override = Stacks::DailyFinancialSnapshotter.subcontractor_hourly_cost(individual_contributor, forecast_project)
+        hourly_rate_of_pay_override = forecast_project.hourly_rate_override_for_email_address(individual_contributor.email)
 
         if individual_contributor.present?
           payouts[individual_contributor] ||= {
@@ -310,7 +310,7 @@ class InvoiceTracker < ApplicationRecord
               IndividualContributor: []
             }
           }
-          if hourly_rate_of_pay_override > 0
+          if hourly_rate_of_pay_override.present?
             amount = working_hours * hourly_rate_of_pay_override
             payouts[individual_contributor][:blueprint][:IndividualContributor] << {
               qbo_line_item: line_item,

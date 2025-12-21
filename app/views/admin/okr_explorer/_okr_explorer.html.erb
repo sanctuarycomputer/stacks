@@ -99,7 +99,7 @@ function update(a, b) {
 
               <div>
                 <span><%= project_tracker.profit_margin.round(1) %>%</span>
-                <p class="okr_hint" style="margin-bottom:0px;padding-top:0px !important"><%= number_to_currency(project_tracker.spend) %> earnt, <%= number_to_currency(project_tracker.estimated_cost("cash")) %> COSR</p>
+                <p class="okr_hint" style="margin-bottom:0px;padding-top:0px !important"><%= number_to_currency(project_tracker.spend) %> earnt, <%= number_to_currency(project_tracker.estimated_cost) %> Cost</p>
               </div>
 
             </td>

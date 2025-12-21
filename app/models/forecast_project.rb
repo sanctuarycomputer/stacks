@@ -15,6 +15,20 @@ class ForecastProject < ApplicationRecord
     order(Arel.sql("data->>'archived'").asc)
   }
 
+  def hourly_rate_override_for_email_address(email)
+    return nil unless notes.present?
+    # It's possible to record overrides to a particular individual's
+    # (or contractor's) hourly rates in Harvest Forecast by adding a note
+    # to the Forecast project in the form:
+    # "contractor-name@contractor-domain.com:150p/h"
+    regexp = /^([^:]+):\$?([0-9\.]+)p\/h/
+    matches = notes.scan(regexp)
+    match = matches.find do |match|
+      match[0].downcase == email.downcase
+    end
+    hourly_rate_of_pay_override = match[1].to_f if match.present?
+  end
+
   def self.candidates_for_association_with_project_tracker(project_tracker)
     forecast_codes_for_other_trackers = self.forecast_codes_already_associated_to_project_tracker(project_tracker.id)
     forecast_codes_for_this_tracker = project_tracker.forecast_projects.map(&:code)

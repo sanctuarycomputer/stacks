@@ -85,12 +85,6 @@ class AdminUser < ApplicationRecord
     end
   end
 
-  def approximate_cost_per_hour_before_studio_expenses
-    date = Date.today.beginning_of_week
-    hours_per_day = 8
-    cost_of_employment_on_date(date) / hours_per_day
-  end
-
   def is_employed_on_date?(date)
     full_time_period_at(date).present?
   end
@@ -322,10 +316,6 @@ class AdminUser < ApplicationRecord
     latest_full_time_period.try(:expected_utilization) || 0.8
   end
 
-  def expected_utilization_at(date = Date.today)
-    full_time_period_at(date).try(:expected_utilization) || 0
-  end
-
   def full_time_period_at(date = Date.today)
     # If the latest_full_time_period is not ended, and the date is in the future
     # assume the individual will not quit, and their FTP won't change (so we can
@@ -431,51 +421,6 @@ class AdminUser < ApplicationRecord
     end
     d[:total] = d[:salary] + d[:contract]
     d
-  end
-
-  def profit_shares
-    year = 2021
-    data = []
-
-    while year <= Date.today.year
-      profit_share_pass =
-        ProfitSharePass
-          .finalized
-          .find { |psp|
-            (Date.parse(psp.snapshot["finalized_at"]).year == year)
-          }
-      unless profit_share_pass.present?
-        year += 1
-        next
-      end
-      psu_value = profit_share_pass.make_scenario.actual_value_per_psu
-      psu_earnt = psu_earned_by(Date.new(year, 12, 15))
-      psu_earnt = 0 if psu_earnt == nil
-      pre_spent_profit_share = pre_profit_share_spent_during(year)
-
-      data << {
-        year: year,
-        psu_value: psu_value,
-        psu_earnt: psu_earnt,
-        pre_spent_profit_share: pre_spent_profit_share,
-        total_payout: (psu_value * psu_earnt) - pre_spent_profit_share
-      }
-
-      year += 1
-    end
-
-    data
-  end
-
-  def should_nag_for_skill_tree?
-    system = System.instance
-    if archived_reviews.any?
-      (Date.today - archived_reviews.first.archived_at.to_date).to_i >
-        system.expected_skill_tree_cadence_days
-    elsif latest_full_time_period.present?
-      (Date.today - latest_full_time_period.started_at).to_i >
-        system.expected_skill_tree_cadence_days
-    end
   end
 
   def skill_tree_level_without_salary

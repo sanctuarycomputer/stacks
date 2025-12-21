@@ -23,6 +23,10 @@ class Stacks::Quickbooks
       Retriable.retriable(tries: 5, base_interval: 1, multiplier: 2, max_interval: 10) do
         sync_all_vendors!
       end
+
+      Retriable.retriable(tries: 5, base_interval: 1, multiplier: 2, max_interval: 10) do
+        sync_all_bills!
+      end
     end
 
     def sync_all_invoices!
@@ -210,17 +214,6 @@ class Stacks::Quickbooks
       invoice_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
       invoice_service.access_token = access_token
       invoice_service.fetch_by_id(id)
-    end
-
-    def fetch_invoices_by_memo(memo)
-      access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
-
-      invoice_service = Quickbooks::Service::Invoice.new
-      invoice_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
-      invoice_service.access_token = access_token
-
-      qbo_invoices = invoice_service.all
-      qbo_invoices.select{|i| i.private_note == memo}
     end
 
     def fetch_profit_and_loss_report_for_range(start_of_range, end_of_range, accounting_method = "Cash")

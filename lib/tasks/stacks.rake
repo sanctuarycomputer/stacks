@@ -69,7 +69,6 @@ namespace :stacks do
       Parallel.map(Stacks::Notion::DATABASE_IDS.values, in_threads: 3) do |db_id|
         notion.sync_database(db_id)
       end
-      Stacks::Automator.send_stale_task_digests_every_thursday
     rescue => e
       system_task.mark_as_error(e)
     else
@@ -187,8 +186,6 @@ namespace :stacks do
       # Finally, do client_services, which require data from internal studios
       # (and garden3d hides reinvestment data)
       Parallel.map(Studio.client_services, in_threads: 3) { |s| s.generate_snapshot! }
-      # Now, generate project snapshots
-      Stacks::DailyFinancialSnapshotter.snapshot_all!
 
       puts "~~~> DOING MISC"
       Stacks::Notifications.make_notifications!

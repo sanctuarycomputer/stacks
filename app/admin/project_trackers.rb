@@ -115,7 +115,7 @@ ActiveAdmin.register ProjectTracker do
     column :spend
     column :income
     column :estimated_cost do |pt|
-      pt.estimated_cost("cash")
+      pt.estimated_cost
     end
     column :profit
     column :profit_margin
@@ -382,12 +382,12 @@ ActiveAdmin.register ProjectTracker do
       })
     end
 
-    if resource.snapshot[accounting_method].try(:dig, "cosr")
+    if resource.snapshot["cost"]
       burnup_data[:data][:datasets].push({
-        borderColor: Stacks::Utils::COLORS[2], # color of dots
-        backgroundColor: Stacks::Utils::COLORS[8], # color of line
-        label: "Cost of Services Rendered (COSR)",
-        data: resource.snapshot[accounting_method].try(:dig, "cosr"),
+        backgroundColor: Stacks::Utils::COLORS[2], # color of dots
+        borderColor: Stacks::Utils::COLORS[8], # color of line
+        label: "Cost",
+        data: resource.snapshot["cost"],
         pointRadius: 1
       })
     end

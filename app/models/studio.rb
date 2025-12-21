@@ -2,9 +2,6 @@ class Studio < ApplicationRecord
   has_many :studio_memberships, dependent: :delete_all
   has_many :admin_users, through: :studio_memberships, dependent: :delete_all
 
-  has_many :studio_coordinator_periods, dependent: :delete_all
-  accepts_nested_attributes_for :studio_coordinator_periods, allow_destroy: true
-
   has_many :mailing_lists, dependent: :destroy
   has_many :okr_period_studios, dependent: :delete_all
 
@@ -31,15 +28,7 @@ class Studio < ApplicationRecord
     if date.year != Date.today.year
       rel_snapshot = snapshot["year"].find{|s| s["label"] == "#{date.year}"}
     end
-
     rel_snapshot.dig(accounting_method, "datapoints", "net_revenue", "value").try(:to_f)
-  end
-
-  def current_studio_coordinators
-    studio_coordinator_periods
-      .select{|p| p.started_at <= Date.today && p.period_ended_at >= Date.today}
-      .map(&:admin_user)
-      .select(&:active?)
   end
 
   def forecast_people(all_studios = Studio.all)
@@ -66,7 +55,6 @@ class Studio < ApplicationRecord
         started_at: DateTime.now.iso8601,
       }) do |acc, gradation|
         periods = Stacks::Period.for_gradation(gradation)
-
 
         utilization_by_period =
           periods.reduce({}) do |acc, period|
@@ -263,17 +251,6 @@ class Studio < ApplicationRecord
     )
   end
 
-  def non_core_forecast_people_involved_with_studio(all_studios = Studio.all)
-    @_non_core_forecast_people_involved_with_studio ||= forecast_people(all_studios).select do |fp|
-      fp.admin_user.nil?
-    end
-  end
-
-  def forecast_people_involved_with_studio_in_period(period, all_studios = Studio.all)
-    core_members_involved_during_period = core_members_active_during_range(period.starts_at, period.ends_at)
-    [*core_members_involved_during_period.map(&:forecast_person), *non_core_forecast_people_involved_with_studio(all_studios)].compact
-  end
-
   def project_trackers_with_recorded_time_in_period(period, all_studios = Studio.all)
     assignments =
       ForecastAssignment
@@ -284,8 +261,9 @@ class Studio < ApplicationRecord
           'end_date >= ? AND start_date <= ? AND person_id in (?)',
           period.starts_at,
           period.ends_at,
-          forecast_people_involved_with_studio_in_period(period, all_studios).map(&:forecast_id)
+          forecast_people(all_studios).map(&:forecast_id)
         )
+
     forecast_projects = assignments.map(&:forecast_project).uniq.reject do |fp|
       fp.is_internal?
     end
@@ -319,21 +297,6 @@ class Studio < ApplicationRecord
     @all_studios ||= Studio.all
   end
 
-  def skill_levels_on(date)
-    archetypal_levels = Stacks::SkillLevelFinder.find_all!(date)
-
-    bands = archetypal_levels.reduce({}) do |acc, archetypal_level|
-      acc[archetypal_level[:name]] = 0
-      acc
-    end
-
-    core_members_active_on(date).reduce(bands) do |acc, member|
-      member_level = member.skill_tree_level_on_date(date)
-      acc[member_level[:name]] += 1
-      acc
-    end
-  end
-
   def core_members_active_on(date)
     if is_garden3d?
       AdminUser
@@ -356,50 +319,6 @@ class Studio < ApplicationRecord
           coalesce(studio_memberships.ended_at, 'infinity') >= :date AND
           studio_memberships.studio_id = :studio_id
         ", { date: date, studio_id: self.id }).distinct
-    end
-  end
-
-  def core_members_active_during_range(start_range, end_range)
-    if is_garden3d?
-      AdminUser
-        .includes(:forecast_person)
-        .joins(:full_time_periods)
-        .where("
-          coalesce(full_time_periods.ended_at, 'infinity') >= :start_range AND
-          full_time_periods.started_at <= :end_range AND
-          full_time_periods.contributor_type IN (0, 1)
-        ", { start_range: start_range, end_range: end_range }).distinct
-    else
-      admin_users
-        .includes(:forecast_person)
-        .joins(:full_time_periods)
-        .where("
-          coalesce(full_time_periods.ended_at, 'infinity') >= :start_range AND
-          full_time_periods.started_at <= :end_range AND
-          full_time_periods.contributor_type IN (0, 1) AND
-          coalesce(studio_memberships.ended_at, 'infinity') >= :start_range AND
-          studio_memberships.started_at <= :end_range AND
-          studio_memberships.studio_id = :studio_id AND
-          full_time_periods.started_at <= coalesce(studio_memberships.ended_at, 'infinity') AND
-          studio_memberships.started_at <= coalesce(full_time_periods.ended_at, 'infinity')
-        ", { start_range: start_range, end_range: end_range, studio_id: self.id }).distinct
-    end
-  end
-
-  def studio_members_that_left_during_period(period)
-    studio_members_at_start_of_period = core_members_active_on(period.starts_at)
-    studio_members_at_end_of_period = core_members_active_on(period.ends_at)
-
-    studio_members_at_start_of_period.reject do |sm|
-      studio_members_at_end_of_period.include?(sm)
-    end
-  end
-
-  def all_mailing_lists
-    if is_garden3d?
-      MailingList.all
-    else
-      mailing_lists
     end
   end
 
@@ -603,6 +522,11 @@ class Studio < ApplicationRecord
       unless v.nil?
         data[:average_hourly_rate][:value] =
           Stacks::Utils.weighted_average(v[:billable].map{|k, v| [k.to_f, v]})
+      end
+
+      data[:cost_per_sellable_hour] = { unit: :usd, value: nil }
+      unless v.nil?
+        data[:cost_per_sellable_hour][:value] = cogs[:cogs] / v[:sellable].to_f
       end
 
       data[:actual_cost_per_hour_sold] = { unit: :usd, value: nil }

@@ -412,31 +412,5 @@ class Stacks::Calendar
         return { success: false, error: e.message, event_id: root_event[:event_id] }
       end
     end
-
-    def find_orphaned_events
-      matching_events = []
-
-      puts "Searching all calendars in workspace for orphaned events..."
-
-      search_all_calendars do |event, event_data|
-        if event_data[:likely_orphaned]
-          matching_events << event_data
-        end
-      end
-
-      group_events_by_recurring_series(matching_events, "Orphaned events")
-    end
-
-    def cancel_orphaned_events
-      orphans = find_orphaned_events
-      orphans[:recurring_groups].each do |base_id, group|
-        if group[:root_event]
-          binding.pry
-          next if ["Gardenxrs Monthly Meeting", "Future Chats"].include?(group[:root_event][:event].summary)
-          cancel_recurring_event(group[:root_event])
-        end
-      end
-
-    end
   end
 end

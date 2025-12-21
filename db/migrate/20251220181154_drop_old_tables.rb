@@ -28,5 +28,6 @@ class DropOldTables < ActiveRecord::Migration[6.1]
     drop_table :zenhub_workspace_issue_connections
     drop_table :zenhub_workspaces
 
+    drop_table :forecast_assignment_daily_financial_snapshots
   end
 end
