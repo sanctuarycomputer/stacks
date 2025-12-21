@@ -1,0 +1,31 @@
+<% monthly_cosr.to_a.reverse.to_a.each do |date, cosr| %>
+  <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+    <div id="titlebar_left">
+      <h2 id="page_title"><%= date.strftime("%B %Y") %></h2>
+    </div>
+  </div>
+
+  <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+    <thead>
+      <tr>
+        <th class="col">Date</th>
+        <th class="col">Type</th>
+        <th class="col text-right">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% cosr.each_with_index do |(forecast_person, cosr_data), index| %>
+        <tr class="<%= index.even? ? "even" : "odd" %>">
+          <td class="col"><%= link_to forecast_person.email, admin_contributor_path(forecast_person.contributor) %></td>
+          <td class="col"><%= cosr_data[:type].to_s.humanize %></td>
+          <td class="col text-right"><%= number_to_currency(cosr_data[:amount]) %></td>
+        </tr>
+      <% end %>
+      <tr>
+        <td><strong>Total</strong></td>
+        <td></td>
+        <td class="text-right"><%= number_to_currency(cosr.values.sum { |cosr_data| cosr_data[:amount] }) %></td>
+      </tr>
+    </tbody>
+  </table>
+<% end %>

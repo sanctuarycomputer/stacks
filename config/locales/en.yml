@@ -37,7 +37,6 @@ en:
     dei_explorer: "DEI Explorer"
     okr_explorer: "OKR Explorer"
     data_integrity_explorer: "Data Integrity Explorer"
-    project_cosr_explorer: "Cost of Services Rendered (COSR) Explorer"
     new_biz_explorer: "New Biz Explorer"
     finalization_explorer: "Finalization Explorer"
     filters:

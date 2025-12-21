@@ -41,6 +41,10 @@ class ContributorPayout < ApplicationRecord
     end
   end
 
+  def accrual_date
+    invoice_tracker.invoice_pass.start_of_month.end_of_month
+  end
+
   def sync_qbo_bill!
     return unless contributor.qbo_vendor.present?
 

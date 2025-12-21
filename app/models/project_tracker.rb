@@ -30,10 +30,6 @@ class ProjectTracker < ApplicationRecord
   has_many :forecast_projects, through: :project_tracker_forecast_projects
   accepts_nested_attributes_for :project_tracker_forecast_projects, allow_destroy: true
 
-  has_many :project_tracker_zenhub_workspaces, dependent: :delete_all
-  has_many :zenhub_workspaces, through: :project_tracker_zenhub_workspaces
-  accepts_nested_attributes_for :project_tracker_zenhub_workspaces, allow_destroy: true
-
   has_many :forecast_assignments, through: :forecast_projects
 
   belongs_to :runn_project, class_name: "RunnProject", foreign_key: "runn_project_id", primary_key: "runn_id", optional: true
@@ -204,12 +200,9 @@ class ProjectTracker < ApplicationRecord
       hours_total: 0,
       spend_total: 0,
     }) do |acc, date|
-      hours_by_studio = self.total_hours_during_range_by_studio(preloaded_studios, date, date)
-      hours = hours_by_studio.values.reduce(:+) || 0
-
       acc[:hours].push({
         x: date.iso8601,
-        y: acc[:hours_total] += hours
+        y: acc[:hours_total] += self.total_hours_during_range(date, date)
       })
 
       acc[:spend].push({
@@ -221,8 +214,7 @@ class ProjectTracker < ApplicationRecord
     end
   end
 
-  def generate_snapshot!(bing = false)
-    cosr = cost_of_services_rendered
+  def generate_snapshot!
     today = Date.today
 
     invoiced_income_total = (
@@ -281,53 +273,33 @@ class ProjectTracker < ApplicationRecord
       generated_at: DateTime.now.iso8601,
       hours: [],
       spend: [],
+      cost: [],
       hours_total: 0,
       hours_free: aggregate_hours[:free],
       spend_total: 0,
+      cost_total: 0,
       invoiced_income_total: invoiced_income_total,
       invoiced_with_running_spend_total: invoiced_with_running_spend_total,
-      cash: {
-        cosr: [],
-        cosr_total: 0,
-      },
-      accrual: {
-        cosr: [],
-        cosr_total: 0,
-      }
     }) do |acc, date|
-
       acc[:spend].push({
         x: date.iso8601,
         y: acc[:spend_total] +=
           self.total_value_during_range(date, date)
       })
 
-      cosr_for_date = cosr[date]
-      total_cosr_for_date = 0
-      total_hours_for_date = 0
-
-      unless cosr_for_date.blank?
-        cosr_for_date.each do |studio_id, cosr_data|
-          total_cosr_for_date += cosr_data[:total_cost]
-          total_hours_for_date += cosr_data[:total_hours]
-        end
-      end
-
       acc[:hours].push({
         x: date.iso8601,
-        y: acc[:hours_total] += total_hours_for_date
+        y: acc[:hours_total] += self.total_hours_during_range(date, date)
       })
 
-      acc[:cash][:cosr].push({
+      acc
+    end
+
+    snapshot = monthly_cosr.reduce(snapshot) do |acc, (date, cosr)|
+      acc[:cost].push({
         x: date.iso8601,
-        y: acc[:cash][:cosr_total] += total_cosr_for_date
+        y: acc[:cost_total] += cosr.values.sum{|c| c[:amount]}.round(2)
       })
-
-      acc[:accrual][:cosr].push({
-        x: date.iso8601,
-        y: acc[:accrual][:cosr_total] += total_cosr_for_date
-      })
-
       acc
     end
 
@@ -516,13 +488,6 @@ class ProjectTracker < ApplicationRecord
       .reverse
   end
 
-  def last_month_hours
-    total_hours_during_range(
-      Date.today - 1.month,
-      Date.today
-    )
-  end
-
   def last_week_value
     total_value_during_range(
       Date.today - 1.week,
@@ -561,14 +526,70 @@ class ProjectTracker < ApplicationRecord
     snapshot["invoiced_with_running_spend_total"].to_f
   end
 
-  def estimated_cost(accounting_method)
-    return 0 if snapshot.empty? # If new project trackers are made, we'll not have a snapshot yet
-    latest = snapshot[accounting_method]["cosr"].try(:last)
-    latest ? (latest["y"] || 0) : 0
+  def profit
+    spend - estimated_cost
   end
 
-  def profit
-    spend - estimated_cost("cash")
+  def monthly_cosr
+    fpids = forecast_project_ids
+
+    # First, collect all the contributor payouts
+    monthly_cosr = ContributorPayout.includes(invoice_tracker: :invoice_pass).where(invoice_tracker_id: invoice_trackers.pluck(:id)).reduce({}) do |acc, cp|
+      acc[cp.accrual_date] ||= {}
+
+      # Contributor payouts are on the client level, so lets filter out
+      # any parts of the payout that are not due to work done against this
+      # specific project tracker
+      amount_for_this_tracker = cp.amount
+      bp = cp.blueprint || {}
+      if bp.is_a?(Hash) && (bp.keys.sort == ["AccountLead", "IndividualContributor", "TeamLead"].sort)
+        amount_for_this_tracker = 0
+        amount_for_this_tracker = bp.values.flatten.reduce(0) do |acc, v|
+          if fpids.include?(v.try(:dig, "blueprint_metadata", "forecast_project"))
+            acc += v.try(:dig, "amount").to_f
+          end
+          acc
+        end
+      end
+
+      next acc unless amount_for_this_tracker > 0
+      acc[cp.accrual_date][cp.contributor.forecast_person] = {
+        amount: amount_for_this_tracker.round(2),
+        type: :contributor_payout,
+      }
+      acc
+    end
+
+    # Next, check if any forecast assignments were recorded for the old deal
+    assignments =
+      ForecastAssignment
+        .includes(forecast_person: [admin_user: :full_time_periods])
+        .where(project_id: forecast_projects.map(&:forecast_id))
+
+    (start_date..end_date).reduce(monthly_cosr) do |acc, date|
+      assignments.where('end_date >= ? AND start_date <= ?', date, date).each do |fa|
+        admin_user = fa.forecast_person.try(:admin_user)
+        next acc unless admin_user.present?
+
+        ftp = admin_user.full_time_period_at(date)
+        next acc unless ftp.present? && (ftp.four_day? || ftp.five_day?)
+
+        acc[date.end_of_month] ||= {}
+        allocation_hrs = fa.allocation_during_range_in_hours(date, date)
+        daily_cost = admin_user.cost_of_employment_on_date(date)
+        assignment_cosr = allocation_hrs >= 8 ? daily_cost : (daily_cost * (allocation_hrs.to_f / 8))
+        acc[date.end_of_month][fa.forecast_person] ||= {
+          amount: 0,
+          type: :salary,
+        }
+        acc[date.end_of_month][fa.forecast_person][:amount] += assignment_cosr
+      end
+      acc
+    end.sort_by{|date, cosr| date}.to_h
+  end
+
+  def estimated_cost
+    snapshot["cost_total"].try(:to_f) || 0
   end
 
   def profit_margin
@@ -653,46 +674,6 @@ class ProjectTracker < ApplicationRecord
     end
   end
 
-  def cost_of_services_rendered
-    calculator = Stacks::CostOfServicesRenderedCalculator.new(
-      start_date: start_date,
-      end_date: end_date,
-      forecast_project_ids: forecast_projects.map(&:forecast_id)
-    )
-
-    calculator.calculate
-  end
-
-  def raw_resourcing_cost_during_range_in_usd(start_range, end_range)
-    assignments =
-      ForecastAssignment
-        .includes(:forecast_project)
-        .where(project_id: forecast_projects.map(&:forecast_id))
-    assignments.reduce(0) do |acc, a|
-      acc += a.raw_resourcing_cost_during_range_in_usd(
-        start_range,
-        end_range
-      )
-    end || 0
-  end
-
-  def raw_resourcing_cost
-    forecast_project_ids = forecast_projects.map(&:forecast_id)
-    today = Date.today
-
-    assignments =
-      ForecastAssignment
-        .includes(:forecast_project)
-        .where(project_id: forecast_project_ids)
-
-    assignments.reduce(0) do |acc, a|
-      acc += a.raw_resourcing_cost_during_range_in_usd(
-        Date.new(2015, 1, 1),
-        today
-      )
-    end || 0
-  end
-
   def first_recorded_assignment
     @_first_recorded_assignment ||= (
       forecast_project_ids = forecast_projects.map(&:forecast_id)
@@ -717,16 +698,5 @@ class ProjectTracker < ApplicationRecord
 
   def income
     snapshot["invoiced_income_total"].to_f
-  end
-
-  def average_time_to_merge_pr_in_days_during_range(start_range, end_range)
-    gh_repo_ids = zenhub_workspaces.map(&:github_repos).flatten.map(&:id)
-    prs = GithubPullRequest
-      .where(merged_at: start_range..end_range)
-      .where(github_repo: gh_repo_ids)
-      .merged
-
-    ttm = prs.average(:time_to_merge)
-    ttm.present? ? (ttm / 86400.to_f) : nil
   end
 end

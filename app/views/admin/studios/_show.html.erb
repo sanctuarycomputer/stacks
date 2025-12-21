@@ -62,12 +62,6 @@ function update(a, b) {
   </div>
 <% end %>
 
-<a href="https://www.notion.so/garden3d/The-Operating-Modes-of-garden3d-6eefbe5c5f5c463bb5e4679f977a46fa" target="_blank">
-  <p class="pill nag <%= resource.health.dig("health") %>" style="margin-bottom: 20px;margin-right: 6px;">
-      <strong><%= resource.health.dig("value") %></strong>
-  </p>
-</a>
-
 <a href="https://www.notion.so/garden3d/How-to-optimize-our-OKRs-82d1d26d9c0947fd962fd5f8b22be5c6" target="_blank">
   <p class="nag" style="margin-bottom: 20px;margin-right: 6px;">
     🤔 Learn to understand and optimize OKRs ↗
@@ -332,92 +326,6 @@ function update(a, b) {
   </div>
 </div>
 
-
-<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
-  <div id="titlebar_left">
-    <h2 id="page_title">💾 Dev Data</h2>
-  </div>
-</div>
-
-<div class="dashboard-modules table index_table index">
-  <div class="dashboard-module">
-    <div class="module-header">
-      <p>Dev Data</p>
-    </div>
-    <div class="module-body">
-      <canvas id="dev-data"></canvas>
-    </div>
-  </div>
-</div>
-
-<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
-  <div id="titlebar_left">
-    <h2 id="page_title">📡 Following</h2>
-  </div>
-  <div id="titlebar_right">
-    <div class="action_items">
-      <%= link_to "Mailing Lists ↗", admin_studio_mailing_lists_path(resource) %>
-    </div>
-  </div>
-</div>
-
-<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
-  <div id="titlebar_left">
-    <h2 id="page_title">🤡 Talent Pool</h2>
-  </div>
-</div>
-
-<% if studio_senior_ratio_data[:total] > 0 %>
-  <div class="dashboard-modules table index_table index">
-    <div class="dashboard-module" style="min-height: 240px">
-      <div class="module-body factoid-parent">
-        <div class="factoid">
-          <h2><%= ((studio_senior_ratio_data[:senior].to_f / studio_senior_ratio_data[:total]) * 100).round %>%</h2>
-          <p>Team members at S1 or above</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="dashboard-module">
-      <div class="module-body factoid-parent">
-        <div class="factoid">
-          <h2><%= studio_senior_ratio_data[:total] %></h2>
-          <p>Total team members, active today</p>
-        </div>
-      </div>
-    </div>
-  </div>
-<% end %>
-
-<div class="dashboard-modules table index_table index">
-  <div class="dashboard-module">
-    <div class="module-header">
-      <p>Current Skill Levels in this Studio</p>
-    </div>
-    <div class="module-body">
-      <canvas id="studio-talent-pool"></canvas>
-    </div>
-  </div>
-</div>
-
-
-<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
-  <div id="titlebar_left">
-    <h2 id="page_title">🥲 Attrition</h2>
-  </div>
-</div>
-
-<div class="dashboard-modules table index_table index">
-  <div class="dashboard-module">
-    <div class="module-header">
-      <p>Studio Members leaving with DEI Demographic Breakdowns</p>
-    </div>
-    <div class="module-body">
-      <canvas id="studio-attrition"></canvas>
-    </div>
-  </div>
-</div>
-
 <div class="full-screen-modal hidden">
   <div class="full-screen-modal__contents">
     <div class="full-screen-modal__contents__title">
@@ -555,36 +463,6 @@ function update(a, b) {
 <script>
   luxon.Settings.defaultLocale = "en";
 
-  new Chart(document.getElementById('dev-data'), {
-    type: 'bar',
-    data: <%= studio_dev_data.to_json.html_safe %>,
-    options: {
-      interaction: {
-        intersect: false,
-        mode: 'index',
-      },
-      tension: 0.3,
-      scales: {
-        y: {
-          type: 'linear',
-          display: true,
-          position: 'left',
-          beginAtZero: true
-        },
-        y1: {
-          type: 'linear',
-          display: true,
-          position: 'right',
-          beginAtZero: true,
-          min: 0,
-          grid: {
-            drawOnChartArea: false, // only want the grid lines for one axis to show up
-          },
-        }
-      }
-    }
-  })
-
   new Chart(document.getElementById('studio-profitability'), {
     type: 'bar',
     data: <%= studio_profitability_data.to_json.html_safe %>,
@@ -696,54 +574,6 @@ function update(a, b) {
           grid: {
             drawOnChartArea: false, // only want the grid lines for one axis to show up
           },
-        },
-      }
-    }
-  });
-
-  new Chart(document.getElementById('studio-talent-pool'), {
-    type: 'bar',
-    data: <%= studio_talent_pool_data.to_json.html_safe %>,
-    options: {
-      plugins: {
-        legend: {
-          display: false
-        },
-      },
-      tension: 0.3,
-      scales: {
-        y: {
-          type: 'linear',
-          display: true,
-          position: 'left',
-          beginAtZero: true,
-          ticks: {
-            stepSize: 1
-          }
-        },
-      }
-    }
-  });
-
-  new Chart(document.getElementById('studio-attrition'), {
-    type: 'bar',
-    data: <%= studio_attrition_data.to_json.html_safe %>,
-    options: {
-      plugins: {
-        legend: {
-          display: false
-        },
-      },
-      tension: 0.3,
-      scales: {
-        y: {
-          type: 'linear',
-          display: true,
-          position: 'left',
-          beginAtZero: true,
-          ticks: {
-            stepSize: 1
-          }
         },
       }
     }

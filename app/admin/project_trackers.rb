@@ -56,12 +56,6 @@ ActiveAdmin.register ProjectTracker do
       :_destroy,
       :_edit
     ],
-    project_tracker_zenhub_workspaces_attributes: [
-      :id,
-      :zenhub_workspace_id,
-      :_destroy,
-      :_edit
-    ],
     creative_lead_periods_attributes: [
       :id,
       :admin_user_id,
@@ -121,7 +115,7 @@ ActiveAdmin.register ProjectTracker do
     column :spend
     column :income
     column :estimated_cost do |pt|
-      pt.estimated_cost("cash")
+      pt.estimated_cost
     end
     column :profit
     column :profit_margin
@@ -388,12 +382,12 @@ ActiveAdmin.register ProjectTracker do
       })
     end
 
-    if resource.snapshot[accounting_method].try(:dig, "cosr")
+    if resource.snapshot["cost"]
       burnup_data[:data][:datasets].push({
-        borderColor: Stacks::Utils::COLORS[2], # color of dots
-        backgroundColor: Stacks::Utils::COLORS[8], # color of line
-        label: "Cost of Services Rendered (COSR)",
-        data: resource.snapshot[accounting_method].try(:dig, "cosr"),
+        backgroundColor: Stacks::Utils::COLORS[2], # color of dots
+        borderColor: Stacks::Utils::COLORS[8], # color of line
+        label: "Cost",
+        data: resource.snapshot["cost"],
         pointRadius: 1
       })
     end
@@ -449,14 +443,6 @@ ActiveAdmin.register ProjectTracker do
         as: :select,
         collection: RunnProject.candidates_for_association_with_project_tracker(resource),
         hint: "Runn.io Project missing? Check first it's not tentative or archived in Runn.io; and it should appear in this list after about 10 minutes."
-
-      f.has_many :project_tracker_zenhub_workspaces, heading: false, allow_destroy: true, new_record: 'Connect a Zenhub Workspace' do |a|
-        a.input(:zenhub_workspace, {
-          label: "Zenhub Workspace",
-          prompt: "Select a Zenhub Workspace",
-          collection: ZenhubWorkspace.all,
-        })
-      end
 
       f.input :notes, label: "Notes (accepts markdown)"
     end

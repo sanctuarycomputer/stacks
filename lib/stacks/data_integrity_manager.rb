@@ -102,13 +102,7 @@ class Stacks::DataIntegrityManager
   def discover_admin_user_problems
     all_admin_users = AdminUser
       .includes([
-        :full_time_periods,
-        :admin_user_racial_backgrounds,
-        :racial_backgrounds,
-        :admin_user_cultural_backgrounds,
-        :cultural_backgrounds,
-        :admin_user_gender_identities,
-        :gender_identities,
+        :full_time_periods
       ]).not_ignored
 
     all_admin_users.reduce({}) do |acc, o|
@@ -118,7 +112,6 @@ class Stacks::DataIntegrityManager
       if o.active?
         # Active Users
         if [Enum::ContributorType::FOUR_DAY, Enum::ContributorType::FIVE_DAY].include?(o.current_contributor_type)
-          acc[o] = [*(acc[o] || []), :missing_dei_data] if o.should_nag_for_dei_data?
           acc[o] = [*(acc[o] || []), :missing_skill_tree] if o.skill_tree_level_without_salary == "No Reviews Yet"
         end
       else

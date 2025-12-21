@@ -3,13 +3,17 @@ class SystemTask < ApplicationRecord
     where(settled_at: nil)
   }
   scope :success, -> {
-    where.not(settled_at: nil).where(notification: nil)
+    where("settled_at IS NOT NULL AND notification_id IS NULL")
   }
   scope :error, -> {
-    where.not(notification: nil, settled_at: nil)
+    where("notification_id IS NOT NULL AND settled_at IS NOT NULL")
   }
 
   belongs_to :notification, optional: true, dependent: :destroy
+
+  def self.clean_up_old_tasks!
+    where("created_at < ?", 1.week.ago).delete_all
+  end
 
   def time_taken_in_minutes
     return Float::INFINITY if settled_at.nil?

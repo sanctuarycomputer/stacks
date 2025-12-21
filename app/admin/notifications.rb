@@ -15,6 +15,7 @@ ActiveAdmin.register Notification do
   config.paginate = false
   actions :index, :show
   config.current_filters = false
+  menu false
 
   index title: "Inbox", download_links: false do
     column :created_at

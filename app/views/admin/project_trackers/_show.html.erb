@@ -3,8 +3,7 @@
 <% running_spend = current_spend - income %>
 <% budget_low_end = @project_tracker.budget_low_end %>
 <% budget_high_end = @project_tracker.budget_high_end %>
-<% accounting_method = session[:accounting_method] || "cash" %>
-<% estimated_cost = @project_tracker.estimated_cost(accounting_method) %>
+<% estimated_cost = @project_tracker.estimated_cost %>
 <% last_seven_days_snapshot = @project_tracker.make_adhoc_snapshot(7.days) %>
 
 <% inbudget_overage = (
@@ -107,16 +106,8 @@
 
         <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
           <tbody>
-            <% if false %>
-              <tr class="odd">
-                <td class="col"><strong>Raw Resourcing Cost</strong></td>
-                <td class="col text-right">
-                  <%= number_to_currency(@project_tracker.raw_resourcing_cost) %>
-                </td>
-              </tr>
-            <% end %>
             <tr class="even">
-              <td class="col"><%= link_to "Estimated COSR →", admin_project_tracker_project_cosr_explorer_path(@project_tracker) %></td>
+              <td class="col"><%= link_to "Estimated Cost Explorer →", admin_project_tracker_project_cost_explorer_path(@project_tracker) %></td>
               <td class="col text-right">
                 <%= number_to_currency(estimated_cost) %>
               </td>
@@ -258,7 +249,7 @@
       <% else %>
         <p>Full chart not generated yet.</p>
       <% end %>
-      <%= link_to "COSR Explorer ↗", admin_project_tracker_project_cosr_explorer_path(@project_tracker) %>
+      <%= link_to "Estimated Cost Explorer →", admin_project_tracker_project_cost_explorer_path(@project_tracker) %>
     </div>
     <div class="module-body">
       <canvas id="burnup"></canvas>
@@ -450,40 +441,6 @@ Budget: <%= number_to_currency(budget_high_end) %>
     </div>
   </div>
 </div>
-
-<table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom:20px;">
-  <thead>
-    <tr>
-      <th class="col">
-        <div class="icon-and-text">
-          <%= image_tag("zenhub-logo-icon.png") %>
-          Zenhub Data
-        </div>
-      </th>
-      <th class="col">TTM PR (Last Month)</th>
-      <th class="col">TTM PR (Last 3 Months)</th>
-      <th class="col">All-time TTM PR</th>
-    </tr>
-  </thead>
-  <tbody>
-    <% @project_tracker.zenhub_workspaces.each_with_index do |zw, index| %>
-      <tr class="<%= index.even? ? "even" : "odd" %>">
-        <td class="col">
-          <%= link_to zw.name, admin_zenhub_workspace_path(zw) %>
-        </td>
-        <td class="col">
-          <%= zw.average_time_to_merge_pr_in_days_during_range(Date.today - 1.month, Date.today) || "?" %> days
-        </td>
-        <td class="col">
-          <%= zw.average_time_to_merge_pr_in_days_during_range(Date.today - 3.months, Date.today) || "?" %> days
-        </td>
-        <td class="col">
-          <%= zw.average_time_to_merge_pr || "?" %> days
-        </td>
-      </tr>
-    <% end %>
-  </tbody>
-</table>
 
 <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom:20px;">
   <thead>

@@ -40,37 +40,6 @@ class Stacks::Automator
       end
     end
 
-    def send_stale_task_digests_every_thursday
-      return unless Time.now.thursday?
-
-      raw_digest =
-        Stacks::Notion::Task.stale.reduce({}) do |acc, task|
-          stewards_emails = task.stewards.map{|p| p.dig("person", "email")}
-          stewards_emails.compact.each do |e|
-            acc[e] = acc[e] || { tasks_stewarding: [], tasks_assigned: [] }
-            acc[e][:tasks_stewarding] = [*acc[e][:tasks_stewarding], task.notion_page]
-          end
-
-          assignees_emails = task.assignees.map{|p| p.dig("person", "email")}
-          assignees_emails.compact.each do |e|
-            acc[e] = acc[e] || { tasks_stewarding: [], tasks_assigned: [] }
-            acc[e][:tasks_assigned] = [*acc[e][:tasks_assigned], task.notion_page]
-          end
-
-          acc
-        end
-
-      raw_digest.each do |k, v|
-        a = AdminUser.find_by(email: k)
-        if a.present? && a.email == "hugh@sanctuary.computer"
-          StaleTasksNotification.with(
-            digest: v,
-            include_admins: false,
-          ).deliver(a)
-        end
-      end
-    end
-
     def message_operations_channel_thread(thread_title, message)
       channel = twist.get_channel("352129") # General Channel
       thread = twist.get_all_threads(channel["id"]).find do |t|
@@ -190,14 +159,6 @@ class Stacks::Automator
         twist_users.find{ |tu| tu["email"] == a.email }
       end).compact
 
-      studios = Studio.all
-      studio_coordinator_twist_users = studios.reduce({}) do |acc, s|
-        acc[s] = (s.current_studio_coordinators.map do |a|
-          twist_users.find{ |tu| tu["email"] == a.email }
-        end).compact
-        acc
-      end
-
       needed_reminding = people.filter do |person|
         person[:reminder].present? &&
         person[:twist_data].present? &&
@@ -206,10 +167,8 @@ class Stacks::Automator
 
       if send_twist_reminders
         needed_reminding.each do |person|
-          sc_twist_users =
-            studio_coordinator_twist_users[person[:forecast_data].studio(studios)] || []
           participant_ids = [
-            *(sc_twist_users.any? ? sc_twist_users : admin_twist_users).map{|tu| tu["id"]},
+            *admin_twist_users.map{|tu| tu["id"]},
             person[:twist_data]["id"]
           ].join(",")
           conversation = twist.get_or_create_conversation(participant_ids)

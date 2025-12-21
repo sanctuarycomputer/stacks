@@ -11,10 +11,10 @@ ActiveAdmin.register SystemTask do
         },
         parent: "Dashboard"
 
-  config.filters = true
+  config.filters = false
+  config.current_filters = false
   config.paginate = true
   actions :index, :show, :destroy
-  config.current_filters = false
 
   scope :in_progress, default: true
   scope :success

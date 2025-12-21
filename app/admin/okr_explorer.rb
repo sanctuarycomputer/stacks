@@ -5,7 +5,7 @@ ActiveAdmin.register_page "OKR Explorer" do
     all_gradations = ["month", "quarter", "year", "trailing_3_months", "trailing_4_months", "trailing_6_months", "trailing_12_months"]
     default_gradation = "month"
 
-    all_okrs = ["average_hourly_rate", "sellable_hours_sold", "cost_per_sellable_hour", "successful_projects", "successful_proposals"]
+    all_okrs = ["average_hourly_rate", "successful_projects", "successful_proposals"]
     default_okr = "average_hourly_rate"
 
     studio = Studio.find(params[:studio_id])
@@ -32,24 +32,6 @@ ActiveAdmin.register_page "OKR Explorer" do
         acc
       end
     end
-
-    # all_repos = GithubRepo.all
-    # all_prs_by_period = if current_okr == "time_to_merge_pr"
-    #   periods.reduce({}) do |acc, period|
-    #     all_prs = GithubPullRequest.includes(:github_repo).merged.where(merged_at: period.starts_at..period.ends_at)
-
-    #     acc[period] = all_repos.reduce({}) do |acc, repo|
-    #       all_prs_for_repo = all_prs.where(github_repo: repo)
-    #       acc[repo] = {
-    #         prs: all_prs_for_repo.count,
-    #         average_time_to_merge: all_prs_for_repo.average(:time_to_merge)
-    #       }
-    #       acc
-    #     end
-
-    #     acc
-    #   end
-    # end
 
     render(partial: "okr_explorer", locals: {
       all_gradations: all_gradations,

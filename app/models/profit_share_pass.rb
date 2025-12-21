@@ -69,8 +69,7 @@ class ProfitSharePass < ApplicationRecord
   end
 
   def self.ensure_exists!
-    # TODO: Uncomment this when dashboard fixed
-    # return nil if Time.now.year >= 2025
+    return nil if Time.now.year >= 2025
     ProfitSharePass.this_year || ProfitSharePass.create!
   end
 

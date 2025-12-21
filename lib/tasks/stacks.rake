@@ -69,20 +69,6 @@ namespace :stacks do
       Parallel.map(Stacks::Notion::DATABASE_IDS.values, in_threads: 3) do |db_id|
         notion.sync_database(db_id)
       end
-      Stacks::Automator.send_stale_task_digests_every_thursday
-    rescue => e
-      system_task.mark_as_error(e)
-    else
-      system_task.mark_as_success
-    end
-  end
-
-  desc "Sync Github"
-  task :sync_github => :environment do
-    system_task = SystemTask.create!(name: "stacks:sync_github")
-    begin
-      Stacks::Github.sync_all!
-      Stacks::Zenhub.sync_all!
     rescue => e
       system_task.mark_as_error(e)
     else
@@ -159,25 +145,29 @@ namespace :stacks do
     system_task = SystemTask.create!(name: "stacks:daily_tasks")
     begin
       puts "~~~> DOING SYNC: #{Time.new.localtime}"
-      # No dependencies, so we can do this first
-      ProfitSharePass.ensure_exists!
+      SystemTask.clean_up_old_tasks!
 
       # These are all dependencies for the rest of the tasks
       Retriable.retriable(tries: 5, base_interval: 1, multiplier: 2, max_interval: 10) do
         Stacks::Team.discover!
       end
+
       Stacks::Forecast.new.sync_all! # Has internal retry counter
+
       Stacks::Runn.new.sync_all!
 
       Stacks::Quickbooks.sync_all! # Has internal retry counter
+
       Stacks::Deel.new.sync_all!
 
       # We can do this as soon as we sync the forecast
       Stacks::Automator.attempt_invoicing_for_previous_month
+
       Stacks::Automator.remind_people_to_record_hours_weekly
 
       # No dependencies, so we can do this next
       Stacks::Automator.remind_people_of_outstanding_surveys_every_thurday
+
       Stacks::Automator.send_project_capsule_reminders_every_tuesday
 
       # This one is quick, so we can do it next
@@ -196,11 +186,8 @@ namespace :stacks do
       # Finally, do client_services, which require data from internal studios
       # (and garden3d hides reinvestment data)
       Parallel.map(Studio.client_services, in_threads: 3) { |s| s.generate_snapshot! }
-      # Now, generate project snapshots
-      Stacks::DailyFinancialSnapshotter.snapshot_all!
 
       puts "~~~> DOING MISC"
-      Stacks::Dei.make_rollup # TODO Remove me
       Stacks::Notifications.make_notifications!
 
       runn_instance = Stacks::Runn.new

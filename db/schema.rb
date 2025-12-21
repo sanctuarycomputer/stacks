@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2025_11_30_175130) do
+ActiveRecord::Schema.define(version: 2025_12_20_181154) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -51,51 +51,6 @@ ActiveRecord::Schema.define(version: 2025_11_30_175130) do
     t.index ["qbo_invoice_id", "project_tracker_id"], name: "index_adhoc_invoice_trackers_on_qbo_invoice_and_project_tracker", unique: true
   end
 
-  create_table "admin_user_communities", force: :cascade do |t|
-    t.bigint "community_id", null: false
-    t.bigint "admin_user_id", null: false
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["admin_user_id"], name: "index_admin_user_communities_on_admin_user_id"
-    t.index ["community_id"], name: "index_admin_user_communities_on_community_id"
-  end
-
-  create_table "admin_user_cultural_backgrounds", force: :cascade do |t|
-    t.bigint "cultural_background_id", null: false
-    t.bigint "admin_user_id", null: false
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["admin_user_id"], name: "index_admin_user_cultural_backgrounds_on_admin_user_id"
-    t.index ["cultural_background_id"], name: "index_admin_user_cultural_backgrounds_on_cultural_background_id"
-  end
-
-  create_table "admin_user_gender_identities", force: :cascade do |t|
-    t.bigint "gender_identity_id", null: false
-    t.bigint "admin_user_id", null: false
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["admin_user_id"], name: "index_admin_user_gender_identities_on_admin_user_id"
-    t.index ["gender_identity_id"], name: "index_admin_user_gender_identities_on_gender_identity_id"
-  end
-
-  create_table "admin_user_interests", force: :cascade do |t|
-    t.bigint "interest_id", null: false
-    t.bigint "admin_user_id", null: false
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["admin_user_id"], name: "index_admin_user_interests_on_admin_user_id"
-    t.index ["interest_id"], name: "index_admin_user_interests_on_interest_id"
-  end
-
-  create_table "admin_user_racial_backgrounds", force: :cascade do |t|
-    t.bigint "racial_background_id", null: false
-    t.bigint "admin_user_id", null: false
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["admin_user_id"], name: "index_admin_user_racial_backgrounds_on_admin_user_id"
-    t.index ["racial_background_id"], name: "index_admin_user_racial_backgrounds_on_racial_background_id"
-  end
-
   create_table "admin_user_salary_windows", force: :cascade do |t|
     t.bigint "admin_user_id", null: false
     t.decimal "salary", null: false
@@ -122,9 +77,7 @@ ActiveRecord::Schema.define(version: 2025_11_30_175130) do
     t.text "profit_share_notes"
     t.jsonb "info", default: {}
     t.boolean "ignore", default: false
-    t.integer "github_user_id"
     t.index ["email"], name: "index_admin_users_on_email", unique: true
-    t.index ["github_user_id"], name: "index_admin_users_on_github_user_id", unique: true
     t.index ["reset_password_token"], name: "index_admin_users_on_reset_password_token", unique: true
   end
 
@@ -138,31 +91,6 @@ ActiveRecord::Schema.define(version: 2025_11_30_175130) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.index ["admin_user_id"], name: "index_associates_award_agreements_on_admin_user_id"
-  end
-
-  create_table "collective_role_holder_periods", force: :cascade do |t|
-    t.bigint "collective_role_id", null: false
-    t.bigint "admin_user_id", null: false
-    t.date "started_at"
-    t.date "ended_at"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["admin_user_id"], name: "index_collective_role_holder_periods_on_admin_user_id"
-    t.index ["collective_role_id"], name: "index_collective_role_holder_periods_on_collective_role_id"
-  end
-
-  create_table "collective_roles", force: :cascade do |t|
-    t.string "name", null: false
-    t.string "notion_link", null: false
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.decimal "leadership_psu_pool_weighting", default: "0.0"
-  end
-
-  create_table "communities", force: :cascade do |t|
-    t.string "name"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
   end
 
   create_table "contacts", force: :cascade do |t|
@@ -218,14 +146,6 @@ ActiveRecord::Schema.define(version: 2025_11_30_175130) do
     t.index ["studio_id"], name: "index_creative_lead_periods_on_studio_id"
   end
 
-  create_table "cultural_backgrounds", force: :cascade do |t|
-    t.string "name"
-    t.string "description"
-    t.boolean "opt_out"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-  end
-
   create_table "deel_contracts", force: :cascade do |t|
     t.string "deel_id", null: false
     t.jsonb "data", null: false
@@ -249,12 +169,6 @@ ActiveRecord::Schema.define(version: 2025_11_30_175130) do
     t.index ["deel_id"], name: "index_deel_people_on_deel_id", unique: true
   end
 
-  create_table "dei_rollups", force: :cascade do |t|
-    t.jsonb "data"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-  end
-
   create_table "enterprises", force: :cascade do |t|
     t.string "name", null: false
     t.jsonb "snapshot", default: {}
@@ -269,23 +183,6 @@ ActiveRecord::Schema.define(version: 2025_11_30_175130) do
     t.datetime "deleted_at"
     t.index ["deleted_at"], name: "index_finalizations_on_deleted_at"
     t.index ["review_id"], name: "index_finalizations_on_review_id"
-  end
-
-  create_table "forecast_assignment_daily_financial_snapshots", force: :cascade do |t|
-    t.bigint "forecast_assignment_id", null: false
-    t.bigint "forecast_person_id", null: false
-    t.bigint "forecast_project_id", null: false
-    t.date "effective_date", null: false
-    t.bigint "studio_id", null: false
-    t.decimal "hourly_cost", null: false
-    t.decimal "hours", null: false
-    t.boolean "needs_review", null: false
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["forecast_assignment_id"], name: "idx_snapshots_on_forecast_assignment_id"
-    t.index ["forecast_person_id"], name: "idx_snapshots_on_forecast_person_id"
-    t.index ["forecast_project_id"], name: "idx_snapshots_on_forecast_project_id"
-    t.index ["needs_review"], name: "idx_snapshots_on_needs_review"
   end
 
   create_table "forecast_assignments", force: :cascade do |t|
@@ -386,13 +283,6 @@ ActiveRecord::Schema.define(version: 2025_11_30_175130) do
     t.index ["admin_user_id"], name: "index_full_time_periods_on_admin_user_id"
   end
 
-  create_table "gender_identities", force: :cascade do |t|
-    t.string "name"
-    t.boolean "opt_out"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-  end
-
   create_table "gifted_profit_shares", force: :cascade do |t|
     t.bigint "admin_user_id", null: false
     t.decimal "amount"
@@ -400,57 +290,6 @@ ActiveRecord::Schema.define(version: 2025_11_30_175130) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.index ["admin_user_id"], name: "index_gifted_profit_shares_on_admin_user_id"
-  end
-
-  create_table "github_issues", force: :cascade do |t|
-    t.bigint "github_id", null: false
-    t.string "github_node_id", null: false
-    t.string "title", null: false
-    t.jsonb "data", null: false
-    t.bigint "github_repo_id", null: false
-    t.bigint "github_user_id", null: false
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["github_id"], name: "index_github_issues_on_github_id", unique: true
-    t.index ["github_node_id"], name: "index_github_issues_on_github_node_id", unique: true
-  end
-
-  create_table "github_pull_requests", force: :cascade do |t|
-    t.string "title", default: "", null: false
-    t.bigint "time_to_merge"
-    t.bigint "github_id", null: false
-    t.bigint "github_repo_id", null: false
-    t.bigint "github_user_id", null: false
-    t.jsonb "data", null: false
-    t.datetime "merged_at"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["github_id"], name: "index_github_pull_requests_on_github_id", unique: true
-    t.index ["github_repo_id"], name: "index_github_pull_requests_on_github_repo_id"
-    t.index ["github_user_id"], name: "index_github_pull_requests_on_github_user_id"
-    t.index ["merged_at"], name: "index_github_pull_requests_on_merged_at"
-  end
-
-  create_table "github_repos", force: :cascade do |t|
-    t.bigint "github_id", null: false
-    t.string "name", null: false
-    t.jsonb "data", null: false
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["github_id"], name: "index_github_repos_on_github_id", unique: true
-  end
-
-  create_table "github_users", force: :cascade do |t|
-    t.bigint "github_id", null: false
-    t.string "login", null: false
-    t.jsonb "data", null: false
-    t.index ["github_id"], name: "index_github_users_on_github_id", unique: true
-  end
-
-  create_table "interests", force: :cascade do |t|
-    t.string "name"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
   end
 
   create_table "invoice_passes", force: :cascade do |t|
@@ -739,15 +578,6 @@ ActiveRecord::Schema.define(version: 2025_11_30_175130) do
     t.index ["project_tracker_id"], name: "index_project_tracker_links_on_project_tracker_id"
   end
 
-  create_table "project_tracker_zenhub_workspaces", force: :cascade do |t|
-    t.bigint "project_tracker_id", null: false
-    t.string "zenhub_workspace_id", null: false
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["project_tracker_id", "zenhub_workspace_id"], name: "idx_project_tracker_zenhub_workspace", unique: true
-    t.index ["project_tracker_id"], name: "index_project_tracker_zenhub_workspaces_on_project_tracker_id"
-  end
-
   create_table "project_trackers", force: :cascade do |t|
     t.string "name"
     t.decimal "budget_low_end"
@@ -821,14 +651,6 @@ ActiveRecord::Schema.define(version: 2025_11_30_175130) do
     t.datetime "updated_at", precision: 6, null: false
   end
 
-  create_table "racial_backgrounds", force: :cascade do |t|
-    t.string "name"
-    t.string "description"
-    t.boolean "opt_out"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-  end
-
   create_table "review_trees", force: :cascade do |t|
     t.bigint "review_id", null: false
     t.bigint "tree_id", null: false
@@ -888,17 +710,6 @@ ActiveRecord::Schema.define(version: 2025_11_30_175130) do
     t.index ["deleted_at"], name: "index_scores_on_deleted_at"
     t.index ["score_tree_id"], name: "index_scores_on_score_tree_id"
     t.index ["trait_id"], name: "index_scores_on_trait_id"
-  end
-
-  create_table "studio_coordinator_periods", force: :cascade do |t|
-    t.bigint "studio_id", null: false
-    t.bigint "admin_user_id", null: false
-    t.date "started_at", null: false
-    t.date "ended_at"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["admin_user_id"], name: "index_studio_coordinator_periods_on_admin_user_id"
-    t.index ["studio_id"], name: "index_studio_coordinator_periods_on_studio_id"
   end
 
   create_table "studio_memberships", force: :cascade do |t|
@@ -1066,76 +877,11 @@ ActiveRecord::Schema.define(version: 2025_11_30_175130) do
     t.index ["reviewable_type", "reviewable_id"], name: "index_workspaces_on_reviewable_type_and_reviewable_id"
   end
 
-  create_table "zenhub_issue_assignees", force: :cascade do |t|
-    t.string "zenhub_issue_id", null: false
-    t.integer "github_user_id", null: false
-    t.index ["zenhub_issue_id", "github_user_id"], name: "idx_zenhub_issue_assignees", unique: true
-  end
-
-  create_table "zenhub_issue_connected_pull_requests", force: :cascade do |t|
-    t.string "zenhub_issue_id", null: false
-    t.string "zenhub_pull_request_issue_id", null: false
-    t.index ["zenhub_issue_id", "zenhub_pull_request_issue_id"], name: "idx_zenhub_issue_connected_pull_requests", unique: true
-  end
-
-  create_table "zenhub_issues", force: :cascade do |t|
-    t.string "zenhub_id", null: false
-    t.integer "github_repo_id", null: false
-    t.integer "github_user_id"
-    t.integer "issue_type", default: 0, null: false
-    t.integer "issue_state", default: 0, null: false
-    t.integer "estimate"
-    t.integer "number"
-    t.integer "github_issue_id"
-    t.string "github_issue_node_id"
-    t.string "title"
-    t.boolean "is_pull_request", default: false, null: false
-    t.datetime "closed_at"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["closed_at"], name: "index_zenhub_issues_on_closed_at"
-    t.index ["zenhub_id"], name: "index_zenhub_issues_on_zenhub_id", unique: true
-  end
-
-  create_table "zenhub_workspace_github_repository_connections", force: :cascade do |t|
-    t.string "zenhub_id"
-    t.string "zenhub_workspace_id"
-    t.integer "github_repo_id"
-    t.index ["zenhub_id"], name: "idx_zenhub_workspace_github_repo_connections_zenhub_id", unique: true
-    t.index ["zenhub_workspace_id", "github_repo_id"], name: "idx_zenhub_workspace_github_repo_connections", unique: true
-  end
-
-  create_table "zenhub_workspace_issue_connections", force: :cascade do |t|
-    t.string "zenhub_workspace_id", null: false
-    t.string "zenhub_issue_id", null: false
-    t.index ["zenhub_workspace_id", "zenhub_issue_id"], name: "idx_zenhub_workspace_issue_connections_on_workspace_and_issue", unique: true
-  end
-
-  create_table "zenhub_workspaces", force: :cascade do |t|
-    t.string "zenhub_id"
-    t.string "name"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["zenhub_id"], name: "index_zenhub_workspaces_on_zenhub_id", unique: true
-  end
-
   add_foreign_key "account_lead_periods", "admin_users"
   add_foreign_key "account_lead_periods", "project_trackers"
   add_foreign_key "adhoc_invoice_trackers", "project_trackers"
-  add_foreign_key "admin_user_communities", "admin_users"
-  add_foreign_key "admin_user_communities", "communities"
-  add_foreign_key "admin_user_cultural_backgrounds", "admin_users"
-  add_foreign_key "admin_user_cultural_backgrounds", "cultural_backgrounds"
-  add_foreign_key "admin_user_gender_identities", "admin_users"
-  add_foreign_key "admin_user_gender_identities", "gender_identities"
-  add_foreign_key "admin_user_interests", "admin_users"
-  add_foreign_key "admin_user_interests", "interests"
-  add_foreign_key "admin_user_racial_backgrounds", "admin_users"
-  add_foreign_key "admin_user_racial_backgrounds", "racial_backgrounds"
   add_foreign_key "admin_user_salary_windows", "admin_users"
   add_foreign_key "associates_award_agreements", "admin_users"
-  add_foreign_key "collective_role_holder_periods", "admin_users"
-  add_foreign_key "collective_role_holder_periods", "collective_roles"
   add_foreign_key "contributor_payouts", "admin_users", column: "created_by_id"
   add_foreign_key "contributor_payouts", "contributors"
   add_foreign_key "contributor_payouts", "invoice_trackers"
@@ -1191,8 +937,6 @@ ActiveRecord::Schema.define(version: 2025_11_30_175130) do
   add_foreign_key "score_trees", "workspaces"
   add_foreign_key "scores", "score_trees"
   add_foreign_key "scores", "traits"
-  add_foreign_key "studio_coordinator_periods", "admin_users"
-  add_foreign_key "studio_coordinator_periods", "studios"
   add_foreign_key "studio_memberships", "admin_users"
   add_foreign_key "studio_memberships", "studios"
   add_foreign_key "survey_free_text_question_responses", "survey_free_text_questions"

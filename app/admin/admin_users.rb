@@ -1,15 +1,8 @@
 ActiveAdmin.register AdminUser do
   permit_params :show_skill_tree_data,
-    :opt_out_of_dei_data_entry,
     :ignore,
     :old_skill_tree_level,
     :profit_share_notes,
-    :github_user_id,
-    racial_background_ids: [],
-    cultural_background_ids: [],
-    gender_identity_ids: [],
-    community_ids: [],
-    interest_ids: [],
     full_time_periods_attributes: [
       :id,
       :admin_user_id,
@@ -48,32 +41,10 @@ ActiveAdmin.register AdminUser do
   scope :associates
   scope :all
 
-  config.filters = true
+  config.filters = false
   config.current_filters = false
-  filter :studios, as: :check_boxes
-  filter :interests, as: :check_boxes
   config.sort_order = "created_at_desc"
   config.paginate = false
-
-  controller do
-    def scoped_collection
-      super.includes(
-        :gifted_profit_shares,
-        :admin_user_racial_backgrounds,
-        :racial_backgrounds,
-        :admin_user_cultural_backgrounds,
-        :cultural_backgrounds,
-        :admin_user_gender_identities,
-        :gender_identities,
-        :admin_user_interests,
-        :interests,
-      )
-    end
-
-    # def update
-    #   binding.pry
-    # end
-  end
 
   action_item :toggle_admin, only: :show, if: proc { current_admin_user.is_admin? } do
     if resource.is_admin?
@@ -81,10 +52,6 @@ ActiveAdmin.register AdminUser do
     else
       link_to "Promote Admin", promote_admin_user_admin_admin_user_path(resource), method: :post
     end
-  end
-
-  action_item :admin_user_psu_explorer, only: :show do
-    link_to "PSU Explorer", admin_admin_user_admin_user_psu_explorer_path(resource)
   end
 
   member_action :demote_admin_user, method: :post do
@@ -104,12 +71,30 @@ ActiveAdmin.register AdminUser do
     column :forecast_person do |resource|
       resource.forecast_person
     end
-    column :github do |resource|
-      resource.github_user
-    end
     if current_admin_user.is_hugh?
       column :total_amount_paid do |resource|
         number_to_currency(resource.total_amount_paid[:total])
+      end
+      column :last_month_utilization do |resource|
+        latest_key_metrics = resource.latest_key_metrics
+        should_have_sold_hours = latest_key_metrics[:sellable][:value].present? && latest_key_metrics[:sellable][:value] > 0
+        next nil unless should_have_sold_hours
+
+
+
+        surplus = (latest_key_metrics[:billable][:value] - latest_key_metrics[:sellable][:value]).round(2)
+        extreme = surplus.abs > 20
+        health = surplus >= 0 ? (extreme ? :exceptional : :healthy) : (extreme ? :failing : :at_risk)
+        bearer = surplus >= 0 ? "+" : "-"
+
+        div([
+          span(class: "pill #{health}") do
+            span("#{health.to_s.humanize}")
+            span(class: "split natural") do
+              "#{bearer}#{surplus.abs} hrs"
+            end
+          end
+        ])
       end
     end
     actions
@@ -152,74 +137,13 @@ ActiveAdmin.register AdminUser do
       end
     end
 
-    #render(partial: "show", locals: { data: data })
-    render(partial: "new_show", locals: { resource: resource })
+    render(partial: "show", locals: { resource: resource })
   end
 
   form do |f|
     f.semantic_errors
 
-    render(partial: "add_more_interests")
-    f.inputs(id: "dei_admin_inputs") do
-      f.input :interests,
-        as: :check_boxes,
-        label: "What interests do you have?",
-        collection: Interest.all.map{|e| [e.name, e.id]}
-    end
-
-    render(partial: "add_more_dei_categories")
-    f.inputs(id: "dei_admin_inputs") do
-      f.input :racial_backgrounds,
-        as: :check_boxes,
-        label: "How do you describe your racial background?",
-        collection: (RacialBackground.order(opt_out: :asc).all.map do |e|
-          [
-            "#{e.name} #{e.description.blank? ? "" : "(" + e.description + ")"}",
-            e.id,
-            { "data-opt-out" => e.opt_out, onclick: "didClickCheckbox(this)" },
-          ]
-        end)
-      f.input :cultural_backgrounds,
-        as: :check_boxes,
-        label: "How do you describe your cultural background?",
-        collection: (CulturalBackground.order(opt_out: :asc).all.map do |e|
-          [e.name, e.id, { "data-opt-out" => e.opt_out, onclick: "didClickCheckbox(this)" }]
-        end)
-      f.input :gender_identities,
-        as: :check_boxes,
-        label: "How do you describe your gender identity?",
-        collection: (GenderIdentity.order(opt_out: :asc).all.map do |gi|
-          [gi.name, gi.id, { "data-opt-out" => gi.opt_out, onclick: "didClickCheckbox(this)" }]
-        end)
-      f.input :communities,
-        as: :check_boxes,
-        label: "Are you a part of any other communities?",
-        collection: Community.all.map { |c| [c.name, c.id] }
-    end
-
-    script (<<-JS
-        function didClickCheckbox(el) {
-        window.el = el;
-          if (el.dataset.optOut === 'true') {
-            Array.from(el.parentElement.parentElement.parentElement.getElementsByTagName('input')).forEach(e => {
-              if (e !== el) e.checked = 0;
-            });
-          } else if (el.dataset.optOut === 'false') {
-            Array.from(el.parentElement.parentElement.parentElement.getElementsByTagName('input')).forEach(e => {
-              if (e.dataset.optOut === 'true') e.checked = 0;
-            });
-          }
-        }
-      JS
-).html_safe
-
-    f.input :github_user,
-      as: :select,
-      collection: GithubUser.all
-
     if current_admin_user.is_admin?
-      hr
-      h1 "Admin Only"
       f.inputs(class: "admin_inputs") do
         f.input :ignore, hint: "Check this box if this account is a dummy email address, bot or duplicate."
         f.input :old_skill_tree_level,

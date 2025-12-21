@@ -2,7 +2,7 @@ ActiveAdmin.register ContributorPayout do
   config.filters = false
   config.paginate = false
   actions :index, :new, :show, :edit, :update, :create, :destroy
-  permit_params :forecast_person_id, :amount, :description, :created_by_id, :blueprint
+  permit_params :contributor_id, :amount, :description, :created_by_id, :blueprint
   menu false
 
   belongs_to :invoice_tracker
@@ -36,7 +36,7 @@ ActiveAdmin.register ContributorPayout do
 
   member_action :toggle_acceptance, method: :post do
     cp = ContributorPayout.find(params[:id])
-    return unless cp.forecast_person.try(:admin_user) == current_admin_user || current_admin_user.is_admin?
+    return unless cp.contributor.forecast_person.try(:admin_user) == current_admin_user || current_admin_user.is_admin?
     cp.toggle_acceptance!
     return redirect_to(
       admin_invoice_tracker_contributor_payouts_path(cp.invoice_tracker, cp, format: :html),
@@ -83,7 +83,7 @@ ActiveAdmin.register ContributorPayout do
     column :accepted?
 
     actions do |resource|
-      if resource.forecast_person.try(:admin_user) == current_admin_user || current_admin_user.is_admin?
+      if resource.contributor.forecast_person.try(:admin_user) == current_admin_user || current_admin_user.is_admin?
         if resource.accepted?
           link_to(
             "Unaccept",
@@ -105,10 +105,9 @@ ActiveAdmin.register ContributorPayout do
     f.inputs do
       f.semantic_errors
       f.input :invoice_tracker, input_html: { disabled: true }
-      f.input :forecast_person
+      f.input :contributor
       f.input :amount
       f.input :description
-      f.input :blueprint, as: :text, input_html: { rows: 10 }
     end
 
     f.actions

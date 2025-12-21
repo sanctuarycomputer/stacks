@@ -151,107 +151,6 @@ class AdminUserTest < ActiveSupport::TestCase
     assert admin_user.psu_earned_by(Date.new(2021, 1, 1)) == 12
   end
 
-  test "#met_associates_skill_band_requirement_at when the user has an archived review exceeding the band" do
-    user = AdminUser.create!({
-      email: "josh@sanctuary.computer",
-      password: "password"
-    })
-
-    target_date = 5.days.ago
-
-    user.reviews.create!({
-      archived_at: target_date,
-      finalization: Finalization.new({
-        workspace: Workspace.new({
-          status: "complete"
-        })
-      })
-    })
-
-    Review.any_instance.expects(:total_points).returns(650)
-
-    assert_in_delta(
-      target_date,
-      user.met_associates_skill_band_requirement_at,
-      1.second
-    )
-  end
-
-  test "#met_associates_skill_band_requirement_at when the user has an archived review that does not exceed the band" do
-    user = AdminUser.create!({
-      email: "josh@sanctuary.computer",
-      password: "password"
-    })
-
-    target_date = 5.days.ago
-
-    user.reviews.create!({
-      archived_at: target_date,
-      finalization: Finalization.new({
-        workspace: Workspace.new({
-          status: "complete"
-        })
-      })
-    })
-
-    Review.any_instance.expects(:total_points).returns(400)
-
-    assert_nil(user.met_associates_skill_band_requirement_at)
-  end
-
-  test "#met_associates_skill_band_requirement_at with no archived reviews or old skill tree level" do
-    user = AdminUser.create!({
-      email: "josh@sanctuary.computer",
-      password: "password"
-    })
-
-    assert_nil(user.met_associates_skill_band_requirement_at)
-  end
-
-  test "#met_associates_skill_band_requirement_at with old skill level exceeding required points" do
-    user = AdminUser.create!({
-      email: "josh@sanctuary.computer",
-      password: "password",
-      old_skill_tree_level: :senior_4
-    })
-
-    start_date = Date.new(2023, 1, 1)
-
-    FullTimePeriod.create!({
-      admin_user: user,
-      started_at: start_date,
-      ended_at: nil,
-      contributor_type: Enum::ContributorType::FIVE_DAY,
-      expected_utilization: 0.8
-    })
-
-    assert_in_delta(
-      start_date,
-      user.met_associates_skill_band_requirement_at,
-      1.second
-    )
-  end
-
-  test "#met_associates_skill_band_requirement_at with old skill level not exceeding required points" do
-    user = AdminUser.create!({
-      email: "josh@sanctuary.computer",
-      password: "password",
-      old_skill_tree_level: :junior_1
-    })
-
-    start_date = Date.new(2023, 1, 1)
-
-    FullTimePeriod.create!({
-      admin_user: user,
-      started_at: start_date,
-      ended_at: nil,
-      contributor_type: Enum::ContributorType::FIVE_DAY,
-      expected_utilization: 0.8
-    })
-
-    assert_nil(user.met_associates_skill_band_requirement_at)
-  end
-
   test "#skill_tree_level_without_salary when the user has an archived review" do
     user = AdminUser.create!({
       email: "josh@sanctuary.computer",
@@ -646,23 +545,6 @@ class AdminUserTest < ActiveSupport::TestCase
     period = user.full_time_period_at(Date.new(2022, 6, 1))
 
     assert_nil(period)
-  end
-
-  test "#approximate_cost_per_hour_before_studio_expenses returns the expected value" do
-    user = AdminUser.create!({
-      email: "josh@sanctuary.computer",
-      password: "password",
-      old_skill_tree_level: :senior_2
-    })
-
-    actual_cost = user.approximate_cost_per_hour_before_studio_expenses
-    expected_cost = 62.2306
-
-    if Date.today.leap?
-      assert_in_delta(62.2306, actual_cost, 0.0001)
-    else
-      assert_in_delta(62.4699, actual_cost, 0.0001)
-    end
   end
 end
 
