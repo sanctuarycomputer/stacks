@@ -130,10 +130,10 @@ ActiveAdmin.register ProjectTracker do
   end
 
   index download_links: [:csv], title: "Projects" do
-    if params["scope"] == "complete"
-      column :considered_successful?
-      column :project_satisfaction_survey do |pt|
+    column :considered_successful?
 
+    if params["scope"] == "complete"
+      column :project_satisfaction_survey do |pt|
         if pt&.project_capsule&.project_satisfaction_survey&.closed_at&.present?
           score = pt.project_capsule.project_satisfaction_survey.results[:overall].round(1)
           pill_class =
@@ -407,6 +407,8 @@ ActiveAdmin.register ProjectTracker do
 
       if current_admin_user.is_admin?
         f.input :company_treasury_split, hint: "The percentage of the project's profit that will be allocated to the company treasury. This is used to calculate the project's profit margin."
+        f.input :target_profit_margin, hint: "The target profit margin for the project. This is used to calculate the project's profit margin."
+        f.input :target_free_hours_percent, hint: "The target free hours percent for the project. This is used to calculate the project's free hours ratio."
       end
 
       f.has_many :project_tracker_links, heading: false, allow_destroy: true, new_record: 'Add a Project URL' do |a|
