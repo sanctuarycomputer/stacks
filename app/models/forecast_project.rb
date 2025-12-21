@@ -26,7 +26,8 @@ class ForecastProject < ApplicationRecord
     match = matches.find do |match|
       match[0].downcase == email.downcase
     end
-    hourly_rate_of_pay_override = match[1].to_f if match.present?
+    return match[1].to_f if match.present?
+    nil
   end
 
   def self.candidates_for_association_with_project_tracker(project_tracker)
