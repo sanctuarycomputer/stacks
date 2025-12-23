@@ -32,6 +32,11 @@
 .dashboard-module .module-body {
   padding: 20px;
 }
+.dashboard-module .module-body ul li {
+  list-style-type: circle;
+  padding: 0px;
+  border: none;
+}
 .dashboard-module .module-body.factoid-parent {
   display: flex;
   align-items: center;

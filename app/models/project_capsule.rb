@@ -9,7 +9,6 @@ class ProjectCapsule < ApplicationRecord
       .where.not(internal_marketing_status: nil)
       .where.not(capsule_status: nil)
       .where.not(project_satisfaction_survey_status: nil)
-      .where.not(postpartum_notes: [nil, ""])
   }
 
   enum client_satisfaction_status: {
@@ -25,7 +24,7 @@ class ProjectCapsule < ApplicationRecord
 
   enum internal_marketing_status: {
     case_study_scheduled_with_communications_team: 0,
-    opt_out_out_of_internal_marketing: 1
+    opt_out_out_of_publishing_a_case_study: 1
   }
 
   enum capsule_status: {
@@ -34,8 +33,8 @@ class ProjectCapsule < ApplicationRecord
   }
 
   enum project_satisfaction_survey_status: {
-    project_satisfaction_survey_created: 0,
-    opt_out_of_project_satisfaction_survey: 1
+    internal_project_team_satisfaction_survey_created: 0,
+    opt_out_of_internal_project_team_satisfaction_survey: 1
   }
 
   def complete?
@@ -44,17 +43,15 @@ class ProjectCapsule < ApplicationRecord
     capsule_status.present? &&
     project_satisfaction_survey_status.present? &&
     project_satisfaction_survey_status_valid? &&
-    postpartum_notes.present? &&
-    client_satisfaction_status.present? &&
-    client_satisfaction_detail.present?
+    client_satisfaction_status.present?
   end
 
   def project_satisfaction_survey_status_valid?
     # Survey is valid if it's opted out
-    return true if opt_out_of_project_satisfaction_survey?
+    return true if opt_out_of_internal_project_team_satisfaction_survey?
 
     # Survey is valid if it's created but also the survey is closed
-    if project_satisfaction_survey_created? && project_satisfaction_survey.present?
+    if internal_project_team_satisfaction_survey_created? && project_satisfaction_survey.present?
       return project_satisfaction_survey.closed?
     end
 

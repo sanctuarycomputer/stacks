@@ -177,24 +177,6 @@
             </tr>
           </tbody>
         </table>
-
-        <p style="padding-top: 20px;"><strong>Client Satisfaction Detail</strong></p>
-        <hr />
-        <div class="markdown-body">
-          <%= sanitize RDiscount.new(project_capsule.client_satisfaction_detail || "").to_html %>
-        </div>
-
-      </div>
-    </div>
-  </div>
-
-  <div class="dashboard-modules table index_table index">
-    <div class="dashboard-module">
-      <div class="module-header">
-        <p>Postpartum Meeting Notes</p>
-      </div>
-      <div class="module-body markdown-body">
-        <%= sanitize RDiscount.new(project_capsule.postpartum_notes || "").to_html %>
       </div>
     </div>
   </div>
