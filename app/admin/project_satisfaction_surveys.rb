@@ -26,13 +26,13 @@ ActiveAdmin.register ProjectSatisfactionSurvey do
       :_edit
     ]
 
-  action_item :close_survey, only: [:show, :edit] do
+  action_item :close_survey, only: [:show, :edit], if: proc { current_admin_user.is_admin? } do
     if resource.status == :open
       link_to "Close Survey", close_survey_admin_project_satisfaction_survey_path(resource), method: :post
     end
   end
 
-  action_item :reopen_survey, only: [:show, :edit] do
+  action_item :reopen_survey, only: [:show, :edit], if: proc { current_admin_user.is_admin? } do
     if resource.status == :closed
       link_to "Reopen Survey", reopen_survey_admin_project_satisfaction_survey_path(resource), method: :post
     end

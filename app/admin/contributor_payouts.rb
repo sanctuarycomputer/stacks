@@ -20,7 +20,7 @@ ActiveAdmin.register ContributorPayout do
     end
   end
 
-  action_item :sync_qbo_bill, only: :show do
+  action_item :sync_qbo_bill, only: :show, if: proc { current_admin_user.is_admin? } do
     link_to "Sync QBO Bill", sync_qbo_bill_admin_invoice_tracker_contributor_payout_path(resource.invoice_tracker, resource),
       method: :post
   end

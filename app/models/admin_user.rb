@@ -532,11 +532,21 @@ class AdminUser < ApplicationRecord
   end
 
   def is_admin?
-    roles.include?("admin")
+    is_hugh? || roles.include?("admin")
   end
 
   def is_hugh?
     email == "hugh@sanctuary.computer"
+  end
+
+  def has_led_projects?
+    return AccountLeadPeriod.where(admin_user_id: self.id).any? || ProjectLeadPeriod.where(admin_user_id: self.id).any?
+  end
+
+  def is_on_old_deal?
+    ftp = full_time_period_at(Date.today)
+    return false unless ftp.present?
+    ftp.contributor_type != Enum::ContributorType::VARIABLE_HOURS
   end
 
   def display_name

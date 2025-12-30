@@ -1,6 +1,15 @@
 ActiveAdmin.register_page "Dashboard" do
   menu label: "g3d", priority: 0
 
+  controller do
+    before_action :redirect_to_profile
+    def redirect_to_profile
+      unless current_admin_user.has_led_projects? || current_admin_user.is_admin?
+        redirect_to admin_admin_user_path(current_admin_user)
+      end
+    end
+  end
+
   content title: proc { I18n.t("active_admin.dashboard") } do
     g3d = Studio.garden3d
     xxix = Studio.find_by(mini_name: "xxix")
