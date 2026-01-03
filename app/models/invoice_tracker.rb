@@ -199,6 +199,113 @@ class InvoiceTracker < ApplicationRecord
     Hashdiff.diff(blueprinted_lines, latest_lines)
   end
 
+  def calculate_surplus
+
+    # Loop through each contributor payout
+    # Find the associated line item for the payout
+    #
+
+    mapping = contributor_payouts.includes(contributor: :forecast_person).reduce([]) do |acc, cp|
+      raise "Foo" unless cp.in_sync?
+
+      cp.blueprint["IndividualContributor"].each do |ic|
+        # Go through each "IC Chunk"
+        # Find the associated line item for the IC Chunk
+        # Find the project tracker for the IC Chunk
+        # Understand if it created surplus (payout was less than 57% of the QBO line item amount)
+        # Create a surplus chunk for th eproject tracker
+        qbo_line_item = qbo_invoice.line_items.find{|li| li["id"] == ic.dig("blueprint_metadata", "id")}
+        amount_paid = ic.dig("amount").try(:to_f) || 0
+        amount_billed = qbo_line_item.dig("amount").try(:to_f) || 0
+        profit_margin = (amount_billed - amount_paid) / amount_billed
+        surplus = ((profit_margin - 0.43) * amount_billed).round(2)
+        next acc if surplus <= 0
+
+        project_tracker = project_trackers.find{|pt| pt.forecast_project_ids.include?(ic.dig("blueprint_metadata", "forecast_project"))}
+        acc << {
+          project_tracker: project_tracker,
+          surplus: surplus,
+          contributor_payout: cp,
+          chunk: ic,
+        }
+      end
+
+      acc
+    end
+
+
+    # InvoiceTracker.find(1167).calculate_surplus
+    bp = blueprint
+    inv = qbo_invoice
+
+    mapping = inv.line_items.reduce({}) do |acc, line|
+      meta = (bp["lines"] || {}).values.find{|l| l["id"] == line["id"]}
+      next acc unless meta.present? && meta["forecast_person"].present?
+
+      forecast_person = ForecastPerson.includes(:admin_user).find(meta["forecast_person"])
+      next acc if forecast_person.admin_user.try(:is_on_old_deal?)
+
+      forecast_project_id = meta["forecast_project"]
+      acc[forecast_person] ||= {}
+      acc[forecast_person][forecast_project_id] ||= { billed: 0, paid: 0 }
+      acc[forecast_person][forecast_project_id][:billed] += line["amount"].to_f
+      acc
+    end
+
+    mapping = contributor_payouts.includes(contributor: :forecast_person).reduce(mapping) do |acc, cp|
+      next acc unless mapping[cp.contributor.forecast_person].present?
+      mapping[cp.contributor.forecast_person][:payouts] ||= []
+
+      # If there's only one project tracker, this is simple.
+      if project_trackers.length < 2
+        binding.pry
+      else
+        # There's multiple project trackers, so we need to split the payout up.
+        if cp.in_sync?
+          mapping[cp.contributor.forecast_person][:payouts] << cp
+          cp.blueprint.each do |k, v|
+            v.each do |vv|
+              binding.pry
+              mapping[cp.contributor.forecast_person][]
+              mapping[cp.contributor.forecast_person][:payouts].last[k] += vv["amount"].to_f
+            end
+          end
+        else
+          # TODO: Raise if contributor payouts that are not in sync?
+        end
+
+      end
+
+      acc
+    end
+
+    mapping.each do |forecast_person, data|
+      binding.pry
+      # {
+      #   [project_tracker]: {
+      #     billed: 0,
+      #     paid: 0
+      #   },
+      #   payouts: []
+      # }
+    end
+
+    mapping.values.map{|v| v[:surplus]}.compact.sum
+  end
+
+  def sync_surplus_splits
+    surplus = calculate_surplus
+    return if surplus == 0
+
+    # If there's only one project tracker, that's cool.
+    # If there's multiple project trackers
+
+    surplus_split = surplus * company_treasury_split
+    return if surplus_split == 0
+
+    binding.pry
+  end
+
   def make_contributor_payouts!(created_by)
     raise "Payment splits are not supported for this invoice pass" unless invoice_pass.allows_payment_splits?
     return [] if qbo_invoice.nil?
