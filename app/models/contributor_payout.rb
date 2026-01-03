@@ -123,6 +123,14 @@ class ContributorPayout < ApplicationRecord
     end
   end
 
+  def in_sync?
+    blueprint_amount = (blueprint || {}).reduce(0) do |acc, (k, v)|
+      acc += v.sum{|vv| vv["amount"].to_f}
+      acc
+    end
+    blueprint_amount == amount
+  end
+
   def contributor_payouts_within_seventy_percent
     return if changes.keys == ["accepted_at"] # Don't check if the payout is being accepted or unaccepted
 
