@@ -46,6 +46,7 @@ class Okr < ApplicationRecord
   }
 
   def self.make_annual_growth_progress_data(target, tolerance, last_year_value, current_value, base_unit_type)
+    last_year_value = last_year_value || 0
     growth_progress = {
       eoy: {
         low: last_year_value * (1 + (target - tolerance)/100.0),
