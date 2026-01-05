@@ -278,3 +278,76 @@
   </div>
 <% end %>
 
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">🏓 Profit Sharing</h2>
+  </div>
+</div>
+
+<% surplus_chunks = invoice_tracker.surplus_chunks.select{|c| c[:surplus] > 0 } %>
+<% surplus = invoice_tracker.surplus(surplus_chunks) %>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-body factoid-parent">
+      <div class="factoid">  
+        <p style="margin-bottom: 6px;">💁 <strong>Note!</strong> When we work with Individual Contributors cheaper than <code>57%</code> of our client's billable rate, the surplus revenue is split between the Account Lead, Project Lead, and our company-wide quarterly profit share program.</p>
+        <a href="https://github.com/sanctuarycomputer/stacks" target="_blank">
+          Read more here ↗
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-module">
+    <div class="module-body factoid-parent">
+      <div class="factoid">  
+        <p style="margin-bottom: 6px;">This invoice generated a surpus of:</p>
+        <h2>
+          <%= number_to_currency surplus %>
+        </h2>
+      </div>
+    </div>
+  </div>
+</div>
+
+<% if surplus > 0 %>
+  <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+    <thead>
+      <tr>
+        <th class="col">Invoice Item</th>
+        <th class="col">Maximum Payout (57%)</th>
+        <th class="col">Actual Payout</th>
+        <th class="col text-right">Surplus</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% surplus_chunks.each_with_index do |c, index| %>
+        <tr class="<%= index.even? ? "even" : "odd" %>">
+          <td class="col">
+            <%= c.dig(:qbo_line_item, "description") %>
+          </td>
+          <td class="col">
+            <%= number_to_currency c[:maximum] %>
+          </td>
+          <td class="col">
+            <%= number_to_currency c[:actual] %>
+          </td>
+          <td class="col text-right">
+            <%= number_to_currency c[:surplus] %>
+          </td>
+        </tr>
+      <% end %>
+      <tr>
+        <td class="col">
+          <strong>TOTAL</strong>
+        </td>
+        <td></td>
+        <td></td>
+        <td class="col text-right">
+          <%= number_to_currency surplus %>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+<% end %>

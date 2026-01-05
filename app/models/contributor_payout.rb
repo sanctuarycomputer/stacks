@@ -41,6 +41,34 @@ class ContributorPayout < ApplicationRecord
     end
   end
 
+  def calculate_surplus
+    return [] unless in_sync?
+
+    qbo_inv = invoice_tracker.qbo_invoice
+    return [] unless qbo_inv.present?
+    
+    project_trackers = invoice_tracker.project_trackers
+
+    blueprint["IndividualContributor"].map do |ic|
+      qbo_line_item = qbo_inv.line_items.find{|li| li["id"] == ic.dig("blueprint_metadata", "id")} || {}
+      amount_paid = ic.dig("amount").try(:to_f) || 0
+      amount_billed = qbo_line_item.dig("amount").try(:to_f) || 0
+      profit_margin = (amount_billed - amount_paid) / amount_billed
+      surplus = ((profit_margin - 0.43) * amount_billed).round(2)
+      surplus = 0 if surplus <= 0
+
+      project_tracker = project_trackers.find{|pt| pt.forecast_project_ids.include?(ic.dig("blueprint_metadata", "forecast_project"))}
+      {
+        project_tracker: project_tracker,
+        surplus: surplus,
+        actual: amount_paid,
+        maximum: 0.57 * amount_billed,
+        chunk: ic,
+        qbo_line_item: qbo_line_item,
+      }
+    end
+  end
+
   def accrual_date
     invoice_tracker.invoice_pass.start_of_month.end_of_month
   end
@@ -124,11 +152,15 @@ class ContributorPayout < ApplicationRecord
   end
 
   def in_sync?
-    blueprint_amount = (blueprint || {}).reduce(0) do |acc, (k, v)|
-      acc += v.sum{|vv| vv["amount"].to_f}
-      acc
+    begin
+      blueprint_amount = (blueprint || {}).reduce(0) do |acc, (k, v)|
+        acc += v.sum{|vv| vv["amount"].to_f}
+        acc
+      end
+      blueprint_amount == amount
+    rescue
+      false
     end
-    blueprint_amount == amount
   end
 
   def contributor_payouts_within_seventy_percent
