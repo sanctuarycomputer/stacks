@@ -608,6 +608,8 @@ class AdminUser < ApplicationRecord
       },
     }
 
+    return data unless g3d_data.present?
+    
     _email, v = g3d_data["utilization"].find{|k,v| k == self.email}
     if v.present?
       data = data.merge({
