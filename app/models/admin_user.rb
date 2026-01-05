@@ -540,7 +540,7 @@ class AdminUser < ApplicationRecord
   end
 
   def has_led_projects?
-    return AccountLeadPeriod.where(admin_user_id: self.id).any? || ProjectLeadPeriod.where(admin_user_id: self.id).any?
+    return AccountLeadPeriod.where(admin_user_id: self.id).any? || TeamLeadPeriod.where(admin_user_id: self.id).any?
   end
 
   def is_on_old_deal?

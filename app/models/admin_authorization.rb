@@ -11,7 +11,7 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
   # end
 
   def authorized?(action, subject = nil)
-    return true if user.is_admin? || user.has_led_projects?
+    return true if (user.is_admin? || user.has_led_projects?)
 
     if subject.is_a?(AdminUser)
       return true if subject == user && action == :read
