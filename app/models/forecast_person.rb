@@ -14,7 +14,7 @@ class ForecastPerson < ApplicationRecord
   end
 
   def ensure_contributor_exists!
-    return if contributor.present?
+    return true if contributor.present?
     Contributor.create!(forecast_person: self)
     self.reload
   end
