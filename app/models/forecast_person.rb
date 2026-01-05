@@ -16,6 +16,7 @@ class ForecastPerson < ApplicationRecord
   def ensure_contributor_exists!
     return if contributor.present?
     Contributor.create!(forecast_person: self)
+    self.reload
   end
 
   def missing_allocation_during_range_in_hours(start_of_range, end_of_range)

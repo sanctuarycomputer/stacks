@@ -13,7 +13,7 @@
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
     <div class="module-body factoid-parent">
-      <% if resource.forecast_person.present? %>
+      <% if resource.forecast_person.present? && resource.forecast_person.ensure_contributor_exists! %>
         <p style="margin-bottom: 6px;">💸 <strong>Note!</strong> This user's payments ledger is available here:</p>
         <%= link_to "Payments Ledger ↗", admin_contributor_path(resource.forecast_person.contributor) %>
       <% else %>
