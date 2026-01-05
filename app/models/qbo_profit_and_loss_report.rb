@@ -225,7 +225,7 @@ class QboProfitAndLossReport < ApplicationRecord
         s[:expenses][:total]
       )
       s[:net_revenue] = s[:revenue] - s[:cogs]
-      s[:profit_margin] = (s[:net_revenue] / s[:revenue]) * 100
+      s[:profit_margin] = s[:revenue] > 0 ? (s[:net_revenue] / s[:revenue]) * 100 : 0
     end
 
     scenarios
