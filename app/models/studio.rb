@@ -532,7 +532,7 @@ class Studio < ApplicationRecord
       data[:actual_cost_per_hour_sold] = { unit: :usd, value: nil }
       unless v.nil?
         total_billable = v[:billable].values.reduce(&:+) || 0
-        data[:actual_cost_per_hour_sold][:value] = cogs[:cogs] / total_billable
+        data[:actual_cost_per_hour_sold][:value] = total_billable > 0 ? cogs[:cogs] / total_billable : 0
       end
 
       data
