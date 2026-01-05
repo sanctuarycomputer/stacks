@@ -186,7 +186,7 @@ class InvoiceTracker < ApplicationRecord
   end
 
   def changes_in_forecast
-    return false if blueprint.nil?
+    return [] if blueprint.nil?
     latest_lines = (make_blueprint![:lines] || {}).deep_stringify_keys.reduce({}) do |acc, (k, v)|
       acc[k] = v.except("id")
       acc
