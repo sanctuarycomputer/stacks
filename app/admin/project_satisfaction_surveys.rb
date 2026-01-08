@@ -159,7 +159,7 @@ ActiveAdmin.register ProjectSatisfactionSurvey do
       super do |success, failure|
         if success.present?
           # Update the project capsule status when the survey is created
-          resource.project_capsule.update!(project_satisfaction_survey_status: :project_satisfaction_survey_created)
+          resource.project_capsule.update!(project_satisfaction_survey_status: :internal_project_team_satisfaction_survey_created)
 
           # Redirect to the show page with a success message
           redirect_to admin_project_satisfaction_survey_path(resource), notice: "Project satisfaction survey created!" and return
