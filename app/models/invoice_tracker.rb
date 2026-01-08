@@ -199,6 +199,27 @@ class InvoiceTracker < ApplicationRecord
     Hashdiff.diff(blueprinted_lines, latest_lines)
   end
 
+  def surplus_chunks
+    contributor_payouts.includes(contributor: :forecast_person).map(&:calculate_surplus).flatten
+  end
+
+  def surplus(chunks = surplus_chunks)
+    chunks.sum{|c| c[:surplus]}
+  end
+
+  def sync_surplus_splits
+    surplus = calculate_surplus
+    return if surplus == 0
+
+    # If there's only one project tracker, that's cool.
+    # If there's multiple project trackers
+
+    surplus_split = surplus * company_treasury_split
+    return if surplus_split == 0
+
+    binding.pry
+  end
+
   def make_contributor_payouts!(created_by)
     raise "Payment splits are not supported for this invoice pass" unless invoice_pass.allows_payment_splits?
     return [] if qbo_invoice.nil?
@@ -363,6 +384,49 @@ class InvoiceTracker < ApplicationRecord
       end
 
       (contributor_payouts - synced).each(&:destroy)
+      contributor_payouts.reload
+
+      # Assign splits for Surplus
+      chunks = surplus_chunks.select{|c| c[:surplus] > 0}
+      total_surplus = surplus(chunks)
+  
+      return unless total_surplus > 0
+
+      chunks.each do |c|
+        next unless c[:project_tracker].present?
+
+        account_lead = c[:project_tracker].account_lead_for_month(invoice_pass.start_of_month)
+        if account_lead_contributor = account_lead.try(:forecast_person).try(:contributor)
+          cp = contributor_payouts.with_deleted.find_or_initialize_by(contributor: contributor)
+          alps = AccountLeadProfitShare.with_deleted.find_or_initialize_by(
+            contributor: contributor,
+            invoice_tracker: self
+          )
+
+          account_lead_share = total_surplus * 0.15
+
+          description <<-DESC
+            # Profit Share
+            This invoice generated #{ActionController::Base.helpers.number_to_currency(total_surplus)} in
+            surplus revenue. The following
+
+            - #{ActionController::Base.helpers.number_to_currency(total_surplus)} * 15% = #{ActionController::Base.helpers.number_to_currency(account_lead_share)}
+          DESC
+          
+          alps.update!(
+            deleted_at: nil,
+            amount: account_lead_share,
+            blueprint: { surplus: total_surplus, share: account_lead_share },
+            created_by: created_by,
+            description: description,
+            accepted_at: payee.admin_user.present? ? nil : DateTime.now
+          )
+        end
+
+        team_lead = c[:project_tracker].team_lead_for_month(invoice_pass.start_of_month)
+        if team_lead_contributor = account_lead.try(:forecast_person).try(:contributor)
+        end
+      end
     end
   end
 
