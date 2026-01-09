@@ -15,7 +15,7 @@ ActiveAdmin.register ContributorPayout do
 
   action_item :toggle_acceptance, only: :show do
     if current_admin_user == resource.contributor.forecast_person.admin_user || current_admin_user.is_admin?
-      link_to resource.accepted? ? "Unaccept" : "Accept", toggle_contributor_payout_acceptance_admin_invoice_pass_invoice_tracker_path(resource.invoice_tracker.invoice_pass.id, resource.invoice_tracker, {contributor_payout_id: resource.id}),
+      link_to resource.accepted? ? "Unaccept" : "Accept", toggle_acceptance_admin_invoice_tracker_contributor_payout_path(resource.invoice_tracker, resource),
         method: :post
     end
   end
@@ -39,7 +39,7 @@ ActiveAdmin.register ContributorPayout do
     return unless cp.contributor.forecast_person.try(:admin_user) == current_admin_user || current_admin_user.is_admin?
     cp.toggle_acceptance!
     return redirect_to(
-      admin_invoice_tracker_contributor_payouts_path(cp.invoice_tracker, cp, format: :html),
+      admin_invoice_tracker_contributor_payout_path(cp.invoice_tracker, cp, format: :html),
       notice: "Success",
     )
   end
