@@ -11,6 +11,10 @@ class ContributorPayout < ApplicationRecord
   validate :contributor_payouts_within_seventy_percent
   validate :only_after_new_deal
 
+  def display_name
+    "#{invoice_tracker.invoice_pass.invoice_month}: #{invoice_tracker.forecast_client.name}"
+  end
+
   def find_qbo_account!
     qbo_accounts = Stacks::Quickbooks.fetch_all_accounts
     account = qbo_accounts.find{|a| a.name == "[SC] Subcontractors"}
@@ -50,14 +54,15 @@ class ContributorPayout < ApplicationRecord
     project_trackers = invoice_tracker.project_trackers
 
     blueprint["IndividualContributor"].map do |ic|
-      qbo_line_item = qbo_inv.line_items.find{|li| li["id"] == ic.dig("blueprint_metadata", "id")} || {}
+      blueprint_metadata = ic.dig("blueprint_metadata")
+      qbo_line_item = qbo_inv.line_items.find{|li| li["id"] == blueprint_metadata.dig("id")} || {}
       amount_paid = ic.dig("amount").try(:to_f) || 0
       amount_billed = qbo_line_item.dig("amount").try(:to_f) || 0
       profit_margin = (amount_billed - amount_paid) / amount_billed
       surplus = ((profit_margin - 0.43) * amount_billed).round(2)
       surplus = 0 if surplus <= 0
 
-      project_tracker = project_trackers.find{|pt| pt.forecast_project_ids.include?(ic.dig("blueprint_metadata", "forecast_project"))}
+      project_tracker = project_trackers.find{|pt| pt.forecast_project_ids.include?(blueprint_metadata.dig("forecast_project"))}
       {
         project_tracker: project_tracker,
         surplus: surplus,
@@ -65,6 +70,7 @@ class ContributorPayout < ApplicationRecord
         maximum: 0.57 * amount_billed,
         chunk: ic,
         qbo_line_item: qbo_line_item,
+        blueprint_metadata: blueprint_metadata,
       }
     end
   end

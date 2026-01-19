@@ -220,6 +220,10 @@ class InvoiceTracker < ApplicationRecord
     binding.pry
   end
 
+  def n2c(*args, **kwargs, &b)
+    ActionController::Base.helpers.number_to_currency(*args, **kwargs, &b)
+  end
+
   def make_contributor_payouts!(created_by)
     raise "Payment splits are not supported for this invoice pass" unless invoice_pass.allows_payment_splits?
     return [] if qbo_invoice.nil?
@@ -298,7 +302,7 @@ class InvoiceTracker < ApplicationRecord
             qbo_line_item: line_item,
             blueprint_metadata: metadata,
             amount: amount,
-            description_line: "- #{working_hours} hrs * #{ActionController::Base.helpers.number_to_currency(working_rate)} p/h * 8% = #{ActionController::Base.helpers.number_to_currency(amount)}",
+            description_line: "- #{working_hours} hrs * #{n2c(working_rate)} p/h * 8% = #{n2c(amount)}",
           }
         end
 
@@ -316,7 +320,7 @@ class InvoiceTracker < ApplicationRecord
             qbo_line_item: line_item,
             blueprint_metadata: metadata,
             amount: amount,
-            description_line: "- #{working_hours} hrs * #{ActionController::Base.helpers.number_to_currency(working_rate)} p/h * 5% = #{ActionController::Base.helpers.number_to_currency(amount)}",
+            description_line: "- #{working_hours} hrs * #{n2c(working_rate)} p/h * 5% = #{n2c(amount)}",
           }
         end
 
@@ -337,7 +341,7 @@ class InvoiceTracker < ApplicationRecord
               qbo_line_item: line_item,
               blueprint_metadata: metadata,
               amount: amount,
-              description_line: "- #{working_hours} hrs * #{ActionController::Base.helpers.number_to_currency(hourly_rate_of_pay_override)} p/h = #{ActionController::Base.helpers.number_to_currency(amount)}",
+              description_line: "- #{working_hours} hrs * #{n2c(hourly_rate_of_pay_override)} p/h = #{n2c(amount)}",
             }
           else
             amount = working_amount * (1 - pt.company_treasury_split - (account_lead.present? ? 0.08 : 0) - (team_lead.present? ? 0.05 : 0))
@@ -345,7 +349,7 @@ class InvoiceTracker < ApplicationRecord
               qbo_line_item: line_item,
               blueprint_metadata: metadata,
               amount: amount,
-              description_line: "- #{working_hours} hrs * #{ActionController::Base.helpers.number_to_currency(working_rate)} p/h * #{100 * (1 - pt.company_treasury_split - (account_lead.present? ? 0.08 : 0) - (team_lead.present? ? 0.05 : 0))}% = #{ActionController::Base.helpers.number_to_currency(amount)}",
+              description_line: "- #{working_hours} hrs * #{n2c(working_rate)} p/h * #{100 * (1 - pt.company_treasury_split - (account_lead.present? ? 0.08 : 0) - (team_lead.present? ? 0.05 : 0))}% = #{n2c(amount)}",
             }
           end
         end
@@ -354,79 +358,93 @@ class InvoiceTracker < ApplicationRecord
       synced = payouts.map do |payee, payee_data|
         amount = payee_data[:blueprint].values.flatten.sum{|l| l[:amount]}.round(2)
         next if amount == 0
-
         contributor = payee.is_a?(ForecastPerson) ? payee.contributor : payee.forecast_person.contributor
-        cp = contributor_payouts.with_deleted.find_or_initialize_by(contributor: contributor)
 
         # Only schedule payouts for variable hours people, as they're likely on the new deal
         if payee.admin_user.nil? || payee.admin_user.full_time_periods.empty? || payee.admin_user.full_time_period_at(invoice_pass.start_of_month.end_of_month).variable_hours?
-          description =
-            payee_data[:blueprint].reduce("") do |acc, (role, data)|
-              next acc if data.empty?
-              acc << "# #{role.to_s.underscore.humanize}\n"
-              acc << data.map{|vv| vv[:description_line]}.join("\n")
-              acc << "\n\n"
-              acc
-            end
-
-          description = description << "# Total: #{ActionController::Base.helpers.number_to_currency(amount)}"
-
+          cp = contributor_payouts.with_deleted.find_or_initialize_by(contributor: contributor)
           cp.update!(
             deleted_at: nil,
             amount: amount,
             blueprint: payee_data[:blueprint],
             created_by: created_by,
-            description: description,
+            description: "",
             accepted_at: payee.admin_user.present? ? nil : DateTime.now
           )
+          next cp
         end
-        cp
-      end
+      end.compact
 
       (contributor_payouts - synced).each(&:destroy)
       contributor_payouts.reload
 
       # Assign splits for Surplus
       chunks = surplus_chunks.select{|c| c[:surplus] > 0}
-      total_surplus = surplus(chunks)
-  
-      return unless total_surplus > 0
-
       chunks.each do |c|
         next unless c[:project_tracker].present?
 
+        lead_share = c[:surplus] * 0.15
+
+        # Share to Account Lead
         account_lead = c[:project_tracker].account_lead_for_month(invoice_pass.start_of_month)
-        if account_lead_contributor = account_lead.try(:forecast_person).try(:contributor)
-          cp = contributor_payouts.with_deleted.find_or_initialize_by(contributor: contributor)
-          alps = AccountLeadProfitShare.with_deleted.find_or_initialize_by(
-            contributor: contributor,
-            invoice_tracker: self
-          )
+        account_lead_on_new_deal = account_lead ? (account_lead.full_time_periods.empty? || account_lead.full_time_period_at(invoice_pass.start_of_month.end_of_month).variable_hours?) : false
+        if account_lead_on_new_deal && account_lead_contributor = account_lead.try(:forecast_person).try(:contributor)
+          cp = contributor_payouts.with_deleted.find_or_initialize_by(contributor: account_lead_contributor)
 
-          account_lead_share = total_surplus * 0.15
-
-          description <<-DESC
-            # Profit Share
-            This invoice generated #{ActionController::Base.helpers.number_to_currency(total_surplus)} in
-            surplus revenue. The following
-
-            - #{ActionController::Base.helpers.number_to_currency(total_surplus)} * 15% = #{ActionController::Base.helpers.number_to_currency(account_lead_share)}
-          DESC
+          new_blueprint = (cp.blueprint || {}).clone
+          new_blueprint["AccountLead"] ||= []
+          new_blueprint["AccountLead"] << {
+            amount: lead_share,
+            qbo_line_item: c[:qbo_line_item],
+            description_line: "- #{n2c(c[:surplus])} * 15% = #{n2c(lead_share)} (`#{c[:qbo_line_item].dig("description")}` generated #{n2c(c[:surplus])} surplus revenue, 15% of which is shared with the Account Lead)",
+            blueprint_metadata: c[:blueprint_metadata],
+          }
           
-          alps.update!(
+          cp.update!(
             deleted_at: nil,
-            amount: account_lead_share,
-            blueprint: { surplus: total_surplus, share: account_lead_share },
-            created_by: created_by,
-            description: description,
-            accepted_at: payee.admin_user.present? ? nil : DateTime.now
+            amount: (cp.amount || 0) + lead_share,
+            blueprint: new_blueprint,
           )
         end
 
+        # Share to Team Lead
         team_lead = c[:project_tracker].team_lead_for_month(invoice_pass.start_of_month)
-        if team_lead_contributor = account_lead.try(:forecast_person).try(:contributor)
+        team_lead_on_new_deal = team_lead ? (team_lead.full_time_periods.empty? || team_lead.full_time_period_at(invoice_pass.start_of_month.end_of_month).variable_hours?) : false
+        if team_lead_on_new_deal && team_lead_contributor = team_lead.try(:forecast_person).try(:contributor)
+          cp = contributor_payouts.with_deleted.find_or_initialize_by(contributor: team_lead_contributor)
+
+          new_blueprint = (cp.blueprint || {}).clone
+          new_blueprint["TeamLead"] ||= []
+          new_blueprint["TeamLead"] << {
+            amount: lead_share,
+            qbo_line_item: c[:qbo_line_item],
+            description_line: "- #{n2c(c[:surplus])} * 15% = #{n2c(lead_share)} (`#{c[:qbo_line_item].dig("description")})` generated #{n2c(c[:surplus])} surplus revenue, 15% of which is shared with the Team Lead)",
+            blueprint_metadata: c[:blueprint_metadata],
+          }
+          
+          cp.update!(
+            deleted_at: nil,
+            amount: (cp.amount || 0) + lead_share,
+            blueprint: new_blueprint,
+          )
         end
       end
+
+      contributor_payouts.reload.each do |cp|
+        description =
+          cp.blueprint.reduce("") do |acc, (role, data)|
+            next acc if data.empty?
+            acc << "# #{role.to_s.underscore.humanize}\n"
+            acc << data.map{|vv| vv["description_line"]}.join("\n")
+            acc << "\n\n"
+            acc
+          end
+
+        description = description << "# Total: #{n2c(cp.amount)}"
+        cp.update!(description: description)
+      end
+
+      contributor_payouts.reload
     end
   end
 
