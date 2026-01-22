@@ -207,19 +207,6 @@ class InvoiceTracker < ApplicationRecord
     chunks.sum{|c| c[:surplus]}
   end
 
-  def sync_surplus_splits
-    surplus = calculate_surplus
-    return if surplus == 0
-
-    # If there's only one project tracker, that's cool.
-    # If there's multiple project trackers
-
-    surplus_split = surplus * company_treasury_split
-    return if surplus_split == 0
-
-    binding.pry
-  end
-
   def n2c(*args, **kwargs, &b)
     ActionController::Base.helpers.number_to_currency(*args, **kwargs, &b)
   end
