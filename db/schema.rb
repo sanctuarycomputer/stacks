@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2025_12_20_181154) do
+ActiveRecord::Schema.define(version: 2026_01_22_203749) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -861,8 +861,10 @@ ActiveRecord::Schema.define(version: 2025_12_20_181154) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.bigint "contributor_id", null: false
+    t.string "qbo_bill_id"
     t.index ["contributor_id"], name: "index_trueups_on_contributor_id"
     t.index ["invoice_pass_id"], name: "index_trueups_on_invoice_pass_id"
+    t.index ["qbo_bill_id"], name: "index_trueups_on_qbo_bill_id"
   end
 
   create_table "workspaces", force: :cascade do |t|
@@ -959,4 +961,5 @@ ActiveRecord::Schema.define(version: 2025_12_20_181154) do
   add_foreign_key "traits", "trees"
   add_foreign_key "trueups", "contributors"
   add_foreign_key "trueups", "invoice_passes"
+  add_foreign_key "trueups", "qbo_bills", primary_key: "qbo_id"
 end

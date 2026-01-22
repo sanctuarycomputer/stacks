@@ -124,7 +124,7 @@
               <% if li.is_a?(MiscPayment) %>
                 <%= link_to "Info ↗", admin_contributor_misc_payment_path(contributor, li) %>
               <% elsif li.is_a?(ContributorPayout) %>
-                <%= link_to "Info ↗", admin_invoice_tracker_contributor_payout_path(li.invoice_tracker, li) %>
+                <%= link_to "#{li.display_name} ↗", admin_invoice_tracker_contributor_payout_path(li.invoice_tracker, li) %>
               <% elsif li.is_a?(Trueup) %>
                 <%= link_to "Info ↗", admin_contributor_trueup_path(contributor, li) %>
               <% end %>

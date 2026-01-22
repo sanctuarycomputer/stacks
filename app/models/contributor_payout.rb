@@ -1,5 +1,6 @@
 class ContributorPayout < ApplicationRecord
   acts_as_paranoid
+  include SyncsAsQboBill
 
   belongs_to :invoice_tracker
   belongs_to :contributor
@@ -12,36 +13,11 @@ class ContributorPayout < ApplicationRecord
   validate :only_after_new_deal
 
   def display_name
-    "#{invoice_tracker.invoice_pass.invoice_month}: #{invoice_tracker.forecast_client.name}"
-  end
-
-  def find_qbo_account!
-    qbo_accounts = Stacks::Quickbooks.fetch_all_accounts
-    account = qbo_accounts.find{|a| a.name == "[SC] Subcontractors"}
-    studio = contributor.forecast_person.studio
-    if studio.present?
-      specific_account = qbo_accounts.find{|a| a.name == studio.qbo_subcontractors_categories.first}
-      account = specific_account if specific_account.present?
-    end
-    raise "No account found in QuickBooks" unless account.present?
-    account
-  end
-
-  def load_qbo_bill!
-    return nil unless qbo_bill.present?
-
-    begin
-      return Stacks::Quickbooks.fetch_bill_by_id(qbo_bill.qbo_id)
-    rescue => e
-      if e.message.starts_with?("Object Not Found:")
-        ActiveRecord::Base.transaction do
-          b = qbo_bill
-          update_attribute(:qbo_bill_id, nil)
-          self.reload
-          b.destroy!
-        end
-      end
-      return nil
+    inv_id = (invoice_tracker.qbo_invoice.try(:data) || {}).dig("doc_number")
+    if inv_id.present?
+      "#{invoice_tracker.forecast_client.name} (Inv ##{inv_id})"
+    else
+      "#{invoice_tracker.forecast_client.name}"
     end
   end
 
@@ -77,49 +53,6 @@ class ContributorPayout < ApplicationRecord
 
   def accrual_date
     invoice_tracker.invoice_pass.start_of_month.end_of_month
-  end
-
-  def sync_qbo_bill!
-    return unless contributor.qbo_vendor.present?
-
-    bill = load_qbo_bill! || Quickbooks::Model::Bill.new
-    bill.txn_date = invoice_tracker.invoice_pass.start_of_month.end_of_month
-    bill.due_date = invoice_tracker.invoice_pass.start_of_month.end_of_month
-    bill.doc_number = "Stacks_#{id}"
-
-    bill.vendor_ref = Quickbooks::Model::BaseReference.new(contributor.qbo_vendor.id)
-
-    line_item = Quickbooks::Model::BillLineItem.new(
-      description: "https://stacks.garden3d.net/admin/invoice_trackers/#{invoice_tracker.id}/contributor_payouts/#{id}",
-      amount: amount,
-    )
-
-    line_item.account_based_expense_item! do |detail|
-      detail.account_ref = Quickbooks::Model::BaseReference.new(find_qbo_account!.id)
-      # Optionally mark as billable to a customer
-      # detail.customer_ref = Quickbooks::Model::BaseReference.new(customer_id)
-    end
-
-    bill.line_items = [line_item]
-    bill_service = Quickbooks::Service::Bill.new
-    bill_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
-    bill_service.access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
-    bill = bill.id.present? ? bill_service.update(bill) : bill_service.create(bill)
-
-    ActiveRecord::Base.transaction do
-      existing_bill_tracker = QboBill.find_by(qbo_id: bill.id)
-      if existing_bill_tracker.present?
-        existing_bill_tracker.update!(data: bill.as_json)
-      else
-        qbo_bill_tracker = QboBill.create!(
-          qbo_id: bill.id,
-          data: bill.as_json,
-          qbo_vendor_id: contributor.qbo_vendor.id
-        )
-      end
-      update_attribute(:qbo_bill_id, bill.id)
-      self.reload
-    end
   end
 
   def toggle_acceptance!

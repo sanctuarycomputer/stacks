@@ -125,6 +125,7 @@ namespace :stacks do
     system_task = SystemTask.create!(name: "stacks:sync_contributor_qbo_bills")
     begin
       Contributor.all.each(&:sync_qbo_bills!)
+      Trueup.all.each(&:sync_qbo_bill!)
     rescue => e
       system_task.mark_as_error(e)
     end
