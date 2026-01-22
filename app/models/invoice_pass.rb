@@ -28,6 +28,10 @@ class InvoicePass < ApplicationRecord
     invoice_trackers.map(&:value).compact.reduce(&:+)
   end
 
+  def surplus
+    invoice_trackers.map(&:surplus).compact.reduce(&:+)
+  end
+
   def balance
     invoice_trackers.map(&:balance).compact.reduce(&:+)
   end

@@ -30,8 +30,11 @@ ActiveAdmin.register InvoicePass do
     column :value do |resource|
       number_to_currency(resource.value)
     end
-    column :outstanding_balance do |resource|
+    column :outstanding do |resource|
       number_to_currency(resource.balance)
+    end
+    column :surplus do |resource|
+      number_to_currency(resource.surplus)
     end
     column :invoicing_statuses do |resource|
       div do
