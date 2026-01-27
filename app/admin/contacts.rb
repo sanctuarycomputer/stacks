@@ -7,6 +7,7 @@ ActiveAdmin.register Contact do
 
   filter :email_cont, as: :string, label: "Email Contains"
   filter :address_cont, as: :string, label: "Address Contains"
+  filter :sources_cont, as: :string, label: "Sources Contains"
 
   scope :all, default: true
   scope :synced_to_apollo

@@ -9,9 +9,14 @@ class Contact < ApplicationRecord
   }
 
   scope :address_cont, ->(value) { where_address_contains(value) }
+  scope :sources_cont, ->(value) { where("array_to_string(sources, ' ') ILIKE ?", "%#{value}%") }
+
+  def self.ransackable_attributes(auth_object = nil)
+    super - ['sources']
+  end
 
   def self.ransackable_scopes(*)
-    %i(address_cont)
+    %i(address_cont sources_cont)
   end
 
   def self.where_address_contains(value)
