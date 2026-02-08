@@ -345,10 +345,12 @@ class InvoiceTracker < ApplicationRecord
       synced = payouts.map do |payee, payee_data|
         amount = payee_data[:blueprint].values.flatten.sum{|l| l[:amount]}.round(2)
         next if amount == 0
-        contributor = payee.is_a?(ForecastPerson) ? payee.contributor : payee.forecast_person.contributor
+        forecast_person = payee.is_a?(ForecastPerson) ? payee : payee.forecast_person
+        forecast_person.ensure_contributor_exists!
+        contributor = forecast_person.contributor
 
         # Only schedule payouts for variable hours people, as they're likely on the new deal
-        if payee.admin_user.nil? || payee.admin_user.full_time_periods.empty? || payee.admin_user.full_time_period_at(invoice_pass.start_of_month.end_of_month).variable_hours?
+        if forecast_person.admin_user.nil? || forecast_person.admin_user.full_time_periods.empty? || forecast_person.admin_user.full_time_period_at(invoice_pass.start_of_month.end_of_month).variable_hours?
           cp = contributor_payouts.with_deleted.find_or_initialize_by(contributor: contributor)
           cp.update!(
             deleted_at: nil,

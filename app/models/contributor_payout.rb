@@ -34,9 +34,13 @@ class ContributorPayout < ApplicationRecord
       qbo_line_item = qbo_inv.line_items.find{|li| li["id"] == blueprint_metadata.dig("id")} || {}
       amount_paid = ic.dig("amount").try(:to_f) || 0
       amount_billed = qbo_line_item.dig("amount").try(:to_f) || 0
-      profit_margin = (amount_billed - amount_paid) / amount_billed
-      surplus = ((profit_margin - 0.43) * amount_billed).round(2)
-      surplus = 0 if surplus <= 0
+
+      surplus = 0
+      if amount_billed > 0
+        profit_margin = (amount_billed - amount_paid) / amount_billed
+        surplus = ((profit_margin - 0.43) * amount_billed).round(2)
+        surplus = 0 if surplus <= 0
+      end
 
       project_tracker = project_trackers.find{|pt| pt.forecast_project_ids.include?(blueprint_metadata.dig("forecast_project"))}
       {
