@@ -106,16 +106,46 @@
 
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
-    <div class="module-body factoid-parent">
-      <div class="factoid">
-        <h2><%= (runway_data[:net_cash] / runway_data[:average_burn_rate]).round(2) %> months</h2>
-        <p>Estimated salary runway</p>
-      </div>
+    <div class="module-body">
+      <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+        <thead>
+          <tr>
+            <th class="col">Contributor Payouts</th>
+            <th class="col text-right">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="even">
+            <td class="col">
+              Balance
+            </td>
+            <td class="col text-right">
+              <%= number_to_currency(aggregated_new_deal_balance[:balance]) %>
+            </td>
+          </tr>
+          <tr class="odd">
+            <td class="col">
+              Unsettled
+            </td>
+            <td class="col text-right">
+              <%= number_to_currency(aggregated_new_deal_balance[:unsettled]) %>
+            </td>
+          </tr>
+          <tr class="even">
+            <td class="col">
+              <strong>TOTAL</strong>
+            </td>
+            <td class="col text-right">
+              <%= number_to_currency(aggregated_new_deal_balance[:balance] + aggregated_new_deal_balance[:unsettled]) %>
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </div>
 
   <div class="dashboard-module">
-    <div class="module-body factoid-parent">
+    <div class="module-body">
       <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom: 0px;">
         <thead>
           <tr>
