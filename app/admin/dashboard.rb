@@ -16,8 +16,8 @@ ActiveAdmin.register_page "Dashboard" do
     sanctu = Studio.find_by(mini_name: "sanctu")
 
     aggregated_new_deal_balance = Contributor.all.map(&:new_deal_balance).reduce({ balance: 0, unsettled: 0 }) do |acc, balance|
-      acc[:balance] += balance[:balance]
-      acc[:unsettled] += balance[:unsettled]
+      acc[:balance] += balance[:balance] if balance[:balance] >= 0
+      acc[:unsettled] += balance[:unsettled] if balance[:unsettled] >= 0
       acc
     end
 
