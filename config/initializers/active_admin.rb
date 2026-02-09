@@ -365,7 +365,7 @@ ActiveAdmin::Views::Pages::Base.class_eval do
     within body(class: body_classes) do
       div id: "wrapper" do
         build_unsupported_browser
-        build_survey_nag if current_admin_user.should_nag_for_survey_responses?
+        build_pending_tasks_nag if current_admin_user.pending_tasks.any?
 
         header active_admin_namespace, current_menu
         build_flash_messages
@@ -376,9 +376,9 @@ ActiveAdmin::Views::Pages::Base.class_eval do
     end
   end
 
-  def build_survey_nag
-    a("📝 You have survey(s) needing completion. Click here to add your responses.", {
-      href: "/admin/all_surveys",
+  def build_pending_tasks_nag
+    a("🙏 You have pending tasks. Click here to view them.", {
+      href: admin_admin_user_path(current_admin_user),
       class: "flash flash_error block",
     })
   end

@@ -1,3 +1,16 @@
+<% pending_tasks = contributor.forecast_person.try(:admin_user).try(:pending_tasks) || [] %>
+
+<% if pending_tasks.any? %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <p style="margin-bottom: 6px;">🚧 <strong>Note!</strong> This contributor has pending tasks. Please complete them as soon as possible to avoid delays in payouts.</p>
+        <%= link_to "View #{pending_tasks.count} #{(pending_tasks.count == 1 ? "Task" : "Tasks")} ↗", admin_admin_user_path(contributor.forecast_person.admin_user) %>
+      </div>
+    </div>
+  </div>
+<% end %>
+
 <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
   <tbody>
     <tr class="even">

@@ -993,6 +993,7 @@ h2 {
   &.on_hold_needs_follow_up,
   &.paused,
   &.upcoming_legal_review,
+  &.project_capsule_incomplete,
   &.project_lead,
   &.no_attendance_record,
   {
@@ -1042,7 +1043,9 @@ h2 {
   &.no_payouts,
   &.misc,
   &.project_safety_representative,
-  &.complete
+  &.complete,
+  &.survey,
+  &.project_satisfaction_survey,
   {
     background-color: $color-purple;
     color: white;

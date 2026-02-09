@@ -10,14 +10,105 @@
   </h1>
 </figure>
 
+<% has_contributor = resource.forecast_person.present? && resource.forecast_person.ensure_contributor_exists! %>
+
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
-    <div class="module-body factoid-parent">
-      <% if resource.forecast_person.present? && resource.forecast_person.ensure_contributor_exists! %>
-        <p style="margin-bottom: 6px;">💸 <strong>Note!</strong> This user's payments ledger is available here:</p>
-        <%= link_to "Payments Ledger ↗", admin_contributor_path(resource.forecast_person.contributor) %>
+    <div class="module-header">
+      <p>Balance</p>
+      <% if has_contributor %>
+        <%= link_to "Ledger ↗", admin_contributor_path(resource.forecast_person.contributor) %>
+      <% end %>
+    </div>
+    <div class="module-body text-center">
+      <% if has_contributor %>
+        <% new_deal_balance = resource.forecast_person.contributor.new_deal_balance %>
+        <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+          <thead>
+            <tr>
+              <th class="col"></th>
+              <th class="col text-right">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="even">
+              <td class="col text-left">
+                Balance
+              </td>
+              <td class="col text-right">
+                <%= number_to_currency(new_deal_balance[:balance]) %>
+              </td>
+            </tr>
+            <tr class="odd">
+              <td class="col text-left">
+                Unsettled
+              </td>
+              <td class="col text-right">
+                <%= number_to_currency(new_deal_balance[:unsettled]) %>
+              </td>
+            </tr>
+            <tr class="even">
+              <td class="col text-left">
+                <strong>TOTAL</strong>
+              </td>
+              <td class="col text-right">
+                <%= number_to_currency(new_deal_balance[:balance] + new_deal_balance[:unsettled]) %>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       <% else %>
         <p>🚧 <strong>Important!</strong> This user has no Harvest Forecast user associated. Please add them in Harvest Forecast (with the same email address) and then their payment ledger will show here.</p>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Pending Tasks</p>
+    </div>
+    <div class="module-body text-center">
+      <% pending_tasks = resource.pending_tasks %>
+      <% if pending_tasks.any? %>
+        <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+          <thead>
+            <tr>
+              <th class="col">Task</th>
+              <th class="col text-right">Link</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% pending_tasks.each_with_index do |task, index| %>
+              <tr class="<%= index.even? ? "even" : "odd" %>">
+                <td class="col text-left">
+                  <span class="pill <%= task[:type] %>">
+                    <%= task[:type].to_s.humanize %>
+                  </span>
+                </td>
+
+                <% if task[:type] == :survey %>
+                  <td class="col text-right">
+                    <%= link_to "Complete →", admin_survey_path(task[:subject]) %>
+                  </td>
+                <% elsif task[:type] == :project_satisfaction_survey %>
+                  <td class="col text-right">
+                    <%= link_to "Complete →", admin_project_satisfaction_survey_path(task[:subject]), style: "text-wrap: nowrap;" %>
+                  </td>
+                <% elsif task[:type] == :project_capsule_incomplete %>
+                  <td class="col text-right">
+                    <%= link_to "#{task[:subject].name} →", admin_project_tracker_path(task[:subject]), style: "text-wrap: nowrap;" %>
+                  </td>
+                <% else %>
+                  <td class="col text-right">
+                    Huh???
+                  </td>
+                <% end %>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      <% else %>
+        <p>🎉 This user has no pending tasks!</p>
       <% end %>
     </div>
   </div>
