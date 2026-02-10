@@ -593,7 +593,8 @@ class ProjectTracker < ApplicationRecord
   end
 
   def profit_margin
-    (profit / spend) * 100
+    return 100 if spend == 0
+    ((profit / spend) * 100).round(1)
   end
 
   def dates_with_recorded_assignments_in_range(start_range, end_range)
