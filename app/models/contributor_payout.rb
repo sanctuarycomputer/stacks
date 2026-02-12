@@ -13,7 +13,7 @@ class ContributorPayout < ApplicationRecord
 
   def find_qbo_account!
     qbo_accounts = Stacks::Quickbooks.fetch_all_accounts
-    account = qbo_accounts.find{|a| a.name == "[SC] Subcontractors"}
+    account = qbo_accounts.find{|a| a.name == "Contractors - Client Services"}
     studio = contributor.forecast_person.studio
     if studio.present?
       specific_account = qbo_accounts.find{|a| a.name == studio.qbo_subcontractors_categories.first}
@@ -46,7 +46,7 @@ class ContributorPayout < ApplicationRecord
 
     qbo_inv = invoice_tracker.qbo_invoice
     return [] unless qbo_inv.present?
-    
+
     project_trackers = invoice_tracker.project_trackers
 
     blueprint["IndividualContributor"].map do |ic|

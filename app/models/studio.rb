@@ -599,42 +599,42 @@ class Studio < ApplicationRecord
   def qbo_sales_categories
     return ["Total Income"] if is_garden3d?
     accounting_prefix.split(",").map(&:strip).map do |p|
-      "[SC] #{p} Services"
+      "Revenue - #{p}"
     end
   end
 
   def qbo_bonus_categories
     return ["Total [SC] Profit Share, Bonuses & Misc"] if is_garden3d?
     accounting_prefix.split(",").map(&:strip).map do |p|
-      "[SC] #{p} Profit Share, Bonuses & Misc"
+      "Bonuses - #{p}"
     end
   end
 
   def qbo_payroll_categories
     return ["Total [SC] Payroll"] if is_garden3d?
     accounting_prefix.split(",").map(&:strip).map do |p|
-      "[SC] #{p} Payroll"
+      "Salaries and Wages - #{p}"
     end
   end
 
   def qbo_benefits_categories
     return ["Total [SC] Benefits, Contributions & Tax"] if is_garden3d?
     accounting_prefix.split(",").map(&:strip).map do |p|
-      "[SC] #{p} Benefits, Contributions & Tax"
+      "Benefits - #{p}"
     end
   end
 
   def qbo_supplies_categories
     return ["Total [SC] Supplies & Materials"] if is_garden3d?
     accounting_prefix.split(",").map(&:strip).map do |p|
-      "[SC] #{p} Supplies & Materials"
+      "Tools and Subscriptions - #{p}"
     end
   end
 
   def qbo_subcontractors_categories
     return ["Total [SC] Subcontractors"] if is_garden3d?
     accounting_prefix.split(",").map(&:strip).map do |p|
-      "[SC] #{p} Subcontractors"
+      "Contractors - #{p}"
     end
   end
 end
