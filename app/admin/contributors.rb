@@ -3,10 +3,16 @@ ActiveAdmin.register Contributor do
 
   config.filters = false
   config.paginate = false
+  config.sort_order = "forecast_people.email_asc"
   actions :index, :show, :edit, :update
-
   scope :recent_new_deal_contributors, default: true
   scope :all
+
+  controller do
+    def scoped_collection
+      super.joins(:forecast_person).select("contributors.*, forecast_people.email")
+    end
+  end
 
   permit_params :qbo_vendor_id, :deel_person_id
 
