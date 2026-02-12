@@ -21,12 +21,42 @@ class ContributorPayout < ApplicationRecord
     end
   end
 
+  def find_qbo_account!
+    qbo_accounts = Stacks::Quickbooks.fetch_all_accounts
+    account = qbo_accounts.find{|a| a.name == "[SC] Subcontractors"}
+    studio = contributor.forecast_person.studio
+    if studio.present?
+      specific_account = qbo_accounts.find{|a| a.name == studio.qbo_subcontractors_categories.first}
+      account = specific_account if specific_account.present?
+    end
+    raise "No account found in QuickBooks" unless account.present?
+    account
+  end
+
+  def load_qbo_bill!
+    return nil unless qbo_bill.present?
+
+    begin
+      return Stacks::Quickbooks.fetch_bill_by_id(qbo_bill.qbo_id)
+    rescue => e
+      if e.message.starts_with?("Object Not Found:")
+        ActiveRecord::Base.transaction do
+          b = qbo_bill
+          update_attribute(:qbo_bill_id, nil)
+          self.reload
+          b.destroy!
+        end
+      end
+      return nil
+    end
+  end
+
   def calculate_surplus
     return [] unless in_sync?
 
     qbo_inv = invoice_tracker.qbo_invoice
     return [] unless qbo_inv.present?
-    
+
     project_trackers = invoice_tracker.project_trackers
 
     blueprint["IndividualContributor"].map do |ic|
