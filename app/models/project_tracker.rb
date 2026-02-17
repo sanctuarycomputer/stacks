@@ -593,6 +593,7 @@ class ProjectTracker < ApplicationRecord
   end
 
   def profit_margin
+    return 100 if spend == 0
     (profit / spend) * 100
   end
 

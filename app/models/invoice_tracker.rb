@@ -508,6 +508,42 @@ class InvoiceTracker < ApplicationRecord
         acc
       end
 
+    # Pepper in recurring charges
+    RecurringCharge.where(forecast_client: forecast_client).each do |rc|
+      item =
+        qbo_items.find { |s| s.fully_qualified_name == rc.qbo_account_name } || default_service_item
+
+      line_item = qbo_inv.line_items.find do |qbo_li|
+        qbo_li.description == rc.description
+      end
+
+      unless line_item.present?
+        line_item = Quickbooks::Model::InvoiceLineItem.new
+        line_item.description = rc.description
+      end
+
+      line_item.sales_item! do |detail|
+        detail.unit_price = rc.unit_price
+        detail.quantity = rc.quantity
+        detail.item_id = item.id
+      end
+  
+      line_item.amount =
+        line_item.sales_line_item_detail.quantity * line_item.sales_line_item_detail.unit_price
+
+      snapshot[:lines][description] = snapshot[:lines][description] || {
+        id: nil,
+        recurring_charge: rc.id,
+        quantity: 0,
+        unit_price: line_item.sales_line_item_detail.unit_price.to_f,
+      }
+      snapshot[:lines][description][:quantity] =
+        line_item.sales_line_item_detail.quantity.to_f
+      acc
+
+      qbo_inv.line_items << line_item
+    end
+
     invoice_service = Quickbooks::Service::Invoice.new
     invoice_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
     invoice_service.access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token

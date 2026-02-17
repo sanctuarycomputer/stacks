@@ -72,9 +72,6 @@ ActiveAdmin.register AdminUser do
       resource.forecast_person
     end
     if current_admin_user.is_hugh?
-      column :total_amount_paid do |resource|
-        number_to_currency(resource.total_amount_paid[:total])
-      end
       column :last_month_utilization do |resource|
         latest_key_metrics = resource.latest_key_metrics
         should_have_sold_hours = latest_key_metrics[:sellable][:value].present? && latest_key_metrics[:sellable][:value] > 0

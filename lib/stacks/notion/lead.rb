@@ -18,6 +18,15 @@ class Stacks::Notion::Lead < Stacks::Notion::Base
     get_prop_value("✨ Lead Received").dig("start")
   end
 
+  def reactivate_at
+    get_prop_value("Reactivate Date").dig("start")
+  end
+
+  def age
+    return nil unless received_at.present?
+    (Date.today - Date.parse(received_at)).to_i
+  end
+
   def settled_at
     get_prop_value("Settled Date").dig("string")
   end

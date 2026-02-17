@@ -23,10 +23,39 @@ ActiveAdmin.register Contributor do
     )
   end
 
+  action_item :submit_reimbursement, only: :show do
+    link_to(
+      "Submit Reimbursement",
+      new_admin_contributor_reimbursement_path(resource)
+    )
+  end
+
   member_action :toggle_contributor_payout_acceptance, method: :post do
     cp = ContributorPayout.find(params[:contributor_payout_id])
     return unless cp.contributor.forecast_person.try(:admin_user) == current_admin_user || current_admin_user.is_admin?
     cp.toggle_acceptance!
+    return redirect_to(
+      admin_contributor_path(params[:id], format: :html),
+      notice: "Success",
+    )
+  end
+
+  member_action :toggle_reimbursement_acceptance, method: :post do
+    r = Reimbursement.find(params[:reimbursement_id])
+    return unless current_admin_user.is_admin?
+
+    if r.accepted?
+      r.update!(
+        accepted_by: nil,
+        accepted_at: nil
+      )
+    else
+      r.update!(
+        accepted_by: current_admin_user,
+        accepted_at: DateTime.now
+      )
+    end
+
     return redirect_to(
       admin_contributor_path(params[:id], format: :html),
       notice: "Success",
@@ -68,6 +97,11 @@ ActiveAdmin.register Contributor do
         "#{number_to_currency(balance[:balance])} (#{number_to_currency(balance[:unsettled])} unsettled)"
       else
         number_to_currency(balance[:balance])
+      end
+    end
+    if current_admin_user.is_hugh?
+      column :total_amount_paid do |resource|
+        number_to_currency(resource.total_amount_paid[:total])
       end
     end
     actions

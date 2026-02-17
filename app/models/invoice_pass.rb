@@ -47,7 +47,10 @@ class InvoicePass < ApplicationRecord
   end
 
   def clients_served
-    Stacks::System.clients_served_since(start_of_month, start_of_month.end_of_month)
+    [
+      *Stacks::System.clients_served_since(start_of_month, start_of_month.end_of_month),
+      *RecurringCharge.includes(:forecast_client).all.map(&:forecast_client).compact.uniq
+    ]
   end
 
   def period

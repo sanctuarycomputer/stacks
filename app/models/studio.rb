@@ -5,6 +5,11 @@ class Studio < ApplicationRecord
   has_many :mailing_lists, dependent: :destroy
   has_many :okr_period_studios, dependent: :delete_all
 
+  has_many :project_lead_periods, dependent: :delete_all
+  has_many :creative_lead_periods, dependent: :delete_all
+  has_many :technical_lead_periods, dependent: :delete_all
+  has_many :project_safety_representative_periods, dependent: :delete_all
+
   has_many :survey_studios
   has_many :surveys, through: :survey_studios
 

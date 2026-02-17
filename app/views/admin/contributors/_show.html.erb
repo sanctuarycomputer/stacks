@@ -62,6 +62,8 @@
               <%= li.paid_at.strftime("%B %d, %Y") %>
             <% elsif li.is_a?(ContributorPayout) %>
               <%= li.invoice_tracker.invoice_pass.start_of_month.strftime("%B %d, %Y") %>
+            <% elsif li.is_a?(Reimbursement) %>
+              <%= li.created_at.strftime("%B %d, %Y") %>
             <% elsif li.is_a?(Trueup) %>
               <%= li.payment_date.strftime("%B %d, %Y") %>
             <% end %>
@@ -92,6 +94,17 @@
                   <%= status.to_s.humanize %>
                 </span>
               </span>
+            <% elsif li.is_a?(Reimbursement) %>
+              <% if li.deleted_at.present? %>
+                <span class="pill deleted">
+                  Deleted
+                </span>
+              <% else %>
+                <span class="pill <%= li.accepted? ? "accepted" : "pending" %>">
+                  <%= li.accepted? ? "accepted" : "pending admin acceptance" %>
+                </span>
+              <% end %>
+
             <% elsif li.is_a?(Trueup) %>
               <span class="pill <%= li.deleted_at.present? ? "deleted" : "paid" %>">
                 <%= li.deleted_at.present? ? "deleted" : "scheduled" %>
@@ -123,13 +136,28 @@
                 <% end %>
               </span>
 
-            <% elsif li.is_a?(Trueup) %>
+            <% elsif li.is_a?(Reimbursement) %>
               <% if li.deleted_at.present? %>
                 <del><%= number_to_currency(li.amount) %></del>
               <% else %>
                 + <%= number_to_currency(li.amount) %>
               <% end %>
 
+              <span class="pill <%= li.accepted? ? "accepted" : "pending" %>" style="margin-right: 6px;">
+                <%= li.accepted? ? "Accepted" : "Pending" %>
+                <% if current_admin_user.is_admin? %>
+                  <span class="split">
+                    <%= link_to li.accepted? ? "Deny ↗" : "Accept ↗", toggle_reimbursement_acceptance_admin_contributor_path(li.contributor, {reimbursement_id: li.id}), method: :post, style: "font-size: unset;" %>
+                  </span>
+                <% end %>
+              </span>
+
+            <% elsif li.is_a?(Trueup) %>
+              <% if li.deleted_at.present? %>
+                <del><%= number_to_currency(li.amount) %></del>
+              <% else %>
+                + <%= number_to_currency(li.amount) %>
+              <% end %>
             <% end %>
           </td>
           <td class="col text-right">
@@ -138,6 +166,8 @@
                 <%= link_to "Info ↗", admin_contributor_misc_payment_path(contributor, li) %>
               <% elsif li.is_a?(ContributorPayout) %>
                 <%= link_to "#{li.display_name} ↗", admin_invoice_tracker_contributor_payout_path(li.invoice_tracker, li) %>
+              <% elsif li.is_a?(Reimbursement) %>
+                <%= link_to "Info ↗", admin_contributor_reimbursement_path(contributor, li) %>
               <% elsif li.is_a?(Trueup) %>
                 <%= link_to "Info ↗", admin_contributor_trueup_path(contributor, li) %>
               <% end %>

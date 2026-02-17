@@ -26,7 +26,8 @@ class Stacks::DataIntegrityManager
         forecast_people: discover_forecast_people_problems,
         forecast_assignments: discover_forecast_assignment_problems,
         admin_users: discover_admin_user_problems,
-        project_trackers: discover_project_tracker_problems
+        project_trackers: discover_project_tracker_problems,
+        reimbursements: discover_reimbursement_problems
       }
     end
   end
@@ -38,6 +39,14 @@ class Stacks::DataIntegrityManager
       next acc if l.received_at.present?
       acc[l] = acc[l] || []
       acc[l] = [*acc[l], :no_received_at_timestamp_set]
+      acc
+    end
+
+    notion_leads = all_notion_leads.reduce({}) do |acc, l|
+      next acc unless l.age.present? && (l.age > 60 && l.age < 365) && l.settled_at.nil?
+      next acc if l.reactivate_at && Date.parse(l.reactivate_at) > Date.today  
+      acc[l] = acc[l] || []
+      acc[l] = [*acc[l], :needs_settling]
       acc
     end
 
@@ -54,15 +63,28 @@ class Stacks::DataIntegrityManager
 
   def discover_forecast_project_problems
     preloaded_studios = Studio.all
+
+    forecast_projects = ProjectTracker.includes(:forecast_projects).complete.reduce({}) do |acc, pt|
+      pt.forecast_projects.each do |fp|
+        next if fp.archived?
+        acc[fp] = acc[fp] || []
+        acc[fp] = [*acc[fp], :needs_archiving]
+      end
+      acc
+    end
+
+    # Operate on external projects
     all_forecast_projects = ForecastProject.includes(:forecast_client).active.reject do |fp|
       fp.is_internal?
     end
-    forecast_projects = all_forecast_projects.reduce({}) do |acc, fp|
+
+    forecast_projects = all_forecast_projects.reduce(forecast_projects) do |acc, fp|
       next acc unless fp.has_no_explicit_hourly_rate?
       acc[fp] = acc[fp] || []
       acc[fp] = [*acc[fp], :no_explicit_hourly_rate_set]
       acc
     end
+
     forecast_projects = all_forecast_projects.reduce(forecast_projects) do |acc, fp|
       next acc unless fp.has_multiple_hourly_rates?
       acc[fp] = acc[fp] || []
@@ -118,6 +140,13 @@ class Stacks::DataIntegrityManager
         # Archived Users
         # TODO: Port over
       end
+      acc
+    end
+  end
+
+  def discover_reimbursement_problems
+    Reimbursement.pending.reduce({}) do |acc, r|
+      acc[r] = [*(acc[r] || []), :pending_acceptance]
       acc
     end
   end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_01_22_203749) do
+ActiveRecord::Schema.define(version: 2026_02_17_012705) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -651,6 +651,33 @@ ActiveRecord::Schema.define(version: 2026_01_22_203749) do
     t.datetime "updated_at", precision: 6, null: false
   end
 
+  create_table "recurring_charges", force: :cascade do |t|
+    t.bigint "forecast_client_id", null: false
+    t.decimal "quantity", default: "0.0", null: false
+    t.decimal "unit_price", default: "0.0", null: false
+    t.string "qbo_account_name", default: "", null: false
+    t.string "description", default: "", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["forecast_client_id", "description"], name: "index_recurring_charges_on_forecast_client_id_and_description", unique: true
+    t.index ["forecast_client_id"], name: "index_recurring_charges_on_forecast_client_id"
+  end
+
+  create_table "reimbursements", force: :cascade do |t|
+    t.bigint "contributor_id", null: false
+    t.decimal "amount", precision: 10, scale: 2, null: false
+    t.string "description", null: false
+    t.text "receipts", null: false
+    t.bigint "accepted_by_id"
+    t.datetime "accepted_at"
+    t.datetime "deleted_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["accepted_by_id"], name: "index_reimbursements_on_accepted_by_id"
+    t.index ["contributor_id"], name: "index_reimbursements_on_contributor_id"
+    t.index ["deleted_at"], name: "index_reimbursements_on_deleted_at"
+  end
+
   create_table "review_trees", force: :cascade do |t|
     t.bigint "review_id", null: false
     t.bigint "tree_id", null: false
@@ -932,6 +959,7 @@ ActiveRecord::Schema.define(version: 2026_01_22_203749) do
   add_foreign_key "qbo_accounts", "enterprises"
   add_foreign_key "qbo_profit_and_loss_reports", "qbo_accounts"
   add_foreign_key "qbo_tokens", "qbo_accounts"
+  add_foreign_key "reimbursements", "admin_users", column: "accepted_by_id"
   add_foreign_key "review_trees", "reviews"
   add_foreign_key "review_trees", "trees"
   add_foreign_key "reviews", "admin_users"

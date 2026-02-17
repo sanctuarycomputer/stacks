@@ -6,6 +6,7 @@ class Contributor < ApplicationRecord
   belongs_to :deel_person, class_name: "DeelPerson", foreign_key: "deel_person_id", primary_key: "deel_id", optional: true
 
   has_many :misc_payments
+  has_many :reimbursements
   has_many :contributor_payouts
   has_many :trueups
 
@@ -17,6 +18,32 @@ class Contributor < ApplicationRecord
   scope :recent_new_deal_contributors, -> {
     joins(:contributor_payouts).where("contributor_payouts.created_at > ?", 3.months.ago).distinct
   }
+
+  def total_amount_paid
+    d = { 
+      salary: 0, 
+      contract: contributor_payouts.sum(:amount), 
+      total: 0 
+    }
+
+    if admin_user = forecast_person.try(:admin_user)
+      ausw = admin_user.admin_user_salary_windows.all
+      d = admin_user.full_time_periods.reduce({ salary: 0, contract: 0, total: 0 }) do |acc, ftp|
+        next acc unless ftp.four_day? || ftp.five_day?
+        ftp.started_at.upto(ftp.ended_at || Date.today).each do |date|
+          days_in_month = Time.days_in_month(date.month, date.year)
+          w = ausw.find{|sw| sw.start_date <= date && date <= (sw.end_date || Date.today) }
+          next if w.nil?
+          day_rate = w.salary / 12 / days_in_month
+          acc[:salary] += day_rate
+        end
+        acc
+      end
+    end
+    
+    d[:total] = d[:salary] + d[:contract]
+    d
+  end
 
   def sync_qbo_bills!
     contributor_payouts.each do |cp|
@@ -66,6 +93,12 @@ class Contributor < ApplicationRecord
         else
           acc[:unsettled] += li.amount
         end
+      elsif li.is_a?(Reimbursement)
+        if li.accepted?
+          acc[:balance] += li.amount
+        else
+          acc[:unsettled] += li.amount
+        end
       elsif li.is_a?(Trueup)
         acc[:balance] += li.amount
       end
@@ -76,6 +109,7 @@ class Contributor < ApplicationRecord
   def new_deal_ledger_items
     preloaded_contributor_payouts = contributor_payouts.includes({ invoice_tracker: :invoice_pass }).with_deleted
     preloaded_misc_payments = misc_payments.with_deleted
+    preloaded_reimbursements = reimbursements.with_deleted
     preloaded_trueups = trueups.includes(:invoice_pass).with_deleted
 
     latest_date = [*preloaded_misc_payments, *preloaded_contributor_payouts, *preloaded_trueups].reduce(Date.today) do |acc, li|
@@ -83,6 +117,8 @@ class Contributor < ApplicationRecord
         acc = li.paid_at if li.paid_at > acc
       elsif li.is_a?(ContributorPayout)
         acc = li.invoice_tracker.invoice_pass.start_of_month if li.invoice_tracker.invoice_pass.start_of_month > acc
+      elsif li.is_a?(Reimbursement)
+        acc = li.created_at if li.created_at > acc
       elsif li.is_a?(Trueup)
         acc = li.payment_date if li.payment_date > acc
       end
@@ -101,18 +137,25 @@ class Contributor < ApplicationRecord
         cp.paid_at <= period.ends_at
       end
 
+      reimbursements_in_period = reimbursements.with_deleted.select do |cp|
+        cp.created_at >= period.starts_at &&
+        cp.created_at <= period.ends_at
+      end
+
       trueups_in_period = preloaded_trueups.select do |tu|
         tu.payment_date >= period.starts_at &&
         tu.payment_date <= period.ends_at
       end
 
-      sorted = [*contributor_payouts_in_period, *contractor_payouts_in_period, *trueups_in_period].sort do |a, b|
+      sorted = [*contributor_payouts_in_period, *contractor_payouts_in_period, *trueups_in_period, *reimbursements_in_period].sort do |a, b|
 
         date_a = nil
         if a.is_a?(Trueup)
           date_a = a.payment_date
         elsif a.is_a?(MiscPayment)
           date_a = a.paid_at
+        elsif a.is_a?(Reimbursement)
+          date_a = a.created_at
         elsif a.is_a?(ContributorPayout)
           date_a = a.invoice_tracker.invoice_pass.start_of_month
         end
@@ -122,6 +165,8 @@ class Contributor < ApplicationRecord
           date_b = b.payment_date
         elsif b.is_a?(MiscPayment)
           date_b = b.paid_at
+        elsif b.is_a?(Reimbursement)
+          date_b = b.created_at
         elsif b.is_a?(ContributorPayout)
           date_b = b.invoice_tracker.invoice_pass.start_of_month
         end

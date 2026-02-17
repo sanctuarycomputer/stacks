@@ -442,36 +442,6 @@ class AdminUser < ApplicationRecord
     end
   end
 
-
-  def total_amount_paid
-    ausw = admin_user_salary_windows.all
-
-    d = full_time_periods.reduce({ salary: 0, contract: 0, total: 0 }) do |acc, ftp|
-      next acc unless ftp.four_day? || ftp.five_day?
-
-      ftp.started_at.upto(ftp.ended_at || Date.today).each do |date|
-        days_in_month = Time.days_in_month(date.month, date.year)
-        w = ausw.find{|sw| sw.start_date <= date && date <= (sw.end_date || Date.today) }
-        next if w.nil?
-        day_rate = w.salary / 12 / days_in_month
-        acc[:salary] += day_rate
-      end
-
-      acc
-    end
-
-    d[:total] = d[:salary] + d[:contract]
-    fp = forecast_person
-    return d unless fp.present?
-
-    d[:contract] = 0
-    if contributor = Contributor.find_by(forecast_person: fp)
-      d[:contract] = contributor.contributor_payouts.sum(:amount)
-    end
-    d[:total] = d[:salary] + d[:contract]
-    d
-  end
-
   def skill_tree_level_without_salary
     latest_review = archived_reviews.first
     if latest_review.present?
