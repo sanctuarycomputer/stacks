@@ -97,7 +97,12 @@ ActiveAdmin.register Studio do
     column :mini_name
     column :studio_type
     column :last_generated do |resource|
-      "#{time_ago_in_words(DateTime.iso8601(resource.snapshot["finished_at"] || resource.snapshot["generated_at"]))} ago"
+      timestamp = resource.snapshot["finished_at"] || resource.snapshot["generated_at"]
+      if timestamp.present?
+        "#{time_ago_in_words(DateTime.iso8601(timestamp))} ago"
+      else
+        "Never generated"
+      end
     end
     actions
   end

@@ -23,7 +23,14 @@ class ContributorPayout < ApplicationRecord
 
   def find_qbo_account!
     qbo_accounts = Stacks::Quickbooks.fetch_all_accounts
-    account = qbo_accounts.find{|a| a.name == "[SC] Subcontractors"}
+    account = qbo_accounts.find{|a| a.name == "Contractors - Client Services"}
+
+    if invoice_tracker.forecast_client.is_internal?
+      marketing_account = qbo_accounts.find{|a| a.name == "Contractors - Marketing Services"}
+      return marketing_account if marketing_account.present?
+      return account
+    end
+
     studio = contributor.forecast_person.studio
     if studio.present?
       specific_account = qbo_accounts.find{|a| a.name == studio.qbo_subcontractors_categories.first}
