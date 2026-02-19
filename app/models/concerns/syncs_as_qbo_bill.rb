@@ -1,16 +1,15 @@
 module SyncsAsQboBill
   extend ActiveSupport::Concern
 
-  def find_qbo_account!
-    qbo_accounts = Stacks::Quickbooks.fetch_all_accounts
-    account = qbo_accounts.find{|a| a.name == "[SC] Subcontractors"}
+  def find_qbo_account!(qbo_accounts = Stacks::Quickbooks.fetch_all_accounts)
+    account = qbo_accounts.find{|a| a.name == "Contractors - Client Services"}
     studio = contributor.forecast_person.studio
     if studio.present?
       specific_account = qbo_accounts.find{|a| a.name == studio.qbo_subcontractors_categories.first}
       account = specific_account if specific_account.present?
     end
     raise "No account found in QuickBooks" unless account.present?
-    account
+    [account, studio]
   end
 
   def load_qbo_bill!
@@ -50,7 +49,7 @@ module SyncsAsQboBill
     bill.doc_number = "Stacks_#{id}_#{self.class.name}".truncate(21) # QBO has a 21 character limit for doc numbers
     bill.vendor_ref = Quickbooks::Model::BaseReference.new(contributor.qbo_vendor.id)
 
-    description = 
+    description =
       case self.class.name
         when "Trueup"
           "http://stacks.garden3d.net/admin/contributors/#{contributor.id}/trueups/#{id}"
@@ -65,8 +64,9 @@ module SyncsAsQboBill
       amount: amount,
     )
 
+    account, studio = find_qbo_account!
     line_item.account_based_expense_item! do |detail|
-      detail.account_ref = Quickbooks::Model::BaseReference.new(find_qbo_account!.id)
+      detail.account_ref = Quickbooks::Model::BaseReference.new(account.id)
     end
 
     bill.line_items = [line_item]
@@ -90,4 +90,4 @@ module SyncsAsQboBill
       self.reload
     end
   end
-end  
+end

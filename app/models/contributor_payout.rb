@@ -23,39 +23,25 @@ class ContributorPayout < ApplicationRecord
 
   def find_qbo_account!
     qbo_accounts = Stacks::Quickbooks.fetch_all_accounts
-    account = qbo_accounts.find{|a| a.name == "Contractors - Client Services"}
+    account, studio = super(qbo_accounts)
 
-    if invoice_tracker.forecast_client.is_internal?
-      marketing_account = qbo_accounts.find{|a| a.name == "Contractors - Marketing Services"}
-      return marketing_account if marketing_account.present?
-      return account
+    # If the client is not internal, we can use the original account
+    internal_client = invoice_tracker.forecast_client.is_internal?
+    return [account, studio] unless internal_client
+
+    # If the client is internal, we need to override external client services accounts with the
+    # marketing account
+    marketing_account = qbo_accounts.find{|a| a.name == "Contractors - Marketing Services"}
+
+    # In this case, either we don't know the studio, sor is present and it's a
+    # client services studio, so we override to use the marketing account
+    if studio.nil? || (studio.present? && studio.client_services?)
+      return [marketing_account, studio]
     end
 
-    studio = contributor.forecast_person.studio
-    if studio.present?
-      specific_account = qbo_accounts.find{|a| a.name == studio.qbo_subcontractors_categories.first}
-      account = specific_account if specific_account.present?
-    end
-    raise "No account found in QuickBooks" unless account.present?
-    account
-  end
-
-  def load_qbo_bill!
-    return nil unless qbo_bill.present?
-
-    begin
-      return Stacks::Quickbooks.fetch_bill_by_id(qbo_bill.qbo_id)
-    rescue => e
-      if e.message.starts_with?("Object Not Found:")
-        ActiveRecord::Base.transaction do
-          b = qbo_bill
-          update_attribute(:qbo_bill_id, nil)
-          self.reload
-          b.destroy!
-        end
-      end
-      return nil
-    end
+    # In this case, the studio is present but it's a non-client services studio
+    # we assume that the original account is correct.
+    [account, studio]
   end
 
   def calculate_surplus
