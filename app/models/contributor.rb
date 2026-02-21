@@ -20,10 +20,10 @@ class Contributor < ApplicationRecord
   }
 
   def total_amount_paid
-    d = { 
-      salary: 0, 
-      contract: contributor_payouts.sum(:amount), 
-      total: 0 
+    d = {
+      salary: 0,
+      contract: contributor_payouts.sum(:amount),
+      total: 0
     }
 
     if admin_user = forecast_person.try(:admin_user)
@@ -40,7 +40,7 @@ class Contributor < ApplicationRecord
         acc
       end
     end
-    
+
     d[:total] = d[:salary] + d[:contract]
     d
   end
@@ -112,7 +112,7 @@ class Contributor < ApplicationRecord
     preloaded_reimbursements = reimbursements.with_deleted
     preloaded_trueups = trueups.includes(:invoice_pass).with_deleted
 
-    latest_date = [*preloaded_misc_payments, *preloaded_contributor_payouts, *preloaded_trueups].reduce(Date.today) do |acc, li|
+    ledger_ends_at = [*preloaded_misc_payments, *preloaded_contributor_payouts, *preloaded_trueups].reduce(Date.today) do |acc, li|
       if li.is_a?(MiscPayment)
         acc = li.paid_at if li.paid_at > acc
       elsif li.is_a?(ContributorPayout)
@@ -123,9 +123,16 @@ class Contributor < ApplicationRecord
         acc = li.payment_date if li.payment_date > acc
       end
       acc
+    end + 1.month
+
+    ledger_starts_at = Stacks::System.singleton_class::NEW_DEAL_START_AT
+    contiguous_ftps = []
+    if admin_user = forecast_person.admin_user && forecast_person.admin_user
+      ledger_starts_at = admin_user.start_date
+      contiguous_ftps = admin_user.contiguous_full_time_periods_until(ledger_ends_at)
     end
 
-    periods = Stacks::Period.for_gradation(:month, Stacks::System.singleton_class::NEW_DEAL_START_AT, latest_date + 1.month).reverse
+    periods = Stacks::Period.for_gradation(:month, ledger_starts_at, ledger_ends_at).reverse
     periods.reduce({ all: [], by_month: {} }) do |acc, period|
       contributor_payouts_in_period = preloaded_contributor_payouts.select do |cp|
         cp.invoice_tracker.invoice_pass.start_of_month >= period.starts_at &&
@@ -186,11 +193,32 @@ class Contributor < ApplicationRecord
         acc
       end)
 
+      ftp = nil
+      partial_salary = 0
+      if admin_user.present?
+        ftp = contiguous_ftps.find do |ftp|
+          ftp[:started_at] <= period.starts_at && ftp[:ended_at] >= period.ends_at
+        end
+
+        broken_ftp = contiguous_ftps.find do |ftp|
+          ftp[:started_at] <= period.starts_at && ftp[:ended_at] < period.ends_at && ftp[:ended_at].month == period.ends_at.month && ftp[:ended_at].year == period.ends_at.year
+        end
+
+        if ftp.nil? && broken_ftp.present?
+          partial_salary = (period.starts_at..period.ends_at).reduce(0) do |acc, date|
+            acc += admin_user.cost_of_employment_on_date(date, 1)
+            acc
+          end
+        end
+      end
+
       acc[:by_month][period] = {
         items: sorted,
         total_hours: total_hours,
         total_income: total_income,
-        elevated_service: total_hours >= 120 || total_income >= 9000
+        partial_salary: partial_salary,
+        fulltime: ftp.present?,
+        elevated_service: ftp.present? || (total_hours >= 120 || (partial_salary + total_income) >= 9000)
       }
       acc
     end

@@ -12,6 +12,16 @@
 
 <% has_contributor = resource.forecast_person.present? && resource.forecast_person.ensure_contributor_exists! %>
 
+<% if resource.is_associate? && resource.associates_award_agreement.present? %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <p style="margin: 20px, 0px;">This user is an Associate. Their Associate Award Agreement can be found <%= link_to "here ↗", admin_associates_award_agreement_path(resource.associates_award_agreement) %>.</p>
+      </div>
+    </div>
+  </div>
+<% end %>
+
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
     <div class="module-header">

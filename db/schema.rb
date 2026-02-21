@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_02_17_012705) do
+ActiveRecord::Schema.define(version: 2026_02_21_164324) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -84,12 +84,11 @@ ActiveRecord::Schema.define(version: 2026_02_17_012705) do
   create_table "associates_award_agreements", force: :cascade do |t|
     t.bigint "admin_user_id", null: false
     t.date "started_at", null: false
-    t.integer "initial_unit_grant", null: false
-    t.integer "vesting_unit_increments", null: false
-    t.integer "vesting_periods", null: false
-    t.integer "vesting_period_type", default: 0, null: false
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.integer "total_awardable_units", default: 5000000
+    t.integer "installment_amount", default: 104167
+    t.string "contract_url"
     t.index ["admin_user_id"], name: "index_associates_award_agreements_on_admin_user_id"
   end
 

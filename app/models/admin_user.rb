@@ -85,10 +85,6 @@ class AdminUser < ApplicationRecord
     end
   end
 
-  def is_employed_on_date?(date)
-    full_time_period_at(date).present?
-  end
-
   def sellable_hours_for_date(date)
     ftp = full_time_period_at(date)
     return nil unless ftp.present?
@@ -121,7 +117,7 @@ class AdminUser < ApplicationRecord
   def is_associate?
     return true if email == "hugh@sanctuary.computer"
     return false unless associates_award_agreement.present?
-    associates_award_agreement.try(:started_at) >= Date.today
+    associates_award_agreement.started_at <= Date.today
   end
 
   def all_but_latest_full_time_periods_are_closed?
@@ -268,6 +264,25 @@ class AdminUser < ApplicationRecord
 
   def left_at
     full_time_periods.order("started_at ASC").last.try(:ended_at) || nil
+  end
+
+  def contiguous_full_time_periods_until(date = Date.today)
+    full_time_periods.order("started_at ASC").select{|ftp| ftp.four_day? || ftp.five_day? }.reduce([]) do |acc, ftp|
+      if acc.empty?
+        # This is the first ftp, stash it.
+        next acc << {ftps: [ftp], started_at: ftp.started_at, ended_at: ftp.ended_at_or(date) }
+      end
+
+      if (acc.last[:ended_at] + 1.day != ftp.started_at)
+        # This ftp is not contiguous, break it.
+        next acc << {ftps: [ftp], started_at: ftp.started_at, ended_at: ftp.ended_at_or(date) }
+      end
+
+      # This is contiguous! Combine them.
+      acc.last[:ftps] << ftp
+      acc.last[:ended_at] = ftp.ended_at_or(date)
+      acc
+    end
   end
 
   def contiguous_psu_earning_periods_until(date = Date.today)
@@ -511,7 +526,18 @@ class AdminUser < ApplicationRecord
     (yearly_cost / business_days) * 1.1 # employment taxes & healthcare
   end
 
-  def cost_of_employment_on_date(date)
+  def cost_of_employment_on_date(date, multiplier = 1.1)
+    ftp = full_time_period_at(date)
+
+    return 0 unless ftp.present? && (ftp.four_day? || ftp.five_day?)
+    if (ftp.four_day?)
+      return 0 unless [1, 2, 3, 4].include?(date.wday)
+    end
+
+    if (ftp.five_day?)
+      return 0 unless [1, 2, 3, 4, 5].include?(date.wday)
+    end
+
     salary_window = admin_user_salary_windows.find_by(
       "start_date <= ? AND (end_date >= ? OR end_date IS NULL)",
       date,
@@ -524,17 +550,11 @@ class AdminUser < ApplicationRecord
       salary_window.salary
     end
 
-    ftp = full_time_period_at(date)
-
     business_days =
       Stacks::Utils.business_days_between(date.beginning_of_year, date.end_of_year)
+    business_days *= 0.8 if ftp.four_day?
 
-    # TODO: Actually calculate the number of non-Friday business days.
-    if ftp.present? && ftp.four_day?
-      business_days *= 0.8
-    end
-
-    (yearly_cost / business_days) * 1.1 # employment taxes & healthcare
+    (yearly_cost / business_days) * multiplier # employment taxes & healthcare
   end
 
   def archived_reviews
@@ -628,7 +648,7 @@ class AdminUser < ApplicationRecord
     }
 
     return data unless g3d_data.present?
-    
+
     _email, v = g3d_data["utilization"].find{|k,v| k == self.email}
     if v.present?
       data = data.merge({
