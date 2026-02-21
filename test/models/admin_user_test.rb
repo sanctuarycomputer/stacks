@@ -344,6 +344,15 @@ class AdminUserTest < ActiveSupport::TestCase
       password: "password"
     })
 
+    user.full_time_periods.create!({
+      started_at: Date.new(2022, 1, 1),
+      ended_at: nil,
+      contributor_type: Enum::ContributorType::FIVE_DAY,
+      expected_utilization: 1
+    })
+
+    user.admin_user_salary_windows.delete_all
+
     user.admin_user_salary_windows.create!({
       salary: 123,
       start_date: Date.new(2022, 1, 1),
@@ -367,9 +376,8 @@ class AdminUserTest < ActiveSupport::TestCase
       Date.new(2023, 1, 1),
       Date.new(2023, 12, 31)
     )
-    tax_benefits_factor = 1.1
-    expected_cost = 456 * tax_benefits_factor / business_days
 
+    expected_cost = (456.0 / business_days) * 1.1
     assert_in_delta(expected_cost, actual_cost, 0.00001)
   end
 
@@ -377,6 +385,13 @@ class AdminUserTest < ActiveSupport::TestCase
     user = AdminUser.create!({
       email: "josh@sanctuary.computer",
       password: "password"
+    })
+
+    user.full_time_periods.create!({
+      started_at: Date.new(2022, 1, 1),
+      ended_at: nil,
+      contributor_type: Enum::ContributorType::FIVE_DAY,
+      expected_utilization: 1
     })
 
     user.admin_user_salary_windows.delete_all
@@ -399,7 +414,7 @@ class AdminUserTest < ActiveSupport::TestCase
       end_date: nil
     })
 
-    actual_cost = user.cost_of_employment_on_date(Date.new(2024, 6, 1))
+    actual_cost = user.cost_of_employment_on_date(Date.new(2024, 6, 3))
     business_days = Stacks::Utils.business_days_between(
       Date.new(2024, 1, 1),
       Date.new(2024, 12, 31)
@@ -417,6 +432,15 @@ class AdminUserTest < ActiveSupport::TestCase
       old_skill_tree_level: :senior_2
     })
 
+    user.full_time_periods.create!({
+      started_at: Date.new(2022, 1, 1),
+      ended_at: Date.new(2025, 1, 1),
+      contributor_type: Enum::ContributorType::FIVE_DAY,
+      expected_utilization: 1
+    })
+
+    user.admin_user_salary_windows.delete_all
+
     user.admin_user_salary_windows.create!({
       salary: 123,
       start_date: Date.new(2022, 1, 1),
@@ -431,7 +455,7 @@ class AdminUserTest < ActiveSupport::TestCase
 
     # Note: no salary window defined for 2024.
 
-    actual_cost = user.cost_of_employment_on_date(Date.new(2024, 6, 1))
+    actual_cost = user.cost_of_employment_on_date(Date.new(2024, 6, 3))
     business_days = Stacks::Utils.business_days_between(
       Date.new(2024, 1, 1),
       Date.new(2024, 12, 31)
@@ -450,7 +474,7 @@ class AdminUserTest < ActiveSupport::TestCase
       old_skill_tree_level: :senior_2
     })
 
-    date = Date.new(2022, 1, 1)
+    date = Date.new(2022, 1, 3) # Monday, 3rd of January 2022
 
     user.full_time_periods.create!({
       started_at: Date.new(2021, 1, 1),
