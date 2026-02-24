@@ -81,8 +81,8 @@ class Contributor < ApplicationRecord
     forecast_person.email
   end
 
-  def new_deal_balance(ledger_items = new_deal_ledger_items())
-    new_deal_ledger_items[:all].reduce({ balance: 0, unsettled: 0 }) do |acc, li|
+  def new_deal_balance(ledger_items = new_deal_ledger_items(false))
+    ledger_items[:all].reduce({ balance: 0, unsettled: 0 }) do |acc, li|
       next acc if li.deleted_at.present?
 
       if li.is_a?(MiscPayment)
@@ -106,7 +106,48 @@ class Contributor < ApplicationRecord
     end
   end
 
-  def new_deal_ledger_items
+  def self.aggregated_new_deal_balance
+    all_misc_payments = MiscPayment.all
+    all_contributor_payouts = ContributorPayout.includes(invoice_tracker: :invoice_pass).all
+    all_reimbursements = Reimbursement.all
+    all_trueups = Trueup.all
+
+    ledger = all_contributor_payouts.reduce({ balance: 0, unsettled: 0 }) do |acc, cp|
+      next acc if cp.invoice_tracker.invoice_pass.start_of_month > Date.today
+      if cp.payable?
+        acc[:balance] += cp.amount
+      else
+        acc[:unsettled] += cp.amount
+      end
+      acc
+    end
+
+    ledger = all_reimbursements.reduce(ledger) do |acc, r|
+      next acc if r.created_at > Date.today
+      if r.accepted?
+        acc[:balance] += r.amount
+      else
+        acc[:unsettled] += r.amount
+      end
+      acc
+    end
+
+    ledger = all_trueups.reduce(ledger) do |acc, tu|
+      next acc if tu.payment_date > Date.today
+      acc[:balance] += tu.amount
+      acc
+    end
+
+    ledger = all_misc_payments.reduce(ledger) do |acc, mp|
+      next acc if mp.paid_at > Date.today
+      acc[:balance] -= mp.amount
+      acc
+    end
+
+    ledger
+  end
+
+  def new_deal_ledger_items(include_salary = true)
     preloaded_contributor_payouts = contributor_payouts.includes({ invoice_tracker: :invoice_pass }).with_deleted
     preloaded_misc_payments = misc_payments.with_deleted
     preloaded_reimbursements = reimbursements.with_deleted
@@ -195,7 +236,7 @@ class Contributor < ApplicationRecord
 
       ftp = nil
       partial_salary = 0
-      if admin_user.present?
+      if include_salary && admin_user.present?
         ftp = contiguous_ftps.find do |ftp|
           ftp[:started_at] <= period.starts_at && ftp[:ended_at] >= period.ends_at
         end

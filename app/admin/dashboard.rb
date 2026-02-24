@@ -15,12 +15,6 @@ ActiveAdmin.register_page "Dashboard" do
     xxix = Studio.find_by(mini_name: "xxix")
     sanctu = Studio.find_by(mini_name: "sanctu")
 
-    aggregated_new_deal_balance = Contributor.all.map(&:new_deal_balance).reduce({ balance: 0, unsettled: 0 }) do |acc, balance|
-      acc[:balance] += balance[:balance] if balance[:balance] >= 0
-      acc[:unsettled] += balance[:unsettled] if balance[:unsettled] >= 0
-      acc
-    end
-
     g3d_ytd_revenue_growth_okr = g3d.ytd_snapshot.dig("accrual", "okrs_excluding_reinvestment", "Revenue Growth")
     g3d_ytd_revenue_growth_progress = Okr.make_annual_growth_progress_data(
       g3d_ytd_revenue_growth_okr["target"].to_f.round(2),
@@ -106,7 +100,7 @@ ActiveAdmin.register_page "Dashboard" do
           current_balance: a.current_balance
         })
       end,
-      aggregated_new_deal_balance: aggregated_new_deal_balance,
+      aggregated_new_deal_balance: Contributor.aggregated_new_deal_balance,
       runway_data: {
         net_cash: net_cash,
         average_burn_rate: average_burn_rate,
