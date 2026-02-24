@@ -164,7 +164,7 @@ class Contributor < ApplicationRecord
         acc = li.payment_date if li.payment_date > acc
       end
       acc
-    end + 1.month
+    end + 2.months
 
     ledger_starts_at = Stacks::System.singleton_class::NEW_DEAL_START_AT
     contiguous_ftps = []
@@ -196,7 +196,6 @@ class Contributor < ApplicationRecord
       end
 
       sorted = [*contributor_payouts_in_period, *contractor_payouts_in_period, *trueups_in_period, *reimbursements_in_period].sort do |a, b|
-
         date_a = nil
         if a.is_a?(Trueup)
           date_a = a.payment_date
