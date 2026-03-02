@@ -540,7 +540,6 @@ class InvoiceTracker < ApplicationRecord
       }
       snapshot[:lines][description][:quantity] =
         line_item.sales_line_item_detail.quantity.to_f
-      acc
 
       qbo_inv.line_items << line_item
     end
