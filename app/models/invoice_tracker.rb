@@ -388,7 +388,7 @@ class InvoiceTracker < ApplicationRecord
             description_line: "- #{n2c(c[:surplus])} * 15% = #{n2c(lead_share)} (`#{c[:qbo_line_item].dig("description")}` generated #{n2c(c[:surplus])} surplus revenue, 15% of which is shared with the Account Lead)",
             blueprint_metadata: c[:blueprint_metadata],
           }
-          
+
           cp.update!(
             deleted_at: nil,
             amount: (cp.amount || 0) + lead_share,
@@ -410,7 +410,7 @@ class InvoiceTracker < ApplicationRecord
             description_line: "- #{n2c(c[:surplus])} * 15% = #{n2c(lead_share)} (`#{c[:qbo_line_item].dig("description")})` generated #{n2c(c[:surplus])} surplus revenue, 15% of which is shared with the Team Lead)",
             blueprint_metadata: c[:blueprint_metadata],
           }
-          
+
           cp.update!(
             deleted_at: nil,
             amount: (cp.amount || 0) + lead_share,
@@ -510,16 +510,17 @@ class InvoiceTracker < ApplicationRecord
 
     # Pepper in recurring charges
     RecurringCharge.where(forecast_client: forecast_client).each do |rc|
+      description = rc.description
       item =
         qbo_items.find { |s| s.fully_qualified_name == rc.qbo_account_name } || default_service_item
 
       line_item = qbo_inv.line_items.find do |qbo_li|
-        qbo_li.description == rc.description
+        qbo_li.description == description
       end
 
       unless line_item.present?
         line_item = Quickbooks::Model::InvoiceLineItem.new
-        line_item.description = rc.description
+        line_item.description = description
       end
 
       line_item.sales_item! do |detail|
@@ -527,7 +528,7 @@ class InvoiceTracker < ApplicationRecord
         detail.quantity = rc.quantity
         detail.item_id = item.id
       end
-  
+
       line_item.amount =
         line_item.sales_line_item_detail.quantity * line_item.sales_line_item_detail.unit_price
 
