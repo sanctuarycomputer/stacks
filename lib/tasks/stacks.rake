@@ -148,21 +148,20 @@ namespace :stacks do
       puts "~~~> DOING SYNC: #{Time.new.localtime}"
       SystemTask.clean_up_old_tasks!
 
-      # These are all dependencies for the rest of the tasks
+
       Retriable.retriable(tries: 5, base_interval: 1, multiplier: 2, max_interval: 10) do
         Stacks::Team.discover!
       end
 
       Stacks::Forecast.new.sync_all! # Has internal retry counter
 
-      Stacks::Runn.new.sync_all!
-
-      Stacks::Quickbooks.sync_all! # Has internal retry counter
-
-      Stacks::Deel.new.sync_all!
-
       # We can do this as soon as we sync the forecast
       Stacks::Automator.attempt_invoicing_for_previous_month
+
+      # These are all dependencies for the rest of the tasks
+      Stacks::Runn.new.sync_all!
+      Stacks::Quickbooks.sync_all! # Has internal retry counter
+      Stacks::Deel.new.sync_all!
 
       Stacks::Automator.remind_people_to_record_hours_weekly
 
