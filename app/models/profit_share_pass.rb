@@ -111,27 +111,27 @@ class ProfitSharePass < ApplicationRecord
     xxix = Studio.find_by(mini_name: "xxix")
     sanctu = Studio.find_by(mini_name: "sanctu")
 
-    g3d_ytd_revenue_growth_okr = g3d.ytd_snapshot.dig("accrual", "okrs_excluding_reinvestment", "Revenue Growth")
+    g3d_ytd_revenue_growth_okr = g3d.ytd_snapshot.dig("accrual", "okrs", "Revenue Growth")
     g3d_ytd_revenue_growth_progress = Okr.make_annual_growth_progress_data(
       g3d_ytd_revenue_growth_okr["target"].to_f.round(2),
       g3d_ytd_revenue_growth_okr["tolerance"].to_f.round(2),
-      g3d.last_year_snapshot.dig("accrual", "datapoints_excluding_reinvestment", "revenue", "value"),
-      g3d.ytd_snapshot.dig("accrual", "datapoints_excluding_reinvestment", "revenue", "value"),
+      g3d.last_year_snapshot.dig("accrual", "datapoints", "revenue", "value"),
+      g3d.ytd_snapshot.dig("accrual", "datapoints", "revenue", "value"),
       :usd
     )
 
-    g3d_ytd_lead_growth_okr = g3d.ytd_snapshot.dig("accrual", "okrs_excluding_reinvestment", "Lead Growth")
+    g3d_ytd_lead_growth_okr = g3d.ytd_snapshot.dig("accrual", "okrs", "Lead Growth")
     g3d_ytd_lead_growth_progress = Okr.make_annual_growth_progress_data(
       g3d_ytd_lead_growth_okr["target"].to_f.round(2),
       g3d_ytd_lead_growth_okr["tolerance"].to_f.round(2),
-      g3d.last_year_snapshot.dig("accrual", "datapoints_excluding_reinvestment", "lead_count", "value"),
-      g3d.ytd_snapshot.dig("accrual", "datapoints_excluding_reinvestment", "lead_count", "value"),
+      g3d.last_year_snapshot.dig("accrual", "datapoints", "lead_count", "value"),
+      g3d.ytd_snapshot.dig("accrual", "datapoints", "lead_count", "value"),
       :count
     )
 
     collective_okrs = [{
       "datapoint" => "profit_margin",
-      "okr" => g3d.ytd_snapshot.dig("accrual", "okrs_excluding_reinvestment", "Profit Margin"),
+      "okr" => g3d.ytd_snapshot.dig("accrual", "okrs", "Profit Margin"),
       "role_holders" => [*CollectiveRole.find_by(name: "General Manager").try(:current_collective_role_holders)]
     }, {
       "datapoint" => "revenue_growth",
@@ -178,7 +178,7 @@ class ProfitSharePass < ApplicationRecord
       ]
     }, {
       "datapoint" => "workplace_satisfaction",
-      "okr" => g3d.ytd_snapshot.dig("accrual", "okrs_excluding_reinvestment", "Workplace Satisfaction"),
+      "okr" => g3d.ytd_snapshot.dig("accrual", "okrs", "Workplace Satisfaction"),
       "role_holders" => [
         *CollectiveRole.find_by(name: "Director of Project Delivery").try(:current_collective_role_holders),
         *CollectiveRole.find_by(name: "Director of People Ops").try(:current_collective_role_holders)
@@ -390,7 +390,7 @@ class ProfitSharePass < ApplicationRecord
   end
 
   def projected_monthly_cost_of_doing_business
-    Studio.garden3d.snapshot["trailing_6_months"].last.dig("cash", "datapoints_excluding_reinvestment", "cogs", "value") / 6
+    Studio.garden3d.snapshot["trailing_6_months"].last.dig("cash", "datapoints", "cogs", "value") / 6
   end
 
   def pull_outstanding_invoices
