@@ -2,11 +2,13 @@ class Stacks::Period
   attr_accessor :label
   attr_accessor :starts_at
   attr_accessor :ends_at
+  attr_accessor :gradation
 
-  def initialize(label, starts_at, ends_at)
+  def initialize(label, starts_at, ends_at, gradation = nil)
     @label = label
     @starts_at = starts_at
     @ends_at = ends_at
+    @gradation = gradation
   end
 
   def report(qbo_account = nil)
@@ -58,7 +60,8 @@ class Stacks::Period
         periods << Stacks::Period.new(
           time.strftime("%B, %Y"),
           time.beginning_of_month,
-          time.end_of_month
+          time.end_of_month,
+          gradation
         )
         time = time.advance(months: 1)
       end
@@ -70,7 +73,8 @@ class Stacks::Period
         periods << Stacks::Period.new(
           "Q#{(time.beginning_of_quarter.month / 3) + 1}, #{time.beginning_of_quarter.year}",
           time.beginning_of_quarter,
-          time.end_of_quarter
+          time.end_of_quarter,
+          gradation
         )
         time = time.advance(months: 3)
       end
@@ -82,14 +86,16 @@ class Stacks::Period
         periods << Stacks::Period.new(
           "#{time.beginning_of_quarter.year}",
           time.beginning_of_year,
-          time.end_of_year
+          time.end_of_year,
+          gradation
         )
         time = time.advance(years: 1)
       end
       periods << Stacks::Period.new(
         "YTD",
         Date.today.beginning_of_year,
-        Date.today.end_of_year
+        Date.today.end_of_year,
+        gradation
       )
       return periods
 
@@ -101,7 +107,8 @@ class Stacks::Period
         periods << Stacks::Period.new(
           "#{starts_at.strftime("%B, %Y")} - #{ends_at.strftime("%B, %Y")}",
           starts_at,
-          ends_at
+          ends_at,
+          gradation
         )
         time = time - 3.months
       end
@@ -115,7 +122,8 @@ class Stacks::Period
         periods << Stacks::Period.new(
           "#{starts_at.strftime("%B, %Y")} - #{ends_at.strftime("%B, %Y")}",
           starts_at,
-          ends_at
+          ends_at,
+          gradation
         )
         time = time - 4.months
       end
@@ -129,7 +137,8 @@ class Stacks::Period
         periods << Stacks::Period.new(
           "#{starts_at.strftime("%B, %Y")} - #{ends_at.strftime("%B, %Y")}",
           starts_at,
-          ends_at
+          ends_at,
+          gradation
         )
         time = time - 6.months
       end
@@ -143,7 +152,8 @@ class Stacks::Period
         periods << Stacks::Period.new(
           "#{starts_at.strftime("%B, %Y")} - #{ends_at.strftime("%B, %Y")}",
           starts_at,
-          ends_at
+          ends_at,
+          gradation
         )
         time = time - 12.months
       end

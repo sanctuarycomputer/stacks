@@ -36,7 +36,7 @@ class StudioTest < ActiveSupport::TestCase
 
     ForecastPerson.all.each{ |fp| fp.sync_utilization_reports! }
     jan = Stacks::Period.new("January 2020", Date.new(2021, 6, 1), Date.new(2021, 6, 30))
-    u = studio.utilization_for_period(jan, studio.forecast_people)[forecast_person]
+    u = studio.utilization_for_period(jan)[forecast_person]
 
     assert (u[:sellable] / (u[:sellable] + u[:non_sellable])) == ftp.expected_utilization
   end
@@ -77,8 +77,8 @@ class StudioTest < ActiveSupport::TestCase
     ForecastPerson.all.each{ |fp| fp.sync_utilization_reports! }
 
     jan = Stacks::Period.new("January 2020", Date.new(2021, 6, 1), Date.new(2021, 6, 30))
-    u = studio.utilization_for_period(jan, studio.forecast_people)[forecast_person]
-
+    u = studio.utilization_for_period(jan)[forecast_person]
+    
     assert (u[:sellable] / (u[:sellable] + u[:non_sellable])) == ftp.expected_utilization
   end
 
@@ -117,7 +117,7 @@ class StudioTest < ActiveSupport::TestCase
 
     ForecastPerson.all.each{ |fp| fp.sync_utilization_reports! }
     jan = Stacks::Period.new("January 2020", Date.new(2021, 6, 1), Date.new(2021, 6, 30))
-    u = studio.utilization_for_period(jan, studio.forecast_people)[forecast_person]
+    u = studio.utilization_for_period(jan)[forecast_person]
 
     assert u[:sellable] == 0
     assert u[:non_sellable] == 0

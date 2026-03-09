@@ -49,7 +49,7 @@
               <% elsif unit == "display" %>
                 <h2 style="margin: 0;" class="<%= health %>"><%= okr_results.dig("value") %></h2>
               <% else %>
-                <h2 style="margin: 0;" class="<%= health %>"><%= value.round(2) %></h2> <p>( <%= target.round(2) %>±<%= tolerance %>)</p>
+                <h2 style="margin: 0;" class="<%= health %>"><%= value.round(2) %></h2> <p>(<%= target.round(2) %>±<%= tolerance %>)</p>
               <% end %>
             </div>
 

@@ -61,8 +61,11 @@ class ForecastPerson < ApplicationRecord
   end
 
   def sync_utilization_reports!
-    Stacks::Period.all.each do |period|
-      make_utilization_report_for_period!(period)
+    ActiveRecord::Base.transaction do
+      ForecastPersonUtilizationReport.where(forecast_person: self).delete_all
+      Stacks::Period.all.each do |period|
+        make_utilization_report_for_period!(period)
+      end
     end
   end
 
@@ -122,7 +125,8 @@ class ForecastPerson < ApplicationRecord
     utilization_report = ForecastPersonUtilizationReport.where(
       starts_at: period.starts_at,
       ends_at: period.ends_at,
-      forecast_person_id: forecast_id
+      forecast_person_id: forecast_id,
+      period_gradation: period.gradation
     ).first_or_initialize
 
     utilization_rate = ((report[:actual][:sold].to_f / report[:expected][:sellable].to_f) * 100).round(2)

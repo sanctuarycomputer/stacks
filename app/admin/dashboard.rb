@@ -15,31 +15,33 @@ ActiveAdmin.register_page "Dashboard" do
     xxix = Studio.find_by(mini_name: "xxix")
     sanctu = Studio.find_by(mini_name: "sanctu")
 
-    g3d_ytd_revenue_growth_okr = g3d.ytd_snapshot.dig("accrual", "okrs_excluding_reinvestment", "Revenue Growth")
-    g3d_ytd_revenue_growth_progress = Okr.make_annual_growth_progress_data(
-      g3d_ytd_revenue_growth_okr["target"].to_f.round(2),
-      g3d_ytd_revenue_growth_okr["tolerance"].to_f.round(2),
-      g3d.last_year_snapshot.dig("accrual", "datapoints_excluding_reinvestment", "revenue", "value"),
-      g3d.ytd_snapshot.dig("accrual", "datapoints_excluding_reinvestment", "revenue", "value"),
-      :usd
-    ).deep_stringify_keys
+    if g3d_ytd_income_growth_okr = g3d.ytd_snapshot.dig("accrual", "okrs", "Income Growth")
+      g3d_ytd_income_growth_progress = Okr.make_annual_growth_progress_data(
+        g3d_ytd_income_growth_okr["target"].to_f.round(2),
+        g3d_ytd_income_growth_okr["tolerance"].to_f.round(2),
+        g3d.last_year_snapshot.dig("accrual", "datapoints", "income", "value"),
+        g3d.ytd_snapshot.dig("accrual", "datapoints", "income", "value"),
+        :usd
+      ).deep_stringify_keys
+    end
 
-    g3d_ytd_lead_growth_okr = g3d.ytd_snapshot.dig("accrual", "okrs_excluding_reinvestment", "Lead Growth")
-    g3d_ytd_lead_growth_progress = Okr.make_annual_growth_progress_data(
-      g3d_ytd_lead_growth_okr["target"].to_f.round(2),
-      g3d_ytd_lead_growth_okr["tolerance"].to_f.round(2),
-      g3d.last_year_snapshot.dig("accrual", "datapoints_excluding_reinvestment", "lead_count", "value"),
-      g3d.ytd_snapshot.dig("accrual", "datapoints_excluding_reinvestment", "lead_count", "value"),
-      :count
-    ).deep_stringify_keys
+    if g3d_ytd_lead_growth_okr = g3d.ytd_snapshot.dig("accrual", "okrs", "Lead Growth")
+      g3d_ytd_lead_growth_progress = Okr.make_annual_growth_progress_data(
+        g3d_ytd_lead_growth_okr["target"].to_f.round(2),
+        g3d_ytd_lead_growth_okr["tolerance"].to_f.round(2),
+        g3d.last_year_snapshot.dig("accrual", "datapoints", "lead_count", "value"),
+        g3d.ytd_snapshot.dig("accrual", "datapoints", "lead_count", "value"),
+        :count
+      ).deep_stringify_keys
+    end
 
     collective_okrs = [{
       "datapoint" => "profit_margin",
-      "okr" => g3d.ytd_snapshot.dig("accrual", "okrs_excluding_reinvestment", "Profit Margin"),
+      "okr" => g3d.ytd_snapshot.dig("accrual", "okrs", "Profit Margin"),
     }, {
-      "datapoint" => "revenue_growth",
-      "okr" => g3d_ytd_revenue_growth_okr,
-      "growth_progress" => g3d_ytd_revenue_growth_progress,
+      "datapoint" => "income_growth",
+      "okr" => g3d_ytd_income_growth_okr,
+      "growth_progress" => g3d_ytd_income_growth_progress,
     }, {
       "datapoint" => "successful_design_projects",
       "okr" => xxix.ytd_snapshot.dig("accrual", "okrs", "Successful Projects"),
@@ -58,7 +60,7 @@ ActiveAdmin.register_page "Dashboard" do
       "growth_progress" => g3d_ytd_lead_growth_progress,
     }, {
       "datapoint" => "workplace_satisfaction",
-      "okr" => g3d.ytd_snapshot.dig("accrual", "okrs_excluding_reinvestment", "Workplace Satisfaction"),
+      "okr" => g3d.ytd_snapshot.dig("accrual", "okrs", "Workplace Satisfaction"),
     }]
 
     accounting_method = session[:accounting_method] || "cash"
