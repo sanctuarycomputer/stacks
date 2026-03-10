@@ -508,7 +508,7 @@ class InvoiceTracker < ApplicationRecord
         acc
       end
 
-    # Pepper in recurring charges
+    # Pepper in recurring charges. Don't add them to the blueprint.
     RecurringCharge.where(forecast_client: forecast_client).each do |rc|
       description = rc.description
       item =
@@ -531,15 +531,6 @@ class InvoiceTracker < ApplicationRecord
 
       line_item.amount =
         line_item.sales_line_item_detail.quantity * line_item.sales_line_item_detail.unit_price
-
-      snapshot[:lines][description] = snapshot[:lines][description] || {
-        id: nil,
-        recurring_charge: rc.id,
-        quantity: 0,
-        unit_price: line_item.sales_line_item_detail.unit_price.to_f,
-      }
-      snapshot[:lines][description][:quantity] =
-        line_item.sales_line_item_detail.quantity.to_f
 
       qbo_inv.line_items << line_item
     end
