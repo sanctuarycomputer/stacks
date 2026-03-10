@@ -5,6 +5,10 @@ class Stacks::Quickbooks
   class << self
     def sync_all!
       Retriable.retriable(tries: 5, base_interval: 1, multiplier: 2, max_interval: 10) do
+        cleanup_orphaned_qbo_objects!
+      end
+
+      Retriable.retriable(tries: 5, base_interval: 1, multiplier: 2, max_interval: 10) do
         sync_monthly_profit_and_loss_reports!
       end
 
@@ -87,6 +91,28 @@ class Stacks::Quickbooks
       end
       QboVendor.upsert_all(data, unique_by: :qbo_id)
       QboVendor.where.not(qbo_id: data.map{|t| t[:qbo_id]}).delete_all
+    end
+
+    def cleanup_orphaned_qbo_objects!
+      fetch_all_bills.each do |b|
+        splat = (b.doc_number || "").match(/^Stacks_(\d+)(?:_([A-Za-z][A-Za-z0-9_]*))?$/)
+        next unless splat.present?
+
+        # Look to see if the parent object is present
+        klass = splat[2].present? ? splat[2].constantize : ContributorPayout
+        obj = klass.find_by(id: splat[1])
+        next if obj.present?
+
+        # If not, check if it's a deleted object
+        if deleted_obj = klass.with_deleted.find_by(id: splat[1])
+          deleted_obj.update(qbo_bill_id: nil)
+          deleted_obj.qbo_bill.destroy! if deleted_obj.qbo_bill.present?
+        elsif qbo_bill = QboBill.find_by(qbo_id: b.id)
+          qbo_bill.destroy!
+        else
+          delete_bill(b)
+        end
+      end
     end
 
     def sync_all_bills!
@@ -198,6 +224,14 @@ class Stacks::Quickbooks
       service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
       service.access_token = access_token
       qbo_bills = service.all
+    end
+
+    def delete_bill(bill)
+      access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
+      service = Quickbooks::Service::Bill.new
+      service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
+      service.access_token = access_token
+      service.delete(bill)
     end
 
     def fetch_bill_by_id(id)

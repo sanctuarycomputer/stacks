@@ -6,7 +6,7 @@ class ContributorPayout < ApplicationRecord
   belongs_to :contributor
   belongs_to :forecast_person, class_name: "ForecastPerson", foreign_key: "forecast_person_id", primary_key: "forecast_id", optional: true
   belongs_to :created_by, class_name: 'AdminUser'
-  belongs_to :qbo_bill, class_name: "QboBill", foreign_key: "qbo_bill_id", primary_key: "qbo_id", optional: true
+  belongs_to :qbo_bill, class_name: "QboBill", foreign_key: "qbo_bill_id", primary_key: "qbo_id", optional: true, dependent: :destroy
 
   validates :amount, presence: true
   validate :contributor_payouts_within_seventy_percent

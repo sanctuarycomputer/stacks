@@ -1,6 +1,10 @@
 module SyncsAsQboBill
   extend ActiveSupport::Concern
 
+  def qbo_url
+    qbo_bill.try(:qbo_url)
+  end
+
   def find_qbo_account!(qbo_accounts = Stacks::Quickbooks.fetch_all_accounts)
     account = qbo_accounts.find{|a| a.name == "Contractors - Client Services"}
     studio = contributor.forecast_person.studio
