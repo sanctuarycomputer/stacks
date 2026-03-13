@@ -125,7 +125,7 @@ class Stacks::Quickbooks
       end
       QboBill.upsert_all(data, unique_by: :qbo_id)
       deleted_bills = QboBill.where.not(qbo_id: data.map{|t| t[:qbo_id]})
-      ContributorPayout.where(qbo_bill: deleted_bills).update_all(qbo_bill_id: nil)
+      ContributorPayout.with_deleted.where(qbo_bill: deleted_bills).update_all(qbo_bill_id: nil)
       deleted_bills.delete_all
     end
 
