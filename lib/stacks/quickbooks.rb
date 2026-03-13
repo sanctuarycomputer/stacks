@@ -95,11 +95,19 @@ class Stacks::Quickbooks
 
     def cleanup_orphaned_qbo_objects!
       fetch_all_bills.each do |b|
-        splat = (b.doc_number || "").match(/^Stacks_(\d+)(?:_([A-Za-z][A-Za-z0-9_]*))?$/)
+        splat = (b.doc_number || "").match(/^Stacks_(\d+)(?:_([A-Za-z][A-Za-z0-9_]*\.{3}?))?$/)
         next unless splat.present?
 
-        # Look to see if the parent object is present
-        klass = splat[2].present? ? splat[2].constantize : ContributorPayout
+        case splat[2]
+        when "ContributorPayout", /^Contri/
+          klass = ContributorPayout
+        when "Trueup"
+          klass = Trueup
+        else
+          # Early iterations didn't embed the class name in the doc number, so we default to ContributorPayout
+          klass = ContributorPayout
+        end
+
         obj = klass.find_by(id: splat[1])
         next if obj.present?
 
