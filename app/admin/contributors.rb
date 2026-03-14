@@ -40,6 +40,16 @@ ActiveAdmin.register Contributor do
     )
   end
 
+  member_action :toggle_profit_share_acceptance, method: :post do
+    ps = ProfitShare.find(params[:profit_share_id])
+    return unless ps.contributor.forecast_person.try(:admin_user) == current_admin_user || current_admin_user.is_admin?
+    ps.toggle_acceptance!
+    return redirect_to(
+      admin_contributor_path(params[:id], format: :html),
+      notice: "Success",
+    )
+  end
+
   member_action :toggle_reimbursement_acceptance, method: :post do
     r = Reimbursement.find(params[:reimbursement_id])
     return unless current_admin_user.is_admin?

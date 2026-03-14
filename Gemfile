@@ -41,6 +41,7 @@ gem 'newrelic_rpm'
 gem 'retriable'
 gem 'concurrent-ruby', '1.3.4'
 gem 'matrix'
+gem 'countries'
 
 group :development, :test do
   gem 'pry'

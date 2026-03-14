@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_03_08_183334) do
+ActiveRecord::Schema.define(version: 2026_03_14_201821) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -412,6 +412,16 @@ ActiveRecord::Schema.define(version: 2026_03_08_183334) do
     t.index ["review_id"], name: "index_peer_reviews_on_review_id"
   end
 
+  create_table "periodic_reports", force: :cascade do |t|
+    t.integer "period_gradation", default: 0, null: false
+    t.date "period_starts_at", null: false
+    t.string "period_label", null: false
+    t.jsonb "blueprint", default: {}, null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["period_gradation", "period_starts_at"], name: "index_periodic_reports_on_period_gradation_and_period_starts_at", unique: true
+  end
+
   create_table "pre_profit_share_purchases", force: :cascade do |t|
     t.bigint "admin_user_id", null: false
     t.decimal "amount"
@@ -446,6 +456,22 @@ ActiveRecord::Schema.define(version: 2026_03_08_183334) do
     t.datetime "updated_at", precision: 6, null: false
     t.index ["admin_user_id"], name: "index_profit_share_payments_on_admin_user_id"
     t.index ["profit_share_pass_id"], name: "index_profit_share_payments_on_profit_share_pass_id"
+  end
+
+  create_table "profit_shares", force: :cascade do |t|
+    t.bigint "periodic_report_id", null: false
+    t.decimal "amount", null: false
+    t.jsonb "blueprint", default: {}, null: false
+    t.bigint "contributor_id", null: false
+    t.string "qbo_bill_id"
+    t.datetime "accepted_at"
+    t.datetime "deleted_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["contributor_id"], name: "index_profit_shares_on_contributor_id"
+    t.index ["deleted_at"], name: "index_profit_shares_on_deleted_at"
+    t.index ["periodic_report_id", "contributor_id"], name: "index_profit_shares_on_periodic_report_id_and_contributor_id", unique: true
+    t.index ["periodic_report_id"], name: "index_profit_shares_on_periodic_report_id"
   end
 
   create_table "project_capsules", force: :cascade do |t|
@@ -934,6 +960,8 @@ ActiveRecord::Schema.define(version: 2026_03_08_183334) do
   add_foreign_key "pre_profit_share_purchases", "admin_users"
   add_foreign_key "profit_share_payments", "admin_users"
   add_foreign_key "profit_share_payments", "profit_share_passes"
+  add_foreign_key "profit_shares", "contributors"
+  add_foreign_key "profit_shares", "periodic_reports"
   add_foreign_key "project_capsules", "project_trackers"
   add_foreign_key "project_lead_periods", "admin_users"
   add_foreign_key "project_lead_periods", "project_trackers"

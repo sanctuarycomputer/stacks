@@ -1,0 +1,19 @@
+# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+one:
+  periodic_report: one
+  amount: 9.99
+  blueprint: 
+  contributor: one
+  qbo_bill_id: MyString
+  accepted_at: 2026-03-14 16:18:21
+  deleted_at: 2026-03-14 16:18:21
+
+two:
+  periodic_report: two
+  amount: 9.99
+  blueprint: 
+  contributor: two
+  qbo_bill_id: MyString
+  accepted_at: 2026-03-14 16:18:21
+  deleted_at: 2026-03-14 16:18:21
