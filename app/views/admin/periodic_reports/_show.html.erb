@@ -4,6 +4,12 @@
   </div>
 </div>
 
+<a href="https://www.notion.so/garden3d/The-New-Deal-Profit-Share-Program-2d8131fea2c78010b23bc4867427a489?source=copy_link" target="_blank">
+  <p class="nag" style="margin-bottom: 20px;margin-right: 6px;">
+    🤔 Learn to understand the New Deal Profit Share program here ↗
+  </p>
+</a>
+
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
     <div class="module-body factoid-parent">
@@ -38,7 +44,7 @@
     <div class="module-body factoid-parent">
       <div class="factoid">
         <h2><%= periodic_report.blueprint["total_shares"] %></h2>
-        <p>Total Shares</p>
+        <p>Total Profit Shares Issued</p>
       </div>
     </div>
   </div>
@@ -63,7 +69,7 @@
       <tr class="<%= index.even? ? "even" : "odd" %>">
         <td class="col"><%= link_to profit_share.contributor.forecast_person.email, admin_contributor_path(profit_share.contributor) %></td>
         <td class="col"><%= profit_share.blueprint.dig("tenure_multiplier") %></td>
-        <td class="col"><%= profit_share.blueprint.dig("cost_of_living_data", "cost_of_living_plus_rent_index") %></td>
+        <td class="col"><%= (profit_share.blueprint.dig("cost_of_living_multiplier") * 100).round(2) %>%</td>
         <td class="col"><%= profit_share.blueprint.dig("elevated_service_months") %></td>
         <td class="col"><%= profit_share.blueprint.dig("shares") %></td>
         <td class="col"><%= ((profit_share.blueprint.dig("shares").to_f / periodic_report.blueprint["total_shares"].to_f) * 100).round(2) %>%</td>

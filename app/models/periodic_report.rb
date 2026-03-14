@@ -1,9 +1,10 @@
 # TODO: Add Deel Person to the Data Integrity thing
-# TODO: Don't sync to QBO unless payable items are payable!
-# TODO: Why no Conan?
-# TODO: Why Parker?
-# TODO: Don't generate profit shares for amount: 0!
+# TODO: Don't sync to QBO unless payable items are payable
 # TODO: Ensure Surplus Calcs work https://stacks.garden3d.net/admin/invoice_passes/669/invoice_trackers/1367
+# TODO: Actually calculate the shares
+# TODO: Nag for when any unaccepted profit shares exist!
+# TODO: Optimize the speed stuff, preload everything!
+# TODO: Exception Handling (like Runn Sync)
 
 class PeriodicReport < ApplicationRecord
   validates :period_gradation, presence: true
@@ -61,10 +62,13 @@ class PeriodicReport < ApplicationRecord
     @_garden3d_snapshot ||= Studio.garden3d.snapshot["quarter"].find{|p| p["label"] == period.label}
   end
 
+  def us_cost_of_living_data
+    @_us_cost_of_living_data ||= PeriodicReport.parsed_numbeo_cost_of_living_indices_by_country["United States"]
+  end
+
   def tentative_profit_shares_by_contributor
     @_tentative_profit_shares_by_contributor ||= contributors.reduce({}) do |acc, contributor|
       ledger = contributor.new_deal_ledger_items(false, nil, period.ends_at + 1.day)
-      next acc unless ledger[:all].any?
 
       attendance = ledger[:by_month].select{|p| p.starts_at >= period.starts_at && p.ends_at <= period.ends_at }.reduce({}) do |agg, tuple|
         period, metadata = tuple
@@ -73,13 +77,13 @@ class PeriodicReport < ApplicationRecord
         agg[period.label] = m
         agg
       end
-      next acc if attendance.empty?
+      elevated_service_months = attendance.values.select{|v| v[:elevated_service]}.count
+      next acc if elevated_service_months == 0
 
-      us_cost_of_living_data = PeriodicReport.parsed_numbeo_cost_of_living_indices_by_country["United States"]
       cost_of_living_data = nil
       begin
         # Overrides
-        if ["hugh@sanctuary.computer"].include?(contributor.forecast_person.email.downcase)
+        if ["hugh@sanctuary.computer", "sohee@sanctuary.computer", "conan@sanctuary.computer"].include?(contributor.forecast_person.email.downcase)
           cost_of_living_data = us_cost_of_living_data
         else
           country_code = contributor.deel_person.data["addresses"].first.dig("country")
@@ -91,20 +95,24 @@ class PeriodicReport < ApplicationRecord
           end
         end
       rescue => e
+        binding.pry
         # TODO: Raise?
         raise "Could not find cost of living data for #{contributor.forecast_person.email}"
       end
 
       psu = ledger[:by_month].values.select{|l| l[:elevated_service]}.count
+      cost_of_living_multiplier = (cost_of_living_data[:cost_of_living_plus_rent_index].to_f / us_cost_of_living_data[:cost_of_living_plus_rent_index].to_f).clamp(0, 1)
+      tenure_multiplier = ((psu / 12) * yearly_tenure_multiplier) + 1
       acc[contributor] = {
         contributor_id: contributor.id,
         email: contributor.forecast_person.email,
         cost_of_living_data: cost_of_living_data,
+        cost_of_living_multiplier: cost_of_living_multiplier,
         psu: psu,
-        tenure_multiplier: (psu / 12) * yearly_tenure_multiplier,
+        tenure_multiplier: tenure_multiplier,
         attendance: attendance,
-        elevated_service_months: attendance.values.select{|v| v[:elevated_service]}.count,
-        shares: 100, # TODO: Calculate this
+        elevated_service_months: elevated_service_months,
+        shares: psu * tenure_multiplier * cost_of_living_multiplier * (elevated_service_months / 3.0)
       }
 
       acc
@@ -145,9 +153,7 @@ class PeriodicReport < ApplicationRecord
         profit_share.restore! if profit_share.deleted?
         touched << profit_share
       end
-
-      to_delete = (profit_shares - touched)
-      to_delete.each(&:destroy_fully!)
+      (profit_shares - touched).each(&:destroy_fully!)
     end
 
     update!(blueprint: {
@@ -155,7 +161,8 @@ class PeriodicReport < ApplicationRecord
       "successful_projects" => successful_projects,
       "gross_surplus" => gross_surplus,
       "net_profit_share_pool" => net_profit_share_pool,
-      "total_shares" => total_shares
+      "total_shares" => total_shares,
+      "us_cost_of_living_data" => us_cost_of_living_data
     })
   end
 
