@@ -3,7 +3,7 @@
 # TODO: Why no Conan?
 # TODO: Why Parker?
 # TODO: Don't generate profit shares for amount: 0!
-
+# TODO: Ensure Surplus Calcs work https://stacks.garden3d.net/admin/invoice_passes/669/invoice_trackers/1367
 
 class PeriodicReport < ApplicationRecord
   validates :period_gradation, presence: true
