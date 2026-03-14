@@ -1,7 +1,6 @@
 # TODO: Add Deel Person to the Data Integrity thing
 # TODO: Don't sync to QBO unless payable items are payable
 # TODO: Ensure Surplus Calcs work https://stacks.garden3d.net/admin/invoice_passes/669/invoice_trackers/1367
-# TODO: Actually calculate the shares
 # TODO: Nag for when any unaccepted profit shares exist!
 # TODO: Optimize the speed stuff, preload everything!
 # TODO: Exception Handling (like Runn Sync)
@@ -101,18 +100,18 @@ class PeriodicReport < ApplicationRecord
       end
 
       psu = ledger[:by_month].values.select{|l| l[:elevated_service]}.count
-      cost_of_living_multiplier = (cost_of_living_data[:cost_of_living_plus_rent_index].to_f / us_cost_of_living_data[:cost_of_living_plus_rent_index].to_f).clamp(0, 1)
+      effective_cost_of_living_index = cost_of_living_data[:cost_of_living_plus_rent_index].to_f.clamp(0, us_cost_of_living_data[:cost_of_living_plus_rent_index].to_f)
       tenure_multiplier = ((psu / 12) * yearly_tenure_multiplier) + 1
       acc[contributor] = {
         contributor_id: contributor.id,
         email: contributor.forecast_person.email,
         cost_of_living_data: cost_of_living_data,
-        cost_of_living_multiplier: cost_of_living_multiplier,
+        effective_cost_of_living_index: effective_cost_of_living_index,
         psu: psu,
         tenure_multiplier: tenure_multiplier,
         attendance: attendance,
         elevated_service_months: elevated_service_months,
-        shares: psu * tenure_multiplier * cost_of_living_multiplier * (elevated_service_months / 3.0)
+        shares: tenure_multiplier * effective_cost_of_living_index * elevated_service_months
       }
 
       acc

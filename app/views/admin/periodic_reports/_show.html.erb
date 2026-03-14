@@ -43,7 +43,7 @@
   <div class="dashboard-module">
     <div class="module-body factoid-parent">
       <div class="factoid">
-        <h2><%= periodic_report.blueprint["total_shares"] %></h2>
+        <h2><%= periodic_report.blueprint["total_shares"].round(2) %></h2>
         <p>Total Profit Shares Issued</p>
       </div>
     </div>
@@ -69,9 +69,9 @@
       <tr class="<%= index.even? ? "even" : "odd" %>">
         <td class="col"><%= link_to profit_share.contributor.forecast_person.email, admin_contributor_path(profit_share.contributor) %></td>
         <td class="col"><%= profit_share.blueprint.dig("tenure_multiplier") %></td>
-        <td class="col"><%= (profit_share.blueprint.dig("cost_of_living_multiplier") * 100).round(2) %>%</td>
+        <td class="col"><%= profit_share.blueprint.dig("effective_cost_of_living_index") %></td>
         <td class="col"><%= profit_share.blueprint.dig("elevated_service_months") %></td>
-        <td class="col"><%= profit_share.blueprint.dig("shares") %></td>
+        <td class="col"><%= profit_share.blueprint.dig("shares").round(2) %></td>
         <td class="col"><%= ((profit_share.blueprint.dig("shares").to_f / periodic_report.blueprint["total_shares"].to_f) * 100).round(2) %>%</td>
         <td class="col"><%= number_to_currency(profit_share.amount) %></td>
         <td class="col">
