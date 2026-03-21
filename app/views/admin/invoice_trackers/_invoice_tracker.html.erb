@@ -210,6 +210,7 @@
         <th class="col">Payee</th>
         <th class="col">Status</th>
         <th class="col">Amount</th>
+        <th class="col">In Sync</th>
         <th class="col text-right">Details</th>
       </tr>
     </thead>
@@ -261,6 +262,11 @@
             </span>
 
           </td>
+          <td class="col">
+            <span class="pill <%= cp.in_sync? ? "in_sync" : "out_of_sync" %>">
+              <%= cp.in_sync? ? "In Sync" : "Out of Sync" %>
+            </span>
+          </td>
           <td class="col text-right">
             <%= link_to "Breakdown ↗", admin_invoice_tracker_contributor_payout_path(invoice_tracker, cp) %>
           </td>
@@ -290,7 +296,7 @@
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
     <div class="module-body factoid-parent">
-      <div class="factoid">  
+      <div class="factoid">
         <p style="margin-bottom: 6px;">💁 <strong>Note!</strong> When we work with Individual Contributors cheaper than <code>57%</code> of our client's billable rate, the surplus revenue is split between the Account Lead, Team Lead, and our company-wide quarterly profit share program.</p>
         <a href="https://github.com/sanctuarycomputer/stacks" target="_blank">
           Read more here ↗
@@ -301,7 +307,7 @@
 
   <div class="dashboard-module">
     <div class="module-body factoid-parent">
-      <div class="factoid">  
+      <div class="factoid">
         <p style="margin-bottom: 6px;">This invoice generated a surpus of:</p>
         <h2>
           <%= number_to_currency surplus %>

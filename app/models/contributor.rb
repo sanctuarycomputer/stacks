@@ -6,10 +6,19 @@ class Contributor < ApplicationRecord
   belongs_to :deel_person, class_name: "DeelPerson", foreign_key: "deel_person_id", primary_key: "deel_id", optional: true
 
   has_many :misc_payments
+  has_many :misc_payments_with_deleted, -> { with_deleted }, class_name: 'MiscPayment'
+
   has_many :reimbursements
+  has_many :reimbursements_with_deleted, -> { with_deleted }, class_name: 'Reimbursement'
+
   has_many :contributor_payouts
+  has_many :contributor_payouts_with_deleted, -> { includes({ invoice_tracker: :invoice_pass }).with_deleted }, class_name: 'ContributorPayout'
+
   has_many :trueups
+  has_many :trueups_with_deleted, -> { includes(:invoice_pass).with_deleted }, class_name: 'Trueup'
+
   has_many :profit_shares
+  has_many :profit_shares_with_deleted, -> { includes(:periodic_report).with_deleted }, class_name: 'ProfitShare'
 
   scope :recent_new_deal_contributors, -> {
     joins(:contributor_payouts).where("contributor_payouts.created_at > ?", 3.months.ago).distinct
@@ -157,11 +166,11 @@ class Contributor < ApplicationRecord
   end
 
   def new_deal_ledger_items(include_salary = true, override_ledger_starts_at = nil, override_ledger_ends_at = nil)
-    preloaded_contributor_payouts = contributor_payouts.includes({ invoice_tracker: :invoice_pass }).with_deleted
-    preloaded_misc_payments = misc_payments.with_deleted
-    preloaded_reimbursements = reimbursements.with_deleted
-    preloaded_trueups = trueups.includes(:invoice_pass).with_deleted
-    preloaded_profit_shares = profit_shares.includes(:periodic_report).with_deleted
+    preloaded_contributor_payouts = contributor_payouts_with_deleted
+    preloaded_misc_payments = misc_payments_with_deleted
+    preloaded_reimbursements = reimbursements_with_deleted
+    preloaded_trueups = trueups_with_deleted
+    preloaded_profit_shares = profit_shares_with_deleted
 
     if override_ledger_ends_at.present?
       ledger_ends_at = override_ledger_ends_at
@@ -200,12 +209,12 @@ class Contributor < ApplicationRecord
         cp.invoice_tracker.invoice_pass.start_of_month <= period.ends_at
       end
 
-      contractor_payouts_in_period = misc_payments.with_deleted.select do |cp|
+      contractor_payouts_in_period = preloaded_misc_payments.select do |cp|
         cp.paid_at >= period.starts_at &&
         cp.paid_at <= period.ends_at
       end
 
-      reimbursements_in_period = reimbursements.with_deleted.select do |cp|
+      reimbursements_in_period = preloaded_reimbursements.select do |cp|
         cp.created_at >= period.starts_at &&
         cp.created_at <= period.ends_at
       end

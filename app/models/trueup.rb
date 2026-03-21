@@ -12,4 +12,8 @@ class Trueup < ApplicationRecord
   def payment_date
     invoice_pass.start_of_month.end_of_month
   end
+
+  def payable?
+    true
+  end
 end

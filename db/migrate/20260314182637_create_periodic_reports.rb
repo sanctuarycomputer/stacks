@@ -5,6 +5,7 @@ class CreatePeriodicReports < ActiveRecord::Migration[6.1]
       t.date :period_starts_at, null: false
       t.string :period_label, null: false
       t.jsonb :blueprint, null: false, default: {}
+      t.references :notification, null: true, foreign_key: true
 
       t.timestamps
     end

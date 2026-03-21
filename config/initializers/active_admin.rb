@@ -336,6 +336,10 @@ ActiveAdmin.setup do |config|
   # you only pass content you trust.
   #
   # config.head = ''.html_safe
+  config.head = '
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jsoneditor/10.1.0/jsoneditor.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsoneditor/10.1.0/jsoneditor.min.js"></script>
+  '.html_safe
 
   # == Footer
   #

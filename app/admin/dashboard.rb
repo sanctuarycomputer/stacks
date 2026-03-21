@@ -59,8 +59,8 @@ ActiveAdmin.register_page "Dashboard" do
       "okr" => g3d_ytd_lead_growth_okr,
       "growth_progress" => g3d_ytd_lead_growth_progress,
     }, {
-      "datapoint" => "workplace_satisfaction",
-      "okr" => g3d.ytd_snapshot.dig("accrual", "okrs", "Workplace Satisfaction"),
+      "datapoint" => "project_satisfaction",
+      "okr" => g3d.ytd_snapshot.dig("accrual", "okrs", "Project Satisfaction"),
     }]
 
     accounting_method = session[:accounting_method] || "cash"

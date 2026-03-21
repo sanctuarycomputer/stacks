@@ -1,15 +1,9 @@
-# TODO: Add Deel Person to the Data Integrity thing
-# TODO: Don't sync to QBO unless payable items are payable
-# TODO: Ensure Surplus Calcs work https://stacks.garden3d.net/admin/invoice_passes/669/invoice_trackers/1367
-# TODO: Nag for when any unaccepted profit shares exist!
-# TODO: Optimize the speed stuff, preload everything!
-# TODO: Exception Handling (like Runn Sync)
-
 class PeriodicReport < ApplicationRecord
   validates :period_gradation, presence: true
   validates :period_starts_at, presence: true, uniqueness: { scope: [:period_gradation] }
   validates :period_label, presence: true
   has_many :profit_shares, dependent: :destroy
+  belongs_to :notification, optional: true, dependent: :destroy
 
   enum period_gradation: {
     year: 0,
@@ -27,6 +21,12 @@ class PeriodicReport < ApplicationRecord
       period_starts_at: period.starts_at,
       period_label: period.label
     )
+  end
+
+  def self.ensure_exists!
+    Stacks::Period.for_gradation(:quarter, Date.new(2026, 1, 1)).each do |period|
+      create_for_period(period)
+    end
   end
 
   def yearly_tenure_multiplier
@@ -54,7 +54,7 @@ class PeriodicReport < ApplicationRecord
   end
 
   def contributors
-    @_contributors ||= Contributor.includes(:forecast_person, :deel_person, :contributor_payouts, :misc_payments, :reimbursements, :trueups).all
+    @_contributors ||= Contributor.includes(:forecast_person, :deel_person, :contributor_payouts_with_deleted, :misc_payments_with_deleted, :reimbursements_with_deleted, :trueups_with_deleted, :profit_shares_with_deleted).all
   end
 
   def garden3d_snapshot
@@ -94,9 +94,7 @@ class PeriodicReport < ApplicationRecord
           end
         end
       rescue => e
-        binding.pry
-        # TODO: Raise?
-        raise "Could not find cost of living data for #{contributor.forecast_person.email}"
+        raise Stacks::Errors::Base.new("Could not find COL data for #{contributor.forecast_person.email}: #{e.message}")
       end
 
       psu = ledger[:by_month].values.select{|l| l[:elevated_service]}.count
@@ -125,44 +123,49 @@ class PeriodicReport < ApplicationRecord
   def sync_profit_shares!
     return if profit_shares.any? && all_profit_shares_accepted?
 
-    successful_projects = garden3d_snapshot.dig("accrual", "datapoints", "successful_projects", "value") || 0
-    gross_surplus = surplus
-    net_profit_share_pool = gross_surplus * 0.3 * (successful_projects / 100.0)
-    total_shares = tentative_profit_shares_by_contributor.values.map{|d| d[:shares]}.reduce(&:+) || 0
+    begin
+      successful_projects = garden3d_snapshot.dig("accrual", "datapoints", "successful_projects", "value") || 0
+      gross_surplus = surplus
+      net_profit_share_pool = gross_surplus * 0.3 * (successful_projects / 100.0)
+      total_shares = tentative_profit_shares_by_contributor.values.map{|d| d[:shares]}.reduce(&:+) || 0
 
-    ActiveRecord::Base.transaction do
-      profit_shares_by_contributor = profit_shares.with_deleted.reduce({}) do |acc, profit_share|
-        acc[profit_share.contributor_id] = profit_share
-        acc
-      end
-
-      touched = []
-      tentative_profit_shares_by_contributor.each do |contributor, data|
-        profit_share = profit_shares_by_contributor[contributor.id] || ProfitShare.create!({
-          periodic_report: self,
-          contributor: contributor,
-          amount: 0,
-          blueprint: {},
-        })
-        amount = (data[:shares] / total_shares.to_f) * net_profit_share_pool
-        if profit_share.amount > 0 && profit_share.amount != amount
-          profit_share.update!(accepted_at: nil)
+      ActiveRecord::Base.transaction do
+        profit_shares_by_contributor = profit_shares.with_deleted.reduce({}) do |acc, profit_share|
+          acc[profit_share.contributor_id] = profit_share
+          acc
         end
-        profit_share.update!(amount: amount, blueprint: data)
-        profit_share.restore! if profit_share.deleted?
-        touched << profit_share
-      end
-      (profit_shares - touched).each(&:destroy_fully!)
-    end
 
-    update!(blueprint: {
-      "generated_at" => DateTime.now.to_s,
-      "successful_projects" => successful_projects,
-      "gross_surplus" => gross_surplus,
-      "net_profit_share_pool" => net_profit_share_pool,
-      "total_shares" => total_shares,
-      "us_cost_of_living_data" => us_cost_of_living_data
-    })
+        touched = []
+        tentative_profit_shares_by_contributor.each do |contributor, data|
+          profit_share = profit_shares_by_contributor[contributor.id] || ProfitShare.create!({
+            periodic_report: self,
+            contributor: contributor,
+            amount: 0,
+            blueprint: {},
+          })
+          amount = (data[:shares] / total_shares.to_f) * net_profit_share_pool
+          if profit_share.amount > 0 && profit_share.amount != amount
+            profit_share.update!(accepted_at: nil)
+          end
+          profit_share.update!(amount: amount, blueprint: data)
+          profit_share.restore! if profit_share.deleted?
+          touched << profit_share
+        end
+        (profit_shares - touched).each(&:destroy_fully!)
+      end
+
+      update!(blueprint: {
+        "generated_at" => DateTime.now.to_s,
+        "successful_projects" => successful_projects,
+        "gross_surplus" => gross_surplus,
+        "net_profit_share_pool" => net_profit_share_pool,
+        "total_shares" => total_shares,
+        "us_cost_of_living_data" => us_cost_of_living_data
+      }, notification: nil)
+    rescue => e
+      notification = Stacks::Notifications.report_exception(e)
+      update(blueprint: { "generated_at" => DateTime.now.to_s }, notification: notification.record)
+    end
   end
 
   def self.parsed_numbeo_cost_of_living_indices_by_country

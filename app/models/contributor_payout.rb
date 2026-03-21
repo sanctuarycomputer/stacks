@@ -44,6 +44,12 @@ class ContributorPayout < ApplicationRecord
     [account, studio]
   end
 
+  def blueprint=(val)
+    super(val.is_a?(String) ? JSON.parse(val) : val)
+  rescue JSON::ParserError
+    super(val)
+  end
+
   def calculate_surplus
     return [] unless in_sync?
 

@@ -417,8 +417,10 @@ ActiveRecord::Schema.define(version: 2026_03_14_201821) do
     t.date "period_starts_at", null: false
     t.string "period_label", null: false
     t.jsonb "blueprint", default: {}, null: false
+    t.bigint "notification_id"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.index ["notification_id"], name: "index_periodic_reports_on_notification_id"
     t.index ["period_gradation", "period_starts_at"], name: "index_periodic_reports_on_period_gradation_and_period_starts_at", unique: true
   end
 
@@ -957,6 +959,7 @@ ActiveRecord::Schema.define(version: 2026_03_14_201821) do
   add_foreign_key "okr_periods", "okrs"
   add_foreign_key "peer_reviews", "admin_users"
   add_foreign_key "peer_reviews", "reviews"
+  add_foreign_key "periodic_reports", "notifications"
   add_foreign_key "pre_profit_share_purchases", "admin_users"
   add_foreign_key "profit_share_payments", "admin_users"
   add_foreign_key "profit_share_payments", "profit_share_passes"

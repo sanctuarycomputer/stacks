@@ -103,6 +103,8 @@ class Stacks::Quickbooks
           klass = ContributorPayout
         when "Trueup"
           klass = Trueup
+        when "ProfitShare", /^Profit/
+          klass = ProfitShare
         else
           # Early iterations didn't embed the class name in the doc number, so we default to ContributorPayout
           klass = ContributorPayout

@@ -44,8 +44,13 @@ module SyncsAsQboBill
     end
   end
 
+  def payable?
+    false
+  end
+
   def sync_qbo_bill!
     return unless contributor.qbo_vendor.present?
+    return unless payable?
 
     bill = load_qbo_bill! || Quickbooks::Model::Bill.new
     bill.txn_date = find_invoice_pass!.start_of_month.end_of_month
