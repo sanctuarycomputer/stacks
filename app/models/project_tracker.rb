@@ -77,6 +77,10 @@ class ProjectTracker < ApplicationRecord
       .distinct
   }
 
+  def capsule_complete?
+    project_capsule.present? && project_capsule.complete?
+  end
+
   def self.capsule_pending
     ProjectTracker.where.not(work_completed_at: nil).select do |pt|
       pt.work_status == :capsule_pending

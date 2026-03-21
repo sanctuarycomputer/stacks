@@ -82,6 +82,8 @@
                 <%= li.created_at.strftime("%B %d, %Y") %>
               <% elsif li.is_a?(Trueup) %>
                 <%= li.payment_date.strftime("%B %d, %Y") %>
+              <% elsif li.is_a?(ProfitShare) %>
+                <%= li.applied_at.strftime("%B %d, %Y") %>
               <% end %>
             </td>
             <td class="col">
@@ -108,6 +110,13 @@
                   Invoice
                   <span class="split">
                     <%= status.to_s.humanize %>
+                  </span>
+                </span>
+              <% elsif li.is_a?(ProfitShare) %>
+                <span class="pill <%= li.periodic_report.all_profit_shares_accepted? ? "accepted" : "pending" %>">
+                  Profit Share Acceptance
+                  <span class="split">
+                    <%= li.accepted? ? "All Accepted" : "Some Pending" %>
                   </span>
                 </span>
               <% elsif li.is_a?(Reimbursement) %>
@@ -152,6 +161,22 @@
                   <% end %>
                 </span>
 
+              <% elsif li.is_a?(ProfitShare) %>
+                <% if li.deleted_at.present? %>
+                  <del><%= number_to_currency(li.amount) %></del>
+                <% else %>
+                  + <%= number_to_currency(li.amount) %>
+                <% end %>
+
+                <span class="pill <%= li.accepted? ? "accepted" : "pending" %>" style="margin-right: 6px;">
+                  <%= li.accepted? ? "Accepted" : "Pending" %>
+                  <% if current_admin_user.forecast_person == li.contributor.forecast_person || current_admin_user.is_admin? %>
+                  <span class="split">
+                      <%= link_to li.accepted? ? "Unaccept ↗" : "Accept ↗", toggle_profit_share_acceptance_admin_contributor_path(li.contributor, {profit_share_id: li.id}), method: :post, style: "font-size: unset;" %>
+                    </span>
+                  <% end %>
+                </span>
+
               <% elsif li.is_a?(Reimbursement) %>
                 <% if li.deleted_at.present? %>
                   <del><%= number_to_currency(li.amount) %></del>
@@ -182,6 +207,8 @@
                   <%= link_to "Info ↗", admin_contributor_misc_payment_path(contributor, li) %>
                 <% elsif li.is_a?(ContributorPayout) %>
                   <%= link_to "#{li.display_name} ↗", admin_invoice_tracker_contributor_payout_path(li.invoice_tracker, li) %>
+                <% elsif li.is_a?(ProfitShare) %>
+                  <%= link_to "#{li.periodic_report.display_name} ↗", admin_periodic_report_path(li.periodic_report) %>
                 <% elsif li.is_a?(Reimbursement) %>
                   <%= link_to "Info ↗", admin_contributor_reimbursement_path(contributor, li) %>
                 <% elsif li.is_a?(Trueup) %>

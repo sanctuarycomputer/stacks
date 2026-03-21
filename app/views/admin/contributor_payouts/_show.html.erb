@@ -2,6 +2,10 @@
   <%= resource.accepted? ? "Accepted" : "Pending" %>
 </p>
 
+<p class="pill nag <%= resource.in_sync? ? "in_sync" : "out_of_sync" %>" style="margin-right: 6px">
+  <%= resource.in_sync? ? "In Sync" : "Out of Sync" %>
+</p>
+
 <% if current_admin_user.has_led_projects? %>
   <%= link_to "Invoice Tracker", admin_invoice_pass_invoice_tracker_path(resource.invoice_tracker.invoice_pass, resource.invoice_tracker), class: "nag", style: "margin-right: 6px;" %>
 <% end %>

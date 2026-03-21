@@ -6,14 +6,19 @@ class Contributor < ApplicationRecord
   belongs_to :deel_person, class_name: "DeelPerson", foreign_key: "deel_person_id", primary_key: "deel_id", optional: true
 
   has_many :misc_payments
-  has_many :reimbursements
-  has_many :contributor_payouts
-  has_many :trueups
+  has_many :misc_payments_with_deleted, -> { with_deleted }, class_name: 'MiscPayment'
 
-  # TODO: monthly ledger:
-  # Payouts
-  # Salary
-  # Elevated Service?
+  has_many :reimbursements
+  has_many :reimbursements_with_deleted, -> { with_deleted }, class_name: 'Reimbursement'
+
+  has_many :contributor_payouts
+  has_many :contributor_payouts_with_deleted, -> { includes({ invoice_tracker: :invoice_pass }).with_deleted }, class_name: 'ContributorPayout'
+
+  has_many :trueups
+  has_many :trueups_with_deleted, -> { includes(:invoice_pass).with_deleted }, class_name: 'Trueup'
+
+  has_many :profit_shares
+  has_many :profit_shares_with_deleted, -> { includes(:periodic_report).with_deleted }, class_name: 'ProfitShare'
 
   scope :recent_new_deal_contributors, -> {
     joins(:contributor_payouts).where("contributor_payouts.created_at > ?", 3.months.ago).distinct
@@ -101,6 +106,12 @@ class Contributor < ApplicationRecord
         end
       elsif li.is_a?(Trueup)
         acc[:balance] += li.amount
+      elsif li.is_a?(ProfitShare)
+        if li.payable?
+          acc[:balance] += li.amount
+        else
+          acc[:unsettled] += li.amount
+        end
       end
       acc
     end
@@ -111,6 +122,7 @@ class Contributor < ApplicationRecord
     all_contributor_payouts = ContributorPayout.includes(invoice_tracker: :invoice_pass).all
     all_reimbursements = Reimbursement.all
     all_trueups = Trueup.all
+    all_profit_shares = ProfitShare.includes(:periodic_report).all
 
     ledger = all_contributor_payouts.reduce({ balance: 0, unsettled: 0 }) do |acc, cp|
       next acc if cp.invoice_tracker.invoice_pass.start_of_month > Date.today
@@ -144,15 +156,25 @@ class Contributor < ApplicationRecord
       acc
     end
 
+    ledger = all_profit_shares.reduce(ledger) do |acc, ps|
+      next acc if ps.applied_at > Date.today
+      acc[:balance] += ps.amount
+      acc
+    end
+
     ledger
   end
 
-  def new_deal_ledger_items(include_salary = true)
-    preloaded_contributor_payouts = contributor_payouts.includes({ invoice_tracker: :invoice_pass }).with_deleted
-    preloaded_misc_payments = misc_payments.with_deleted
-    preloaded_reimbursements = reimbursements.with_deleted
-    preloaded_trueups = trueups.includes(:invoice_pass).with_deleted
+  def new_deal_ledger_items(include_salary = true, override_ledger_starts_at = nil, override_ledger_ends_at = nil)
+    preloaded_contributor_payouts = contributor_payouts_with_deleted
+    preloaded_misc_payments = misc_payments_with_deleted
+    preloaded_reimbursements = reimbursements_with_deleted
+    preloaded_trueups = trueups_with_deleted
+    preloaded_profit_shares = profit_shares_with_deleted
 
+    if override_ledger_ends_at.present?
+      ledger_ends_at = override_ledger_ends_at
+    else
     ledger_ends_at = [*preloaded_misc_payments, *preloaded_contributor_payouts, *preloaded_trueups].reduce(Date.today) do |acc, li|
       if li.is_a?(MiscPayment)
         acc = li.paid_at if li.paid_at > acc
@@ -162,15 +184,22 @@ class Contributor < ApplicationRecord
         acc = li.created_at if li.created_at > acc
       elsif li.is_a?(Trueup)
         acc = li.payment_date if li.payment_date > acc
+      elsif li.is_a?(ProfitShare)
+        acc = li.applied_at if li.applied_at > acc
       end
-      acc
-    end + 2.months
+        acc
+      end + 2.months
+    end
 
-    ledger_starts_at = Stacks::System.singleton_class::NEW_DEAL_START_AT
-    contiguous_ftps = []
-    if admin_user = forecast_person.admin_user && forecast_person.admin_user
-      ledger_starts_at = admin_user.start_date
-      contiguous_ftps = admin_user.contiguous_full_time_periods_until(ledger_ends_at)
+    if override_ledger_starts_at.present?
+      ledger_starts_at = override_ledger_starts_at
+    else
+      ledger_starts_at = Stacks::System.singleton_class::NEW_DEAL_START_AT
+      contiguous_ftps = []
+      if admin_user = forecast_person.admin_user && forecast_person.admin_user
+        ledger_starts_at = admin_user.start_date
+        contiguous_ftps = admin_user.contiguous_full_time_periods_until(ledger_ends_at)
+      end
     end
 
     periods = Stacks::Period.for_gradation(:month, ledger_starts_at, ledger_ends_at).reverse
@@ -180,12 +209,12 @@ class Contributor < ApplicationRecord
         cp.invoice_tracker.invoice_pass.start_of_month <= period.ends_at
       end
 
-      contractor_payouts_in_period = misc_payments.with_deleted.select do |cp|
+      contractor_payouts_in_period = preloaded_misc_payments.select do |cp|
         cp.paid_at >= period.starts_at &&
         cp.paid_at <= period.ends_at
       end
 
-      reimbursements_in_period = reimbursements.with_deleted.select do |cp|
+      reimbursements_in_period = preloaded_reimbursements.select do |cp|
         cp.created_at >= period.starts_at &&
         cp.created_at <= period.ends_at
       end
@@ -195,7 +224,12 @@ class Contributor < ApplicationRecord
         tu.payment_date <= period.ends_at
       end
 
-      sorted = [*contributor_payouts_in_period, *contractor_payouts_in_period, *trueups_in_period, *reimbursements_in_period].sort do |a, b|
+      profit_shares_in_period = preloaded_profit_shares.select do |ps|
+        ps.applied_at >= period.starts_at &&
+        ps.applied_at <= period.ends_at
+      end
+
+      sorted = [*contributor_payouts_in_period, *contractor_payouts_in_period, *trueups_in_period, *reimbursements_in_period, *profit_shares_in_period].sort do |a, b|
         date_a = nil
         if a.is_a?(Trueup)
           date_a = a.payment_date
@@ -205,6 +239,8 @@ class Contributor < ApplicationRecord
           date_a = a.created_at
         elsif a.is_a?(ContributorPayout)
           date_a = a.invoice_tracker.invoice_pass.start_of_month
+        elsif a.is_a?(ProfitShare)
+          date_a = a.applied_at
         end
 
         date_b = nil
@@ -216,6 +252,8 @@ class Contributor < ApplicationRecord
           date_b = b.created_at
         elsif b.is_a?(ContributorPayout)
           date_b = b.invoice_tracker.invoice_pass.start_of_month
+        elsif b.is_a?(ProfitShare)
+          date_b = b.applied_at
         end
 
         date_b <=> date_a

@@ -996,6 +996,8 @@ h2 {
   &.project_capsule_incomplete,
   &.project_lead,
   &.no_attendance_record,
+  &.some_pending,
+  &.out_of_sync,
   {
     background-color: $color-orange;
     color: white;
@@ -1044,6 +1046,7 @@ h2 {
   &.misc,
   &.project_safety_representative,
   &.complete,
+  &.in_sync,
   &.survey,
   &.project_satisfaction_survey,
   {
@@ -1061,6 +1064,7 @@ h2 {
   &.contributor,
   &.reimbursement,
   &.trueup,
+  &.profit,
   {
     background-color: $color-blue;
     color: white;
@@ -1070,6 +1074,7 @@ h2 {
   &.no_data,
   &.no_status,
   &.introduction,
+  &.not_generated,
   &.no_period
   {
     background-color: $color-black;

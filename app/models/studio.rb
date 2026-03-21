@@ -55,9 +55,9 @@ class Studio < ApplicationRecord
         forecast_person_id: forecast_people.map(&:id),
         period_gradation: gradation
       ).includes(:forecast_person)
-  
+
       periods.reduce({}) do |acc, period|
-        reports_for_period = reports.select do |r| 
+        reports_for_period = reports.select do |r|
           r.starts_at == period.starts_at && r.ends_at == period.ends_at
         end
         acc[period] = reports_for_period.reduce({}) do |azz, report|
@@ -71,7 +71,7 @@ class Studio < ApplicationRecord
           azz
         end
         acc
-      end  
+      end
     )
   end
 
@@ -85,23 +85,23 @@ class Studio < ApplicationRecord
     g3d_utilization_by_period = is_garden3d? ? utilization_by_period : preloaded_studios.find(&:is_garden3d?).utilization_by_period_gradation(:month)
 
     snapshot_data_for_period(
-      periods.last, 
-      periods.second_to_last, 
-      utilization_by_period, 
-      g3d_utilization_by_period, 
-      preloaded_studios, 
+      periods.last,
+      periods.second_to_last,
+      utilization_by_period,
+      g3d_utilization_by_period,
+      preloaded_studios,
       preloaded_new_biz_leads,
       all_okrs
     )
   end
 
   def snapshot_data_for_period(
-    period, 
-    prev_period, 
-    utilization_by_period, 
-    g3d_utilization_by_period, 
-    preloaded_studios, 
-    preloaded_new_biz_leads, 
+    period,
+    prev_period,
+    utilization_by_period,
+    g3d_utilization_by_period,
+    preloaded_studios,
+    preloaded_new_biz_leads,
     all_okrs
   )
     d = {
@@ -153,18 +153,18 @@ class Studio < ApplicationRecord
         started_at: DateTime.now.iso8601,
       }) do |acc, gradation|
         periods = Stacks::Period.for_gradation(gradation)
-        
+
         utilization_by_period = utilization_by_period_gradation(gradation, periods)
         g3d_utilization_by_period = self.is_garden3d? ?
           utilization_by_period :
           g3d.utilization_by_period_gradation(gradation, periods)
 
-        acc[gradation] = Parallel.map(periods, in_threads: 6) do |period|
+        acc[gradation] = Parallel.map(periods, in_threads: 20) do |period|
           prev_period = periods[0] == period ? nil : periods[periods.index(period) - 1]
           snapshot_data_for_period(
-            period, 
-            prev_period, 
-            utilization_by_period, 
+            period,
+            prev_period,
+            utilization_by_period,
             g3d_utilization_by_period,
             preloaded_studios,
             preloaded_new_biz_leads,
@@ -404,6 +404,18 @@ class Studio < ApplicationRecord
     end
 
     all_projects = project_trackers_with_recorded_time_in_period(period, preloaded_studios)
+
+    completed_projects_in_period = ProjectTracker
+      .includes(project_capsule: {project_satisfaction_survey: :project_satisfaction_survey_responses})
+      .where(work_completed_at: period.starts_at..period.ends_at)
+      .select{|pt| pt.capsule_complete? && pt.project_capsule.project_satisfaction_survey.present? && pt.project_capsule.project_satisfaction_survey.closed?}
+
+    project_satisfaction_score = nil
+    if completed_projects_in_period.any?
+      project_satisfaction_scores = completed_projects_in_period.map{|pt| pt.project_capsule.project_satisfaction_survey.results[:overall] }
+      project_satisfaction_score = (project_satisfaction_scores.reduce(&:+) / project_satisfaction_scores.count).round(1)
+    end
+
     all_proposals = sent_proposals_settled_in_period(preloaded_new_biz_leads, period)
 
     latest_survey_closed =
@@ -449,15 +461,31 @@ class Studio < ApplicationRecord
       },
       total_projects: {
         value: all_projects.count,
-        unit: :count
+        unit: :count,
+        extras: {
+          project_tracker_ids: all_projects.map(&:id)
+        }
       },
       successful_projects: {
         value: ((all_projects.map(&:considered_successful?).count{|v| !!v} / all_projects.count.to_f) * 100),
-        unit: :percentage
+        unit: :percentage,
+        extras: {
+          project_tracker_ids: all_projects.map(&:id)
+        }
       },
       successful_proposals: {
         value: ((all_proposals.map(&:considered_successful?).count{|v| !!v} / all_proposals.count.to_f) * 100),
-        unit: :percentage
+        unit: :percentage,
+        extras: {
+          notion_page_ids: all_proposals.map(&:id)
+        }
+      },
+      project_satisfaction: {
+        value: project_satisfaction_score,
+        unit: :count,
+        extras: {
+          project_tracker_ids: completed_projects_in_period.map(&:id)
+        }
       },
       workplace_satisfaction: {
         value: latest_survey_closed.try(:results).try(:dig, :overall),

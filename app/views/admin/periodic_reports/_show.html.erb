@@ -1,0 +1,108 @@
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">🤝 Profit Share</h2>
+  </div>
+</div>
+
+<a href="https://www.notion.so/garden3d/The-New-Deal-Profit-Share-Program-2d8131fea2c78010b23bc4867427a489?source=copy_link" target="_blank">
+  <p class="nag" style="margin-bottom: 20px;margin-right: 6px;">
+    🤔 Learn to understand the New Deal Profit Share program here ↗
+  </p>
+</a>
+
+
+<% if periodic_report.profit_shares.any? %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <div class="factoid">
+          <h2><%= number_to_currency(periodic_report.blueprint["gross_surplus"]) %></h2>
+          <p>Gross Surplus before AL/TL splits</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <div class="factoid">
+          <h2><%= periodic_report.blueprint["successful_projects"] %>%</h2>
+          <p><%= link_to "Successful Projects ↗", admin_studio_okr_explorer_path(Studio.garden3d, gradation: "quarter", okr: "successful_projects") %></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <div class="factoid">
+          <h2><%= number_to_currency(periodic_report.blueprint["net_profit_share_pool"]) %></h2>
+          <p>Net Profit Share Pool</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <div class="factoid">
+          <h2><%= periodic_report.blueprint["total_shares"].round(2) %></h2>
+          <p>Total Profit Shares Issued</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+    <thead>
+      <tr>
+        <th class="col">Contributor</th>
+        <th class="col">Tenure Multiplier</th>
+        <th class="col">Cost of Living Index</th>
+        <th class="col">Elevated Service Months</th>
+        <th class="col">Shares</th>
+        <th class="col">%</th>
+        <th class="col">Amount</th>
+        <th class="col">Accepted?</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      <% periodic_report.profit_shares.each_with_index do |profit_share, index| %>
+        <tr class="<%= index.even? ? "even" : "odd" %>">
+          <td class="col"><%= link_to profit_share.contributor.forecast_person.email, admin_contributor_path(profit_share.contributor) %></td>
+          <td class="col"><%= profit_share.blueprint.dig("tenure_multiplier") %></td>
+          <td class="col"><%= profit_share.blueprint.dig("effective_cost_of_living_index") %></td>
+          <td class="col"><%= profit_share.blueprint.dig("elevated_service_months") %></td>
+          <td class="col"><%= profit_share.blueprint.dig("shares").round(2) %></td>
+          <td class="col"><%= ((profit_share.blueprint.dig("shares").to_f / periodic_report.blueprint["total_shares"].to_f) * 100).round(2) %>%</td>
+          <td class="col"><%= number_to_currency(profit_share.amount) %></td>
+          <td class="col">
+
+            <span class="pill <%= profit_share.accepted? ? "accepted" : "pending" %>" style="margin-right: 6px;">
+              <%= profit_share.accepted? ? "Accepted" : "Pending" %>
+              <% if current_admin_user.forecast_person == profit_share.contributor.forecast_person || current_admin_user.is_admin? %>
+              <span class="split">
+                  <%= link_to profit_share.accepted? ? "Unaccept ↗" : "Accept ↗", toggle_profit_share_acceptance_admin_contributor_path(profit_share.contributor, {profit_share_id: profit_share.id}), method: :post, style: "font-size: unset;" %>
+                </span>
+              <% end %>
+            </span>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+<% else %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <% if periodic_report.notification.present? %>
+          <p>An error occurred while generating the periodic report:</p>
+          <p><code><%= periodic_report.notification.params[:exception][:message] %></code></p>
+          <%= link_to "Inspect Error ↗", admin_notification_path(periodic_report.notification) %>
+        <% else %>
+          <p>No profit shares found for this period.</p>
+        <% end %>
+      </div>
+    </div>
+  </div>
+<% end %>
