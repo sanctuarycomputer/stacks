@@ -78,7 +78,7 @@ class StudioTest < ActiveSupport::TestCase
 
     jan = Stacks::Period.new("January 2020", Date.new(2021, 6, 1), Date.new(2021, 6, 30))
     u = studio.utilization_for_period(jan)[forecast_person]
-    
+
     assert (u[:sellable] / (u[:sellable] + u[:non_sellable])) == ftp.expected_utilization
   end
 

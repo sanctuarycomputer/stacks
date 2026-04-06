@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_03_14_201821) do
+ActiveRecord::Schema.define(version: 2026_04_06_120000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -249,7 +249,7 @@ ActiveRecord::Schema.define(version: 2026_03_14_201821) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.integer "period_gradation", default: 0, null: false
-    t.index ["forecast_person_id", "starts_at", "ends_at"], name: "idx_forecast_person_utilization", unique: true
+    t.index ["forecast_person_id", "starts_at", "ends_at", "period_gradation"], name: "idx_forecast_person_utilization", unique: true
     t.index ["forecast_person_id"], name: "index_forecast_person_utilization_reports_on_forecast_person_id"
   end
 
