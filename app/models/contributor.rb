@@ -20,6 +20,9 @@ class Contributor < ApplicationRecord
   has_many :profit_shares
   has_many :profit_shares_with_deleted, -> { includes(:periodic_report).with_deleted }, class_name: 'ProfitShare'
 
+  has_many :contributor_adjustments
+  has_many :contributor_adjustments_with_deleted, -> { with_deleted }, class_name: "ContributorAdjustment"
+
   scope :recent_new_deal_contributors, -> {
     joins(:contributor_payouts).where("contributor_payouts.created_at > ?", 3.months.ago).distinct
   }
@@ -112,6 +115,12 @@ class Contributor < ApplicationRecord
         else
           acc[:unsettled] += li.amount
         end
+      elsif li.is_a?(ContributorAdjustment)
+        if li.payable?
+          acc[:balance] += li.amount
+        else
+          acc[:unsettled] += li.amount
+        end
       end
       acc
     end
@@ -123,6 +132,7 @@ class Contributor < ApplicationRecord
     all_reimbursements = Reimbursement.all
     all_trueups = Trueup.all
     all_profit_shares = ProfitShare.includes(:periodic_report).all
+    all_contributor_adjustments = ContributorAdjustment.all
 
     ledger = all_contributor_payouts.reduce({ balance: 0, unsettled: 0 }) do |acc, cp|
       next acc if cp.invoice_tracker.invoice_pass.start_of_month > Date.today
@@ -162,6 +172,16 @@ class Contributor < ApplicationRecord
       acc
     end
 
+    ledger = all_contributor_adjustments.reduce(ledger) do |acc, adj|
+      next acc if adj.effective_on > Date.today
+      if adj.payable?
+        acc[:balance] += adj.amount
+      else
+        acc[:unsettled] += adj.amount
+      end
+      acc
+    end
+
     ledger
   end
 
@@ -171,11 +191,12 @@ class Contributor < ApplicationRecord
     preloaded_reimbursements = reimbursements_with_deleted
     preloaded_trueups = trueups_with_deleted
     preloaded_profit_shares = profit_shares_with_deleted
+    preloaded_adjustments = contributor_adjustments_with_deleted
 
     if override_ledger_ends_at.present?
       ledger_ends_at = override_ledger_ends_at
     else
-    ledger_ends_at = [*preloaded_misc_payments, *preloaded_contributor_payouts, *preloaded_trueups].reduce(Date.today) do |acc, li|
+    ledger_ends_at = [*preloaded_misc_payments, *preloaded_contributor_payouts, *preloaded_trueups, *preloaded_adjustments].reduce(Date.today) do |acc, li|
       if li.is_a?(MiscPayment)
         acc = li.paid_at if li.paid_at > acc
       elsif li.is_a?(ContributorPayout)
@@ -186,6 +207,8 @@ class Contributor < ApplicationRecord
         acc = li.payment_date if li.payment_date > acc
       elsif li.is_a?(ProfitShare)
         acc = li.applied_at if li.applied_at > acc
+      elsif li.is_a?(ContributorAdjustment)
+        acc = li.effective_on if li.effective_on > acc
       end
         acc
       end + 2.months
@@ -229,7 +252,12 @@ class Contributor < ApplicationRecord
         ps.applied_at <= period.ends_at
       end
 
-      sorted = [*contributor_payouts_in_period, *contractor_payouts_in_period, *trueups_in_period, *reimbursements_in_period, *profit_shares_in_period].sort do |a, b|
+      adjustments_in_period = preloaded_adjustments.select do |adj|
+        adj.effective_on >= period.starts_at &&
+        adj.effective_on <= period.ends_at
+      end
+
+      sorted = [*contributor_payouts_in_period, *contractor_payouts_in_period, *trueups_in_period, *reimbursements_in_period, *profit_shares_in_period, *adjustments_in_period].sort do |a, b|
         date_a = nil
         if a.is_a?(Trueup)
           date_a = a.payment_date
@@ -241,6 +269,8 @@ class Contributor < ApplicationRecord
           date_a = a.invoice_tracker.invoice_pass.start_of_month
         elsif a.is_a?(ProfitShare)
           date_a = a.applied_at
+        elsif a.is_a?(ContributorAdjustment)
+          date_a = a.effective_on
         end
 
         date_b = nil
@@ -254,6 +284,8 @@ class Contributor < ApplicationRecord
           date_b = b.invoice_tracker.invoice_pass.start_of_month
         elsif b.is_a?(ProfitShare)
           date_b = b.applied_at
+        elsif b.is_a?(ContributorAdjustment)
+          date_b = b.effective_on
         end
 
         date_b <=> date_a

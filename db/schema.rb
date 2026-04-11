@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_04_06_120000) do
+ActiveRecord::Schema.define(version: 2026_04_11_120000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -101,6 +101,20 @@ ActiveRecord::Schema.define(version: 2026_04_06_120000) do
     t.jsonb "apollo_data", default: {}
     t.index ["apollo_id"], name: "index_contacts_on_apollo_id", unique: true
     t.index ["email"], name: "index_contacts_on_email", unique: true
+  end
+
+  create_table "contributor_adjustments", force: :cascade do |t|
+    t.bigint "contributor_id", null: false
+    t.decimal "amount", precision: 12, scale: 2, null: false
+    t.date "effective_on", null: false
+    t.string "qbo_invoice_id"
+    t.text "description"
+    t.datetime "deleted_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["contributor_id"], name: "index_contributor_adjustments_on_contributor_id"
+    t.index ["deleted_at"], name: "index_contributor_adjustments_on_deleted_at"
+    t.index ["qbo_invoice_id"], name: "index_contributor_adjustments_on_qbo_invoice_id"
   end
 
   create_table "contributor_payouts", force: :cascade do |t|
@@ -939,6 +953,7 @@ ActiveRecord::Schema.define(version: 2026_04_06_120000) do
   add_foreign_key "adhoc_invoice_trackers", "project_trackers"
   add_foreign_key "admin_user_salary_windows", "admin_users"
   add_foreign_key "associates_award_agreements", "admin_users"
+  add_foreign_key "contributor_adjustments", "contributors"
   add_foreign_key "contributor_payouts", "admin_users", column: "created_by_id"
   add_foreign_key "contributor_payouts", "contributors"
   add_foreign_key "contributor_payouts", "invoice_trackers"

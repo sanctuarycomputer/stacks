@@ -11,6 +11,10 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
   # end
 
   def authorized?(action, subject = nil)
+    if subject.is_a?(ContributorAdjustment) || subject == ContributorAdjustment
+      return user.is_admin? if [:create, :update, :destroy].include?(action)
+    end
+
     return true if (user.is_admin? || user.has_led_projects?)
 
     if subject.is_a?(AdminUser)
@@ -26,6 +30,10 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
     end
 
     if subject.is_a?(MiscPayment)
+      return true if subject.contributor.forecast_person.admin_user == user && action == :read
+    end
+
+    if subject.is_a?(ContributorAdjustment)
       return true if subject.contributor.forecast_person.admin_user == user && action == :read
     end
 
