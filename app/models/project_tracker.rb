@@ -151,7 +151,9 @@ class ProjectTracker < ApplicationRecord
 
   def target_profit_margin_satisfied?
     return true if target_profit_margin <= 0
-    profit_margin >= target_profit_margin
+    # Compare using whole percentage points (round up) so float noise / display rounding
+    # (e.g. 29.9% shown vs 30% goal) does not mark a project unsuccessful.
+    profit_margin.ceil >= target_profit_margin.to_f
   end
 
   def target_free_hours_ratio_satisfied?

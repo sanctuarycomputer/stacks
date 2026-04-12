@@ -1,20 +1,20 @@
 class SystemExceptionNotification < Noticed::Base
   deliver_by :database
-  deliver_by :twist, class: "DeliveryMethods::Twist"
-  param :exception, :include_admins
+  param :exception
 
   def topic
     "System Exception Occurred (#{record.created_at.to_date.strftime("%B %d, %Y")})"
   end
 
   def body
+    exc = params[:exception].with_indifferent_access
     <<~HEREDOC
       # Exception
-      `#{params[:exception][:klass]}: #{params[:exception][:message]}`
+      `#{exc[:klass]}: #{exc[:message]}`
 
       # Backtrace:
       ```
-      #{(params[:exception][:backtrace] || []).reject{|l| l.include?('/app/vendor/')}.join("\n")}
+      #{(exc[:backtrace] || []).reject { |l| l.include?("/app/vendor/") }.join("\n")}
       ```
     HEREDOC
   end
