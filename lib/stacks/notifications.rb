@@ -1,5 +1,6 @@
 class Stacks::Notifications
   TWIST_EXCEPTIONS_THREAD_ID = "7718844"
+  TWIST_EXCEPTION_NOTIFY_USER_ID = 427_360
 
   class << self
     include Rails.application.routes.url_helpers
@@ -25,7 +26,11 @@ class Stacks::Notifications
         backtrace: exception.try(:backtrace)
       }
       notification = SystemExceptionNotification.with(exception: exception_hash)
-      twist.add_comment_to_thread(TWIST_EXCEPTIONS_THREAD_ID, notification.body)
+      twist.add_comment_to_thread(
+        TWIST_EXCEPTIONS_THREAD_ID,
+        notification.body,
+        [TWIST_EXCEPTION_NOTIFY_USER_ID]
+      )
       notification.deliver(System.instance)
 
       Sentry.capture_exception(exception)

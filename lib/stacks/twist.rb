@@ -48,7 +48,11 @@ class Stacks::Twist
       thread_id: thread_id,
       content: thread_content,
     }
-    body[:recipients] = recipients if recipients.present?
+    unless recipients.nil?
+      # Form body must match Twist's expected shape (e.g. recipients=[10000,10001]); omitting
+      # recipients defaults to EVERYONE_IN_THREAD. Empty array notifies no users.
+      body[:recipients] = recipients.is_a?(Array) ? recipients.to_json : recipients
+    end
     self.class.post("/comments/add", {
       headers: @headers,
       body: body
