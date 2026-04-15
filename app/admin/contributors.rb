@@ -1,12 +1,16 @@
 ActiveAdmin.register Contributor do
   menu parent: "Team"
 
-  config.filters = false
-  config.paginate = false
+  config.filters = true
+  config.paginate = true
+  config.per_page = 20
   config.sort_order = "forecast_people.email_asc"
+
   actions :index, :show, :edit, :update
   scope :recent_new_deal_contributors, default: true
   scope :all
+
+  filter :forecast_email_cont, as: :string, label: "Email contains"
 
   controller do
     def scoped_collection

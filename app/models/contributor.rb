@@ -27,6 +27,17 @@ class Contributor < ApplicationRecord
     joins(:contributor_payouts).where("contributor_payouts.created_at > ?", 3.months.ago).distinct
   }
 
+  scope :forecast_email_cont, ->(value) {
+    return all if value.blank?
+
+    term = "%#{ActiveRecord::Base.sanitize_sql_like(value.to_s.strip)}%"
+    where(forecast_person_id: ForecastPerson.where("email ILIKE ?", term).select(:forecast_id))
+  }
+
+  def self.ransackable_scopes(*)
+    %i[forecast_email_cont]
+  end
+
   def total_amount_paid
     d = {
       salary: 0,
