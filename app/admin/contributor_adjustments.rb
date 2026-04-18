@@ -7,6 +7,16 @@ ActiveAdmin.register ContributorAdjustment do
 
   belongs_to :contributor
 
+  controller do
+    # Same as InvoiceTracker#show: refresh QBO data when opening the page (paid status, balance, etc.).
+    def show
+      unless resource.qbo_invoice.try(:sync!)
+        resource.reload
+      end
+      super
+    end
+  end
+
   index download_links: false do
     column :contributor
     column :amount
@@ -30,5 +40,9 @@ ActiveAdmin.register ContributorAdjustment do
     end
 
     f.actions
+  end
+
+  show do
+    render partial: "show", locals: { resource: resource }
   end
 end

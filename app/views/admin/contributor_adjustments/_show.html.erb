@@ -1,0 +1,39 @@
+<% payable = resource.payable? %>
+
+<p class="pill nag <%= payable ? "accepted" : "pending" %>" style="margin-right: 6px">
+  <%= payable ? "Paid" : "Unsettled" %>
+</p>
+
+<% if resource.qbo_invoice_id.present? %>
+  <a href="https://app.qbo.intuit.com/app/invoice?txnId=<%= resource.qbo_invoice_id %>" target="_blank" rel="noopener noreferrer">
+    <span class="nag" style="margin-right: 6px;">Open in QuickBooks ↗</span>
+  </a>
+<% end %>
+
+<%= link_to resource.contributor.forecast_person.email, admin_contributor_path(resource.contributor), class: "nag", style: "margin-right: 6px;" %>
+
+<div class="dashboard-modules table index_table index" style="margin-top:20px;">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Amount &amp; date</p>
+    </div>
+    <div class="module-body markdown-body">
+      <p style="margin-top: 0;"><strong><%= number_to_currency(resource.amount) %></strong> · effective <%= resource.effective_on.strftime("%B %d, %Y") %></p>
+      <% if resource.qbo_invoice_id.present? %>
+        <% doc_no = resource.qbo_invoice.data.dig("doc_number").presence %>
+        <p>QuickBooks document number: <% if doc_no %><code>#<%= doc_no %></code><% else %>—<% end %></p>
+      <% else %>
+        <p>No QuickBooks invoice linked, counts toward balance immediately.</p>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Description</p>
+    </div>
+    <div class="module-body markdown-body">
+      <%= sanitize RDiscount.new(resource.description || "").to_html %>
+    </div>
+  </div>
+</div>
