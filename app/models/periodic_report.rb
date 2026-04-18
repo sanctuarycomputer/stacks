@@ -1,7 +1,10 @@
+require "uri"
+
 class PeriodicReport < ApplicationRecord
   validates :period_gradation, presence: true
   validates :period_starts_at, presence: true, uniqueness: { scope: [:period_gradation] }
   validates :period_label, presence: true
+  validate :report_url_must_be_httpish, if: -> { report_url.present? }
   has_many :profit_shares, dependent: :destroy
   belongs_to :notification, optional: true, dependent: :destroy
 
@@ -14,6 +17,9 @@ class PeriodicReport < ApplicationRecord
     trailing_6_months: 5,
     trailing_12_months: 6
   }
+
+  # Query param + `scope_studio_from_param` keys for quarterly report studio tabs (single source of truth).
+  STUDIO_TAB_KEYS = %w[g3d xxix sanctu].freeze
 
   def self.create_for_period(period = Stacks::Period.new("Q4, 2025", Date.today.last_quarter.beginning_of_quarter, Date.today.last_quarter.end_of_quarter, :quarter))
     create!(
@@ -58,7 +64,87 @@ class PeriodicReport < ApplicationRecord
   end
 
   def garden3d_snapshot
-    @_garden3d_snapshot ||= Studio.garden3d.snapshot["quarter"].find{|p| p["label"] == period.label}
+    @_garden3d_snapshot ||= quarter_slice_for_studio(Studio.garden3d)
+  end
+
+  # Quarter row for a studio's snapshot (same label as this report's period).
+  def quarter_slice_for_studio(studio)
+    return nil unless studio&.snapshot
+    snap = studio.snapshot
+    quarters = snap["quarter"] || snap[:quarter]
+    return nil unless quarters.is_a?(Array)
+
+    want = period.label.to_s.strip
+    quarters.find do |row|
+      next false unless row.is_a?(Hash)
+      lab = row["label"] || row[:label]
+      lab.to_s.strip == want
+    end
+  end
+
+  # Read one OKR from a quarter row; tolerates string/symbol keys from JSON columns.
+  def okr_from_quarter_slice_row(q, accounting_method, okr_name)
+    return nil unless q.is_a?(Hash)
+
+    am = accounting_method.to_s
+    base = q[am] || q[am.to_sym]
+    return nil unless base.is_a?(Hash)
+
+    okrs = base.with_indifferent_access[:okrs]
+    return nil unless okrs.is_a?(Hash)
+
+    okrs.with_indifferent_access[okr_name]
+  end
+
+  # Params: "g3d" | "xxix" | "sanctu" (default g3d).
+  def self.scope_studio_from_param(param)
+    case param.to_s.downcase.strip
+    when "xxix" then Studio.xxix
+    when "sanctu" then Studio.sanctu
+    else Studio.garden3d
+    end
+  end
+
+  # Six OKR chips for the selected studio’s **quarter** slice (`period.label`), not YTD. The studio tab picker
+  # chooses whose snapshot to use; tiles are always profit margin, income growth, successful projects, successful
+  # proposals, lead growth, project satisfaction (same labels on every tab).
+  #
+  # `scope_studio` must match `scope_studio_from_param` so chips and factoids agree.
+  def collective_okrs_for_studio_tab(accounting_method, scope_param, scope_studio)
+    am = accounting_method.to_s
+    param = scope_param.to_s
+
+    if %w[xxix sanctu].include?(param) && scope_studio&.mini_name != param
+      return six_okr_rows_from_quarter_slice(nil, am)
+    end
+
+    q = quarter_slice_for_studio(scope_studio)
+    six_okr_rows_from_quarter_slice(q, am)
+  end
+
+  private def six_okr_rows_from_quarter_slice(q, am)
+    [
+      { "datapoint" => "profit_margin", "okr" => okr_from_quarter_slice_row(q, am, "Profit Margin") },
+      { "datapoint" => "income_growth", "okr" => okr_from_quarter_slice_row(q, am, "Income Growth") },
+      { "datapoint" => "successful_projects", "okr" => okr_from_quarter_slice_row(q, am, "Successful Projects") },
+      { "datapoint" => "successful_proposals", "okr" => okr_from_quarter_slice_row(q, am, "Successful Proposals") },
+      { "datapoint" => "lead_growth", "okr" => okr_from_quarter_slice_row(q, am, "Lead Growth") },
+      { "datapoint" => "project_satisfaction", "okr" => okr_from_quarter_slice_row(q, am, "Project Satisfaction") },
+    ]
+  end
+
+  def profit_shares_for_studio(studio)
+    rel = profit_shares.includes(contributor: :forecast_person)
+    return rel.to_a if studio.nil? || studio.is_garden3d?
+    allowed = studio.forecast_people(Studio.all).map(&:forecast_id).to_set
+    rel.to_a.select { |ps| allowed.include?(ps.contributor.forecast_person_id) }
+  end
+
+  def report_url_must_be_httpish
+    uri = URI.parse(report_url)
+    errors.add(:report_url, "must be an http(s) URL") unless uri.is_a?(URI::HTTP) && uri.host.present?
+  rescue URI::InvalidURIError
+    errors.add(:report_url, "is not a valid URL")
   end
 
   def us_cost_of_living_data

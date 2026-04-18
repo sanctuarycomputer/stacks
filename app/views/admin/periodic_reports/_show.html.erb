@@ -1,3 +1,50 @@
+<script>
+function update(a, b) {
+  var searchParams = new URLSearchParams(window.location.search);
+  if (b !== '')
+    searchParams.set(a, b);
+  else
+    searchParams.delete(a);
+  window.location.search = searchParams.toString();
+}
+</script>
+
+<% all_studio_keys = PeriodicReport::STUDIO_TAB_KEYS %>
+<% current_studio = all_studio_keys.include?(scope_param.to_s) ? scope_param : "g3d" %>
+<div style="margin-bottom: 20px">
+  <% studio_tabs.each do |tab| %>
+    <a onclick='update("studio", "<%= tab[:key] %>");' style="margin-right: 6px">
+      <p class="nag pill <%= current_studio == tab[:key] ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
+        <%= tab[:label] %>
+      </p>
+    </a>
+  <% end %>
+</div>
+
+<% if periodic_report.report_url.present? %>
+  <a href="<%= periodic_report.report_url %>" target="_blank" rel="noopener noreferrer">
+    <p class="nag" style="margin-bottom: 20px;margin-right: 6px;">
+      📖 Read the quarterly report ↗
+    </p>
+  </a>
+<% end %>
+
+<% if collective_okrs.any? %>
+  <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+    <div id="titlebar_left">
+      <h2 id="page_title">📈 OKRs</h2>
+    </div>
+    <% if scope_studio.present? %>
+    <div id="titlebar_right">
+      <div class="action_items">
+        <%= link_to "See all #{scope_studio.name} OKRs ↗", admin_studio_path(scope_studio, gradation: "quarter") %>
+      </div>
+    </div>
+    <% end %>
+  </div>
+  <%= render "okr_chips", collective_okrs: collective_okrs, okr_empty_hint: "No OKR data for this quarter in the snapshot." %>
+<% end %>
+
 <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
   <div id="titlebar_left">
     <h2 id="page_title">🤝 Profit Share</h2>
@@ -10,14 +57,13 @@
   </p>
 </a>
 
-
 <% if periodic_report.profit_shares.any? %>
   <div class="dashboard-modules table index_table index">
     <div class="dashboard-module">
       <div class="module-body factoid-parent">
         <div class="factoid">
           <h2><%= number_to_currency(periodic_report.blueprint["gross_surplus"]) %></h2>
-          <p>Gross Surplus before AL/TL splits</p>
+          <p>Gross Surplus before AL/PL splits</p>
         </div>
       </div>
     </div>
@@ -25,8 +71,10 @@
     <div class="dashboard-module">
       <div class="module-body factoid-parent">
         <div class="factoid">
-          <h2><%= periodic_report.blueprint["successful_projects"] %>%</h2>
-          <p><%= link_to "Successful Projects ↗", admin_studio_okr_explorer_path(Studio.garden3d, gradation: "quarter", okr: "successful_projects") %></p>
+          <% sp_val = quarter_slice&.dig(accounting_method, "datapoints", "successful_projects", "value") %>
+          <% sp_val = periodic_report.blueprint["successful_projects"] if sp_val.nil? %>
+          <h2><%= sp_val %>%</h2>
+          <p><%= link_to "Successful Projects ↗", admin_studio_okr_explorer_path(scope_studio || Studio.garden3d, gradation: "quarter", okr: "successful_projects") %></p>
         </div>
       </div>
     </div>
@@ -67,14 +115,20 @@
     </thead>
 
     <tbody>
-      <% periodic_report.profit_shares.each_with_index do |profit_share, index| %>
+      <% filtered_profit_shares.each_with_index do |profit_share, index| %>
         <tr class="<%= index.even? ? "even" : "odd" %>">
           <td class="col"><%= link_to profit_share.contributor.forecast_person.email, admin_contributor_path(profit_share.contributor) %></td>
           <td class="col"><%= profit_share.blueprint.dig("tenure_multiplier") %></td>
           <td class="col"><%= profit_share.blueprint.dig("effective_cost_of_living_index") %></td>
           <td class="col"><%= profit_share.blueprint.dig("elevated_service_months") %></td>
           <td class="col"><%= profit_share.blueprint.dig("shares").round(2) %></td>
-          <td class="col"><%= ((profit_share.blueprint.dig("shares").to_f / periodic_report.blueprint["total_shares"].to_f) * 100).round(2) %>%</td>
+          <td class="col">
+            <% if filtered_total_shares.to_f > 0 %>
+              <%= ((profit_share.blueprint.dig("shares").to_f / filtered_total_shares) * 100).round(2) %>%
+            <% else %>
+              —
+            <% end %>
+          </td>
           <td class="col"><%= number_to_currency(profit_share.amount) %></td>
           <td class="col">
 
@@ -91,6 +145,9 @@
       <% end %>
     </tbody>
   </table>
+  <% if filtered_profit_shares.empty? && periodic_report.profit_shares.any? %>
+    <p class="okr_hint" style="margin-top: 12px;">No contributors in this studio scope for this period.</p>
+  <% end %>
 <% else %>
   <div class="dashboard-modules table index_table index">
     <div class="dashboard-module">

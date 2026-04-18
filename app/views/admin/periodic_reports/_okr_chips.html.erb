@@ -1,0 +1,46 @@
+<% okr_empty_hint ||= "No OKR data for this quarter in the snapshot." %>
+<% collective_okrs.each_slice(2).to_a.each do |set| %>
+  <div class="dashboard-modules table index_table index">
+    <% set.each do |cokr| %>
+      <div class="dashboard-module">
+        <div class="module-header">
+          <p><%= cokr["datapoint"].to_s.humanize %></p>
+        </div>
+
+        <% okr_results = cokr["okr"] %>
+        <% if okr_results.present? %>
+          <% value = okr_results.dig("value").to_f  %>
+          <% target = (okr_results.dig("target").try(:to_f) || 0).round(2) %>
+          <% health = okr_results.dig("health")  %>
+          <% tolerance = (okr_results.dig("tolerance").try(:to_f) || 0).round(2)  %>
+          <% unit = okr_results.dig("unit") %>
+          <% hint = (okr_results.dig("hint") || "No hint given") %>
+
+          <div class="module-body">
+            <div class="flex" style="align-items: baseline;">
+              <% if unit == "usd" %>
+                <h2 style="margin: 0;" class="<%= health %>"><%= number_to_currency(value.round(2)) %></h2> <p>(target: <%= number_to_currency(target) %>±<%= tolerance %>)</p>
+              <% elsif unit == "percentage" %>
+                <h2 style="margin: 0;" class="<%= health %>"><%= value.round(2) %>%</h2> <p>(<%= target.round(2) %>%±<%= tolerance %>)</p>
+              <% elsif unit == "display" %>
+                <h2 style="margin: 0;" class="<%= health %>"><%= okr_results.dig("value") %></h2>
+              <% else %>
+                <h2 style="margin: 0;" class="<%= health %>"><%= value.round(2) %></h2> <p>(<%= target.round(2) %>±<%= tolerance %>)</p>
+              <% end %>
+            </div>
+
+            <p class="okr_hint" style="padding-top: 0px !important"><%= sanitize hint, attributes: ["href", "target"] %></p>
+          </div>
+        <% else %>
+          <div class="module-body">
+            <div class="flex" style="align-items: baseline;">
+              <h2 style="margin: 0;">TBD</h2>
+            </div>
+
+            <p class="okr_hint" style="padding-top: 0px !important"><%= okr_empty_hint %></p>
+          </div>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+<% end %>

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_04_18_160000) do
+ActiveRecord::Schema.define(version: 2026_04_19_120000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -473,6 +473,7 @@ ActiveRecord::Schema.define(version: 2026_04_18_160000) do
     t.bigint "notification_id"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.string "report_url"
     t.index ["notification_id"], name: "index_periodic_reports_on_notification_id"
     t.index ["period_gradation", "period_starts_at"], name: "index_periodic_reports_on_period_gradation_and_period_starts_at", unique: true
   end

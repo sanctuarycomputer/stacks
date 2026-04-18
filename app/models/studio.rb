@@ -317,6 +317,10 @@ class Studio < ApplicationRecord
     Studio.find_by(name: "garden3d", mini_name: "g3d")
   end
 
+  def self.xxix
+    find_by(mini_name: "xxix")
+  end
+
   def self.sanctu
     Studio.find_by(mini_name: "sanctu")
   end
