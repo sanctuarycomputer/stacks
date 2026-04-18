@@ -18,13 +18,13 @@
             <% roles = data[:roles].map { |r| r[:name].to_s }.uniq %>
             <% roles.each do |role| %>
               <% pill_class = case role
-                when "project_lead" then "project_lead"
-                when "creative_lead" then "creative_lead"
-                when "technical_lead" then "technical_lead"
-                when "project_safety_representative" then "project_safety_representative"
+                when "old_deal_project_lead" then "project_lead"
+                when "old_deal_creative_lead" then "creative_lead"
+                when "old_deal_technical_lead" then "technical_lead"
+                when "old_deal_project_safety_representative" then "project_safety_representative"
                 else "contributor"
                 end %>
-              <span class="pill <%= pill_class %>" style="margin-right: 4px;"><%= role.to_s.humanize %></span>
+              <span class="pill <%= pill_class %>" style="margin-right: 4px;"><%= role.to_s.titleize %></span>
             <% end %>
           <% else %>
             <span class="pill contributor">Contributor</span>

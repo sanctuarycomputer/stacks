@@ -154,7 +154,7 @@ class Stacks::DataIntegrityManager
   def discover_project_tracker_problems
     all_project_trackers = ProjectTracker
       .includes([
-        :project_lead_periods,
+        :old_deal_project_lead_periods,
         :adhoc_invoice_trackers,
         :forecast_projects
       ])

@@ -34,21 +34,17 @@ class ProjectTracker < ApplicationRecord
 
   belongs_to :runn_project, class_name: "RunnProject", foreign_key: "runn_project_id", primary_key: "runn_id", optional: true
 
-  has_many :project_lead_periods, dependent: :delete_all
-  accepts_nested_attributes_for :project_lead_periods, allow_destroy: true
-  has_many :project_leads, through: :project_lead_periods, source: :admin_user
+  has_many :old_deal_project_lead_periods, dependent: :delete_all
+  has_many :old_deal_project_leads, through: :old_deal_project_lead_periods, source: :admin_user
 
-  has_many :project_safety_representative_periods, dependent: :delete_all
-  accepts_nested_attributes_for :project_safety_representative_periods, allow_destroy: true
-  has_many :project_safety_representatives, through: :project_safety_representative_periods, source: :admin_user
+  has_many :old_deal_project_safety_representative_periods, dependent: :delete_all
+  has_many :old_deal_project_safety_representatives, through: :old_deal_project_safety_representative_periods, source: :admin_user
 
-  has_many :creative_lead_periods, dependent: :delete_all
-  accepts_nested_attributes_for :creative_lead_periods, allow_destroy: true
-  has_many :creative_leads, through: :creative_lead_periods, source: :admin_user
+  has_many :old_deal_creative_lead_periods, dependent: :delete_all
+  has_many :old_deal_creative_leads, through: :old_deal_creative_lead_periods, source: :admin_user
 
-  has_many :technical_lead_periods, dependent: :delete_all
-  accepts_nested_attributes_for :technical_lead_periods, allow_destroy: true
-  has_many :technical_leads, through: :technical_lead_periods, source: :admin_user
+  has_many :old_deal_technical_lead_periods, dependent: :delete_all
+  has_many :old_deal_technical_leads, through: :old_deal_technical_lead_periods, source: :admin_user
 
   has_many :account_lead_periods, dependent: :delete_all
   accepts_nested_attributes_for :account_lead_periods, allow_destroy: true
@@ -365,51 +361,51 @@ class ProjectTracker < ApplicationRecord
       acc
     end
 
-    # Add project leads
-    project_lead_periods.reduce(project_members) do |acc, period|
+    # Add project leads (Old Deal)
+    old_deal_project_lead_periods.reduce(project_members) do |acc, period|
       acc[period.admin_user] = acc[period.admin_user] || {
         roles: []
       }
-      acc[period.admin_user][:roles] << { name: :project_lead, started_at: period.started_at, ended_at: period.ended_at }
+      acc[period.admin_user][:roles] << { name: :old_deal_project_lead, started_at: period.started_at, ended_at: period.ended_at }
       acc
     end
 
-    # Add creative leads
-    creative_lead_periods.reduce(project_members) do |acc, period|
+    # Add creative leads (Old Deal)
+    old_deal_creative_lead_periods.reduce(project_members) do |acc, period|
       acc[period.admin_user] = acc[period.admin_user] || {
         roles: []
       }
-      acc[period.admin_user][:roles] << { name: :creative_lead, started_at: period.started_at, ended_at: period.ended_at }
+      acc[period.admin_user][:roles] << { name: :old_deal_creative_lead, started_at: period.started_at, ended_at: period.ended_at }
       acc
     end
 
-    # Add technical leads
-    technical_lead_periods.reduce(project_members) do |acc, period|
+    # Add technical leads (Old Deal)
+    old_deal_technical_lead_periods.reduce(project_members) do |acc, period|
       acc[period.admin_user] = acc[period.admin_user] || {
         roles: []
       }
-      acc[period.admin_user][:roles] << { name: :technical_lead, started_at: period.started_at, ended_at: period.ended_at }
+      acc[period.admin_user][:roles] << { name: :old_deal_technical_lead, started_at: period.started_at, ended_at: period.ended_at }
       acc
     end
 
-    # Add project safety representatives
-    project_safety_representative_periods.reduce(project_members) do |acc, period|
+    # Add project safety representatives (Old Deal)
+    old_deal_project_safety_representative_periods.reduce(project_members) do |acc, period|
       acc[period.admin_user] = acc[period.admin_user] || {
         roles: []
       }
-      acc[period.admin_user][:roles] << { name: :project_safety_representative, started_at: period.started_at, ended_at: period.ended_at }
+      acc[period.admin_user][:roles] << { name: :old_deal_project_safety_representative, started_at: period.started_at, ended_at: period.ended_at }
       acc
     end
 
     project_members
   end
 
-  def current_project_safety_representatives
-    current_project_safety_representative_periods.map(&:admin_user)
+  def current_old_deal_project_safety_representatives
+    current_old_deal_project_safety_representative_periods.map(&:admin_user)
   end
 
-  def current_project_safety_representative_periods
-    project_safety_representative_periods.select do |p|
+  def current_old_deal_project_safety_representative_periods
+    old_deal_project_safety_representative_periods.select do |p|
       p.period_started_at <= Date.today && p.ended_at.nil?
     end
   end
@@ -446,32 +442,32 @@ class ProjectTracker < ApplicationRecord
     end
   end
 
-  def current_project_leads
-    current_project_lead_periods.map(&:admin_user)
+  def current_old_deal_project_leads
+    current_old_deal_project_lead_periods.map(&:admin_user)
   end
 
-  def current_project_lead_periods
-    project_lead_periods.select do |p|
+  def current_old_deal_project_lead_periods
+    old_deal_project_lead_periods.select do |p|
       p.period_started_at <= Date.today && p.ended_at.nil?
     end
   end
 
-  def current_creative_leads
-    current_creative_lead_periods.map(&:admin_user)
+  def current_old_deal_creative_leads
+    current_old_deal_creative_lead_periods.map(&:admin_user)
   end
 
-  def current_creative_lead_periods
-    creative_lead_periods.select do |p|
+  def current_old_deal_creative_lead_periods
+    old_deal_creative_lead_periods.select do |p|
       p.period_started_at <= Date.today && p.ended_at.nil?
     end
   end
 
-  def current_technical_leads
-    current_technical_lead_periods.map(&:admin_user)
+  def current_old_deal_technical_leads
+    current_old_deal_technical_lead_periods.map(&:admin_user)
   end
 
-  def current_technical_lead_periods
-    technical_lead_periods.select do |p|
+  def current_old_deal_technical_lead_periods
+    old_deal_technical_lead_periods.select do |p|
       p.period_started_at <= Date.today && p.ended_at.nil?
     end
   end

@@ -1,19 +1,24 @@
 ActiveAdmin.register_page "Admin User PSU Explorer" do
   belongs_to :admin_user
 
+  # Loads legacy ProfitSharePass for YTD/year context only (deprecated Pass model; see plan).
   content title: "PSU Explorer" do
     periods = Stacks::Period.for_gradation(:year).reverse
     default_year = periods.first.label
     current_year = params["year"] || default_year
 
-    all_psu_types = ["tenure", "project_leadership", "collective_leadership"]
+    all_psu_types = ["tenure", "project_leadership"]
     default_psu_type = all_psu_types.first
     current_psu_type = params["psu_type"] || default_psu_type
 
-    psp = current_year.downcase.start_with?("ytd") ? ProfitSharePass.this_year : ProfitSharePass.all.find{|p| p.created_at.year.to_s == current_year}
+    psp = current_year.downcase.start_with?("ytd") ? ProfitSharePass.this_year : ProfitSharePass.all.find { |p| p.created_at.year.to_s == current_year }
     admin_user = AdminUser.find(params["admin_user_id"])
 
-    if current_psu_type == "project_leadership"
+    project_role_days = {}
+    individual_total_effective_project_leadership_days = 0
+    individual_total_effective_successful_project_leadership_days = 0
+
+    if current_psu_type == "project_leadership" && psp
       project_role_days = psp.project_leadership_days_by_admin_user[admin_user] || {}
       individual_total_effective_project_leadership_days = project_role_days.reduce(0) do |acc, tuple|
         role, d = tuple
@@ -28,18 +33,9 @@ ActiveAdmin.register_page "Admin User PSU Explorer" do
       end
     end
 
-    if current_psu_type == "collective_leadership"
-      collective_role_days = psp.collective_leadership_days_by_admin_user[admin_user] || {}
-
-      # Calculate this admin user's weighted days
-      individual_total_weighted_collective_leadership_days = collective_role_days.values.reduce(0) do |acc, data|
-        acc + (data[:days] * data[:weight])
-      end
-    end
-
     render(partial: "admin_user_psu_explorer", locals: {
       periods: periods,
-      all_years: periods.map{|p| p.label},
+      all_years: periods.map { |p| p.label },
       current_year: current_year,
       default_year: default_year,
 
@@ -53,9 +49,6 @@ ActiveAdmin.register_page "Admin User PSU Explorer" do
       project_role_days: project_role_days,
       individual_total_effective_project_leadership_days: individual_total_effective_project_leadership_days,
       individual_total_effective_successful_project_leadership_days: individual_total_effective_successful_project_leadership_days,
-
-      collective_role_days: collective_role_days,
-      individual_total_weighted_collective_leadership_days: individual_total_weighted_collective_leadership_days,
     })
   end
 end

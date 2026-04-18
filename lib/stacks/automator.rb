@@ -14,7 +14,7 @@ class Stacks::Automator
       return unless Time.now.tuesday? || force
 
       digest = ProjectTracker.likely_complete.reduce({}) do |acc, pt|
-        pt.current_project_leads.each do |pl|
+        pt.current_old_deal_project_leads.each do |pl|
           acc[pl.email] = acc[pl.email] || { likely_complete: [], capsule_pending: [] }
           acc[pl.email][:likely_complete] = [*acc[pl.email][:likely_complete], pt]
         end
@@ -22,7 +22,7 @@ class Stacks::Automator
       end
 
       digest = ProjectTracker.capsule_pending.reduce(digest) do |acc, pt|
-        pt.current_project_leads.each do |pl|
+        pt.current_old_deal_project_leads.each do |pl|
           acc[pl.email] = acc[pl.email] || { likely_complete: [], capsule_pending: [] }
           acc[pl.email][:capsule_pending] = [*acc[pl.email][:capsule_pending], pt]
         end

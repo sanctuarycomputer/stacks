@@ -37,42 +37,6 @@ ActiveAdmin.register ProjectTracker do
       :forecast_project_id,
       :_destroy,
       :_edit
-    ],
-    project_lead_periods_attributes: [
-      :id,
-      :admin_user_id,
-      :studio_id,
-      :started_at,
-      :ended_at,
-      :_destroy,
-      :_edit
-    ],
-    project_safety_representative_periods_attributes: [
-      :id,
-      :admin_user_id,
-      :studio_id,
-      :started_at,
-      :ended_at,
-      :_destroy,
-      :_edit
-    ],
-    creative_lead_periods_attributes: [
-      :id,
-      :admin_user_id,
-      :studio_id,
-      :started_at,
-      :ended_at,
-      :_destroy,
-      :_edit
-    ],
-    technical_lead_periods_attributes: [
-      :id,
-      :admin_user_id,
-      :studio_id,
-      :started_at,
-      :ended_at,
-      :_destroy,
-      :_edit
     ]
 
   controller do
@@ -91,16 +55,11 @@ ActiveAdmin.register ProjectTracker do
 
     def scoped_collection
       super.includes(
-        :project_lead_periods,
         :project_capsule,
         :project_tracker_forecast_projects,
         :forecast_projects,
         :adhoc_invoice_trackers,
       ).includes(
-        project_lead_periods: :admin_user,
-        creative_lead_periods: :admin_user,
-        technical_lead_periods: :admin_user,
-        project_safety_representative_periods: :admin_user,
         account_lead_periods: :admin_user,
         team_lead_periods: :admin_user,
         adhoc_invoice_trackers: :qbo_invoice

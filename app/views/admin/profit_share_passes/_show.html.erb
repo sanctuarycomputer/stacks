@@ -9,6 +9,10 @@
 <% total_reinvestment_spend = profit_share_pass.total_reinvestment_spend %>
 <% is_projection = profit_share_pass.is_projection? %>
 
+<p class="nag warning" style="margin-bottom: 20px; margin-right: 10px;">
+  <strong>Deprecated</strong> — This <em>Profit Share Pass</em> screen is kept for historical reference only. Finalized totals use stored pass payment rows. This is not contributor <code>ProfitShare</code> (periodic report / ledger).
+</p>
+
 <% if is_projection %>
   <p class="nag warning sticky" style="margin-bottom: 20px;margin-right:10px;">
     ⚠️ <strong>This is a projection. Please expect these numbers to fluctuate (wildly).</strong>
@@ -341,8 +345,7 @@
     <tr>
       <th class="col">Profit Shares</th>
       <th class="col text-center">Tenured PSU</th>
-      <th class="col text-center">Project Leadership PSU</th>
-      <th class="col text-center">Collective Leadership PSU</th>
+      <th class="col text-center">Old Deal Project Leadership PSU</th>
       <th class="col text-center">Total PSU</th>
       <th class="col text-center">Value</th>
       <th class="col text-center">Pre-spent</th>
@@ -364,14 +367,9 @@
           <%= link_to "Explore ↗", admin_admin_user_admin_user_psu_explorer_path(share[:admin_user], { psu_type: "project_leadership", year: Date.today.year == profit_share_pass.created_at.year ? "YTD" : profit_share_pass.created_at.year }) %>
         </td>
         <td class="col text-center">
-          <%= share[:collective_leadership_psu_earnt].round(2) || 'N/A' %>
-          <%= link_to "Explore ↗", admin_admin_user_admin_user_psu_explorer_path(share[:admin_user], { psu_type: "collective_leadership", year: Date.today.year == profit_share_pass.created_at.year ? "YTD" : profit_share_pass.created_at.year }) %>
-        </td>
-        <td class="col text-center">
           <%= [
             share[:tenured_psu_earnt],
-            share[:project_leadership_psu_earnt] || 0,
-            share[:collective_leadership_psu_earnt] || 0
+            share[:project_leadership_psu_earnt] || 0
           ].sum.round(2) %>
         </td>
         <td class="col text-center">

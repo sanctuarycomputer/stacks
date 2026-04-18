@@ -4,10 +4,10 @@ class AdminUser < ApplicationRecord
   has_one :associates_award_agreement, dependent: :delete
   validate :all_but_latest_full_time_periods_are_closed?
 
-  has_many :project_lead_periods, dependent: :delete_all
-  has_many :creative_lead_periods
-  has_many :technical_lead_periods
-  has_many :project_safety_representative_periods
+  has_many :old_deal_project_lead_periods, dependent: :delete_all
+  has_many :old_deal_creative_lead_periods
+  has_many :old_deal_technical_lead_periods
+  has_many :old_deal_project_safety_representative_periods
 
   has_many :invoice_trackers, dependent: :nullify
   has_one :forecast_person, class_name: "ForecastPerson", foreign_key: "email", primary_key: "email"
@@ -71,16 +71,10 @@ class AdminUser < ApplicationRecord
 
   def project_roles_in_period(period)
     [
-      project_lead_periods,
-      creative_lead_periods,
-      technical_lead_periods,
+      old_deal_project_lead_periods,
+      old_deal_creative_lead_periods,
+      old_deal_technical_lead_periods,
     ].flatten.select do |p|
-      p.effective_days_in_role_during_range(period.starts_at, period.ends_at) > 0
-    end
-  end
-
-  def collective_roles_in_period(period)
-    collective_role_holder_periods.select do |p|
       p.effective_days_in_role_during_range(period.starts_at, period.ends_at) > 0
     end
   end

@@ -1,3 +1,6 @@
+# Deprecated legacy admin surface: historical Profit Share Pass / PSU allocation pipeline.
+# Not to be confused with Contributor ProfitShare (periodic reports / ledger).
+# Kept for reference; prefer reading persisted profit_share_payments for finalized math.
 class ProfitSharePass < ApplicationRecord
   has_many :profit_share_payments, dependent: :destroy
 
@@ -132,57 +135,37 @@ class ProfitSharePass < ApplicationRecord
     collective_okrs = [{
       "datapoint" => "profit_margin",
       "okr" => g3d.ytd_snapshot.dig("accrual", "okrs", "Profit Margin"),
-      "role_holders" => [*CollectiveRole.find_by(name: "General Manager").try(:current_collective_role_holders)]
+      "role_holders" => []
     }, {
       "datapoint" => "revenue_growth",
       "okr" => g3d_ytd_revenue_growth_okr,
       "growth_progress" => g3d_ytd_revenue_growth_progress,
-      "role_holders" => [*CollectiveRole.find_by(name: "General Manager").try(:current_collective_role_holders)]
+      "role_holders" => []
     }, {
       "datapoint" => "successful_design_projects",
       "okr" => xxix.ytd_snapshot.dig("accrual", "okrs", "Successful Projects"),
-      "role_holders" => [
-        *CollectiveRole.find_by(name: "Creative Director").try(:current_collective_role_holders),
-        *CollectiveRole.find_by(name: "Apprentice Creative Director").try(:current_collective_role_holders),
-        *CollectiveRole.find_by(name: "Director of Project Delivery").try(:current_collective_role_holders),
-      ]
+      "role_holders" => []
     }, {
       "datapoint" => "successful_development_projects",
       "okr" => sanctu.ytd_snapshot.dig("accrual", "okrs", "Successful Projects"),
-      "role_holders" => [
-        *CollectiveRole.find_by(name: "Technical Director").try(:current_collective_role_holders),
-        *CollectiveRole.find_by(name: "Apprentice Technical Director").try(:current_collective_role_holders),
-        *CollectiveRole.find_by(name: "Director of Project Delivery").try(:current_collective_role_holders),
-      ]
+      "role_holders" => []
     }, {
       "datapoint" => "successful_design_proposals",
       "okr" => xxix.ytd_snapshot.dig("accrual", "okrs", "Successful Proposals"),
-      "role_holders" => [
-        *CollectiveRole.find_by(name: "Director of Business Development").try(:current_collective_role_holders),
-        *CollectiveRole.find_by(name: "Creative Director").try(:current_collective_role_holders),
-      ]
+      "role_holders" => []
     }, {
       "datapoint" => "successful_development_proposals",
       "okr" => sanctu.ytd_snapshot.dig("accrual", "okrs", "Successful Proposals"),
-      "role_holders" => [
-        *CollectiveRole.find_by(name: "Director of Business Development").try(:current_collective_role_holders),
-        *CollectiveRole.find_by(name: "Technical Director").try(:current_collective_role_holders)
-      ]
+      "role_holders" => []
     }, {
       "datapoint" => "lead_growth",
       "okr" => g3d_ytd_lead_growth_okr,
       "growth_progress" => g3d_ytd_lead_growth_progress,
-      "role_holders" => [
-        *CollectiveRole.find_by(name: "Director of Business Development").try(:current_collective_role_holders),
-        *CollectiveRole.find_by(name: "Director of Communications").try(:current_collective_role_holders)
-      ]
+      "role_holders" => []
     }, {
       "datapoint" => "workplace_satisfaction",
       "okr" => g3d.ytd_snapshot.dig("accrual", "okrs", "Workplace Satisfaction"),
-      "role_holders" => [
-        *CollectiveRole.find_by(name: "Director of Project Delivery").try(:current_collective_role_holders),
-        *CollectiveRole.find_by(name: "Director of People Ops").try(:current_collective_role_holders)
-      ]
+      "role_holders" => []
     }]
 
     collective_okrs.each do |dp|
@@ -219,53 +202,13 @@ class ProfitSharePass < ApplicationRecord
     )
   end
 
-  def collective_leadership_days_by_admin_user
-    period = make_period
-
-    @_collective_leadership_days_by_admin_user ||= Studio.garden3d.core_members_active_on(finalization_day).includes(
-      :collective_role_holder_periods
-    ).reduce({}) do |acc, a|
-      acc[a] = a.collective_roles_in_period(period).reduce({}) do |axx, r|
-        axx[r] = {
-          days: r.effective_days_in_role_during_range(period.starts_at, period.ends_at),
-          weight: r.collective_role.leadership_psu_pool_weighting
-        }
-        axx
-      end
-      acc
-    end
-  end
-
-  def awarded_collective_leadership_psu_proportion_for_admin_user(admin_user)
-    collective_role_days = collective_leadership_days_by_admin_user[admin_user] || {}
-
-    # Calculate this admin user's weighted days
-    individual_weighted_days = collective_role_days.values.reduce(0) do |acc, data|
-      acc + (data[:days] * data[:weight])
-    end
-
-    total_possible_days = max_possible_collective_leadership_weighted_days_for_year
-    return 0 if total_possible_days == 0
-
-    # Calculate proportion based on maximum possible days
-    individual_weighted_days / total_possible_days.to_f
-  end
-
-  def max_possible_collective_leadership_weighted_days_for_year
-    @_max_possible_collective_leadership_weighted_days_for_year ||= CollectiveRole.where(
-      "created_at <= ?", finalization_day
-    ).reduce(0) do |acc, role|
-      acc + (days_this_year * role.leadership_psu_pool_weighting)
-    end
-  end
-
   def project_leadership_days_by_admin_user
     period = make_period
     @_project_leadership_days_by_admin_user ||= Studio.garden3d.core_members_active_on(finalization_day).includes(
       full_time_periods: [],
-      technical_lead_periods: [project_tracker: [:forecast_assignments, :project_capsule]],
-      creative_lead_periods: [project_tracker: [:forecast_assignments, :project_capsule]],
-      project_lead_periods: [project_tracker: [:forecast_assignments, :project_capsule]]
+      old_deal_technical_lead_periods: [project_tracker: [:forecast_assignments, :project_capsule]],
+      old_deal_creative_lead_periods: [project_tracker: [:forecast_assignments, :project_capsule]],
+      old_deal_project_lead_periods: [project_tracker: [:forecast_assignments, :project_capsule]]
     ).reduce({}) do |acc, a|
       acc[a] = a.project_roles_in_period(period).reduce({}) do |axx, r|
         axx[r] = {
@@ -328,12 +271,6 @@ class ProfitSharePass < ApplicationRecord
       Studio.garden3d.core_members_active_on(finalization_day).map do |a|
         tenured_psu_earnt = a.psu_earned_by(finalization_day) || 0
 
-        collective_leadership_psu_earnt = (
-          awarded_collective_leadership_psu_proportion_for_admin_user(a) *
-          lpp["total_claimable"] *
-          ((100 - leadership_psu_pool_project_role_holders_percentage) / 100)
-        ) || 0
-
         project_leadership_psu_earnt = (
           awarded_project_leadership_psu_proportion_for_admin_user(a) *
           lpp["total_claimable"] *
@@ -344,8 +281,8 @@ class ProfitSharePass < ApplicationRecord
           admin_user: a,
           tenured: tenured_psu_earnt,
           project_leadership: project_leadership_psu_earnt,
-          collective_leadership: collective_leadership_psu_earnt,
-          total: tenured_psu_earnt + project_leadership_psu_earnt + collective_leadership_psu_earnt
+          collective_leadership: 0.0,
+          total: tenured_psu_earnt + project_leadership_psu_earnt
         }
       end
     end
