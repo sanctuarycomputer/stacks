@@ -70,8 +70,8 @@ ActiveAdmin.register ContributorPayout do
     column :as_account_lead do |cp|
       number_to_currency(cp.as_account_lead)
     end
-    column :as_team_lead do |cp|
-      number_to_currency(cp.as_team_lead)
+    column :as_project_lead do |cp|
+      number_to_currency(cp.as_project_lead)
     end
     column :as_ic do |cp|
       number_to_currency(cp.as_individual_contributor)

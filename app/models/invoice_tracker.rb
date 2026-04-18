@@ -232,7 +232,7 @@ class InvoiceTracker < ApplicationRecord
           payouts[individual_contributor] ||= {
             blueprint: {
               AccountLead: [],
-              TeamLead: [],
+              ProjectLead: [],
               IndividualContributor: []
             }
           }
@@ -279,7 +279,7 @@ class InvoiceTracker < ApplicationRecord
           payouts[account_lead] ||= {
             blueprint: {
               AccountLead: [],
-              TeamLead: [],
+              ProjectLead: [],
               IndividualContributor: []
             }
           }
@@ -293,17 +293,17 @@ class InvoiceTracker < ApplicationRecord
           }
         end
 
-        team_lead = pt.team_lead_for_month(invoice_pass.start_of_month).try(:forecast_person)
-        if team_lead.present?
-          payouts[team_lead] ||= {
+        project_lead = pt.project_lead_for_month(invoice_pass.start_of_month).try(:forecast_person)
+        if project_lead.present?
+          payouts[project_lead] ||= {
             blueprint: {
               AccountLead: [],
-              TeamLead: [],
+              ProjectLead: [],
               IndividualContributor: [],
             }
           }
           amount = working_amount * 0.05
-          payouts[team_lead][:blueprint][:TeamLead] << {
+          payouts[project_lead][:blueprint][:ProjectLead] << {
             qbo_line_item: line_item,
             blueprint_metadata: metadata,
             amount: amount,
@@ -318,7 +318,7 @@ class InvoiceTracker < ApplicationRecord
           payouts[individual_contributor] ||= {
             blueprint: {
               AccountLead: [],
-              TeamLead: [],
+              ProjectLead: [],
               IndividualContributor: []
             }
           }
@@ -331,12 +331,12 @@ class InvoiceTracker < ApplicationRecord
               description_line: "- #{working_hours} hrs * #{n2c(hourly_rate_of_pay_override)} p/h = #{n2c(amount)}",
             }
           else
-            amount = working_amount * (1 - pt.company_treasury_split - (account_lead.present? ? 0.08 : 0) - (team_lead.present? ? 0.05 : 0))
+            amount = working_amount * (1 - pt.company_treasury_split - (account_lead.present? ? 0.08 : 0) - (project_lead.present? ? 0.05 : 0))
             payouts[individual_contributor][:blueprint][:IndividualContributor] << {
               qbo_line_item: line_item,
               blueprint_metadata: metadata,
               amount: amount,
-              description_line: "- #{working_hours} hrs * #{n2c(working_rate)} p/h * #{100 * (1 - pt.company_treasury_split - (account_lead.present? ? 0.08 : 0) - (team_lead.present? ? 0.05 : 0))}% = #{n2c(amount)}",
+              description_line: "- #{working_hours} hrs * #{n2c(working_rate)} p/h * #{100 * (1 - pt.company_treasury_split - (account_lead.present? ? 0.08 : 0) - (project_lead.present? ? 0.05 : 0))}% = #{n2c(amount)}",
             }
           end
         end
@@ -396,18 +396,18 @@ class InvoiceTracker < ApplicationRecord
           )
         end
 
-        # Share to Team Lead
-        team_lead = c[:project_tracker].team_lead_for_month(invoice_pass.start_of_month)
-        team_lead_on_new_deal = team_lead ? (team_lead.full_time_periods.empty? || team_lead.full_time_period_at(invoice_pass.start_of_month.end_of_month).variable_hours?) : false
-        if team_lead_on_new_deal && team_lead_contributor = team_lead.try(:forecast_person).try(:contributor)
-          cp = contributor_payouts.with_deleted.find_or_initialize_by(contributor: team_lead_contributor)
+        # Share to Project Lead
+        project_lead = c[:project_tracker].project_lead_for_month(invoice_pass.start_of_month)
+        project_lead_on_new_deal = project_lead ? (project_lead.full_time_periods.empty? || project_lead.full_time_period_at(invoice_pass.start_of_month.end_of_month).variable_hours?) : false
+        if project_lead_on_new_deal && project_lead_contributor = project_lead.try(:forecast_person).try(:contributor)
+          cp = contributor_payouts.with_deleted.find_or_initialize_by(contributor: project_lead_contributor)
 
           new_blueprint = (cp.blueprint || {}).clone
-          new_blueprint["TeamLead"] ||= []
-          new_blueprint["TeamLead"] << {
+          new_blueprint["ProjectLead"] ||= []
+          new_blueprint["ProjectLead"] << {
             amount: lead_share,
             qbo_line_item: c[:qbo_line_item],
-            description_line: "- #{n2c(c[:surplus])} * 15% = #{n2c(lead_share)} (`#{c[:qbo_line_item].dig("description")})` generated #{n2c(c[:surplus])} surplus revenue, 15% of which is shared with the Team Lead)",
+            description_line: "- #{n2c(c[:surplus])} * 15% = #{n2c(lead_share)} (`#{c[:qbo_line_item].dig("description")})` generated #{n2c(c[:surplus])} surplus revenue, 15% of which is shared with the Project Lead)",
             blueprint_metadata: c[:blueprint_metadata],
           }
 

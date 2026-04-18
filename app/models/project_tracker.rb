@@ -50,9 +50,9 @@ class ProjectTracker < ApplicationRecord
   accepts_nested_attributes_for :account_lead_periods, allow_destroy: true
   has_many :account_leads, through: :account_lead_periods, source: :admin_user
 
-  has_many :team_lead_periods, dependent: :delete_all
-  accepts_nested_attributes_for :team_lead_periods, allow_destroy: true
-  has_many :team_leads, through: :team_lead_periods, source: :admin_user
+  has_many :project_lead_periods, dependent: :delete_all
+  accepts_nested_attributes_for :project_lead_periods, allow_destroy: true
+  has_many :project_leads, through: :project_lead_periods, source: :admin_user
 
   scope :complete, -> {
     where.not(work_completed_at: nil)
@@ -353,11 +353,11 @@ class ProjectTracker < ApplicationRecord
       acc
     end
 
-    team_lead_periods.reduce(project_members) do |acc, period|
+    project_lead_periods.reduce(project_members) do |acc, period|
       acc[period.admin_user] = acc[period.admin_user] || {
         roles: []
       }
-      acc[period.admin_user][:roles] << { name: :team_lead, started_at: period.started_at, ended_at: period.ended_at }
+      acc[period.admin_user][:roles] << { name: :project_lead, started_at: period.started_at, ended_at: period.ended_at }
       acc
     end
 
@@ -420,8 +420,8 @@ class ProjectTracker < ApplicationRecord
     end
   end
 
-  def team_lead_for_month(date)
-    team_lead_periods.find do |p|
+  def project_lead_for_month(date)
+    project_lead_periods.find do |p|
       p.period_started_at.beginning_of_month <= date && p.period_ended_at.end_of_month >= date
     end.try(:admin_user)
   end
@@ -432,12 +432,12 @@ class ProjectTracker < ApplicationRecord
     end.try(:admin_user)
   end
 
-  def current_team_leads
-    current_team_lead_periods.map(&:admin_user)
+  def current_project_leads
+    current_project_lead_periods.map(&:admin_user)
   end
 
-  def current_team_lead_periods
-    team_lead_periods.select do |p|
+  def current_project_lead_periods
+    project_lead_periods.select do |p|
       p.period_started_at <= Date.today && (p.ended_at.nil? || p.ended_at >= Date.today)
     end
   end
@@ -544,7 +544,9 @@ class ProjectTracker < ApplicationRecord
       # specific project tracker
       amount_for_this_tracker = cp.amount
       bp = cp.blueprint || {}
-      if bp.is_a?(Hash) && (bp.keys.sort == ["AccountLead", "IndividualContributor", "TeamLead"].sort)
+      legacy_team_lead_keys = bp.keys.sort == ["AccountLead", "IndividualContributor", "TeamLead"].sort
+      project_lead_keys = bp.keys.sort == ["AccountLead", "IndividualContributor", "ProjectLead"].sort
+      if bp.is_a?(Hash) && (legacy_team_lead_keys || project_lead_keys)
         amount_for_this_tracker = 0
         amount_for_this_tracker = bp.values.flatten.reduce(0) do |acc, v|
           if fpids.include?(v.try(:dig, "blueprint_metadata", "forecast_project"))

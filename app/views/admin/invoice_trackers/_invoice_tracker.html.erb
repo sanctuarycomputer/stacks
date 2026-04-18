@@ -141,7 +141,7 @@
           </div>
         </th>
         <th class="col">Account Lead</th>
-        <th class="col">Team Lead</th>
+        <th class="col">Project Lead</th>
         <th class="col text-right">Status</th>
       </tr>
     </thead>
@@ -162,11 +162,11 @@
           </td>
 
           <td class="col">
-            <% team_lead = pt.team_lead_for_month(invoice_tracker.invoice_pass.start_of_month) %>
-            <% if team_lead.present? %>
-              <%= link_to team_lead.email, admin_admin_user_path(team_lead) %>
+            <% project_lead = pt.project_lead_for_month(invoice_tracker.invoice_pass.start_of_month) %>
+            <% if project_lead.present? %>
+              <%= link_to project_lead.email, admin_admin_user_path(project_lead) %>
             <% else %>
-              <span class="pill error" style="pointer-events: auto;">No Team Lead</span>
+              <span class="pill error" style="pointer-events: auto;">No Project Lead</span>
             <% end %>
           </td>
 
@@ -297,7 +297,7 @@
   <div class="dashboard-module">
     <div class="module-body factoid-parent">
       <div class="factoid">
-        <p style="margin-bottom: 6px;">💁 <strong>Note!</strong> When we work with Individual Contributors cheaper than <code>57%</code> of our client's billable rate, the surplus revenue is split between the Account Lead, Team Lead, and our company-wide quarterly profit share program.</p>
+        <p style="margin-bottom: 6px;">💁 <strong>Note!</strong> When we work with Individual Contributors cheaper than <code>57%</code> of our client's billable rate, the surplus revenue is split between the Account Lead, Project Lead, and our company-wide quarterly profit share program.</p>
         <a href="https://github.com/sanctuarycomputer/stacks" target="_blank">
           Read more here ↗
         </a>

@@ -97,7 +97,7 @@ ActiveAdmin.register ProjectCapsule do
             <p>✍️ Internal Sharing of Project Capsule</p>
           </div>
           <div class="module-body">
-            <p style="margin-bottom: 6px;">For team morale & growth, we encourage all Team Leads to share all project capsules with the entire garden3d team on Twist. Here's a few capsule threads in Twist for inspiration:</p>
+            <p style="margin-bottom: 6px;">For team morale & growth, we encourage all Project Leads to share all project capsules with the entire garden3d team on Twist. Here's a few capsule threads in Twist for inspiration:</p>
             <ul>
               <li><p><a href='https://twist.com/a/133876/ch/355509/t/6877281/' target='_blank'>Williamstown Theatre Festival ↗</a></p></li>
               <li><p><a href='https://twist.com/a/133876/ch/355509/t/6844523/' target='_blank'>SOS Kicks User Testing ↗</a></p></li>

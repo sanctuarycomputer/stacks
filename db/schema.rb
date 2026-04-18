@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_04_11_120000) do
+ActiveRecord::Schema.define(version: 2026_04_18_160000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -144,19 +144,6 @@ ActiveRecord::Schema.define(version: 2026_04_11_120000) do
     t.datetime "updated_at", precision: 6, null: false
     t.index ["forecast_person_id"], name: "index_contributors_on_forecast_person_id"
     t.index ["qbo_vendor_id"], name: "index_contributors_on_qbo_vendor_id"
-  end
-
-  create_table "creative_lead_periods", force: :cascade do |t|
-    t.bigint "project_tracker_id", null: false
-    t.bigint "admin_user_id", null: false
-    t.bigint "studio_id", null: false
-    t.date "started_at"
-    t.date "ended_at"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["admin_user_id"], name: "index_creative_lead_periods_on_admin_user_id"
-    t.index ["project_tracker_id"], name: "index_creative_lead_periods_on_project_tracker_id"
-    t.index ["studio_id"], name: "index_creative_lead_periods_on_studio_id"
   end
 
   create_table "deel_contracts", force: :cascade do |t|
@@ -415,6 +402,58 @@ ActiveRecord::Schema.define(version: 2026_04_11_120000) do
     t.datetime "updated_at", precision: 6, null: false
   end
 
+  create_table "old_deal_creative_lead_periods", force: :cascade do |t|
+    t.bigint "project_tracker_id", null: false
+    t.bigint "admin_user_id", null: false
+    t.bigint "studio_id", null: false
+    t.date "started_at"
+    t.date "ended_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_old_deal_creative_lead_periods_on_admin_user_id"
+    t.index ["project_tracker_id"], name: "index_old_deal_creative_lead_periods_on_project_tracker_id"
+    t.index ["studio_id"], name: "index_old_deal_creative_lead_periods_on_studio_id"
+  end
+
+  create_table "old_deal_project_lead_periods", force: :cascade do |t|
+    t.bigint "project_tracker_id", null: false
+    t.bigint "admin_user_id", null: false
+    t.bigint "studio_id", null: false
+    t.date "started_at"
+    t.date "ended_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_old_deal_project_lead_periods_on_admin_user_id"
+    t.index ["project_tracker_id"], name: "index_old_deal_project_lead_periods_on_project_tracker_id"
+    t.index ["studio_id"], name: "index_old_deal_project_lead_periods_on_studio_id"
+  end
+
+  create_table "old_deal_project_safety_representative_periods", force: :cascade do |t|
+    t.bigint "project_tracker_id", null: false
+    t.bigint "admin_user_id", null: false
+    t.bigint "studio_id", null: false
+    t.date "started_at"
+    t.date "ended_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "idx_project_safety_rep_periods_on_admin_user_id"
+    t.index ["project_tracker_id"], name: "idx_project_safety_rep_periods_on_project_tracker_id"
+    t.index ["studio_id"], name: "idx_project_safety_rep_periods_on_studio_id"
+  end
+
+  create_table "old_deal_technical_lead_periods", force: :cascade do |t|
+    t.bigint "project_tracker_id", null: false
+    t.bigint "admin_user_id", null: false
+    t.bigint "studio_id", null: false
+    t.date "started_at"
+    t.date "ended_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_old_deal_technical_lead_periods_on_admin_user_id"
+    t.index ["project_tracker_id"], name: "index_old_deal_technical_lead_periods_on_project_tracker_id"
+    t.index ["studio_id"], name: "index_old_deal_technical_lead_periods_on_studio_id"
+  end
+
   create_table "peer_reviews", force: :cascade do |t|
     t.bigint "admin_user_id", null: false
     t.bigint "review_id", null: false
@@ -508,27 +547,12 @@ ActiveRecord::Schema.define(version: 2026_04_11_120000) do
   create_table "project_lead_periods", force: :cascade do |t|
     t.bigint "project_tracker_id", null: false
     t.bigint "admin_user_id", null: false
-    t.bigint "studio_id", null: false
     t.date "started_at"
     t.date "ended_at"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.index ["admin_user_id"], name: "index_project_lead_periods_on_admin_user_id"
     t.index ["project_tracker_id"], name: "index_project_lead_periods_on_project_tracker_id"
-    t.index ["studio_id"], name: "index_project_lead_periods_on_studio_id"
-  end
-
-  create_table "project_safety_representative_periods", force: :cascade do |t|
-    t.bigint "project_tracker_id", null: false
-    t.bigint "admin_user_id", null: false
-    t.bigint "studio_id", null: false
-    t.date "started_at"
-    t.date "ended_at"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["admin_user_id"], name: "idx_project_safety_rep_periods_on_admin_user_id"
-    t.index ["project_tracker_id"], name: "idx_project_safety_rep_periods_on_project_tracker_id"
-    t.index ["studio_id"], name: "idx_project_safety_rep_periods_on_studio_id"
   end
 
   create_table "project_satisfaction_survey_free_text_question_responses", force: :cascade do |t|
@@ -884,30 +908,6 @@ ActiveRecord::Schema.define(version: 2026_04_11_120000) do
     t.datetime "updated_at", precision: 6, null: false
   end
 
-  create_table "team_lead_periods", force: :cascade do |t|
-    t.bigint "project_tracker_id", null: false
-    t.bigint "admin_user_id", null: false
-    t.date "started_at"
-    t.date "ended_at"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["admin_user_id"], name: "index_team_lead_periods_on_admin_user_id"
-    t.index ["project_tracker_id"], name: "index_team_lead_periods_on_project_tracker_id"
-  end
-
-  create_table "technical_lead_periods", force: :cascade do |t|
-    t.bigint "project_tracker_id", null: false
-    t.bigint "admin_user_id", null: false
-    t.bigint "studio_id", null: false
-    t.date "started_at"
-    t.date "ended_at"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["admin_user_id"], name: "index_technical_lead_periods_on_admin_user_id"
-    t.index ["project_tracker_id"], name: "index_technical_lead_periods_on_project_tracker_id"
-    t.index ["studio_id"], name: "index_technical_lead_periods_on_studio_id"
-  end
-
   create_table "traits", force: :cascade do |t|
     t.bigint "tree_id", null: false
     t.string "name"
@@ -958,9 +958,6 @@ ActiveRecord::Schema.define(version: 2026_04_11_120000) do
   add_foreign_key "contributor_payouts", "contributors"
   add_foreign_key "contributor_payouts", "invoice_trackers"
   add_foreign_key "contributor_payouts", "qbo_bills", primary_key: "qbo_id"
-  add_foreign_key "creative_lead_periods", "admin_users"
-  add_foreign_key "creative_lead_periods", "project_trackers"
-  add_foreign_key "creative_lead_periods", "studios"
   add_foreign_key "finalizations", "reviews"
   add_foreign_key "full_time_periods", "admin_users"
   add_foreign_key "gifted_profit_shares", "admin_users"
@@ -972,6 +969,18 @@ ActiveRecord::Schema.define(version: 2026_04_11_120000) do
   add_foreign_key "okr_period_studios", "okr_periods"
   add_foreign_key "okr_period_studios", "studios"
   add_foreign_key "okr_periods", "okrs"
+  add_foreign_key "old_deal_creative_lead_periods", "admin_users"
+  add_foreign_key "old_deal_creative_lead_periods", "project_trackers"
+  add_foreign_key "old_deal_creative_lead_periods", "studios"
+  add_foreign_key "old_deal_project_lead_periods", "admin_users"
+  add_foreign_key "old_deal_project_lead_periods", "project_trackers"
+  add_foreign_key "old_deal_project_lead_periods", "studios"
+  add_foreign_key "old_deal_project_safety_representative_periods", "admin_users"
+  add_foreign_key "old_deal_project_safety_representative_periods", "project_trackers"
+  add_foreign_key "old_deal_project_safety_representative_periods", "studios"
+  add_foreign_key "old_deal_technical_lead_periods", "admin_users"
+  add_foreign_key "old_deal_technical_lead_periods", "project_trackers"
+  add_foreign_key "old_deal_technical_lead_periods", "studios"
   add_foreign_key "peer_reviews", "admin_users"
   add_foreign_key "peer_reviews", "reviews"
   add_foreign_key "periodic_reports", "notifications"
@@ -983,10 +992,6 @@ ActiveRecord::Schema.define(version: 2026_04_11_120000) do
   add_foreign_key "project_capsules", "project_trackers"
   add_foreign_key "project_lead_periods", "admin_users"
   add_foreign_key "project_lead_periods", "project_trackers"
-  add_foreign_key "project_lead_periods", "studios"
-  add_foreign_key "project_safety_representative_periods", "admin_users"
-  add_foreign_key "project_safety_representative_periods", "project_trackers"
-  add_foreign_key "project_safety_representative_periods", "studios"
   add_foreign_key "project_satisfaction_survey_free_text_question_responses", "project_satisfaction_survey_free_text_questions"
   add_foreign_key "project_satisfaction_survey_free_text_question_responses", "project_satisfaction_survey_responses"
   add_foreign_key "project_satisfaction_survey_free_text_questions", "project_satisfaction_surveys"
@@ -1027,11 +1032,6 @@ ActiveRecord::Schema.define(version: 2026_04_11_120000) do
   add_foreign_key "survey_studios", "studios"
   add_foreign_key "survey_studios", "surveys"
   add_foreign_key "system_tasks", "notifications"
-  add_foreign_key "team_lead_periods", "admin_users"
-  add_foreign_key "team_lead_periods", "project_trackers"
-  add_foreign_key "technical_lead_periods", "admin_users"
-  add_foreign_key "technical_lead_periods", "project_trackers"
-  add_foreign_key "technical_lead_periods", "studios"
   add_foreign_key "traits", "trees"
   add_foreign_key "trueups", "contributors"
   add_foreign_key "trueups", "invoice_passes"

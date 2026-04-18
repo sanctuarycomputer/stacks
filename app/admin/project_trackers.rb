@@ -61,7 +61,7 @@ ActiveAdmin.register ProjectTracker do
         :adhoc_invoice_trackers,
       ).includes(
         account_lead_periods: :admin_user,
-        team_lead_periods: :admin_user,
+        project_lead_periods: :admin_user,
         adhoc_invoice_trackers: :qbo_invoice
       )
     end
@@ -170,11 +170,11 @@ ActiveAdmin.register ProjectTracker do
         span("No Account Lead", class: "pill error")
       end
     end
-    column "Team Lead (TL)", :team_leads do |resource|
-      if resource.current_team_leads.any?
-        resource.current_team_leads
+    column "Project Lead (PL)", :project_leads do |resource|
+      if resource.current_project_leads.any?
+        resource.current_project_leads
       else
-        span("No Team Lead", class: "pill error")
+        span("No Project Lead", class: "pill error")
       end
     end
 
@@ -201,8 +201,8 @@ ActiveAdmin.register ProjectTracker do
     link_to "Edit Account Lead", admin_project_tracker_account_lead_periods_path(resource)
   end
 
-  action_item :edit_team_leads, only: [:show, :edit] do
-    link_to "Edit Team Lead", admin_project_tracker_team_lead_periods_path(resource)
+  action_item :edit_project_leads, only: [:show, :edit] do
+    link_to "Edit Project Lead", admin_project_tracker_project_lead_periods_path(resource)
   end
 
   member_action :complete_work, method: :post do

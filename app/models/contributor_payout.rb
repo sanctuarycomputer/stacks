@@ -156,9 +156,12 @@ class ContributorPayout < ApplicationRecord
     blueprint["AccountLead"].sum{|l| l["amount"]}
   end
 
-  def as_team_lead
-    return 0 unless blueprint["TeamLead"].present?
-    blueprint["TeamLead"].sum{|l| l["amount"]}
+  def as_project_lead
+    legacy = blueprint["TeamLead"]
+    current = blueprint["ProjectLead"]
+    lines = [legacy, current].compact.flatten
+    return 0 if lines.empty?
+    lines.sum { |l| l["amount"].to_f }
   end
 
   def as_individual_contributor

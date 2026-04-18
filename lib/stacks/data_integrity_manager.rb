@@ -161,7 +161,7 @@ class Stacks::DataIntegrityManager
     all_project_trackers.reduce({}) do |acc, o|
       if o.work_completed_at.nil?
         # Active Projects
-        acc[o] = [*(acc[o] || []), :no_team_lead_set] if o.current_team_leads.empty?
+        acc[o] = [*(acc[o] || []), :no_project_lead_set] if o.current_project_leads.empty?
         acc[o] = [*(acc[o] || []), :no_account_lead_set] if o.current_account_leads.empty?
         acc[o] = [*(acc[o] || []), :likely_should_mark_as_work_complete?] if o.likely_should_be_marked_as_completed?
       else

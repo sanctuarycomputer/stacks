@@ -18,6 +18,7 @@
             <% roles = data[:roles].map { |r| r[:name].to_s }.uniq %>
             <% roles.each do |role| %>
               <% pill_class = case role
+                when "project_lead" then "project_lead"
                 when "old_deal_project_lead" then "project_lead"
                 when "old_deal_creative_lead" then "creative_lead"
                 when "old_deal_technical_lead" then "technical_lead"

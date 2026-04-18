@@ -3,7 +3,17 @@ class ProjectLeadPeriod < ApplicationRecord
 
   belongs_to :project_tracker
   belongs_to :admin_user
-  belongs_to :studio
+
+  validate :full_months_only
+
+  def full_months_only
+    if started_at && started_at.day != started_at.beginning_of_month.day
+      errors.add(:started_at, "must be the first day of the month")
+    end
+    if ended_at && ended_at.day != ended_at.end_of_month.day
+      errors.add(:ended_at, "must be the last day of the month")
+    end
+  end
 
   def period_started_at
     started_at || project_tracker.first_recorded_assignment&.start_date || Date.today
@@ -13,23 +23,11 @@ class ProjectLeadPeriod < ApplicationRecord
     ended_at || project_tracker.last_recorded_assignment&.end_date || Date.today
   end
 
-  def effective_days_in_role_during_range(start_range, end_range)
-    project_tracker.dates_with_recorded_assignments_in_range(
-      [start_range, period_started_at, admin_user.start_date].compact.max,
-      [period_ended_at, end_range, admin_user.left_at].compact.min,
-    )
-  end
-
   def current?
     period_ended_at >= Date.today - 14.days
   end
 
   def sibling_periods
     project_tracker.project_lead_periods
-  end
-
-  def overlaps?(other)
-    return false if studio != other.studio
-    super
   end
 end

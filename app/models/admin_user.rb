@@ -191,9 +191,9 @@ class AdminUser < ApplicationRecord
     #   end
     # end
 
-    TeamLeadPeriod.includes(project_tracker: :project_capsule).where(admin_user: self).each do |tl|
+    ProjectLeadPeriod.includes(project_tracker: :project_capsule).where(admin_user: self).each do |tl|
       pt = tl.project_tracker
-      next unless pt.current_team_leads.include?(self)
+      next unless pt.current_project_leads.include?(self)
       if pt.work_completed_at.present? && pt.work_status == :capsule_pending
         task = {
           type: :project_capsule_incomplete,
@@ -573,7 +573,7 @@ class AdminUser < ApplicationRecord
   end
 
   def has_led_projects?
-    return AccountLeadPeriod.where(admin_user_id: self.id).any? || TeamLeadPeriod.where(admin_user_id: self.id).any?
+    return AccountLeadPeriod.where(admin_user_id: self.id).any? || ProjectLeadPeriod.where(admin_user_id: self.id).any?
   end
 
   def is_on_old_deal?
