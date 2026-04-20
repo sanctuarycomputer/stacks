@@ -110,14 +110,14 @@ ActiveAdmin.register Contributor do
     column :forecast_person
     column :qbo_vendor
     column :deel_person
-    column :balance do |c|
-      balance = c.new_deal_balance
-      if balance[:unsettled] > 0
-        "#{number_to_currency(balance[:balance])} (#{number_to_currency(balance[:unsettled])} unsettled)"
-      else
-        number_to_currency(balance[:balance])
-      end
-    end
+    # column :balance do |c|
+    #   balance = c.new_deal_balance
+    #   if balance[:unsettled] > 0
+    #     "#{number_to_currency(balance[:balance])} (#{number_to_currency(balance[:unsettled])} unsettled)"
+    #   else
+    #     number_to_currency(balance[:balance])
+    #   end
+    # end
     # if current_admin_user.is_hugh?
     #   column :total_amount_paid do |resource|
     #     number_to_currency(resource.total_amount_paid[:total])
