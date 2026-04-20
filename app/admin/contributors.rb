@@ -16,6 +16,20 @@ ActiveAdmin.register Contributor do
     def scoped_collection
       super.joins(:forecast_person).select("contributors.*, forecast_people.email")
     end
+
+    def find_resource
+      scoped_collection.includes(
+        forecast_person: {
+          admin_user: [:full_time_periods, :admin_user_salary_windows],
+        },
+        contributor_payouts_with_deleted: {
+          invoice_tracker: [:invoice_pass, :contributor_payouts, :forecast_client, :qbo_invoice],
+        },
+        profit_shares_with_deleted: { periodic_report: :profit_shares },
+        contributor_adjustments_with_deleted: :qbo_invoice,
+        trueups_with_deleted: :invoice_pass,
+      ).find(params[:id])
+    end
   end
 
   permit_params :qbo_vendor_id, :deel_person_id
@@ -131,11 +145,14 @@ ActiveAdmin.register Contributor do
   show do
     new_deal_ledger_items = resource.new_deal_ledger_items
     balance = resource.new_deal_balance(new_deal_ledger_items)
+    admin = resource.forecast_person&.admin_user
+    pending_tasks = admin&.pending_tasks || []
 
     render(partial: "show", locals: {
       contributor: resource,
       new_deal_ledger_items: new_deal_ledger_items,
-      balance: balance
+      balance: balance,
+      pending_tasks: pending_tasks,
     })
   end
 end

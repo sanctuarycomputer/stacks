@@ -236,6 +236,16 @@ class Contributor < ApplicationRecord
       end
     end
 
+    assignments_for_ledger =
+      forecast_person.forecast_assignments
+        .includes(:forecast_project)
+        .where(
+          "end_date >= ? AND start_date <= ?",
+          ledger_starts_at,
+          ledger_ends_at,
+        )
+        .to_a
+
     periods = Stacks::Period.for_gradation(:month, ledger_starts_at, ledger_ends_at).reverse
     periods.reduce({ all: [], by_month: {} }) do |acc, period|
       contributor_payouts_in_period = preloaded_contributor_payouts.select do |cp|
@@ -304,7 +314,12 @@ class Contributor < ApplicationRecord
 
       acc[:all] = [*acc[:all], *sorted]
 
-      total_hours = forecast_person.recorded_allocation_during_range_in_hours(period.starts_at, period.ends_at)
+      total_hours =
+        forecast_person.recorded_allocation_during_range_in_hours_from_assignments(
+          assignments_for_ledger,
+          period.starts_at,
+          period.ends_at,
+        )
       total_income = (sorted.reduce(0) do |acc, item|
         if item.is_a?(Trueup)
           next acc += item.amount

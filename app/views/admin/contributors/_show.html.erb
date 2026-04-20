@@ -1,5 +1,3 @@
-<% pending_tasks = contributor.forecast_person.try(:admin_user).try(:pending_tasks) || [] %>
-
 <% if pending_tasks.any? %>
   <div class="dashboard-modules table index_table index">
     <div class="dashboard-module">
@@ -32,7 +30,7 @@
   </tbody>
 </table>
 
-<% contributor.new_deal_ledger_items[:by_month].each do |period, metadata| %>
+<% new_deal_ledger_items[:by_month].each do |period, metadata| %>
   <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
     <div id="titlebar_left">
       <h2 id="page_title"><%= period.starts_at.strftime("%B %Y") %></h2>

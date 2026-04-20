@@ -158,52 +158,54 @@ class AdminUser < ApplicationRecord
   }
 
   def pending_tasks
-    tasks = []
-    # Count pending regular surveys
-    Survey.open.each do |s|
-      if s.expected_responders.include?(self) && SurveyResponder.find_by(survey: s, admin_user: self).nil?
-        tasks << {
-          type: :survey,
-          subject: s,
-        }
+    @_pending_tasks ||= begin
+      tasks = []
+      # Count pending regular surveys
+      Survey.open.each do |s|
+        if s.expected_responders.include?(self) && SurveyResponder.find_by(survey: s, admin_user: self).nil?
+          tasks << {
+            type: :survey,
+            subject: s,
+          }
+        end
       end
-    end
 
-    # Count pending project satisfaction surveys
-    ProjectSatisfactionSurvey.open.each do |pss|
-      if pss.expected_responders.keys.include?(self) && ProjectSatisfactionSurveyResponder.find_by(project_satisfaction_survey: pss, admin_user: self).nil?
-        tasks << {
-          type: :project_satisfaction_survey,
-          subject: pss,
-        }
+      # Count pending project satisfaction surveys
+      ProjectSatisfactionSurvey.open.each do |pss|
+        if pss.expected_responders.keys.include?(self) && ProjectSatisfactionSurveyResponder.find_by(project_satisfaction_survey: pss, admin_user: self).nil?
+          tasks << {
+            type: :project_satisfaction_survey,
+            subject: pss,
+          }
+        end
       end
-    end
 
-    # AccountLeadPeriod.where(admin_user: self).each do |al|
-    #   pt = al.project_tracker
-    #   next unless pt.current_account_leads.include?(self)
-    #   if pt.work_completed_at.present? && pt.work_status == :capsule_pending
-    #     task = {
-    #       type: :project_capsule_incomplete,
-    #       subject: pt,
-    #     }
-    #     tasks << task unless tasks.include?(task)
-    #   end
-    # end
+      # AccountLeadPeriod.where(admin_user: self).each do |al|
+      #   pt = al.project_tracker
+      #   next unless pt.current_account_leads.include?(self)
+      #   if pt.work_completed_at.present? && pt.work_status == :capsule_pending
+      #     task = {
+      #       type: :project_capsule_incomplete,
+      #       subject: pt,
+      #     }
+      #     tasks << task unless tasks.include?(task)
+      #   end
+      # end
 
-    ProjectLeadPeriod.includes(project_tracker: :project_capsule).where(admin_user: self).each do |tl|
-      pt = tl.project_tracker
-      next unless pt.current_project_leads.include?(self)
-      if pt.work_completed_at.present? && pt.work_status == :capsule_pending
-        task = {
-          type: :project_capsule_incomplete,
-          subject: pt,
-        }
-        tasks << task unless tasks.include?(task)
+      ProjectLeadPeriod.includes(project_tracker: :project_capsule).where(admin_user: self).each do |tl|
+        pt = tl.project_tracker
+        next unless pt.current_project_leads.include?(self)
+        if pt.work_completed_at.present? && pt.work_status == :capsule_pending
+          task = {
+            type: :project_capsule_incomplete,
+            subject: pt,
+          }
+          tasks << task unless tasks.include?(task)
+        end
       end
-    end
 
-    tasks
+      tasks
+    end
   end
 
   def should_nag_for_survey_responses?

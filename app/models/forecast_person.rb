@@ -48,6 +48,15 @@ class ForecastPerson < ApplicationRecord
     end || 0
   end
 
+  # Preload assignments (e.g. one query for the whole ledger window) and pass them here to avoid per-period DB queries.
+  def recorded_allocation_during_range_in_hours_from_assignments(assignments, start_of_range, end_of_range)
+    assignments.reduce(0) do |acc, fa|
+      next acc unless fa.end_date >= start_of_range && fa.start_date <= end_of_range
+
+      acc + fa.allocation_during_range_in_hours(start_of_range, end_of_range)
+    end
+  end
+
   def edit_link
     "https://forecastapp.com/864444/team/#{forecast_id}/edit"
   end
