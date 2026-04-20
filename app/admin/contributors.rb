@@ -13,6 +13,8 @@ ActiveAdmin.register Contributor do
   filter :forecast_email_cont, as: :string, label: "Email contains"
 
   controller do
+    helper_method :manual_deel_invoice_visible?
+
     def scoped_collection
       super.joins(:forecast_person).select("contributors.*, forecast_people.email")
     end
@@ -28,11 +30,22 @@ ActiveAdmin.register Contributor do
         profit_shares_with_deleted: { periodic_report: :profit_shares },
         contributor_adjustments_with_deleted: :qbo_invoice,
         trueups_with_deleted: :invoice_pass,
+        deel_invoice_adjustments_with_deleted: :deel_contract,
       ).find(params[:id])
+    end
+
+    def manual_deel_invoice_visible?(contributor)
+      contributor.deel_invoice_actions_visible_to?(current_admin_user)
     end
   end
 
   permit_params :qbo_vendor_id, :deel_person_id
+
+  action_item :deel_invoice, only: :show, if: proc {
+    manual_deel_invoice_visible?(resource)
+  } do
+    link_to("New Deel Withdrawal", new_admin_contributor_deel_invoice_adjustment_path(resource))
+  end
 
   action_item :record_misc_payment, only: :show, if: proc { current_admin_user.is_admin? } do
     link_to(

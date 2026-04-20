@@ -23,6 +23,9 @@ class Contributor < ApplicationRecord
   has_many :contributor_adjustments
   has_many :contributor_adjustments_with_deleted, -> { with_deleted }, class_name: "ContributorAdjustment"
 
+  has_many :deel_invoice_adjustments
+  has_many :deel_invoice_adjustments_with_deleted, -> { with_deleted }, class_name: "DeelInvoiceAdjustment"
+
   scope :recent_new_deal_contributors, -> {
     joins(:contributor_payouts).where("contributor_payouts.created_at > ?", 3.months.ago).distinct
   }
@@ -100,6 +103,17 @@ class Contributor < ApplicationRecord
     forecast_person.email
   end
 
+  # Staff admins (`admin_user.is_admin?`) see Deel Withdrawal UI whenever this contributor has a Deel person.
+  # Linked contributors (non-staff) only when they are the ForecastPerson’s admin user and on the Deel allowlist.
+  def deel_invoice_actions_visible_to?(admin_user)
+    return false unless deel_person_id.present?
+    return true if admin_user.is_admin?
+
+    return false unless forecast_person&.admin_user == admin_user
+
+    Stacks::DeelWithdrawalAccess.allowlisted?(admin_user.email)
+  end
+
   def new_deal_balance(ledger_items = new_deal_ledger_items(false))
     ledger_items[:all].reduce({ balance: 0, unsettled: 0 }) do |acc, li|
       next acc if li.deleted_at.present?
@@ -132,6 +146,8 @@ class Contributor < ApplicationRecord
         else
           acc[:unsettled] += li.amount
         end
+      elsif li.is_a?(DeelInvoiceAdjustment)
+        acc[:balance] -= li.amount if li.deducts_balance?
       end
       acc
     end
@@ -144,6 +160,7 @@ class Contributor < ApplicationRecord
     all_trueups = Trueup.all
     all_profit_shares = ProfitShare.includes(:periodic_report).all
     all_contributor_adjustments = ContributorAdjustment.all
+    all_deel_invoice_adjustments = DeelInvoiceAdjustment.all
 
     ledger = all_contributor_payouts.reduce({ balance: 0, unsettled: 0 }) do |acc, cp|
       next acc if cp.invoice_tracker.invoice_pass.start_of_month > Date.today
@@ -193,6 +210,14 @@ class Contributor < ApplicationRecord
       acc
     end
 
+    ledger = all_deel_invoice_adjustments.reduce(ledger) do |acc, row|
+      next acc if row.date_submitted > Date.today
+      next acc unless row.deducts_balance?
+
+      acc[:balance] -= row.amount
+      acc
+    end
+
     ledger
   end
 
@@ -203,11 +228,12 @@ class Contributor < ApplicationRecord
     preloaded_trueups = trueups_with_deleted
     preloaded_profit_shares = profit_shares_with_deleted
     preloaded_adjustments = contributor_adjustments_with_deleted
+    preloaded_deel_invoice_adjustments = deel_invoice_adjustments_with_deleted
 
     if override_ledger_ends_at.present?
       ledger_ends_at = override_ledger_ends_at
     else
-    ledger_ends_at = [*preloaded_misc_payments, *preloaded_contributor_payouts, *preloaded_trueups, *preloaded_adjustments].reduce(Date.today) do |acc, li|
+    ledger_ends_at = [*preloaded_misc_payments, *preloaded_contributor_payouts, *preloaded_trueups, *preloaded_adjustments, *preloaded_deel_invoice_adjustments].reduce(Date.today) do |acc, li|
       if li.is_a?(MiscPayment)
         acc = li.paid_at if li.paid_at > acc
       elsif li.is_a?(ContributorPayout)
@@ -220,6 +246,9 @@ class Contributor < ApplicationRecord
         acc = li.applied_at if li.applied_at > acc
       elsif li.is_a?(ContributorAdjustment)
         acc = li.effective_on if li.effective_on > acc
+      elsif li.is_a?(DeelInvoiceAdjustment)
+        d = li.date_submitted
+        acc = d if d > acc
       end
         acc
       end + 2.months
@@ -278,7 +307,21 @@ class Contributor < ApplicationRecord
         adj.effective_on <= period.ends_at
       end
 
-      sorted = [*contributor_payouts_in_period, *contractor_payouts_in_period, *trueups_in_period, *reimbursements_in_period, *profit_shares_in_period, *adjustments_in_period].sort do |a, b|
+      deel_invoice_in_period = preloaded_deel_invoice_adjustments.select do |dia|
+        dia.date_submitted >= period.starts_at &&
+        dia.date_submitted <= period.ends_at
+      end
+
+      sorted =
+        [
+          *contributor_payouts_in_period,
+          *contractor_payouts_in_period,
+          *trueups_in_period,
+          *reimbursements_in_period,
+          *profit_shares_in_period,
+          *adjustments_in_period,
+          *deel_invoice_in_period,
+        ].sort do |a, b|
         date_a = nil
         if a.is_a?(Trueup)
           date_a = a.payment_date
@@ -292,6 +335,8 @@ class Contributor < ApplicationRecord
           date_a = a.applied_at
         elsif a.is_a?(ContributorAdjustment)
           date_a = a.effective_on
+        elsif a.is_a?(DeelInvoiceAdjustment)
+          date_a = a.date_submitted
         end
 
         date_b = nil
@@ -307,6 +352,8 @@ class Contributor < ApplicationRecord
           date_b = b.applied_at
         elsif b.is_a?(ContributorAdjustment)
           date_b = b.effective_on
+        elsif b.is_a?(DeelInvoiceAdjustment)
+          date_b = b.date_submitted
         end
 
         date_b <=> date_a

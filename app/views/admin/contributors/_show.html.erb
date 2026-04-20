@@ -84,6 +84,8 @@
                 <%= li.applied_at.strftime("%B %d, %Y") %>
               <% elsif li.is_a?(ContributorAdjustment) %>
                 <%= li.effective_on.strftime("%B %d, %Y") %>
+              <% elsif li.is_a?(DeelInvoiceAdjustment) %>
+                <%= li.date_submitted.strftime("%B %d, %Y") %>
               <% end %>
             </td>
             <td class="col">
@@ -147,6 +149,13 @@
                 <% else %>
                   <span class="pill pending">Invoice not found</span>
                 <% end %>
+              <% elsif li.is_a?(DeelInvoiceAdjustment) %>
+                <span class="pill <%= li.ledger_status_pill_class %>">
+                  Deel
+                  <span class="split">
+                    <%= li.deleted_at.present? ? "Deleted" : li.deel_status.to_s.humanize %>
+                  </span>
+                </span>
               <% end %>
             </td>
             <td class="col">
@@ -218,6 +227,15 @@
                 <% else %>
                   + <%= number_to_currency(li.amount) %>
                 <% end %>
+              <% elsif li.is_a?(DeelInvoiceAdjustment) %>
+                <% if li.ledger_amount_strikethrough? %>
+                  <del>- <%= number_to_currency(li.amount) %></del>
+                <% elsif li.deducts_balance? %>
+                  - <%= number_to_currency(li.amount) %>
+                <% else %>
+                  <%= number_to_currency(li.amount) %>
+                  <span class="pill voided" style="margin-left: 6px;">Not reserved</span>
+                <% end %>
               <% end %>
             </td>
             <td class="col text-right">
@@ -234,6 +252,8 @@
                   <%= link_to "Info ↗", admin_contributor_trueup_path(contributor, li) %>
                 <% elsif li.is_a?(ContributorAdjustment) %>
                   <%= link_to "Info ↗", admin_contributor_contributor_adjustment_path(contributor, li) %>
+                <% elsif li.is_a?(DeelInvoiceAdjustment) %>
+                  <%= link_to "Info ↗", admin_contributor_deel_invoice_adjustment_path(contributor, li) %>
                 <% end %>
               <% end %>
             </td>
