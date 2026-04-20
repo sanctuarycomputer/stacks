@@ -30,6 +30,20 @@
 # available at https://guides.rubyonrails.org/i18n.html.
 
 en:
+  activerecord:
+    models:
+      deel_invoice_adjustment: "Deel Withdrawal"
+    attributes:
+      deel_invoice_adjustment:
+        deel_contract_id: "Contract"
+        deel_status: "Provider status"
+        deel_adjustment_id: "Provider reference id"
+
+  helpers:
+    submit:
+      deel_invoice_adjustment:
+        create: "Submit Deel Withdrawal"
+
   active_admin:
     roles_explorer: "Roles Explorer"
     retention_explorer: "Retention Explorer"

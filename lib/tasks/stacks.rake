@@ -163,6 +163,11 @@ namespace :stacks do
       Stacks::Quickbooks.sync_all! # Has internal retry counter
       Stacks::Deel.new.sync_all!
 
+      puts "~~~> SYNC DEEL WITHDRAWAL STATUSES (DEEL)"
+      Retriable.retriable(tries: 3, base_interval: 5, multiplier: 2, max_interval: 60) do
+        DeelInvoiceAdjustments::BatchSyncFromDeel.run!
+      end
+
       Stacks::Automator.remind_people_to_record_hours_weekly
 
       # No dependencies, so we can do this next

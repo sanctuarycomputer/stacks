@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_04_19_120000) do
+ActiveRecord::Schema.define(version: 2026_04_20_120000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -151,6 +151,24 @@ ActiveRecord::Schema.define(version: 2026_04_19_120000) do
     t.jsonb "data", null: false
     t.string "deel_person_id", null: false
     t.index ["deel_id"], name: "index_deel_contracts_on_deel_id", unique: true
+  end
+
+  create_table "deel_invoice_adjustments", force: :cascade do |t|
+    t.bigint "contributor_id", null: false
+    t.string "deel_contract_id", null: false
+    t.string "deel_adjustment_id", null: false
+    t.decimal "amount", precision: 10, scale: 2, null: false
+    t.text "description", null: false
+    t.date "date_submitted", null: false
+    t.string "deel_status", default: "pending", null: false
+    t.datetime "synced_at"
+    t.datetime "deleted_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["contributor_id"], name: "index_deel_invoice_adjustments_on_contributor_id"
+    t.index ["deel_adjustment_id"], name: "index_deel_invoice_adjustments_on_deel_adjustment_id", unique: true
+    t.index ["deel_contract_id"], name: "index_deel_invoice_adjustments_on_deel_contract_id"
+    t.index ["deleted_at"], name: "index_deel_invoice_adjustments_on_deleted_at"
   end
 
   create_table "deel_off_cycle_payments", force: :cascade do |t|
@@ -959,6 +977,8 @@ ActiveRecord::Schema.define(version: 2026_04_19_120000) do
   add_foreign_key "contributor_payouts", "contributors"
   add_foreign_key "contributor_payouts", "invoice_trackers"
   add_foreign_key "contributor_payouts", "qbo_bills", primary_key: "qbo_id"
+  add_foreign_key "deel_invoice_adjustments", "contributors"
+  add_foreign_key "deel_invoice_adjustments", "deel_contracts", primary_key: "deel_id"
   add_foreign_key "finalizations", "reviews"
   add_foreign_key "full_time_periods", "admin_users"
   add_foreign_key "gifted_profit_shares", "admin_users"

@@ -1,0 +1,52 @@
+<% strikes = resource.ledger_amount_strikethrough? %>
+<% deducts = resource.deducts_balance? %>
+
+<p class="pill nag <%= resource.ledger_status_pill_class %>" style="margin-right: 6px;">
+  <%= resource.deleted_at.present? ? "Deleted" : resource.deel_status.to_s.humanize %>
+</p>
+
+<%= link_to resource.contributor.forecast_person.email, admin_contributor_path(resource.contributor), class: "nag", style: "margin-right: 6px;" %>
+
+<div class="dashboard-modules table index_table index" style="margin-top:20px;">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Amount &amp; submission</p>
+    </div>
+    <div class="module-body markdown-body">
+      <p style="margin-top: 0;">
+        <% if strikes %>
+          <del><strong>- <%= number_to_currency(resource.amount) %></strong></del>
+        <% elsif deducts %>
+          <strong>- <%= number_to_currency(resource.amount) %></strong>
+        <% else %>
+          <strong><%= number_to_currency(resource.amount) %></strong>
+          <span class="pill voided" style="margin-left: 6px;">Not reserved</span>
+        <% end %>
+        <span> · submitted <%= resource.date_submitted.strftime("%B %d, %Y") %></span>
+      </p>
+      <% if resource.deel_contract.present? %>
+        <p>Contract: <%= resource.deel_contract.display_name_for_deel_invoice_select %></p>
+      <% end %>
+      <p>
+        Deel Adjustment ID: <code><%= resource.deel_adjustment_id %></code>
+      </p>
+      <% if resource.synced_at.present? %>
+        <p>
+          Last synced from Deel <%= resource.synced_at.strftime("%B %d, %Y") %>
+          at <%= resource.synced_at.strftime("%I:%M %p %Z") %>
+        </p>
+      <% else %>
+        <p>Not yet synced from Deel.</p>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Description</p>
+    </div>
+    <div class="module-body markdown-body">
+      <%= sanitize RDiscount.new(resource.description || "").to_html %>
+    </div>
+  </div>
+</div>
