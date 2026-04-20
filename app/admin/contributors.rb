@@ -110,22 +110,6 @@ ActiveAdmin.register Contributor do
     column :forecast_person
     column :qbo_vendor
     column :deel_person
-    column :has_pending_tasks? do |c|
-      admin_user = c.forecast_person.try(:admin_user)
-      pending_tasks = admin_user.try(:pending_tasks) || []
-      if pending_tasks.empty?
-        span(class: "pill yes") do
-          "No"
-        end
-      else
-        span(class: "pill no") do
-          text_node "Yes"
-          span(class: "split") do
-            link_to "View #{pending_tasks.count} #{(pending_tasks.count == 1 ? "Task" : "Tasks")} ↗", admin_admin_user_path(admin_user), style: "font-size: unset;"
-          end
-        end
-      end
-    end
     column :balance do |c|
       balance = c.new_deal_balance
       if balance[:unsettled] > 0
@@ -134,11 +118,11 @@ ActiveAdmin.register Contributor do
         number_to_currency(balance[:balance])
       end
     end
-    if current_admin_user.is_hugh?
-      column :total_amount_paid do |resource|
-        number_to_currency(resource.total_amount_paid[:total])
-      end
-    end
+    # if current_admin_user.is_hugh?
+    #   column :total_amount_paid do |resource|
+    #     number_to_currency(resource.total_amount_paid[:total])
+    #   end
+    # end
     actions
   end
 
