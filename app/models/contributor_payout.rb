@@ -44,11 +44,54 @@ class ContributorPayout < ApplicationRecord
     [account, studio]
   end
 
+  # jsonb normally returns a Hash; some legacy rows store a JSON string, or the setter
+  # fell through to super(val) on JSON::ParserError and persisted Hash#inspect text.
+  def blueprint
+    self.class.coerce_blueprint_to_hash(read_attribute(:blueprint))
+  end
+
   def blueprint=(val)
     super(val.is_a?(String) ? JSON.parse(val) : val)
   rescue JSON::ParserError
     super(val)
   end
+
+  def self.coerce_blueprint_to_hash(raw)
+    case raw
+    when Hash
+      raw
+    when String
+      coerce_blueprint_string(raw)
+    else
+      {}
+    end
+  end
+
+  def self.coerce_blueprint_string(str)
+    s = str.to_s.strip
+    return {} if s.empty?
+
+    parsed = parse_json_blueprint(s)
+    return parsed if parsed
+
+    # Hash-rocket text that JSON.parse rejects; keys/values are usually JSON-safe.
+    if s.include?("=>")
+      jsonish = s.gsub(/\s*=>\s*/, ":")
+      parsed = parse_json_blueprint(jsonish)
+      return parsed if parsed
+    end
+
+    {}
+  end
+
+  def self.parse_json_blueprint(s)
+    parsed = JSON.parse(s)
+    5.times { break unless parsed.is_a?(String); parsed = JSON.parse(parsed) }
+    parsed if parsed.is_a?(Hash)
+  rescue JSON::ParserError, TypeError
+    nil
+  end
+  private_class_method :parse_json_blueprint
 
   def calculate_surplus
     return [] unless in_sync?
