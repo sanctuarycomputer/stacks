@@ -53,126 +53,131 @@ ActiveAdmin.register ProjectTracker do
       new!
     end
 
-    def scoped_collection
-      super.includes(
-        { project_capsule: :project_satisfaction_survey },
-        :project_tracker_forecast_projects,
-        :forecast_projects,
-        :adhoc_invoice_trackers,
-      ).includes(
-        account_lead_periods: :admin_user,
-        project_lead_periods: :admin_user,
-        adhoc_invoice_trackers: :qbo_invoice
-      )
-    end
+    # def scoped_collection
+    #   super.includes(
+    #     { project_capsule: :project_satisfaction_survey },
+    #     :project_tracker_forecast_projects,
+    #     :forecast_projects,
+    #     :adhoc_invoice_trackers,
+    #   ).includes(
+    #     account_lead_periods: :admin_user,
+    #     project_lead_periods: :admin_user,
+    #     adhoc_invoice_trackers: :qbo_invoice
+    #   )
+    # end
   end
 
-  index download_links: false, title: "Projects" do
-    column :considered_successful?
-
-    if params["scope"] == "complete"
-      column :project_satisfaction_survey do |pt|
-        survey = pt&.project_capsule&.project_satisfaction_survey
-        if survey&.closed_at&.present?
-          raw = survey.score || survey.overall_rating_from_question_responses
-          score = raw.nil? ? nil : raw.to_f.round(1)
-          if score.nil?
-            span("No responses", class: "pill error")
-          else
-            pill_class =
-              if score >= 4.5
-                "exceptional"
-              elsif score >= 3.5
-                "healthy"
-              elsif score >= 2.5
-                "at_risk"
-              else
-                "failing"
-              end
-
-            span("#{score} / 5", class: "pill #{pill_class}")
-          end
-        else
-          "No survey"
-        end
-      end
-      column :last_recorded_assignment do |pt|
-        pt.last_recorded_assignment.try(:end_date)
-      end
-    end
-
+  index do
     column :name
-
-    column :hours do |resource|
-      free_hours = resource.total_free_hours
-      total_hours = resource.total_hours
-      free_hours_percentage = resource.free_hours_ratio * 100
-
-      pill_class =
-        if free_hours_percentage == 0
-          "exceptional"
-        elsif free_hours_percentage < 1
-          "healthy"
-        elsif free_hours_percentage < 5
-          "at_risk"
-        else
-          "failing"
-        end
-
-      div([
-        span(class: "pill #{pill_class}") do
-          span(class: "split") do
-            [strong("#{total_hours.round} hrs,"), span("#{free_hours.round} free")]
-          end
-        end,
-        para(class: "okr_hint") do
-          "#{free_hours_percentage.round(1)}% hrs billed at $0p/h"
-        end
-      ])
-    end
-    column :budget_status do |resource|
-      span(resource.status.to_s.humanize.capitalize, class: "pill #{resource.status}")
-    end
-    column :work_status do |resource|
-      span(resource.work_status.to_s.humanize.capitalize, class: "pill #{resource.work_status}")
-    end
-    column :forecast_projects do |resource|
-      if resource.forecast_projects.any?
-        div(
-          resource.forecast_projects.map do |fp|
-            a("#{fp.display_name} ↗", { href: fp.link, target: "_blank", class: "block", style: "white-space:nowrap" })
-          end
-        )
-      else
-        span("No Forecast Project/s Connected", class: "pill error")
-      end
-    end
-
-    column "Account Lead (AL)", :account_leads do |resource|
-      if resource.current_account_leads.any?
-        resource.current_account_leads
-      else
-        span("No Account Lead", class: "pill error")
-      end
-    end
-    column "Project Lead (PL)", :project_leads do |resource|
-      if resource.current_project_leads.any?
-        resource.current_project_leads
-      else
-        span("No Project Lead", class: "pill error")
-      end
-    end
-
-    column "Runn.io Project", :runn_project do |resource|
-      if resource.runn_project.present?
-        a("#{resource.runn_project.name} ↗", { href: resource.runn_project.link, target: "_blank", class: "block", style: "white-space:nowrap" })
-      else
-        span("No Runn.io Project Connected", class: "pill error")
-      end
-    end
-
     actions
   end
+
+  # index download_links: false, title: "Projects" do
+  #   column :considered_successful?
+
+  #   if params["scope"] == "complete"
+  #     column :project_satisfaction_survey do |pt|
+  #       survey = pt&.project_capsule&.project_satisfaction_survey
+  #       if survey&.closed_at&.present?
+  #         raw = survey.score || survey.overall_rating_from_question_responses
+  #         score = raw.nil? ? nil : raw.to_f.round(1)
+  #         if score.nil?
+  #           span("No responses", class: "pill error")
+  #         else
+  #           pill_class =
+  #             if score >= 4.5
+  #               "exceptional"
+  #             elsif score >= 3.5
+  #               "healthy"
+  #             elsif score >= 2.5
+  #               "at_risk"
+  #             else
+  #               "failing"
+  #             end
+
+  #           span("#{score} / 5", class: "pill #{pill_class}")
+  #         end
+  #       else
+  #         "No survey"
+  #       end
+  #     end
+  #     column :last_recorded_assignment do |pt|
+  #       pt.last_recorded_assignment.try(:end_date)
+  #     end
+  #   end
+
+  #   column :name
+
+  #   column :hours do |resource|
+  #     free_hours = resource.total_free_hours
+  #     total_hours = resource.total_hours
+  #     free_hours_percentage = resource.free_hours_ratio * 100
+
+  #     pill_class =
+  #       if free_hours_percentage == 0
+  #         "exceptional"
+  #       elsif free_hours_percentage < 1
+  #         "healthy"
+  #       elsif free_hours_percentage < 5
+  #         "at_risk"
+  #       else
+  #         "failing"
+  #       end
+
+  #     div([
+  #       span(class: "pill #{pill_class}") do
+  #         span(class: "split") do
+  #           [strong("#{total_hours.round} hrs,"), span("#{free_hours.round} free")]
+  #         end
+  #       end,
+  #       para(class: "okr_hint") do
+  #         "#{free_hours_percentage.round(1)}% hrs billed at $0p/h"
+  #       end
+  #     ])
+  #   end
+  #   column :budget_status do |resource|
+  #     span(resource.status.to_s.humanize.capitalize, class: "pill #{resource.status}")
+  #   end
+  #   column :work_status do |resource|
+  #     span(resource.work_status.to_s.humanize.capitalize, class: "pill #{resource.work_status}")
+  #   end
+  #   column :forecast_projects do |resource|
+  #     if resource.forecast_projects.any?
+  #       div(
+  #         resource.forecast_projects.map do |fp|
+  #           a("#{fp.display_name} ↗", { href: fp.link, target: "_blank", class: "block", style: "white-space:nowrap" })
+  #         end
+  #       )
+  #     else
+  #       span("No Forecast Project/s Connected", class: "pill error")
+  #     end
+  #   end
+
+  #   column "Account Lead (AL)", :account_leads do |resource|
+  #     if resource.current_account_leads.any?
+  #       resource.current_account_leads
+  #     else
+  #       span("No Account Lead", class: "pill error")
+  #     end
+  #   end
+  #   column "Project Lead (PL)", :project_leads do |resource|
+  #     if resource.current_project_leads.any?
+  #       resource.current_project_leads
+  #     else
+  #       span("No Project Lead", class: "pill error")
+  #     end
+  #   end
+
+  #   column "Runn.io Project", :runn_project do |resource|
+  #     if resource.runn_project.present?
+  #       a("#{resource.runn_project.name} ↗", { href: resource.runn_project.link, target: "_blank", class: "block", style: "white-space:nowrap" })
+  #     else
+  #       span("No Runn.io Project Connected", class: "pill error")
+  #     end
+  #   end
+
+  #   actions
+  # end
 
   action_item :mark_as_complete, only: :show do
     if resource.work_completed_at.present?
