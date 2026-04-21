@@ -67,9 +67,9 @@ ActiveAdmin.register ProjectTracker do
 
     def collection
       c = super
-      if action_name == "index" && !@_edge_assignments_cached
-        ProjectTracker.batch_cache_edge_recorded_assignments!(c.to_a)
-        @_edge_assignments_cached = true
+      if action_name == "index" && !@_preloaded_for_render
+        ProjectTracker.preload_for_render(c.to_a)
+        @_preloaded_for_render = true
       end
       c
     end

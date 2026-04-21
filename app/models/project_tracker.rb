@@ -88,6 +88,26 @@ class ProjectTracker < ApplicationRecord
     ProjectTracker.dormant.reject(&:considered_ongoing?)
   end
 
+  # Preloads every association a rendered ProjectTracker row needs (runn_project,
+  # forecast_projects, capsule + satisfaction survey, lead periods + admin users) and
+  # batch-caches assignment edge bounds. Idempotent — associations already loaded are
+  # skipped. Use this on any page that iterates a list of trackers and renders columns
+  # depending on considered_successful?, work_status, current_*_leads, etc.
+  def self.preload_for_render(trackers)
+    list = Array(trackers).compact
+    return list if list.empty?
+
+    ActiveRecord::Associations::Preloader.new.preload(list, [
+      :runn_project,
+      :forecast_projects,
+      { project_capsule: :project_satisfaction_survey },
+      { account_lead_periods: :admin_user },
+      { project_lead_periods: :admin_user }
+    ])
+    batch_cache_edge_recorded_assignments!(list)
+    list
+  end
+
   # Sets @_first_recorded_assignment and @_last_recorded_assignment from one
   # ForecastAssignment query per batch (min/max start_date and end_date across each
   # tracker’s linked forecast projects). Call after forecast_projects are preloaded.

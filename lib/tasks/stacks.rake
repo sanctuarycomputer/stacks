@@ -195,6 +195,10 @@ namespace :stacks do
       puts "~~~> DOING MISC"
       Stacks::Notifications.make_notifications!
 
+      puts "~~~> WARMING DATA INTEGRITY CACHE"
+      Rails.cache.delete("Stacks::DataIntegrityManager#discover_problems")
+      Stacks::DataIntegrityManager.new.discover_problems
+
       runn_instance = Stacks::Runn.new
       ProjectTracker.where.not(runn_project: nil).each do |pt|
         puts "~~~> Will sync '#{pt.name}' Forecast Assignments to '#{pt.runn_project.name}' Runn Actuals"

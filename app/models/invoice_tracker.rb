@@ -134,10 +134,19 @@ class InvoiceTracker < ApplicationRecord
   end
 
   def project_trackers
-    ProjectTracker
-      .includes(:forecast_projects)
-      .all
-      .select{|pt| (pt.forecast_projects.map(&:forecast_id) & forecast_project_ids).any?}
+    return @_project_trackers if defined?(@_project_trackers)
+
+    ids = forecast_project_ids.compact
+    @_project_trackers =
+      if ids.empty?
+        []
+      else
+        tracker_ids = ProjectTrackerForecastProject
+          .where(forecast_project_id: ids)
+          .distinct
+          .pluck(:project_tracker_id)
+        ProjectTracker.where(id: tracker_ids).includes(:forecast_projects).to_a
+      end
   end
 
   def assignments

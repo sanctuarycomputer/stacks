@@ -157,7 +157,8 @@ class Stacks::DataIntegrityManager
         :old_deal_project_lead_periods,
         :adhoc_invoice_trackers,
         :forecast_projects
-      ])
+      ]).to_a
+    ProjectTracker.preload_for_render(all_project_trackers)
     all_project_trackers.reduce({}) do |acc, o|
       if o.work_completed_at.nil?
         # Active Projects

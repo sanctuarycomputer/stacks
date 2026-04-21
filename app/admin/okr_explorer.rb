@@ -23,6 +23,8 @@ ActiveAdmin.register_page "OKR Explorer" do
       periods.reduce({}) do |acc, period|
         acc[period] = studio.project_trackers_with_recorded_time_in_period(period, preloaded_studios)
         acc
+      end.tap do |by_period|
+        ProjectTracker.preload_for_render(by_period.values.flatten.uniq)
       end
     end
 
