@@ -6,9 +6,10 @@ ActiveAdmin.register ProjectTracker do
   actions :index, :new, :show, :edit, :update, :create, :destroy
   config.current_filters = false
 
-  scope :in_progress, default: true
-  scope :dormant
-  scope :complete
+  scope :all
+  # scope :in_progress, default: true
+  # scope :dormant
+  # scope :complete
 
   permit_params :name,
     :budget_low_end,
