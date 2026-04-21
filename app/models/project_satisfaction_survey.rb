@@ -21,6 +21,9 @@ class ProjectSatisfactionSurvey < ApplicationRecord
   has_many :project_satisfaction_survey_responses
   has_many :project_satisfaction_survey_responders
 
+  before_destroy :destroy_associated_survey_records
+  after_destroy :reset_project_capsule_survey_flow
+
   before_save :sync_score_with_closed_at
 
   DEFAULT_RATING_QUESTIONS = [
@@ -156,6 +159,24 @@ class ProjectSatisfactionSurvey < ApplicationRecord
   end
 
   private
+
+  def destroy_associated_survey_records
+    survey_id = id
+    transaction do
+      ProjectSatisfactionSurveyResponse.where(project_satisfaction_survey_id: survey_id).find_each(&:destroy!)
+      ProjectSatisfactionSurveyResponder.where(project_satisfaction_survey_id: survey_id).delete_all
+      ProjectSatisfactionSurveyQuestion.where(project_satisfaction_survey_id: survey_id).find_each(&:destroy!)
+      ProjectSatisfactionSurveyFreeTextQuestion.where(project_satisfaction_survey_id: survey_id).find_each(&:destroy!)
+    end
+  end
+
+  def reset_project_capsule_survey_flow
+    capsule = project_capsule
+    return if capsule.blank?
+    return unless capsule.internal_project_team_satisfaction_survey_created?
+
+    capsule.update_column(:project_satisfaction_survey_status, nil)
+  end
 
   def sync_score_with_closed_at
     return unless closed_at_changed?

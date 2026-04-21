@@ -1,7 +1,7 @@
 ActiveAdmin.register ProjectSatisfactionSurvey do
   config.filters = false
   config.paginate = false
-  actions :index, :new, :show, :create, :edit, :update, :delete
+  actions :index, :new, :show, :create, :edit, :update, :destroy
   menu label: "Project Satisfaction Surveys", parent: "All Surveys", priority: 2
 
   scope :open, default: true

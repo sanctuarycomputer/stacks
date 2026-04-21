@@ -15,6 +15,10 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
       return user.is_admin? if [:create, :update, :destroy].include?(action)
     end
 
+    if (subject.is_a?(ProjectSatisfactionSurvey) || subject == ProjectSatisfactionSurvey) && action == :destroy
+      return user.is_admin?
+    end
+
     return true if (user.is_admin? || user.has_led_projects?)
 
     if subject.is_a?(AdminUser)
