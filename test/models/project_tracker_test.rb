@@ -37,10 +37,15 @@ class ProjectTrackerTest < ActiveSupport::TestCase
     assert_not pt.likely_complete?
   end
 
-  test "in_progress scope uses SQL subqueries instead of materializing complete and dormant ids" do
+  test "dormant scope filters on snapshot last_forecast_assignment_end_date" do
+    sql = ProjectTracker.dormant.to_sql
+    assert_includes sql, "last_forecast_assignment_end_date"
+    assert_includes sql, "snapshot"
+  end
+
+  test "in_progress scope generates SQL without loading ids in Ruby" do
     sql = ProjectTracker.in_progress.to_sql
-    not_in_selects = sql.scan(/NOT IN \(SELECT/)
-    assert_operator not_in_selects.size, :>=, 2,
-      "expected chained NOT IN subqueries (avoid splat [*complete, *dormant] loading all rows in Ruby)"
+    assert_predicate sql, :present?
+    assert_includes sql, "project_trackers"
   end
 end

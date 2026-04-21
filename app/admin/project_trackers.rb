@@ -2,14 +2,13 @@ ActiveAdmin.register ProjectTracker do
   menu label: "Projects", priority: 2
   config.filters = false
   config.sort_order = "created_at_desc"
-  config.paginate = true
-  config.per_page = 5
+  config.paginate = false
   actions :index, :new, :show, :edit, :update, :create, :destroy
   config.current_filters = false
 
-  scope :all, default: true, show_count: false
-  # scope :in_progress, default: true, show_count: false
-  # scope :dormant, show_count: false
+  #scope :all, default: true, show_count: false
+  scope :in_progress, default: true, show_count: false
+  scope :dormant, show_count: false
   scope :complete, show_count: false
 
   permit_params :name,

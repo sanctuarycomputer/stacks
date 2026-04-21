@@ -66,17 +66,12 @@ class ProjectTracker < ApplicationRecord
       .where.not(id: dormant)
   }
 
+  # Uses assignment bounds written by `generate_snapshot!` into jsonb `snapshot` (not live joins).
   scope :dormant, -> {
-    # Dedupe join duplicates via subquery so the outer query stays plain SELECT ... ORDER BY
-    # (PostgreSQL: SELECT DISTINCT + ORDER BY non-select-list cols is invalid).
-    inner = ProjectTracker.where.not(id: complete)
-      .joins(forecast_projects: :forecast_assignments)
-      .where('forecast_assignments.end_date = (SELECT MAX(end_date) FROM forecast_assignments fa2 INNER JOIN project_tracker_forecast_projects ptfp2 ON fa2.project_id = ptfp2.forecast_project_id WHERE ptfp2.project_tracker_id = project_trackers.id)')
-      .where('forecast_assignments.end_date < ?', Date.today - 1.month)
-      .select(:id)
-      .distinct
-
-    where(id: inner)
+    threshold = Date.today - 1.month
+    where.not(id: complete)
+      .where("(snapshot->>'last_forecast_assignment_end_date') IS NOT NULL")
+      .where("(snapshot->>'last_forecast_assignment_end_date')::date < ?", threshold)
   }
 
   def capsule_complete?
@@ -305,6 +300,11 @@ class ProjectTracker < ApplicationRecord
       })
       acc
     end
+
+    snapshot["first_forecast_assignment_start_date"] =
+      first_recorded_assignment&.start_date&.iso8601
+    snapshot["last_forecast_assignment_end_date"] =
+      last_recorded_assignment&.end_date&.iso8601
 
     update_attribute('snapshot', snapshot)
   end
