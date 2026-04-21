@@ -55,7 +55,7 @@ ActiveAdmin.register ProjectTracker do
 
     def scoped_collection
       super.includes(
-        :project_capsule,
+        { project_capsule: :project_satisfaction_survey },
         :project_tracker_forecast_projects,
         :forecast_projects,
         :adhoc_invoice_trackers,
@@ -93,20 +93,26 @@ ActiveAdmin.register ProjectTracker do
 
     if params["scope"] == "complete"
       column :project_satisfaction_survey do |pt|
-        if pt&.project_capsule&.project_satisfaction_survey&.closed_at&.present?
-          score = pt.project_capsule.project_satisfaction_survey.results[:overall].round(1)
-          pill_class =
-            if score >= 4.5
-              "exceptional"
-            elsif score >= 3.5
-              "healthy"
-            elsif score >= 2.5
-              "at_risk"
-            else
-              "failing"
-            end
+        survey = pt&.project_capsule&.project_satisfaction_survey
+        if survey&.closed_at&.present?
+          raw = survey.score || survey.overall_rating_from_question_responses
+          score = raw.nil? ? nil : raw.to_f.round(1)
+          if score.nil?
+            span("No responses", class: "pill error")
+          else
+            pill_class =
+              if score >= 4.5
+                "exceptional"
+              elsif score >= 3.5
+                "healthy"
+              elsif score >= 2.5
+                "at_risk"
+              else
+                "failing"
+              end
 
-          span("#{score} / 5", class: "pill #{pill_class}")
+            span("#{score} / 5", class: "pill #{pill_class}")
+          end
         else
           "No survey"
         end

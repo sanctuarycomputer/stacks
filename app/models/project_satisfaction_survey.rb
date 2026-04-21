@@ -21,6 +21,8 @@ class ProjectSatisfactionSurvey < ApplicationRecord
   has_many :project_satisfaction_survey_responses
   has_many :project_satisfaction_survey_responders
 
+  before_save :sync_score_with_closed_at
+
   DEFAULT_RATING_QUESTIONS = [
     "The budget was realistic",
     "The timeline was realistic",
@@ -78,14 +80,36 @@ class ProjectSatisfactionSurvey < ApplicationRecord
     end
   end
 
+  # Same numeric average as persisted `score` and as `results[:overall]`.
+  # Returns nil when there are no survey responses; 0 when none of the rating questions have answers.
+  def overall_rating_from_question_responses
+    return nil if project_satisfaction_survey_responses.empty?
+
+    total_score_sum = 0.0
+    total_responses = 0
+
+    project_satisfaction_survey_questions.each do |q|
+      responses = ProjectSatisfactionSurveyQuestionResponse.where(project_satisfaction_survey_question: q)
+
+      next unless responses.any?
+
+      question_score_sum = responses.reduce(0.0) do |sum, response|
+        sum + ProjectSatisfactionSurveyQuestionResponse.sentiment_to_score(response.sentiment.to_s)
+      end
+
+      total_score_sum += question_score_sum
+      total_responses += responses.count
+    end
+
+    total_responses > 0 ? (total_score_sum / total_responses) : 0
+  end
+
   # Calculate the survey results, including scores and free text responses
   def results
     return nil if project_satisfaction_survey_responses.empty?
 
     # Calculate average sentiment by question
     question_results = {}
-    total_score_sum = 0.0
-    total_responses = 0
 
     project_satisfaction_survey_questions.each do |q|
       responses = ProjectSatisfactionSurveyQuestionResponse.where(project_satisfaction_survey_question: q)
@@ -100,10 +124,6 @@ class ProjectSatisfactionSurvey < ApplicationRecord
 
         average_sentiment = question_score_sum / responses.count
 
-        # Add to overall totals
-        total_score_sum += question_score_sum
-        total_responses += responses.count
-
         question_results[q] = {
           average_sentiment: average_sentiment,
           response_count: responses.count,
@@ -112,8 +132,7 @@ class ProjectSatisfactionSurvey < ApplicationRecord
       end
     end
 
-    # Calculate overall average
-    overall_score = total_responses > 0 ? (total_score_sum / total_responses) : 0
+    overall_score = overall_rating_from_question_responses
 
     # Collect free text responses
     free_text_results = {}
@@ -134,5 +153,16 @@ class ProjectSatisfactionSurvey < ApplicationRecord
       response_count: project_satisfaction_survey_responses.count,
       expected_response_count: expected_responders.count
     }
+  end
+
+  private
+
+  def sync_score_with_closed_at
+    return unless closed_at_changed?
+
+    self.score =
+      if closed_at.present?
+        overall_rating_from_question_responses
+      end
   end
 end

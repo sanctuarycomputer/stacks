@@ -84,16 +84,11 @@ class ProjectTracker < ApplicationRecord
   end
 
   def self.likely_complete
-    ProjectTracker.dormant.select do |pt|
-      if pt.last_recorded_assignment
-        pt.last_recorded_assignment.end_date < (Date.today -  1.month)
-      else
-        false
-      end
-    end.reject do |pt|
-      downcased_name = pt.name.downcase
-      downcased_name.include?("ongoing") || downcased_name.include?("retainer")
-    end
+    ProjectTracker.dormant.reject(&:considered_ongoing?)
+  end
+
+  def likely_complete?
+    ProjectTracker.dormant.where(id: id).exists? && !considered_ongoing?
   end
 
   def forecast_projects
@@ -647,7 +642,7 @@ class ProjectTracker < ApplicationRecord
 
   def work_status
     if work_completed_at.nil?
-      if ProjectTracker.likely_complete.include?(self)
+      if likely_complete?
         :likely_complete
       else
         :in_progress

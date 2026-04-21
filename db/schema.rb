@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_04_20_120000) do
+ActiveRecord::Schema.define(version: 2026_04_20_130000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -631,6 +631,7 @@ ActiveRecord::Schema.define(version: 2026_04_20_120000) do
     t.datetime "closed_at"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.decimal "score", precision: 5, scale: 2
     t.index ["project_capsule_id"], name: "index_project_satisfaction_surveys_on_project_capsule_id"
   end
 
