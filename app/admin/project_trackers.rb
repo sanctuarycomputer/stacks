@@ -10,7 +10,7 @@ ActiveAdmin.register ProjectTracker do
   scope :all, default: true, show_count: false
   # scope :in_progress, default: true, show_count: false
   # scope :dormant, show_count: false
-  # scope :complete, show_count: false
+  scope :complete, show_count: false
 
   permit_params :name,
     :budget_low_end,
