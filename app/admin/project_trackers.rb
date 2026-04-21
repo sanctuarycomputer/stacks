@@ -55,6 +55,8 @@ ActiveAdmin.register ProjectTracker do
 
     def scoped_collection
       super.includes(
+        :runn_project,
+        :forecast_projects,
         { project_capsule: :project_satisfaction_survey },
         { project_tracker_forecast_projects: :forecast_project },
         { adhoc_invoice_trackers: :qbo_invoice },

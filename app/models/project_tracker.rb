@@ -113,7 +113,20 @@ class ProjectTracker < ApplicationRecord
   end
 
   def likely_complete?
-    ProjectTracker.dormant.where(id: id).exists? && !considered_ongoing?
+    return false if considered_ongoing?
+    return false if capsule_complete_by_statuses?
+    last_end = date_from_snapshot_key("last_forecast_assignment_end_date")
+    return false unless last_end
+    last_end < (Date.today - 1.month)
+  end
+
+  private def capsule_complete_by_statuses?
+    pc = project_capsule
+    pc.present? &&
+      pc.client_feedback_survey_status.present? &&
+      pc.internal_marketing_status.present? &&
+      pc.capsule_status.present? &&
+      pc.project_satisfaction_survey_status.present?
   end
 
   def forecast_projects
@@ -676,22 +689,24 @@ class ProjectTracker < ApplicationRecord
   end
 
   def work_status
-    if work_completed_at.nil?
-      if likely_complete?
-        :likely_complete
+    return @_work_status if defined?(@_work_status)
+    @_work_status =
+      if work_completed_at.nil?
+        if likely_complete?
+          :likely_complete
+        else
+          :in_progress
+        end
       else
-        :in_progress
+        if (
+          project_capsule.present? &&
+          project_capsule.complete?
+        )
+          :complete
+        else
+          :capsule_pending
+        end
       end
-    else
-      if (
-        project_capsule.present? &&
-        project_capsule.complete?
-      )
-        :complete
-      else
-        :capsule_pending
-      end
-    end
   end
 
   def status

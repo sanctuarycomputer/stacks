@@ -1,14 +1,12 @@
 require "test_helper"
 
 class ProjectTrackerTest < ActiveSupport::TestCase
-  test "likely_complete? is true when in dormant scope and name is not ongoing or retainer" do
+  test "likely_complete? is true when snapshot end date is old and capsule is not complete" do
     pt = ProjectTracker.new(name: "Client Project")
     pt.save!(validate: false)
-
-    chain = mock("chain")
-    ProjectTracker.expects(:dormant).returns(chain)
-    chain.expects(:where).with(id: pt.id).returns(chain)
-    chain.expects(:exists?).returns(true)
+    pt.update_column(:snapshot, {
+      "last_forecast_assignment_end_date" => (Date.today - 2.months).iso8601,
+    })
 
     assert_predicate pt, :likely_complete?
   end
@@ -16,25 +14,46 @@ class ProjectTrackerTest < ActiveSupport::TestCase
   test "likely_complete? is false when name matches considered_ongoing?" do
     pt = ProjectTracker.new(name: "Something ongoing")
     pt.save!(validate: false)
-
-    chain = mock("chain")
-    ProjectTracker.expects(:dormant).returns(chain)
-    chain.expects(:where).with(id: pt.id).returns(chain)
-    chain.expects(:exists?).returns(true)
+    pt.update_column(:snapshot, {
+      "last_forecast_assignment_end_date" => (Date.today - 2.months).iso8601,
+    })
 
     assert_not pt.likely_complete?
   end
 
-  test "likely_complete? is false when not in dormant scope" do
+  test "likely_complete? is false when snapshot end date is recent" do
     pt = ProjectTracker.new(name: "Client Project")
     pt.save!(validate: false)
-
-    chain = mock("chain")
-    ProjectTracker.expects(:dormant).returns(chain)
-    chain.expects(:where).with(id: pt.id).returns(chain)
-    chain.expects(:exists?).returns(false)
+    pt.update_column(:snapshot, {
+      "last_forecast_assignment_end_date" => Date.today.iso8601,
+    })
 
     assert_not pt.likely_complete?
+  end
+
+  test "likely_complete? is false when snapshot end date is missing" do
+    pt = ProjectTracker.new(name: "Client Project")
+    pt.save!(validate: false)
+    pt.update_column(:snapshot, {})
+
+    assert_not pt.likely_complete?
+  end
+
+  test "likely_complete? is false when project_capsule has all four statuses set" do
+    pt = ProjectTracker.new(name: "Client Project")
+    pt.save!(validate: false)
+    pt.update_column(:snapshot, {
+      "last_forecast_assignment_end_date" => (Date.today - 2.months).iso8601,
+    })
+    ProjectCapsule.create!(
+      project_tracker: pt,
+      client_feedback_survey_status: :no_response_from_client,
+      internal_marketing_status: :opt_out_out_of_publishing_a_case_study,
+      capsule_status: :opt_out_of_sharing_project_capsule_with_garden3d,
+      project_satisfaction_survey_status: :opt_out_of_internal_project_team_satisfaction_survey,
+    )
+
+    assert_not pt.reload.likely_complete?
   end
 
   test "dormant scope filters on snapshot last_forecast_assignment_end_date" do
