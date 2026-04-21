@@ -64,6 +64,15 @@ ActiveAdmin.register ProjectTracker do
         { project_lead_periods: :admin_user }
       )
     end
+
+    def collection
+      c = super
+      if action_name == "index" && !@_edge_assignments_cached
+        ProjectTracker.batch_cache_edge_recorded_assignments!(c.to_a)
+        @_edge_assignments_cached = true
+      end
+      c
+    end
   end
 
   index download_links: false, title: "Projects" do

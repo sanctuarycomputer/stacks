@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_04_20_130000) do
+ActiveRecord::Schema.define(version: 2026_04_21_163607) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -223,6 +223,7 @@ ActiveRecord::Schema.define(version: 2026_04_20_130000) do
     t.index ["person_id", "project_id", "start_date", "end_date"], name: "idx_assignments_on_person_project_and_daterange", using: :gist
     t.index ["person_id", "start_date", "end_date"], name: "idx_assignments_on_person_and_daterange", using: :gist
     t.index ["person_id"], name: "index_forecast_assignments_on_person_id"
+    t.index ["project_id", "end_date"], name: "index_forecast_assignments_on_project_id_and_end_date"
     t.index ["project_id", "start_date", "end_date"], name: "idx_assignments_on_project_and_daterange", using: :gist
     t.index ["project_id", "start_date"], name: "index_forecast_assignments_on_project_id_and_start_date"
     t.index ["project_id"], name: "index_forecast_assignments_on_project_id"
