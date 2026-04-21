@@ -36,4 +36,11 @@ class ProjectTrackerTest < ActiveSupport::TestCase
 
     assert_not pt.likely_complete?
   end
+
+  test "in_progress scope uses SQL subqueries instead of materializing complete and dormant ids" do
+    sql = ProjectTracker.in_progress.to_sql
+    not_in_selects = sql.scan(/NOT IN \(SELECT/)
+    assert_operator not_in_selects.size, :>=, 2,
+      "expected chained NOT IN subqueries (avoid splat [*complete, *dormant] loading all rows in Ruby)"
+  end
 end

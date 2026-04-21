@@ -62,15 +62,21 @@ class ProjectTracker < ApplicationRecord
   }
 
   scope :in_progress, -> {
-    where.not(id: [*complete, *dormant])
+    where.not(id: complete)
+      .where.not(id: dormant)
   }
 
   scope :dormant, -> {
-    where.not(id: complete)
+    # Dedupe join duplicates via subquery so the outer query stays plain SELECT ... ORDER BY
+    # (PostgreSQL: SELECT DISTINCT + ORDER BY non-select-list cols is invalid).
+    inner = ProjectTracker.where.not(id: complete)
       .joins(forecast_projects: :forecast_assignments)
       .where('forecast_assignments.end_date = (SELECT MAX(end_date) FROM forecast_assignments fa2 INNER JOIN project_tracker_forecast_projects ptfp2 ON fa2.project_id = ptfp2.forecast_project_id WHERE ptfp2.project_tracker_id = project_trackers.id)')
       .where('forecast_assignments.end_date < ?', Date.today - 1.month)
+      .select(:id)
       .distinct
+
+    where(id: inner)
   }
 
   def capsule_complete?
