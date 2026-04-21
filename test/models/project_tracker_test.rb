@@ -48,4 +48,16 @@ class ProjectTrackerTest < ActiveSupport::TestCase
     assert_predicate sql, :present?
     assert_includes sql, "project_trackers"
   end
+
+  test "first_recorded_assignment_start_date and last_recorded_assignment_end_date read snapshot when set" do
+    pt = ProjectTracker.new(name: "Snapshot bounds")
+    pt.save!(validate: false)
+    pt.update_column(:snapshot, {
+      "first_forecast_assignment_start_date" => "2024-01-10",
+      "last_forecast_assignment_end_date" => "2024-06-30",
+    })
+
+    assert_equal Date.new(2024, 1, 10), pt.reload.first_recorded_assignment_start_date
+    assert_equal Date.new(2024, 6, 30), pt.last_recorded_assignment_end_date
+  end
 end

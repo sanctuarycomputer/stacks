@@ -94,7 +94,7 @@ ActiveAdmin.register ProjectTracker do
         end
       end
       column :last_recorded_assignment do |pt|
-        pt.last_recorded_assignment.try(:end_date)
+        pt.last_recorded_assignment_end_date
       end
     end
 
@@ -203,9 +203,9 @@ ActiveAdmin.register ProjectTracker do
     accounting_method = session[:accounting_method] || "cash"
 
     start_date =
-      resource.first_recorded_assignment&.start_date&.iso8601 || DateTime.now.iso8601
+      resource.first_recorded_assignment_start_date&.iso8601 || DateTime.now.iso8601
     end_date =
-      resource.last_recorded_assignment&.end_date&.iso8601 || DateTime.now.iso8601
+      resource.last_recorded_assignment_end_date&.iso8601 || DateTime.now.iso8601
 
     income_data = [
       *resource.invoice_trackers,

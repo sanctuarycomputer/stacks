@@ -6,7 +6,7 @@ class OldDealProjectSafetyRepresentativePeriod < ApplicationRecord
   belongs_to :studio
 
   def period_started_at
-    started_at || (project_tracker.first_recorded_assignment && project_tracker.first_recorded_assignment.start_date) || Date.today
+    started_at || project_tracker.first_recorded_assignment_start_date || Date.today
   end
 
   def sibling_periods

@@ -88,6 +88,30 @@ class ProjectTracker < ApplicationRecord
     ProjectTracker.dormant.reject(&:considered_ongoing?)
   end
 
+  # Sets @_first_recorded_assignment and @_last_recorded_assignment from one
+  # ForecastAssignment query per batch (min/max start_date and end_date across each
+  # tracker’s linked forecast projects). Call after forecast_projects are preloaded.
+  def self.batch_cache_edge_recorded_assignments!(project_trackers)
+    list = Array(project_trackers).compact
+    return if list.empty?
+
+    all_fp_ids = list.flat_map { |t| t.forecast_projects.map(&:forecast_id) }.compact.uniq
+    return if all_fp_ids.empty?
+
+    assignments = ForecastAssignment.where(project_id: all_fp_ids).to_a
+    list.each do |pt|
+      fpids = pt.forecast_projects.map { |fp| fp.forecast_id.to_i }.to_set
+      rel = assignments.select { |a| fpids.include?(a.project_id.to_i) }
+      if rel.empty?
+        pt.instance_variable_set(:@_first_recorded_assignment, nil)
+        pt.instance_variable_set(:@_last_recorded_assignment, nil)
+      else
+        pt.instance_variable_set(:@_first_recorded_assignment, rel.min_by(&:start_date))
+        pt.instance_variable_set(:@_last_recorded_assignment, rel.max_by(&:end_date))
+      end
+    end
+  end
+
   def likely_complete?
     ProjectTracker.dormant.where(id: id).exists? && !considered_ongoing?
   end
@@ -111,11 +135,11 @@ class ProjectTracker < ApplicationRecord
 
   def likely_should_be_marked_as_completed?
     return false if considered_ongoing?
-    if last_recorded_assignment
-      last_recorded_assignment.end_date < (Date.today -  1.month)
-    else
-      false
-    end
+
+    last_end = last_recorded_assignment_end_date
+    return false unless last_end
+
+    last_end < (Date.today - 1.month)
   end
 
   def latest_forecast_to_runn_sync_task
@@ -153,7 +177,7 @@ class ProjectTracker < ApplicationRecord
   end
 
   def has_recorded_hours_after_today?
-    (last_recorded_assignment.try(:end_date) || Date.today) > Date.today
+    (last_recorded_assignment_end_date || Date.today) > Date.today
   end
 
   def has_msa_and_sow_links
@@ -264,9 +288,11 @@ class ProjectTracker < ApplicationRecord
         acc
       end
 
+    assignment_range_start, assignment_range_end = assignment_bounds_from_forecast_table
+
     snapshot = (
-      (self.first_recorded_assignment.try(:start_date) || Date.today)..
-      [(self.last_recorded_assignment.try(:end_date) || Date.today), today].min
+      assignment_range_start..
+      [assignment_range_end, today].min
     ).reduce({
       generated_at: DateTime.now.iso8601,
       hours: [],
@@ -301,10 +327,8 @@ class ProjectTracker < ApplicationRecord
       acc
     end
 
-    snapshot["first_forecast_assignment_start_date"] =
-      first_recorded_assignment&.start_date&.iso8601
-    snapshot["last_forecast_assignment_end_date"] =
-      last_recorded_assignment&.end_date&.iso8601
+    snapshot["first_forecast_assignment_start_date"] = assignment_range_start.iso8601
+    snapshot["last_forecast_assignment_end_date"] = assignment_range_end.iso8601
 
     update_attribute('snapshot', snapshot)
   end
@@ -505,20 +529,23 @@ class ProjectTracker < ApplicationRecord
     )
   end
 
+  # Prefers bounds persisted on snapshot by generate_snapshot!; falls back to querying Forecast.
+  def first_recorded_assignment_start_date
+    date_from_snapshot_key("first_forecast_assignment_start_date") ||
+      first_recorded_assignment&.start_date
+  end
+
+  def last_recorded_assignment_end_date
+    date_from_snapshot_key("last_forecast_assignment_end_date") ||
+      last_recorded_assignment&.end_date
+  end
+
   def start_date
-    (
-      first_recorded_assignment ?
-      first_recorded_assignment.start_date :
-      Date.today
-    )
+    first_recorded_assignment_start_date || Date.today
   end
 
   def end_date
-    (
-      last_recorded_assignment ?
-      last_recorded_assignment.end_date :
-      Date.today
-    )
+    last_recorded_assignment_end_date || Date.today
   end
 
   def lifetime_value
@@ -571,7 +598,9 @@ class ProjectTracker < ApplicationRecord
         .includes(forecast_person: [admin_user: :full_time_periods])
         .where(project_id: forecast_projects.map(&:forecast_id))
 
-    (start_date..end_date).reduce(monthly_cosr) do |acc, date|
+    cosr_range_start, cosr_range_end = assignment_bounds_from_forecast_table
+
+    (cosr_range_start..cosr_range_end).reduce(monthly_cosr) do |acc, date|
       assignments.where('end_date >= ? AND start_date <= ?', date, date).each do |fa|
         admin_user = fa.forecast_person.try(:admin_user)
         next acc unless admin_user.present?
@@ -681,25 +710,43 @@ class ProjectTracker < ApplicationRecord
   end
 
   def first_recorded_assignment
-    @_first_recorded_assignment ||= (
-      forecast_project_ids = forecast_projects.map(&:forecast_id)
-      ForecastAssignment
-        .where(project_id: forecast_project_ids)
-        .order(start_date: :asc)
-        .limit(1)
-        .first
-    )
+    return @_first_recorded_assignment if instance_variable_defined?(:@_first_recorded_assignment)
+
+    forecast_project_ids = forecast_projects.map(&:forecast_id)
+    @_first_recorded_assignment = ForecastAssignment
+      .where(project_id: forecast_project_ids)
+      .order(start_date: :asc)
+      .limit(1)
+      .first
   end
 
   def last_recorded_assignment
-    @_last_recorded_assignment ||= (
-      forecast_project_ids = forecast_projects.map(&:forecast_id)
-      ForecastAssignment
-        .where(project_id: forecast_project_ids)
-        .order(end_date: :desc)
-        .limit(1)
-        .first
-    )
+    return @_last_recorded_assignment if instance_variable_defined?(:@_last_recorded_assignment)
+
+    forecast_project_ids = forecast_projects.map(&:forecast_id)
+    @_last_recorded_assignment = ForecastAssignment
+      .where(project_id: forecast_project_ids)
+      .order(end_date: :desc)
+      .limit(1)
+      .first
+  end
+
+  private def date_from_snapshot_key(key)
+    raw = snapshot[key]
+    return nil if raw.blank?
+
+    Date.iso8601(raw.to_s)
+  rescue ArgumentError
+    nil
+  end
+
+  # Bounds read live from Forecast (used by generate_snapshot! and monthly_cosr so we never
+  # use stale snapshot JSON while regenerating).
+  private def assignment_bounds_from_forecast_table
+    [
+      first_recorded_assignment&.start_date || Date.today,
+      last_recorded_assignment&.end_date || Date.today
+    ]
   end
 
   def income

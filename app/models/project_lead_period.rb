@@ -16,11 +16,11 @@ class ProjectLeadPeriod < ApplicationRecord
   end
 
   def period_started_at
-    started_at || project_tracker.first_recorded_assignment&.start_date || Date.today
+    started_at || project_tracker.first_recorded_assignment_start_date || Date.today
   end
 
   def period_ended_at
-    ended_at || project_tracker.last_recorded_assignment&.end_date || Date.today
+    ended_at || project_tracker.last_recorded_assignment_end_date || Date.today
   end
 
   def current?

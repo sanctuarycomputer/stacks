@@ -192,15 +192,28 @@ class AdminUser < ApplicationRecord
       #   end
       # end
 
-      ProjectLeadPeriod.includes(project_tracker: :project_capsule).where(admin_user: self).each do |tl|
-        pt = tl.project_tracker
-        next unless pt.current_project_leads.include?(self)
-        if pt.work_completed_at.present? && pt.work_status == :capsule_pending
-          task = {
-            type: :project_capsule_incomplete,
-            subject: pt,
-          }
-          tasks << task unless tasks.include?(task)
+      lead_periods = ProjectLeadPeriod.where(admin_user: self).to_a
+      unless lead_periods.empty?
+        tracker_ids = lead_periods.map(&:project_tracker_id).uniq
+        trackers_by_id = ProjectTracker.where(id: tracker_ids).includes(
+          :forecast_projects,
+          { project_lead_periods: :admin_user },
+          { project_capsule: :project_satisfaction_survey }
+        ).index_by(&:id)
+
+        ProjectTracker.batch_cache_edge_recorded_assignments!(trackers_by_id.values)
+
+        lead_periods.each do |tl|
+          pt = trackers_by_id[tl.project_tracker_id]
+          next unless pt
+          next unless pt.current_project_leads.include?(self)
+          if pt.work_completed_at.present? && pt.work_status == :capsule_pending
+            task = {
+              type: :project_capsule_incomplete,
+              subject: pt,
+            }
+            tasks << task unless tasks.include?(task)
+          end
         end
       end
 
