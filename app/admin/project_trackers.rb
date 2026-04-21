@@ -89,38 +89,38 @@ ActiveAdmin.register ProjectTracker do
   end
 
   index download_links: [:csv], title: "Projects" do
-    column :considered_successful?
+    #column :considered_successful?
 
-    if params["scope"] == "complete"
-      column :project_satisfaction_survey do |pt|
-        survey = pt&.project_capsule&.project_satisfaction_survey
-        if survey&.closed_at&.present?
-          raw = survey.score || survey.overall_rating_from_question_responses
-          score = raw.nil? ? nil : raw.to_f.round(1)
-          if score.nil?
-            span("No responses", class: "pill error")
-          else
-            pill_class =
-              if score >= 4.5
-                "exceptional"
-              elsif score >= 3.5
-                "healthy"
-              elsif score >= 2.5
-                "at_risk"
-              else
-                "failing"
-              end
+    # if params["scope"] == "complete"
+    #   column :project_satisfaction_survey do |pt|
+    #     survey = pt&.project_capsule&.project_satisfaction_survey
+    #     if survey&.closed_at&.present?
+    #       raw = survey.score || survey.overall_rating_from_question_responses
+    #       score = raw.nil? ? nil : raw.to_f.round(1)
+    #       if score.nil?
+    #         span("No responses", class: "pill error")
+    #       else
+    #         pill_class =
+    #           if score >= 4.5
+    #             "exceptional"
+    #           elsif score >= 3.5
+    #             "healthy"
+    #           elsif score >= 2.5
+    #             "at_risk"
+    #           else
+    #             "failing"
+    #           end
 
-            span("#{score} / 5", class: "pill #{pill_class}")
-          end
-        else
-          "No survey"
-        end
-      end
-      column :last_recorded_assignment do |pt|
-        pt.last_recorded_assignment.try(:end_date)
-      end
-    end
+    #         span("#{score} / 5", class: "pill #{pill_class}")
+    #       end
+    #     else
+    #       "No survey"
+    #     end
+    #   end
+    #   column :last_recorded_assignment do |pt|
+    #     pt.last_recorded_assignment.try(:end_date)
+    #   end
+    # end
 
     column :name
 
@@ -151,12 +151,12 @@ ActiveAdmin.register ProjectTracker do
         end
       ])
     end
-    column :budget_status do |resource|
-      span(resource.status.to_s.humanize.capitalize, class: "pill #{resource.status}")
-    end
-    column :work_status do |resource|
-      span(resource.work_status.to_s.humanize.capitalize, class: "pill #{resource.work_status}")
-    end
+    # column :budget_status do |resource|
+    #   span(resource.status.to_s.humanize.capitalize, class: "pill #{resource.status}")
+    # end
+    # column :work_status do |resource|
+    #   span(resource.work_status.to_s.humanize.capitalize, class: "pill #{resource.work_status}")
+    # end
     column :forecast_projects do |resource|
       if resource.forecast_projects.any?
         div(

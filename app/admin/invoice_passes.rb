@@ -2,8 +2,15 @@ ActiveAdmin.register InvoicePass do
   menu label: "Invoicing", parent: "Money"
   config.filters = false
   config.sort_order = 'start_of_month_desc'
-  config.paginate = false
+  config.paginate = true
+  config.per_page = 12
   actions :index, :show
+
+  controller do
+    def scoped_collection
+      super.includes(invoice_trackers: [:qbo_invoice, :contributor_payouts])
+    end
+  end
 
   action_item :rerun_invoice_pass, only: :show do
     link_to 'Send Reminders',
