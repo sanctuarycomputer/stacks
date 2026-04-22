@@ -548,16 +548,16 @@ class ProjectTracker < ApplicationRecord
       .reverse
   end
 
-  def last_week_value
+  def trailing_7_days_value
     total_value_during_range(
-      Date.today - 1.week,
+      Date.today - 6.days,
       Date.today
     )
   end
 
-  def last_month_value
+  def trailing_30_days_value
     total_value_during_range(
-      Date.today - 1.month,
+      Date.today - 29.days,
       Date.today
     )
   end

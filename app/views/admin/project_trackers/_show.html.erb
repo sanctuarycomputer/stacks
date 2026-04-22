@@ -331,13 +331,13 @@ Budget: <%= number_to_currency(budget_high_end) %>
 </table>
 
 
-<% if @project_tracker.last_month_value > 0 %>
+<% if @project_tracker.trailing_30_days_value > 0 %>
   <div class="dashboard-modules table index_table index">
     <div class="dashboard-module">
       <div class="module-body factoid-parent">
         <div class="factoid">
-          <h2><%= number_to_currency(@project_tracker.last_month_value) %></h2>
-          <p>Last month's spend</p>
+          <h2><%= number_to_currency(@project_tracker.trailing_30_days_value) %></h2>
+          <p>Spend over trailing 30 days</p>
         </div>
       </div>
     </div>
@@ -348,9 +348,9 @@ Budget: <%= number_to_currency(budget_high_end) %>
           <div class="factoid">
               <% if inbudget_overage == 0 %>
                 <h2 style="line-height: 32px; margin-bottom: 8px;">
-                  <%= ((budget_low_end - current_spend) / @project_tracker.last_week_value).round(1) %> weeks
+                  <%= ((budget_low_end - current_spend) / @project_tracker.trailing_7_days_value).round(1) %> weeks
                   <span style="font-size:16px;">or</span>
-                  <%= ((budget_low_end - current_spend) / @project_tracker.last_month_value).round(1) %> months
+                  <%= ((budget_low_end - current_spend) / @project_tracker.trailing_30_days_value).round(1) %> months
                 </h2>
                 <% if budget_low_end == budget_high_end %>
                   <p>Remaining in <strong class="color-red">Budget High End</strong> <a target="_blank" href="https://www.notion.so/garden3d/WIP-Stacks-Manual-71dbbc83d5a446ca998f8cd7b68f5c3b?pvs=4#24345066edd04483ae00f1ae4c5bd0ba">(based on recent spending ↗)</a></p>
@@ -364,9 +364,9 @@ Budget: <%= number_to_currency(budget_high_end) %>
                 <p>Overbudget</p>
               <% else %>
                 <h2 style="line-height: 32px; margin-bottom: 8px;">
-                  <%= ((budget_high_end - current_spend) / @project_tracker.last_week_value).round(1) %> weeks
+                  <%= ((budget_high_end - current_spend) / @project_tracker.trailing_7_days_value).round(1) %> weeks
                   <span style="font-size:16px;">or</span>
-                  <%= ((budget_high_end - current_spend) / @project_tracker.last_month_value).round(1) %> months
+                  <%= ((budget_high_end - current_spend) / @project_tracker.trailing_30_days_value).round(1) %> months
                 </h2>
                 <p>Remaining in <strong class="color-red">Budget High End</strong> <a target="_blank" href="https://www.notion.so/garden3d/WIP-Stacks-Manual-71dbbc83d5a446ca998f8cd7b68f5c3b?pvs=4#24345066edd04483ae00f1ae4c5bd0ba">(based on recent spending ↗)</a></p>
               <% end %>
@@ -434,8 +434,8 @@ Budget: <%= number_to_currency(budget_high_end) %>
         </div>
       </th>
       <th class="col">Rate</th>
-      <th class="col">Hours (Last Week)</th>
-      <th class="col">Hours (Last Month)</th>
+      <th class="col">Hours (Trailing 7 days)</th>
+      <th class="col">Hours (Trailing 30 days)</th>
       <th class="col">Hours (Total)</th>
       <th class="col text-right">Spend (Total)</th>
     </tr>
@@ -452,10 +452,10 @@ Budget: <%= number_to_currency(budget_high_end) %>
           <%= number_to_currency(fp.hourly_rate) %>
         </td>
         <td class="col">
-          <%= fp.total_hours_during_range(Date.today - 1.week, Date.today) %>
+          <%= fp.total_hours_during_range(Date.today - 6.days, Date.today) %>
         </td>
         <td class="col">
-          <%= fp.total_hours_during_range(Date.today - 1.month, Date.today) %>
+          <%= fp.total_hours_during_range(Date.today - 29.days, Date.today) %>
         </td>
         <td class="col">
           <%= fp.total_hours %>
