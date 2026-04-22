@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_04_21_163607) do
+ActiveRecord::Schema.define(version: 2026_04_22_115949) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -332,6 +332,7 @@ ActiveRecord::Schema.define(version: 2026_04_21_163607) do
     t.text "notes"
     t.date "allow_early_contributor_payouts_on"
     t.decimal "company_treasury_split", default: "0.3"
+    t.datetime "reviewers_last_notified_at"
     t.index ["admin_user_id"], name: "index_invoice_trackers_on_admin_user_id"
     t.index ["forecast_client_id", "invoice_pass_id"], name: "idx_invoice_trackers_on_forecast_client_id_and_invoice_pass_id", unique: true
     t.index ["forecast_client_id"], name: "index_invoice_trackers_on_forecast_client_id"

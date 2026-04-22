@@ -14,6 +14,31 @@ ActiveAdmin.register InvoiceTracker do
     )
   end
 
+  action_item :notify_reviewers, only: :show, if: proc {
+    current_admin_user.is_admin? || resource.admin_user == current_admin_user
+  } do
+    if resource.sent?
+      link_to(
+        "Notify Reviewers",
+        "#",
+        onclick: "alert('This invoice has already been sent. Reviewers will not be notified.'); return false;"
+      )
+    else
+      last_label =
+        if resource.reviewers_last_notified_at
+          " (last: #{time_ago_in_words(resource.reviewers_last_notified_at)} ago)"
+        else
+          ""
+        end
+      link_to(
+        "Notify Reviewers#{last_label}",
+        notify_reviewers_admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource),
+        method: :post,
+        data: { confirm: "Send a 24-hour review reminder to all Account Leads and Project Leads on the connected Project Trackers?" }
+      )
+    end
+  end
+
   member_action :toggle_contributor_payout_acceptance, method: :post do
     cp = ContributorPayout.find(params[:contributor_payout_id])
     return unless cp.contributor.forecast_person.try(:admin_user) == current_admin_user || current_admin_user.is_admin?
@@ -38,6 +63,101 @@ ActiveAdmin.register InvoiceTracker do
         notice: "Claimed!",
       )
     end
+  end
+
+  member_action :notify_reviewers, method: :post do
+    unless current_admin_user.is_admin? || resource.admin_user == current_admin_user
+      return redirect_back(
+        fallback_location: admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource),
+        alert: "Not authorized to notify reviewers."
+      )
+    end
+
+    if resource.qbo_invoice.nil?
+      return redirect_back(
+        fallback_location: admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource),
+        alert: "Can't notify reviewers — this invoice hasn't been generated yet."
+      )
+    end
+
+    if resource.sent?
+      return redirect_back(
+        fallback_location: admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource),
+        alert: "This invoice has already been sent. Reviewers will NOT be notified."
+      )
+    end
+
+    month = resource.invoice_pass.start_of_month
+    host = "https://stacks.garden3d.net"
+    invoice_link = Rails.application.routes.url_helpers.admin_invoice_pass_invoice_tracker_url(
+      resource.invoice_pass, resource, host: host
+    )
+
+    twist = Stacks::Twist.new
+    twist_users_by_email =
+      twist.get_workspace_users.parsed_response.index_by { |u| u["email"] }
+    admin_twist_users =
+      AdminUser.admin.map { |a| twist_users_by_email[a.email] }.compact
+
+    sent = []
+    skipped = []
+
+    resource.project_trackers.each do |pt|
+      al = pt.account_lead_for_month(month)
+      pl = pt.project_lead_for_month(month)
+
+      if al.nil? && pl.nil?
+        skipped << "#{pt.name} (no Account Lead or Project Lead set)"
+        next
+      end
+
+      al_twist = al && twist_users_by_email[al.email]
+      pl_twist = pl && twist_users_by_email[pl.email]
+
+      # Primary is the AL when present; otherwise fall back to PL.
+      primary_twist = al_twist || pl_twist
+      if primary_twist.nil?
+        skipped << "#{pt.name} (reviewers not on Twist: #{[al&.email, pl&.email].compact.join(", ")})"
+        next
+      end
+
+      participant_ids = ([primary_twist, pl_twist, al_twist, *admin_twist_users]
+        .compact
+        .uniq { |u| u["id"] }
+        .map { |u| u["id"] })
+        .join(",")
+
+      mention = "[#{primary_twist["name"]}](twist-mention://#{primary_twist["id"]})"
+      pt_url = Rails.application.routes.url_helpers.admin_project_tracker_url(pt, host: host)
+
+      body = <<~HEREDOC
+        💸 Hi #{mention}!
+
+        The [invoice](#{invoice_link}) for **#{pt.name}** (#{month.strftime("%B %Y")}) is ready for your review. We will send this invoice in 24 hours. If anything looks off, please flag it now.
+
+        **→ If you miss this window, it will be sent without your approval and can no longer be modified.**
+
+        ☝️ All Contributor Payouts will be derived from this invoice, so it's important to get this right *before* it's sent.
+
+        Thanks!
+      HEREDOC
+
+      conversation = twist.get_or_create_conversation(participant_ids)
+      twist.add_message_to_conversation(conversation["id"], body)
+      sent << "#{pt.name} → @#{primary_twist["name"]}"
+      sleep(0.1) # be kind to the Twist API
+    end
+
+    resource.update!(reviewers_last_notified_at: Time.current) if sent.any?
+
+    flash_msg = []
+    flash_msg << "Sent #{sent.length}: #{sent.join("; ")}" if sent.any?
+    flash_msg << "Skipped: #{skipped.join("; ")}" if skipped.any?
+
+    redirect_back(
+      fallback_location: admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource),
+      notice: flash_msg.join(" — ").presence || "Nothing to send."
+    )
   end
 
   member_action :attempt_generate, method: :post do
@@ -89,6 +209,13 @@ ActiveAdmin.register InvoiceTracker do
     column :payout_status do |resource|
       span(resource.contributor_payouts_status.to_s.humanize, class: "pill #{resource.contributor_payouts_status}")
     end
+    column "Reviewers Notified" do |resource|
+      if resource.reviewers_last_notified_at
+        "#{time_ago_in_words(resource.reviewers_last_notified_at)} ago"
+      else
+        span("Not yet", class: "pill error")
+      end
+    end
     column :owner do |resource|
       if resource.admin_user.present?
         resource.admin_user
@@ -97,19 +224,41 @@ ActiveAdmin.register InvoiceTracker do
       end
     end
     actions do |resource|
+      links = []
+
       if resource.admin_user.nil?
-        link_to(
+        links << link_to(
           "Claim ↗",
           toggle_ownership_admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource),
           method: :post
         )
       elsif resource.admin_user == current_admin_user
-        link_to(
+        links << link_to(
           "Unclaim ↗",
           toggle_ownership_admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource),
           method: :post
         )
       end
+
+      if current_admin_user.is_admin? || resource.admin_user == current_admin_user
+        label = resource.reviewers_last_notified_at ? "Re-Notify ↗" : "Notify ↗"
+        links << if resource.sent?
+          link_to(
+            label,
+            "#",
+            onclick: "alert('This invoice has already been sent. Reviewers will not be notified.'); return false;"
+          )
+        else
+          link_to(
+            label,
+            notify_reviewers_admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource),
+            method: :post,
+            data: { confirm: "Send a 24-hour review reminder to all Account Leads and Project Leads on the connected Project Trackers?" }
+          )
+        end
+      end
+
+      safe_join(links, " ")
     end
   end
 

@@ -128,6 +128,10 @@ class InvoiceTracker < ApplicationRecord
     end
   end
 
+  def sent?
+    qbo_invoice&.email_status == "EmailSent"
+  end
+
   def forecast_project_ids
     return [] if blueprint.nil?
     blueprint["lines"].values.map{|l| l["forecast_project"]}
