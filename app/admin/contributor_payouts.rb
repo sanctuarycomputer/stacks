@@ -2,7 +2,7 @@ ActiveAdmin.register ContributorPayout do
   config.filters = false
   config.paginate = false
   actions :index, :new, :show, :edit, :update, :create, :destroy
-  permit_params :contributor_id, :amount, :description, :created_by_id, :blueprint
+  permit_params :contributor_id, :amount, :description, :created_by_id, :blueprint, :skip_seventy_percent_check
   menu false
 
   belongs_to :invoice_tracker
@@ -38,6 +38,31 @@ ActiveAdmin.register ContributorPayout do
     return redirect_to(
       admin_invoice_tracker_contributor_payout_path(cp.invoice_tracker, cp),
       notice: "Success",
+    )
+  end
+
+  member_action :remap_blueprint_entry, method: :post do
+    return redirect_to(
+      admin_invoice_tracker_contributor_payout_path(resource.invoice_tracker, resource),
+      alert: "Admins only."
+    ) unless current_admin_user.is_admin?
+
+    begin
+      resource.remap_blueprint_entry!(
+        role: params[:role],
+        index: params[:index].to_i,
+        new_line_item_id: params[:new_line_item_id]
+      )
+    rescue => e
+      return redirect_to(
+        admin_invoice_tracker_contributor_payout_path(resource.invoice_tracker, resource),
+        alert: "Remap failed: #{e.message}"
+      )
+    end
+
+    redirect_to(
+      admin_invoice_tracker_contributor_payout_path(resource.invoice_tracker, resource),
+      notice: "Remapped #{params[:role]} ##{params[:index]} to QBO line ##{params[:new_line_item_id]}."
     )
   end
 
@@ -150,6 +175,10 @@ ActiveAdmin.register ContributorPayout do
 
       # Only show the blueprint editor if the user is an admin
       if current_admin_user.is_admin?
+        f.input :skip_seventy_percent_check,
+          as: :boolean,
+          label: "Skip 70% cap validation (one-time override, not persisted)",
+          hint: "Tick this to let this save proceed even if all contributor payouts on this invoice would exceed 70% of the invoice total. Only use when you understand why the cap is blocking an otherwise correct edit."
         f.input :blueprint, as: :json_editor, input_html: { style: { height: "600px" } }
       end
     end

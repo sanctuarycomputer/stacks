@@ -8,6 +8,10 @@ class ContributorPayout < ApplicationRecord
   belongs_to :created_by, class_name: 'AdminUser'
   belongs_to :qbo_bill, class_name: "QboBill", foreign_key: "qbo_bill_id", primary_key: "qbo_id", optional: true, dependent: :destroy
 
+  # Ephemeral flag — not persisted. Set via the admin edit form to bypass the
+  # 70% cap validation for a single save. Resets to nil on each fresh instance.
+  attr_accessor :skip_seventy_percent_check
+
   validates :amount, presence: true
   validate :contributor_payouts_within_seventy_percent
   validate :only_after_new_deal
@@ -93,11 +97,14 @@ class ContributorPayout < ApplicationRecord
   end
   private_class_method :parse_json_blueprint
 
-  # The only fields on a blueprint entry's metadata that readers consume:
+  # Fields preserved on blueprint entries:
   # - "id" → key into qbo_invoice.line_items for live surplus calc
   # - "forecast_project" → locate the ProjectTracker for surplus / monthly_cosr attribution
+  # - "forecast_person" → diagnostic. On IC entries, MUST equal cp.contributor.forecast_person.forecast_id;
+  #   drift signals a chunk has been moved or mismapped. On AL/PL entries, records the
+  #   IC whose work generated the billable — useful audit context for lead shares.
   def self.slim_metadata(m)
-    (m || {}).slice("id", "forecast_project")
+    (m || {}).slice("id", "forecast_project", "forecast_person")
   end
 
   # Returns a slim copy of a blueprint hash: drops qbo_line_item and trims metadata
@@ -115,6 +122,76 @@ class ContributorPayout < ApplicationRecord
         slim
       end
     end
+  end
+
+  # Repoints a single blueprint entry to a different QBO line item without touching
+  # `amount` or `description_line`. Used when a QBO invoice has been edited heavily
+  # and the stored line item id on a chunk no longer resolves (or resolves to the
+  # wrong line), causing calculate_surplus to compute against the wrong amount_billed.
+  #
+  # Also pulls forward `forecast_project` and `forecast_person` from the matching
+  # invoice_tracker.blueprint["lines"] entry so all three diagnostic fields stay
+  # aligned with the line the chunk now points at. An IC remap onto a line that
+  # was originally for a different contributor will then surface via the
+  # blueprint_integrity_errors check.
+  #
+  # Opportunistically slims the whole blueprint while we're writing — safe because
+  # slim only drops unused fields and preserves every entry's `amount`.
+  #
+  # Raises if the role/index/new_line_item_id are invalid so the UI can surface the
+  # error in a flash rather than silently no-op.
+  def remap_blueprint_entry!(role:, index:, new_line_item_id:)
+    bp = read_attribute(:blueprint)
+    raise "Blueprint is not a hash" unless bp.is_a?(Hash)
+
+    entries = bp[role]
+    raise "Role #{role.inspect} not found in blueprint" unless entries.is_a?(Array)
+    raise "Index #{index} out of bounds for #{role} (#{entries.length} entries)" unless (0...entries.length).cover?(index)
+
+    new_id = new_line_item_id.to_s
+    new_line = invoice_tracker.qbo_invoice&.line_items&.find { |li| li["id"].to_s == new_id }
+    raise "QBO line item ##{new_id} not found on this invoice" unless new_line
+
+    entry = entries[index]
+    entry["blueprint_metadata"] ||= {}
+    entry["blueprint_metadata"]["id"] = new_id
+
+    # Pull forecast_project and forecast_person from the invoice_tracker blueprint's
+    # line with the new id. If the QBO invoice has been edited so heavily that there's
+    # no matching invoice_tracker line, leave those fields alone.
+    it_lines = invoice_tracker.blueprint.is_a?(Hash) ? (invoice_tracker.blueprint["lines"] || {}).values : []
+    it_line = it_lines.find { |l| l["id"].to_s == new_id }
+    if it_line
+      entry["blueprint_metadata"]["forecast_project"] = it_line["forecast_project"] if it_line["forecast_project"]
+      entry["blueprint_metadata"]["forecast_person"] = it_line["forecast_person"] if it_line["forecast_person"]
+    end
+
+    slim_bp = self.class.slim_blueprint(bp)
+    update_columns(blueprint: slim_bp)
+    true
+  end
+
+  # Returns a list of human-readable strings describing integrity issues with the
+  # blueprint. Empty list = clean. Currently only checks IndividualContributor entries,
+  # where the stored forecast_person MUST equal this CP's contributor's forecast_person —
+  # any mismatch means the chunk got muddled onto the wrong CP (via manual edit,
+  # a botched remap, or a regen bug). Skipped for entries that lack the stored field
+  # (legacy slimmed records before backfill).
+  def blueprint_integrity_errors
+    errs = []
+    expected_fp = contributor&.forecast_person&.forecast_id
+    return errs if expected_fp.nil?
+
+    (blueprint["IndividualContributor"] || []).each_with_index do |ic, i|
+      next unless ic.is_a?(Hash)
+      stored_fp = ic.dig("blueprint_metadata", "forecast_person")
+      next if stored_fp.blank?
+      next if stored_fp.to_s == expected_fp.to_s
+
+      errs << "IndividualContributor ##{i}: blueprint forecast_person (#{stored_fp}) does not match this payout's contributor forecast_person (#{expected_fp}) — chunk may be mismapped."
+    end
+
+    errs
   end
 
   # Migrates THIS payout's blueprint to the slim shape in place. Idempotent —
@@ -163,6 +240,7 @@ class ContributorPayout < ApplicationRecord
       project_tracker = project_trackers.find{|pt| pt.forecast_project_ids.include?(blueprint_metadata.dig("forecast_project"))}
       {
         project_tracker: project_tracker,
+        contributor: contributor,
         surplus: surplus,
         actual: amount_paid,
         maximum: 0.57 * amount_billed,
@@ -225,6 +303,7 @@ class ContributorPayout < ApplicationRecord
   end
 
   def contributor_payouts_within_seventy_percent
+    return if ActiveModel::Type::Boolean.new.cast(skip_seventy_percent_check) # Ephemeral admin override
     return if changes.keys == ["accepted_at"] # Don't check if the payout is being accepted or unaccepted
 
     cps = invoice_tracker.contributor_payouts.include?(self) ? invoice_tracker.contributor_payouts : [*invoice_tracker.contributor_payouts, self]

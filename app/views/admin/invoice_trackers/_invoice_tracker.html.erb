@@ -218,7 +218,8 @@
         <th class="col">Payee</th>
         <th class="col">Status</th>
         <th class="col">Amount</th>
-        <th class="col">In Sync</th>
+        <th class="col">Reconciliation</th>
+        <th class="col">Integrity</th>
         <th class="col text-right">Details</th>
       </tr>
     </thead>
@@ -232,9 +233,9 @@
           </td>
           <td class="col">
             <% if cp.deleted_at.present? %>
-              <del><%= link_to cp.contributor.forecast_person.email, admin_forecast_person_path(cp.contributor.forecast_person) %></del>
+              <del><%= link_to cp.contributor.forecast_person.email, admin_contributor_path(cp.contributor) %></del>
             <% else %>
-              <%= link_to cp.contributor.forecast_person.email, admin_forecast_person_path(cp.contributor.forecast_person) %>
+              <%= link_to cp.contributor.forecast_person.email, admin_contributor_path(cp.contributor) %>
             <% end %>
           </td>
           <td class="col">
@@ -271,9 +272,19 @@
 
           </td>
           <td class="col">
-            <span class="pill <%= cp.in_sync? ? "in_sync" : "out_of_sync" %>">
-              <%= cp.in_sync? ? "In Sync" : "Out of Sync" %>
+            <span class="pill <%= cp.in_sync? ? "in_sync" : "out_of_sync" %>" title="Sum of blueprint entry amounts <%= cp.in_sync? ? "equals" : "does not equal" %> the payout's total amount">
+              <%= cp.in_sync? ? "Reconciled" : "Unreconciled" %>
             </span>
+          </td>
+          <td class="col">
+            <% integrity_errors = cp.blueprint_integrity_errors %>
+            <% if integrity_errors.any? %>
+              <span class="pill error" title="<%= integrity_errors.join(" | ") %>">
+                ⚠️ <%= integrity_errors.length %> <%= "error".pluralize(integrity_errors.length) %>
+              </span>
+            <% else %>
+              <span class="pill in_sync">✓ Clean</span>
+            <% end %>
           </td>
           <td class="col text-right">
             <%= link_to "Breakdown ↗", admin_invoice_tracker_contributor_payout_path(invoice_tracker, cp) %>
@@ -330,6 +341,7 @@
     <thead>
       <tr>
         <th class="col">Invoice Item</th>
+        <th class="col">Payee</th>
         <th class="col">Maximum Payout (57%)</th>
         <th class="col">Actual Payout</th>
         <th class="col text-right">Surplus</th>
@@ -340,6 +352,9 @@
         <tr class="<%= index.even? ? "even" : "odd" %>">
           <td class="col">
             <%= c.dig(:qbo_line_item, "description") %>
+          </td>
+          <td class="col">
+            <%= link_to c.dig(:contributor)&.forecast_person&.email, admin_contributor_path(c.dig(:contributor)) %>
           </td>
           <td class="col">
             <%= number_to_currency c[:maximum] %>
@@ -356,6 +371,7 @@
         <td class="col">
           <strong>TOTAL</strong>
         </td>
+        <td></td>
         <td></td>
         <td></td>
         <td class="col text-right">

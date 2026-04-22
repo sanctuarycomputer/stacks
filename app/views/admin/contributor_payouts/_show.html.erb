@@ -2,8 +2,8 @@
   <%= resource.accepted? ? "Accepted" : "Pending" %>
 </p>
 
-<p class="pill nag <%= resource.in_sync? ? "in_sync" : "out_of_sync" %>" style="margin-right: 6px">
-  <%= resource.in_sync? ? "In Sync" : "Out of Sync" %>
+<p class="pill nag <%= resource.in_sync? ? "in_sync" : "out_of_sync" %>" style="margin-right: 6px" title="Sum of blueprint entry amounts <%= resource.in_sync? ? "equals" : "does not equal" %> the payout's total amount">
+  <%= resource.in_sync? ? "Reconciled" : "Unreconciled" %>
 </p>
 
 <% if current_admin_user.has_led_projects? %>
@@ -25,6 +25,22 @@
   </a>
 <% end %>
 
+<% integrity_errors = resource.blueprint_integrity_errors %>
+<% if integrity_errors.any? %>
+  <div style="margin-top: 20px; padding: 12px 16px; background: #fff4e5; border: 1px solid #e69e3a; border-radius: 4px;">
+    <strong>⚠️ Blueprint integrity issues detected</strong>
+    <ul style="margin: 8px 0 0 20px;">
+      <% integrity_errors.each do |err| %>
+        <li><%= err %></li>
+      <% end %>
+    </ul>
+    <p style="margin: 8px 0 0; font-size: 0.9em; color: #7a4a1a;">
+      These mismatches suggest a chunk has been moved to the wrong payout. Review the
+      "Remap Blueprint Entries" table below and repoint affected entries to the correct QBO line.
+    </p>
+  </div>
+<% end %>
+
 <div class="dashboard-modules table index_table index" style="margin-top:20px;">
   <div class="dashboard-module">
     <div class="module-header">
@@ -35,3 +51,57 @@
     </div>
   </div>
 </div>
+
+<% qbo_line_items = resource.invoice_tracker.qbo_invoice&.line_items || [] %>
+<% if current_admin_user.is_admin? && qbo_line_items.any? %>
+  <div class="dashboard-modules table index_table index" style="margin-top:20px;">
+    <div class="dashboard-module" style="width: 100%;">
+      <div class="module-header">
+        <p>Remap Blueprint Entries</p>
+      </div>
+      <div class="module-body">
+        <p style="padding: 0 12px 8px; font-size: 0.9em; color: #666;">
+          If the QBO invoice has been edited and a blueprint entry points at the wrong line,
+          remap it here. Amount and description are preserved — only the QBO line pointer changes.
+        </p>
+        <table class="index_table index" style="width: 100%;">
+          <thead>
+            <tr>
+              <th>Role</th>
+              <th>Amount</th>
+              <th>Currently Mapped QBO Line</th>
+              <th>Remap To</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% ["IndividualContributor", "AccountLead", "ProjectLead", "TeamLead"].each do |role| %>
+              <% (resource.blueprint[role] || []).each_with_index do |entry, index| %>
+                <% current_id = entry.dig("blueprint_metadata", "id").to_s %>
+                <% current_line = qbo_line_items.find { |li| li["id"].to_s == current_id } %>
+                <tr>
+                  <td><strong><%= role %></strong> <span style="color:#999;">#<%= index %></span></td>
+                  <td><%= number_to_currency entry["amount"] %></td>
+                  <td>
+                    <% if current_line %>
+                      #<%= current_id %> — <%= current_line["description"] %>
+                    <% else %>
+                      <span class="pill error">No match (id=<%= current_id.presence || "nil" %>)</span>
+                    <% end %>
+                  </td>
+                  <td>
+                    <%= form_with url: remap_blueprint_entry_admin_invoice_tracker_contributor_payout_path(resource.invoice_tracker, resource), method: :post, local: true, data: { confirm: "Remap #{role} ##{index} to the selected QBO line? Amount and description are preserved." } do |f| %>
+                      <%= f.hidden_field :role, value: role %>
+                      <%= f.hidden_field :index, value: index %>
+                      <%= f.select :new_line_item_id, qbo_line_items.map { |li| ["##{li["id"]} — #{li["description"]}", li["id"]] }, { selected: current_id } %>
+                      <%= f.submit "Remap", style: "margin-left: 6px;" %>
+                    <% end %>
+                  </td>
+                </tr>
+              <% end %>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+<% end %>
