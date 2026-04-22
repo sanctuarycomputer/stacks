@@ -246,8 +246,9 @@ class ProjectTracker < ApplicationRecord
   def make_adhoc_snapshot(period = 7.days)
     preloaded_studios = Studio.all
 
+    # Trailing N days ending today (inclusive on both ends), e.g. period=7.days → 7 days.
     snapshot = (
-      (Date.today - period)..
+      (Date.today - period + 1.day)..
       Date.today
     ).reduce({
       hours: [],

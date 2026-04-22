@@ -249,7 +249,7 @@ async function copyToClipboard() {
   if (!navigator.clipboard) return alert('Could not copy.');
   try {
       await navigator.clipboard.writeText(`⏳ Hours Progress
-Last 7 days: <%= last_seven_days_snapshot[:hours_total] %> hours (<%= number_to_currency(last_seven_days_snapshot[:spend_total]) %>)
+Trailing 7 days: <%= last_seven_days_snapshot[:hours_total] %> hours (<%= number_to_currency(last_seven_days_snapshot[:spend_total]) %>)
 
 💹 Budgetary Progress
 Invoiced: <%= number_to_currency(income) %>
