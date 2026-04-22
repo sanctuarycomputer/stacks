@@ -25,6 +25,13 @@ ActiveAdmin.register ContributorPayout do
       method: :post
   end
 
+  action_item :migrate_blueprint, only: :show, if: proc { current_admin_user.is_admin? } do
+    link_to "Migrate Blueprint",
+      migrate_blueprint_admin_invoice_tracker_contributor_payout_path(resource.invoice_tracker, resource),
+      method: :post,
+      data: { confirm: "Migrate this payout's blueprint to the slim shape? This drops the redundant qbo_line_item blob and unused blueprint_metadata fields. Idempotent — safe to re-run." }
+  end
+
   member_action :sync_qbo_bill, method: :post do
     cp = ContributorPayout.find(params[:id])
     cp.sync_qbo_bill!
@@ -32,6 +39,38 @@ ActiveAdmin.register ContributorPayout do
       admin_invoice_tracker_contributor_payout_path(cp.invoice_tracker, cp),
       notice: "Success",
     )
+  end
+
+  member_action :migrate_blueprint, method: :post do
+    return redirect_to(
+      admin_invoice_tracker_contributor_payout_path(resource.invoice_tracker, resource),
+      alert: "Admins only."
+    ) unless current_admin_user.is_admin?
+
+    before_bp = resource.read_attribute(:blueprint)
+    before_size = before_bp.is_a?(Hash) ? before_bp.to_json.bytesize : 0
+
+    begin
+      changed = resource.slim_blueprint!
+    rescue => e
+      return redirect_to(
+        admin_invoice_tracker_contributor_payout_path(resource.invoice_tracker, resource),
+        alert: "Migration aborted: #{e.message}"
+      )
+    end
+
+    if changed
+      after_size = resource.reload.read_attribute(:blueprint).to_json.bytesize
+      return redirect_to(
+        admin_invoice_tracker_contributor_payout_path(resource.invoice_tracker, resource),
+        notice: "Blueprint migrated — #{before_size} B → #{after_size} B (saved #{before_size - after_size} B)."
+      )
+    else
+      return redirect_to(
+        admin_invoice_tracker_contributor_payout_path(resource.invoice_tracker, resource),
+        notice: "Blueprint is already in slim shape — nothing to do."
+      )
+    end
   end
 
   member_action :toggle_acceptance, method: :post do
@@ -105,7 +144,7 @@ ActiveAdmin.register ContributorPayout do
     f.inputs do
       f.semantic_errors
       f.input :invoice_tracker, input_html: { disabled: true }
-      f.input :contributor
+      f.input :contributor, input_html: { disabled: f.object.persisted? }
       f.input :amount
       f.input :description
 

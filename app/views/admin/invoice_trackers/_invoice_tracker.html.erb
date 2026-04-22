@@ -68,6 +68,7 @@
   <thead>
     <tr>
       <th class="col"></th>
+      <th class="col">QBO Line Item ID</th>
       <th class="col">Item</th>
       <th class="col">Hours</th>
       <th class="col">Rate</th>
@@ -84,6 +85,13 @@
           <span class="pill <%= diff_state %>">
             <%= diff_state.humanize %>
           </span>
+        </td>
+        <td class="col">
+          <% if diff_state == "removed" %>
+            <del><%= blueprint_diff.dig("lines", line, "id") %></del>
+          <% else %>
+            <%= blueprint_diff.dig("lines", line, "id") %>
+          <% end %>
         </td>
         <td class="col">
           <% if diff_state == "removed" %>

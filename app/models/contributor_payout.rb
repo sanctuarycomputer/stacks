@@ -93,6 +93,52 @@ class ContributorPayout < ApplicationRecord
   end
   private_class_method :parse_json_blueprint
 
+  # The only fields on a blueprint entry's metadata that readers consume:
+  # - "id" → key into qbo_invoice.line_items for live surplus calc
+  # - "forecast_project" → locate the ProjectTracker for surplus / monthly_cosr attribution
+  def self.slim_metadata(m)
+    (m || {}).slice("id", "forecast_project")
+  end
+
+  # Returns a slim copy of a blueprint hash: drops qbo_line_item and trims metadata
+  # to just {id, forecast_project}. Preserves amount and description_line.
+  def self.slim_blueprint(bp)
+    return bp unless bp.is_a?(Hash)
+    bp.transform_values do |entries|
+      next entries unless entries.is_a?(Array)
+      entries.map do |entry|
+        next entry unless entry.is_a?(Hash)
+        slim = entry.slice("amount", "description_line")
+        if entry["blueprint_metadata"].is_a?(Hash)
+          slim["blueprint_metadata"] = slim_metadata(entry["blueprint_metadata"])
+        end
+        slim
+      end
+    end
+  end
+
+  # Migrates THIS payout's blueprint to the slim shape in place. Idempotent —
+  # returns false if already slim (or not a hash). Returns true when a write happened.
+  # Uses update_columns to skip validations, callbacks, and updated_at touch — this
+  # is a storage cleanup, not a meaningful data change.
+  def slim_blueprint!
+    before = read_attribute(:blueprint)
+    return false unless before.is_a?(Hash)
+
+    after = self.class.slim_blueprint(before)
+    return false if after == before
+
+    # Safety: slimming must not alter total amounts for any role.
+    sum = ->(h) { h.values.flatten.sum { |e| (e.is_a?(Hash) ? e["amount"] : 0).to_f }.round(2) }
+    if sum.call(before) != sum.call(after)
+      raise "slim_blueprint! would change total amounts on ContributorPayout ##{id} " \
+            "(before=#{sum.call(before)} after=#{sum.call(after)})"
+    end
+
+    update_columns(blueprint: after)
+    true
+  end
+
   def calculate_surplus
     return [] unless in_sync?
 

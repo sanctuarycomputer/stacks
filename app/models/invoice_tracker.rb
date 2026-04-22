@@ -250,8 +250,7 @@ class InvoiceTracker < ApplicationRecord
             }
           }
           payouts[individual_contributor][:blueprint][:IndividualContributor] << {
-            qbo_line_item: line_item,
-            blueprint_metadata: metadata,
+            blueprint_metadata: ContributorPayout.slim_metadata(metadata),
             amount: line_item["amount"].to_f,
           }
           next
@@ -299,8 +298,7 @@ class InvoiceTracker < ApplicationRecord
 
           amount = working_amount * 0.08
           payouts[account_lead][:blueprint][:AccountLead] << {
-            qbo_line_item: line_item,
-            blueprint_metadata: metadata,
+            blueprint_metadata: ContributorPayout.slim_metadata(metadata),
             amount: amount,
             description_line: "- #{working_hours} hrs * #{n2c(working_rate)} p/h * 8% = #{n2c(amount)}",
           }
@@ -317,8 +315,7 @@ class InvoiceTracker < ApplicationRecord
           }
           amount = working_amount * 0.05
           payouts[project_lead][:blueprint][:ProjectLead] << {
-            qbo_line_item: line_item,
-            blueprint_metadata: metadata,
+            blueprint_metadata: ContributorPayout.slim_metadata(metadata),
             amount: amount,
             description_line: "- #{working_hours} hrs * #{n2c(working_rate)} p/h * 5% = #{n2c(amount)}",
           }
@@ -338,16 +335,14 @@ class InvoiceTracker < ApplicationRecord
           if hourly_rate_of_pay_override.present?
             amount = working_hours * hourly_rate_of_pay_override
             payouts[individual_contributor][:blueprint][:IndividualContributor] << {
-              qbo_line_item: line_item,
-              blueprint_metadata: metadata,
+              blueprint_metadata: ContributorPayout.slim_metadata(metadata),
               amount: amount,
               description_line: "- #{working_hours} hrs * #{n2c(hourly_rate_of_pay_override)} p/h = #{n2c(amount)}",
             }
           else
             amount = working_amount * (1 - pt.company_treasury_split - (account_lead.present? ? 0.08 : 0) - (project_lead.present? ? 0.05 : 0))
             payouts[individual_contributor][:blueprint][:IndividualContributor] << {
-              qbo_line_item: line_item,
-              blueprint_metadata: metadata,
+              blueprint_metadata: ContributorPayout.slim_metadata(metadata),
               amount: amount,
               description_line: "- #{working_hours} hrs * #{n2c(working_rate)} p/h * #{100 * (1 - pt.company_treasury_split - (account_lead.present? ? 0.08 : 0) - (project_lead.present? ? 0.05 : 0))}% = #{n2c(amount)}",
             }
@@ -397,9 +392,8 @@ class InvoiceTracker < ApplicationRecord
           new_blueprint["AccountLead"] ||= []
           new_blueprint["AccountLead"] << {
             amount: lead_share,
-            qbo_line_item: c[:qbo_line_item],
             description_line: "- #{n2c(c[:surplus])} * 15% = #{n2c(lead_share)} (`#{c[:qbo_line_item].dig("description")}` generated #{n2c(c[:surplus])} surplus revenue, 15% of which is shared with the Account Lead)",
-            blueprint_metadata: c[:blueprint_metadata],
+            blueprint_metadata: ContributorPayout.slim_metadata(c[:blueprint_metadata]),
           }
 
           cp.update!(
@@ -419,9 +413,8 @@ class InvoiceTracker < ApplicationRecord
           new_blueprint["ProjectLead"] ||= []
           new_blueprint["ProjectLead"] << {
             amount: lead_share,
-            qbo_line_item: c[:qbo_line_item],
             description_line: "- #{n2c(c[:surplus])} * 15% = #{n2c(lead_share)} (`#{c[:qbo_line_item].dig("description")})` generated #{n2c(c[:surplus])} surplus revenue, 15% of which is shared with the Project Lead)",
-            blueprint_metadata: c[:blueprint_metadata],
+            blueprint_metadata: ContributorPayout.slim_metadata(c[:blueprint_metadata]),
           }
 
           cp.update!(
