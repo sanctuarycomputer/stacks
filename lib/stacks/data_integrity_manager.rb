@@ -91,6 +91,17 @@ class Stacks::DataIntegrityManager
       acc[fp] = [*acc[fp], :multiple_hourly_rates_set]
       acc
     end
+
+    # Flag active, non-internal projects that have a project code but aren't
+    # linked to any ProjectTracker — these should almost always be tracked.
+    linked_forecast_project_ids = ProjectTrackerForecastProject.distinct.pluck(:forecast_project_id).to_set
+    forecast_projects = all_forecast_projects.reduce(forecast_projects) do |acc, fp|
+      next acc if fp.code.blank?
+      next acc if linked_forecast_project_ids.include?(fp.forecast_id)
+      acc[fp] = acc[fp] || []
+      acc[fp] = [*acc[fp], :not_linked_to_project_tracker]
+      acc
+    end
   end
 
   def discover_forecast_people_problems

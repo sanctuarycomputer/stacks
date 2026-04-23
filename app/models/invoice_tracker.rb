@@ -184,8 +184,7 @@ class InvoiceTracker < ApplicationRecord
         invoice_pass.start_of_month,
         invoice_pass.start_of_month.end_of_month
       )
-      description =
-        "#{project.code} #{project.name} (#{invoice_pass.invoice_month}) #{person.first_name} #{person.last_name}".strip
+      description = self.class.line_description_for(project, person, invoice_pass.invoice_month)
       acc[:lines][description] = acc[:lines][description] || {
         id: nil,
         forecast_project: project.forecast_id,
@@ -198,14 +197,36 @@ class InvoiceTracker < ApplicationRecord
     end
   end
 
+  # Canonical QBO invoice line description, including a trailing [FP-<forecast_id>]
+  # tag. The tag:
+  # - de-duplicates lines for different people who share a name on the same project
+  # - gives us a content-based fallback / cross-check against blueprint metadata
+  # - survives QBO-side edits of OTHER fields on the line
+  # The tag looks like a tracking ref to clients; they can ignore it.
+  def self.line_description_for(project, person, invoice_month)
+    base = "#{project.code} #{project.name} (#{invoice_month}) #{person.first_name} #{person.last_name}".strip
+    "#{base} [FP-#{person.forecast_id}]"
+  end
+
+  # Pulls the forecast_person id encoded into a QBO line description by
+  # line_description_for, or nil if the description is untagged (legacy lines
+  # written before this format was introduced).
+  def self.forecast_person_id_from_description(description)
+    match = description.to_s.match(/\[FP-(\d+)\]\s*\z/)
+    match && match[1].to_i
+  end
+
   def changes_in_forecast
     return [] if blueprint.nil?
+    # Strip the [FP-<id>] tag on both sides so legacy blueprints (without the tag)
+    # still diff cleanly against freshly-generated blueprints (with the tag).
+    strip_tag = ->(desc) { desc.to_s.sub(/\s*\[FP-\d+\]\s*\z/, "") }
     latest_lines = (make_blueprint![:lines] || {}).deep_stringify_keys.reduce({}) do |acc, (k, v)|
-      acc[k] = v.except("id")
+      acc[strip_tag.call(k)] = v.except("id")
       acc
     end
     blueprinted_lines = (blueprint["lines"] || {}).reduce({}) do |acc, (k, v)|
-      acc[k] = v.except("id")
+      acc[strip_tag.call(k)] = v.except("id")
       acc
     end
 
@@ -549,8 +570,7 @@ class InvoiceTracker < ApplicationRecord
         )
         item = qbo_item_for_person(person, qbo_items, default_service_item)
 
-        description =
-          "#{project.code} #{project.name} (#{invoice_pass.invoice_month}) #{person.first_name} #{person.last_name}".strip
+        description = self.class.line_description_for(project, person, invoice_pass.invoice_month)
         line_item = qbo_inv.line_items.find do |qbo_li|
           qbo_li.description == description
         end
