@@ -14,6 +14,15 @@ ActiveAdmin.register InvoiceTracker do
     )
   end
 
+  action_item :resync_qbo_line_item_services, only: :show, if: proc { current_admin_user.is_admin? } do
+    link_to(
+      "Resync QBO service categories",
+      resync_qbo_line_item_services_admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource),
+      method: :post,
+      data: { confirm: "Rewrite each line item's service category to match the current mapping logic. Only the item_ref is changed — id, quantity, amount, and description are preserved. Proceed?" }
+    )
+  end
+
   action_item :notify_reviewers, only: :show, if: proc {
     current_admin_user.is_admin? || resource.admin_user == current_admin_user
   } do
@@ -157,6 +166,39 @@ ActiveAdmin.register InvoiceTracker do
     redirect_back(
       fallback_location: admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource),
       notice: flash_msg.join(" — ").presence || "Nothing to send."
+    )
+  end
+
+  member_action :resync_qbo_line_item_services, method: :post do
+    return redirect_back(
+      fallback_location: admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource),
+      alert: "Admins only."
+    ) unless current_admin_user.is_admin?
+
+    if resource.qbo_invoice.nil?
+      return redirect_back(
+        fallback_location: admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource),
+        alert: "Can't sync — no QBO invoice attached."
+      )
+    end
+
+    begin
+      result = resource.resync_qbo_line_item_services!
+    rescue => e
+      return redirect_back(
+        fallback_location: admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource),
+        alert: "Sync failed: #{e.message}"
+      )
+    end
+
+    parts = []
+    parts << "Updated #{result[:updated].length}" if result[:updated].any?
+    parts << "Unchanged #{result[:unchanged]}" if result[:unchanged].positive?
+    parts << "Skipped #{result[:skipped].length} (#{result[:skipped].join("; ")})" if result[:skipped].any?
+
+    redirect_back(
+      fallback_location: admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource),
+      notice: parts.join(" — ").presence || "No line items to sync."
     )
   end
 

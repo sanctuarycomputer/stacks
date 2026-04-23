@@ -64,11 +64,13 @@
   </div>
 <% end %>
 
+<% qbo_line_items_by_id = (invoice_tracker.qbo_invoice&.line_items || []).index_by { |li| li["id"].to_s } %>
 <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom:20px;">
   <thead>
     <tr>
       <th class="col"></th>
       <th class="col">QBO Line Item ID</th>
+      <th class="col">QBO Service</th>
       <th class="col">Item</th>
       <th class="col">Hours</th>
       <th class="col">Rate</th>
@@ -79,6 +81,9 @@
     <% blueprint_diff = invoice_tracker.blueprint_diff %>
     <% blueprint_diff["lines"].keys.each_with_index do |line, index| %>
       <% diff_state = blueprint_diff.dig("lines", line, "diff_state") %>
+      <% line_id = blueprint_diff.dig("lines", line, "id") %>
+      <% current_qbo_line = qbo_line_items_by_id[line_id.to_s] %>
+      <% current_service = current_qbo_line&.dig("sales_line_item_detail", "item_ref", "name") %>
 
       <tr class="<%= index.even? ? "even" : "odd" %>">
         <td class="col">
@@ -88,9 +93,16 @@
         </td>
         <td class="col">
           <% if diff_state == "removed" %>
-            <del><%= blueprint_diff.dig("lines", line, "id") %></del>
+            <del><%= line_id %></del>
           <% else %>
-            <%= blueprint_diff.dig("lines", line, "id") %>
+            <%= line_id %>
+          <% end %>
+        </td>
+        <td class="col">
+          <% if current_service.present? %>
+            <%= current_service %>
+          <% else %>
+            <span style="color:#999;">—</span>
           <% end %>
         </td>
         <td class="col">

@@ -443,6 +443,81 @@ class InvoiceTracker < ApplicationRecord
     end
   end
 
+  # Retroactively updates the QBO item_ref on each line item of the attached QBO
+  # invoice to reflect the CURRENT service-assignment logic in make_invoice!, without
+  # touching id / quantity / amount / description. Useful when the person.studio →
+  # qbo_item mapping (or the recurring-charge mapping) has changed and previously
+  # generated invoices need to be brought in line.
+  #
+  # Returns a hash summary: { updated: [String], skipped: [String], unchanged: Integer }.
+  # Raises if no QBO invoice is attached.
+  def resync_qbo_line_item_services!
+    raise "No QBO invoice attached" if qbo_invoice.nil?
+
+    qbo_items, default_service_item = Stacks::Quickbooks.fetch_all_items
+
+    access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
+    invoice_service = Quickbooks::Service::Invoice.new
+    invoice_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
+    invoice_service.access_token = access_token
+
+    live_invoice = invoice_service.fetch_by_id(qbo_invoice_id)
+
+    blueprint_lines_by_id = (blueprint.is_a?(Hash) ? (blueprint["lines"] || {}).values : []).each_with_object({}) do |line, h|
+      next unless line.is_a?(Hash) && line["id"]
+      h[line["id"].to_s] = line
+    end
+
+    recurring_charges_by_description =
+      RecurringCharge.where(forecast_client: forecast_client).index_by(&:description)
+
+    updated = []
+    skipped = []
+    unchanged = 0
+    any_changed = false
+
+    live_invoice.line_items.each do |line_item|
+      next unless line_item.sales_item? # skip subtotal / description-only lines
+
+      description = line_item.description
+      expected_item = nil
+
+      if (bp_line = blueprint_lines_by_id[line_item.id.to_s])
+        forecast_person_id = bp_line["forecast_person"]
+        person = ForecastPerson.find_by(forecast_id: forecast_person_id)
+        if person.nil?
+          skipped << "#{description} — forecast_person ##{forecast_person_id} not found"
+          next
+        end
+        service_name = (person.studio.try(:accounting_prefix) || "").split(",").map(&:strip)[0]
+        expected_item = qbo_items.find { |s| s.fully_qualified_name == service_name } || default_service_item
+      elsif (rc = recurring_charges_by_description[description])
+        expected_item = qbo_items.find { |s| s.fully_qualified_name == rc.qbo_account_name } || default_service_item
+      else
+        skipped << "#{description} — unknown origin (not in blueprint or recurring charges)"
+        next
+      end
+
+      current_item_ref = line_item.sales_line_item_detail.item_ref
+      current_item_id = current_item_ref&.value.to_s
+      if current_item_id == expected_item.id.to_s
+        unchanged += 1
+        next
+      end
+
+      line_item.sales_line_item_detail.item_id = expected_item.id
+      updated << "#{description}: ##{current_item_id} → ##{expected_item.id} (#{expected_item.fully_qualified_name})"
+      any_changed = true
+    end
+
+    if any_changed
+      invoice_service.update(live_invoice)
+      qbo_invoice.sync!
+    end
+
+    { updated: updated, skipped: skipped, unchanged: unchanged }
+  end
+
   def make_invoice!
     return if configuration_errors.any?
     return if qbo_invoice.present?
