@@ -489,8 +489,7 @@ class InvoiceTracker < ApplicationRecord
           skipped << "#{description} — forecast_person ##{forecast_person_id} not found"
           next
         end
-        service_name = (person.studio.try(:accounting_prefix) || "").split(",").map(&:strip)[0]
-        expected_item = qbo_items.find { |s| s.fully_qualified_name == service_name } || default_service_item
+        expected_item = qbo_item_for_person(person, qbo_items, default_service_item)
       elsif (rc = recurring_charges_by_description[description])
         expected_item = qbo_items.find { |s| s.fully_qualified_name == rc.qbo_account_name } || default_service_item
       else
@@ -548,10 +547,7 @@ class InvoiceTracker < ApplicationRecord
           invoice_pass.start_of_month,
           invoice_pass.start_of_month.end_of_month
         )
-        service_name = person.studio.try(:accounting_prefix) || ""
-        service_name = service_name.split(",").map(&:strip)[0]
-        item =
-          qbo_items.find { |s| s.fully_qualified_name == service_name } || default_service_item
+        item = qbo_item_for_person(person, qbo_items, default_service_item)
 
         description =
           "#{project.code} #{project.name} (#{invoice_pass.invoice_month}) #{person.first_name} #{person.last_name}".strip
@@ -633,4 +629,26 @@ class InvoiceTracker < ApplicationRecord
     self.reload
     created_qbo_inv
   end
+
+  # Picks the QBO invoice-line Item for a given forecast_person. Mirrors the
+  # bill-side internal-client override in ContributorPayout#find_qbo_account!:
+  # for internal clients, when the person has no studio or is on a client-services
+  # studio, force the line item's service to "Marketing Services" instead of the
+  # studio's normal accounting_prefix-derived item.
+  private def qbo_item_for_person(person, qbo_items, default_service_item)
+    service_name = (person.studio.try(:accounting_prefix) || "").split(",").map(&:strip)[0]
+    item = qbo_items.find { |s| s.fully_qualified_name == service_name } || default_service_item
+
+    if forecast_client.is_internal? && (person.studio.nil? || person.studio.client_services?)
+      marketing_item = qbo_items.find { |s| s.fully_qualified_name == MARKETING_SERVICES_ITEM_NAME }
+      item = marketing_item if marketing_item.present?
+    end
+
+    item
+  end
+
+  # Fully qualified name of the QBO Item used for internal-client lines that would
+  # otherwise resolve to a client-services studio service. Counterpart to the
+  # "Contractors - Marketing Services" expense account used on the bill side.
+  MARKETING_SERVICES_ITEM_NAME = "Marketing Services"
 end
