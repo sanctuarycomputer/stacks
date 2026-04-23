@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_04_22_115949) do
+ActiveRecord::Schema.define(version: 2026_04_23_140834) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -120,7 +120,7 @@ ActiveRecord::Schema.define(version: 2026_04_22_115949) do
   create_table "contributor_payouts", force: :cascade do |t|
     t.bigint "invoice_tracker_id", null: false
     t.bigint "created_by_id", null: false
-    t.decimal "amount", default: "0.0", null: false
+    t.decimal "amount", precision: 10, scale: 2, default: "0.0", null: false
     t.jsonb "blueprint", default: {}, null: false
     t.text "description"
     t.datetime "accepted_at"

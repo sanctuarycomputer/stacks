@@ -107,8 +107,10 @@ class ContributorPayout < ApplicationRecord
     (m || {}).slice("id", "forecast_project", "forecast_person")
   end
 
-  # Returns a slim copy of a blueprint hash: drops qbo_line_item and trims metadata
-  # to just {id, forecast_project}. Preserves amount and description_line.
+  # Returns a slim copy of a blueprint hash: drops qbo_line_item, trims metadata
+  # to just {id, forecast_project, forecast_person}, and rounds each entry's amount
+  # to 2 decimals (eliminating float noise from legacy write paths). Preserves
+  # description_line.
   def self.slim_blueprint(bp)
     return bp unless bp.is_a?(Hash)
     bp.transform_values do |entries|
@@ -116,6 +118,7 @@ class ContributorPayout < ApplicationRecord
       entries.map do |entry|
         next entry unless entry.is_a?(Hash)
         slim = entry.slice("amount", "description_line")
+        slim["amount"] = slim["amount"].to_f.round(2) if slim.key?("amount")
         if entry["blueprint_metadata"].is_a?(Hash)
           slim["blueprint_metadata"] = slim_metadata(entry["blueprint_metadata"])
         end
@@ -194,25 +197,33 @@ class ContributorPayout < ApplicationRecord
     errs
   end
 
-  # Migrates THIS payout's blueprint to the slim shape in place. Idempotent —
-  # returns false if already slim (or not a hash). Returns true when a write happened.
-  # Uses update_columns to skip validations, callbacks, and updated_at touch — this
-  # is a storage cleanup, not a meaningful data change.
+  # Migrates THIS payout's blueprint to the slim shape in place AND rounds each
+  # entry's amount to 2 decimals. Idempotent — returns false if nothing needs to
+  # change. Returns true when a write happened.
+  #
+  # When rounding changes the per-entry amounts, the top-level cp.amount column is
+  # also updated to the new rounded sum so the record stays reconciled. Uses
+  # update_columns to skip validations, callbacks, and updated_at touch.
   def slim_blueprint!
     before = read_attribute(:blueprint)
     return false unless before.is_a?(Hash)
 
     after = self.class.slim_blueprint(before)
-    return false if after == before
-
-    # Safety: slimming must not alter total amounts for any role.
     sum = ->(h) { h.values.flatten.sum { |e| (e.is_a?(Hash) ? e["amount"] : 0).to_f }.round(2) }
-    if sum.call(before) != sum.call(after)
-      raise "slim_blueprint! would change total amounts on ContributorPayout ##{id} " \
-            "(before=#{sum.call(before)} after=#{sum.call(after)})"
+    new_total = sum.call(after)
+    blueprint_unchanged = after == before
+    total_unchanged = new_total == amount.to_f.round(2)
+    return false if blueprint_unchanged && total_unchanged
+
+    # Safety: per-entry rounding can shift the total by a few cents at most. Any
+    # larger drift indicates we're dropping real data — bail rather than persist.
+    before_total = sum.call(before)
+    if (new_total - before_total).abs > 1.0
+      raise "slim_blueprint! would alter total amount by more than $1 on ContributorPayout ##{id} " \
+            "(before=#{before_total}, after=#{new_total})"
     end
 
-    update_columns(blueprint: after)
+    update_columns(blueprint: after, amount: new_total)
     true
   end
 
@@ -296,7 +307,9 @@ class ContributorPayout < ApplicationRecord
         acc += v.sum{|vv| vv["amount"].to_f}
         acc
       end
-      blueprint_amount == amount
+      # Compare at 2-decimal precision so sub-cent float noise from legacy
+      # un-rounded entries doesn't flag otherwise-reconciled payouts.
+      blueprint_amount.round(2) == amount.to_f.round(2)
     rescue
       false
     end

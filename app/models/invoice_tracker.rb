@@ -251,7 +251,7 @@ class InvoiceTracker < ApplicationRecord
           }
           payouts[individual_contributor][:blueprint][:IndividualContributor] << {
             blueprint_metadata: ContributorPayout.slim_metadata(metadata),
-            amount: line_item["amount"].to_f,
+            amount: line_item["amount"].to_f.round(2),
           }
           next
         end
@@ -296,7 +296,7 @@ class InvoiceTracker < ApplicationRecord
             }
           }
 
-          amount = working_amount * 0.08
+          amount = (working_amount * 0.08).round(2)
           payouts[account_lead][:blueprint][:AccountLead] << {
             blueprint_metadata: ContributorPayout.slim_metadata(metadata),
             amount: amount,
@@ -313,7 +313,7 @@ class InvoiceTracker < ApplicationRecord
               IndividualContributor: [],
             }
           }
-          amount = working_amount * 0.05
+          amount = (working_amount * 0.05).round(2)
           payouts[project_lead][:blueprint][:ProjectLead] << {
             blueprint_metadata: ContributorPayout.slim_metadata(metadata),
             amount: amount,
@@ -333,14 +333,14 @@ class InvoiceTracker < ApplicationRecord
             }
           }
           if hourly_rate_of_pay_override.present?
-            amount = working_hours * hourly_rate_of_pay_override
+            amount = (working_hours * hourly_rate_of_pay_override).round(2)
             payouts[individual_contributor][:blueprint][:IndividualContributor] << {
               blueprint_metadata: ContributorPayout.slim_metadata(metadata),
               amount: amount,
               description_line: "- #{working_hours} hrs * #{n2c(hourly_rate_of_pay_override)} p/h = #{n2c(amount)}",
             }
           else
-            amount = working_amount * (1 - pt.company_treasury_split - (account_lead.present? ? 0.08 : 0) - (project_lead.present? ? 0.05 : 0))
+            amount = (working_amount * (1 - pt.company_treasury_split - (account_lead.present? ? 0.08 : 0) - (project_lead.present? ? 0.05 : 0))).round(2)
             payouts[individual_contributor][:blueprint][:IndividualContributor] << {
               blueprint_metadata: ContributorPayout.slim_metadata(metadata),
               amount: amount,
@@ -380,7 +380,7 @@ class InvoiceTracker < ApplicationRecord
       chunks.each do |c|
         next unless c[:project_tracker].present?
 
-        lead_share = c[:surplus] * 0.15
+        lead_share = (c[:surplus] * 0.15).round(2)
 
         # Share to Account Lead
         account_lead = c[:project_tracker].account_lead_for_month(invoice_pass.start_of_month)
@@ -398,7 +398,7 @@ class InvoiceTracker < ApplicationRecord
 
           cp.update!(
             deleted_at: nil,
-            amount: (cp.amount || 0) + lead_share,
+            amount: ((cp.amount || 0) + lead_share).round(2),
             blueprint: new_blueprint,
           )
         end
@@ -419,7 +419,7 @@ class InvoiceTracker < ApplicationRecord
 
           cp.update!(
             deleted_at: nil,
-            amount: (cp.amount || 0) + lead_share,
+            amount: ((cp.amount || 0) + lead_share).round(2),
             blueprint: new_blueprint,
           )
         end
