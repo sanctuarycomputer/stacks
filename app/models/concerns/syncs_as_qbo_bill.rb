@@ -34,15 +34,16 @@ module SyncsAsQboBill
     end
   end
 
-  def find_invoice_pass!
-    if defined?(invoice_pass)
-      invoice_pass
-    elsif defined?(invoice_tracker)
-      invoice_tracker.invoice_pass
-    else
-      raise "No invoice pass defined"
-    end
-  end
+  # Host models MUST implement:
+  # - bill_txn_date → Date used for the QBO Bill's txn_date and due_date
+  # - bill_description → String used as the QBO Bill line item description
+  #   (conventionally a URL back to the Stacks admin page for the record)
+  # - bill_doc_number_code → Short 2-char tag embedded in the QBO Bill doc_number so
+  #   cleanup_orphaned_qbo_objects! can unambiguously map a QBO bill back to its
+  #   host class. MUST be unique across all host models. Current mappings:
+  #     ContributorPayout     → "CP"
+  #     Trueup                → "TU"
+  #     ContributorAdjustment → "CA"
 
   def payable?
     false
@@ -52,23 +53,13 @@ module SyncsAsQboBill
     return unless contributor.qbo_vendor.present?
 
     bill = load_qbo_bill! || Quickbooks::Model::Bill.new
-    bill.txn_date = find_invoice_pass!.start_of_month.end_of_month
-    bill.due_date = find_invoice_pass!.start_of_month.end_of_month
-    bill.doc_number = "Stacks_#{id}_#{self.class.name}".truncate(21) # QBO has a 21 character limit for doc numbers
+    bill.txn_date = bill_txn_date
+    bill.due_date = bill_txn_date
+    bill.doc_number = "Stacks_#{id}_#{bill_doc_number_code}" # QBO has a 21 character limit; short code keeps us well under
     bill.vendor_ref = Quickbooks::Model::BaseReference.new(contributor.qbo_vendor.id)
 
-    description =
-      case self.class.name
-        when "Trueup"
-          "http://stacks.garden3d.net/admin/contributors/#{contributor.id}/trueups/#{id}"
-        when "ContributorPayout"
-          "https://stacks.garden3d.net/admin/invoice_trackers/#{invoice_tracker.id}/contributor_payouts/#{id}"
-        else
-          raise "Unknown class: #{self.class.name}"
-        end
-
     line_item = Quickbooks::Model::BillLineItem.new(
-      description: description,
+      description: bill_description,
       amount: amount,
     )
 

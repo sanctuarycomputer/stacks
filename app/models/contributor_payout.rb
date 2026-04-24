@@ -349,4 +349,17 @@ class ContributorPayout < ApplicationRecord
     return 0 unless blueprint["IndividualContributor"].present?
     blueprint["IndividualContributor"].sum{|l| l["amount"]}
   end
+
+  # SyncsAsQboBill contract
+  def bill_txn_date
+    invoice_tracker.invoice_pass.start_of_month.end_of_month
+  end
+
+  def bill_description
+    "https://stacks.garden3d.net/admin/invoice_trackers/#{invoice_tracker.id}/contributor_payouts/#{id}"
+  end
+
+  def bill_doc_number_code
+    "CP"
+  end
 end

@@ -71,6 +71,12 @@ class Contributor < ApplicationRecord
     contributor_payouts.each do |cp|
       cp.sync_qbo_bill!
     end
+    contributor_adjustments.each do |adj|
+      adj.sync_qbo_bill!
+    end
+    profit_shares.each do |ps|
+      ps.sync_qbo_bill!
+    end
   end
 
   def attempt_populate_qbo_vendor_and_deel_person!

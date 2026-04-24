@@ -16,4 +16,17 @@ class Trueup < ApplicationRecord
   def payable?
     true
   end
+
+  # SyncsAsQboBill contract
+  def bill_txn_date
+    invoice_pass.start_of_month.end_of_month
+  end
+
+  def bill_description
+    "http://stacks.garden3d.net/admin/contributors/#{contributor.id}/trueups/#{id}"
+  end
+
+  def bill_doc_number_code
+    "TU"
+  end
 end

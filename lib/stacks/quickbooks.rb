@@ -99,6 +99,20 @@ class Stacks::Quickbooks
         next unless splat.present?
 
         case splat[2]
+        # New short-code format (unambiguous across classes)
+        when "CP"
+          klass = ContributorPayout
+        when "TU"
+          klass = Trueup
+        when "CA"
+          klass = ContributorAdjustment
+        when "PS"
+          klass = ProfitShare
+        # Legacy long-form doc_numbers. NOTE: a truncated "ContributorAdjustment"
+        # also starts with "Contribut..." — legacy bills with that prefix are
+        # assumed to be ContributorPayouts because adjustments did not sync as
+        # bills before the short-code format was introduced. Newly generated
+        # ContributorAdjustment bills use the "CA" code and won't hit this branch.
         when "ContributorPayout", /^Contri/
           klass = ContributorPayout
         when "Trueup"

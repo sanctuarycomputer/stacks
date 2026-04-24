@@ -7,6 +7,21 @@ ActiveAdmin.register ContributorAdjustment do
 
   belongs_to :contributor
 
+  action_item :sync_qbo_bill, only: :show, if: proc { current_admin_user.is_admin? } do
+    link_to "Sync QBO Bill",
+      sync_qbo_bill_admin_contributor_contributor_adjustment_path(resource.contributor, resource),
+      method: :post
+  end
+
+  member_action :sync_qbo_bill, method: :post do
+    adj = ContributorAdjustment.find(params[:id])
+    adj.sync_qbo_bill!
+    redirect_to(
+      admin_contributor_contributor_adjustment_path(adj.contributor, adj),
+      notice: "Success"
+    )
+  end
+
   controller do
     # Same as InvoiceTracker#show: refresh QBO data when opening the page (paid status, balance, etc.).
     def show
