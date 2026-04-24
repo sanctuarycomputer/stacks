@@ -123,11 +123,47 @@ namespace :stacks do
   desc "Sync Contributor Bills"
   task :sync_contributor_qbo_bills => :environment do
     system_task = SystemTask.create!(name: "stacks:sync_contributor_qbo_bills")
+    failures = []
+
+    sync_record = ->(record) {
+      begin
+        record.sync_qbo_bill!
+      rescue => e
+        failures << { record: "#{record.class.name}##{record.id}", error: "#{e.class}: #{e.message}" }
+        Rails.logger.error("sync_qbo_bill! failed for #{record.class.name}##{record.id}: #{e.class}: #{e.message}")
+      ensure
+        # Throttle below QBO's ~500 req/min limit. sync_qbo_bill! typically makes
+        # 2 API calls per record (load + create/update), so 0.15s per record
+        # caps effective rate around ~400 req/min with headroom.
+        sleep(0.15)
+      end
+    }
+
     begin
-      Contributor.all.each(&:sync_qbo_bills!)
-      Trueup.all.each(&:sync_qbo_bill!)
+      Contributor.find_each do |c|
+        c.contributor_payouts.each(&sync_record)
+        c.contributor_adjustments.each(&sync_record)
+        c.profit_shares.each(&sync_record)
+      end
+      Trueup.find_each(&sync_record)
     rescue => e
       system_task.mark_as_error(e)
+      next
+    end
+
+    puts "Completed with #{failures.length} failure(s)."
+    failures.each { |f| puts "  #{f[:record]}: #{f[:error]}" }
+
+    if failures.any?
+      # Surface a summary on the exception so Stacks::Notifications.report_exception
+      # (called inside mark_as_error) sends a Twist notification that actually
+      # tells us what broke, not just "something did."
+      summary = failures.first(10).map { |f| "#{f[:record]}: #{f[:error]}" }.join("\n")
+      suffix = failures.length > 10 ? "\n…and #{failures.length - 10} more (see task output)" : ""
+      message = "#{failures.length} record(s) failed during sync_contributor_qbo_bills:\n#{summary}#{suffix}"
+      system_task.mark_as_error(RuntimeError.new(message))
+    else
+      system_task.mark_as_success
     end
   end
 
