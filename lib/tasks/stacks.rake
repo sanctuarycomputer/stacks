@@ -191,6 +191,10 @@ namespace :stacks do
 
       Stacks::Forecast.new.sync_all! # Has internal retry counter
 
+      Retriable.retriable(tries: 3, base_interval: 5, multiplier: 2, max_interval: 60) do
+        Stacks::OptixSync.new(OptixOrganization.first).sync_all!
+      end
+
       # We can do this as soon as we sync the forecast
       Stacks::Automator.attempt_invoicing_for_previous_month
 

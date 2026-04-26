@@ -423,10 +423,6 @@ GEM
       multi_json (~> 1.10)
     skylight (6.0.4)
       activesupport (>= 5.2.0)
-    spring (2.1.1)
-    spring-watcher-listen (2.0.1)
-      listen (>= 2.7, < 4.0)
-      spring (>= 1.2, < 3.0)
     sprockets (4.2.2)
       concurrent-ruby (~> 1.0)
       logger
@@ -532,8 +528,6 @@ DEPENDENCIES
   sentry-rails
   sentry-ruby
   skylight (~> 6.0)
-  spring
-  spring-watcher-listen (~> 2.0.0)
   storext
   turbolinks (~> 5)
   tzinfo-data
