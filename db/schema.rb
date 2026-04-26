@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_04_23_140834) do
+ActiveRecord::Schema.define(version: 2026_04_26_162500) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -112,8 +112,10 @@ ActiveRecord::Schema.define(version: 2026_04_23_140834) do
     t.datetime "deleted_at"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.string "qbo_bill_id"
     t.index ["contributor_id"], name: "index_contributor_adjustments_on_contributor_id"
     t.index ["deleted_at"], name: "index_contributor_adjustments_on_deleted_at"
+    t.index ["qbo_bill_id"], name: "index_contributor_adjustments_on_qbo_bill_id"
     t.index ["qbo_invoice_id"], name: "index_contributor_adjustments_on_qbo_invoice_id"
   end
 
@@ -472,6 +474,93 @@ ActiveRecord::Schema.define(version: 2026_04_23_140834) do
     t.index ["admin_user_id"], name: "index_old_deal_technical_lead_periods_on_admin_user_id"
     t.index ["project_tracker_id"], name: "index_old_deal_technical_lead_periods_on_project_tracker_id"
     t.index ["studio_id"], name: "index_old_deal_technical_lead_periods_on_studio_id"
+  end
+
+  create_table "optix_account_plans", primary_key: "optix_id", id: :string, force: :cascade do |t|
+    t.bigint "optix_organization_id", null: false
+    t.string "optix_plan_template_id"
+    t.string "name"
+    t.string "status", null: false
+    t.float "price"
+    t.string "price_frequency"
+    t.bigint "start_timestamp"
+    t.bigint "end_timestamp"
+    t.bigint "canceled_timestamp"
+    t.bigint "created_timestamp"
+    t.string "access_usage_user_optix_id"
+    t.jsonb "data", default: {}
+    t.datetime "synced_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["access_usage_user_optix_id"], name: "index_optix_account_plans_on_access_usage_user_optix_id"
+    t.index ["end_timestamp"], name: "index_optix_account_plans_on_end_timestamp"
+    t.index ["optix_organization_id"], name: "index_optix_account_plans_on_optix_organization_id"
+    t.index ["optix_plan_template_id"], name: "index_optix_account_plans_on_optix_plan_template_id"
+    t.index ["start_timestamp"], name: "index_optix_account_plans_on_start_timestamp"
+    t.index ["status"], name: "index_optix_account_plans_on_status"
+  end
+
+  create_table "optix_locations", primary_key: "optix_id", id: :string, force: :cascade do |t|
+    t.bigint "optix_organization_id", null: false
+    t.string "name"
+    t.string "city"
+    t.string "region"
+    t.string "country"
+    t.string "timezone"
+    t.boolean "is_visible", default: true, null: false
+    t.boolean "is_hidden", default: false, null: false
+    t.boolean "is_deleted", default: false, null: false
+    t.jsonb "data", default: {}
+    t.datetime "synced_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["optix_organization_id"], name: "index_optix_locations_on_optix_organization_id"
+  end
+
+  create_table "optix_organizations", force: :cascade do |t|
+    t.string "name", null: false
+    t.datetime "synced_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+  end
+
+  create_table "optix_plan_template_locations", force: :cascade do |t|
+    t.string "optix_plan_template_id", null: false
+    t.string "optix_location_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["optix_location_id"], name: "idx_optix_ptl_on_location"
+    t.index ["optix_plan_template_id", "optix_location_id"], name: "idx_optix_plan_template_locations_unique", unique: true
+    t.index ["optix_plan_template_id"], name: "idx_optix_ptl_on_plan_template"
+  end
+
+  create_table "optix_plan_templates", primary_key: "optix_id", id: :string, force: :cascade do |t|
+    t.bigint "optix_organization_id", null: false
+    t.string "name", null: false
+    t.float "price"
+    t.string "price_frequency"
+    t.boolean "in_all_locations", default: false, null: false
+    t.boolean "onboarding_enabled", default: true, null: false
+    t.boolean "non_onboarding_enabled", default: true, null: false
+    t.jsonb "data", default: {}
+    t.datetime "synced_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["optix_organization_id"], name: "index_optix_plan_templates_on_optix_organization_id"
+  end
+
+  create_table "optix_users", primary_key: "optix_id", id: :string, force: :cascade do |t|
+    t.bigint "optix_organization_id", null: false
+    t.string "email"
+    t.string "name"
+    t.string "last_name"
+    t.boolean "is_active", default: true, null: false
+    t.jsonb "data", default: {}
+    t.datetime "synced_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index "lower((email)::text)", name: "idx_optix_users_on_lower_email"
+    t.index ["optix_organization_id"], name: "index_optix_users_on_optix_organization_id"
   end
 
   create_table "peer_reviews", force: :cascade do |t|
