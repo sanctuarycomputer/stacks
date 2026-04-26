@@ -1,4 +1,6 @@
 class ProjectTracker < ApplicationRecord
+  include BustsTaskCache
+
   validates :name, presence: :true
   validate :has_msa_and_sow_links
   validate :no_forecast_projects_missing_project_code

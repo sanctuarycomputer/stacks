@@ -1,4 +1,6 @@
 class SurveyResponse < ApplicationRecord
+  include BustsTaskCache
+
   belongs_to :survey
 
   has_many :survey_question_responses

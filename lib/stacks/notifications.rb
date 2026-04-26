@@ -38,7 +38,16 @@ class Stacks::Notifications
     end
 
     def make_notifications!
-      Stacks::DataIntegrityManager.new.notify!
+      task_count = Stacks::TaskBuilder.new.task_count
+      return if task_count == 0
+
+      SystemNotification.with({
+        subject: "#{task_count}x tasks across the team need attention.",
+        type: :system,
+        link: "https://stacks.garden3d.net/admin/tasks",
+        error: :tasks_need_attention,
+        priority: 0,
+      }).deliver(System.instance)
     end
   end
 end

@@ -1,5 +1,7 @@
 class Reimbursement < ApplicationRecord
   acts_as_paranoid
+  include BustsTaskCache
+
   belongs_to :contributor
   belongs_to :accepted_by, class_name: 'AdminUser', optional: true
 

@@ -5,15 +5,13 @@ class Contributors::SubmitDeelInvoiceAdjustment
 
   attr_reader :contributor, :contract_id, :amount, :description, :date_submitted
 
-  # `bypass_team_allowlist`: when true (staff `is_admin?`), skips DeelWithdrawalAccess on the linked team member so ops can submit.
   # `skip_balance_validation`: when true, skips settled-balance cap (Admin role + checkbox in ActiveAdmin).
-  def initialize(contributor:, contract_id:, amount:, description:, date_submitted:, bypass_team_allowlist: false, skip_balance_validation: false)
+  def initialize(contributor:, contract_id:, amount:, description:, date_submitted:, skip_balance_validation: false)
     @contributor = contributor
     @contract_id = contract_id.to_s
     @amount = amount
     @description = description.to_s
     @date_submitted = date_submitted
-    @bypass_team_allowlist = bypass_team_allowlist
     @skip_balance_validation = skip_balance_validation
   end
 
@@ -57,12 +55,6 @@ class Contributors::SubmitDeelInvoiceAdjustment
 
     linked_admin = contributor.forecast_person&.admin_user
     raise Error, "No team member is linked to this contributor." unless linked_admin
-
-    unless @bypass_team_allowlist
-      unless Stacks::DeelWithdrawalAccess.allowlisted?(linked_admin.email)
-        raise Error, "Deel withdrawal is not enabled for the linked team member (Deel allowlist)."
-      end
-    end
   end
 
   def validate_contract!

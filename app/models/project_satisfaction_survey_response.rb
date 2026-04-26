@@ -1,4 +1,6 @@
 class ProjectSatisfactionSurveyResponse < ApplicationRecord
+  include BustsTaskCache
+
   belongs_to :project_satisfaction_survey
 
   has_many :project_satisfaction_survey_question_responses, dependent: :destroy

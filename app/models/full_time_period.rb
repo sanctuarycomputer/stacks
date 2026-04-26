@@ -1,5 +1,6 @@
 class FullTimePeriod < ApplicationRecord
   include ActsAsPeriod
+  include BustsTaskCache
 
   belongs_to :admin_user
   validates_presence_of :started_at

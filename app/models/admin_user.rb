@@ -1,4 +1,6 @@
 class AdminUser < ApplicationRecord
+  include BustsTaskCache
+
   has_many :notifications, as: :recipient, dependent: :delete_all
   has_many :full_time_periods, -> { order(started_at: :asc) }, dependent: :delete_all
   has_one :associates_award_agreement, dependent: :delete
@@ -157,68 +159,11 @@ class AdminUser < ApplicationRecord
     ).uniq
   }
 
+  # Returns Array<StacksTask> assigned to this user. Pulls from the unified
+  # Stacks::TaskBuilder, which combines survey gaps and data-quality issues
+  # into a single ownership-routed list. Cached at the TaskBuilder layer (24h).
   def pending_tasks
-    @_pending_tasks ||= begin
-      tasks = []
-      # Count pending regular surveys
-      Survey.open.each do |s|
-        if s.expected_responders.include?(self) && SurveyResponder.find_by(survey: s, admin_user: self).nil?
-          tasks << {
-            type: :survey,
-            subject: s,
-          }
-        end
-      end
-
-      # Count pending project satisfaction surveys
-      ProjectSatisfactionSurvey.open.each do |pss|
-        if pss.expected_responders.keys.include?(self) && ProjectSatisfactionSurveyResponder.find_by(project_satisfaction_survey: pss, admin_user: self).nil?
-          tasks << {
-            type: :project_satisfaction_survey,
-            subject: pss,
-          }
-        end
-      end
-
-      # AccountLeadPeriod.where(admin_user: self).each do |al|
-      #   pt = al.project_tracker
-      #   next unless pt.current_account_leads.include?(self)
-      #   if pt.work_completed_at.present? && pt.work_status == :capsule_pending
-      #     task = {
-      #       type: :project_capsule_incomplete,
-      #       subject: pt,
-      #     }
-      #     tasks << task unless tasks.include?(task)
-      #   end
-      # end
-
-      lead_periods = ProjectLeadPeriod.where(admin_user: self).to_a
-      unless lead_periods.empty?
-        tracker_ids = lead_periods.map(&:project_tracker_id).uniq
-        trackers_by_id = ProjectTracker.where(id: tracker_ids).includes(
-          :forecast_projects,
-          { project_lead_periods: :admin_user },
-          { project_capsule: :project_satisfaction_survey }
-        ).index_by(&:id)
-
-        ProjectTracker.batch_cache_edge_recorded_assignments!(trackers_by_id.values)
-
-        lead_periods.each do |tl|
-          pt = trackers_by_id[tl.project_tracker_id]
-          next unless pt
-          next unless pt.current_project_leads.include?(self)
-          if pt.work_completed_at.present? && pt.work_status == :capsule_pending
-            task = {
-              type: :project_capsule_incomplete,
-              subject: pt,
-            }
-            tasks << task unless tasks.include?(task)
-          end
-        end
-      end
-
-      tasks
-    end
+    @_pending_tasks ||= Stacks::TaskBuilder.new.tasks_for(self)
   end
 
   def should_nag_for_survey_responses?

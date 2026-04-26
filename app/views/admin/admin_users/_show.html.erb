@@ -77,48 +77,12 @@
     <div class="module-header">
       <p>Pending Tasks</p>
     </div>
-    <div class="module-body text-center">
+    <div class="module-body">
       <% pending_tasks = resource.pending_tasks %>
       <% if pending_tasks.any? %>
-        <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
-          <thead>
-            <tr>
-              <th class="col">Task</th>
-              <th class="col text-right">Link</th>
-            </tr>
-          </thead>
-          <tbody>
-            <% pending_tasks.each_with_index do |task, index| %>
-              <tr class="<%= index.even? ? "even" : "odd" %>">
-                <td class="col text-left">
-                  <span class="pill <%= task[:type] %>">
-                    <%= task[:type].to_s.humanize %>
-                  </span>
-                </td>
-
-                <% if task[:type] == :survey %>
-                  <td class="col text-right">
-                    <%= link_to "Complete →", admin_survey_path(task[:subject]) %>
-                  </td>
-                <% elsif task[:type] == :project_satisfaction_survey %>
-                  <td class="col text-right">
-                    <%= link_to "Complete →", admin_project_satisfaction_survey_path(task[:subject]), style: "text-wrap: nowrap;" %>
-                  </td>
-                <% elsif task[:type] == :project_capsule_incomplete %>
-                  <td class="col text-right">
-                    <%= link_to "#{task[:subject].name} →", admin_project_tracker_path(task[:subject]), style: "text-wrap: nowrap;" %>
-                  </td>
-                <% else %>
-                  <td class="col text-right">
-                    Huh???
-                  </td>
-                <% end %>
-              </tr>
-            <% end %>
-          </tbody>
-        </table>
+        <%= render partial: "admin/tasks/task_list", locals: { tasks: pending_tasks, show_owners: false } %>
       <% else %>
-        <p>🎉 This user has no pending tasks!</p>
+        <p class="text-center">🎉 This user has no pending tasks!</p>
       <% end %>
     </div>
   </div>

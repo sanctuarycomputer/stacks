@@ -69,7 +69,6 @@ ActiveAdmin.register DeelInvoiceAdjustment do
         amount: submitted[:amount],
         description: submitted[:description],
         date_submitted: submitted[:date_submitted].presence || Date.current,
-        bypass_team_allowlist: current_admin_user.is_admin?,
         skip_balance_validation: skip_balance_validation_for_request?(submitted),
       )
 

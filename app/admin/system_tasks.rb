@@ -7,7 +7,7 @@ ActiveAdmin.register SystemTask do
             display_count = count > 99 ? "99+" : count.to_s
             div("#{display_count}", class: "notifier")
           end
-          "Tasks"
+          "System Jobs"
         },
         parent: "Dashboard"
 

@@ -1,5 +1,6 @@
 class ProjectLeadPeriod < ApplicationRecord
   include ActsAsPeriod
+  include BustsTaskCache
 
   belongs_to :project_tracker
   belongs_to :admin_user

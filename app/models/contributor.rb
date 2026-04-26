@@ -110,14 +110,12 @@ class Contributor < ApplicationRecord
   end
 
   # Staff admins (`admin_user.is_admin?`) see Deel Withdrawal UI whenever this contributor has a Deel person.
-  # Linked contributors (non-staff) only when they are the ForecastPerson’s admin user and on the Deel allowlist.
+  # Linked contributors (non-staff) see it when they are the ForecastPerson's admin user.
   def deel_invoice_actions_visible_to?(admin_user)
     return false unless deel_person_id.present?
     return true if admin_user.is_admin?
 
-    return false unless forecast_person&.admin_user == admin_user
-
-    Stacks::DeelWithdrawalAccess.allowlisted?(admin_user.email)
+    forecast_person&.admin_user == admin_user
   end
 
   def new_deal_balance(ledger_items = new_deal_ledger_items(false))

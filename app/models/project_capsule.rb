@@ -1,4 +1,6 @@
 class ProjectCapsule < ApplicationRecord
+  include BustsTaskCache
+
   belongs_to :project_tracker
 
   has_one :project_satisfaction_survey

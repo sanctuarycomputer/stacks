@@ -1,4 +1,6 @@
 class ProjectTrackerForecastProject < ApplicationRecord
+  include BustsTaskCache
+
   belongs_to :project_tracker
   belongs_to :forecast_project, primary_key: :forecast_id
   validates :forecast_project, uniqueness: true
