@@ -12,7 +12,7 @@ class Contact < ApplicationRecord
   scope :sources_cont, ->(value) { where("array_to_string(sources, ' ') ILIKE ?", "%#{value}%") }
 
   def self.ransackable_attributes(auth_object = nil)
-    super - ['sources']
+    super - %w[sources metadata]
   end
 
   def self.ransackable_scopes(*)

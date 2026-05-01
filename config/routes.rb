@@ -15,6 +15,6 @@ Rails.application.routes.draw do
 
   namespace :api do
     resources :profit_share_passes, only: [:index]
-    resources :contacts, only: [:create]
+    resources :contacts, only: [:create, :index]
   end
 end

@@ -45,6 +45,22 @@ ActiveAdmin.register Contact do
     link_to "Sync to Apollo", sync_to_apollo_admin_contact_path(resource), method: :post
   end
 
+  show do
+    attributes_table do
+      row :email
+      row :sources
+      row :apollo_id
+      row :metadata do |c|
+        tag.pre(JSON.pretty_generate(c.metadata))
+      end
+      row :apollo_data do |c|
+        tag.pre(JSON.pretty_generate(c.apollo_data))
+      end
+      row :created_at
+      row :updated_at
+    end
+  end
+
   index download_links: [:csv] do
     column :email
     column :sources

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_04_26_162500) do
+ActiveRecord::Schema.define(version: 2026_05_01_120000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -99,6 +99,7 @@ ActiveRecord::Schema.define(version: 2026_04_26_162500) do
     t.datetime "updated_at", precision: 6, null: false
     t.string "apollo_id"
     t.jsonb "apollo_data", default: {}
+    t.jsonb "metadata", default: {}, null: false
     t.index ["apollo_id"], name: "index_contacts_on_apollo_id", unique: true
     t.index ["email"], name: "index_contacts_on_email", unique: true
   end
