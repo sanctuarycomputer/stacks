@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_05_01_120000) do
+ActiveRecord::Schema.define(version: 2026_05_05_120000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -90,6 +90,21 @@ ActiveRecord::Schema.define(version: 2026_05_01_120000) do
     t.integer "installment_amount", default: 104167
     t.string "contract_url"
     t.index ["admin_user_id"], name: "index_associates_award_agreements_on_admin_user_id"
+  end
+
+  create_table "commissions", force: :cascade do |t|
+    t.bigint "project_tracker_id", null: false
+    t.bigint "contributor_id", null: false
+    t.string "type", null: false
+    t.decimal "rate", precision: 10, scale: 4, null: false
+    t.text "notes"
+    t.datetime "deleted_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["contributor_id"], name: "index_commissions_on_contributor_id"
+    t.index ["deleted_at"], name: "index_commissions_on_deleted_at"
+    t.index ["project_tracker_id"], name: "index_commissions_on_project_tracker_id"
+    t.index ["type"], name: "index_commissions_on_type"
   end
 
   create_table "contacts", force: :cascade do |t|
@@ -1065,6 +1080,8 @@ ActiveRecord::Schema.define(version: 2026_05_01_120000) do
   add_foreign_key "adhoc_invoice_trackers", "project_trackers"
   add_foreign_key "admin_user_salary_windows", "admin_users"
   add_foreign_key "associates_award_agreements", "admin_users"
+  add_foreign_key "commissions", "contributors"
+  add_foreign_key "commissions", "project_trackers"
   add_foreign_key "contributor_adjustments", "contributors"
   add_foreign_key "contributor_payouts", "admin_users", column: "created_by_id"
   add_foreign_key "contributor_payouts", "contributors"

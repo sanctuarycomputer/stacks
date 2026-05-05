@@ -28,6 +28,9 @@ class ProjectTracker < ApplicationRecord
   has_many :adhoc_invoice_trackers, dependent: :delete_all
   accepts_nested_attributes_for :adhoc_invoice_trackers, allow_destroy: true
 
+  has_many :commissions, dependent: :destroy
+  accepts_nested_attributes_for :commissions, allow_destroy: true
+
   has_many :project_tracker_forecast_projects, dependent: :delete_all
   has_many :forecast_projects, through: :project_tracker_forecast_projects
   accepts_nested_attributes_for :project_tracker_forecast_projects, allow_destroy: true
@@ -586,6 +589,12 @@ class ProjectTracker < ApplicationRecord
 
   def lifetime_value
     total_value_during_range(start_date, end_date)
+  end
+
+  def lifetime_commissions_paid
+    invoice_trackers.sum do |it|
+      it.contributor_payouts.sum(&:as_commission)
+    end
   end
 
   def spend

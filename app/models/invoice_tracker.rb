@@ -237,6 +237,23 @@ class InvoiceTracker < ApplicationRecord
     contributor_payouts.includes(contributor: :forecast_person).map(&:calculate_surplus).flatten
   end
 
+  def commission_deductions_for_line(project_tracker, qbo_line_item, blueprint_line)
+    project_tracker.commissions.map do |commission|
+      {
+        commission: commission,
+        amount: commission.deduction_for_line(qbo_line_item, blueprint_line).to_f.round(2),
+      }
+    end.reject { |d| d[:amount] <= 0 }
+  end
+
+  def commission_total_for_line(line_item_id)
+    contributor_payouts.includes(:contributor).sum do |cp|
+      (cp.blueprint["Commission"] || []).sum do |entry|
+        entry.dig("blueprint_metadata", "id").to_s == line_item_id.to_s ? entry["amount"].to_f : 0
+      end
+    end
+  end
+
   def surplus(chunks = surplus_chunks)
     chunks.sum{|c| c[:surplus]}
   end
@@ -263,16 +280,46 @@ class InvoiceTracker < ApplicationRecord
         if forecast_project.forecast_client.is_internal?
           individual_contributor = ForecastPerson.find(metadata["forecast_person"])
           next unless individual_contributor.present?
+
+          # Internal projects may or may not have a ProjectTracker. If they do
+          # and it has commissions, deduct them off the top before recording the IC entry.
+          ptfps = ProjectTrackerForecastProject.includes(:project_tracker).where(forecast_project_id: metadata["forecast_project"])
+          pt = ptfps.first&.project_tracker
+          commission_total = 0
+          if pt
+            deductions = commission_deductions_for_line(pt, line_item, metadata)
+            commission_total = deductions.sum { |d| d[:amount] }
+
+            deductions.each do |d|
+              recipient = d[:commission].contributor.forecast_person
+              next unless recipient.present?
+              payouts[recipient] ||= {
+                blueprint: {
+                  AccountLead: [],
+                  ProjectLead: [],
+                  IndividualContributor: [],
+                  Commission: [],
+                }
+              }
+              payouts[recipient][:blueprint][:Commission] << {
+                blueprint_metadata: ContributorPayout.slim_metadata(metadata),
+                amount: d[:amount],
+                description_line: d[:commission].description_line(line_item, metadata, d[:amount]),
+              }
+            end
+          end
+
           payouts[individual_contributor] ||= {
             blueprint: {
               AccountLead: [],
               ProjectLead: [],
-              IndividualContributor: []
+              IndividualContributor: [],
+              Commission: [],
             }
           }
           payouts[individual_contributor][:blueprint][:IndividualContributor] << {
             blueprint_metadata: ContributorPayout.slim_metadata(metadata),
-            amount: line_item["amount"].to_f.round(2),
+            amount: (line_item["amount"].to_f - commission_total).round(2),
           }
           next
         end
@@ -291,6 +338,29 @@ class InvoiceTracker < ApplicationRecord
         working_hours = metadata["quantity"].to_f
         working_rate = metadata["unit_price"].to_f
 
+        # Commission deduction: take commissions off the top before AL/PL/IC math.
+        deductions = commission_deductions_for_line(pt, line_item, metadata)
+        commission_total = deductions.sum { |d| d[:amount] }
+        working_amount -= commission_total
+
+        deductions.each do |d|
+          recipient = d[:commission].contributor.forecast_person
+          next unless recipient.present?
+          payouts[recipient] ||= {
+            blueprint: {
+              AccountLead: [],
+              ProjectLead: [],
+              IndividualContributor: [],
+              Commission: [],
+            }
+          }
+          payouts[recipient][:blueprint][:Commission] << {
+            blueprint_metadata: ContributorPayout.slim_metadata(metadata),
+            amount: d[:amount],
+            description_line: d[:commission].description_line(line_item, metadata, d[:amount]),
+          }
+        end
+
         is_first_month_of_new_deal = invoice_pass.start_of_month == Date.new(2025, 6, 1)
         if is_first_month_of_new_deal
           working_hours =
@@ -305,6 +375,7 @@ class InvoiceTracker < ApplicationRecord
                 a.allocation_during_range_in_hours(Date.new(2025, 6, 16), Date.new(2025, 6, 30))
               end.compact.sum
           working_amount = working_hours * working_rate
+          working_amount -= commission_total  # re-apply commission deduction after first-month recompute
         end
 
         account_lead = pt.account_lead_for_month(invoice_pass.start_of_month).try(:forecast_person)
@@ -313,7 +384,8 @@ class InvoiceTracker < ApplicationRecord
             blueprint: {
               AccountLead: [],
               ProjectLead: [],
-              IndividualContributor: []
+              IndividualContributor: [],
+              Commission: [],
             }
           }
 
@@ -332,6 +404,7 @@ class InvoiceTracker < ApplicationRecord
               AccountLead: [],
               ProjectLead: [],
               IndividualContributor: [],
+              Commission: [],
             }
           }
           amount = (working_amount * 0.05).round(2)
@@ -350,7 +423,8 @@ class InvoiceTracker < ApplicationRecord
             blueprint: {
               AccountLead: [],
               ProjectLead: [],
-              IndividualContributor: []
+              IndividualContributor: [],
+              Commission: [],
             }
           }
           if hourly_rate_of_pay_override.present?
@@ -395,6 +469,19 @@ class InvoiceTracker < ApplicationRecord
 
       (contributor_payouts - synced).each(&:destroy)
       contributor_payouts.reload
+
+      # Commission-only CPs auto-accept: no contributor is reviewing their own work,
+      # since the commission rate was agreed up-front on the project tracker.
+      contributor_payouts.each do |cp|
+        bp = cp.blueprint || {}
+        commission_amount = (bp["Commission"] || []).sum { |e| e["amount"].to_f }
+        other_amount = ["AccountLead", "ProjectLead", "IndividualContributor"].sum do |role|
+          (bp[role] || []).sum { |e| e["amount"].to_f }
+        end
+        if commission_amount > 0 && other_amount == 0 && cp.accepted_at.nil?
+          cp.update_columns(accepted_at: DateTime.now)
+        end
+      end
 
       # Assign splits for Surplus
       chunks = surplus_chunks.select{|c| c[:surplus] > 0}

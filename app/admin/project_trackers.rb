@@ -37,6 +37,15 @@ ActiveAdmin.register ProjectTracker do
       :forecast_project_id,
       :_destroy,
       :_edit
+    ],
+    commissions_attributes: [
+      :id,
+      :type,
+      :contributor_id,
+      :rate,
+      :notes,
+      :_destroy,
+      :_edit,
     ]
 
   controller do
@@ -391,6 +400,22 @@ ActiveAdmin.register ProjectTracker do
           collection: ForecastProject.candidates_for_association_with_project_tracker(resource),
           hint: "Is your project disabled? That's likely because it's Forecast Project Code is claimed by another Stacks Project Tracker. Choose a unique code for Forecast Projects associated with this Project Tracker. We sync with Forecast every ~10 minutes or so, so if you make changes there, check back here after 10 minutes."
         })
+      end
+
+      f.has_many :commissions, heading: "Commissions (paid back-of-house, deducted from each invoice line before contributor payouts)", allow_destroy: true, new_record: 'Add a Commission' do |c|
+        c.input :type,
+          as: :select,
+          collection: [
+            ["Percentage of line amount", "PercentageCommission"],
+            ["Per billable hour", "PerHourCommission"],
+          ],
+          prompt: "Choose commission type"
+        c.input :contributor,
+          as: :select,
+          collection: Contributor.all.map { |co| [co.display_name, co.id] },
+          prompt: "Choose recipient (Contributor)"
+        c.input :rate, hint: "For Percentage: 0.15 = 15%. For Per Hour: dollar amount per billable hour (e.g. 15.00)."
+        c.input :notes, as: :text, input_html: { rows: 2 }
       end
 
       f.input :runn_project,

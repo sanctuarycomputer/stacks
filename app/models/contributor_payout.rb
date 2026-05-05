@@ -243,10 +243,13 @@ class ContributorPayout < ApplicationRecord
       amount_paid = ic.dig("amount").try(:to_f) || 0
       amount_billed = qbo_line_item.dig("amount").try(:to_f) || 0
 
+      commission_for_line = invoice_tracker.commission_total_for_line(blueprint_metadata.dig("id"))
+      working_amount = amount_billed - commission_for_line
+
       surplus = 0
-      if amount_billed > 0
-        profit_margin = (amount_billed - amount_paid) / amount_billed
-        surplus = ((profit_margin - 0.43) * amount_billed).round(2)
+      if working_amount > 0
+        profit_margin = (working_amount - amount_paid) / working_amount
+        surplus = ((profit_margin - 0.43) * working_amount).round(2)
         surplus = 0 if surplus <= 0
       end
 
@@ -256,7 +259,7 @@ class ContributorPayout < ApplicationRecord
         contributor: contributor,
         surplus: surplus,
         actual: amount_paid,
-        maximum: 0.57 * amount_billed,
+        maximum: 0.57 * working_amount,
         chunk: ic,
         qbo_line_item: qbo_line_item,
         blueprint_metadata: blueprint_metadata,
@@ -323,14 +326,20 @@ class ContributorPayout < ApplicationRecord
 
     cps = invoice_tracker.contributor_payouts.include?(self) ? invoice_tracker.contributor_payouts : [*invoice_tracker.contributor_payouts, self]
 
+    commissions_total = cps.sum(&:as_commission)
+
     if invoice_tracker.forecast_client.is_internal?
-      max_amount = invoice_tracker.total
+      post_commission_total = invoice_tracker.total - commissions_total
+      max_amount = post_commission_total
     else
-      max_amount = invoice_tracker.total * (1 - invoice_tracker.company_treasury_split)
+      post_commission_total = invoice_tracker.total - commissions_total
+      max_amount = post_commission_total * (1 - invoice_tracker.company_treasury_split)
     end
 
-    if cps.sum(&:amount) > (max_amount + 1) # Add a dollar to account for rounding errors
-      errors.add(:base, "Contributor Payouts may not exceed #{ActionController::Base.helpers.number_to_currency(max_amount)} (#{100 * (1 - invoice_tracker.company_treasury_split)}% of invoice total).")
+    contributor_pool_sum = cps.sum { |cp| cp.amount.to_f - cp.as_commission }
+
+    if contributor_pool_sum > (max_amount + 1) # Add a dollar to account for rounding errors
+      errors.add(:base, "Contributor Payouts may not exceed #{ActionController::Base.helpers.number_to_currency(max_amount)} (#{100 * (1 - invoice_tracker.company_treasury_split)}% of post-commission invoice total).")
     end
   end
 
@@ -350,6 +359,11 @@ class ContributorPayout < ApplicationRecord
   def as_individual_contributor
     return 0 unless blueprint["IndividualContributor"].present?
     blueprint["IndividualContributor"].sum{|l| l["amount"]}
+  end
+
+  def as_commission
+    return 0 unless blueprint["Commission"].present?
+    blueprint["Commission"].sum { |l| l["amount"].to_f }
   end
 
   # SyncsAsQboBill contract

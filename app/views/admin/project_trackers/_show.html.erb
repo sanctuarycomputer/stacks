@@ -290,6 +290,15 @@ Budget: <%= number_to_currency(budget_high_end) %>
       </td>
     </tr>
 
+    <% if @project_tracker.commissions.any? || @project_tracker.lifetime_commissions_paid > 0 %>
+      <tr class="even">
+        <td class="col">Total Commissions Paid (Lifetime)</td>
+        <td class="col">
+          <%= number_to_currency(@project_tracker.lifetime_commissions_paid) %>
+        </td>
+      </tr>
+    <% end %>
+
     <% if budget_low_end.present? %>
       <tr class="even">
         <td class="col">Budget Low End</td>
