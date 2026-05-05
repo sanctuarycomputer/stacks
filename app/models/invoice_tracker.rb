@@ -393,7 +393,9 @@ class InvoiceTracker < ApplicationRecord
           payouts[account_lead][:blueprint][:AccountLead] << {
             blueprint_metadata: ContributorPayout.slim_metadata(metadata),
             amount: amount,
-            description_line: "- #{working_hours} hrs * #{n2c(working_rate)} p/h * 8% = #{n2c(amount)}",
+            description_line: commission_total > 0 ?
+              "- (#{working_hours} hrs * #{n2c(working_rate)} p/h) - #{n2c(commission_total)} commission = #{n2c(working_amount)} * 8% = #{n2c(amount)}" :
+              "- #{working_hours} hrs * #{n2c(working_rate)} p/h * 8% = #{n2c(amount)}",
           }
         end
 
@@ -411,7 +413,9 @@ class InvoiceTracker < ApplicationRecord
           payouts[project_lead][:blueprint][:ProjectLead] << {
             blueprint_metadata: ContributorPayout.slim_metadata(metadata),
             amount: amount,
-            description_line: "- #{working_hours} hrs * #{n2c(working_rate)} p/h * 5% = #{n2c(amount)}",
+            description_line: commission_total > 0 ?
+              "- (#{working_hours} hrs * #{n2c(working_rate)} p/h) - #{n2c(commission_total)} commission = #{n2c(working_amount)} * 5% = #{n2c(amount)}" :
+              "- #{working_hours} hrs * #{n2c(working_rate)} p/h * 5% = #{n2c(amount)}",
           }
         end
 
@@ -435,11 +439,14 @@ class InvoiceTracker < ApplicationRecord
               description_line: "- #{working_hours} hrs * #{n2c(hourly_rate_of_pay_override)} p/h = #{n2c(amount)}",
             }
           else
-            amount = (working_amount * (1 - pt.company_treasury_split - (account_lead.present? ? 0.08 : 0) - (project_lead.present? ? 0.05 : 0))).round(2)
+            ic_share = 1 - pt.company_treasury_split - (account_lead.present? ? 0.08 : 0) - (project_lead.present? ? 0.05 : 0)
+            amount = (working_amount * ic_share).round(2)
             payouts[individual_contributor][:blueprint][:IndividualContributor] << {
               blueprint_metadata: ContributorPayout.slim_metadata(metadata),
               amount: amount,
-              description_line: "- #{working_hours} hrs * #{n2c(working_rate)} p/h * #{100 * (1 - pt.company_treasury_split - (account_lead.present? ? 0.08 : 0) - (project_lead.present? ? 0.05 : 0))}% = #{n2c(amount)}",
+              description_line: commission_total > 0 ?
+                "- (#{working_hours} hrs * #{n2c(working_rate)} p/h) - #{n2c(commission_total)} commission = #{n2c(working_amount)} * #{(ic_share * 100).round(2)}% = #{n2c(amount)}" :
+                "- #{working_hours} hrs * #{n2c(working_rate)} p/h * #{(ic_share * 100).round(2)}% = #{n2c(amount)}",
             }
           end
         end
