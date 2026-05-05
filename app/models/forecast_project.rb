@@ -18,10 +18,14 @@ class ForecastProject < ApplicationRecord
   def hourly_rate_override_for_email_address(email)
     return nil unless notes.present?
     # It's possible to record overrides to a particular individual's
-    # (or contractor's) hourly rates in Harvest Forecast by adding a note
-    # to the Forecast project in the form:
-    # "contractor-name@contractor-domain.com:150p/h"
-    regexp = /^([^:]+):\$?([0-9\.]+)p\/h/
+    # (or contractor's) hourly rates in Harvest Forecast by adding notes
+    # to the Forecast project. Entries can be on their own line or
+    # comma-separated on a single line:
+    #   "contractor-name@contractor-domain.com:150p/h"
+    #   "alice@example.com:120p/h, bob@example.com:99.75p/h"
+    # The leading anchor (start-of-line or comma) prevents partial matches
+    # against email-like text embedded in prose.
+    regexp = /(?:^|,)\s*([^:,\s]+):\$?([0-9\.]+)p\/h/
     matches = notes.scan(regexp)
     match = matches.find do |match|
       match[0].downcase == email.downcase
