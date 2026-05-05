@@ -222,38 +222,6 @@
   <% end %>
 </div>
 
-<% commission_entries = invoice_tracker.contributor_payouts.flat_map do |cp|
-     (cp.blueprint["Commission"] || []).map do |entry|
-       { recipient: cp.contributor.display_name, amount: entry["amount"].to_f, line_id: entry.dig("blueprint_metadata", "id") }
-     end
-   end %>
-<% if commission_entries.any? %>
-  <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
-    <thead>
-      <tr>
-        <th class="col">Recipient</th>
-        <th class="col">Amount</th>
-        <th class="col">Line Item</th>
-      </tr>
-    </thead>
-    <tbody>
-      <% commission_entries.each_with_index do |entry, index| %>
-        <% line = invoice_tracker.qbo_invoice&.line_items&.find { |li| li["id"].to_s == entry[:line_id].to_s } %>
-        <tr class="<%= index.even? ? "even" : "odd" %>">
-          <td class="col"><strong><%= entry[:recipient] %></strong></td>
-          <td class="col">- <%= number_to_currency(entry[:amount]) %></td>
-          <td class="col"><% if line %><em><%= line["description"] %></em><% else %><span style="color:#999;">—</span><% end %></td>
-        </tr>
-      <% end %>
-      <tr>
-        <td class="col"><strong>Total Deducted</strong></td>
-        <td class="col"><strong>- <%= number_to_currency(commission_entries.sum { |e| e[:amount] }) %></strong></td>
-        <td class="col"></td>
-      </tr>
-    </tbody>
-  </table>
-<% end %>
-
 <% if invoice_tracker.contributor_payouts.any? %>
   <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
     <thead>
