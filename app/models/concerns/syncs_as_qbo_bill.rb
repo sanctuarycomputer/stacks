@@ -1,6 +1,22 @@
 module SyncsAsQboBill
   extend ActiveSupport::Concern
 
+  # Host models are acts_as_paranoid: destroy soft-deletes the host row but
+  # leaves it referencing qbo_bills via qbo_bill_id. A naive `dependent: :destroy`
+  # on the belongs_to violates the FK because the soft-deleted host still points
+  # at the bill. Detach first, then destroy — same ordering used in load_qbo_bill!.
+  # Wire up via `before_destroy :detach_and_destroy_qbo_bill` on hosts that want
+  # immediate cleanup (CP/CA). Trueup relies on cleanup_orphaned_qbo_objects! cron.
+  def detach_and_destroy_qbo_bill
+    return unless qbo_bill.present?
+
+    ActiveRecord::Base.transaction do
+      bill = qbo_bill
+      update_attribute(:qbo_bill_id, nil)
+      bill.destroy!
+    end
+  end
+
   def qbo_url
     qbo_bill.try(:qbo_url)
   end
