@@ -243,10 +243,13 @@ class ContributorPayout < ApplicationRecord
       amount_paid = ic.dig("amount").try(:to_f) || 0
       amount_billed = qbo_line_item.dig("amount").try(:to_f) || 0
 
+      commission_for_line = invoice_tracker.commission_total_for_line(blueprint_metadata.dig("id"))
+      working_amount = amount_billed - commission_for_line
+
       surplus = 0
-      if amount_billed > 0
-        profit_margin = (amount_billed - amount_paid) / amount_billed
-        surplus = ((profit_margin - 0.43) * amount_billed).round(2)
+      if working_amount > 0
+        profit_margin = (working_amount - amount_paid) / working_amount
+        surplus = ((profit_margin - 0.43) * working_amount).round(2)
         surplus = 0 if surplus <= 0
       end
 
@@ -256,7 +259,7 @@ class ContributorPayout < ApplicationRecord
         contributor: contributor,
         surplus: surplus,
         actual: amount_paid,
-        maximum: 0.57 * amount_billed,
+        maximum: 0.57 * working_amount,
         chunk: ic,
         qbo_line_item: qbo_line_item,
         blueprint_metadata: blueprint_metadata,

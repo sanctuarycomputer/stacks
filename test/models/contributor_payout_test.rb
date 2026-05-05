@@ -65,4 +65,37 @@ class ContributorPayoutTest < ActiveSupport::TestCase
     ic_cp.send(:contributor_payouts_within_seventy_percent)
     assert_not_empty ic_cp.errors[:base]
   end
+
+  test "calculate_surplus uses post-commission working_amount as basis" do
+    qbo_line = { "id" => "5", "amount" => 1000.0, "description" => "ABC-1 Foo" }
+    qbo_invoice = mock("qbo_invoice")
+    qbo_invoice.stubs(:line_items).returns([qbo_line])
+
+    invoice_tracker = mock("invoice_tracker")
+    invoice_tracker.stubs(:qbo_invoice).returns(qbo_invoice)
+    invoice_tracker.stubs(:project_trackers).returns([])
+    invoice_tracker.stubs(:commission_total_for_line).with("5").returns(150.0)
+
+    contributor = mock("contributor")
+    cp = ContributorPayout.new(
+      amount: 400.0,
+      blueprint: {
+        "IndividualContributor" => [
+          { "amount" => 400.0, "blueprint_metadata" => { "id" => "5", "forecast_project" => 99 } },
+        ],
+      },
+    )
+    cp.stubs(:invoice_tracker).returns(invoice_tracker)
+    cp.stubs(:contributor).returns(contributor)
+    cp.stubs(:in_sync?).returns(true)
+
+    chunks = cp.calculate_surplus
+    assert_equal 1, chunks.length
+    chunk = chunks.first
+    # working_amount = 1000 - 150 = 850
+    # profit_margin = (850 - 400) / 850 = 450/850 = 0.52941...
+    # surplus = (0.52941 - 0.43) * 850 = 0.09941 * 850 = ~84.50
+    assert_in_delta 84.50, chunk[:surplus], 0.05
+    assert_in_delta 0.57 * 850, chunk[:maximum], 0.01
+  end
 end
