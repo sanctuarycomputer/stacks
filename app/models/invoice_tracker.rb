@@ -280,6 +280,35 @@ class InvoiceTracker < ApplicationRecord
         if forecast_project.forecast_client.is_internal?
           individual_contributor = ForecastPerson.find(metadata["forecast_person"])
           next unless individual_contributor.present?
+
+          # Internal projects may or may not have a ProjectTracker. If they do
+          # and it has commissions, deduct them off the top before recording the IC entry.
+          ptfps = ProjectTrackerForecastProject.includes(:project_tracker).where(forecast_project_id: metadata["forecast_project"])
+          pt = ptfps.first&.project_tracker
+          commission_total = 0
+          if pt
+            deductions = commission_deductions_for_line(pt, line_item, metadata)
+            commission_total = deductions.sum { |d| d[:amount] }
+
+            deductions.each do |d|
+              recipient = d[:commission].contributor.forecast_person
+              next unless recipient.present?
+              payouts[recipient] ||= {
+                blueprint: {
+                  AccountLead: [],
+                  ProjectLead: [],
+                  IndividualContributor: [],
+                  Commission: [],
+                }
+              }
+              payouts[recipient][:blueprint][:Commission] << {
+                blueprint_metadata: ContributorPayout.slim_metadata(metadata),
+                amount: d[:amount],
+                description_line: d[:commission].description_line(line_item, metadata, d[:amount]),
+              }
+            end
+          end
+
           payouts[individual_contributor] ||= {
             blueprint: {
               AccountLead: [],
@@ -290,7 +319,7 @@ class InvoiceTracker < ApplicationRecord
           }
           payouts[individual_contributor][:blueprint][:IndividualContributor] << {
             blueprint_metadata: ContributorPayout.slim_metadata(metadata),
-            amount: line_item["amount"].to_f.round(2),
+            amount: (line_item["amount"].to_f - commission_total).round(2),
           }
           next
         end
@@ -316,6 +345,7 @@ class InvoiceTracker < ApplicationRecord
 
         deductions.each do |d|
           recipient = d[:commission].contributor.forecast_person
+          next unless recipient.present?
           payouts[recipient] ||= {
             blueprint: {
               AccountLead: [],
