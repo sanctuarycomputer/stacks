@@ -1,0 +1,2 @@
+class PercentageCommission < Commission
+end

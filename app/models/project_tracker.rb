@@ -28,6 +28,9 @@ class ProjectTracker < ApplicationRecord
   has_many :adhoc_invoice_trackers, dependent: :delete_all
   accepts_nested_attributes_for :adhoc_invoice_trackers, allow_destroy: true
 
+  has_many :commissions, dependent: :destroy
+  accepts_nested_attributes_for :commissions, allow_destroy: true
+
   has_many :project_tracker_forecast_projects, dependent: :delete_all
   has_many :forecast_projects, through: :project_tracker_forecast_projects
   accepts_nested_attributes_for :project_tracker_forecast_projects, allow_destroy: true
