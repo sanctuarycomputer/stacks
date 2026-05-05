@@ -83,4 +83,28 @@ class InvoiceTrackerTest < ActiveSupport::TestCase
       }
     ], line_items)
   end
+
+  test "#commission_total_for_line sums Commission entries across CPs whose blueprint_metadata.id matches the line" do
+    cp1 = ContributorPayout.new(blueprint: {
+      "Commission" => [
+        { "amount" => 100.0, "blueprint_metadata" => { "id" => "5" } },
+        { "amount" => 50.0,  "blueprint_metadata" => { "id" => "6" } },
+      ]
+    })
+    cp2 = ContributorPayout.new(blueprint: {
+      "Commission" => [
+        { "amount" => 25.0, "blueprint_metadata" => { "id" => "5" } },
+      ],
+      "IndividualContributor" => [
+        { "amount" => 999.0, "blueprint_metadata" => { "id" => "5" } },
+      ]
+    })
+
+    invoice_tracker = InvoiceTracker.new
+    invoice_tracker.stubs(:contributor_payouts).returns(stub(includes: [cp1, cp2]))
+
+    assert_in_delta 125.0, invoice_tracker.commission_total_for_line("5"), 0.001
+    assert_in_delta 50.0,  invoice_tracker.commission_total_for_line(6), 0.001
+    assert_equal 0, invoice_tracker.commission_total_for_line("99")
+  end
 end

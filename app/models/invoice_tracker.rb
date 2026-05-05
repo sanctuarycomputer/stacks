@@ -237,6 +237,14 @@ class InvoiceTracker < ApplicationRecord
     contributor_payouts.includes(contributor: :forecast_person).map(&:calculate_surplus).flatten
   end
 
+  def commission_total_for_line(line_item_id)
+    contributor_payouts.includes(:contributor).sum do |cp|
+      (cp.blueprint["Commission"] || []).sum do |entry|
+        entry.dig("blueprint_metadata", "id").to_s == line_item_id.to_s ? entry["amount"].to_f : 0
+      end
+    end
+  end
+
   def surplus(chunks = surplus_chunks)
     chunks.sum{|c| c[:surplus]}
   end
