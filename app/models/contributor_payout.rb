@@ -323,14 +323,20 @@ class ContributorPayout < ApplicationRecord
 
     cps = invoice_tracker.contributor_payouts.include?(self) ? invoice_tracker.contributor_payouts : [*invoice_tracker.contributor_payouts, self]
 
+    commissions_total = cps.sum(&:as_commission)
+
     if invoice_tracker.forecast_client.is_internal?
-      max_amount = invoice_tracker.total
+      post_commission_total = invoice_tracker.total - commissions_total
+      max_amount = post_commission_total
     else
-      max_amount = invoice_tracker.total * (1 - invoice_tracker.company_treasury_split)
+      post_commission_total = invoice_tracker.total - commissions_total
+      max_amount = post_commission_total * (1 - invoice_tracker.company_treasury_split)
     end
 
-    if cps.sum(&:amount) > (max_amount + 1) # Add a dollar to account for rounding errors
-      errors.add(:base, "Contributor Payouts may not exceed #{ActionController::Base.helpers.number_to_currency(max_amount)} (#{100 * (1 - invoice_tracker.company_treasury_split)}% of invoice total).")
+    contributor_pool_sum = cps.sum { |cp| cp.amount.to_f - cp.as_commission }
+
+    if contributor_pool_sum > (max_amount + 1) # Add a dollar to account for rounding errors
+      errors.add(:base, "Contributor Payouts may not exceed #{ActionController::Base.helpers.number_to_currency(max_amount)} (#{100 * (1 - invoice_tracker.company_treasury_split)}% of post-commission invoice total).")
     end
   end
 
