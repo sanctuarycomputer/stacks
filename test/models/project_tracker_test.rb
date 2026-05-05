@@ -79,4 +79,19 @@ class ProjectTrackerTest < ActiveSupport::TestCase
     assert_equal Date.new(2024, 1, 10), pt.reload.first_recorded_assignment_start_date
     assert_equal Date.new(2024, 6, 30), pt.last_recorded_assignment_end_date
   end
+
+  test "lifetime_commissions_paid sums as_commission across all CPs on this tracker's invoices" do
+    pt = ProjectTracker.new(name: "Commission Total Test")
+    pt.save!(validate: false)
+
+    cp1 = ContributorPayout.new(amount: 50, blueprint: { "Commission" => [{ "amount" => 50 }] })
+    cp2 = ContributorPayout.new(amount: 30, blueprint: { "Commission" => [{ "amount" => 30 }] })
+    cp3 = ContributorPayout.new(amount: 100, blueprint: { "IndividualContributor" => [{ "amount" => 100 }] })
+
+    invoice_tracker = mock("invoice_tracker")
+    invoice_tracker.stubs(:contributor_payouts).returns([cp1, cp2, cp3])
+    pt.stubs(:invoice_trackers).returns([invoice_tracker])
+
+    assert_in_delta 80.0, pt.lifetime_commissions_paid, 0.001
+  end
 end

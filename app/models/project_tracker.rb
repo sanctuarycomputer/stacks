@@ -591,6 +591,12 @@ class ProjectTracker < ApplicationRecord
     total_value_during_range(start_date, end_date)
   end
 
+  def lifetime_commissions_paid
+    invoice_trackers.sum do |it|
+      it.contributor_payouts.sum(&:as_commission)
+    end
+  end
+
   def spend
     snapshot["invoiced_with_running_spend_total"].to_f
   end
