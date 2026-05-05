@@ -352,6 +352,11 @@ class ContributorPayout < ApplicationRecord
     blueprint["IndividualContributor"].sum{|l| l["amount"]}
   end
 
+  def as_commission
+    return 0 unless blueprint["Commission"].present?
+    blueprint["Commission"].sum { |l| l["amount"].to_f }
+  end
+
   # SyncsAsQboBill contract
   def bill_txn_date
     invoice_tracker.invoice_pass.start_of_month.end_of_month
