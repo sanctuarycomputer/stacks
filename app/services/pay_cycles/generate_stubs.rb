@@ -42,5 +42,16 @@ module PayCycles
         .where("forecast_assignments.end_date >= ?", pay_cycle.starts_at)
         .includes(:forecast_person, forecast_project: :forecast_client)
     end
+
+    # Mirrors invoice_tracker.rb:467's guard. Salaried (non-variable_hours) people
+    # are paid via their full-time arrangement, not pay stubs.
+    def salaried_skip?(forecast_person)
+      admin_user = forecast_person.admin_user
+      return false if admin_user.nil?
+      return false if admin_user.full_time_periods.empty?
+      ftp = admin_user.full_time_period_at(pay_cycle.ends_at)
+      return false if ftp.nil?
+      !ftp.variable_hours?
+    end
   end
 end

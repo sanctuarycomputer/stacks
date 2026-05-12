@@ -49,4 +49,28 @@ class PayCycles::GenerateStubsTest < ActiveSupport::TestCase
     # ForecastProject#hourly_rate defaults to System.instance.default_hourly_rate (175)
     assert_equal 175.0, rate
   end
+
+  test "salaried_skip? true when contributor's admin_user has a non-variable_hours full-time period overlapping cycle end" do
+    email = "salary#{rand(1000000)}@example.com"
+    fp = ForecastPerson.create!(forecast_id: rand(1..10000), email: email, data: {})
+    au = AdminUser.create!(email: email, password: "password123", password_confirmation: "password123")
+    FullTimePeriod.create!(admin_user: au, started_at: Date.new(2025, 1, 1), ended_at: Date.new(2027, 1, 1), contributor_type: :five_day)
+    skip = PayCycles::GenerateStubs.new(@cycle).salaried_skip?(fp)
+    assert skip
+  end
+
+  test "salaried_skip? false when contributor has no full-time period (pure contractor)" do
+    email = "contractor#{rand(1000000)}@example.com"
+    fp = ForecastPerson.create!(forecast_id: rand(1..10000), email: email, data: {})
+    au = AdminUser.create!(email: email, password: "password123", password_confirmation: "password123")
+    refute PayCycles::GenerateStubs.new(@cycle).salaried_skip?(fp)
+  end
+
+  test "salaried_skip? false when variable_hours at cycle end" do
+    email = "variable#{rand(1000000)}@example.com"
+    fp = ForecastPerson.create!(forecast_id: rand(1..10000), email: email, data: {})
+    au = AdminUser.create!(email: email, password: "password123", password_confirmation: "password123")
+    FullTimePeriod.create!(admin_user: au, started_at: Date.new(2025, 1, 1), ended_at: Date.new(2027, 1, 1), contributor_type: :variable_hours)
+    refute PayCycles::GenerateStubs.new(@cycle).salaried_skip?(fp)
+  end
 end
