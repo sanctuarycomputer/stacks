@@ -60,7 +60,14 @@ class Contributor < ApplicationRecord
   def preload_for_ledger_view!
     @_contributor_payouts_with_deleted =
       ContributorPayout.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
-        .includes(:ledger, invoice_tracker: [:invoice_pass, :forecast_client, :qbo_invoice]).to_a
+        .includes(
+          :ledger,
+          # Preload :contributor_payouts on the invoice_tracker so
+          # InvoiceTracker#contributor_payouts_status stays in-memory
+          # (otherwise it fires 2 SQL queries per invoice_tracker for the
+          # `.exists?` + `.where(accepted_at: nil).none?` fallback branch).
+          invoice_tracker: [:invoice_pass, :forecast_client, :qbo_invoice, :contributor_payouts],
+        ).to_a
     @_contributor_adjustments_with_deleted =
       ContributorAdjustment.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
         .includes(:ledger, :qbo_invoice).to_a
