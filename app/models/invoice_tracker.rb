@@ -467,14 +467,25 @@ class InvoiceTracker < ApplicationRecord
         if forecast_person.admin_user.nil? || forecast_person.admin_user.full_time_periods.empty? || forecast_person.admin_user.full_time_period_at(invoice_pass.start_of_month.end_of_month).variable_hours?
           ledger = Ledger.find_or_create_for(enterprise: forecast_client.billing_enterprise, contributor: contributor)
           cp = contributor_payouts.with_deleted.find_or_initialize_by(ledger_id: ledger.id)
-          cp.update!(
+          preserve_acceptance =
+            cp.persisted? && cp.accepted_at.present? && amount_equals?(cp.amount, amount)
+
+          attrs = {
             deleted_at: nil,
             amount: amount,
             blueprint: payee_data[:blueprint],
             created_by: created_by,
             description: "",
-            accepted_at: payee.admin_user.present? ? nil : DateTime.now
-          )
+          }
+          # Commission-only CPs (no admin_user behind them) auto-accept now and always.
+          # Otherwise: preserve acceptance only when the recomputed amount matches the
+          # existing one. Mismatches reset accepted_at so the contributor re-reviews.
+          if payee.admin_user.nil?
+            attrs[:accepted_at] = DateTime.now
+          elsif !preserve_acceptance
+            attrs[:accepted_at] = nil
+          end
+          cp.update!(attrs)
           next cp
         end
       end.compact
@@ -772,4 +783,10 @@ class InvoiceTracker < ApplicationRecord
   # otherwise resolve to a client-services studio service. Counterpart to the
   # "Contractors - Marketing Services" expense account used on the bill side.
   MARKETING_SERVICES_ITEM_NAME = "Marketing Services"
+
+  private
+
+  def amount_equals?(a, b)
+    (a.to_f - b.to_f).abs <= 0.01
+  end
 end

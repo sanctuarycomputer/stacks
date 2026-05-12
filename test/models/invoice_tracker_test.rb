@@ -149,3 +149,15 @@ class InvoiceTrackerTest < ActiveSupport::TestCase
     assert_empty deductions
   end
 end
+
+class InvoiceTrackerRegenAcceptancePreservationTest < ActiveSupport::TestCase
+  test "amount_equals? compares amounts within $0.01 rounding tolerance" do
+    # Predicate covers the only new conditional. End-to-end integration
+    # coverage relies on the analogous PayStub preservation test in Task 10
+    # (same code shape).
+    it = InvoiceTracker.new
+    assert it.send(:amount_equals?, 100.0, 100.00)
+    assert it.send(:amount_equals?, 100.0, 100.005)
+    refute it.send(:amount_equals?, 100.0, 101.0)
+  end
+end
