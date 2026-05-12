@@ -8,6 +8,7 @@ class Ledger < ApplicationRecord
   has_many :reimbursements
   has_many :profit_shares
   has_many :deel_invoice_adjustments
+  has_many :pay_stubs
 
   validates :enterprise_id, uniqueness: { scope: :contributor_id }
 
@@ -51,7 +52,7 @@ class Ledger < ApplicationRecord
       sorted = items_in_period.sort_by { |li| li.effective_on_for_display }.reverse
 
       total_income = sorted.sum do |li|
-        (li.is_a?(ContributorPayout) || li.is_a?(Trueup)) ? li.amount.to_f : 0
+        (li.is_a?(ContributorPayout) || li.is_a?(Trueup) || li.is_a?(PayStub)) ? li.amount.to_f : 0
       end
 
       acc[:all] = acc[:all] + sorted
@@ -74,6 +75,7 @@ class Ledger < ApplicationRecord
       reimbursements.to_a,
       profit_shares.to_a,
       deel_invoice_adjustments.to_a,
+      pay_stubs.to_a,
     ].flatten
   end
 
@@ -86,6 +88,7 @@ class Ledger < ApplicationRecord
       Reimbursement.with_deleted.where(ledger_id: id).to_a,
       ProfitShare.with_deleted.includes(:periodic_report).where(ledger_id: id).to_a,
       DeelInvoiceAdjustment.with_deleted.where(ledger_id: id).to_a,
+      PayStub.with_deleted.includes(:pay_cycle).where(ledger_id: id).to_a,
     ].flatten
   end
 end
