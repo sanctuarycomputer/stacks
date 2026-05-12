@@ -1,0 +1,35 @@
+<% return unless enterprise.pay_cycle_cadence.present? %>
+
+<h2 style="margin-top: 32px">Pay cycles</h2>
+<p>
+  <%= link_to "New Pay Cycle",
+    new_admin_enterprise_pay_cycle_path(enterprise),
+    class: "button" %>
+</p>
+
+<table style="width: 100%; margin-top: 16px">
+  <thead>
+    <tr>
+      <th>Period</th>
+      <th>Status</th>
+      <th>Stub count</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% enterprise.pay_cycles.includes(:pay_stubs).order(starts_at: :desc).each do |pc| %>
+      <tr>
+        <td><%= pc.starts_at %> – <%= pc.ends_at %></td>
+        <td>
+          <% case pc.stubs_status
+             when :no_stubs %>No stubs
+          <% when :some_pending %>Some pending
+          <% when :all_accepted %>All accepted
+          <% end %>
+        </td>
+        <td><%= pc.pay_stubs.size %></td>
+        <td><%= link_to "Open", admin_enterprise_pay_cycle_path(enterprise, pc) %></td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
