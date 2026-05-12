@@ -86,4 +86,41 @@ class PayStubTest < ActiveSupport::TestCase
     stub = PayStub.create!(pay_cycle: @cycle, ledger: @ledger, amount: 1000, blueprint: @blueprint)
     assert_equal @cycle.ends_at, stub.effective_on_for_display
   end
+
+  test "new_deal_balance includes accepted PayStub in balance and unaccepted in unsettled" do
+    # Accepted stub — cycle has only this one stub so stubs_status == :all_accepted => payable?
+    accepted_stub = PayStub.create!(
+      pay_cycle: @cycle,
+      ledger: @ledger,
+      amount: 1000,
+      blueprint: @blueprint,
+      accepted_at: DateTime.now,
+      accepted_by: @admin,
+    )
+    assert accepted_stub.payable?, "stub should be payable when all stubs in cycle are accepted"
+
+    balance = @contributor.new_deal_balance
+    assert_equal 1000, balance[:balance], "accepted payable stub should appear in balance"
+    assert_equal 0, balance[:unsettled], "no unsettled stubs yet"
+
+    # Add a second cycle with an unaccepted stub — neither stub in that cycle is payable
+    cycle2 = PayCycle.create!(
+      enterprise: @enterprise,
+      starts_at: Date.new(2026, 6, 1),
+      ends_at: Date.new(2026, 6, 30),
+    )
+    blueprint2 = { "lines" => [{ "forecast_project" => "fp-2", "hours" => 5, "rate" => 100, "amount" => 500.0, "description" => "June" }] }
+    pending_stub = PayStub.create!(pay_cycle: cycle2, ledger: @ledger, amount: 500, blueprint: blueprint2)
+    refute pending_stub.payable?, "unaccepted stub should not be payable"
+
+    # Re-check contributor (reset memoized cache by reloading)
+    @contributor.instance_variable_set(:@_pay_stubs_with_deleted, nil)
+    balance2 = @contributor.new_deal_balance
+    assert_equal 1000, balance2[:balance], "accepted stub still in balance"
+    assert_equal 500, balance2[:unsettled], "unaccepted stub appears in unsettled"
+
+    # Cleanup
+    pending_stub.destroy
+    cycle2.destroy
+  end
 end

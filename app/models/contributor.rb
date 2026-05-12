@@ -320,6 +320,7 @@ class Contributor < ApplicationRecord
     preloaded_profit_shares = profit_shares_with_deleted
     preloaded_adjustments = contributor_adjustments_with_deleted
     preloaded_deel_invoice_adjustments = deel_invoice_adjustments_with_deleted
+    preloaded_pay_stubs = pay_stubs_with_deleted
 
     if override_ledger_ends_at.present?
       ledger_ends_at = override_ledger_ends_at
@@ -329,6 +330,7 @@ class Contributor < ApplicationRecord
         *preloaded_trueups,
         *preloaded_adjustments,
         *preloaded_deel_invoice_adjustments,
+        *preloaded_pay_stubs,
       ].reduce(Date.today) do |acc, li|
         if li.is_a?(ContributorPayout)
           acc = li.invoice_tracker.invoice_pass.start_of_month if li.invoice_tracker.invoice_pass.start_of_month > acc
@@ -342,6 +344,9 @@ class Contributor < ApplicationRecord
           acc = li.effective_on if li.effective_on > acc
         elsif li.is_a?(DeelInvoiceAdjustment)
           d = li.date_submitted
+          acc = d if d > acc
+        elsif li.is_a?(PayStub)
+          d = li.effective_on_for_display
           acc = d if d > acc
         end
         acc
@@ -401,6 +406,11 @@ class Contributor < ApplicationRecord
         dia.date_submitted <= period.ends_at
       end
 
+      pay_stubs_in_period = preloaded_pay_stubs.select do |ps|
+        ps.effective_on_for_display >= period.starts_at &&
+        ps.effective_on_for_display <= period.ends_at
+      end
+
       sorted =
         [
           *contributor_payouts_in_period,
@@ -409,6 +419,7 @@ class Contributor < ApplicationRecord
           *profit_shares_in_period,
           *adjustments_in_period,
           *deel_invoice_in_period,
+          *pay_stubs_in_period,
         ].sort do |a, b|
         date_a = nil
         if a.is_a?(Trueup)
@@ -423,6 +434,8 @@ class Contributor < ApplicationRecord
           date_a = a.effective_on
         elsif a.is_a?(DeelInvoiceAdjustment)
           date_a = a.date_submitted
+        elsif a.is_a?(PayStub)
+          date_a = a.effective_on_for_display
         end
 
         date_b = nil
@@ -438,6 +451,8 @@ class Contributor < ApplicationRecord
           date_b = b.effective_on
         elsif b.is_a?(DeelInvoiceAdjustment)
           date_b = b.date_submitted
+        elsif b.is_a?(PayStub)
+          date_b = b.effective_on_for_display
         end
 
         date_b <=> date_a
