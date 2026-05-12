@@ -137,16 +137,41 @@ ActiveAdmin.register Contributor do
   end
 
   show do
-    new_deal_ledger_items = resource.all_items_grouped_by_month
-    balance = resource.new_deal_balance(new_deal_ledger_items)
+    # Resolve which ledger view to render. Default = "all" (aggregated, with elevated_service).
+    ledger_param = params[:ledger]
+
+    ledgers_with_items = resource.ledgers.includes(:enterprise).select do |l|
+      [l.contributor_payouts, l.contributor_adjustments, l.trueups,
+       l.reimbursements, l.profit_shares, l.ledger_withdrawals].any?(&:any?)
+    end
+
+    view_mode = :all
+    current_ledger = nil
+    if ledger_param.present? && ledger_param != "all"
+      current_ledger = ledgers_with_items.find { |l| l.enterprise.name == ledger_param || l.id.to_s == ledger_param }
+      view_mode = :ledger if current_ledger
+    end
+
+    items_result =
+      if view_mode == :all
+        resource.all_items_grouped_by_month
+      else
+        current_ledger.items_grouped_by_month
+      end
+
+    balance = resource.new_deal_balance(items_result)
     admin = resource.forecast_person&.admin_user
     pending_tasks = admin&.pending_tasks || []
 
     render(partial: "show", locals: {
       contributor: resource,
-      new_deal_ledger_items: new_deal_ledger_items,
+      items_result: items_result,
+      new_deal_ledger_items: items_result,
       balance: balance,
       pending_tasks: pending_tasks,
+      view_mode: view_mode,
+      ledgers_with_items: ledgers_with_items,
+      current_ledger: current_ledger,
     })
   end
 end

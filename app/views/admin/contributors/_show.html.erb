@@ -1,3 +1,9 @@
+<%= render 'ledger_tabs',
+      contributor: contributor,
+      ledgers_with_items: ledgers_with_items,
+      current_ledger: current_ledger,
+      view_mode: view_mode %>
+
 <% if pending_tasks.any? %>
   <div class="dashboard-modules table index_table index">
     <div class="dashboard-module">
@@ -35,21 +41,23 @@
     <div id="titlebar_left">
       <h2 id="page_title"><%= period.starts_at.strftime("%B %Y") %></h2>
     </div>
-    <div id="titlebar_right">
-      <span class="pill <%= metadata[:elevated_service] ? 'misc' : '' %>">
-        <%= metadata[:elevated_service] ? 'Elevated' : 'Standard' %> Service
-        <span class="split">
-          <% if metadata[:fulltime] %>
-            Fulltime
-          <% else %>
-            <strong><%= metadata[:total_hours] %>hrs, </strong><span><%= number_to_currency(metadata[:total_income]) %><%= metadata[:partial_salary] > 0 ? " + #{number_to_currency(metadata[:partial_salary])} partial salary" : "" %></span>
-          <% end %>
+    <% if view_mode == :all %>
+      <div id="titlebar_right">
+        <span class="pill <%= metadata[:elevated_service] ? 'misc' : '' %>">
+          <%= metadata[:elevated_service] ? 'Elevated' : 'Standard' %> Service
+          <span class="split">
+            <% if metadata[:fulltime] %>
+              Fulltime
+            <% else %>
+              <strong><%= metadata[:total_hours] %>hrs, </strong><span><%= number_to_currency(metadata[:total_income]) %><%= metadata[:partial_salary] > 0 ? " + #{number_to_currency(metadata[:partial_salary])} partial salary" : "" %></span>
+            <% end %>
+          </span>
         </span>
-      </span>
-    </div>
+      </div>
+    <% end %>
   </div>
 
-  <% if metadata[:fulltime] %>
+  <% if view_mode == :all && metadata[:fulltime] %>
     <div class="dashboard-modules table index_table index">
       <div class="dashboard-module">
         <div class="module-body factoid-parent">

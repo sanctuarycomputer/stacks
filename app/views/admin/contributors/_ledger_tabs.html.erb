@@ -1,0 +1,12 @@
+<%# Ledger tab bar — "All" + one tab per Enterprise with items. %>
+<nav class="ledger-tabs">
+  <%= link_to "All",
+        admin_contributor_path(contributor),
+        class: "ledger-tab#{' selected' if view_mode == :all}" %>
+  <% ledgers_with_items.each do |ledger| %>
+    <% selected = view_mode == :ledger && current_ledger&.id == ledger.id %>
+    <%= link_to ledger.enterprise.name,
+          admin_contributor_path(contributor, ledger: ledger.enterprise.name),
+          class: "ledger-tab#{' selected' if selected}" %>
+  <% end %>
+</nav>
