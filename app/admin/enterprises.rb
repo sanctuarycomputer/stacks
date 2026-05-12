@@ -4,6 +4,7 @@ ActiveAdmin.register Enterprise do
   actions :index, :show, :new, :create, :edit, :update
   permit_params :name,
     :deel_legal_entity_id,
+    :pay_cycle_cadence,
     forecast_client_ids: [],
     qbo_account_attributes: [
       :id,
@@ -98,6 +99,13 @@ ActiveAdmin.register Enterprise do
         hint: "Forecast clients whose hours route to this Enterprise's ledger. " \
               "Each Forecast client can only be linked to ONE Enterprise. " \
               "Leave empty for general clients billed by Sanctuary."
+
+      f.input :pay_cycle_cadence,
+        as: :select,
+        collection: [["Monthly", "monthly"], ["Twice monthly (1–15, 16–end)", "twice_monthly"]],
+        include_blank: "(disabled — no pay cycles)",
+        hint: "Setting this enables the \"New Pay Cycle\" button on this enterprise's show page. " \
+              "Choose Monthly for a single cycle per calendar month, or Twice monthly to split the month in half."
 
       f.inputs "QBO Account", for: [:qbo_account, f.object.qbo_account || QboAccount.new] do |qbo_account|
         qbo_account.input :client_id
