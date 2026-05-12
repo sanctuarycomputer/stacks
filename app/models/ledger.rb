@@ -7,6 +7,7 @@ class Ledger < ApplicationRecord
   has_many :trueups
   has_many :reimbursements
   has_many :profit_shares
+  has_many :ledger_withdrawals
 
   validates :enterprise_id, uniqueness: { scope: :contributor_id }
 

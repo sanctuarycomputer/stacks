@@ -15,6 +15,7 @@ class Contributor < ApplicationRecord
   has_many :trueups, through: :ledgers
   has_many :profit_shares, through: :ledgers
   has_many :contributor_adjustments, through: :ledgers
+  has_many :ledger_withdrawals, through: :ledgers
 
   def contributor_payouts_with_deleted
     ContributorPayout.with_deleted.includes(invoice_tracker: :invoice_pass).joins(:ledger).where(ledgers: { contributor_id: id })
