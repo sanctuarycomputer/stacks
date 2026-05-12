@@ -164,21 +164,25 @@ class PayCycles::GenerateStubsTest < ActiveSupport::TestCase
 
   private
 
+  def safe_random_id
+    rand(1..2_000_000_000)
+  end
+
   # Helper to seed a single qualifying assignment for the cycle.
   # - Internal client uses a name from ForecastClient::INTERNAL_CLIENTS (so is_internal? returns true).
   # - Project tags default to ["100p/h"]; pass empty array to test no-rate.
   # - allocation_seconds: pass 0 for $0 stub test.
   def setup_one_assignment(start_date: nil, end_date: nil, hours_per_day: 8, project_tags: ["100p/h"], allocation_seconds: nil)
-    @internal_client ||= ForecastClient.create!(forecast_id: SecureRandom.hex(8), name: "garden3d")
+    @internal_client ||= ForecastClient.create!(forecast_id: safe_random_id, name: "garden3d")
     EnterpriseForecastClient.find_or_create_by!(enterprise: @enterprise, forecast_client_id: @internal_client.forecast_id)
-    @internal_project ||= ForecastProject.create!(forecast_id: SecureRandom.hex(8), client_id: @internal_client.forecast_id, name: "P #{SecureRandom.hex(2)}", tags: project_tags)
-    @assignment_fp ||= ForecastPerson.create!(forecast_id: SecureRandom.hex(8), email: "asg#{SecureRandom.hex(3)}@example.com", data: {})
+    @internal_project ||= ForecastProject.create!(forecast_id: safe_random_id, client_id: @internal_client.forecast_id, name: "P #{SecureRandom.hex(2)}", tags: project_tags)
+    @assignment_fp ||= ForecastPerson.create!(forecast_id: safe_random_id, email: "asg#{SecureRandom.hex(3)}@example.com", data: {})
     @assignment_admin_user ||= AdminUser.create!(email: @assignment_fp.email, password: "password123", password_confirmation: "password123")
     @assignment_contributor ||= Contributor.find_or_create_by!(forecast_person: @assignment_fp)
     @admin ||= AdminUser.create!(email: "approver#{SecureRandom.hex(3)}@example.com", password: "password123", password_confirmation: "password123")
     allocation = allocation_seconds.nil? ? hours_per_day * 60 * 60 : allocation_seconds
     @assignment = ForecastAssignment.create!(
-      forecast_id: SecureRandom.hex(8),
+      forecast_id: safe_random_id,
       person_id: @assignment_fp.forecast_id,
       project_id: @internal_project.forecast_id,
       start_date: start_date || @cycle.starts_at,
