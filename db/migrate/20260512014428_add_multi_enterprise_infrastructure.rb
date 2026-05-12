@@ -8,10 +8,11 @@ class AddMultiEnterpriseInfrastructure < ActiveRecord::Migration[6.1]
     add_column :deel_contracts, :deel_legal_entity_id, :string
     add_index :deel_contracts, :deel_legal_entity_id
 
-    # Inline backfill from existing data JSONB
+    # Inline backfill from existing data JSONB. Deel's /contracts payload
+    # nests the legal entity under client.team (id + name), not client.legal_entity.
     execute(<<~SQL)
       UPDATE deel_contracts
-         SET deel_legal_entity_id = data#>>'{client,legal_entity,id}'
+         SET deel_legal_entity_id = data#>>'{client,team,id}'
        WHERE deel_legal_entity_id IS NULL
     SQL
 

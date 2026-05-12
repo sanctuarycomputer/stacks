@@ -50,7 +50,9 @@ class FoldMiscPaymentsIntoAdjustments < ActiveRecord::Migration[6.1]
       count
     end
 
-    drop_table :misc_payments
+    # Keep the misc_payments table dormant rather than dropping it, so the
+    # original rows remain recoverable if the fold ever needs to be reviewed.
+    # The MiscPayment model and admin page are gone; no app code reads it.
   end
 
   def down
