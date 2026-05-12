@@ -8,7 +8,7 @@ class StacksDeelSyncContractsTest < ActiveSupport::TestCase
       {
         "id" => "c1",
         "worker" => { "id" => "p1" },
-        "client" => { "legal_entity" => { "id" => "le_garden3d" } },
+        "client" => { "team" => { "id" => "le_garden3d", "name" => "Garden3D LLC" } },
       },
     ]
 
