@@ -33,10 +33,6 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
       return true if subject.contributor.forecast_person.admin_user == user && action == :read
     end
 
-    if subject.is_a?(MiscPayment)
-      return true if subject.contributor.forecast_person.admin_user == user && action == :read
-    end
-
     if subject.is_a?(ContributorAdjustment)
       return true if subject.contributor.forecast_person.admin_user == user && action == :read
     end

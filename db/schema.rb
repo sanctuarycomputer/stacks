@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_05_12_015500) do
+ActiveRecord::Schema.define(version: 2026_05_12_020950) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -397,18 +397,6 @@ ActiveRecord::Schema.define(version: 2026_05_12_015500) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.index ["studio_id"], name: "index_mailing_lists_on_studio_id"
-  end
-
-  create_table "misc_payments", force: :cascade do |t|
-    t.decimal "amount", precision: 10, scale: 2, null: false
-    t.text "remittance"
-    t.datetime "deleted_at"
-    t.date "paid_at"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.bigint "contributor_id", null: false
-    t.index ["contributor_id"], name: "index_misc_payments_on_contributor_id"
-    t.index ["deleted_at"], name: "index_misc_payments_on_deleted_at"
   end
 
   create_table "notifications", force: :cascade do |t|
@@ -1123,7 +1111,6 @@ ActiveRecord::Schema.define(version: 2026_05_12_015500) do
   add_foreign_key "ledgers", "enterprises"
   add_foreign_key "mailing_list_subscribers", "mailing_lists"
   add_foreign_key "mailing_lists", "studios"
-  add_foreign_key "misc_payments", "contributors"
   add_foreign_key "okr_period_studios", "okr_periods"
   add_foreign_key "okr_period_studios", "studios"
   add_foreign_key "okr_periods", "okrs"

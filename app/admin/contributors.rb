@@ -47,13 +47,6 @@ ActiveAdmin.register Contributor do
     link_to("New Deel Withdrawal", new_admin_contributor_deel_invoice_adjustment_path(resource))
   end
 
-  action_item :record_misc_payment, only: :show, if: proc { current_admin_user.is_admin? } do
-    link_to(
-      "Record Misc Payment",
-      new_admin_contributor_misc_payment_path(resource)
-    )
-  end
-
   action_item :new_contributor_adjustment, only: :show, if: proc { current_admin_user.is_admin? } do
     link_to(
       "New Adjustment",

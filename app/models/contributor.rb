@@ -5,9 +5,6 @@ class Contributor < ApplicationRecord
   belongs_to :qbo_vendor, class_name: "QboVendor", foreign_key: "qbo_vendor_id", primary_key: "qbo_id", optional: true
   belongs_to :deel_person, class_name: "DeelPerson", foreign_key: "deel_person_id", primary_key: "deel_id", optional: true
 
-  has_many :misc_payments
-  has_many :misc_payments_with_deleted, -> { with_deleted }, class_name: 'MiscPayment'
-
   has_many :deel_invoice_adjustments
   has_many :deel_invoice_adjustments_with_deleted, -> { with_deleted }, class_name: "DeelInvoiceAdjustment"
 
@@ -135,9 +132,7 @@ class Contributor < ApplicationRecord
     ledger_items[:all].reduce({ balance: 0, unsettled: 0 }) do |acc, li|
       next acc if li.deleted_at.present?
 
-      if li.is_a?(MiscPayment)
-        acc[:balance] -= li.amount
-      elsif li.is_a?(ContributorPayout)
+      if li.is_a?(ContributorPayout)
         if li.payable?
           acc[:balance] += li.amount
         else
@@ -171,7 +166,6 @@ class Contributor < ApplicationRecord
   end
 
   def self.aggregated_new_deal_balance
-    all_misc_payments = MiscPayment.all
     all_contributor_payouts = ContributorPayout.includes(invoice_tracker: :invoice_pass).all
     all_reimbursements = Reimbursement.all
     all_trueups = Trueup.all
@@ -205,12 +199,6 @@ class Contributor < ApplicationRecord
       acc
     end
 
-    ledger = all_misc_payments.reduce(ledger) do |acc, mp|
-      next acc if mp.paid_at > Date.today
-      acc[:balance] -= mp.amount
-      acc
-    end
-
     ledger = all_profit_shares.reduce(ledger) do |acc, ps|
       next acc if ps.applied_at > Date.today
       acc[:balance] += ps.amount
@@ -240,7 +228,6 @@ class Contributor < ApplicationRecord
 
   def new_deal_ledger_items(include_salary = true, override_ledger_starts_at = nil, override_ledger_ends_at = nil)
     preloaded_contributor_payouts = contributor_payouts_with_deleted
-    preloaded_misc_payments = misc_payments_with_deleted
     preloaded_reimbursements = reimbursements_with_deleted
     preloaded_trueups = trueups_with_deleted
     preloaded_profit_shares = profit_shares_with_deleted
@@ -250,10 +237,8 @@ class Contributor < ApplicationRecord
     if override_ledger_ends_at.present?
       ledger_ends_at = override_ledger_ends_at
     else
-    ledger_ends_at = [*preloaded_misc_payments, *preloaded_contributor_payouts, *preloaded_trueups, *preloaded_adjustments, *preloaded_deel_invoice_adjustments].reduce(Date.today) do |acc, li|
-      if li.is_a?(MiscPayment)
-        acc = li.paid_at if li.paid_at > acc
-      elsif li.is_a?(ContributorPayout)
+    ledger_ends_at = [*preloaded_contributor_payouts, *preloaded_trueups, *preloaded_adjustments, *preloaded_deel_invoice_adjustments].reduce(Date.today) do |acc, li|
+      if li.is_a?(ContributorPayout)
         acc = li.invoice_tracker.invoice_pass.start_of_month if li.invoice_tracker.invoice_pass.start_of_month > acc
       elsif li.is_a?(Reimbursement)
         acc = li.created_at if li.created_at > acc
@@ -299,11 +284,6 @@ class Contributor < ApplicationRecord
         cp.invoice_tracker.invoice_pass.start_of_month <= period.ends_at
       end
 
-      contractor_payouts_in_period = preloaded_misc_payments.select do |cp|
-        cp.paid_at >= period.starts_at &&
-        cp.paid_at <= period.ends_at
-      end
-
       reimbursements_in_period = preloaded_reimbursements.select do |cp|
         cp.created_at >= period.starts_at &&
         cp.created_at <= period.ends_at
@@ -332,7 +312,6 @@ class Contributor < ApplicationRecord
       sorted =
         [
           *contributor_payouts_in_period,
-          *contractor_payouts_in_period,
           *trueups_in_period,
           *reimbursements_in_period,
           *profit_shares_in_period,
@@ -342,8 +321,6 @@ class Contributor < ApplicationRecord
         date_a = nil
         if a.is_a?(Trueup)
           date_a = a.payment_date
-        elsif a.is_a?(MiscPayment)
-          date_a = a.paid_at
         elsif a.is_a?(Reimbursement)
           date_a = a.created_at
         elsif a.is_a?(ContributorPayout)
@@ -359,8 +336,6 @@ class Contributor < ApplicationRecord
         date_b = nil
         if b.is_a?(Trueup)
           date_b = b.payment_date
-        elsif b.is_a?(MiscPayment)
-          date_b = b.paid_at
         elsif b.is_a?(Reimbursement)
           date_b = b.created_at
         elsif b.is_a?(ContributorPayout)

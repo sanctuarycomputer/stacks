@@ -60,7 +60,7 @@ class PeriodicReport < ApplicationRecord
   end
 
   def contributors
-    @_contributors ||= Contributor.includes(:forecast_person, :deel_person, :contributor_payouts_with_deleted, :misc_payments_with_deleted, :reimbursements_with_deleted, :trueups_with_deleted, :profit_shares_with_deleted).all
+    @_contributors ||= Contributor.includes(:forecast_person, :deel_person, :contributor_payouts_with_deleted, :reimbursements_with_deleted, :trueups_with_deleted, :profit_shares_with_deleted).all
   end
 
   def garden3d_snapshot
