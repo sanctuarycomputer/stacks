@@ -5,6 +5,17 @@ module Stacks
         def tasks
           all_leads = NotionPage.lead.map(&:as_lead)
 
+          # Bulk-resolve every lead's Account Lead admin users in ONE query
+          # rather than N. Each lead reads from the shared cache.
+          all_emails = all_leads.flat_map(&:account_lead_emails).uniq
+          admin_users_by_email =
+            if all_emails.any?
+              AdminUser.where("LOWER(email) IN (?)", all_emails).index_by { |au| au.email.downcase }
+            else
+              {}
+            end
+          all_leads.each { |l| l.account_lead_admin_users_cache = admin_users_by_email }
+
           all_leads.flat_map do |lead|
             owners = lead.account_lead_admin_users
             issues_for(lead).map do |type|

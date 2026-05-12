@@ -53,25 +53,46 @@ class Contributor < ApplicationRecord
 
   # Eager-loads the six *_with_deleted collections with the heavier includes
   # the ledger view body needs (so the partial doesn't trip N+1 inside the
-  # type-switching loop). The admin show action calls this once.
+  # type-switching loop). Each query also preloads `ledger` so the LedgerItem
+  # concern's `delegate :contributor, to: :ledger` doesn't re-query per item;
+  # we also stamp the ledger's contributor association target to `self` so
+  # `item.contributor` returns this Contributor without ever touching SQL.
   def preload_for_ledger_view!
     @_contributor_payouts_with_deleted =
       ContributorPayout.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
-        .includes(invoice_tracker: [:invoice_pass, :forecast_client, :qbo_invoice]).to_a
+        .includes(:ledger, invoice_tracker: [:invoice_pass, :forecast_client, :qbo_invoice]).to_a
     @_contributor_adjustments_with_deleted =
       ContributorAdjustment.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
-        .includes(:qbo_invoice).to_a
+        .includes(:ledger, :qbo_invoice).to_a
     @_trueups_with_deleted =
       Trueup.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
-        .includes(:invoice_pass).to_a
+        .includes(:ledger, :invoice_pass).to_a
     @_reimbursements_with_deleted =
-      Reimbursement.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id }).to_a
+      Reimbursement.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
+        .includes(:ledger).to_a
     @_profit_shares_with_deleted =
       ProfitShare.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
-        .includes(periodic_report: :profit_shares).to_a
+        .includes(:ledger, periodic_report: :profit_shares).to_a
     @_deel_invoice_adjustments_with_deleted =
       DeelInvoiceAdjustment.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
-        .includes(:deel_contract).to_a
+        .includes(:ledger, :deel_contract).to_a
+
+    # Short-circuit `item.contributor` (and any downstream delegate hop) to
+    # this Contributor. All preloaded items belong to ledgers whose contributor
+    # IS self, by construction of the queries above.
+    [
+      @_contributor_payouts_with_deleted,
+      @_contributor_adjustments_with_deleted,
+      @_trueups_with_deleted,
+      @_reimbursements_with_deleted,
+      @_profit_shares_with_deleted,
+      @_deel_invoice_adjustments_with_deleted,
+    ].each do |items|
+      items.each do |item|
+        item.ledger.association(:contributor).target = self
+      end
+    end
+
     self
   end
 
