@@ -4,10 +4,30 @@ class Enterprise < ApplicationRecord
   has_many :enterprise_forecast_clients, dependent: :destroy
   has_many :forecast_clients, through: :enterprise_forecast_clients
   has_many :ledgers
+  has_many :pay_cycles, dependent: :destroy
 
   has_one :qbo_account
   accepts_nested_attributes_for :qbo_account, allow_destroy: true
   VERTICAL_MATCHER = /\[(.+)\](.*)/
+
+  # Returns a Date range to pre-fill a new PayCycle's starts_at/ends_at,
+  # or nil if this enterprise hasn't been configured to run pay cycles.
+  # "monthly"      → entire calendar month containing `date`
+  # "twice_monthly" → 1..15 of `date`'s month if date.day <= 15, else 16..end_of_month
+  def pay_cycle_default_range_for(date)
+    case pay_cycle_cadence
+    when "monthly"
+      date.beginning_of_month..date.end_of_month
+    when "twice_monthly"
+      if date.day <= 15
+        date.beginning_of_month..(date.beginning_of_month + 14)
+      else
+        (date.beginning_of_month + 15)..date.end_of_month
+      end
+    else
+      nil
+    end
+  end
 
   def self.sanctuary
     Thread.current[:sanctuary_enterprise] ||= Enterprise.find_by!(name: SANCTUARY_NAME)
