@@ -32,3 +32,5 @@ Trait.create!(name: "Ambiguity & Accountability", tree: leadership)
 Trait.create!(name: "People Skills", tree: leadership)
 Trait.create!(name: "Work Delivery", tree: leadership)
 Trait.create!(name: "Strategic Thinking", tree: leadership)
+
+Enterprise.find_or_create_by!(name: Enterprise::SANCTUARY_NAME)

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_05_05_120000) do
+ActiveRecord::Schema.define(version: 2026_05_12_014428) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -168,7 +168,9 @@ ActiveRecord::Schema.define(version: 2026_05_05_120000) do
     t.string "deel_id", null: false
     t.jsonb "data", null: false
     t.string "deel_person_id", null: false
+    t.string "deel_legal_entity_id"
     t.index ["deel_id"], name: "index_deel_contracts_on_deel_id", unique: true
+    t.index ["deel_legal_entity_id"], name: "index_deel_contracts_on_deel_legal_entity_id"
   end
 
   create_table "deel_invoice_adjustments", force: :cascade do |t|
@@ -205,11 +207,22 @@ ActiveRecord::Schema.define(version: 2026_05_05_120000) do
     t.index ["deel_id"], name: "index_deel_people_on_deel_id", unique: true
   end
 
+  create_table "enterprise_forecast_clients", force: :cascade do |t|
+    t.bigint "enterprise_id", null: false
+    t.integer "forecast_client_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["enterprise_id"], name: "index_enterprise_forecast_clients_on_enterprise_id"
+    t.index ["forecast_client_id"], name: "index_enterprise_forecast_clients_on_forecast_client_id", unique: true
+  end
+
   create_table "enterprises", force: :cascade do |t|
     t.string "name", null: false
     t.jsonb "snapshot", default: {}
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.string "deel_legal_entity_id"
+    t.index ["deel_legal_entity_id"], name: "index_enterprises_on_deel_legal_entity_id", unique: true, where: "(deel_legal_entity_id IS NOT NULL)"
   end
 
   create_table "finalizations", force: :cascade do |t|
@@ -356,6 +369,51 @@ ActiveRecord::Schema.define(version: 2026_05_05_120000) do
     t.index ["forecast_client_id"], name: "index_invoice_trackers_on_forecast_client_id"
     t.index ["invoice_pass_id"], name: "index_invoice_trackers_on_invoice_pass_id"
     t.check_constraint "(company_treasury_split >= (0)::numeric) AND (company_treasury_split <= (1)::numeric)", name: "check_company_treasury_split_range"
+  end
+
+  create_table "ledger_items", force: :cascade do |t|
+    t.string "type", null: false
+    t.bigint "ledger_id", null: false
+    t.decimal "amount", precision: 12, scale: 2, default: "0.0", null: false
+    t.date "effective_on", null: false
+    t.text "description"
+    t.jsonb "blueprint", default: {}, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "accepted_at"
+    t.bigint "accepted_by_id"
+    t.bigint "created_by_id"
+    t.datetime "deleted_at"
+    t.bigint "invoice_tracker_id"
+    t.bigint "invoice_pass_id"
+    t.bigint "periodic_report_id"
+    t.string "qbo_bill_id"
+    t.string "qbo_invoice_id"
+    t.string "deel_contract_id"
+    t.string "deel_adjustment_id"
+    t.text "receipts"
+    t.integer "withdrawal_method"
+    t.string "withdrawal_status"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["accepted_by_id"], name: "index_ledger_items_on_accepted_by_id"
+    t.index ["created_by_id"], name: "index_ledger_items_on_created_by_id"
+    t.index ["deel_adjustment_id"], name: "index_ledger_items_on_deel_adjustment_id", unique: true, where: "(deel_adjustment_id IS NOT NULL)"
+    t.index ["deleted_at"], name: "index_ledger_items_on_deleted_at"
+    t.index ["invoice_pass_id"], name: "index_ledger_items_on_invoice_pass_id"
+    t.index ["invoice_tracker_id"], name: "index_ledger_items_on_invoice_tracker_id"
+    t.index ["ledger_id"], name: "index_ledger_items_on_ledger_id"
+    t.index ["periodic_report_id"], name: "index_ledger_items_on_periodic_report_id"
+    t.index ["type"], name: "index_ledger_items_on_type"
+  end
+
+  create_table "ledgers", force: :cascade do |t|
+    t.bigint "enterprise_id", null: false
+    t.bigint "contributor_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["contributor_id"], name: "index_ledgers_on_contributor_id"
+    t.index ["enterprise_id", "contributor_id"], name: "index_ledgers_on_enterprise_id_and_contributor_id", unique: true
+    t.index ["enterprise_id"], name: "index_ledgers_on_enterprise_id"
   end
 
   create_table "mailing_list_subscribers", force: :cascade do |t|
@@ -1089,11 +1147,14 @@ ActiveRecord::Schema.define(version: 2026_05_05_120000) do
   add_foreign_key "contributor_payouts", "qbo_bills", primary_key: "qbo_id"
   add_foreign_key "deel_invoice_adjustments", "contributors"
   add_foreign_key "deel_invoice_adjustments", "deel_contracts", primary_key: "deel_id"
+  add_foreign_key "enterprise_forecast_clients", "enterprises"
+  add_foreign_key "enterprise_forecast_clients", "forecast_clients", primary_key: "forecast_id"
   add_foreign_key "finalizations", "reviews"
   add_foreign_key "full_time_periods", "admin_users"
   add_foreign_key "gifted_profit_shares", "admin_users"
   add_foreign_key "invoice_trackers", "admin_users"
   add_foreign_key "invoice_trackers", "invoice_passes"
+  add_foreign_key "ledger_items", "ledgers"
   add_foreign_key "mailing_list_subscribers", "mailing_lists"
   add_foreign_key "mailing_lists", "studios"
   add_foreign_key "misc_payments", "contributors"

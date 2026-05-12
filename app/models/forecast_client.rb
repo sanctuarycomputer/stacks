@@ -2,6 +2,13 @@ class ForecastClient < ApplicationRecord
   self.primary_key = "forecast_id"
   has_many :forecast_projects, class_name: "ForecastProject", foreign_key: "client_id"
 
+  has_one :enterprise_forecast_client, dependent: :destroy
+  has_one :enterprise, through: :enterprise_forecast_client
+
+  def billing_enterprise
+    enterprise || Enterprise.sanctuary
+  end
+
   attr_accessor :_qbo_customer
   attr_accessor :_qbo_term
 

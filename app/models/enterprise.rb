@@ -1,7 +1,16 @@
 class Enterprise < ApplicationRecord
+  SANCTUARY_NAME = "Sanctuary Computer Inc".freeze
+
+  has_many :enterprise_forecast_clients, dependent: :destroy
+  has_many :forecast_clients, through: :enterprise_forecast_clients
+
   has_one :qbo_account
   accepts_nested_attributes_for :qbo_account, allow_destroy: true
   VERTICAL_MATCHER = /\[(.+)\](.*)/
+
+  def self.sanctuary
+    Thread.current[:sanctuary_enterprise] ||= Enterprise.find_by!(name: SANCTUARY_NAME)
+  end
 
   def discover_verticals
     qbo_account.qbo_profit_and_loss_reports.reduce([]) do |acc, qbo_profit_and_loss_report|

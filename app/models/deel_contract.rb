@@ -5,6 +5,12 @@ class DeelContract < ApplicationRecord
 
   belongs_to :deel_person, class_name: "DeelPerson", foreign_key: "deel_person_id"
 
+  # Extracts the Deel legal entity id from the synced contract payload.
+  def extract_legal_entity_id
+    return unless data.is_a?(Hash)
+    data.dig("client", "legal_entity", "id")
+  end
+
   # From Deel’s synced contract JSON (`GET /contracts` → stored in `data`).
   PAY_AS_YOU_GO_TYPES = %w[
     pay_as_you_go_time_based
