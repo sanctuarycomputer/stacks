@@ -24,6 +24,10 @@ class ContributorAdjustment < ApplicationRecord
     inv.present? && inv.status == :paid
   end
 
+  def effective_on_for_display
+    effective_on
+  end
+
   # SyncsAsQboBill contract
   def bill_txn_date
     effective_on

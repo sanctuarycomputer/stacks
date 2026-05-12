@@ -28,4 +28,12 @@ class Reimbursement < ApplicationRecord
   def accepted?
     accepted_by.present?
   end
+
+  def payable?
+    accepted?
+  end
+
+  def effective_on_for_display
+    created_at.to_date
+  end
 end

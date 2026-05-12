@@ -75,7 +75,7 @@ class Contributors::SubmitDeelInvoiceAdjustment
 
   def validate_against_stacks_balance!
     amt = BigDecimal(amount.to_s)
-    ledger = contributor.new_deal_ledger_items(false)
+    ledger = contributor.all_items_grouped_by_month(false)
     bal = BigDecimal(contributor.new_deal_balance(ledger)[:balance].to_s)
     raise Error, "Amount cannot exceed your settled Stacks balance (#{bal})." if amt > bal
   end

@@ -13,6 +13,10 @@ class Trueup < ApplicationRecord
     invoice_pass.start_of_month.end_of_month
   end
 
+  def effective_on_for_display
+    payment_date
+  end
+
   def payable?
     true
   end

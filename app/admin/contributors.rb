@@ -133,7 +133,7 @@ ActiveAdmin.register Contributor do
   end
 
   show do
-    new_deal_ledger_items = resource.new_deal_ledger_items
+    new_deal_ledger_items = resource.all_items_grouped_by_month
     balance = resource.new_deal_balance(new_deal_ledger_items)
     admin = resource.forecast_person&.admin_user
     pending_tasks = admin&.pending_tasks || []

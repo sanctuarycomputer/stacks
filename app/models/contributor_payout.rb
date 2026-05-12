@@ -271,6 +271,10 @@ class ContributorPayout < ApplicationRecord
     invoice_tracker.invoice_pass.start_of_month.end_of_month
   end
 
+  def effective_on_for_display
+    invoice_tracker.invoice_pass.start_of_month
+  end
+
   def toggle_acceptance!
     if accepted?
       raise "Cannot unaccept a payout if all payouts have been accepted." if invoice_tracker.contributor_payouts_status == :all_accepted

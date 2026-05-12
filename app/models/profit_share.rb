@@ -10,6 +10,10 @@ class ProfitShare < ApplicationRecord
     periodic_report.period.ends_at
   end
 
+  def effective_on_for_display
+    applied_at
+  end
+
   def payable?
     periodic_report.all_profit_shares_accepted?
   end

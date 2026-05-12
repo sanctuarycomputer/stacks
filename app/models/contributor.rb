@@ -37,6 +37,10 @@ class Contributor < ApplicationRecord
     ProfitShare.with_deleted.includes(:periodic_report).joins(:ledger).where(ledgers: { contributor_id: id })
   end
 
+  def ledger_withdrawals_with_deleted
+    LedgerWithdrawal.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
+  end
+
   scope :recent_new_deal_contributors, -> {
     joins(:contributor_payouts).where("contributor_payouts.created_at > ?", 3.months.ago).distinct
   }
@@ -129,9 +133,9 @@ class Contributor < ApplicationRecord
     forecast_person&.admin_user == admin_user
   end
 
-  def new_deal_balance(ledger_items = new_deal_ledger_items(false))
+  def new_deal_balance(ledger_items = all_items_grouped_by_month(false))
     ledger_items[:all].reduce({ balance: 0, unsettled: 0 }) do |acc, li|
-      next acc if li.deleted_at.present?
+      next acc if li.respond_to?(:deleted_at) && li.deleted_at.present?
 
       if li.is_a?(ContributorPayout)
         if li.payable?
@@ -159,6 +163,12 @@ class Contributor < ApplicationRecord
         else
           acc[:unsettled] += li.amount
         end
+      elsif li.is_a?(LedgerWithdrawal)
+        if li.payable?
+          acc[:balance] += li.signed_amount
+        else
+          acc[:unsettled] += li.signed_amount
+        end
       elsif li.is_a?(DeelInvoiceAdjustment)
         acc[:balance] -= li.amount if li.deducts_balance?
       end
@@ -172,6 +182,7 @@ class Contributor < ApplicationRecord
     all_trueups = Trueup.all
     all_profit_shares = ProfitShare.includes(:periodic_report).all
     all_contributor_adjustments = ContributorAdjustment.all
+    all_ledger_withdrawals = LedgerWithdrawal.all
     all_deel_invoice_adjustments = DeelInvoiceAdjustment.all
 
     ledger = all_contributor_payouts.reduce({ balance: 0, unsettled: 0 }) do |acc, cp|
@@ -216,6 +227,16 @@ class Contributor < ApplicationRecord
       acc
     end
 
+    ledger = all_ledger_withdrawals.reduce(ledger) do |acc, lw|
+      next acc if lw.effective_on > Date.today
+      if lw.payable?
+        acc[:balance] += lw.signed_amount
+      else
+        acc[:unsettled] += lw.signed_amount
+      end
+      acc
+    end
+
     ledger = all_deel_invoice_adjustments.reduce(ledger) do |acc, row|
       next acc if row.date_submitted > Date.today
       next acc unless row.deducts_balance?
@@ -227,32 +248,45 @@ class Contributor < ApplicationRecord
     ledger
   end
 
-  def new_deal_ledger_items(include_salary = true, override_ledger_starts_at = nil, override_ledger_ends_at = nil)
+  # Cross-enterprise aggregation. `elevated_service` is fundamentally an ALL-ENTERPRISES
+  # concept — a contributor's total contribution across the company that month — so it
+  # lives here, not on Ledger. Per-enterprise views should use Ledger#items_grouped_by_month
+  # instead, which omits elevated_service / total_hours / partial_salary / fulltime.
+  def all_items_grouped_by_month(include_salary = true, override_ledger_starts_at = nil, override_ledger_ends_at = nil)
     preloaded_contributor_payouts = contributor_payouts_with_deleted
     preloaded_reimbursements = reimbursements_with_deleted
     preloaded_trueups = trueups_with_deleted
     preloaded_profit_shares = profit_shares_with_deleted
     preloaded_adjustments = contributor_adjustments_with_deleted
+    preloaded_ledger_withdrawals = ledger_withdrawals_with_deleted
     preloaded_deel_invoice_adjustments = deel_invoice_adjustments_with_deleted
 
     if override_ledger_ends_at.present?
       ledger_ends_at = override_ledger_ends_at
     else
-    ledger_ends_at = [*preloaded_contributor_payouts, *preloaded_trueups, *preloaded_adjustments, *preloaded_deel_invoice_adjustments].reduce(Date.today) do |acc, li|
-      if li.is_a?(ContributorPayout)
-        acc = li.invoice_tracker.invoice_pass.start_of_month if li.invoice_tracker.invoice_pass.start_of_month > acc
-      elsif li.is_a?(Reimbursement)
-        acc = li.created_at if li.created_at > acc
-      elsif li.is_a?(Trueup)
-        acc = li.payment_date if li.payment_date > acc
-      elsif li.is_a?(ProfitShare)
-        acc = li.applied_at if li.applied_at > acc
-      elsif li.is_a?(ContributorAdjustment)
-        acc = li.effective_on if li.effective_on > acc
-      elsif li.is_a?(DeelInvoiceAdjustment)
-        d = li.date_submitted
-        acc = d if d > acc
-      end
+      ledger_ends_at = [
+        *preloaded_contributor_payouts,
+        *preloaded_trueups,
+        *preloaded_adjustments,
+        *preloaded_ledger_withdrawals,
+        *preloaded_deel_invoice_adjustments,
+      ].reduce(Date.today) do |acc, li|
+        if li.is_a?(ContributorPayout)
+          acc = li.invoice_tracker.invoice_pass.start_of_month if li.invoice_tracker.invoice_pass.start_of_month > acc
+        elsif li.is_a?(Reimbursement)
+          acc = li.created_at if li.created_at > acc
+        elsif li.is_a?(Trueup)
+          acc = li.payment_date if li.payment_date > acc
+        elsif li.is_a?(ProfitShare)
+          acc = li.applied_at if li.applied_at > acc
+        elsif li.is_a?(ContributorAdjustment)
+          acc = li.effective_on if li.effective_on > acc
+        elsif li.is_a?(LedgerWithdrawal)
+          acc = li.effective_on if li.effective_on > acc
+        elsif li.is_a?(DeelInvoiceAdjustment)
+          d = li.date_submitted
+          acc = d if d > acc
+        end
         acc
       end + 2.months
     end
@@ -305,6 +339,11 @@ class Contributor < ApplicationRecord
         adj.effective_on <= period.ends_at
       end
 
+      ledger_withdrawals_in_period = preloaded_ledger_withdrawals.select do |lw|
+        lw.effective_on >= period.starts_at &&
+        lw.effective_on <= period.ends_at
+      end
+
       deel_invoice_in_period = preloaded_deel_invoice_adjustments.select do |dia|
         dia.date_submitted >= period.starts_at &&
         dia.date_submitted <= period.ends_at
@@ -317,6 +356,7 @@ class Contributor < ApplicationRecord
           *reimbursements_in_period,
           *profit_shares_in_period,
           *adjustments_in_period,
+          *ledger_withdrawals_in_period,
           *deel_invoice_in_period,
         ].sort do |a, b|
         date_a = nil
@@ -329,6 +369,8 @@ class Contributor < ApplicationRecord
         elsif a.is_a?(ProfitShare)
           date_a = a.applied_at
         elsif a.is_a?(ContributorAdjustment)
+          date_a = a.effective_on
+        elsif a.is_a?(LedgerWithdrawal)
           date_a = a.effective_on
         elsif a.is_a?(DeelInvoiceAdjustment)
           date_a = a.date_submitted
@@ -344,6 +386,8 @@ class Contributor < ApplicationRecord
         elsif b.is_a?(ProfitShare)
           date_b = b.applied_at
         elsif b.is_a?(ContributorAdjustment)
+          date_b = b.effective_on
+        elsif b.is_a?(LedgerWithdrawal)
           date_b = b.effective_on
         elsif b.is_a?(DeelInvoiceAdjustment)
           date_b = b.date_submitted
@@ -398,6 +442,14 @@ class Contributor < ApplicationRecord
       }
       acc
     end
+  end
+
+  # Convenience predicate: was this contributor in "elevated service" for `period`,
+  # computed across all enterprises. Defaults to a single-month window scoped query
+  # so callers don't pay the full-history cost when checking one month.
+  def elevated_service_for_month(period, items_result = all_items_grouped_by_month(false, period.starts_at, period.ends_at + 1.day))
+    data = items_result[:by_month][period]
+    !!(data && data[:elevated_service])
   end
 
 end

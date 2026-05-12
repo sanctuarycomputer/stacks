@@ -153,7 +153,7 @@ class PeriodicReport < ApplicationRecord
 
   def tentative_profit_shares_by_contributor
     @_tentative_profit_shares_by_contributor ||= contributors.reduce({}) do |acc, contributor|
-      ledger = contributor.new_deal_ledger_items(false, nil, period.ends_at + 1.day)
+      ledger = contributor.all_items_grouped_by_month(false, nil, period.ends_at + 1.day)
 
       attendance = ledger[:by_month].select{|p| p.starts_at >= period.starts_at && p.ends_at <= period.ends_at }.reduce({}) do |agg, tuple|
         period, metadata = tuple

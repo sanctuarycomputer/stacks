@@ -18,4 +18,8 @@ class LedgerWithdrawal < ApplicationRecord
   def payable?
     PAYABLE_STATUSES.include?(withdrawal_status.to_s)
   end
+
+  def effective_on_for_display
+    effective_on
+  end
 end
