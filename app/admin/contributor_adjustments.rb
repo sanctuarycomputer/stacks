@@ -6,6 +6,10 @@ ActiveAdmin.register ContributorAdjustment do
   menu false
 
   belongs_to :ledger, optional: true
+  # Legacy nesting kept so existing QBO bill descriptions
+  # (/admin/contributors/:contributor_id/contributor_adjustments/:id) baked
+  # into QBO before the move to Ledger-nested routes still resolve.
+  belongs_to :contributor, optional: true
 
   action_item :sync_qbo_bill, only: :show, if: proc { current_admin_user.is_admin? } do
     link_to "Sync QBO Bill",

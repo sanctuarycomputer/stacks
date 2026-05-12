@@ -5,6 +5,10 @@ ActiveAdmin.register Trueup do
   menu false
 
   belongs_to :ledger, optional: true
+  # Legacy nesting kept so existing QBO bill descriptions
+  # (/admin/contributors/:contributor_id/trueups/:id) baked into QBO before
+  # the move to Ledger-nested routes still resolve.
+  belongs_to :contributor, optional: true
 
   index download_links: false do
     column :contributor

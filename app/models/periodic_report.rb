@@ -60,7 +60,15 @@ class PeriodicReport < ApplicationRecord
   end
 
   def contributors
-    @_contributors ||= Contributor.includes(:forecast_person, :deel_person, :contributor_payouts_with_deleted, :reimbursements_with_deleted, :trueups_with_deleted, :profit_shares_with_deleted).all
+    # NOTE: *_with_deleted are instance methods on Contributor (not real
+    # associations) after PR 1's Ledger routing, so they can't be eager-loaded
+    # via includes. Each contributor's ledger items are warmed via
+    # Contributor#preload_for_ledger_view! (which memoizes per-instance).
+    @_contributors ||= begin
+      cs = Contributor.includes(:forecast_person, :deel_person).all
+      cs.each(&:preload_for_ledger_view!)
+      cs
+    end
   end
 
   def garden3d_snapshot
