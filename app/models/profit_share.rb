@@ -1,9 +1,9 @@
 class ProfitShare < ApplicationRecord
   acts_as_paranoid
+  include LedgerItem
   include SyncsAsQboBill
 
   belongs_to :periodic_report
-  belongs_to :contributor
   belongs_to :qbo_bill, class_name: "QboBill", foreign_key: "qbo_bill_id", primary_key: "qbo_id", optional: true, dependent: :destroy
 
   def applied_at

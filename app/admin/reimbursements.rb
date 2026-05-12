@@ -2,10 +2,20 @@ ActiveAdmin.register Reimbursement do
   config.filters = false
   config.paginate = false
   actions :index, :new, :show, :create, :destroy
-  permit_params :contributor_id, :amount, :receipts, :description
+  permit_params :amount, :receipts, :description
   menu false
-  
+
   belongs_to :contributor
+
+  controller do
+    def build_new_resource
+      contributor = parent
+      ledger = Ledger.find_or_create_for(enterprise: Enterprise.sanctuary, contributor: contributor)
+      Reimbursement.new(permitted_params[:reimbursement] || {}).tap do |r|
+        r.ledger = ledger
+      end
+    end
+  end
 
   action_item :toggle_acceptance, only: :show do
     if current_admin_user.is_admin?

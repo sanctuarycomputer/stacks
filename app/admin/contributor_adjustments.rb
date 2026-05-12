@@ -2,7 +2,7 @@ ActiveAdmin.register ContributorAdjustment do
   config.filters = false
   config.paginate = false
   actions :index, :new, :show, :edit, :create, :update, :destroy
-  permit_params :contributor_id, :amount, :effective_on, :description, :qbo_invoice_id
+  permit_params :amount, :effective_on, :description, :qbo_invoice_id
   menu false
 
   belongs_to :contributor
@@ -29,6 +29,14 @@ ActiveAdmin.register ContributorAdjustment do
         resource.reload
       end
       super
+    end
+
+    def build_new_resource
+      contributor = parent
+      ledger = Ledger.find_or_create_for(enterprise: Enterprise.sanctuary, contributor: contributor)
+      ContributorAdjustment.new(permitted_params[:contributor_adjustment] || {}).tap do |adj|
+        adj.ledger = ledger
+      end
     end
   end
 

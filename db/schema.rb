@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_05_12_015403) do
+ActiveRecord::Schema.define(version: 2026_05_12_015500) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -120,7 +120,6 @@ ActiveRecord::Schema.define(version: 2026_05_12_015403) do
   end
 
   create_table "contributor_adjustments", force: :cascade do |t|
-    t.bigint "contributor_id", null: false
     t.decimal "amount", precision: 12, scale: 2, null: false
     t.date "effective_on", null: false
     t.string "qbo_invoice_id"
@@ -129,8 +128,9 @@ ActiveRecord::Schema.define(version: 2026_05_12_015403) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.string "qbo_bill_id"
-    t.index ["contributor_id"], name: "index_contributor_adjustments_on_contributor_id"
+    t.bigint "ledger_id", null: false
     t.index ["deleted_at"], name: "index_contributor_adjustments_on_deleted_at"
+    t.index ["ledger_id"], name: "index_contributor_adjustments_on_ledger_id"
     t.index ["qbo_bill_id"], name: "index_contributor_adjustments_on_qbo_bill_id"
     t.index ["qbo_invoice_id"], name: "index_contributor_adjustments_on_qbo_invoice_id"
   end
@@ -145,12 +145,12 @@ ActiveRecord::Schema.define(version: 2026_05_12_015403) do
     t.datetime "deleted_at"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
-    t.bigint "contributor_id", null: false
     t.string "qbo_bill_id"
-    t.index ["contributor_id"], name: "index_contributor_payouts_on_contributor_id"
+    t.bigint "ledger_id", null: false
     t.index ["created_by_id"], name: "index_contributor_payouts_on_created_by_id"
     t.index ["deleted_at"], name: "index_contributor_payouts_on_deleted_at"
     t.index ["invoice_tracker_id"], name: "index_contributor_payouts_on_invoice_tracker_id"
+    t.index ["ledger_id"], name: "index_contributor_payouts_on_ledger_id"
     t.index ["qbo_bill_id"], name: "index_contributor_payouts_on_qbo_bill_id"
   end
 
@@ -666,15 +666,15 @@ ActiveRecord::Schema.define(version: 2026_05_12_015403) do
     t.bigint "periodic_report_id", null: false
     t.decimal "amount", null: false
     t.jsonb "blueprint", default: {}, null: false
-    t.bigint "contributor_id", null: false
     t.string "qbo_bill_id"
     t.datetime "accepted_at"
     t.datetime "deleted_at"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
-    t.index ["contributor_id"], name: "index_profit_shares_on_contributor_id"
+    t.bigint "ledger_id", null: false
     t.index ["deleted_at"], name: "index_profit_shares_on_deleted_at"
-    t.index ["periodic_report_id", "contributor_id"], name: "index_profit_shares_on_periodic_report_id_and_contributor_id", unique: true
+    t.index ["ledger_id"], name: "index_profit_shares_on_ledger_id"
+    t.index ["periodic_report_id", "ledger_id"], name: "index_profit_shares_on_periodic_report_id_and_ledger_id", unique: true
     t.index ["periodic_report_id"], name: "index_profit_shares_on_periodic_report_id"
   end
 
@@ -880,7 +880,6 @@ ActiveRecord::Schema.define(version: 2026_05_12_015403) do
   end
 
   create_table "reimbursements", force: :cascade do |t|
-    t.bigint "contributor_id", null: false
     t.decimal "amount", precision: 10, scale: 2, null: false
     t.string "description", null: false
     t.text "receipts", null: false
@@ -889,9 +888,10 @@ ActiveRecord::Schema.define(version: 2026_05_12_015403) do
     t.datetime "deleted_at"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.bigint "ledger_id", null: false
     t.index ["accepted_by_id"], name: "index_reimbursements_on_accepted_by_id"
-    t.index ["contributor_id"], name: "index_reimbursements_on_contributor_id"
     t.index ["deleted_at"], name: "index_reimbursements_on_deleted_at"
+    t.index ["ledger_id"], name: "index_reimbursements_on_ledger_id"
   end
 
   create_table "review_trees", force: :cascade do |t|
@@ -1079,10 +1079,10 @@ ActiveRecord::Schema.define(version: 2026_05_12_015403) do
     t.datetime "deleted_at"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
-    t.bigint "contributor_id", null: false
     t.string "qbo_bill_id"
-    t.index ["contributor_id"], name: "index_trueups_on_contributor_id"
+    t.bigint "ledger_id", null: false
     t.index ["invoice_pass_id"], name: "index_trueups_on_invoice_pass_id"
+    t.index ["ledger_id"], name: "index_trueups_on_ledger_id"
     t.index ["qbo_bill_id"], name: "index_trueups_on_qbo_bill_id"
   end
 
@@ -1105,10 +1105,10 @@ ActiveRecord::Schema.define(version: 2026_05_12_015403) do
   add_foreign_key "associates_award_agreements", "admin_users"
   add_foreign_key "commissions", "contributors"
   add_foreign_key "commissions", "project_trackers"
-  add_foreign_key "contributor_adjustments", "contributors"
+  add_foreign_key "contributor_adjustments", "ledgers"
   add_foreign_key "contributor_payouts", "admin_users", column: "created_by_id"
-  add_foreign_key "contributor_payouts", "contributors"
   add_foreign_key "contributor_payouts", "invoice_trackers"
+  add_foreign_key "contributor_payouts", "ledgers"
   add_foreign_key "contributor_payouts", "qbo_bills", primary_key: "qbo_id"
   add_foreign_key "deel_invoice_adjustments", "contributors"
   add_foreign_key "deel_invoice_adjustments", "deel_contracts", primary_key: "deel_id"
@@ -1145,7 +1145,7 @@ ActiveRecord::Schema.define(version: 2026_05_12_015403) do
   add_foreign_key "pre_profit_share_purchases", "admin_users"
   add_foreign_key "profit_share_payments", "admin_users"
   add_foreign_key "profit_share_payments", "profit_share_passes"
-  add_foreign_key "profit_shares", "contributors"
+  add_foreign_key "profit_shares", "ledgers"
   add_foreign_key "profit_shares", "periodic_reports"
   add_foreign_key "project_capsules", "project_trackers"
   add_foreign_key "project_lead_periods", "admin_users"
@@ -1169,6 +1169,7 @@ ActiveRecord::Schema.define(version: 2026_05_12_015403) do
   add_foreign_key "qbo_profit_and_loss_reports", "qbo_accounts"
   add_foreign_key "qbo_tokens", "qbo_accounts"
   add_foreign_key "reimbursements", "admin_users", column: "accepted_by_id"
+  add_foreign_key "reimbursements", "ledgers"
   add_foreign_key "review_trees", "reviews"
   add_foreign_key "review_trees", "trees"
   add_foreign_key "reviews", "admin_users"
@@ -1191,7 +1192,7 @@ ActiveRecord::Schema.define(version: 2026_05_12_015403) do
   add_foreign_key "survey_studios", "surveys"
   add_foreign_key "system_tasks", "notifications"
   add_foreign_key "traits", "trees"
-  add_foreign_key "trueups", "contributors"
   add_foreign_key "trueups", "invoice_passes"
+  add_foreign_key "trueups", "ledgers"
   add_foreign_key "trueups", "qbo_bills", primary_key: "qbo_id"
 end

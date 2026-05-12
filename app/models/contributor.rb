@@ -8,25 +8,36 @@ class Contributor < ApplicationRecord
   has_many :misc_payments
   has_many :misc_payments_with_deleted, -> { with_deleted }, class_name: 'MiscPayment'
 
-  has_many :reimbursements
-  has_many :reimbursements_with_deleted, -> { with_deleted }, class_name: 'Reimbursement'
-
-  has_many :contributor_payouts
-  has_many :contributor_payouts_with_deleted, -> { includes({ invoice_tracker: :invoice_pass }).with_deleted }, class_name: 'ContributorPayout'
-
-  has_many :trueups
-  has_many :trueups_with_deleted, -> { includes(:invoice_pass).with_deleted }, class_name: 'Trueup'
-
-  has_many :profit_shares
-  has_many :profit_shares_with_deleted, -> { includes(:periodic_report).with_deleted }, class_name: 'ProfitShare'
-
-  has_many :contributor_adjustments
-  has_many :contributor_adjustments_with_deleted, -> { with_deleted }, class_name: "ContributorAdjustment"
-
   has_many :deel_invoice_adjustments
   has_many :deel_invoice_adjustments_with_deleted, -> { with_deleted }, class_name: "DeelInvoiceAdjustment"
 
   has_many :ledgers
+
+  has_many :reimbursements, through: :ledgers
+  has_many :contributor_payouts, through: :ledgers
+  has_many :trueups, through: :ledgers
+  has_many :profit_shares, through: :ledgers
+  has_many :contributor_adjustments, through: :ledgers
+
+  def contributor_payouts_with_deleted
+    ContributorPayout.with_deleted.includes(invoice_tracker: :invoice_pass).joins(:ledger).where(ledgers: { contributor_id: id })
+  end
+
+  def contributor_adjustments_with_deleted
+    ContributorAdjustment.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
+  end
+
+  def trueups_with_deleted
+    Trueup.with_deleted.includes(:invoice_pass).joins(:ledger).where(ledgers: { contributor_id: id })
+  end
+
+  def reimbursements_with_deleted
+    Reimbursement.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
+  end
+
+  def profit_shares_with_deleted
+    ProfitShare.with_deleted.includes(:periodic_report).joins(:ledger).where(ledgers: { contributor_id: id })
+  end
 
   scope :recent_new_deal_contributors, -> {
     joins(:contributor_payouts).where("contributor_payouts.created_at > ?", 3.months.ago).distinct

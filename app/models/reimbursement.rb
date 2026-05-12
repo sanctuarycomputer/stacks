@@ -1,8 +1,8 @@
 class Reimbursement < ApplicationRecord
   acts_as_paranoid
+  include LedgerItem
   include BustsTaskCache
 
-  belongs_to :contributor
   belongs_to :accepted_by, class_name: 'AdminUser', optional: true
 
   scope :accepted, -> {
@@ -18,7 +18,7 @@ class Reimbursement < ApplicationRecord
   end
 
   def external_link
-    "/admin/contributors/#{contributor_id}/reimbursements/#{id}"
+    "/admin/contributors/#{contributor.id}/reimbursements/#{id}"
   end
 
   def display_name

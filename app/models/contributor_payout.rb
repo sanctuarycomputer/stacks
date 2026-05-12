@@ -1,11 +1,11 @@
 class ContributorPayout < ApplicationRecord
   acts_as_paranoid
+  include LedgerItem
   include SyncsAsQboBill
 
   before_destroy :detach_and_destroy_qbo_bill
 
   belongs_to :invoice_tracker
-  belongs_to :contributor
   belongs_to :forecast_person, class_name: "ForecastPerson", foreign_key: "forecast_person_id", primary_key: "forecast_id", optional: true
   belongs_to :created_by, class_name: 'AdminUser'
   belongs_to :qbo_bill, class_name: "QboBill", foreign_key: "qbo_bill_id", primary_key: "qbo_id", optional: true

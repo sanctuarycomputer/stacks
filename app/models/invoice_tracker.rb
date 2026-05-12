@@ -461,7 +461,8 @@ class InvoiceTracker < ApplicationRecord
 
         # Only schedule payouts for variable hours people, as they're likely on the new deal
         if forecast_person.admin_user.nil? || forecast_person.admin_user.full_time_periods.empty? || forecast_person.admin_user.full_time_period_at(invoice_pass.start_of_month.end_of_month).variable_hours?
-          cp = contributor_payouts.with_deleted.find_or_initialize_by(contributor: contributor)
+          ledger = Ledger.find_or_create_for(enterprise: forecast_client.billing_enterprise, contributor: contributor)
+          cp = contributor_payouts.with_deleted.find_or_initialize_by(ledger_id: ledger.id)
           cp.update!(
             deleted_at: nil,
             amount: amount,
@@ -501,7 +502,8 @@ class InvoiceTracker < ApplicationRecord
         account_lead = c[:project_tracker].account_lead_for_month(invoice_pass.start_of_month)
         account_lead_on_new_deal = account_lead ? (account_lead.full_time_periods.empty? || account_lead.full_time_period_at(invoice_pass.start_of_month.end_of_month).variable_hours?) : false
         if account_lead_on_new_deal && account_lead_contributor = account_lead.try(:forecast_person).try(:contributor)
-          cp = contributor_payouts.with_deleted.find_or_initialize_by(contributor: account_lead_contributor)
+          ledger = Ledger.find_or_create_for(enterprise: forecast_client.billing_enterprise, contributor: account_lead_contributor)
+          cp = contributor_payouts.with_deleted.find_or_initialize_by(ledger_id: ledger.id)
 
           new_blueprint = (cp.blueprint || {}).clone
           new_blueprint["AccountLead"] ||= []
@@ -522,7 +524,8 @@ class InvoiceTracker < ApplicationRecord
         project_lead = c[:project_tracker].project_lead_for_month(invoice_pass.start_of_month)
         project_lead_on_new_deal = project_lead ? (project_lead.full_time_periods.empty? || project_lead.full_time_period_at(invoice_pass.start_of_month.end_of_month).variable_hours?) : false
         if project_lead_on_new_deal && project_lead_contributor = project_lead.try(:forecast_person).try(:contributor)
-          cp = contributor_payouts.with_deleted.find_or_initialize_by(contributor: project_lead_contributor)
+          ledger = Ledger.find_or_create_for(enterprise: forecast_client.billing_enterprise, contributor: project_lead_contributor)
+          cp = contributor_payouts.with_deleted.find_or_initialize_by(ledger_id: ledger.id)
 
           new_blueprint = (cp.blueprint || {}).clone
           new_blueprint["ProjectLead"] ||= []
