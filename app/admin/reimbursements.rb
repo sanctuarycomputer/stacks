@@ -43,22 +43,15 @@ ActiveAdmin.register Reimbursement do
       ledger_collection = Ledger.includes(:enterprise, contributor: :forecast_person).map do |l|
         ["#{l.enterprise.name} — #{l.contributor.forecast_person&.email}", l.id]
       end
-      if parent && parent.is_a?(Ledger)
-        # Nested under a ledger: show the ledger as a DISABLED select with the
-        # human-friendly label, so admin sees full context but can't change it.
-        f.input :ledger,
-          as: :select,
-          collection: ledger_collection,
-          selected: f.object.ledger_id,
-          input_html: { disabled: true }
-        # Submit ledger_id via a hidden field so the disabled select doesn't drop it.
-        f.input :ledger_id, as: :hidden
-      else
-        f.input :ledger,
-          as: :select,
-          collection: ledger_collection,
-          selected: f.object.ledger_id
-      end
+      # Canonical URL is ledger-nested, so the ledger is always known from
+      # the URL — render it as a disabled select for context and pin the id
+      # via a hidden field.
+      f.input :ledger,
+        as: :select,
+        collection: ledger_collection,
+        selected: f.object.ledger_id,
+        input_html: { disabled: true }
+      f.input :ledger_id, as: :hidden
       f.input :amount, as: :number, input_html: { step: 0.01, min: 0.01 }, label: "Amount (in USD, eg: 120.75)"
       f.input :description, placeholder: "Travel Expenses to Taipei"
       f.input :receipts, placeholder: "Links to PDFs on Google Drive, etc"

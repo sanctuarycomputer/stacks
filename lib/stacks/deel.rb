@@ -138,10 +138,12 @@ class Stacks::Deel
   end
 
   def sync_all!
+    # Pure upsert flow. The previous wipe-and-rebuild approach
+    # (DeelContract.delete_all etc.) raises ForeignKeyViolation now that
+    # DeelInvoiceAdjustment.belongs_to :deel_contract pins those rows.
+    # Stale contracts/people/off-cycle-payments persist if Deel deletes
+    # them upstream, which is a rare event we accept.
     ActiveRecord::Base.transaction do
-      DeelOffCyclePayment.delete_all
-      DeelContract.delete_all
-      DeelPerson.delete_all
       sync_people!
       sync_contracts!
 
