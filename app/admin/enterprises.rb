@@ -2,7 +2,9 @@ ActiveAdmin.register Enterprise do
   config.filters = false
   config.paginate = false
   actions :index, :show, :new, :create, :edit, :update
-  permit_params :name,     
+  permit_params :name,
+    :deel_legal_entity_id,
+    forecast_client_ids: [],
     qbo_account_attributes: [
       :id,
       :_edit,
@@ -62,6 +64,17 @@ ActiveAdmin.register Enterprise do
     f.inputs(class: "admin_inputs") do
       f.semantic_errors
       f.input :name
+      f.input :deel_legal_entity_id,
+        hint: "From Deel's GET /legal-entities — paste the legal_entity.id string for this LLC."
+
+      f.input :forecast_clients,
+        as: :select,
+        multiple: true,
+        collection: ForecastClient.order(:name).pluck(:name, :id),
+        input_html: { size: 12 },
+        hint: "Forecast clients whose hours route to this Enterprise's ledger. " \
+              "Each Forecast client can only be linked to ONE Enterprise. " \
+              "Leave empty for general clients billed by Sanctuary."
 
       f.inputs "QBO Account", for: [:qbo_account, f.object.qbo_account || QboAccount.new] do |qbo_account|
         qbo_account.input :client_id
