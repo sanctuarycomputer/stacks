@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_05_12_031751) do
+ActiveRecord::Schema.define(version: 2026_05_12_223915) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -222,6 +222,7 @@ ActiveRecord::Schema.define(version: 2026_05_12_031751) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.string "deel_legal_entity_id"
+    t.string "pay_cycle_cadence"
     t.index ["deel_legal_entity_id"], name: "index_enterprises_on_deel_legal_entity_id", unique: true, where: "(deel_legal_entity_id IS NOT NULL)"
   end
 
@@ -397,6 +398,18 @@ ActiveRecord::Schema.define(version: 2026_05_12_031751) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.index ["studio_id"], name: "index_mailing_lists_on_studio_id"
+  end
+
+  create_table "misc_payments", force: :cascade do |t|
+    t.decimal "amount", precision: 10, scale: 2, null: false
+    t.text "remittance"
+    t.datetime "deleted_at"
+    t.date "paid_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.bigint "contributor_id", null: false
+    t.index ["contributor_id"], name: "index_misc_payments_on_contributor_id"
+    t.index ["deleted_at"], name: "index_misc_payments_on_deleted_at"
   end
 
   create_table "notifications", force: :cascade do |t|
@@ -588,6 +601,39 @@ ActiveRecord::Schema.define(version: 2026_05_12_031751) do
     t.datetime "updated_at", precision: 6, null: false
     t.index "lower((email)::text)", name: "idx_optix_users_on_lower_email"
     t.index ["optix_organization_id"], name: "index_optix_users_on_optix_organization_id"
+  end
+
+  create_table "pay_cycles", force: :cascade do |t|
+    t.bigint "enterprise_id", null: false
+    t.date "starts_at", null: false
+    t.date "ends_at", null: false
+    t.bigint "created_by_id"
+    t.datetime "deleted_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["created_by_id"], name: "index_pay_cycles_on_created_by_id"
+    t.index ["deleted_at"], name: "index_pay_cycles_on_deleted_at"
+    t.index ["enterprise_id", "starts_at", "ends_at"], name: "index_pay_cycles_unique_window", unique: true
+    t.index ["enterprise_id"], name: "index_pay_cycles_on_enterprise_id"
+  end
+
+  create_table "pay_stubs", force: :cascade do |t|
+    t.bigint "pay_cycle_id", null: false
+    t.bigint "ledger_id", null: false
+    t.decimal "amount", precision: 12, scale: 2, null: false
+    t.jsonb "blueprint", default: {}, null: false
+    t.datetime "accepted_at"
+    t.bigint "accepted_by_id"
+    t.string "qbo_bill_id"
+    t.datetime "deleted_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["accepted_by_id"], name: "index_pay_stubs_on_accepted_by_id"
+    t.index ["deleted_at"], name: "index_pay_stubs_on_deleted_at"
+    t.index ["ledger_id"], name: "index_pay_stubs_on_ledger_id"
+    t.index ["pay_cycle_id", "ledger_id"], name: "index_pay_stubs_unique_per_cycle_ledger", unique: true
+    t.index ["pay_cycle_id"], name: "index_pay_stubs_on_pay_cycle_id"
+    t.index ["qbo_bill_id"], name: "index_pay_stubs_on_qbo_bill_id", unique: true, where: "(qbo_bill_id IS NOT NULL)"
   end
 
   create_table "peer_reviews", force: :cascade do |t|
@@ -1111,6 +1157,7 @@ ActiveRecord::Schema.define(version: 2026_05_12_031751) do
   add_foreign_key "ledgers", "enterprises"
   add_foreign_key "mailing_list_subscribers", "mailing_lists"
   add_foreign_key "mailing_lists", "studios"
+  add_foreign_key "misc_payments", "contributors"
   add_foreign_key "okr_period_studios", "okr_periods"
   add_foreign_key "okr_period_studios", "studios"
   add_foreign_key "okr_periods", "okrs"
@@ -1126,6 +1173,11 @@ ActiveRecord::Schema.define(version: 2026_05_12_031751) do
   add_foreign_key "old_deal_technical_lead_periods", "admin_users"
   add_foreign_key "old_deal_technical_lead_periods", "project_trackers"
   add_foreign_key "old_deal_technical_lead_periods", "studios"
+  add_foreign_key "pay_cycles", "admin_users", column: "created_by_id"
+  add_foreign_key "pay_cycles", "enterprises"
+  add_foreign_key "pay_stubs", "admin_users", column: "accepted_by_id"
+  add_foreign_key "pay_stubs", "ledgers"
+  add_foreign_key "pay_stubs", "pay_cycles"
   add_foreign_key "peer_reviews", "admin_users"
   add_foreign_key "peer_reviews", "reviews"
   add_foreign_key "periodic_reports", "notifications"
