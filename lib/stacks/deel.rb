@@ -99,6 +99,20 @@ class Stacks::Deel
     response.parsed_response
   end
 
+  # Token scopes: organizations:read
+  # Returns the list of legal entities (LLCs) under the Deel workspace, used to
+  # populate the Enterprise admin's Deel legal entity select.
+  def self.fetch_all_legal_entities
+    response = get(
+      "#{api_root}/legal-entities",
+      headers: json_headers(org_bearer),
+    )
+    raise_api_error!(response, "fetch_all_legal_entities")
+    body = response.parsed_response
+    # Deel returns either a top-level "data" array or a bare array.
+    body.is_a?(Hash) ? Array(body["data"]) : Array(body)
+  end
+
   def self.raise_api_error!(response, context)
     return if response.success?
 
