@@ -13,6 +13,7 @@ class Contributor < ApplicationRecord
   has_many :profit_shares, through: :ledgers
   has_many :contributor_adjustments, through: :ledgers
   has_many :deel_invoice_adjustments, through: :ledgers
+  has_many :pay_stubs, through: :ledgers
 
   # Each *_with_deleted method below is memoized per-instance. The first call
   # fires a query; subsequent calls return the cached array.
@@ -51,6 +52,11 @@ class Contributor < ApplicationRecord
       DeelInvoiceAdjustment.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id }).to_a
   end
 
+  def pay_stubs_with_deleted
+    @_pay_stubs_with_deleted ||=
+      PayStub.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id }).to_a
+  end
+
   # Eager-loads the six *_with_deleted collections with the heavier includes
   # the ledger view body needs (so the partial doesn't trip N+1 inside the
   # type-switching loop). Each query also preloads `ledger` so the LedgerItem
@@ -83,6 +89,9 @@ class Contributor < ApplicationRecord
     @_deel_invoice_adjustments_with_deleted =
       DeelInvoiceAdjustment.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
         .includes(:ledger, :deel_contract).to_a
+    @_pay_stubs_with_deleted =
+      PayStub.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
+        .includes(:ledger, :pay_cycle).to_a
 
     # Short-circuit `item.contributor` (and any downstream delegate hop) to
     # this Contributor. All preloaded items belong to ledgers whose contributor
@@ -94,6 +103,7 @@ class Contributor < ApplicationRecord
       @_reimbursements_with_deleted,
       @_profit_shares_with_deleted,
       @_deel_invoice_adjustments_with_deleted,
+      @_pay_stubs_with_deleted,
     ].each do |items|
       items.each do |item|
         item.ledger.association(:contributor).target = self
@@ -220,6 +230,12 @@ class Contributor < ApplicationRecord
           acc[:unsettled] += li.amount
         end
       elsif li.is_a?(ContributorAdjustment)
+        if li.payable?
+          acc[:balance] += li.amount
+        else
+          acc[:unsettled] += li.amount
+        end
+      elsif li.is_a?(PayStub)
         if li.payable?
           acc[:balance] += li.amount
         else
