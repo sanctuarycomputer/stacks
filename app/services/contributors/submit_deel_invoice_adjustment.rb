@@ -32,8 +32,9 @@ class Contributors::SubmitDeelInvoiceAdjustment
       date_submitted: date_submitted,
     )
 
+    ledger = Ledger.find_or_create_for(enterprise: Enterprise.sanctuary, contributor: contributor)
     DeelInvoiceAdjustment.create_from_deel_response!(
-      contributor: contributor,
+      ledger: ledger,
       deel_contract_id: contract_id,
       amount: BigDecimal(amount.to_s),
       description: description,

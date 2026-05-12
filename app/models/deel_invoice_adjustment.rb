@@ -1,10 +1,10 @@
 class DeelInvoiceAdjustment < ApplicationRecord
   acts_as_paranoid
+  include LedgerItem
 
   # Form-only (ActiveAdmin): not persisted. Server must still verify initiator has admin role.
   attr_accessor :allow_ledger_overdraw
 
-  belongs_to :contributor
   belongs_to :deel_contract, foreign_key: :deel_contract_id, primary_key: :deel_id
 
   validates :deel_adjustment_id, presence: true, uniqueness: true
@@ -15,6 +15,19 @@ class DeelInvoiceAdjustment < ApplicationRecord
 
   NON_DEDUCTING_STATUSES = %w[rejected cancelled canceled declined void voided].freeze
   APPROVED_LEDGER_STATUSES = %w[approved paid].freeze
+
+  # Withdrawals deduct from balance.
+  def signed_amount
+    -amount
+  end
+
+  def payable?
+    deducts_balance?
+  end
+
+  def effective_on_for_display
+    date_submitted
+  end
 
   def deducts_balance?
     return false if deleted_at.present?
@@ -89,7 +102,7 @@ class DeelInvoiceAdjustment < ApplicationRecord
     attrs
   end
 
-  def self.create_from_deel_response!(contributor:, deel_contract_id:, amount:, description:, date_submitted:, parsed_response:)
+  def self.create_from_deel_response!(ledger:, deel_contract_id:, amount:, description:, date_submitted:, parsed_response:)
     deel_adjustment_id, _status = deel_id_and_status_from_api_payload(parsed_response)
     raise ArgumentError, "Deel response did not include an adjustment id." if deel_adjustment_id.blank?
 
@@ -108,7 +121,7 @@ class DeelInvoiceAdjustment < ApplicationRecord
 
     create!(
       {
-        contributor: contributor,
+        ledger: ledger,
         deel_contract_id: deel_contract_id.to_s,
         deel_adjustment_id: deel_adjustment_id,
         amount: from_api[:amount] || BigDecimal(amount.to_s),

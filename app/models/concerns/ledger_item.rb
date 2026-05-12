@@ -1,7 +1,7 @@
 # Shared interface for any model that affects a contributor's ledger
 # (ContributorPayout, ContributorAdjustment, Trueup, Reimbursement,
-# ProfitShare, LedgerWithdrawal). Each host model has its own table and
-# type-specific columns; this concern provides the common contract:
+# ProfitShare, DeelInvoiceAdjustment). Each host model has its own table
+# and type-specific columns; this concern provides the common contract:
 #
 # - belongs_to :ledger (the per-(enterprise, contributor) anchor)
 # - delegate :contributor, :enterprise to the ledger

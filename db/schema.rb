@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_05_12_021409) do
+ActiveRecord::Schema.define(version: 2026_05_12_031751) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -174,7 +174,6 @@ ActiveRecord::Schema.define(version: 2026_05_12_021409) do
   end
 
   create_table "deel_invoice_adjustments", force: :cascade do |t|
-    t.bigint "contributor_id", null: false
     t.string "deel_contract_id", null: false
     t.string "deel_adjustment_id", null: false
     t.decimal "amount", precision: 10, scale: 2, null: false
@@ -185,10 +184,11 @@ ActiveRecord::Schema.define(version: 2026_05_12_021409) do
     t.datetime "deleted_at"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
-    t.index ["contributor_id"], name: "index_deel_invoice_adjustments_on_contributor_id"
+    t.bigint "ledger_id", null: false
     t.index ["deel_adjustment_id"], name: "index_deel_invoice_adjustments_on_deel_adjustment_id", unique: true
     t.index ["deel_contract_id"], name: "index_deel_invoice_adjustments_on_deel_contract_id"
     t.index ["deleted_at"], name: "index_deel_invoice_adjustments_on_deleted_at"
+    t.index ["ledger_id"], name: "index_deel_invoice_adjustments_on_ledger_id"
   end
 
   create_table "deel_off_cycle_payments", force: :cascade do |t|
@@ -369,25 +369,6 @@ ActiveRecord::Schema.define(version: 2026_05_12_021409) do
     t.index ["forecast_client_id"], name: "index_invoice_trackers_on_forecast_client_id"
     t.index ["invoice_pass_id"], name: "index_invoice_trackers_on_invoice_pass_id"
     t.check_constraint "(company_treasury_split >= (0)::numeric) AND (company_treasury_split <= (1)::numeric)", name: "check_company_treasury_split_range"
-  end
-
-  create_table "ledger_withdrawals", force: :cascade do |t|
-    t.bigint "ledger_id", null: false
-    t.decimal "amount", precision: 12, scale: 2, null: false
-    t.date "effective_on", null: false
-    t.text "description"
-    t.integer "withdrawal_method", null: false
-    t.string "withdrawal_status", default: "pending", null: false
-    t.string "deel_contract_id"
-    t.string "deel_adjustment_id"
-    t.datetime "accepted_at"
-    t.datetime "deleted_at"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["deel_adjustment_id"], name: "index_ledger_withdrawals_on_deel_adjustment_id", unique: true, where: "(deel_adjustment_id IS NOT NULL)"
-    t.index ["deleted_at"], name: "index_ledger_withdrawals_on_deleted_at"
-    t.index ["ledger_id"], name: "index_ledger_withdrawals_on_ledger_id"
-    t.index ["withdrawal_status"], name: "index_ledger_withdrawals_on_withdrawal_status"
   end
 
   create_table "ledgers", force: :cascade do |t|
@@ -1117,8 +1098,8 @@ ActiveRecord::Schema.define(version: 2026_05_12_021409) do
   add_foreign_key "contributor_payouts", "invoice_trackers"
   add_foreign_key "contributor_payouts", "ledgers"
   add_foreign_key "contributor_payouts", "qbo_bills", primary_key: "qbo_id"
-  add_foreign_key "deel_invoice_adjustments", "contributors"
   add_foreign_key "deel_invoice_adjustments", "deel_contracts", primary_key: "deel_id"
+  add_foreign_key "deel_invoice_adjustments", "ledgers"
   add_foreign_key "enterprise_forecast_clients", "enterprises"
   add_foreign_key "enterprise_forecast_clients", "forecast_clients", primary_key: "forecast_id"
   add_foreign_key "finalizations", "reviews"
@@ -1126,7 +1107,6 @@ ActiveRecord::Schema.define(version: 2026_05_12_021409) do
   add_foreign_key "gifted_profit_shares", "admin_users"
   add_foreign_key "invoice_trackers", "admin_users"
   add_foreign_key "invoice_trackers", "invoice_passes"
-  add_foreign_key "ledger_withdrawals", "ledgers"
   add_foreign_key "ledgers", "contributors"
   add_foreign_key "ledgers", "enterprises"
   add_foreign_key "mailing_list_subscribers", "mailing_lists"

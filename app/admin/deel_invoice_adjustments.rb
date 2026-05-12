@@ -45,7 +45,7 @@ ActiveAdmin.register DeelInvoiceAdjustment do
 
     def build_resource
       super.tap do |r|
-        r.contributor = parent
+        r.ledger = Ledger.find_or_create_for(enterprise: Enterprise.sanctuary, contributor: parent)
         r.date_submitted ||= Date.current
         if r.new_record? && r.deel_contract_id.blank?
           contracts = DeelContract.sorted_for_balance_withdrawal_select(parent.deel_person_id)
@@ -96,8 +96,16 @@ ActiveAdmin.register DeelInvoiceAdjustment do
   form do |f|
     f.semantic_errors
     contracts = DeelContract.sorted_for_balance_withdrawal_select(f.object.contributor.deel_person_id)
+    ledger_collection = Ledger.includes(:enterprise, contributor: :forecast_person).map do |l|
+      ["#{l.enterprise.name} — #{l.contributor.forecast_person.email}", l.id]
+    end
     f.inputs do
-      f.input :contributor, input_html: { disabled: true }
+      f.input :ledger,
+        as: :select,
+        collection: ledger_collection,
+        selected: f.object.ledger_id,
+        input_html: { disabled: true }
+      f.input :ledger_id, as: :hidden
       f.input :deel_contract_id,
         as: :select,
         collection: contracts.map { |dc| [dc.display_name_for_deel_invoice_select, dc.deel_id] },

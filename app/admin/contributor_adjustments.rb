@@ -43,14 +43,24 @@ ActiveAdmin.register ContributorAdjustment do
   form do |f|
     f.inputs do
       f.semantic_errors
-      if f.object.ledger.present?
-        f.input :ledger, as: :hidden, input_html: { value: f.object.ledger_id }
+      ledger_collection = Ledger.includes(:enterprise, contributor: :forecast_person).map do |l|
+        ["#{l.enterprise.name} — #{l.contributor.forecast_person&.email}", l.id]
+      end
+      if parent && parent.is_a?(Ledger)
+        # Nested under a ledger: show the ledger as a DISABLED select with the
+        # human-friendly label, so admin sees full context but can't change it.
+        f.input :ledger,
+          as: :select,
+          collection: ledger_collection,
+          selected: f.object.ledger_id,
+          input_html: { disabled: true }
+        # Submit ledger_id via a hidden field so the disabled select doesn't drop it.
+        f.input :ledger_id, as: :hidden
       else
         f.input :ledger,
           as: :select,
-          collection: Ledger.includes(:enterprise, contributor: :forecast_person).map { |l|
-            ["#{l.contributor.forecast_person&.email} - #{l.enterprise.name}", l.id]
-          }
+          collection: ledger_collection,
+          selected: f.object.ledger_id
       end
       f.input :amount, as: :number, input_html: { step: 0.01 }, label: "Amount (positive increases amount owed to contributor)"
       f.input :effective_on, as: :date_picker

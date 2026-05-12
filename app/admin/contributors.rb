@@ -142,7 +142,7 @@ ActiveAdmin.register Contributor do
 
     ledgers_with_items = resource.ledgers.includes(:enterprise).select do |l|
       [l.contributor_payouts, l.contributor_adjustments, l.trueups,
-       l.reimbursements, l.profit_shares, l.ledger_withdrawals].any?(&:any?)
+       l.reimbursements, l.profit_shares, l.deel_invoice_adjustments].any?(&:any?)
     end
 
     view_mode = :all

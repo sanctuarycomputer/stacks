@@ -7,7 +7,7 @@ class Ledger < ApplicationRecord
   has_many :trueups
   has_many :reimbursements
   has_many :profit_shares
-  has_many :ledger_withdrawals
+  has_many :deel_invoice_adjustments
 
   validates :enterprise_id, uniqueness: { scope: :contributor_id }
 
@@ -73,7 +73,7 @@ class Ledger < ApplicationRecord
       trueups.to_a,
       reimbursements.to_a,
       profit_shares.to_a,
-      ledger_withdrawals.to_a,
+      deel_invoice_adjustments.to_a,
     ].flatten
   end
 
@@ -85,7 +85,7 @@ class Ledger < ApplicationRecord
       Trueup.with_deleted.includes(:invoice_pass).where(ledger_id: id).to_a,
       Reimbursement.with_deleted.where(ledger_id: id).to_a,
       ProfitShare.with_deleted.includes(:periodic_report).where(ledger_id: id).to_a,
-      LedgerWithdrawal.with_deleted.where(ledger_id: id).to_a,
+      DeelInvoiceAdjustment.with_deleted.where(ledger_id: id).to_a,
     ].flatten
   end
 end

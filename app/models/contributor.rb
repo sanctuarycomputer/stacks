@@ -5,9 +5,6 @@ class Contributor < ApplicationRecord
   belongs_to :qbo_vendor, class_name: "QboVendor", foreign_key: "qbo_vendor_id", primary_key: "qbo_id", optional: true
   belongs_to :deel_person, class_name: "DeelPerson", foreign_key: "deel_person_id", primary_key: "deel_id", optional: true
 
-  has_many :deel_invoice_adjustments
-  has_many :deel_invoice_adjustments_with_deleted, -> { with_deleted }, class_name: "DeelInvoiceAdjustment"
-
   has_many :ledgers
 
   has_many :reimbursements, through: :ledgers
@@ -15,7 +12,7 @@ class Contributor < ApplicationRecord
   has_many :trueups, through: :ledgers
   has_many :profit_shares, through: :ledgers
   has_many :contributor_adjustments, through: :ledgers
-  has_many :ledger_withdrawals, through: :ledgers
+  has_many :deel_invoice_adjustments, through: :ledgers
 
   def contributor_payouts_with_deleted
     ContributorPayout.with_deleted.includes(invoice_tracker: :invoice_pass).joins(:ledger).where(ledgers: { contributor_id: id })
@@ -37,8 +34,8 @@ class Contributor < ApplicationRecord
     ProfitShare.with_deleted.includes(:periodic_report).joins(:ledger).where(ledgers: { contributor_id: id })
   end
 
-  def ledger_withdrawals_with_deleted
-    LedgerWithdrawal.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
+  def deel_invoice_adjustments_with_deleted
+    DeelInvoiceAdjustment.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
   end
 
   scope :recent_new_deal_contributors, -> {
@@ -163,12 +160,6 @@ class Contributor < ApplicationRecord
         else
           acc[:unsettled] += li.amount
         end
-      elsif li.is_a?(LedgerWithdrawal)
-        if li.payable?
-          acc[:balance] += li.signed_amount
-        else
-          acc[:unsettled] += li.signed_amount
-        end
       elsif li.is_a?(DeelInvoiceAdjustment)
         acc[:balance] -= li.amount if li.deducts_balance?
       end
@@ -182,7 +173,6 @@ class Contributor < ApplicationRecord
     all_trueups = Trueup.all
     all_profit_shares = ProfitShare.includes(:periodic_report).all
     all_contributor_adjustments = ContributorAdjustment.all
-    all_ledger_withdrawals = LedgerWithdrawal.all
     all_deel_invoice_adjustments = DeelInvoiceAdjustment.all
 
     ledger = all_contributor_payouts.reduce({ balance: 0, unsettled: 0 }) do |acc, cp|
@@ -227,16 +217,6 @@ class Contributor < ApplicationRecord
       acc
     end
 
-    ledger = all_ledger_withdrawals.reduce(ledger) do |acc, lw|
-      next acc if lw.effective_on > Date.today
-      if lw.payable?
-        acc[:balance] += lw.signed_amount
-      else
-        acc[:unsettled] += lw.signed_amount
-      end
-      acc
-    end
-
     ledger = all_deel_invoice_adjustments.reduce(ledger) do |acc, row|
       next acc if row.date_submitted > Date.today
       next acc unless row.deducts_balance?
@@ -258,7 +238,6 @@ class Contributor < ApplicationRecord
     preloaded_trueups = trueups_with_deleted
     preloaded_profit_shares = profit_shares_with_deleted
     preloaded_adjustments = contributor_adjustments_with_deleted
-    preloaded_ledger_withdrawals = ledger_withdrawals_with_deleted
     preloaded_deel_invoice_adjustments = deel_invoice_adjustments_with_deleted
 
     if override_ledger_ends_at.present?
@@ -268,7 +247,6 @@ class Contributor < ApplicationRecord
         *preloaded_contributor_payouts,
         *preloaded_trueups,
         *preloaded_adjustments,
-        *preloaded_ledger_withdrawals,
         *preloaded_deel_invoice_adjustments,
       ].reduce(Date.today) do |acc, li|
         if li.is_a?(ContributorPayout)
@@ -280,8 +258,6 @@ class Contributor < ApplicationRecord
         elsif li.is_a?(ProfitShare)
           acc = li.applied_at if li.applied_at > acc
         elsif li.is_a?(ContributorAdjustment)
-          acc = li.effective_on if li.effective_on > acc
-        elsif li.is_a?(LedgerWithdrawal)
           acc = li.effective_on if li.effective_on > acc
         elsif li.is_a?(DeelInvoiceAdjustment)
           d = li.date_submitted
@@ -339,11 +315,6 @@ class Contributor < ApplicationRecord
         adj.effective_on <= period.ends_at
       end
 
-      ledger_withdrawals_in_period = preloaded_ledger_withdrawals.select do |lw|
-        lw.effective_on >= period.starts_at &&
-        lw.effective_on <= period.ends_at
-      end
-
       deel_invoice_in_period = preloaded_deel_invoice_adjustments.select do |dia|
         dia.date_submitted >= period.starts_at &&
         dia.date_submitted <= period.ends_at
@@ -356,7 +327,6 @@ class Contributor < ApplicationRecord
           *reimbursements_in_period,
           *profit_shares_in_period,
           *adjustments_in_period,
-          *ledger_withdrawals_in_period,
           *deel_invoice_in_period,
         ].sort do |a, b|
         date_a = nil
@@ -369,8 +339,6 @@ class Contributor < ApplicationRecord
         elsif a.is_a?(ProfitShare)
           date_a = a.applied_at
         elsif a.is_a?(ContributorAdjustment)
-          date_a = a.effective_on
-        elsif a.is_a?(LedgerWithdrawal)
           date_a = a.effective_on
         elsif a.is_a?(DeelInvoiceAdjustment)
           date_a = a.date_submitted
@@ -386,8 +354,6 @@ class Contributor < ApplicationRecord
         elsif b.is_a?(ProfitShare)
           date_b = b.applied_at
         elsif b.is_a?(ContributorAdjustment)
-          date_b = b.effective_on
-        elsif b.is_a?(LedgerWithdrawal)
           date_b = b.effective_on
         elsif b.is_a?(DeelInvoiceAdjustment)
           date_b = b.date_submitted
