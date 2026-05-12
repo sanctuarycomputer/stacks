@@ -45,10 +45,17 @@ ActiveAdmin.register DeelInvoiceAdjustment do
 
     def build_resource
       super.tap do |r|
-        r.ledger = Ledger.find_or_create_for(enterprise: Enterprise.sanctuary, contributor: parent)
+        # Contributors#show action items pass ?ledger=<id> through to here so the
+        # New Deel Withdrawal form binds to the same ledger as the selected tab.
+        # Fall back to Sanctuary to keep older deep links working.
+        selected = params[:ledger].present? && parent.ledgers.find_by(id: params[:ledger])
+        r.ledger = selected || Ledger.find_or_create_for(enterprise: Enterprise.sanctuary, contributor: parent)
         r.date_submitted ||= Date.current
         if r.new_record? && r.deel_contract_id.blank?
-          contracts = DeelContract.sorted_for_balance_withdrawal_select(parent.deel_person_id)
+          contracts = DeelContract.sorted_for_balance_withdrawal_select(
+            parent.deel_person_id,
+            deel_legal_entity_id: r.ledger.enterprise.deel_legal_entity_id,
+          )
           r.deel_contract_id = contracts.first.deel_id if contracts.size == 1
         end
       end
@@ -63,8 +70,13 @@ ActiveAdmin.register DeelInvoiceAdjustment do
         :allow_ledger_overdraw,
       )
 
+      target_ledger =
+        (params[:ledger].present? && parent.ledgers.find_by(id: params[:ledger])) ||
+          Ledger.find_or_create_for(enterprise: Enterprise.sanctuary, contributor: parent)
+
       record = Contributors::SubmitDeelInvoiceAdjustment.call(
         contributor: parent,
+        ledger: target_ledger,
         contract_id: submitted[:deel_contract_id],
         amount: submitted[:amount],
         description: submitted[:description],
@@ -95,7 +107,10 @@ ActiveAdmin.register DeelInvoiceAdjustment do
 
   form do |f|
     f.semantic_errors
-    contracts = DeelContract.sorted_for_balance_withdrawal_select(f.object.contributor.deel_person_id)
+    contracts = DeelContract.sorted_for_balance_withdrawal_select(
+      f.object.contributor.deel_person_id,
+      deel_legal_entity_id: f.object.ledger.enterprise.deel_legal_entity_id,
+    )
     ledger_collection = Ledger.includes(:enterprise, contributor: :forecast_person).map do |l|
       ["#{l.enterprise.name} — #{l.contributor.forecast_person.email}", l.id]
     end

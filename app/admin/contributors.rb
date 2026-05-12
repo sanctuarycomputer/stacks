@@ -38,28 +38,42 @@ ActiveAdmin.register Contributor do
 
   permit_params :qbo_vendor_id, :deel_person_id
 
+  # Action items below are scoped to the ledger tab the user is viewing.
+  # On the "All" tab (no `ledger` query param), there's no single ledger to
+  # write against, so the buttons short-circuit to a JS alert instead.
+  LEDGER_REQUIRED_ALERT = "Select the appropriate ledger before you can perform this action.".freeze
+
   action_item :deel_invoice, only: :show, if: proc {
     manual_deel_invoice_visible?(resource)
   } do
-    link_to("New Deel Withdrawal", new_admin_contributor_deel_invoice_adjustment_path(resource))
+    selected_ledger = params[:ledger].present? && resource.ledgers.find_by(id: params[:ledger])
+    if selected_ledger
+      link_to "New Deel Withdrawal",
+        new_admin_contributor_deel_invoice_adjustment_path(resource, ledger: selected_ledger.id)
+    else
+      link_to "New Deel Withdrawal", "#",
+        onclick: "alert(#{LEDGER_REQUIRED_ALERT.to_json}); return false;"
+    end
   end
 
   action_item :new_contributor_adjustment, only: :show, if: proc { current_admin_user.is_admin? } do
-    link_to(
-      "New Adjustment",
-      new_admin_ledger_contributor_adjustment_path(
-        Ledger.find_or_create_for(enterprise: Enterprise.sanctuary, contributor: resource)
-      )
-    )
+    selected_ledger = params[:ledger].present? && resource.ledgers.find_by(id: params[:ledger])
+    if selected_ledger
+      link_to "New Adjustment", new_admin_ledger_contributor_adjustment_path(selected_ledger)
+    else
+      link_to "New Adjustment", "#",
+        onclick: "alert(#{LEDGER_REQUIRED_ALERT.to_json}); return false;"
+    end
   end
 
   action_item :submit_reimbursement, only: :show do
-    link_to(
-      "Submit Reimbursement",
-      new_admin_ledger_reimbursement_path(
-        Ledger.find_or_create_for(enterprise: Enterprise.sanctuary, contributor: resource)
-      )
-    )
+    selected_ledger = params[:ledger].present? && resource.ledgers.find_by(id: params[:ledger])
+    if selected_ledger
+      link_to "Submit Reimbursement", new_admin_ledger_reimbursement_path(selected_ledger)
+    else
+      link_to "Submit Reimbursement", "#",
+        onclick: "alert(#{LEDGER_REQUIRED_ALERT.to_json}); return false;"
+    end
   end
 
   member_action :toggle_contributor_payout_acceptance, method: :post do

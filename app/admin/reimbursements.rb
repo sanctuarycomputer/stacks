@@ -5,7 +5,7 @@ ActiveAdmin.register Reimbursement do
   permit_params :amount, :receipts, :description, :ledger_id
   menu false
 
-  belongs_to :ledger, optional: true
+  belongs_to :ledger
 
   action_item :toggle_acceptance, only: :show do
     if current_admin_user.is_admin?

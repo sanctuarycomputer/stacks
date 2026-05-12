@@ -5,7 +5,7 @@ ActiveAdmin.register ContributorAdjustment do
   permit_params :amount, :effective_on, :description, :qbo_invoice_id, :ledger_id
   menu false
 
-  belongs_to :ledger, optional: true
+  belongs_to :ledger
 
   action_item :sync_qbo_bill, only: :show, if: proc { current_admin_user.is_admin? } do
     link_to "Sync QBO Bill",
@@ -59,7 +59,7 @@ ActiveAdmin.register ContributorAdjustment do
       f.input :effective_on, as: :date_picker
       f.input :qbo_invoice,
         as: :select,
-        collection: QboInvoice.order(Arel.sql("data->>'doc_number'")),
+        collection: QboInvoice.order(Arel.sql("(data->>'doc_number')::int DESC")),
         include_blank: "None (available immediately)",
         hint: "Optional. If unset, counts toward balance immediately; if set, the adjustment stays unsettled until that invoice is fully paid in QBO."
       f.input :description, as: :text, input_html: { rows: 4 }

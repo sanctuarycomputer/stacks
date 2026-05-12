@@ -207,7 +207,9 @@ class Stacks::Deel
         deel_id: c["id"],
         deel_person_id: c.dig("worker", "id"),
         data: c,
-        deel_legal_entity_id: c.dig("client", "legal_entity", "id"),
+        # Deel exposes the legal entity as `client.team.{id,name}` on the
+        # contracts API; the id is the same UUID returned by /legal-entities.
+        deel_legal_entity_id: c.dig("client", "team", "id"),
       }
     end.compact
     DeelContract.upsert_all(data, unique_by: :deel_id)

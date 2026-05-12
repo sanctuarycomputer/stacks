@@ -107,7 +107,7 @@ class StacksTask
     when ForecastPerson then subject.try(:external_link)
     when ForecastAssignment then subject.try(:external_link)
     when AdminUser then helpers.admin_admin_user_path(subject)
-    when Reimbursement then helpers.admin_reimbursement_path(subject)
+    when Reimbursement then helpers.admin_ledger_reimbursement_path(subject.ledger, subject)
     when Survey then helpers.admin_survey_path(subject)
     when ProjectSatisfactionSurvey then helpers.admin_project_satisfaction_survey_path(subject)
     when Stacks::Notion::Lead then subject.try(:notion_link) || subject.try(:external_link)

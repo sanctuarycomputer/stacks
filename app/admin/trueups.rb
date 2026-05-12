@@ -4,7 +4,7 @@ ActiveAdmin.register Trueup do
   actions :index, :show, :destroy
   menu false
 
-  belongs_to :ledger, optional: true
+  belongs_to :ledger
 
   index download_links: false do
     column :contributor
