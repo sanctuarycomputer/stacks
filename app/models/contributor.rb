@@ -26,6 +26,8 @@ class Contributor < ApplicationRecord
   has_many :deel_invoice_adjustments
   has_many :deel_invoice_adjustments_with_deleted, -> { with_deleted }, class_name: "DeelInvoiceAdjustment"
 
+  has_many :ledgers
+
   scope :recent_new_deal_contributors, -> {
     joins(:contributor_payouts).where("contributor_payouts.created_at > ?", 3.months.ago).distinct
   }

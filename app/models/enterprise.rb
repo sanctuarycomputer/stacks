@@ -3,6 +3,7 @@ class Enterprise < ApplicationRecord
 
   has_many :enterprise_forecast_clients, dependent: :destroy
   has_many :forecast_clients, through: :enterprise_forecast_clients
+  has_many :ledgers
 
   has_one :qbo_account
   accepts_nested_attributes_for :qbo_account, allow_destroy: true
