@@ -1135,23 +1135,3 @@ body.logged_out #login a {
   background-image: none !important;
 }
 
-.ledger-tabs {
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-  border-bottom: 1px solid #ddd;
-
-  .ledger-tab {
-    padding: 0.5rem 1rem;
-    border: 1px solid #ddd;
-    border-bottom: none;
-    color: #555;
-    text-decoration: none;
-
-    &.selected {
-      background: #fff;
-      color: #000;
-      font-weight: 600;
-    }
-  }
-}
