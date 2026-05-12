@@ -17,6 +17,16 @@ module PayCycles
       raise NotImplementedError, "Implemented in Task 8+"
     end
 
+    # Reuses the existing rate hierarchy used by InvoiceTracker#make_contributor_payouts!:
+    # per-email override on the forecast project's notes wins, else the project's hourly_rate.
+    def resolve_rate(forecast_project, email)
+      override = forecast_project.hourly_rate_override_for_email_address(email)
+      return override.to_f if override.present?
+      rate = forecast_project.hourly_rate
+      return nil if rate.blank?
+      rate.to_f
+    end
+
     # Returns ForecastAssignments overlapping this cycle whose project's
     # forecast_client.is_internal? AND whose forecast_client is mapped to
     # this cycle's enterprise.

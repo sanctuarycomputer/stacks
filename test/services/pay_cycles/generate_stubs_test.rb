@@ -27,4 +27,26 @@ class PayCycles::GenerateStubsTest < ActiveSupport::TestCase
     assert_equal 1, qualifying.size
     assert_equal internal_project.forecast_id, qualifying.first.project_id
   end
+
+  test "resolve_rate uses per-email override when present" do
+    client = ForecastClient.create!(forecast_id: rand(1..1000000), name: "Test Client")
+    project = ForecastProject.create!(forecast_id: rand(1000000..2000000), client_id: client.forecast_id, name: "Test Project", tags: ["100p/h"], notes: "alice@example.com:120p/h")
+    rate = PayCycles::GenerateStubs.new(@cycle).resolve_rate(project, "alice@example.com")
+    assert_equal 120.0, rate
+  end
+
+  test "resolve_rate falls back to project's hourly_rate" do
+    client = ForecastClient.create!(forecast_id: rand(1..1000000), name: "Test Client")
+    project = ForecastProject.create!(forecast_id: rand(1000000..2000000), client_id: client.forecast_id, name: "Test Project", tags: ["75p/h"])
+    rate = PayCycles::GenerateStubs.new(@cycle).resolve_rate(project, "bob@example.com")
+    assert_equal 75.0, rate
+  end
+
+  test "resolve_rate returns default system rate when no override and no explicit tags" do
+    client = ForecastClient.create!(forecast_id: rand(1..1000000), name: "Test Client")
+    project = ForecastProject.create!(forecast_id: rand(1000000..2000000), client_id: client.forecast_id, name: "Test Project", tags: [])
+    rate = PayCycles::GenerateStubs.new(@cycle).resolve_rate(project, "bob@example.com")
+    # ForecastProject#hourly_rate defaults to System.instance.default_hourly_rate (175)
+    assert_equal 175.0, rate
+  end
 end
