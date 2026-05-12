@@ -27,7 +27,12 @@ ActiveAdmin.register Enterprise do
   index download_links: false do
     column :name
     column :last_generated do |resource|
-      "#{time_ago_in_words(DateTime.iso8601(resource.snapshot["generated_at"]))} ago"
+      generated_at = resource.snapshot.is_a?(Hash) ? resource.snapshot["generated_at"] : nil
+      if generated_at.present?
+        "#{time_ago_in_words(DateTime.iso8601(generated_at))} ago"
+      else
+        "Never"
+      end
     end
     actions
   end
