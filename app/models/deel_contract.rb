@@ -5,6 +5,13 @@ class DeelContract < ApplicationRecord
 
   belongs_to :deel_person, class_name: "DeelPerson", foreign_key: "deel_person_id"
 
+  # Deel's `/contracts` payload exposes the legal entity under `client.team`
+  # (id + name). The `deel_legal_entity_id` column is also denormalized at sync
+  # time so we can filter by entity at the SQL level.
+  def deel_legal_entity_name
+    data.is_a?(Hash) ? data.dig("client", "team", "name") : nil
+  end
+
   # From Deel’s synced contract JSON (`GET /contracts` → stored in `data`).
   PAY_AS_YOU_GO_TYPES = %w[
     pay_as_you_go_time_based
@@ -43,14 +50,21 @@ class DeelContract < ApplicationRecord
   def display_name_for_deel_invoice_select
     title = data.is_a?(Hash) ? data["title"].presence : nil
     kind = pay_as_you_go_family? ? "Pay As You Go" : deel_contract_type_label
-    "#{title || 'Contract'} — #{kind} — #{deel_id.to_s[0, 10]}…"
+    entity = deel_legal_entity_name.presence
+    prefix = entity ? "[#{entity}] " : ""
+    "#{prefix}#{title || 'Contract'} — #{kind} — #{deel_id.to_s[0, 10]}…"
   end
 
   # Pay-as-you-go contracts first, then by label (matches Deel Withdrawal ActiveAdmin form).
-  def self.sorted_for_balance_withdrawal_select(deel_person_id)
+  # When `deel_legal_entity_id:` is provided, restrict to contracts under that legal entity
+  # so withdrawals can only be created against the entity the calling ledger maps to.
+  # `nil` means no scoping (legacy enterprises without a Deel entity assigned yet).
+  def self.sorted_for_balance_withdrawal_select(deel_person_id, deel_legal_entity_id: nil)
     return [] if deel_person_id.blank?
 
-    where(deel_person_id: deel_person_id).to_a.sort_by do |dc|
+    scope = where(deel_person_id: deel_person_id)
+    scope = scope.where(deel_legal_entity_id: deel_legal_entity_id) if deel_legal_entity_id.present?
+    scope.to_a.sort_by do |dc|
       [dc.pay_as_you_go_family? ? 0 : 1, dc.display_name_for_deel_invoice_select.to_s.downcase]
     end
   end

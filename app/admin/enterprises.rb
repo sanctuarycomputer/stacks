@@ -2,7 +2,9 @@ ActiveAdmin.register Enterprise do
   config.filters = false
   config.paginate = false
   actions :index, :show, :new, :create, :edit, :update
-  permit_params :name,     
+  permit_params :name,
+    :deel_legal_entity_id,
+    forecast_client_ids: [],
     qbo_account_attributes: [
       :id,
       :_edit,
@@ -62,6 +64,40 @@ ActiveAdmin.register Enterprise do
     f.inputs(class: "admin_inputs") do
       f.semantic_errors
       f.input :name
+
+      # Fetch legal entities live from Deel so the admin picks from a
+      # dropdown rather than copy-pasting an opaque ID. Falls back to a
+      # plain text input if the Deel API is unreachable or the token is
+      # misconfigured.
+      legal_entity_options = begin
+        Stacks::Deel.fetch_all_legal_entities.map do |le|
+          label = le["name"].presence || le["legal_entity_name"].presence || "Unnamed"
+          ["#{label} (#{le["id"]})", le["id"]]
+        end
+      rescue Stacks::Deel::ApiError => e
+        Rails.logger.warn("[Admin::Enterprises#form] couldn't fetch Deel legal entities: #{e.message}")
+        nil
+      end
+
+      if legal_entity_options
+        f.input :deel_legal_entity_id,
+          as: :select,
+          collection: legal_entity_options,
+          include_blank: "(not linked to a Deel legal entity)",
+          hint: "Pulled live from Deel's /legal-entities endpoint."
+      else
+        f.input :deel_legal_entity_id,
+          hint: "Deel API unreachable — paste the legal_entity.id manually."
+      end
+
+      f.input :forecast_clients,
+        as: :select,
+        multiple: true,
+        collection: ForecastClient.order(:name).pluck(:name, :id),
+        input_html: { size: 12 },
+        hint: "Forecast clients whose hours route to this Enterprise's ledger. " \
+              "Each Forecast client can only be linked to ONE Enterprise. " \
+              "Leave empty for general clients billed by Sanctuary."
 
       f.inputs "QBO Account", for: [:qbo_account, f.object.qbo_account || QboAccount.new] do |qbo_account|
         qbo_account.input :client_id

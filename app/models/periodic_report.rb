@@ -60,7 +60,15 @@ class PeriodicReport < ApplicationRecord
   end
 
   def contributors
-    @_contributors ||= Contributor.includes(:forecast_person, :deel_person, :contributor_payouts_with_deleted, :misc_payments_with_deleted, :reimbursements_with_deleted, :trueups_with_deleted, :profit_shares_with_deleted).all
+    # NOTE: *_with_deleted are instance methods on Contributor (not real
+    # associations) after PR 1's Ledger routing, so they can't be eager-loaded
+    # via includes. Each contributor's ledger items are warmed via
+    # Contributor#preload_for_ledger_view! (which memoizes per-instance).
+    @_contributors ||= begin
+      cs = Contributor.includes(:forecast_person, :deel_person).all
+      cs.each(&:preload_for_ledger_view!)
+      cs
+    end
   end
 
   def garden3d_snapshot
@@ -153,7 +161,7 @@ class PeriodicReport < ApplicationRecord
 
   def tentative_profit_shares_by_contributor
     @_tentative_profit_shares_by_contributor ||= contributors.reduce({}) do |acc, contributor|
-      ledger = contributor.new_deal_ledger_items(false, nil, period.ends_at + 1.day)
+      ledger = contributor.all_items_grouped_by_month(false, nil, period.ends_at + 1.day)
 
       attendance = ledger[:by_month].select{|p| p.starts_at >= period.starts_at && p.ends_at <= period.ends_at }.reduce({}) do |agg, tuple|
         period, metadata = tuple
@@ -216,19 +224,22 @@ class PeriodicReport < ApplicationRecord
       total_shares = tentative_profit_shares_by_contributor.values.map{|d| d[:shares]}.reduce(&:+) || 0
 
       ActiveRecord::Base.transaction do
-        profit_shares_by_contributor = profit_shares.with_deleted.reduce({}) do |acc, profit_share|
-          acc[profit_share.contributor_id] = profit_share
+        profit_shares_by_contributor = profit_shares.with_deleted.includes(:ledger).reduce({}) do |acc, profit_share|
+          acc[profit_share.ledger.contributor_id] = profit_share
           acc
         end
 
         touched = []
         tentative_profit_shares_by_contributor.each do |contributor, data|
-          profit_share = profit_shares_by_contributor[contributor.id] || ProfitShare.create!({
-            periodic_report: self,
-            contributor: contributor,
-            amount: 0,
-            blueprint: {},
-          })
+          profit_share = profit_shares_by_contributor[contributor.id] || begin
+            ledger = Ledger.find_or_create_for(enterprise: Enterprise.sanctuary, contributor: contributor)
+            ProfitShare.create!({
+              periodic_report: self,
+              ledger: ledger,
+              amount: 0,
+              blueprint: {},
+            })
+          end
           amount = (data[:shares] / total_shares.to_f) * net_profit_share_pool
           if profit_share.amount > 0 && profit_share.amount != amount
             profit_share.update!(accepted_at: nil)

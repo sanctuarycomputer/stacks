@@ -32,3 +32,8 @@ Trait.create!(name: "Ambiguity & Accountability", tree: leadership)
 Trait.create!(name: "People Skills", tree: leadership)
 Trait.create!(name: "Work Delivery", tree: leadership)
 Trait.create!(name: "Strategic Thinking", tree: leadership)
+
+Enterprise.find_or_create_by!(name: Enterprise::SANCTUARY_NAME)
+Enterprise.find_or_create_by!(name: "Garden3D LLC")
+Enterprise.find_or_create_by!(name: "USB Club LLC")
+# "Index" already exists in prod from earlier P&L work — no seed needed.

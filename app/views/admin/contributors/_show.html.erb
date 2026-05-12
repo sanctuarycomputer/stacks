@@ -1,3 +1,9 @@
+<%= render 'ledger_tabs',
+      contributor: contributor,
+      ledgers_with_items: ledgers_with_items,
+      current_ledger: current_ledger,
+      view_mode: view_mode %>
+
 <% if pending_tasks.any? %>
   <div class="dashboard-modules table index_table index">
     <div class="dashboard-module">
@@ -35,21 +41,23 @@
     <div id="titlebar_left">
       <h2 id="page_title"><%= period.starts_at.strftime("%B %Y") %></h2>
     </div>
-    <div id="titlebar_right">
-      <span class="pill <%= metadata[:elevated_service] ? 'misc' : '' %>">
-        <%= metadata[:elevated_service] ? 'Elevated' : 'Standard' %> Service
-        <span class="split">
-          <% if metadata[:fulltime] %>
-            Fulltime
-          <% else %>
-            <strong><%= metadata[:total_hours] %>hrs, </strong><span><%= number_to_currency(metadata[:total_income]) %><%= metadata[:partial_salary] > 0 ? " + #{number_to_currency(metadata[:partial_salary])} partial salary" : "" %></span>
-          <% end %>
+    <% if view_mode == :all %>
+      <div id="titlebar_right">
+        <span class="pill <%= metadata[:elevated_service] ? 'misc' : '' %>">
+          <%= metadata[:elevated_service] ? 'Elevated' : 'Standard' %> Service
+          <span class="split">
+            <% if metadata[:fulltime] %>
+              Fulltime
+            <% else %>
+              <strong><%= metadata[:total_hours] %>hrs, </strong><span><%= number_to_currency(metadata[:total_income]) %><%= metadata[:partial_salary] > 0 ? " + #{number_to_currency(metadata[:partial_salary])} partial salary" : "" %></span>
+            <% end %>
+          </span>
         </span>
-      </span>
-    </div>
+      </div>
+    <% end %>
   </div>
 
-  <% if metadata[:fulltime] %>
+  <% if view_mode == :all && metadata[:fulltime] %>
     <div class="dashboard-modules table index_table index">
       <div class="dashboard-module">
         <div class="module-body factoid-parent">
@@ -72,9 +80,7 @@
         <% metadata[:items].each_with_index do |li, index| %>
           <tr class="<%= index.even? ? "even" : "odd" %>">
             <td class="col">
-              <% if li.is_a?(MiscPayment) %>
-                <%= li.paid_at.strftime("%B %d, %Y") %>
-              <% elsif li.is_a?(ContributorPayout) %>
+              <% if li.is_a?(ContributorPayout) %>
                 <%= li.invoice_tracker.invoice_pass.start_of_month.strftime("%B %d, %Y") %>
               <% elsif li.is_a?(Reimbursement) %>
                 <%= li.created_at.strftime("%B %d, %Y") %>
@@ -94,11 +100,7 @@
               </span>
             </td>
             <td class="col">
-              <% if li.is_a?(MiscPayment) %>
-                <span class="pill <%= li.deleted_at.present? ? "deleted" : "paid" %>">
-                  <%= li.deleted_at.present? ? "deleted" : "scheduled" %>
-                </span>
-              <% elsif li.is_a?(ContributorPayout) %>
+              <% if li.is_a?(ContributorPayout) %>
 
                 <span class="pill <%= li.invoice_tracker.contributor_payouts_status.to_s.humanize %>" style="margin-right: 6px;">
                   Payout Acceptance
@@ -159,15 +161,7 @@
               <% end %>
             </td>
             <td class="col">
-              <% if li.is_a?(MiscPayment) %>
-
-                <% if li.deleted_at.present? %>
-                  <del><%= number_to_currency(li.amount) %></del>
-                <% else %>
-                  - <%= number_to_currency(li.amount) %>
-                <% end %>
-
-              <% elsif li.is_a?(ContributorPayout) %>
+              <% if li.is_a?(ContributorPayout) %>
                 <% if li.deleted_at.present? %>
                   <del><%= number_to_currency(li.amount) %></del>
                 <% else %>
@@ -240,18 +234,16 @@
             </td>
             <td class="col text-right">
               <% unless li.deleted_at.present? %>
-                <% if li.is_a?(MiscPayment) %>
-                  <%= link_to "Info ↗", admin_contributor_misc_payment_path(contributor, li) %>
-                <% elsif li.is_a?(ContributorPayout) %>
+                <% if li.is_a?(ContributorPayout) %>
                   <%= link_to "#{li.display_name} ↗", admin_invoice_tracker_contributor_payout_path(li.invoice_tracker, li) %>
                 <% elsif li.is_a?(ProfitShare) %>
                   <%= link_to "#{li.periodic_report.display_name} ↗", admin_periodic_report_path(li.periodic_report) %>
                 <% elsif li.is_a?(Reimbursement) %>
-                  <%= link_to "Info ↗", admin_contributor_reimbursement_path(contributor, li) %>
+                  <%= link_to "Info ↗", admin_ledger_reimbursement_path(li.ledger, li) %>
                 <% elsif li.is_a?(Trueup) %>
-                  <%= link_to "Info ↗", admin_contributor_trueup_path(contributor, li) %>
+                  <%= link_to "Info ↗", admin_ledger_trueup_path(li.ledger, li) %>
                 <% elsif li.is_a?(ContributorAdjustment) %>
-                  <%= link_to "Info ↗", admin_contributor_contributor_adjustment_path(contributor, li) %>
+                  <%= link_to "Info ↗", admin_ledger_contributor_adjustment_path(li.ledger, li) %>
                 <% elsif li.is_a?(DeelInvoiceAdjustment) %>
                   <%= link_to "Info ↗", admin_contributor_deel_invoice_adjustment_path(contributor, li) %>
                 <% end %>

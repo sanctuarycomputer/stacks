@@ -2,10 +2,10 @@ ActiveAdmin.register Reimbursement do
   config.filters = false
   config.paginate = false
   actions :index, :new, :show, :create, :destroy
-  permit_params :contributor_id, :amount, :receipts, :description
+  permit_params :amount, :receipts, :description, :ledger_id
   menu false
-  
-  belongs_to :contributor
+
+  belongs_to :ledger
 
   action_item :toggle_acceptance, only: :show do
     if current_admin_user.is_admin?
@@ -13,7 +13,7 @@ ActiveAdmin.register Reimbursement do
         method: :post
     end
   end
-  
+
   index download_links: false do
     column :description
     column :contributor
@@ -40,7 +40,18 @@ ActiveAdmin.register Reimbursement do
   form do |f|
     f.inputs do
       f.semantic_errors
-      f.input :contributor, input_html: { disabled: true }
+      ledger_collection = Ledger.includes(:enterprise, contributor: :forecast_person).map do |l|
+        ["#{l.enterprise.name} — #{l.contributor.forecast_person&.email}", l.id]
+      end
+      # Canonical URL is ledger-nested, so the ledger is always known from
+      # the URL — render it as a disabled select for context and pin the id
+      # via a hidden field.
+      f.input :ledger,
+        as: :select,
+        collection: ledger_collection,
+        selected: f.object.ledger_id,
+        input_html: { disabled: true }
+      f.input :ledger_id, as: :hidden
       f.input :amount, as: :number, input_html: { step: 0.01, min: 0.01 }, label: "Amount (in USD, eg: 120.75)"
       f.input :description, placeholder: "Travel Expenses to Taipei"
       f.input :receipts, placeholder: "Links to PDFs on Google Drive, etc"
@@ -49,4 +60,3 @@ ActiveAdmin.register Reimbursement do
     f.actions
   end
 end
-  

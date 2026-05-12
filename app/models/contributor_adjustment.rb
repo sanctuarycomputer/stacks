@@ -1,10 +1,10 @@
 class ContributorAdjustment < ApplicationRecord
   acts_as_paranoid
+  include LedgerItem
   include SyncsAsQboBill
 
   before_destroy :detach_and_destroy_qbo_bill
 
-  belongs_to :contributor
   belongs_to :qbo_invoice, class_name: "QboInvoice", foreign_key: "qbo_invoice_id", primary_key: "qbo_id", optional: true
   belongs_to :qbo_bill, class_name: "QboBill", foreign_key: "qbo_bill_id", primary_key: "qbo_id", optional: true
 
@@ -24,13 +24,17 @@ class ContributorAdjustment < ApplicationRecord
     inv.present? && inv.status == :paid
   end
 
+  def effective_on_for_display
+    effective_on
+  end
+
   # SyncsAsQboBill contract
   def bill_txn_date
     effective_on
   end
 
   def bill_description
-    "https://stacks.garden3d.net/admin/contributors/#{contributor.id}/contributor_adjustments/#{id}"
+    "https://stacks.garden3d.net/admin/ledgers/#{ledger_id}/contributor_adjustments/#{id}"
   end
 
   def bill_doc_number_code

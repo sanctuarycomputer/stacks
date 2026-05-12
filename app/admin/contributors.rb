@@ -20,17 +20,14 @@ ActiveAdmin.register Contributor do
     end
 
     def find_resource
+      # Only preload what's a real ActiveRecord association on Contributor.
+      # The *_with_deleted methods route through :ledgers and can't be
+      # preloaded by `includes(...)` — they're warmed up via
+      # `Contributor#preload_for_ledger_view!` inside the show block instead.
       scoped_collection.includes(
         forecast_person: {
           admin_user: [:full_time_periods, :admin_user_salary_windows],
         },
-        contributor_payouts_with_deleted: {
-          invoice_tracker: [:invoice_pass, :contributor_payouts, :forecast_client, :qbo_invoice],
-        },
-        profit_shares_with_deleted: { periodic_report: :profit_shares },
-        contributor_adjustments_with_deleted: :qbo_invoice,
-        trueups_with_deleted: :invoice_pass,
-        deel_invoice_adjustments_with_deleted: :deel_contract,
       ).find(params[:id])
     end
 
@@ -41,31 +38,42 @@ ActiveAdmin.register Contributor do
 
   permit_params :qbo_vendor_id, :deel_person_id
 
+  # Action items below are scoped to the ledger tab the user is viewing.
+  # On the "All" tab (no `ledger` query param), there's no single ledger to
+  # write against, so the buttons short-circuit to a JS alert instead.
+  LEDGER_REQUIRED_ALERT = "Select the appropriate ledger before you can perform this action.".freeze
+
   action_item :deel_invoice, only: :show, if: proc {
     manual_deel_invoice_visible?(resource)
   } do
-    link_to("New Deel Withdrawal", new_admin_contributor_deel_invoice_adjustment_path(resource))
-  end
-
-  action_item :record_misc_payment, only: :show, if: proc { current_admin_user.is_admin? } do
-    link_to(
-      "Record Misc Payment",
-      new_admin_contributor_misc_payment_path(resource)
-    )
+    selected_ledger = params[:ledger].present? && resource.ledgers.find_by(id: params[:ledger])
+    if selected_ledger
+      link_to "New Deel Withdrawal",
+        new_admin_contributor_deel_invoice_adjustment_path(resource, ledger: selected_ledger.id)
+    else
+      link_to "New Deel Withdrawal", "#",
+        onclick: "alert(#{LEDGER_REQUIRED_ALERT.to_json}); return false;"
+    end
   end
 
   action_item :new_contributor_adjustment, only: :show, if: proc { current_admin_user.is_admin? } do
-    link_to(
-      "New Adjustment",
-      new_admin_contributor_contributor_adjustment_path(resource)
-    )
+    selected_ledger = params[:ledger].present? && resource.ledgers.find_by(id: params[:ledger])
+    if selected_ledger
+      link_to "New Adjustment", new_admin_ledger_contributor_adjustment_path(selected_ledger)
+    else
+      link_to "New Adjustment", "#",
+        onclick: "alert(#{LEDGER_REQUIRED_ALERT.to_json}); return false;"
+    end
   end
 
   action_item :submit_reimbursement, only: :show do
-    link_to(
-      "Submit Reimbursement",
-      new_admin_contributor_reimbursement_path(resource)
-    )
+    selected_ledger = params[:ledger].present? && resource.ledgers.find_by(id: params[:ledger])
+    if selected_ledger
+      link_to "Submit Reimbursement", new_admin_ledger_reimbursement_path(selected_ledger)
+    else
+      link_to "Submit Reimbursement", "#",
+        onclick: "alert(#{LEDGER_REQUIRED_ALERT.to_json}); return false;"
+    end
   end
 
   member_action :toggle_contributor_payout_acceptance, method: :post do
@@ -140,16 +148,47 @@ ActiveAdmin.register Contributor do
   end
 
   show do
-    new_deal_ledger_items = resource.new_deal_ledger_items
-    balance = resource.new_deal_balance(new_deal_ledger_items)
+    # Warm the six *_with_deleted collections so the type-switching loop in
+    # the partial doesn't fire N+1 queries. Each method below is memoized
+    # per-instance and `preload_for_ledger_view!` populates the caches with
+    # eager-loads tailored to the partial's needs.
+    resource.preload_for_ledger_view!
+
+    # Resolve which ledger view to render. Default = "all" (aggregated, with elevated_service).
+    ledger_param = params[:ledger]
+
+    ledgers_with_items = resource.ledgers.includes(:enterprise).select do |l|
+      [l.contributor_payouts, l.contributor_adjustments, l.trueups,
+       l.reimbursements, l.profit_shares, l.deel_invoice_adjustments].any?(&:any?)
+    end
+
+    view_mode = :all
+    current_ledger = nil
+    if ledger_param.present? && ledger_param != "all"
+      current_ledger = ledgers_with_items.find { |l| l.id.to_s == ledger_param.to_s }
+      view_mode = :ledger if current_ledger
+    end
+
+    items_result =
+      if view_mode == :all
+        resource.all_items_grouped_by_month
+      else
+        current_ledger.items_grouped_by_month
+      end
+
+    balance = resource.new_deal_balance(items_result)
     admin = resource.forecast_person&.admin_user
     pending_tasks = admin&.pending_tasks || []
 
     render(partial: "show", locals: {
       contributor: resource,
-      new_deal_ledger_items: new_deal_ledger_items,
+      items_result: items_result,
+      new_deal_ledger_items: items_result,
       balance: balance,
       pending_tasks: pending_tasks,
+      view_mode: view_mode,
+      ledgers_with_items: ledgers_with_items,
+      current_ledger: current_ledger,
     })
   end
 end

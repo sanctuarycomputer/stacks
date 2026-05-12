@@ -38,7 +38,7 @@ class AssociatesAwardAgreement < ApplicationRecord
     contributor = admin_user.forecast_person.contributor
     return initial unless contributor.present?
 
-    ledger_asc_by_month = contributor.new_deal_ledger_items[:by_month]
+    ledger_asc_by_month = contributor.all_items_grouped_by_month[:by_month]
       .sort_by { |period, _| period.starts_at }
       .map do |period, period_meta|
         next nil unless started_at <= period.starts_at

@@ -1,0 +1,30 @@
+<%# Ledger tab bar — "All" + one tab per Enterprise with items.
+    Uses the existing pill toggle pattern from periodic_reports/_show.html.erb
+    (and the studio period filter). The `update(name, value)` JS rewrites the
+    query string; an empty value clears the param. %>
+<script>
+function update(a, b) {
+  var searchParams = new URLSearchParams(window.location.search);
+  if (b !== '')
+    searchParams.set(a, b);
+  else
+    searchParams.delete(a);
+  window.location.search = searchParams.toString();
+}
+</script>
+
+<div style="margin-bottom: 20px">
+  <a onclick='update("ledger", "");' style="margin-right: 6px">
+    <p class="nag pill <%= 'complete' if view_mode == :all %>" style="margin-bottom: 0px;margin-right: 6px;">
+      All
+    </p>
+  </a>
+  <% ledgers_with_items.each do |ledger| %>
+    <% selected = view_mode == :ledger && current_ledger&.id == ledger.id %>
+    <a onclick='update("ledger", "<%= ledger.id %>");' style="margin-right: 6px">
+      <p class="nag pill <%= 'complete' if selected %>" style="margin-bottom: 0px;margin-right: 6px;">
+        <%= ledger.enterprise.name %>
+      </p>
+    </a>
+  <% end %>
+</div>

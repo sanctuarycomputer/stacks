@@ -5,26 +5,103 @@ class Contributor < ApplicationRecord
   belongs_to :qbo_vendor, class_name: "QboVendor", foreign_key: "qbo_vendor_id", primary_key: "qbo_id", optional: true
   belongs_to :deel_person, class_name: "DeelPerson", foreign_key: "deel_person_id", primary_key: "deel_id", optional: true
 
-  has_many :misc_payments
-  has_many :misc_payments_with_deleted, -> { with_deleted }, class_name: 'MiscPayment'
+  has_many :ledgers
 
-  has_many :reimbursements
-  has_many :reimbursements_with_deleted, -> { with_deleted }, class_name: 'Reimbursement'
+  has_many :reimbursements, through: :ledgers
+  has_many :contributor_payouts, through: :ledgers
+  has_many :trueups, through: :ledgers
+  has_many :profit_shares, through: :ledgers
+  has_many :contributor_adjustments, through: :ledgers
+  has_many :deel_invoice_adjustments, through: :ledgers
 
-  has_many :contributor_payouts
-  has_many :contributor_payouts_with_deleted, -> { includes({ invoice_tracker: :invoice_pass }).with_deleted }, class_name: 'ContributorPayout'
+  # Each *_with_deleted method below is memoized per-instance. The first call
+  # fires a query; subsequent calls return the cached array.
+  #
+  # `preload_for_ledger_view!` warms all six caches at once with the heavier
+  # eager-loads the ledger UI needs. Call it from the admin show action to
+  # avoid lazy queries inside `all_items_grouped_by_month`.
 
-  has_many :trueups
-  has_many :trueups_with_deleted, -> { includes(:invoice_pass).with_deleted }, class_name: 'Trueup'
+  def contributor_payouts_with_deleted
+    @_contributor_payouts_with_deleted ||=
+      ContributorPayout.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id }).to_a
+  end
 
-  has_many :profit_shares
-  has_many :profit_shares_with_deleted, -> { includes(:periodic_report).with_deleted }, class_name: 'ProfitShare'
+  def contributor_adjustments_with_deleted
+    @_contributor_adjustments_with_deleted ||=
+      ContributorAdjustment.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id }).to_a
+  end
 
-  has_many :contributor_adjustments
-  has_many :contributor_adjustments_with_deleted, -> { with_deleted }, class_name: "ContributorAdjustment"
+  def trueups_with_deleted
+    @_trueups_with_deleted ||=
+      Trueup.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id }).to_a
+  end
 
-  has_many :deel_invoice_adjustments
-  has_many :deel_invoice_adjustments_with_deleted, -> { with_deleted }, class_name: "DeelInvoiceAdjustment"
+  def reimbursements_with_deleted
+    @_reimbursements_with_deleted ||=
+      Reimbursement.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id }).to_a
+  end
+
+  def profit_shares_with_deleted
+    @_profit_shares_with_deleted ||=
+      ProfitShare.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id }).to_a
+  end
+
+  def deel_invoice_adjustments_with_deleted
+    @_deel_invoice_adjustments_with_deleted ||=
+      DeelInvoiceAdjustment.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id }).to_a
+  end
+
+  # Eager-loads the six *_with_deleted collections with the heavier includes
+  # the ledger view body needs (so the partial doesn't trip N+1 inside the
+  # type-switching loop). Each query also preloads `ledger` so the LedgerItem
+  # concern's `delegate :contributor, to: :ledger` doesn't re-query per item;
+  # we also stamp the ledger's contributor association target to `self` so
+  # `item.contributor` returns this Contributor without ever touching SQL.
+  def preload_for_ledger_view!
+    @_contributor_payouts_with_deleted =
+      ContributorPayout.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
+        .includes(
+          :ledger,
+          # Preload :contributor_payouts on the invoice_tracker so
+          # InvoiceTracker#contributor_payouts_status stays in-memory
+          # (otherwise it fires 2 SQL queries per invoice_tracker for the
+          # `.exists?` + `.where(accepted_at: nil).none?` fallback branch).
+          invoice_tracker: [:invoice_pass, :forecast_client, :qbo_invoice, :contributor_payouts],
+        ).to_a
+    @_contributor_adjustments_with_deleted =
+      ContributorAdjustment.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
+        .includes(:ledger, :qbo_invoice).to_a
+    @_trueups_with_deleted =
+      Trueup.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
+        .includes(:ledger, :invoice_pass).to_a
+    @_reimbursements_with_deleted =
+      Reimbursement.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
+        .includes(:ledger).to_a
+    @_profit_shares_with_deleted =
+      ProfitShare.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
+        .includes(:ledger, periodic_report: :profit_shares).to_a
+    @_deel_invoice_adjustments_with_deleted =
+      DeelInvoiceAdjustment.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
+        .includes(:ledger, :deel_contract).to_a
+
+    # Short-circuit `item.contributor` (and any downstream delegate hop) to
+    # this Contributor. All preloaded items belong to ledgers whose contributor
+    # IS self, by construction of the queries above.
+    [
+      @_contributor_payouts_with_deleted,
+      @_contributor_adjustments_with_deleted,
+      @_trueups_with_deleted,
+      @_reimbursements_with_deleted,
+      @_profit_shares_with_deleted,
+      @_deel_invoice_adjustments_with_deleted,
+    ].each do |items|
+      items.each do |item|
+        item.ledger.association(:contributor).target = self
+      end
+    end
+
+    self
+  end
 
   scope :recent_new_deal_contributors, -> {
     joins(:contributor_payouts).where("contributor_payouts.created_at > ?", 3.months.ago).distinct
@@ -118,13 +195,11 @@ class Contributor < ApplicationRecord
     forecast_person&.admin_user == admin_user
   end
 
-  def new_deal_balance(ledger_items = new_deal_ledger_items(false))
+  def new_deal_balance(ledger_items = all_items_grouped_by_month(false))
     ledger_items[:all].reduce({ balance: 0, unsettled: 0 }) do |acc, li|
-      next acc if li.deleted_at.present?
+      next acc if li.respond_to?(:deleted_at) && li.deleted_at.present?
 
-      if li.is_a?(MiscPayment)
-        acc[:balance] -= li.amount
-      elsif li.is_a?(ContributorPayout)
+      if li.is_a?(ContributorPayout)
         if li.payable?
           acc[:balance] += li.amount
         else
@@ -158,7 +233,6 @@ class Contributor < ApplicationRecord
   end
 
   def self.aggregated_new_deal_balance
-    all_misc_payments = MiscPayment.all
     all_contributor_payouts = ContributorPayout.includes(invoice_tracker: :invoice_pass).all
     all_reimbursements = Reimbursement.all
     all_trueups = Trueup.all
@@ -192,12 +266,6 @@ class Contributor < ApplicationRecord
       acc
     end
 
-    ledger = all_misc_payments.reduce(ledger) do |acc, mp|
-      next acc if mp.paid_at > Date.today
-      acc[:balance] -= mp.amount
-      acc
-    end
-
     ledger = all_profit_shares.reduce(ledger) do |acc, ps|
       next acc if ps.applied_at > Date.today
       acc[:balance] += ps.amount
@@ -225,9 +293,12 @@ class Contributor < ApplicationRecord
     ledger
   end
 
-  def new_deal_ledger_items(include_salary = true, override_ledger_starts_at = nil, override_ledger_ends_at = nil)
+  # Cross-enterprise aggregation. `elevated_service` is fundamentally an ALL-ENTERPRISES
+  # concept — a contributor's total contribution across the company that month — so it
+  # lives here, not on Ledger. Per-enterprise views should use Ledger#items_grouped_by_month
+  # instead, which omits elevated_service / total_hours / partial_salary / fulltime.
+  def all_items_grouped_by_month(include_salary = true, override_ledger_starts_at = nil, override_ledger_ends_at = nil)
     preloaded_contributor_payouts = contributor_payouts_with_deleted
-    preloaded_misc_payments = misc_payments_with_deleted
     preloaded_reimbursements = reimbursements_with_deleted
     preloaded_trueups = trueups_with_deleted
     preloaded_profit_shares = profit_shares_with_deleted
@@ -237,23 +308,26 @@ class Contributor < ApplicationRecord
     if override_ledger_ends_at.present?
       ledger_ends_at = override_ledger_ends_at
     else
-    ledger_ends_at = [*preloaded_misc_payments, *preloaded_contributor_payouts, *preloaded_trueups, *preloaded_adjustments, *preloaded_deel_invoice_adjustments].reduce(Date.today) do |acc, li|
-      if li.is_a?(MiscPayment)
-        acc = li.paid_at if li.paid_at > acc
-      elsif li.is_a?(ContributorPayout)
-        acc = li.invoice_tracker.invoice_pass.start_of_month if li.invoice_tracker.invoice_pass.start_of_month > acc
-      elsif li.is_a?(Reimbursement)
-        acc = li.created_at if li.created_at > acc
-      elsif li.is_a?(Trueup)
-        acc = li.payment_date if li.payment_date > acc
-      elsif li.is_a?(ProfitShare)
-        acc = li.applied_at if li.applied_at > acc
-      elsif li.is_a?(ContributorAdjustment)
-        acc = li.effective_on if li.effective_on > acc
-      elsif li.is_a?(DeelInvoiceAdjustment)
-        d = li.date_submitted
-        acc = d if d > acc
-      end
+      ledger_ends_at = [
+        *preloaded_contributor_payouts,
+        *preloaded_trueups,
+        *preloaded_adjustments,
+        *preloaded_deel_invoice_adjustments,
+      ].reduce(Date.today) do |acc, li|
+        if li.is_a?(ContributorPayout)
+          acc = li.invoice_tracker.invoice_pass.start_of_month if li.invoice_tracker.invoice_pass.start_of_month > acc
+        elsif li.is_a?(Reimbursement)
+          acc = li.created_at if li.created_at > acc
+        elsif li.is_a?(Trueup)
+          acc = li.payment_date if li.payment_date > acc
+        elsif li.is_a?(ProfitShare)
+          acc = li.applied_at if li.applied_at > acc
+        elsif li.is_a?(ContributorAdjustment)
+          acc = li.effective_on if li.effective_on > acc
+        elsif li.is_a?(DeelInvoiceAdjustment)
+          d = li.date_submitted
+          acc = d if d > acc
+        end
         acc
       end + 2.months
     end
@@ -286,11 +360,6 @@ class Contributor < ApplicationRecord
         cp.invoice_tracker.invoice_pass.start_of_month <= period.ends_at
       end
 
-      contractor_payouts_in_period = preloaded_misc_payments.select do |cp|
-        cp.paid_at >= period.starts_at &&
-        cp.paid_at <= period.ends_at
-      end
-
       reimbursements_in_period = preloaded_reimbursements.select do |cp|
         cp.created_at >= period.starts_at &&
         cp.created_at <= period.ends_at
@@ -319,7 +388,6 @@ class Contributor < ApplicationRecord
       sorted =
         [
           *contributor_payouts_in_period,
-          *contractor_payouts_in_period,
           *trueups_in_period,
           *reimbursements_in_period,
           *profit_shares_in_period,
@@ -329,8 +397,6 @@ class Contributor < ApplicationRecord
         date_a = nil
         if a.is_a?(Trueup)
           date_a = a.payment_date
-        elsif a.is_a?(MiscPayment)
-          date_a = a.paid_at
         elsif a.is_a?(Reimbursement)
           date_a = a.created_at
         elsif a.is_a?(ContributorPayout)
@@ -346,8 +412,6 @@ class Contributor < ApplicationRecord
         date_b = nil
         if b.is_a?(Trueup)
           date_b = b.payment_date
-        elsif b.is_a?(MiscPayment)
-          date_b = b.paid_at
         elsif b.is_a?(Reimbursement)
           date_b = b.created_at
         elsif b.is_a?(ContributorPayout)
@@ -409,6 +473,14 @@ class Contributor < ApplicationRecord
       }
       acc
     end
+  end
+
+  # Convenience predicate: was this contributor in "elevated service" for `period`,
+  # computed across all enterprises. Defaults to a single-month window scoped query
+  # so callers don't pay the full-history cost when checking one month.
+  def elevated_service_for_month(period, items_result = all_items_grouped_by_month(false, period.starts_at, period.ends_at + 1.day))
+    data = items_result[:by_month][period]
+    !!(data && data[:elevated_service])
   end
 
 end

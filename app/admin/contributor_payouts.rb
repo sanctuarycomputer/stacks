@@ -2,7 +2,7 @@ ActiveAdmin.register ContributorPayout do
   config.filters = false
   config.paginate = false
   actions :index, :new, :show, :edit, :update, :create, :destroy
-  permit_params :contributor_id, :amount, :description, :created_by_id, :blueprint, :skip_seventy_percent_check
+  permit_params :amount, :description, :created_by_id, :blueprint, :skip_seventy_percent_check
   menu false
 
   belongs_to :invoice_tracker
@@ -116,7 +116,22 @@ ActiveAdmin.register ContributorPayout do
 
   controller do
     def scoped_collection
-      super.with_deleted.includes(:forecast_person)
+      super.with_deleted.includes(ledger: { contributor: :forecast_person })
+    end
+
+    def build_new_resource
+      contributor_id = params.dig(:contributor_payout, :contributor_id)
+      cp = ContributorPayout.new(permitted_params[:contributor_payout] || {})
+      if contributor_id.present?
+        contributor = Contributor.unscoped.find(contributor_id)
+        invoice_tracker = parent
+        ledger = Ledger.find_or_create_for(
+          enterprise: invoice_tracker.forecast_client.billing_enterprise,
+          contributor: contributor
+        )
+        cp.ledger = ledger
+      end
+      cp
     end
 
     def create

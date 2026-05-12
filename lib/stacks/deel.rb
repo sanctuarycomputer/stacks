@@ -99,6 +99,20 @@ class Stacks::Deel
     response.parsed_response
   end
 
+  # Token scopes: organizations:read
+  # Returns the list of legal entities (LLCs) under the Deel workspace, used to
+  # populate the Enterprise admin's Deel legal entity select.
+  def self.fetch_all_legal_entities
+    response = get(
+      "#{api_root}/legal-entities",
+      headers: json_headers(org_bearer),
+    )
+    raise_api_error!(response, "fetch_all_legal_entities")
+    body = response.parsed_response
+    # Deel returns either a top-level "data" array or a bare array.
+    body.is_a?(Hash) ? Array(body["data"]) : Array(body)
+  end
+
   def self.raise_api_error!(response, context)
     return if response.success?
 
@@ -124,10 +138,12 @@ class Stacks::Deel
   end
 
   def sync_all!
+    # Pure upsert flow. The previous wipe-and-rebuild approach
+    # (DeelContract.delete_all etc.) raises ForeignKeyViolation now that
+    # DeelInvoiceAdjustment.belongs_to :deel_contract pins those rows.
+    # Stale contracts/people/off-cycle-payments persist if Deel deletes
+    # them upstream, which is a rare event we accept.
     ActiveRecord::Base.transaction do
-      DeelOffCyclePayment.delete_all
-      DeelContract.delete_all
-      DeelPerson.delete_all
       sync_people!
       sync_contracts!
 
@@ -191,6 +207,9 @@ class Stacks::Deel
         deel_id: c["id"],
         deel_person_id: c.dig("worker", "id"),
         data: c,
+        # Deel exposes the legal entity as `client.team.{id,name}` on the
+        # contracts API; the id is the same UUID returned by /legal-entities.
+        deel_legal_entity_id: c.dig("client", "team", "id"),
       }
     end.compact
     DeelContract.upsert_all(data, unique_by: :deel_id)

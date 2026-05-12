@@ -3,11 +3,14 @@
 class Contributors::SubmitDeelInvoiceAdjustment
   class Error < StandardError; end
 
-  attr_reader :contributor, :contract_id, :amount, :description, :date_submitted
+  attr_reader :contributor, :ledger, :contract_id, :amount, :description, :date_submitted
 
   # `skip_balance_validation`: when true, skips settled-balance cap (Admin role + checkbox in ActiveAdmin).
-  def initialize(contributor:, contract_id:, amount:, description:, date_submitted:, skip_balance_validation: false)
+  # `ledger`: the ledger the withdrawal is being recorded against. The contract's Deel legal entity
+  # must match the ledger's enterprise's Deel legal entity (when the enterprise has one assigned).
+  def initialize(contributor:, contract_id:, amount:, description:, date_submitted:, ledger: nil, skip_balance_validation: false)
     @contributor = contributor
+    @ledger = ledger || Ledger.find_or_create_for(enterprise: Enterprise.sanctuary, contributor: contributor)
     @contract_id = contract_id.to_s
     @amount = amount
     @description = description.to_s
@@ -33,7 +36,7 @@ class Contributors::SubmitDeelInvoiceAdjustment
     )
 
     DeelInvoiceAdjustment.create_from_deel_response!(
-      contributor: contributor,
+      ledger: ledger,
       deel_contract_id: contract_id,
       amount: BigDecimal(amount.to_s),
       description: description,
@@ -64,6 +67,11 @@ class Contributors::SubmitDeelInvoiceAdjustment
     unless dc.invoice_adjustments_supported?
       raise Error, "Deel withdrawal is not supported for this contract type (#{dc.deel_contract_type_label}). Pay As You Go and other invoice-cycle contracts support it; classic Milestone contracts without a pay cycle do not."
     end
+
+    enterprise_entity_id = ledger.enterprise.deel_legal_entity_id
+    if enterprise_entity_id.present? && dc.deel_legal_entity_id != enterprise_entity_id
+      raise Error, "This Deel contract belongs to a different Deel entity than the #{ledger.enterprise.name} ledger. Pick a ledger that matches the contract's entity."
+    end
   end
 
   def validate_inputs!
@@ -75,7 +83,7 @@ class Contributors::SubmitDeelInvoiceAdjustment
 
   def validate_against_stacks_balance!
     amt = BigDecimal(amount.to_s)
-    ledger = contributor.new_deal_ledger_items(false)
+    ledger = contributor.all_items_grouped_by_month(false)
     bal = BigDecimal(contributor.new_deal_balance(ledger)[:balance].to_s)
     raise Error, "Amount cannot exceed your settled Stacks balance (#{bal})." if amt > bal
   end
