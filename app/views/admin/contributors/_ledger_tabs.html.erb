@@ -6,7 +6,7 @@
   <% ledgers_with_items.each do |ledger| %>
     <% selected = view_mode == :ledger && current_ledger&.id == ledger.id %>
     <%= link_to ledger.enterprise.name,
-          admin_contributor_path(contributor, ledger: ledger.enterprise.name),
+          admin_contributor_path(contributor, ledger: ledger.id),
           class: "ledger-tab#{' selected' if selected}" %>
   <% end %>
 </nav>

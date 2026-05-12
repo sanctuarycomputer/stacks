@@ -151,7 +151,7 @@ ActiveAdmin.register Contributor do
     view_mode = :all
     current_ledger = nil
     if ledger_param.present? && ledger_param != "all"
-      current_ledger = ledgers_with_items.find { |l| l.enterprise.name == ledger_param || l.id.to_s == ledger_param }
+      current_ledger = ledgers_with_items.find { |l| l.id.to_s == ledger_param.to_s }
       view_mode = :ledger if current_ledger
     end
 
