@@ -20,17 +20,14 @@ ActiveAdmin.register Contributor do
     end
 
     def find_resource
+      # Only preload what's a real ActiveRecord association on Contributor.
+      # The *_with_deleted methods route through :ledgers and can't be
+      # preloaded by `includes(...)` — they're warmed up via
+      # `Contributor#preload_for_ledger_view!` inside the show block instead.
       scoped_collection.includes(
         forecast_person: {
           admin_user: [:full_time_periods, :admin_user_salary_windows],
         },
-        contributor_payouts_with_deleted: {
-          invoice_tracker: [:invoice_pass, :contributor_payouts, :forecast_client, :qbo_invoice],
-        },
-        profit_shares_with_deleted: { periodic_report: :profit_shares },
-        contributor_adjustments_with_deleted: :qbo_invoice,
-        trueups_with_deleted: :invoice_pass,
-        deel_invoice_adjustments_with_deleted: :deel_contract,
       ).find(params[:id])
     end
 
@@ -137,6 +134,12 @@ ActiveAdmin.register Contributor do
   end
 
   show do
+    # Warm the six *_with_deleted collections so the type-switching loop in
+    # the partial doesn't fire N+1 queries. Each method below is memoized
+    # per-instance and `preload_for_ledger_view!` populates the caches with
+    # eager-loads tailored to the partial's needs.
+    resource.preload_for_ledger_view!
+
     # Resolve which ledger view to render. Default = "all" (aggregated, with elevated_service).
     ledger_param = params[:ledger]
 

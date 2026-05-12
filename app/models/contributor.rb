@@ -14,28 +14,65 @@ class Contributor < ApplicationRecord
   has_many :contributor_adjustments, through: :ledgers
   has_many :deel_invoice_adjustments, through: :ledgers
 
+  # Each *_with_deleted method below is memoized per-instance. The first call
+  # fires a query; subsequent calls return the cached array.
+  #
+  # `preload_for_ledger_view!` warms all six caches at once with the heavier
+  # eager-loads the ledger UI needs. Call it from the admin show action to
+  # avoid lazy queries inside `all_items_grouped_by_month`.
+
   def contributor_payouts_with_deleted
-    ContributorPayout.with_deleted.includes(invoice_tracker: :invoice_pass).joins(:ledger).where(ledgers: { contributor_id: id })
+    @_contributor_payouts_with_deleted ||=
+      ContributorPayout.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id }).to_a
   end
 
   def contributor_adjustments_with_deleted
-    ContributorAdjustment.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
+    @_contributor_adjustments_with_deleted ||=
+      ContributorAdjustment.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id }).to_a
   end
 
   def trueups_with_deleted
-    Trueup.with_deleted.includes(:invoice_pass).joins(:ledger).where(ledgers: { contributor_id: id })
+    @_trueups_with_deleted ||=
+      Trueup.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id }).to_a
   end
 
   def reimbursements_with_deleted
-    Reimbursement.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
+    @_reimbursements_with_deleted ||=
+      Reimbursement.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id }).to_a
   end
 
   def profit_shares_with_deleted
-    ProfitShare.with_deleted.includes(:periodic_report).joins(:ledger).where(ledgers: { contributor_id: id })
+    @_profit_shares_with_deleted ||=
+      ProfitShare.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id }).to_a
   end
 
   def deel_invoice_adjustments_with_deleted
-    DeelInvoiceAdjustment.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
+    @_deel_invoice_adjustments_with_deleted ||=
+      DeelInvoiceAdjustment.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id }).to_a
+  end
+
+  # Eager-loads the six *_with_deleted collections with the heavier includes
+  # the ledger view body needs (so the partial doesn't trip N+1 inside the
+  # type-switching loop). The admin show action calls this once.
+  def preload_for_ledger_view!
+    @_contributor_payouts_with_deleted =
+      ContributorPayout.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
+        .includes(invoice_tracker: [:invoice_pass, :forecast_client, :qbo_invoice]).to_a
+    @_contributor_adjustments_with_deleted =
+      ContributorAdjustment.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
+        .includes(:qbo_invoice).to_a
+    @_trueups_with_deleted =
+      Trueup.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
+        .includes(:invoice_pass).to_a
+    @_reimbursements_with_deleted =
+      Reimbursement.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id }).to_a
+    @_profit_shares_with_deleted =
+      ProfitShare.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
+        .includes(periodic_report: :profit_shares).to_a
+    @_deel_invoice_adjustments_with_deleted =
+      DeelInvoiceAdjustment.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
+        .includes(:deel_contract).to_a
+    self
   end
 
   scope :recent_new_deal_contributors, -> {
