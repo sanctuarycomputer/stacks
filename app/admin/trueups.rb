@@ -4,7 +4,7 @@ ActiveAdmin.register Trueup do
   actions :index, :show, :destroy
   menu false
 
-  belongs_to :contributor
+  belongs_to :ledger, optional: true
 
   index download_links: false do
     column :contributor
@@ -14,7 +14,7 @@ ActiveAdmin.register Trueup do
   end
 
   action_item :sync_qbo_bill, only: :show, if: proc { current_admin_user.is_admin? } do
-    link_to "Sync QBO Bill", sync_qbo_bill_admin_contributor_trueup_path(resource.contributor, resource),
+    link_to "Sync QBO Bill", sync_qbo_bill_admin_ledger_trueup_path(resource.ledger, resource),
       method: :post
   end
 
@@ -22,7 +22,7 @@ ActiveAdmin.register Trueup do
     tu = Trueup.find(params[:id])
     tu.sync_qbo_bill!
     return redirect_to(
-      admin_contributor_trueup_path(tu.contributor, tu),
+      admin_ledger_trueup_path(tu.ledger, tu),
       notice: "Success",
     )
   end

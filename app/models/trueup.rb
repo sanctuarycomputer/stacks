@@ -27,7 +27,7 @@ class Trueup < ApplicationRecord
   end
 
   def bill_description
-    "http://stacks.garden3d.net/admin/contributors/#{contributor.id}/trueups/#{id}"
+    "https://stacks.garden3d.net/admin/ledgers/#{ledger_id}/trueups/#{id}"
   end
 
   def bill_doc_number_code

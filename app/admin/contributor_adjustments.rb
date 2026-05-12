@@ -2,14 +2,14 @@ ActiveAdmin.register ContributorAdjustment do
   config.filters = false
   config.paginate = false
   actions :index, :new, :show, :edit, :create, :update, :destroy
-  permit_params :amount, :effective_on, :description, :qbo_invoice_id
+  permit_params :amount, :effective_on, :description, :qbo_invoice_id, :ledger_id
   menu false
 
-  belongs_to :contributor
+  belongs_to :ledger, optional: true
 
   action_item :sync_qbo_bill, only: :show, if: proc { current_admin_user.is_admin? } do
     link_to "Sync QBO Bill",
-      sync_qbo_bill_admin_contributor_contributor_adjustment_path(resource.contributor, resource),
+      sync_qbo_bill_admin_ledger_contributor_adjustment_path(resource.ledger, resource),
       method: :post
   end
 
@@ -17,7 +17,7 @@ ActiveAdmin.register ContributorAdjustment do
     adj = ContributorAdjustment.find(params[:id])
     adj.sync_qbo_bill!
     redirect_to(
-      admin_contributor_contributor_adjustment_path(adj.contributor, adj),
+      admin_ledger_contributor_adjustment_path(adj.ledger, adj),
       notice: "Success"
     )
   end
@@ -29,14 +29,6 @@ ActiveAdmin.register ContributorAdjustment do
         resource.reload
       end
       super
-    end
-
-    def build_new_resource
-      contributor = parent
-      ledger = Ledger.find_or_create_for(enterprise: Enterprise.sanctuary, contributor: contributor)
-      ContributorAdjustment.new(permitted_params[:contributor_adjustment] || {}).tap do |adj|
-        adj.ledger = ledger
-      end
     end
   end
 
@@ -51,7 +43,15 @@ ActiveAdmin.register ContributorAdjustment do
   form do |f|
     f.inputs do
       f.semantic_errors
-      f.input :contributor, input_html: { disabled: true }
+      if f.object.ledger.present?
+        f.input :ledger, as: :hidden, input_html: { value: f.object.ledger_id }
+      else
+        f.input :ledger,
+          as: :select,
+          collection: Ledger.includes(:enterprise, contributor: :forecast_person).map { |l|
+            ["#{l.contributor.forecast_person&.email} - #{l.enterprise.name}", l.id]
+          }
+      end
       f.input :amount, as: :number, input_html: { step: 0.01 }, label: "Amount (positive increases amount owed to contributor)"
       f.input :effective_on, as: :date_picker
       f.input :qbo_invoice,

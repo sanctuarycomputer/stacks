@@ -50,14 +50,18 @@ ActiveAdmin.register Contributor do
   action_item :new_contributor_adjustment, only: :show, if: proc { current_admin_user.is_admin? } do
     link_to(
       "New Adjustment",
-      new_admin_contributor_contributor_adjustment_path(resource)
+      new_admin_ledger_contributor_adjustment_path(
+        Ledger.find_or_create_for(enterprise: Enterprise.sanctuary, contributor: resource)
+      )
     )
   end
 
   action_item :submit_reimbursement, only: :show do
     link_to(
       "Submit Reimbursement",
-      new_admin_contributor_reimbursement_path(resource)
+      new_admin_ledger_reimbursement_path(
+        Ledger.find_or_create_for(enterprise: Enterprise.sanctuary, contributor: resource)
+      )
     )
   end
 

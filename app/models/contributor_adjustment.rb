@@ -34,7 +34,7 @@ class ContributorAdjustment < ApplicationRecord
   end
 
   def bill_description
-    "https://stacks.garden3d.net/admin/contributors/#{contributor.id}/contributor_adjustments/#{id}"
+    "https://stacks.garden3d.net/admin/ledgers/#{ledger_id}/contributor_adjustments/#{id}"
   end
 
   def bill_doc_number_code

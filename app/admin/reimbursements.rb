@@ -2,20 +2,10 @@ ActiveAdmin.register Reimbursement do
   config.filters = false
   config.paginate = false
   actions :index, :new, :show, :create, :destroy
-  permit_params :amount, :receipts, :description
+  permit_params :amount, :receipts, :description, :ledger_id
   menu false
 
-  belongs_to :contributor
-
-  controller do
-    def build_new_resource
-      contributor = parent
-      ledger = Ledger.find_or_create_for(enterprise: Enterprise.sanctuary, contributor: contributor)
-      Reimbursement.new(permitted_params[:reimbursement] || {}).tap do |r|
-        r.ledger = ledger
-      end
-    end
-  end
+  belongs_to :ledger, optional: true
 
   action_item :toggle_acceptance, only: :show do
     if current_admin_user.is_admin?
@@ -23,7 +13,7 @@ ActiveAdmin.register Reimbursement do
         method: :post
     end
   end
-  
+
   index download_links: false do
     column :description
     column :contributor
@@ -50,7 +40,15 @@ ActiveAdmin.register Reimbursement do
   form do |f|
     f.inputs do
       f.semantic_errors
-      f.input :contributor, input_html: { disabled: true }
+      if f.object.ledger.present?
+        f.input :ledger, as: :hidden, input_html: { value: f.object.ledger_id }
+      else
+        f.input :ledger,
+          as: :select,
+          collection: Ledger.includes(:enterprise, contributor: :forecast_person).map { |l|
+            ["#{l.contributor.forecast_person&.email} - #{l.enterprise.name}", l.id]
+          }
+      end
       f.input :amount, as: :number, input_html: { step: 0.01, min: 0.01 }, label: "Amount (in USD, eg: 120.75)"
       f.input :description, placeholder: "Travel Expenses to Taipei"
       f.input :receipts, placeholder: "Links to PDFs on Google Drive, etc"
@@ -59,4 +57,3 @@ ActiveAdmin.register Reimbursement do
     f.actions
   end
 end
-  

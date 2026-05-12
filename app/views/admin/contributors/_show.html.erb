@@ -231,11 +231,11 @@
                 <% elsif li.is_a?(ProfitShare) %>
                   <%= link_to "#{li.periodic_report.display_name} ↗", admin_periodic_report_path(li.periodic_report) %>
                 <% elsif li.is_a?(Reimbursement) %>
-                  <%= link_to "Info ↗", admin_contributor_reimbursement_path(contributor, li) %>
+                  <%= link_to "Info ↗", admin_ledger_reimbursement_path(li.ledger, li) %>
                 <% elsif li.is_a?(Trueup) %>
-                  <%= link_to "Info ↗", admin_contributor_trueup_path(contributor, li) %>
+                  <%= link_to "Info ↗", admin_ledger_trueup_path(li.ledger, li) %>
                 <% elsif li.is_a?(ContributorAdjustment) %>
-                  <%= link_to "Info ↗", admin_contributor_contributor_adjustment_path(contributor, li) %>
+                  <%= link_to "Info ↗", admin_ledger_contributor_adjustment_path(li.ledger, li) %>
                 <% elsif li.is_a?(DeelInvoiceAdjustment) %>
                   <%= link_to "Info ↗", admin_contributor_deel_invoice_adjustment_path(contributor, li) %>
                 <% end %>
