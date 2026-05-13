@@ -17,13 +17,17 @@ class CreateContributorQboVendors < ActiveRecord::Migration[6.1]
     sanctuary_qa = sanctuary.qbo_account
     raise "Sanctuary has no qbo_account; cannot backfill" if sanctuary_qa.nil?
 
-    Contributor.where.not(qbo_vendor_id: nil).find_each do |c|
-      ContributorQboVendor.create!(
-        contributor: c,
-        qbo_account: sanctuary_qa,
-        qbo_vendor_id: c.qbo_vendor_id,
-      )
-    end
+    # Raw SQL backfill — `ContributorQboVendor.create!` would fire AR
+    # validations that the model evolves over time (a later migration
+    # converts qbo_vendor_id to a bigint FK and adds `belongs_to :qbo_vendor`
+    # with presence validation). Using SQL keeps the backfill immune to
+    # those future model changes.
+    execute(<<~SQL)
+      INSERT INTO contributor_qbo_vendors (contributor_id, qbo_account_id, qbo_vendor_id, created_at, updated_at)
+      SELECT c.id, #{sanctuary_qa.id}, c.qbo_vendor_id, NOW(), NOW()
+      FROM contributors c
+      WHERE c.qbo_vendor_id IS NOT NULL
+    SQL
   end
 
   def down

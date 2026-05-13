@@ -21,12 +21,27 @@ class ChangeContributorQboVendorsVendorIdToFk < ActiveRecord::Migration[6.1]
         AND qv.qbo_id = cqv.qbo_vendor_id
     SQL
 
-    orphans = ActiveRecord::Base.connection.execute(
-      "SELECT COUNT(*) FROM contributor_qbo_vendors WHERE qbo_vendor_pk_id IS NULL"
-    ).first["count"].to_i
-    if orphans > 0
-      raise "Backfill failed: #{orphans} contributor_qbo_vendors rows have no matching qbo_vendors row. " \
-            "Run Stacks::Quickbooks.sync_all_vendors! first, then retry."
+    # Some contributors may have a stale qbo_vendor_id pointing at a QboVendor
+    # row that's since been deleted (e.g., the vendor was archived in QBO and
+    # purged from qbo_vendors by a sync). Those mappings can't be carried into
+    # the bigint-FK world — they have no qbo_vendors.id to point at. Drop them
+    # explicitly and log what we drop so the admin can investigate / re-link
+    # via the contributor admin form.
+    orphans = ActiveRecord::Base.connection.execute(<<~SQL).to_a
+      SELECT cqv.id, cqv.contributor_id, cqv.qbo_account_id, cqv.qbo_vendor_id
+      FROM contributor_qbo_vendors cqv
+      WHERE cqv.qbo_vendor_pk_id IS NULL
+    SQL
+    if orphans.any?
+      summary = orphans.first(10).map { |r| "contributor_id=#{r["contributor_id"]} qbo_vendor_id=#{r["qbo_vendor_id"]}" }.join("; ")
+      suffix = orphans.size > 10 ? " (+#{orphans.size - 10} more)" : ""
+      say_with_time "Dropping #{orphans.size} orphan contributor_qbo_vendors row(s) with no matching qbo_vendors row: #{summary}#{suffix}" do
+        execute "DELETE FROM contributor_qbo_vendors WHERE qbo_vendor_pk_id IS NULL"
+      end
+      # Also clear the legacy contributors.qbo_vendor_id for those rows so the
+      # data is consistent — the value is now a dangling pointer.
+      orphan_contributor_ids = orphans.map { |r| r["contributor_id"] }.join(",")
+      execute "UPDATE contributors SET qbo_vendor_id = NULL WHERE id IN (#{orphan_contributor_ids})"
     end
 
     # Drop the old string column
