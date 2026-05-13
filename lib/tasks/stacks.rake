@@ -23,25 +23,25 @@ namespace :stacks do
     end
   end
 
-  desc "Open the next pay cycle for each enterprise on cadence"
-  task :open_pay_cycles => :environment do
-    system_task = SystemTask.create!(name: "stacks:open_pay_cycles")
-    begin
-      opened = PayCycles::OpenScheduledCycles.call
-      Rails.logger.info("[stacks:open_pay_cycles] opened #{opened.size} cycle(s)")
-    rescue => e
-      system_task.mark_as_error(e)
-    else
-      system_task.mark_as_success
-    end
-  end
-
   desc "Daily Enterprise Tasks"
   task :daily_enterprise_tasks => :environment do
     system_task = SystemTask.create!(name: "stacks:daily_enterprise_tasks")
     begin
       Parallel.map(QboAccount.all, in_threads: 2) { |e| e.sync_all! }
       Parallel.map(Enterprise.all, in_threads: 2) { |e| e.generate_snapshot! }
+
+      # Pre-create a Ledger for every (enterprise, contributor) pair so a
+      # contributor can submit a reimbursement / receive a pay stub against
+      # any enterprise without first needing a ledger to be lazily created.
+      inserted_ledger_count = Ledger.ensure_all!
+      Rails.logger.info("[stacks:daily_enterprise_tasks] Ledger.ensure_all! created #{inserted_ledger_count} ledger(s)")
+
+      # Open the next pay cycle for each enterprise on cadence. Per-enterprise
+      # errors are isolated; a partial failure raises an aggregate after the
+      # loop so this SystemTask still records visibly, but successful cycles
+      # are already persisted.
+      opened_cycles = PayCycles::OpenScheduledCycles.call
+      Rails.logger.info("[stacks:daily_enterprise_tasks] OpenScheduledCycles opened #{opened_cycles.size} cycle(s)")
     rescue => e
       system_task.mark_as_error(e)
     else

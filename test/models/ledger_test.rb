@@ -62,3 +62,47 @@ class LedgerWithPayStubsTest < ActiveSupport::TestCase
     assert_includes grouped[:all].map(&:id), stub.id
   end
 end
+
+class LedgerEnsureAllTest < ActiveSupport::TestCase
+  setup do
+    Thread.current[:sanctuary_enterprise] = nil
+  end
+
+  test "creates a Ledger for every (enterprise, contributor) pair" do
+    e1 = Enterprise.find_or_create_by!(name: "EA-1-#{SecureRandom.hex(2)}")
+    e2 = Enterprise.find_or_create_by!(name: "EA-2-#{SecureRandom.hex(2)}")
+    fp1 = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "ea1#{SecureRandom.hex(2)}@x.com", data: {})
+    fp2 = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "ea2#{SecureRandom.hex(2)}@x.com", data: {})
+    c1 = Contributor.create!(forecast_person: fp1)
+    c2 = Contributor.create!(forecast_person: fp2)
+
+    before = Ledger.count
+    Ledger.ensure_all!
+    after = Ledger.count
+
+    # Each contributor x enterprise pair should now have a Ledger row.
+    [c1, c2].each do |c|
+      [e1, e2].each do |e|
+        assert Ledger.exists?(contributor: c, enterprise: e),
+          "expected a Ledger for contributor=#{c.id}, enterprise=#{e.id}"
+      end
+    end
+    assert after > before, "expected at least one new Ledger to be created"
+  end
+
+  test "is idempotent — second call inserts nothing" do
+    Ledger.ensure_all!
+    inserted = Ledger.ensure_all!
+    assert_equal 0, inserted
+  end
+
+  test "respects the (enterprise, contributor) uniqueness constraint" do
+    e = Enterprise.find_or_create_by!(name: "EA-Uniq-#{SecureRandom.hex(2)}")
+    fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "uniq#{SecureRandom.hex(2)}@x.com", data: {})
+    c = Contributor.create!(forecast_person: fp)
+    Ledger.create!(enterprise: e, contributor: c)
+    assert_nothing_raised { Ledger.ensure_all! }
+    # Only one Ledger for this pair after ensure_all!.
+    assert_equal 1, Ledger.where(enterprise: e, contributor: c).count
+  end
+end

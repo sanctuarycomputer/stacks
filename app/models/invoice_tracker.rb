@@ -10,8 +10,19 @@ class InvoiceTracker < ApplicationRecord
 
   has_many :contributor_payouts, dependent: :destroy
 
+  delegate :billing_enterprise, to: :forecast_client
+
   def display_name
     "#{qbo_invoice.try(:display_name) || forecast_client.name} (#{status})"
+  end
+
+  # The QboAccount this invoice's records live in. Routes through the
+  # forecast client's billing enterprise. In practice this is always
+  # Sanctuary today (only Sanctuary issues external-client invoices), but
+  # the indirection future-proofs the code so when another enterprise
+  # starts billing external clients we don't have to revisit each callsite.
+  def qbo_account
+    billing_enterprise.qbo_account
   end
 
   def qbo_invoice
@@ -20,14 +31,13 @@ class InvoiceTracker < ApplicationRecord
     in_memory = association(:qbo_invoice).target
     return in_memory if in_memory.present?
     return nil unless qbo_invoice_id
-    # InvoiceTracker invoices always belong to the Sanctuary enterprise QBO account.
-    # We scope explicitly by qbo_account so the (qbo_account_id, qbo_id) composite
+    # Scope explicitly by qbo_account so the (qbo_account_id, qbo_id) composite
     # index is used and a same-qbo_id row in a different account is never matched.
     # (The belongs_to-generated super reader uses primary_key: qbo_id and performs
     # a global, unscoped lookup.)
-    sanctuary_qbo = Enterprise.sanctuary.qbo_account
-    return nil if sanctuary_qbo.nil?
-    QboInvoice.find_or_create_by!(qbo_id: qbo_invoice_id, qbo_account: sanctuary_qbo)
+    qa = qbo_account
+    return nil if qa.nil?
+    QboInvoice.find_or_create_by!(qbo_id: qbo_invoice_id, qbo_account: qa)
   end
 
   def qbo_invoice_link
@@ -599,12 +609,13 @@ class InvoiceTracker < ApplicationRecord
   def resync_qbo_line_item_services!
     raise "No QBO invoice attached" if qbo_invoice.nil?
 
-    sanctuary_qbo = Enterprise.sanctuary.qbo_account
-    qbo_items, default_service_item = sanctuary_qbo.fetch_all_items
+    qa = qbo_account
+    raise "Billing enterprise (#{billing_enterprise.name}) has no connected QboAccount" if qa.nil?
+    qbo_items, default_service_item = qa.fetch_all_items
 
-    access_token = sanctuary_qbo.make_and_refresh_qbo_access_token
+    access_token = qa.make_and_refresh_qbo_access_token
     invoice_service = Quickbooks::Service::Invoice.new
-    invoice_service.company_id = sanctuary_qbo.realm_id
+    invoice_service.company_id = qa.realm_id
     invoice_service.access_token = access_token
 
     live_invoice = invoice_service.fetch_by_id(qbo_invoice_id)
@@ -666,8 +677,9 @@ class InvoiceTracker < ApplicationRecord
   def make_invoice!
     return if configuration_errors.any?
     return if qbo_invoice.present?
-    sanctuary_qbo = Enterprise.sanctuary.qbo_account
-    qbo_items, default_service_item = sanctuary_qbo.fetch_all_items
+    qa = qbo_account
+    raise "Billing enterprise (#{billing_enterprise.name}) has no connected QboAccount" if qa.nil?
+    qbo_items, default_service_item = qa.fetch_all_items
 
     qbo_inv = Quickbooks::Model::Invoice.new
     qbo_inv.customer_id = forecast_client.qbo_customer.id
@@ -759,8 +771,8 @@ class InvoiceTracker < ApplicationRecord
     end
 
     invoice_service = Quickbooks::Service::Invoice.new
-    invoice_service.company_id = sanctuary_qbo.realm_id
-    invoice_service.access_token = sanctuary_qbo.make_and_refresh_qbo_access_token
+    invoice_service.company_id = qa.realm_id
+    invoice_service.access_token = qa.make_and_refresh_qbo_access_token
     created_qbo_inv = invoice_service.create(qbo_inv)
 
     # Assign Quickbooks Ids to our Internal Snapshot
@@ -771,7 +783,7 @@ class InvoiceTracker < ApplicationRecord
     end
 
     update!(qbo_invoice_id: created_qbo_inv.id, blueprint: snapshot)
-    QboInvoice.find_or_create_by!(qbo_id: created_qbo_inv.id, qbo_account: sanctuary_qbo)
+    QboInvoice.find_or_create_by!(qbo_id: created_qbo_inv.id, qbo_account: qa)
     self.reload
     created_qbo_inv
   end

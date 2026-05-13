@@ -161,3 +161,29 @@ class InvoiceTrackerRegenAcceptancePreservationTest < ActiveSupport::TestCase
     refute it.send(:amount_equals?, 100.0, 101.0)
   end
 end
+
+class InvoiceTrackerBillingEnterpriseTest < ActiveSupport::TestCase
+  # InvoiceTracker derives its enterprise (and therefore its QBO account)
+  # from the forecast_client's billing_enterprise. Today every external-
+  # client invoice routes through Sanctuary, but this indirection means
+  # other enterprises can start invoicing without revisiting each callsite.
+  test "billing_enterprise delegates to forecast_client.billing_enterprise" do
+    Thread.current[:sanctuary_enterprise] = nil
+    sanctuary = Enterprise.find_by!(name: Enterprise::SANCTUARY_NAME)
+    fc = ForecastClient.create!(forecast_id: rand(1..2_000_000_000), name: "Acme-#{SecureRandom.hex(2)}")
+    ip = InvoicePass.find_or_create_by!(start_of_month: Date.new(2030, 1, 1))
+    it = InvoiceTracker.new(invoice_pass: ip, forecast_client: fc)
+    # No explicit enterprise mapping → forecast_client.billing_enterprise falls
+    # back to Sanctuary, which means the IT's billing_enterprise is Sanctuary.
+    assert_equal sanctuary, it.billing_enterprise
+  end
+
+  test "qbo_account returns the billing enterprise's qbo_account" do
+    Thread.current[:sanctuary_enterprise] = nil
+    sanctuary = Enterprise.find_by!(name: Enterprise::SANCTUARY_NAME)
+    fc = ForecastClient.create!(forecast_id: rand(1..2_000_000_000), name: "Acme-QA-#{SecureRandom.hex(2)}")
+    ip = InvoicePass.find_or_create_by!(start_of_month: Date.new(2030, 2, 1))
+    it = InvoiceTracker.new(invoice_pass: ip, forecast_client: fc)
+    assert_equal sanctuary.qbo_account, it.qbo_account
+  end
+end

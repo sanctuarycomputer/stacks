@@ -16,6 +16,28 @@ class Ledger < ApplicationRecord
     find_or_create_by!(enterprise: enterprise, contributor: contributor)
   end
 
+  # Idempotently creates a Ledger row for every (Enterprise, Contributor) pair.
+  # Runs daily from stacks:daily_enterprise_tasks so a contributor can submit
+  # a reimbursement / receive a pay stub against ANY enterprise without first
+  # needing a ledger to be lazily created. Bulk-loads existing pairs to avoid
+  # N+1 lookups; only INSERTS the missing ones via insert_all.
+  # Returns the count of rows inserted.
+  def self.ensure_all!
+    existing = pluck(:enterprise_id, :contributor_id).to_set
+    contributor_ids = Contributor.pluck(:id)
+    enterprise_ids = Enterprise.pluck(:id)
+    rows = []
+    now = Time.current
+    contributor_ids.each do |c_id|
+      enterprise_ids.each do |e_id|
+        next if existing.include?([e_id, c_id])
+        rows << { enterprise_id: e_id, contributor_id: c_id, created_at: now, updated_at: now }
+      end
+    end
+    insert_all(rows) if rows.any?
+    rows.size
+  end
+
   # Balance/unsettled at the per-ledger (per-enterprise) level. Excludes soft-deleted rows
   # via the default acts_as_paranoid scope. Each host's `payable?` decides which bucket the
   # row lands in; `signed_amount` lets withdrawals deduct.
