@@ -12,10 +12,14 @@ class Stacks::Forecast
 
   def sync_all!
     ActiveRecord::Base.transaction do
+      # Assignments are genuinely deletable on Forecast (bookings get removed),
+      # so we still nuke-and-pave them to catch upstream deletions. Clients,
+      # people, and projects only get archived in Forecast — they never
+      # disappear from the API — so upsert_all (keyed on forecast_id) handles
+      # both new rows and the archived flag without us needing to delete
+      # anything first. The old delete_all on those three was also colliding
+      # with the new FK on enterprise_forecast_clients.
       ForecastAssignment.delete_all
-      ForecastProject.delete_all
-      ForecastPerson.delete_all
-      ForecastClient.delete_all
       sync_clients!
       sync_people!
       sync_projects!
