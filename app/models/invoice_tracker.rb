@@ -15,7 +15,19 @@ class InvoiceTracker < ApplicationRecord
   end
 
   def qbo_invoice
-    super || (qbo_invoice_id ? QboInvoice.create!(qbo_id: qbo_invoice_id) : nil)
+    # If an in-memory association target was assigned (e.g. InvoiceTracker.new(qbo_invoice: inv)
+    # in tests), honour it directly so AR's normal association cache is not bypassed.
+    in_memory = association(:qbo_invoice).target
+    return in_memory if in_memory.present?
+    return nil unless qbo_invoice_id
+    # InvoiceTracker invoices always belong to the Sanctuary enterprise QBO account.
+    # We scope explicitly by qbo_account so the (qbo_account_id, qbo_id) composite
+    # index is used and a same-qbo_id row in a different account is never matched.
+    # (The belongs_to-generated super reader uses primary_key: qbo_id and performs
+    # a global, unscoped lookup.)
+    sanctuary_qbo = Enterprise.sanctuary.qbo_account
+    return nil if sanctuary_qbo.nil?
+    QboInvoice.find_or_create_by!(qbo_id: qbo_invoice_id, qbo_account: sanctuary_qbo)
   end
 
   def qbo_invoice_link
@@ -759,7 +771,7 @@ class InvoiceTracker < ApplicationRecord
     end
 
     update!(qbo_invoice_id: created_qbo_inv.id, blueprint: snapshot)
-    QboInvoice.create!(qbo_id: created_qbo_inv.id)
+    QboInvoice.find_or_create_by!(qbo_id: created_qbo_inv.id, qbo_account: sanctuary_qbo)
     self.reload
     created_qbo_inv
   end
