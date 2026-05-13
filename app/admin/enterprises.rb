@@ -154,6 +154,18 @@ ActiveAdmin.register Enterprise do
   end
 
   show do
+    # The entire dashboard below is QBO-backed (accounts, P&L reports,
+    # snapshot). For an enterprise that hasn't authorized QBO yet, render a
+    # placeholder + the (QBO-independent) pay cycles section instead of
+    # crashing on a nil access token.
+    if resource.qbo_account.blank? || resource.qbo_account.qbo_token.blank?
+      panel "QuickBooks not connected" do
+        para "This enterprise isn't connected to QuickBooks yet. Edit the enterprise to fill in the QBO Account credentials and authorize an OAuth token — financial dashboards will appear here once that's done."
+      end
+      render(partial: "admin/enterprises/pay_cycles_section", locals: { enterprise: resource })
+      next
+    end
+
     COLORS = Stacks::Utils::COLORS
     accounting_method = session[:accounting_method] || "cash"
 
