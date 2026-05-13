@@ -79,7 +79,9 @@ module SyncsAsQboBill
   # - bill_txn_date          → Date for QBO Bill txn_date and due_date
   # - bill_description       → String used as the line item description
   # - bill_doc_number_code   → Short 2-char tag in the QBO Bill doc_number
-  #   (CP, TU, CA, PS, PSP — must be unique across all host models)
+  #   (must be unique across all host models). Current mappings:
+  #     CP = ContributorPayout, TU = Trueup, CA = ContributorAdjustment,
+  #     PS = ProfitShare, SB = PayStub.
 
   def payable?
     false

@@ -23,27 +23,35 @@ class ContributorQboVendorForTest < ActiveSupport::TestCase
   end
 
   test "qbo_vendor_for returns the vendor record scoped to that qbo_account" do
-    QboVendor.create!(qbo_id: "VENDOR123", qbo_account: @sanctuary_qa, data: { "display_name" => "Test" })
-    ContributorQboVendor.create!(contributor: @contributor, qbo_account: @sanctuary_qa, qbo_vendor_id: "VENDOR123")
-    found = @contributor.qbo_vendor_for(@sanctuary_qa)
-    assert_not_nil found
-    assert_equal "VENDOR123", found.qbo_id
+    vendor = QboVendor.create!(qbo_id: "VENDOR#{SecureRandom.hex(3)}", qbo_account: @sanctuary_qa, data: { "display_name" => "Test" })
+    ContributorQboVendor.create!(contributor: @contributor, qbo_account: @sanctuary_qa, qbo_vendor: vendor)
+    assert_equal vendor, @contributor.qbo_vendor_for(@sanctuary_qa)
   end
 
   test "qbo_vendor_for returns nil when a different qbo_account is provided" do
-    QboVendor.create!(qbo_id: "VENDOR123", qbo_account: @sanctuary_qa, data: { "display_name" => "Test" })
-    ContributorQboVendor.create!(contributor: @contributor, qbo_account: @sanctuary_qa, qbo_vendor_id: "VENDOR123")
+    vendor = QboVendor.create!(qbo_id: "VENDOR#{SecureRandom.hex(3)}", qbo_account: @sanctuary_qa, data: { "display_name" => "Test" })
+    ContributorQboVendor.create!(contributor: @contributor, qbo_account: @sanctuary_qa, qbo_vendor: vendor)
 
     other_ent = Enterprise.find_or_create_by!(name: "Other-#{SecureRandom.hex(2)}")
     other_qa = QboAccount.create!(enterprise: other_ent, client_id: "x", client_secret: "y", realm_id: SecureRandom.hex(8))
     assert_nil @contributor.qbo_vendor_for(other_qa)
   end
 
-  test "backfilled mapping exists for existing contributors after migration" do
+  test "rejects a mapping where qbo_vendor belongs to a different qbo_account" do
+    other_ent = Enterprise.find_or_create_by!(name: "Mismatch-#{SecureRandom.hex(2)}")
+    other_qa = QboAccount.create!(enterprise: other_ent, client_id: "x", client_secret: "y", realm_id: SecureRandom.hex(8))
+    # Vendor lives in `other_qa`, but the mapping says qbo_account = sanctuary_qa
+    cross = QboVendor.create!(qbo_id: "CROSS#{SecureRandom.hex(3)}", qbo_account: other_qa, data: {})
+    mapping = ContributorQboVendor.new(contributor: @contributor, qbo_account: @sanctuary_qa, qbo_vendor: cross)
+    refute mapping.valid?
+    assert_includes mapping.errors[:qbo_vendor], "must belong to the same qbo_account as the mapping"
+  end
+
+  test "backfilled mapping resolves to a qbo_vendor whose qbo_id matches the legacy column" do
     c = Contributor.where.not(qbo_vendor_id: nil).first
     next if c.nil?
-    mapping = c.contributor_qbo_vendors.find_by(qbo_account: @sanctuary_qa)
-    assert_not_nil mapping
-    assert_equal c.qbo_vendor_id, mapping.qbo_vendor_id
+    found_vendor = c.qbo_vendor_for(@sanctuary_qa)
+    assert_not_nil found_vendor
+    assert_equal c.qbo_vendor_id, found_vendor.qbo_id
   end
 end

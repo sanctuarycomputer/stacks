@@ -50,7 +50,7 @@ class PayStub < ApplicationRecord
   end
 
   def bill_doc_number_code
-    "PS"
+    "SB" # "[S]tu[B]" — distinct from ProfitShare's "PS"
   end
 
   private

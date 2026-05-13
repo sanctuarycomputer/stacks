@@ -6,21 +6,17 @@ class Contributor < ApplicationRecord
   belongs_to :deel_person, class_name: "DeelPerson", foreign_key: "deel_person_id", primary_key: "deel_id", optional: true
 
   has_many :contributor_qbo_vendors, dependent: :destroy
+  has_many :qbo_vendors, through: :contributor_qbo_vendors
 
   # Looks up this contributor's QboVendor record within a specific QBO account.
-  # Returns nil if no mapping exists for that account, or if the vendor row was
-  # deleted (e.g., from a QboAccount.sync_vendors! purge).
-  #
-  # Replaces the legacy `qbo_vendor` association (which only worked for Sanctuary)
-  # for code paths that need per-enterprise routing. The legacy column
-  # `contributors.qbo_vendor_id` is preserved for backwards compatibility with
-  # existing callers (e.g., `forecast_client.qbo_customer` lookups) until those
-  # are migrated to per-account in Phase F.
+  # Returns nil when no mapping exists for that account. Replaces the legacy
+  # `qbo_vendor` (singleton, Sanctuary-only) association for code paths that
+  # need per-enterprise routing. The legacy `contributors.qbo_vendor_id`
+  # column is preserved for backwards compatibility with callers like
+  # `forecast_client.qbo_customer` that haven't been migrated yet.
   def qbo_vendor_for(qbo_account)
     return nil if qbo_account.nil?
-    mapping = contributor_qbo_vendors.find_by(qbo_account_id: qbo_account.id)
-    return nil if mapping.nil?
-    QboVendor.find_by(qbo_account_id: qbo_account.id, qbo_id: mapping.qbo_vendor_id)
+    qbo_vendors.find_by(qbo_account_id: qbo_account.id)
   end
 
   has_many :ledgers
