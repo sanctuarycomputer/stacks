@@ -238,7 +238,10 @@ class InvoiceTracker < ApplicationRecord
   end
 
   def surplus_chunks
-    contributor_payouts.includes(contributor: :forecast_person).map(&:calculate_surplus).flatten
+    # ContributorPayout's `:contributor` is delegated through `:ledger` (via
+    # the LedgerItem concern), not a direct AR association — `.includes(contributor:)`
+    # would raise AssociationNotFoundError. Eager-load through the actual chain.
+    contributor_payouts.includes(ledger: { contributor: :forecast_person }).map(&:calculate_surplus).flatten
   end
 
   def commission_deductions_for_line(project_tracker, qbo_line_item, blueprint_line)
@@ -251,7 +254,9 @@ class InvoiceTracker < ApplicationRecord
   end
 
   def commission_total_for_line(line_item_id)
-    contributor_payouts.includes(:contributor).sum do |cp|
+    # Same delegation gotcha as surplus_chunks — :contributor is a method
+    # on CP, not an association. Eager-load via :ledger.
+    contributor_payouts.includes(ledger: :contributor).sum do |cp|
       (cp.blueprint["Commission"] || []).sum do |entry|
         entry.dig("blueprint_metadata", "id").to_s == line_item_id.to_s ? entry["amount"].to_f : 0
       end
