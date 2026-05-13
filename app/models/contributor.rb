@@ -5,6 +5,29 @@ class Contributor < ApplicationRecord
   belongs_to :qbo_vendor, class_name: "QboVendor", foreign_key: "qbo_vendor_id", primary_key: "qbo_id", optional: true
   belongs_to :deel_person, class_name: "DeelPerson", foreign_key: "deel_person_id", primary_key: "deel_id", optional: true
 
+  has_many :contributor_qbo_vendors, dependent: :destroy
+  has_many :qbo_vendors, through: :contributor_qbo_vendors
+
+  # Every contributor gets a Ledger row for every enterprise so reimbursements
+  # / pay stubs / etc. against any enterprise work the moment the contributor
+  # exists — no manual setup, no waiting on the daily cron.
+  after_create :ensure_ledgers_for_all_enterprises!
+
+  def ensure_ledgers_for_all_enterprises!
+    Ledger.ensure_for_contributor!(self)
+  end
+
+  # Looks up this contributor's QboVendor record within a specific QBO account.
+  # Returns nil when no mapping exists for that account. Replaces the legacy
+  # `qbo_vendor` (singleton, Sanctuary-only) association for code paths that
+  # need per-enterprise routing. The legacy `contributors.qbo_vendor_id`
+  # column is preserved for backwards compatibility with callers like
+  # `forecast_client.qbo_customer` that haven't been migrated yet.
+  def qbo_vendor_for(qbo_account)
+    return nil if qbo_account.nil?
+    qbo_vendors.find_by(qbo_account_id: qbo_account.id)
+  end
+
   has_many :ledgers
 
   has_many :reimbursements, through: :ledgers
@@ -13,6 +36,7 @@ class Contributor < ApplicationRecord
   has_many :profit_shares, through: :ledgers
   has_many :contributor_adjustments, through: :ledgers
   has_many :deel_invoice_adjustments, through: :ledgers
+  has_many :pay_stubs, through: :ledgers
 
   # Each *_with_deleted method below is memoized per-instance. The first call
   # fires a query; subsequent calls return the cached array.
@@ -51,6 +75,11 @@ class Contributor < ApplicationRecord
       DeelInvoiceAdjustment.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id }).to_a
   end
 
+  def pay_stubs_with_deleted
+    @_pay_stubs_with_deleted ||=
+      PayStub.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id }).to_a
+  end
+
   # Eager-loads the six *_with_deleted collections with the heavier includes
   # the ledger view body needs (so the partial doesn't trip N+1 inside the
   # type-switching loop). Each query also preloads `ledger` so the LedgerItem
@@ -83,6 +112,9 @@ class Contributor < ApplicationRecord
     @_deel_invoice_adjustments_with_deleted =
       DeelInvoiceAdjustment.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
         .includes(:ledger, :deel_contract).to_a
+    @_pay_stubs_with_deleted =
+      PayStub.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
+        .includes(:ledger, :pay_cycle).to_a
 
     # Short-circuit `item.contributor` (and any downstream delegate hop) to
     # this Contributor. All preloaded items belong to ledgers whose contributor
@@ -94,6 +126,7 @@ class Contributor < ApplicationRecord
       @_reimbursements_with_deleted,
       @_profit_shares_with_deleted,
       @_deel_invoice_adjustments_with_deleted,
+      @_pay_stubs_with_deleted,
     ].each do |items|
       items.each do |item|
         item.ledger.association(:contributor).target = self
@@ -225,6 +258,12 @@ class Contributor < ApplicationRecord
         else
           acc[:unsettled] += li.amount
         end
+      elsif li.is_a?(PayStub)
+        if li.payable?
+          acc[:balance] += li.amount
+        else
+          acc[:unsettled] += li.amount
+        end
       elsif li.is_a?(DeelInvoiceAdjustment)
         acc[:balance] -= li.amount if li.deducts_balance?
       end
@@ -304,6 +343,7 @@ class Contributor < ApplicationRecord
     preloaded_profit_shares = profit_shares_with_deleted
     preloaded_adjustments = contributor_adjustments_with_deleted
     preloaded_deel_invoice_adjustments = deel_invoice_adjustments_with_deleted
+    preloaded_pay_stubs = pay_stubs_with_deleted
 
     if override_ledger_ends_at.present?
       ledger_ends_at = override_ledger_ends_at
@@ -313,6 +353,7 @@ class Contributor < ApplicationRecord
         *preloaded_trueups,
         *preloaded_adjustments,
         *preloaded_deel_invoice_adjustments,
+        *preloaded_pay_stubs,
       ].reduce(Date.today) do |acc, li|
         if li.is_a?(ContributorPayout)
           acc = li.invoice_tracker.invoice_pass.start_of_month if li.invoice_tracker.invoice_pass.start_of_month > acc
@@ -326,6 +367,9 @@ class Contributor < ApplicationRecord
           acc = li.effective_on if li.effective_on > acc
         elsif li.is_a?(DeelInvoiceAdjustment)
           d = li.date_submitted
+          acc = d if d > acc
+        elsif li.is_a?(PayStub)
+          d = li.effective_on_for_display
           acc = d if d > acc
         end
         acc
@@ -385,6 +429,11 @@ class Contributor < ApplicationRecord
         dia.date_submitted <= period.ends_at
       end
 
+      pay_stubs_in_period = preloaded_pay_stubs.select do |ps|
+        ps.effective_on_for_display >= period.starts_at &&
+        ps.effective_on_for_display <= period.ends_at
+      end
+
       sorted =
         [
           *contributor_payouts_in_period,
@@ -393,6 +442,7 @@ class Contributor < ApplicationRecord
           *profit_shares_in_period,
           *adjustments_in_period,
           *deel_invoice_in_period,
+          *pay_stubs_in_period,
         ].sort do |a, b|
         date_a = nil
         if a.is_a?(Trueup)
@@ -407,6 +457,8 @@ class Contributor < ApplicationRecord
           date_a = a.effective_on
         elsif a.is_a?(DeelInvoiceAdjustment)
           date_a = a.date_submitted
+        elsif a.is_a?(PayStub)
+          date_a = a.effective_on_for_display
         end
 
         date_b = nil
@@ -422,6 +474,8 @@ class Contributor < ApplicationRecord
           date_b = b.effective_on
         elsif b.is_a?(DeelInvoiceAdjustment)
           date_b = b.date_submitted
+        elsif b.is_a?(PayStub)
+          date_b = b.effective_on_for_display
         end
 
         date_b <=> date_a

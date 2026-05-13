@@ -1,0 +1,31 @@
+<h2><%= resource.contributor.forecast_person.email %> — <%= resource.pay_cycle.starts_at %> to <%= resource.pay_cycle.ends_at %></h2>
+<p>Total: <strong><%= number_to_currency(resource.amount) %></strong></p>
+<p>Status:
+  <%= resource.accepted? ? "Accepted on #{resource.accepted_at.to_date} by #{resource.accepted_by&.email}" : "Pending acceptance" %>
+</p>
+
+<table style="width: 100%; margin-top: 16px">
+  <thead>
+    <tr>
+      <th>Forecast project</th>
+      <th>Hours</th>
+      <th>Rate</th>
+      <th>Amount</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% (resource.blueprint["lines"] || []).each do |line| %>
+      <tr>
+        <td><%= line["forecast_project"] %></td>
+        <td><%= line["hours"] %></td>
+        <td><%= number_to_currency(line["rate"]) %></td>
+        <td><%= number_to_currency(line["amount"]) %></td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
+
+<% if resource.payable? && resource.qbo_bill.present? %>
+  <h3 style="margin-top: 24px">QBO Bill</h3>
+  <p><%= link_to "Open in QBO", resource.qbo_url, target: "_blank" %></p>
+<% end %>

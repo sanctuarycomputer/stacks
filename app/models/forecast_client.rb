@@ -16,18 +16,17 @@ class ForecastClient < ApplicationRecord
     "https://forecastapp.com/864444/clients/#{forecast_id}/edit"
   end
 
-  INTERNAL_CLIENTS = [
-    "garden3d",
-    "Sanctuary Computer",
-    "Seaborne",
-    "XXIX",
-    "XXXI",
-    "Crystalizer",
-    "Index Space LLC"
-  ]
-
+  # A forecast client is "internal" if and only if it's mapped to an
+  # enterprise via the enterprise_forecast_clients join. Internal clients
+  # generate pay stubs against that enterprise's ledger; external clients
+  # (unmapped) flow through the InvoiceTracker pipeline and are billed by
+  # Sanctuary by default.
+  #
+  # Until 2026-05-13 this used a hardcoded `INTERNAL_CLIENTS` constant —
+  # the migration MigrateInternalClientsToEnterpriseForecastClients seeded
+  # the join from those names so this refactor doesn't regress behavior.
   def is_internal?
-    INTERNAL_CLIENTS.include?(name)
+    enterprise_forecast_client.present?
   end
 
   def qbo_term
@@ -36,8 +35,13 @@ class ForecastClient < ApplicationRecord
         Stacks::System.singleton_class::QBO_NOTES_PAYMENT_TERM_BEARER
       default =
         Stacks::System.singleton_class::DEFAULT_PAYMENT_TERM
-      qbo_terms =
-        Stacks::Quickbooks.fetch_all_terms
+      # Route through billing_enterprise.qbo_account so internal clients
+      # mapped to another enterprise look up terms in THEIR QBO. External
+      # (unmapped) clients fall through to Sanctuary via the billing_enterprise
+      # default — same behavior as before.
+      qa = billing_enterprise&.qbo_account
+      return nil if qa.nil?
+      qbo_terms = qa.fetch_all_terms
 
       term_mapping = (qbo_customer.try(:notes) || "").split(" ").find do |word|
         word.starts_with?(bearer)
@@ -55,7 +59,11 @@ class ForecastClient < ApplicationRecord
   # TODO: Sync qbo_customer and join?
   def qbo_customer(qbo_customers = nil)
     @_qbo_customer ||= (
-      qbo_customers = qbo_customers || Stacks::Quickbooks.fetch_all_customers
+      # Same routing as qbo_term: derive the QBO account from this client's
+      # billing_enterprise (external clients default to Sanctuary).
+      qa = billing_enterprise&.qbo_account
+      return nil if qbo_customers.nil? && qa.nil?
+      qbo_customers = qbo_customers || qa.fetch_all_customers
       bearer =
         Stacks::System.singleton_class::QBO_NOTES_FORECAST_MAPPING_BEARER
       qbo_customers.find do |c|

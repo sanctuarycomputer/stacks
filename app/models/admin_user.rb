@@ -532,6 +532,21 @@ class AdminUser < ApplicationRecord
     email == "hugh@sanctuary.computer"
   end
 
+  # ────────────────────────────────────────────────────────────────────────────
+  # Per-enterprise admin scope. An admin_user listed in the enterprise_admins
+  # join table is allowed to approve that enterprise's pay cycles AND
+  # (eventually, in a follow-up PR) operate as a global admin scoped to that
+  # enterprise's ledger items. Global is_admin? is a super-admin role that
+  # bypasses these scoped checks entirely.
+
+  has_many :enterprise_admins, dependent: :destroy
+  has_many :administered_enterprises, through: :enterprise_admins, source: :enterprise
+
+  def admin_of?(enterprise)
+    return false if enterprise.nil?
+    is_admin? || enterprise_admins.exists?(enterprise_id: enterprise.id)
+  end
+
   def has_led_projects?
     return AccountLeadPeriod.where(admin_user_id: self.id).any? || ProjectLeadPeriod.where(admin_user_id: self.id).any?
   end

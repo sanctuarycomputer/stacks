@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_05_12_031751) do
+ActiveRecord::Schema.define(version: 2026_05_13_202334) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -154,6 +154,18 @@ ActiveRecord::Schema.define(version: 2026_05_12_031751) do
     t.index ["qbo_bill_id"], name: "index_contributor_payouts_on_qbo_bill_id"
   end
 
+  create_table "contributor_qbo_vendors", force: :cascade do |t|
+    t.bigint "contributor_id", null: false
+    t.bigint "qbo_account_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.bigint "qbo_vendor_id", null: false
+    t.index ["contributor_id", "qbo_account_id"], name: "index_cqv_unique_per_contributor_account", unique: true
+    t.index ["contributor_id"], name: "index_contributor_qbo_vendors_on_contributor_id"
+    t.index ["qbo_account_id"], name: "index_contributor_qbo_vendors_on_qbo_account_id"
+    t.index ["qbo_vendor_id"], name: "index_contributor_qbo_vendors_on_qbo_vendor_id"
+  end
+
   create_table "contributors", force: :cascade do |t|
     t.bigint "forecast_person_id", null: false
     t.bigint "qbo_vendor_id"
@@ -207,6 +219,16 @@ ActiveRecord::Schema.define(version: 2026_05_12_031751) do
     t.index ["deel_id"], name: "index_deel_people_on_deel_id", unique: true
   end
 
+  create_table "enterprise_admins", force: :cascade do |t|
+    t.bigint "enterprise_id", null: false
+    t.bigint "admin_user_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_enterprise_admins_on_admin_user_id"
+    t.index ["enterprise_id", "admin_user_id"], name: "index_enterprise_admins_unique", unique: true
+    t.index ["enterprise_id"], name: "index_enterprise_admins_on_enterprise_id"
+  end
+
   create_table "enterprise_forecast_clients", force: :cascade do |t|
     t.bigint "enterprise_id", null: false
     t.integer "forecast_client_id", null: false
@@ -222,6 +244,7 @@ ActiveRecord::Schema.define(version: 2026_05_12_031751) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.string "deel_legal_entity_id"
+    t.string "pay_cycle_cadence"
     t.index ["deel_legal_entity_id"], name: "index_enterprises_on_deel_legal_entity_id", unique: true, where: "(deel_legal_entity_id IS NOT NULL)"
   end
 
@@ -397,6 +420,18 @@ ActiveRecord::Schema.define(version: 2026_05_12_031751) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.index ["studio_id"], name: "index_mailing_lists_on_studio_id"
+  end
+
+  create_table "misc_payments", force: :cascade do |t|
+    t.decimal "amount", precision: 10, scale: 2, null: false
+    t.text "remittance"
+    t.datetime "deleted_at"
+    t.date "paid_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.bigint "contributor_id", null: false
+    t.index ["contributor_id"], name: "index_misc_payments_on_contributor_id"
+    t.index ["deleted_at"], name: "index_misc_payments_on_deleted_at"
   end
 
   create_table "notifications", force: :cascade do |t|
@@ -588,6 +623,42 @@ ActiveRecord::Schema.define(version: 2026_05_12_031751) do
     t.datetime "updated_at", precision: 6, null: false
     t.index "lower((email)::text)", name: "idx_optix_users_on_lower_email"
     t.index ["optix_organization_id"], name: "index_optix_users_on_optix_organization_id"
+  end
+
+  create_table "pay_cycles", force: :cascade do |t|
+    t.bigint "enterprise_id", null: false
+    t.date "starts_at", null: false
+    t.date "ends_at", null: false
+    t.bigint "created_by_id"
+    t.datetime "deleted_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.datetime "approved_at"
+    t.bigint "approved_by_id"
+    t.index ["approved_by_id"], name: "index_pay_cycles_on_approved_by_id"
+    t.index ["created_by_id"], name: "index_pay_cycles_on_created_by_id"
+    t.index ["deleted_at"], name: "index_pay_cycles_on_deleted_at"
+    t.index ["enterprise_id", "starts_at", "ends_at"], name: "index_pay_cycles_unique_window", unique: true
+    t.index ["enterprise_id"], name: "index_pay_cycles_on_enterprise_id"
+  end
+
+  create_table "pay_stubs", force: :cascade do |t|
+    t.bigint "pay_cycle_id", null: false
+    t.bigint "ledger_id", null: false
+    t.decimal "amount", precision: 12, scale: 2, null: false
+    t.jsonb "blueprint", default: {}, null: false
+    t.datetime "accepted_at"
+    t.bigint "accepted_by_id"
+    t.string "qbo_bill_id"
+    t.datetime "deleted_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["accepted_by_id"], name: "index_pay_stubs_on_accepted_by_id"
+    t.index ["deleted_at"], name: "index_pay_stubs_on_deleted_at"
+    t.index ["ledger_id"], name: "index_pay_stubs_on_ledger_id"
+    t.index ["pay_cycle_id", "ledger_id"], name: "index_pay_stubs_unique_per_cycle_ledger", unique: true
+    t.index ["pay_cycle_id"], name: "index_pay_stubs_on_pay_cycle_id"
+    t.index ["qbo_bill_id"], name: "index_pay_stubs_on_qbo_bill_id", unique: true, where: "(qbo_bill_id IS NOT NULL)"
   end
 
   create_table "peer_reviews", force: :cascade do |t|
@@ -813,14 +884,19 @@ ActiveRecord::Schema.define(version: 2026_05_12_031751) do
     t.string "qbo_id", null: false
     t.jsonb "data"
     t.string "qbo_vendor_id", null: false
-    t.index ["qbo_id"], name: "index_qbo_bills_on_qbo_id", unique: true
+    t.bigint "qbo_account_id", null: false
+    t.index ["qbo_account_id", "qbo_id"], name: "index_qbo_bills_on_qbo_account_and_qbo_id", unique: true
+    t.index ["qbo_account_id"], name: "index_qbo_bills_on_qbo_account_id"
+    t.index ["qbo_id"], name: "index_qbo_bills_on_qbo_id"
     t.index ["qbo_vendor_id"], name: "index_qbo_bills_on_qbo_vendor_id"
   end
 
   create_table "qbo_invoices", force: :cascade do |t|
     t.string "qbo_id", null: false
     t.jsonb "data"
-    t.index ["qbo_id"], name: "index_qbo_invoices_on_qbo_id", unique: true, where: "(qbo_id IS NOT NULL)"
+    t.bigint "qbo_account_id", null: false
+    t.index ["qbo_account_id", "qbo_id"], name: "index_qbo_invoices_on_qbo_account_and_qbo_id", unique: true, where: "(qbo_id IS NOT NULL)"
+    t.index ["qbo_account_id"], name: "index_qbo_invoices_on_qbo_account_id"
   end
 
   create_table "qbo_profit_and_loss_reports", force: :cascade do |t|
@@ -829,7 +905,7 @@ ActiveRecord::Schema.define(version: 2026_05_12_031751) do
     t.jsonb "data", default: "{}"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
-    t.bigint "qbo_account_id"
+    t.bigint "qbo_account_id", null: false
     t.index ["qbo_account_id"], name: "index_qbo_profit_and_loss_reports_on_qbo_account_id"
   end
 
@@ -845,7 +921,9 @@ ActiveRecord::Schema.define(version: 2026_05_12_031751) do
   create_table "qbo_vendors", force: :cascade do |t|
     t.string "qbo_id", null: false
     t.jsonb "data"
-    t.index ["qbo_id"], name: "index_qbo_vendors_on_qbo_id", unique: true
+    t.bigint "qbo_account_id", null: false
+    t.index ["qbo_account_id", "qbo_id"], name: "index_qbo_vendors_on_qbo_account_and_qbo_id", unique: true
+    t.index ["qbo_account_id"], name: "index_qbo_vendors_on_qbo_account_id"
   end
 
   create_table "quickbooks_tokens", force: :cascade do |t|
@@ -1097,9 +1175,13 @@ ActiveRecord::Schema.define(version: 2026_05_12_031751) do
   add_foreign_key "contributor_payouts", "admin_users", column: "created_by_id"
   add_foreign_key "contributor_payouts", "invoice_trackers"
   add_foreign_key "contributor_payouts", "ledgers"
-  add_foreign_key "contributor_payouts", "qbo_bills", primary_key: "qbo_id"
+  add_foreign_key "contributor_qbo_vendors", "contributors"
+  add_foreign_key "contributor_qbo_vendors", "qbo_accounts"
+  add_foreign_key "contributor_qbo_vendors", "qbo_vendors"
   add_foreign_key "deel_invoice_adjustments", "deel_contracts", primary_key: "deel_id"
   add_foreign_key "deel_invoice_adjustments", "ledgers"
+  add_foreign_key "enterprise_admins", "admin_users"
+  add_foreign_key "enterprise_admins", "enterprises"
   add_foreign_key "enterprise_forecast_clients", "enterprises"
   add_foreign_key "enterprise_forecast_clients", "forecast_clients", primary_key: "forecast_id"
   add_foreign_key "finalizations", "reviews"
@@ -1111,6 +1193,7 @@ ActiveRecord::Schema.define(version: 2026_05_12_031751) do
   add_foreign_key "ledgers", "enterprises"
   add_foreign_key "mailing_list_subscribers", "mailing_lists"
   add_foreign_key "mailing_lists", "studios"
+  add_foreign_key "misc_payments", "contributors"
   add_foreign_key "okr_period_studios", "okr_periods"
   add_foreign_key "okr_period_studios", "studios"
   add_foreign_key "okr_periods", "okrs"
@@ -1126,6 +1209,12 @@ ActiveRecord::Schema.define(version: 2026_05_12_031751) do
   add_foreign_key "old_deal_technical_lead_periods", "admin_users"
   add_foreign_key "old_deal_technical_lead_periods", "project_trackers"
   add_foreign_key "old_deal_technical_lead_periods", "studios"
+  add_foreign_key "pay_cycles", "admin_users", column: "approved_by_id"
+  add_foreign_key "pay_cycles", "admin_users", column: "created_by_id"
+  add_foreign_key "pay_cycles", "enterprises"
+  add_foreign_key "pay_stubs", "admin_users", column: "accepted_by_id"
+  add_foreign_key "pay_stubs", "ledgers"
+  add_foreign_key "pay_stubs", "pay_cycles"
   add_foreign_key "peer_reviews", "admin_users"
   add_foreign_key "peer_reviews", "reviews"
   add_foreign_key "periodic_reports", "notifications"
@@ -1153,8 +1242,11 @@ ActiveRecord::Schema.define(version: 2026_05_12_031751) do
   add_foreign_key "project_tracker_links", "project_trackers"
   add_foreign_key "project_trackers", "runn_projects", primary_key: "runn_id"
   add_foreign_key "qbo_accounts", "enterprises"
+  add_foreign_key "qbo_bills", "qbo_accounts"
+  add_foreign_key "qbo_invoices", "qbo_accounts"
   add_foreign_key "qbo_profit_and_loss_reports", "qbo_accounts"
   add_foreign_key "qbo_tokens", "qbo_accounts"
+  add_foreign_key "qbo_vendors", "qbo_accounts"
   add_foreign_key "reimbursements", "admin_users", column: "accepted_by_id"
   add_foreign_key "reimbursements", "ledgers"
   add_foreign_key "review_trees", "reviews"
@@ -1181,5 +1273,4 @@ ActiveRecord::Schema.define(version: 2026_05_12_031751) do
   add_foreign_key "traits", "trees"
   add_foreign_key "trueups", "invoice_passes"
   add_foreign_key "trueups", "ledgers"
-  add_foreign_key "trueups", "qbo_bills", primary_key: "qbo_id"
 end

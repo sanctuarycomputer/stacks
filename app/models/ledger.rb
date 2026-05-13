@@ -8,11 +8,64 @@ class Ledger < ApplicationRecord
   has_many :reimbursements
   has_many :profit_shares
   has_many :deel_invoice_adjustments
+  has_many :pay_stubs
 
   validates :enterprise_id, uniqueness: { scope: :contributor_id }
 
   def self.find_or_create_for(enterprise:, contributor:)
     find_or_create_by!(enterprise: enterprise, contributor: contributor)
+  end
+
+  # Idempotently creates a Ledger row for every (Enterprise, Contributor) pair.
+  # Runs from:
+  #   - the BackfillAllLedgers migration (so an empty timeline is filled at deploy)
+  #   - stacks:daily_enterprise_tasks (belt-and-suspenders against drift)
+  #   - Contributor.after_create / Enterprise.after_create (eager fill on add)
+  # Bulk-loads existing pairs to avoid N+1; only INSERTS missing rows.
+  # Returns the count of rows inserted.
+  def self.ensure_all!
+    existing = pluck(:enterprise_id, :contributor_id).to_set
+    contributor_ids = Contributor.pluck(:id)
+    enterprise_ids = Enterprise.pluck(:id)
+    rows = []
+    now = Time.current
+    contributor_ids.each do |c_id|
+      enterprise_ids.each do |e_id|
+        next if existing.include?([e_id, c_id])
+        rows << { enterprise_id: e_id, contributor_id: c_id, created_at: now, updated_at: now }
+      end
+    end
+    insert_all(rows) if rows.any?
+    rows.size
+  end
+
+  # Creates a Ledger for this contributor against every existing enterprise.
+  # Invoked from Contributor.after_create so a brand-new contributor immediately
+  # has a ledger for every enterprise — no manual setup, no waiting on cron.
+  def self.ensure_for_contributor!(contributor)
+    existing_enterprise_ids = where(contributor_id: contributor.id).pluck(:enterprise_id).to_set
+    rows = []
+    now = Time.current
+    Enterprise.pluck(:id).each do |e_id|
+      next if existing_enterprise_ids.include?(e_id)
+      rows << { enterprise_id: e_id, contributor_id: contributor.id, created_at: now, updated_at: now }
+    end
+    insert_all(rows) if rows.any?
+    rows.size
+  end
+
+  # Creates a Ledger for this enterprise against every existing contributor.
+  # Invoked from Enterprise.after_create when a new enterprise is added.
+  def self.ensure_for_enterprise!(enterprise)
+    existing_contributor_ids = where(enterprise_id: enterprise.id).pluck(:contributor_id).to_set
+    rows = []
+    now = Time.current
+    Contributor.pluck(:id).each do |c_id|
+      next if existing_contributor_ids.include?(c_id)
+      rows << { enterprise_id: enterprise.id, contributor_id: c_id, created_at: now, updated_at: now }
+    end
+    insert_all(rows) if rows.any?
+    rows.size
   end
 
   # Balance/unsettled at the per-ledger (per-enterprise) level. Excludes soft-deleted rows
@@ -51,7 +104,7 @@ class Ledger < ApplicationRecord
       sorted = items_in_period.sort_by { |li| li.effective_on_for_display }.reverse
 
       total_income = sorted.sum do |li|
-        (li.is_a?(ContributorPayout) || li.is_a?(Trueup)) ? li.amount.to_f : 0
+        (li.is_a?(ContributorPayout) || li.is_a?(Trueup) || li.is_a?(PayStub)) ? li.amount.to_f : 0
       end
 
       acc[:all] = acc[:all] + sorted
@@ -74,6 +127,7 @@ class Ledger < ApplicationRecord
       reimbursements.to_a,
       profit_shares.to_a,
       deel_invoice_adjustments.to_a,
+      pay_stubs.to_a,
     ].flatten
   end
 
@@ -86,6 +140,7 @@ class Ledger < ApplicationRecord
       Reimbursement.with_deleted.where(ledger_id: id).to_a,
       ProfitShare.with_deleted.includes(:periodic_report).where(ledger_id: id).to_a,
       DeelInvoiceAdjustment.with_deleted.where(ledger_id: id).to_a,
+      PayStub.with_deleted.includes(:pay_cycle).where(ledger_id: id).to_a,
     ].flatten
   end
 end

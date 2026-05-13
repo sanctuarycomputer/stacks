@@ -1,5 +1,10 @@
 class QboInvoice < ApplicationRecord
   self.primary_key = "qbo_id"
+  belongs_to :qbo_account
+
+  # DB enforces NOT NULL via the ScopeQboRecordsByQboAccount migration;
+  # AR-level validation surfaces a clean message before the DB rejection.
+  validates :qbo_account, presence: true
 
   scope :orphans, -> {
     where.not(id: [*InvoiceTracker.pluck(:qbo_invoice_id).compact, *AdhocInvoiceTracker.pluck(:qbo_invoice_id).compact])
@@ -80,7 +85,7 @@ class QboInvoice < ApplicationRecord
     end
 
     begin
-      invoice = Stacks::Quickbooks.fetch_invoice_by_id(qbo_id)
+      invoice = qbo_account.fetch_invoice_by_id(qbo_id)
       update! data: invoice.as_json
       self
     rescue => e

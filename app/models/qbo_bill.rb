@@ -1,6 +1,13 @@
 class QboBill < ApplicationRecord
   self.primary_key = "qbo_id"
+  belongs_to :qbo_account
   belongs_to :qbo_vendor, class_name: "QboVendor", foreign_key: "qbo_vendor_id", primary_key: "qbo_id"
+
+  # Belt-and-suspenders: column is NOT NULL at the DB level (per the
+  # ScopeQboRecordsByQboAccount migration) but we enforce presence at the
+  # AR level too so .valid? surfaces a clean error before the DB rejects it.
+  validates :qbo_account, presence: true
+  validates :qbo_id, presence: true
 
   before_destroy :delete_qbo_bill!
 
@@ -10,7 +17,7 @@ class QboBill < ApplicationRecord
 
   def delete_qbo_bill!
     begin
-      Stacks::Quickbooks.delete_bill(Stacks::Quickbooks.fetch_bill_by_id(qbo_id))
+      qbo_account.delete_bill(qbo_account.fetch_bill_by_id(qbo_id))
     rescue => e
       if e.message.starts_with?("Object Not Found:")
         return nil

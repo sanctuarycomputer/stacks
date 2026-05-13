@@ -9,13 +9,17 @@ class LedgerTest < ActiveSupport::TestCase
   end
 
   test "belongs to enterprise and contributor" do
-    ledger = Ledger.create!(enterprise: @enterprise, contributor: @contributor)
+    # Contributor.after_create already creates a Ledger for every enterprise,
+    # so the (Sanctuary, @contributor) pair is already there — fetch it.
+    ledger = Ledger.find_by!(enterprise: @enterprise, contributor: @contributor)
     assert_equal @enterprise, ledger.enterprise
     assert_equal @contributor, ledger.contributor
   end
 
   test "(enterprise, contributor) is unique" do
-    Ledger.create!(enterprise: @enterprise, contributor: @contributor)
+    # Already created by Contributor.after_create.
+    assert Ledger.exists?(enterprise: @enterprise, contributor: @contributor)
+    # Attempting to create another raises the AR uniqueness validation.
     assert_raises(ActiveRecord::RecordInvalid) do
       Ledger.create!(enterprise: @enterprise, contributor: @contributor)
     end
@@ -26,5 +30,124 @@ class LedgerTest < ActiveSupport::TestCase
     assert ledger.persisted?
     same = Ledger.find_or_create_for(enterprise: @enterprise, contributor: @contributor)
     assert_equal ledger, same
+  end
+end
+
+class LedgerWithPayStubsTest < ActiveSupport::TestCase
+  setup do
+    Thread.current[:sanctuary_enterprise] = nil
+    @enterprise = Enterprise.find_or_create_by!(name: "LedgerStubs-#{SecureRandom.hex(2)}")
+    fp = ForecastPerson.create!(forecast_id: 998_001, email: "lstest@example.com", data: {})
+    @contributor = Contributor.create!(forecast_person: fp)
+    # Use find_or_create_for — Contributor.after_create + Enterprise.after_create
+    # may have already created this pair (depending on which came first).
+    @ledger = Ledger.find_or_create_for(enterprise: @enterprise, contributor: @contributor)
+    @cycle = PayCycle.create!(enterprise: @enterprise, starts_at: Date.new(2026, 5, 1), ends_at: Date.new(2026, 5, 31))
+    @admin = AdminUser.create!(email: "lsadm#{SecureRandom.hex(2)}@example.com", password: "password123", password_confirmation: "password123")
+  end
+
+  test "balance counts payable pay stubs" do
+    blueprint = { "lines" => [{ "amount" => 100.0, "hours" => 1, "rate" => 100, "forecast_project" => "x", "description" => "x" }] }
+    PayStub.create!(pay_cycle: @cycle, ledger: @ledger, amount: 100, blueprint: blueprint, accepted_at: DateTime.now, accepted_by: @admin)
+    # Cycle approval is now required for payable; grant the admin enterprise-admin and approve.
+    @enterprise.admin_users << @admin
+    @cycle.toggle_approval!(by: @admin)
+    assert_equal 100, @ledger.balance.to_f
+    assert_equal 0, @ledger.unsettled.to_f
+  end
+
+  test "unsettled counts un-payable pay stubs" do
+    blueprint = { "lines" => [{ "amount" => 100.0, "hours" => 1, "rate" => 100, "forecast_project" => "x", "description" => "x" }] }
+    PayStub.create!(pay_cycle: @cycle, ledger: @ledger, amount: 100, blueprint: blueprint)  # not accepted
+    assert_equal 0, @ledger.balance.to_f
+    assert_equal 100, @ledger.unsettled.to_f
+  end
+
+  test "all_items_with_deleted includes soft-deleted pay stubs" do
+    blueprint = { "lines" => [{ "amount" => 100.0, "hours" => 1, "rate" => 100, "forecast_project" => "x", "description" => "x" }] }
+    stub = PayStub.create!(pay_cycle: @cycle, ledger: @ledger, amount: 100, blueprint: blueprint)
+    stub.destroy
+    grouped = @ledger.items_grouped_by_month
+    assert_includes grouped[:all].map(&:id), stub.id
+  end
+end
+
+class LedgerEnsureAllTest < ActiveSupport::TestCase
+  setup do
+    Thread.current[:sanctuary_enterprise] = nil
+  end
+
+  test "creates a Ledger for every (enterprise, contributor) pair" do
+    e1 = Enterprise.find_or_create_by!(name: "EA-1-#{SecureRandom.hex(2)}")
+    e2 = Enterprise.find_or_create_by!(name: "EA-2-#{SecureRandom.hex(2)}")
+    fp1 = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "ea1#{SecureRandom.hex(2)}@x.com", data: {})
+    fp2 = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "ea2#{SecureRandom.hex(2)}@x.com", data: {})
+    c1 = Contributor.create!(forecast_person: fp1)
+    c2 = Contributor.create!(forecast_person: fp2)
+
+    # Idempotent — the after_create callbacks on Contributor / Enterprise may
+    # have already filled the grid by this point.
+    Ledger.ensure_all!
+
+    [c1, c2].each do |c|
+      [e1, e2].each do |e|
+        assert Ledger.exists?(contributor: c, enterprise: e),
+          "expected a Ledger for contributor=#{c.id}, enterprise=#{e.id}"
+      end
+    end
+  end
+
+  test "is idempotent — second call inserts nothing" do
+    Ledger.ensure_all!
+    inserted = Ledger.ensure_all!
+    assert_equal 0, inserted
+  end
+
+  test "respects the (enterprise, contributor) uniqueness constraint" do
+    e = Enterprise.find_or_create_by!(name: "EA-Uniq-#{SecureRandom.hex(2)}")
+    fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "uniq#{SecureRandom.hex(2)}@x.com", data: {})
+    c = Contributor.create!(forecast_person: fp)
+    # Contributor.after_create already creates the ledger; this Create raises uniqueness
+    # if attempted again, so use find_or_create_for to remain idempotent.
+    Ledger.find_or_create_for(enterprise: e, contributor: c)
+    assert_nothing_raised { Ledger.ensure_all! }
+    # Only one Ledger for this pair after ensure_all!.
+    assert_equal 1, Ledger.where(enterprise: e, contributor: c).count
+  end
+end
+
+class LedgerAfterCreateCallbacksTest < ActiveSupport::TestCase
+  setup do
+    Thread.current[:sanctuary_enterprise] = nil
+    # Make sure Sanctuary exists so Contributor.after_create has at least
+    # one enterprise to create a ledger against.
+    @sanctuary = Enterprise.find_or_create_by!(name: Enterprise::SANCTUARY_NAME)
+  end
+
+  test "Contributor.after_create creates a Ledger for every existing enterprise" do
+    other = Enterprise.find_or_create_by!(name: "AC-#{SecureRandom.hex(2)}")
+    fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "ac#{SecureRandom.hex(2)}@x.com", data: {})
+    c = Contributor.create!(forecast_person: fp)
+    assert Ledger.exists?(contributor: c, enterprise: @sanctuary), "expected ledger for Sanctuary"
+    assert Ledger.exists?(contributor: c, enterprise: other), "expected ledger for the other enterprise"
+  end
+
+  test "Enterprise.after_create creates a Ledger for every existing contributor" do
+    fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "ec#{SecureRandom.hex(2)}@x.com", data: {})
+    c = Contributor.create!(forecast_person: fp)
+    new_enterprise = Enterprise.create!(name: "ECE-#{SecureRandom.hex(2)}")
+    assert Ledger.exists?(contributor: c, enterprise: new_enterprise),
+      "expected new enterprise to backfill ledgers for existing contributors"
+  end
+
+  test "Contributor.after_create is idempotent when ledger already exists" do
+    fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "idem#{SecureRandom.hex(2)}@x.com", data: {})
+    # Build the Contributor without saving; manually pre-create one ledger so
+    # the after_create callback finds it already there.
+    c = Contributor.new(forecast_person: fp)
+    c.save!
+    # Calling the callback method again should be a no-op (rows already exist).
+    assert_nothing_raised { c.ensure_ledgers_for_all_enterprises! }
+    assert_equal 0, Ledger.ensure_for_contributor!(c), "expected zero new rows on second call"
   end
 end

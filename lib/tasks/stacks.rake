@@ -3,7 +3,7 @@ namespace :stacks do
   task :refresh_qbo_token => :environment do
     system_task = SystemTask.create!(name: "stacks:refresh_qbo_token")
     begin
-      Stacks::Quickbooks.make_and_refresh_qbo_access_token
+      Enterprise.sanctuary.qbo_account.make_and_refresh_qbo_access_token
     rescue => e
       system_task.mark_as_error(e)
     else
@@ -29,6 +29,19 @@ namespace :stacks do
     begin
       Parallel.map(QboAccount.all, in_threads: 2) { |e| e.sync_all! }
       Parallel.map(Enterprise.all, in_threads: 2) { |e| e.generate_snapshot! }
+
+      # Pre-create a Ledger for every (enterprise, contributor) pair so a
+      # contributor can submit a reimbursement / receive a pay stub against
+      # any enterprise without first needing a ledger to be lazily created.
+      inserted_ledger_count = Ledger.ensure_all!
+      Rails.logger.info("[stacks:daily_enterprise_tasks] Ledger.ensure_all! created #{inserted_ledger_count} ledger(s)")
+
+      # Open the next pay cycle for each enterprise on cadence. Per-enterprise
+      # errors are isolated; a partial failure raises an aggregate after the
+      # loop so this SystemTask still records visibly, but successful cycles
+      # are already persisted.
+      opened_cycles = PayCycles::OpenScheduledCycles.call
+      Rails.logger.info("[stacks:daily_enterprise_tasks] OpenScheduledCycles opened #{opened_cycles.size} cycle(s)")
     rescue => e
       system_task.mark_as_error(e)
     else
@@ -200,7 +213,7 @@ namespace :stacks do
 
       # These are all dependencies for the rest of the tasks
       Stacks::Runn.new.sync_all!
-      Stacks::Quickbooks.sync_all! # Has internal retry counter
+      Enterprise.sanctuary.qbo_account.sync_all! # Has internal retry counter
       Stacks::Deel.new.sync_all!
 
       puts "~~~> SYNC DEEL WITHDRAWAL STATUSES (DEEL)"
