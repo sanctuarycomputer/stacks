@@ -102,10 +102,9 @@ ActiveAdmin.register Enterprise do
 
       f.input :pay_cycle_cadence,
         as: :select,
-        collection: [["Monthly", "monthly"], ["Twice monthly (1–15, 16–end)", "twice_monthly"]],
+        collection: [["Monthly", "monthly"], ["Twice monthly", "twice_monthly"]],
         include_blank: "(disabled — no pay cycles)",
-        hint: "Setting this enables the \"New Pay Cycle\" button on this enterprise's show page. " \
-              "Choose Monthly for a single cycle per calendar month, or Twice monthly to split the month in half."
+        hint: "When set, a background job will open new pay cycles on this enterprise's cadence."
 
       f.inputs "QBO Account", for: [:qbo_account, f.object.qbo_account || QboAccount.new] do |qbo_account|
         qbo_account.input :client_id

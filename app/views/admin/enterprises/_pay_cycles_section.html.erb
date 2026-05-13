@@ -1,11 +1,7 @@
 <% return unless enterprise.pay_cycle_cadence.present? %>
 
 <h2 style="margin-top: 32px">Pay cycles</h2>
-<p>
-  <%= link_to "New Pay Cycle",
-    new_admin_enterprise_pay_cycle_path(enterprise),
-    class: "button" %>
-</p>
+<p style="opacity: 0.7; font-style: italic">Cycles are opened automatically by the cadence background job.</p>
 
 <table style="width: 100%; margin-top: 16px">
   <thead>
