@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_05_12_223915) do
+ActiveRecord::Schema.define(version: 2026_05_13_004210) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -859,14 +859,19 @@ ActiveRecord::Schema.define(version: 2026_05_12_223915) do
     t.string "qbo_id", null: false
     t.jsonb "data"
     t.string "qbo_vendor_id", null: false
-    t.index ["qbo_id"], name: "index_qbo_bills_on_qbo_id", unique: true
+    t.bigint "qbo_account_id", null: false
+    t.index ["qbo_account_id", "qbo_id"], name: "index_qbo_bills_on_qbo_account_and_qbo_id", unique: true
+    t.index ["qbo_account_id"], name: "index_qbo_bills_on_qbo_account_id"
+    t.index ["qbo_id"], name: "index_qbo_bills_on_qbo_id"
     t.index ["qbo_vendor_id"], name: "index_qbo_bills_on_qbo_vendor_id"
   end
 
   create_table "qbo_invoices", force: :cascade do |t|
     t.string "qbo_id", null: false
     t.jsonb "data"
-    t.index ["qbo_id"], name: "index_qbo_invoices_on_qbo_id", unique: true, where: "(qbo_id IS NOT NULL)"
+    t.bigint "qbo_account_id", null: false
+    t.index ["qbo_account_id", "qbo_id"], name: "index_qbo_invoices_on_qbo_account_and_qbo_id", unique: true, where: "(qbo_id IS NOT NULL)"
+    t.index ["qbo_account_id"], name: "index_qbo_invoices_on_qbo_account_id"
   end
 
   create_table "qbo_profit_and_loss_reports", force: :cascade do |t|
@@ -891,7 +896,9 @@ ActiveRecord::Schema.define(version: 2026_05_12_223915) do
   create_table "qbo_vendors", force: :cascade do |t|
     t.string "qbo_id", null: false
     t.jsonb "data"
-    t.index ["qbo_id"], name: "index_qbo_vendors_on_qbo_id", unique: true
+    t.bigint "qbo_account_id", null: false
+    t.index ["qbo_account_id", "qbo_id"], name: "index_qbo_vendors_on_qbo_account_and_qbo_id", unique: true
+    t.index ["qbo_account_id"], name: "index_qbo_vendors_on_qbo_account_id"
   end
 
   create_table "quickbooks_tokens", force: :cascade do |t|
@@ -1143,7 +1150,6 @@ ActiveRecord::Schema.define(version: 2026_05_12_223915) do
   add_foreign_key "contributor_payouts", "admin_users", column: "created_by_id"
   add_foreign_key "contributor_payouts", "invoice_trackers"
   add_foreign_key "contributor_payouts", "ledgers"
-  add_foreign_key "contributor_payouts", "qbo_bills", primary_key: "qbo_id"
   add_foreign_key "deel_invoice_adjustments", "deel_contracts", primary_key: "deel_id"
   add_foreign_key "deel_invoice_adjustments", "ledgers"
   add_foreign_key "enterprise_forecast_clients", "enterprises"
@@ -1205,8 +1211,11 @@ ActiveRecord::Schema.define(version: 2026_05_12_223915) do
   add_foreign_key "project_tracker_links", "project_trackers"
   add_foreign_key "project_trackers", "runn_projects", primary_key: "runn_id"
   add_foreign_key "qbo_accounts", "enterprises"
+  add_foreign_key "qbo_bills", "qbo_accounts"
+  add_foreign_key "qbo_invoices", "qbo_accounts"
   add_foreign_key "qbo_profit_and_loss_reports", "qbo_accounts"
   add_foreign_key "qbo_tokens", "qbo_accounts"
+  add_foreign_key "qbo_vendors", "qbo_accounts"
   add_foreign_key "reimbursements", "admin_users", column: "accepted_by_id"
   add_foreign_key "reimbursements", "ledgers"
   add_foreign_key "review_trees", "reviews"
@@ -1233,5 +1242,4 @@ ActiveRecord::Schema.define(version: 2026_05_12_223915) do
   add_foreign_key "traits", "trees"
   add_foreign_key "trueups", "invoice_passes"
   add_foreign_key "trueups", "ledgers"
-  add_foreign_key "trueups", "qbo_bills", primary_key: "qbo_id"
 end
