@@ -1,48 +1,135 @@
 # TODO: Slowly deprecate this for qbo_account.rb now that we have
 # enterprises with different QBO credentials.
+#
+# Phase D: All Stacks::Quickbooks.* class methods delegate to Sanctuary's
+# qbo_account. Until Phase F migrates legacy callers (invoice_tracker,
+# profit_share_pass, forecast_client, qbo_invoice, qbo_bill, dashboard,
+# forecast_assignment, etc.) to use per-enterprise qbo_accounts directly,
+# this delegation preserves backwards compatibility — every
+# Stacks::Quickbooks caller transparently routes to Sanctuary's QboAccount.
+#
+# Note: callers that read Stacks::Utils.config[:quickbooks][:realm_id]
+# or build their own QBO service objects (e.g. invoice_tracker.rb:594)
+# are left untouched here and will be migrated in Phase F.
 
 class Stacks::Quickbooks
   class << self
-    def sync_all!
-      Retriable.retriable(tries: 5, base_interval: 1, multiplier: 2, max_interval: 10) do
-        cleanup_orphaned_qbo_objects!
-      end
-
-      Retriable.retriable(tries: 5, base_interval: 1, multiplier: 2, max_interval: 10) do
-        sync_monthly_profit_and_loss_reports!
-      end
-
-      Retriable.retriable(tries: 5, base_interval: 1, multiplier: 2, max_interval: 10) do
-        sync_quarterly_profit_and_loss_reports!
-      end
-
-      Retriable.retriable(tries: 5, base_interval: 1, multiplier: 2, max_interval: 10) do
-        sync_yearly_profit_and_loss_reports!
-      end
-
-      Retriable.retriable(tries: 5, base_interval: 1, multiplier: 2, max_interval: 10) do
-        sync_all_invoices!
-      end
-
-      Retriable.retriable(tries: 5, base_interval: 1, multiplier: 2, max_interval: 10) do
-        sync_all_vendors!
-      end
-
-      Retriable.retriable(tries: 5, base_interval: 1, multiplier: 2, max_interval: 10) do
-        sync_all_bills!
+    # ---------------------------------------------------------------------------
+    # Private helper — Sanctuary's QboAccount is the canonical delegatee for
+    # every class-level method until Phase F.
+    # ---------------------------------------------------------------------------
+    def sanctuary_qbo_account
+      Enterprise.sanctuary.qbo_account.tap do |qa|
+        raise "Sanctuary enterprise has no qbo_account; configure it via the admin" if qa.nil?
       end
     end
+    private :sanctuary_qbo_account
+
+    # ---------------------------------------------------------------------------
+    # Token management
+    #
+    # Delegates to Sanctuary's QboAccount, then mirrors the refreshed token
+    # into the legacy QuickbooksToken table so any code still reading that
+    # table continues to see a current token. Deprecate the mirror once all
+    # such callers are removed (Phase F+).
+    # ---------------------------------------------------------------------------
+    def make_and_refresh_qbo_access_token(force_refresh = false)
+      access_token = sanctuary_qbo_account.make_and_refresh_qbo_access_token
+      return access_token if access_token.nil?
+
+      # Mirror to legacy QuickbooksToken so legacy reads stay in sync.
+      sanctuary_qbo_token = sanctuary_qbo_account.qbo_token
+      return access_token if sanctuary_qbo_token.nil?
+
+      legacy = QuickbooksToken.order(:created_at).last
+      if legacy.nil?
+        QuickbooksToken.create!(
+          token: sanctuary_qbo_token.token,
+          refresh_token: sanctuary_qbo_token.refresh_token,
+        )
+      elsif legacy.token != sanctuary_qbo_token.token || legacy.refresh_token != sanctuary_qbo_token.refresh_token
+        legacy.update!(
+          token: sanctuary_qbo_token.token,
+          refresh_token: sanctuary_qbo_token.refresh_token,
+        )
+      end
+
+      access_token
+    end
+
+    # ---------------------------------------------------------------------------
+    # Fetch helpers — thin delegation
+    # ---------------------------------------------------------------------------
+
+    def fetch_all_accounts
+      sanctuary_qbo_account.fetch_all_accounts
+    end
+
+    def fetch_all_vendors
+      sanctuary_qbo_account.fetch_all_vendors
+    end
+
+    def fetch_all_invoices
+      sanctuary_qbo_account.fetch_all_invoices
+    end
+
+    def fetch_all_terms
+      sanctuary_qbo_account.fetch_all_terms
+    end
+
+    def fetch_all_items
+      sanctuary_qbo_account.fetch_all_items
+    end
+
+    def fetch_all_customers
+      sanctuary_qbo_account.fetch_all_customers
+    end
+
+    def fetch_all_bills
+      sanctuary_qbo_account.fetch_all_bills
+    end
+
+    def delete_bill(bill)
+      sanctuary_qbo_account.delete_bill(bill)
+    end
+
+    def fetch_bill_by_id(id)
+      sanctuary_qbo_account.fetch_bill_by_id(id)
+    end
+
+    def fetch_invoice_by_id(id)
+      sanctuary_qbo_account.fetch_invoice_by_id(id)
+    end
+
+    def fetch_profit_and_loss_report_for_range(start_of_range, end_of_range, accounting_method = "Cash")
+      sanctuary_qbo_account.fetch_profit_and_loss_report_for_range(start_of_range, end_of_range, accounting_method)
+    end
+
+    # ---------------------------------------------------------------------------
+    # Sync helpers — delegate to QboAccount instance methods
+    # ---------------------------------------------------------------------------
 
     def sync_all_invoices!
-      data = fetch_all_invoices.map do |i|
-        {
-          qbo_id: i["id"],
-          data: i.as_json,
-        }
-      end
-      QboInvoice.upsert_all(data, unique_by: :qbo_id)
+      sanctuary_qbo_account.sync_all_invoices!
     end
 
+    def sync_all_vendors!
+      sanctuary_qbo_account.sync_all_vendors!
+    end
+
+    def sync_all_bills!
+      sanctuary_qbo_account.sync_all_bills!
+    end
+
+    def cleanup_orphaned_qbo_objects!
+      sanctuary_qbo_account.cleanup_orphaned_qbo_objects!
+    end
+
+    # P&L report syncs: keep the legacy date range (2020-01-01) so callers
+    # that depend on historical data aren't silently truncated. QboAccount's
+    # instance methods start from started_at (2023-01-01) and are used when
+    # syncing per-enterprise data. These module-level methods pass nil as the
+    # qbo_account arg so QboProfitAndLossReport uses the legacy/global store.
     def sync_monthly_profit_and_loss_reports!
       time = Date.new(2020, 1, 1)
       while time < Date.today
@@ -82,216 +169,37 @@ class Stacks::Quickbooks
       end
     end
 
-    def sync_all_vendors!
-      data = fetch_all_vendors.map do |v|
-        {
-          qbo_id: v["id"],
-          data: v.as_json,
-        }
-      end
-      QboVendor.upsert_all(data, unique_by: :qbo_id)
-      QboVendor.where.not(qbo_id: data.map{|t| t[:qbo_id]}).delete_all
-    end
-
-    def cleanup_orphaned_qbo_objects!
-      fetch_all_bills.each do |b|
-        splat = (b.doc_number || "").match(/^Stacks_(\d+)(?:_([A-Za-z][A-Za-z0-9_]*\.{3}?))?$/)
-        next unless splat.present?
-
-        case splat[2]
-        # New short-code format (unambiguous across classes)
-        when "CP"
-          klass = ContributorPayout
-        when "TU"
-          klass = Trueup
-        when "CA"
-          klass = ContributorAdjustment
-        when "PS"
-          klass = ProfitShare
-        # Legacy long-form doc_numbers. NOTE: a truncated "ContributorAdjustment"
-        # also starts with "Contribut..." — legacy bills with that prefix are
-        # assumed to be ContributorPayouts because adjustments did not sync as
-        # bills before the short-code format was introduced. Newly generated
-        # ContributorAdjustment bills use the "CA" code and won't hit this branch.
-        when "ContributorPayout", /^Contri/
-          klass = ContributorPayout
-        when "Trueup"
-          klass = Trueup
-        when "ProfitShare", /^Profit/
-          klass = ProfitShare
-        else
-          # Early iterations didn't embed the class name in the doc number, so we default to ContributorPayout
-          klass = ContributorPayout
-        end
-
-        obj = klass.find_by(id: splat[1])
-        next if obj.present?
-
-        # If not, check if it's a deleted object
-        if deleted_obj = klass.with_deleted.find_by(id: splat[1])
-          deleted_obj.update(qbo_bill_id: nil)
-          deleted_obj.qbo_bill.destroy! if deleted_obj.qbo_bill.present?
-        elsif qbo_bill = QboBill.find_by(qbo_id: b.id)
-          qbo_bill.destroy!
-        else
-          delete_bill(b)
-        end
-      end
-    end
-
-    def sync_all_bills!
-      data = fetch_all_bills.map do |b|
-        {
-          qbo_id: b["id"],
-          data: b.as_json,
-          qbo_vendor_id: b.vendor_ref.value
-        }
-      end
-      QboBill.upsert_all(data, unique_by: :qbo_id)
-      deleted_bills = QboBill.where.not(qbo_id: data.map{|t| t[:qbo_id]})
-      ContributorPayout.with_deleted.where(qbo_bill: deleted_bills).update_all(qbo_bill_id: nil)
-      deleted_bills.delete_all
-    end
-
-    def make_and_refresh_qbo_access_token(force_refresh = false)
+    # ---------------------------------------------------------------------------
+    # Top-level orchestrator
+    # ---------------------------------------------------------------------------
+    def sync_all!
       Retriable.retriable(tries: 5, base_interval: 1, multiplier: 2, max_interval: 10) do
-        ActiveRecord::Base.transaction do
-          oauth2_client = OAuth2::Client.new(Stacks::Utils.config[:quickbooks][:client_id], Stacks::Utils.config[:quickbooks][:client_secret], {
-            site: "https://appcenter.intuit.com/connect/oauth2",
-            authorize_url: "https://appcenter.intuit.com/connect/oauth2",
-            token_url: "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer",
-          })
-          qbo_token = QuickbooksToken.order("created_at").last
-          access_token = OAuth2::AccessToken.new(
-            oauth2_client,
-            qbo_token.token,
-            refresh_token: qbo_token.refresh_token
-          )
-
-          # Refresh the token if it's been longer than 10 minutes
-          if force_refresh || (((DateTime.now.to_i - qbo_token.created_at.to_i) / 60) > 10)
-            access_token = access_token.refresh!
-            new_qbo_token =
-              QuickbooksToken.create!(
-                token: access_token.token,
-                refresh_token: access_token.refresh_token
-              )
-            QuickbooksToken.where.not(id: new_qbo_token.id).delete_all
-
-          end
-
-          access_token
-        end
+        cleanup_orphaned_qbo_objects!
       end
-    end
 
-    def fetch_all_vendors
-      access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
+      Retriable.retriable(tries: 5, base_interval: 1, multiplier: 2, max_interval: 10) do
+        sync_monthly_profit_and_loss_reports!
+      end
 
-      service = Quickbooks::Service::Vendor.new
-      service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
-      service.access_token = access_token
-      service.all
-    end
+      Retriable.retriable(tries: 5, base_interval: 1, multiplier: 2, max_interval: 10) do
+        sync_quarterly_profit_and_loss_reports!
+      end
 
-    def fetch_all_invoices
-      access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
+      Retriable.retriable(tries: 5, base_interval: 1, multiplier: 2, max_interval: 10) do
+        sync_yearly_profit_and_loss_reports!
+      end
 
-      service = Quickbooks::Service::Invoice.new
-      service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
-      service.access_token = access_token
-      service.all
-    end
+      Retriable.retriable(tries: 5, base_interval: 1, multiplier: 2, max_interval: 10) do
+        sync_all_invoices!
+      end
 
-    def fetch_all_accounts
-      access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
+      Retriable.retriable(tries: 5, base_interval: 1, multiplier: 2, max_interval: 10) do
+        sync_all_vendors!
+      end
 
-      # Get all accounts (ie, "[SC] Payroll")
-      service = Quickbooks::Service::Account.new
-      service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
-      service.access_token = access_token
-      service.all
-    end
-
-    def fetch_all_terms
-      access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
-
-      # Get all terms (ie, "Net 15")
-      terms_service = Quickbooks::Service::Term.new
-      terms_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
-      terms_service.access_token = access_token
-      qbo_terms = terms_service.all
-    end
-
-    def fetch_all_items
-      access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
-
-      items_service = Quickbooks::Service::Item.new
-      items_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
-      items_service.access_token = access_token
-      qbo_items = items_service.all
-      default_service_item = qbo_items.find { |s| s.fully_qualified_name == "Services" }
-
-      [qbo_items, default_service_item]
-    end
-
-    def fetch_all_customers
-      access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
-
-      # Get all Customers
-      service = Quickbooks::Service::Customer.new
-      service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
-      service.access_token = access_token
-      qbo_customers = service.all
-    end
-
-    def fetch_all_bills
-      access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
-
-      # Get all Bills
-      service = Quickbooks::Service::Bill.new
-      service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
-      service.access_token = access_token
-      qbo_bills = service.all
-    end
-
-    def delete_bill(bill)
-      access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
-      service = Quickbooks::Service::Bill.new
-      service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
-      service.access_token = access_token
-      service.delete(bill)
-    end
-
-    def fetch_bill_by_id(id)
-      access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
-
-      bill_service = Quickbooks::Service::Bill.new
-      bill_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
-      bill_service.access_token = access_token
-      bill_service.fetch_by_id(id)
-    end
-
-    def fetch_invoice_by_id(id)
-      access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
-
-      invoice_service = Quickbooks::Service::Invoice.new
-      invoice_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
-      invoice_service.access_token = access_token
-      invoice_service.fetch_by_id(id)
-    end
-
-    def fetch_profit_and_loss_report_for_range(start_of_range, end_of_range, accounting_method = "Cash")
-      qbo_access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
-      report_service = Quickbooks::Service::ReportsJSON.new
-      report_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
-      report_service.access_token = qbo_access_token
-
-      report_service.query("ProfitAndLoss", nil, {
-        start_date: start_of_range.strftime("%Y-%m-%d"),
-        end_date: end_of_range.strftime("%Y-%m-%d"),
-        accounting_method: accounting_method,
-      })
+      Retriable.retriable(tries: 5, base_interval: 1, multiplier: 2, max_interval: 10) do
+        sync_all_bills!
+      end
     end
   end
 end
