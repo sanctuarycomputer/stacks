@@ -54,4 +54,214 @@ class ContributorQboVendorForTest < ActiveSupport::TestCase
     assert_not_nil found_vendor
     assert_equal c.qbo_vendor_id, found_vendor.qbo_id
   end
+
+  # Edge case: qbo_vendor_for returns the vendor across multiple qbo_accounts correctly
+  test "qbo_vendor_for returns correct vendor when contributor has mappings to multiple qbo_accounts" do
+    # Create a second enterprise and QBO account
+    garden3d = Enterprise.find_or_create_by!(name: "Garden3D-#{SecureRandom.hex(2)}")
+    garden3d_qa = QboAccount.create!(
+      enterprise: garden3d,
+      client_id: "garden3d_client",
+      client_secret: "garden3d_secret",
+      realm_id: "garden3d_realm_#{SecureRandom.hex(4)}"
+    )
+
+    # Create two vendors: one for Sanctuary, one for Garden3D
+    vendor_a = QboVendor.create!(
+      qbo_id: "VENDOR_A_#{SecureRandom.hex(3)}",
+      qbo_account: @sanctuary_qa,
+      data: { "display_name" => "Vendor A (Sanctuary)" }
+    )
+    vendor_b = QboVendor.create!(
+      qbo_id: "VENDOR_B_#{SecureRandom.hex(3)}",
+      qbo_account: garden3d_qa,
+      data: { "display_name" => "Vendor B (Garden3D)" }
+    )
+
+    # Map the contributor to both vendors
+    ContributorQboVendor.create!(
+      contributor: @contributor,
+      qbo_account: @sanctuary_qa,
+      qbo_vendor: vendor_a
+    )
+    ContributorQboVendor.create!(
+      contributor: @contributor,
+      qbo_account: garden3d_qa,
+      qbo_vendor: vendor_b
+    )
+
+    # Verify each account returns its correct vendor
+    assert_equal vendor_a, @contributor.qbo_vendor_for(@sanctuary_qa)
+    assert_equal vendor_b, @contributor.qbo_vendor_for(garden3d_qa)
+
+    # Verify the two vendors have different qbo_ids and qbo_account_ids
+    assert_not_equal vendor_a.qbo_id, vendor_b.qbo_id
+    assert_not_equal vendor_a.qbo_account_id, vendor_b.qbo_account_id
+  end
+
+  # Edge case: qbo_vendor presence validation
+  test "ContributorQboVendor validates qbo_vendor presence" do
+    mapping = ContributorQboVendor.new(
+      contributor: @contributor,
+      qbo_account: @sanctuary_qa,
+      qbo_vendor: nil
+    )
+    refute mapping.valid?
+    # belongs_to validates with "must exist" not "can't be blank"
+    assert_includes mapping.errors[:qbo_vendor], "must exist"
+  end
+
+  # Edge case: qbo_account presence validation
+  test "ContributorQboVendor validates qbo_account presence" do
+    vendor = QboVendor.create!(
+      qbo_id: "VENDOR#{SecureRandom.hex(3)}",
+      qbo_account: @sanctuary_qa,
+      data: { "display_name" => "Test" }
+    )
+    mapping = ContributorQboVendor.new(
+      contributor: @contributor,
+      qbo_account: nil,
+      qbo_vendor: vendor
+    )
+    refute mapping.valid?
+    # belongs_to validates with "must exist" not "can't be blank"
+    assert_includes mapping.errors[:qbo_account], "must exist"
+  end
+
+  # Edge case: uniqueness constraint allows different contributor/qbo_account pairs
+  test "ContributorQboVendor uniqueness allows different (contributor, qbo_account) pairs" do
+    vendor = QboVendor.create!(
+      qbo_id: "VENDOR#{SecureRandom.hex(3)}",
+      qbo_account: @sanctuary_qa,
+      data: { "display_name" => "Test" }
+    )
+
+    # First mapping: contributor + sanctuary_qa
+    mapping1 = ContributorQboVendor.create!(
+      contributor: @contributor,
+      qbo_account: @sanctuary_qa,
+      qbo_vendor: vendor
+    )
+    assert mapping1.persisted?
+
+    # Second mapping: different contributor, same sanctuary_qa
+    fp2 = ForecastPerson.create!(
+      forecast_id: rand(1..2_000_000_000),
+      email: "another#{SecureRandom.hex(2)}@x.com",
+      data: {}
+    )
+    contributor2 = Contributor.create!(forecast_person: fp2)
+    mapping2 = ContributorQboVendor.create!(
+      contributor: contributor2,
+      qbo_account: @sanctuary_qa,
+      qbo_vendor: vendor
+    )
+    assert mapping2.persisted?
+
+    # Third mapping: same contributor, different qbo_account
+    garden3d = Enterprise.find_or_create_by!(name: "Garden3D-#{SecureRandom.hex(2)}")
+    garden3d_qa = QboAccount.create!(
+      enterprise: garden3d,
+      client_id: "garden3d_client",
+      client_secret: "garden3d_secret",
+      realm_id: "garden3d_realm_#{SecureRandom.hex(4)}"
+    )
+    vendor3 = QboVendor.create!(
+      qbo_id: "VENDOR_G#{SecureRandom.hex(3)}",
+      qbo_account: garden3d_qa,
+      data: { "display_name" => "Test Garden" }
+    )
+    mapping3 = ContributorQboVendor.create!(
+      contributor: @contributor,
+      qbo_account: garden3d_qa,
+      qbo_vendor: vendor3
+    )
+    assert mapping3.persisted?
+
+    # Fourth mapping: duplicate of first → should be rejected by uniqueness
+    mapping4 = ContributorQboVendor.new(
+      contributor: @contributor,
+      qbo_account: @sanctuary_qa,
+      qbo_vendor: vendor
+    )
+    refute mapping4.valid?
+    assert_includes mapping4.errors[:contributor_id], "has already been taken"
+  end
+
+  # Edge case: qbo_vendor_for returns nil after the underlying QboVendor is destroyed
+  test "qbo_vendor_for raises FK constraint error when trying to destroy vendor with active mapping" do
+    vendor = QboVendor.create!(
+      qbo_id: "VENDOR#{SecureRandom.hex(3)}",
+      qbo_account: @sanctuary_qa,
+      data: { "display_name" => "Test" }
+    )
+    ContributorQboVendor.create!(
+      contributor: @contributor,
+      qbo_account: @sanctuary_qa,
+      qbo_vendor: vendor
+    )
+
+    # Verify the mapping returns the vendor
+    assert_equal vendor, @contributor.qbo_vendor_for(@sanctuary_qa)
+
+    # The QboVendor has an active FK constraint from ContributorQboVendor,
+    # so attempting to destroy it should raise an error
+    assert_raises ActiveRecord::InvalidForeignKey do
+      vendor.destroy!
+    end
+
+    # Verify the mapping still works because the vendor is still alive
+    assert_equal vendor, @contributor.qbo_vendor_for(@sanctuary_qa)
+  end
+
+  # Edge case: Contributor#qbo_vendors returns all mappings via has_many :through
+  test "Contributor#qbo_vendors returns all mappings via has_many through" do
+    # Create a second enterprise and QBO account
+    garden3d = Enterprise.find_or_create_by!(name: "Garden3D-#{SecureRandom.hex(2)}")
+    garden3d_qa = QboAccount.create!(
+      enterprise: garden3d,
+      client_id: "garden3d_client",
+      client_secret: "garden3d_secret",
+      realm_id: "garden3d_realm_#{SecureRandom.hex(4)}"
+    )
+
+    # Create two vendors
+    vendor_a = QboVendor.create!(
+      qbo_id: "VENDOR_A_#{SecureRandom.hex(3)}",
+      qbo_account: @sanctuary_qa,
+      data: { "display_name" => "Vendor A" }
+    )
+    vendor_b = QboVendor.create!(
+      qbo_id: "VENDOR_B_#{SecureRandom.hex(3)}",
+      qbo_account: garden3d_qa,
+      data: { "display_name" => "Vendor B" }
+    )
+
+    # No mappings yet
+    assert_equal 0, @contributor.qbo_vendors.count
+
+    # Create mappings to both vendors
+    ContributorQboVendor.create!(
+      contributor: @contributor,
+      qbo_account: @sanctuary_qa,
+      qbo_vendor: vendor_a
+    )
+    ContributorQboVendor.create!(
+      contributor: @contributor,
+      qbo_account: garden3d_qa,
+      qbo_vendor: vendor_b
+    )
+
+    # Verify count is 2
+    assert_equal 2, @contributor.qbo_vendors.count
+
+    # Verify we can filter by qbo_account
+    sanctuary_vendors = @contributor.qbo_vendors.where(qbo_account: @sanctuary_qa)
+    assert_equal 1, sanctuary_vendors.count
+    assert_equal vendor_a, sanctuary_vendors.first
+
+    garden3d_vendors = @contributor.qbo_vendors.where(qbo_account: garden3d_qa)
+    assert_equal 1, garden3d_vendors.count
+    assert_equal vendor_b, garden3d_vendors.first
+  end
 end
