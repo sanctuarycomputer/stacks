@@ -35,7 +35,11 @@ class Enterprise < ApplicationRecord
 
   def discover_verticals
     qbo_account.qbo_profit_and_loss_reports.reduce([]) do |acc, qbo_profit_and_loss_report|
-      qbo_profit_and_loss_report.data["cash"]["rows"].each do |row|
+      # Legacy P&L rows may have an empty `data` hash (e.g., rows backfilled
+      # from before the data column was being populated, or a sync that
+      # bailed mid-write). `.dig` keeps the iteration safe.
+      rows = qbo_profit_and_loss_report.data.dig("cash", "rows") || []
+      rows.each do |row|
         splat = /\[(.+)\](.*)/.match(row[0])
         acc |= [splat[1]] if splat.present?
       end
