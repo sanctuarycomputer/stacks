@@ -58,15 +58,21 @@ class QboProfitAndLossReport < ApplicationRecord
   end
 
   def self.find_or_fetch_for_range(start_of_range, end_of_range, force = false, qbo_account = nil)
+    # Callers from the legacy global path (e.g., admin dashboard, studio
+    # pages) pass nil here — resolve to Sanctuary's qbo_account as a
+    # default. Resolve BEFORE the lookup so we find existing rows scoped to
+    # Sanctuary's qbo_account_id (which is what the backfill migration set
+    # for every legacy P&L row), and use the resolved account on create!
+    # so we don't hit the qbo_account presence validation.
+    resolved_qbo_account = qbo_account || Enterprise.sanctuary.qbo_account
+
     ActiveRecord::Base.transaction do
-      existing = where(starts_at: start_of_range, ends_at: end_of_range, qbo_account: qbo_account)
+      existing = where(starts_at: start_of_range, ends_at: end_of_range, qbo_account: resolved_qbo_account)
       if force
         existing.delete_all
       else
         return existing.first if existing.any?
       end
-
-      resolved_qbo_account = qbo_account || Enterprise.sanctuary.qbo_account
 
       cash_report = resolved_qbo_account.fetch_profit_and_loss_report_for_range(
         start_of_range,
@@ -81,7 +87,7 @@ class QboProfitAndLossReport < ApplicationRecord
       )
 
       create!(
-        qbo_account: qbo_account,
+        qbo_account: resolved_qbo_account,
         starts_at: start_of_range,
         ends_at: end_of_range,
         data: {
