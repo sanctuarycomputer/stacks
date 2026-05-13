@@ -11,7 +11,7 @@ class ForecastAssignment < ApplicationRecord
       service_name = forecast_person.studio.try(:accounting_prefix) || ""
       # Accounting prefix might be comma seperated
       service_name = service_name.split(",").map(&:strip)[0]
-      qbo_items, default_service_item = Stacks::Quickbooks.fetch_all_items
+      qbo_items, default_service_item = Enterprise.sanctuary.qbo_account.fetch_all_items
       qbo_items.find do |s|
         s.fully_qualified_name == service_name
       end || default_service_item

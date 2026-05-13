@@ -3,7 +3,7 @@ namespace :stacks do
   task :refresh_qbo_token => :environment do
     system_task = SystemTask.create!(name: "stacks:refresh_qbo_token")
     begin
-      Stacks::Quickbooks.make_and_refresh_qbo_access_token
+      Enterprise.sanctuary.qbo_account.make_and_refresh_qbo_access_token
     rescue => e
       system_task.mark_as_error(e)
     else
@@ -200,7 +200,7 @@ namespace :stacks do
 
       # These are all dependencies for the rest of the tasks
       Stacks::Runn.new.sync_all!
-      Stacks::Quickbooks.sync_all! # Has internal retry counter
+      Enterprise.sanctuary.qbo_account.sync_all! # Has internal retry counter
       Stacks::Deel.new.sync_all!
 
       puts "~~~> SYNC DEEL WITHDRAWAL STATUSES (DEEL)"

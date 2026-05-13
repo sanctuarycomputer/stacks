@@ -37,7 +37,7 @@ class ForecastClient < ApplicationRecord
       default =
         Stacks::System.singleton_class::DEFAULT_PAYMENT_TERM
       qbo_terms =
-        Stacks::Quickbooks.fetch_all_terms
+        Enterprise.sanctuary.qbo_account.fetch_all_terms
 
       term_mapping = (qbo_customer.try(:notes) || "").split(" ").find do |word|
         word.starts_with?(bearer)
@@ -55,7 +55,7 @@ class ForecastClient < ApplicationRecord
   # TODO: Sync qbo_customer and join?
   def qbo_customer(qbo_customers = nil)
     @_qbo_customer ||= (
-      qbo_customers = qbo_customers || Stacks::Quickbooks.fetch_all_customers
+      qbo_customers = qbo_customers || Enterprise.sanctuary.qbo_account.fetch_all_customers
       bearer =
         Stacks::System.singleton_class::QBO_NOTES_FORECAST_MAPPING_BEARER
       qbo_customers.find do |c|

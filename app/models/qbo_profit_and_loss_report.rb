@@ -1,5 +1,5 @@
 class QboProfitAndLossReport < ApplicationRecord
-  belongs_to :qbo_account, optional: true
+  belongs_to :qbo_account
 
   TOP_LEVEL_CATEGORIES = {
     revenue: "Total Income",
@@ -66,33 +66,19 @@ class QboProfitAndLossReport < ApplicationRecord
         return existing.first if existing.any?
       end
 
-      cash_report = if qbo_account.present?
-        qbo_account.fetch_profit_and_loss_report_for_range(
-          start_of_range,
-          end_of_range,
-          "Cash"
-        )
-      else
-        Stacks::Quickbooks.fetch_profit_and_loss_report_for_range(
-          start_of_range,
-          end_of_range,
-          "Cash"
-        )
-      end
+      resolved_qbo_account = qbo_account || Enterprise.sanctuary.qbo_account
 
-      accrual_report = if qbo_account.present?
-        qbo_account.fetch_profit_and_loss_report_for_range(
-          start_of_range,
-          end_of_range,
-          "Accrual"
-        )
-      else
-        Stacks::Quickbooks.fetch_profit_and_loss_report_for_range(
-          start_of_range,
-          end_of_range,
-          "Accrual"
-        )
-      end
+      cash_report = resolved_qbo_account.fetch_profit_and_loss_report_for_range(
+        start_of_range,
+        end_of_range,
+        "Cash"
+      )
+
+      accrual_report = resolved_qbo_account.fetch_profit_and_loss_report_for_range(
+        start_of_range,
+        end_of_range,
+        "Accrual"
+      )
 
       create!(
         qbo_account: qbo_account,

@@ -11,7 +11,7 @@ class QboBill < ApplicationRecord
 
   def delete_qbo_bill!
     begin
-      Stacks::Quickbooks.delete_bill(Stacks::Quickbooks.fetch_bill_by_id(qbo_id))
+      qbo_account.delete_bill(qbo_account.fetch_bill_by_id(qbo_id))
     rescue => e
       if e.message.starts_with?("Object Not Found:")
         return nil

@@ -587,11 +587,12 @@ class InvoiceTracker < ApplicationRecord
   def resync_qbo_line_item_services!
     raise "No QBO invoice attached" if qbo_invoice.nil?
 
-    qbo_items, default_service_item = Stacks::Quickbooks.fetch_all_items
+    sanctuary_qbo = Enterprise.sanctuary.qbo_account
+    qbo_items, default_service_item = sanctuary_qbo.fetch_all_items
 
-    access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
+    access_token = sanctuary_qbo.make_and_refresh_qbo_access_token
     invoice_service = Quickbooks::Service::Invoice.new
-    invoice_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
+    invoice_service.company_id = sanctuary_qbo.realm_id
     invoice_service.access_token = access_token
 
     live_invoice = invoice_service.fetch_by_id(qbo_invoice_id)
@@ -653,7 +654,8 @@ class InvoiceTracker < ApplicationRecord
   def make_invoice!
     return if configuration_errors.any?
     return if qbo_invoice.present?
-    qbo_items, default_service_item = Stacks::Quickbooks.fetch_all_items
+    sanctuary_qbo = Enterprise.sanctuary.qbo_account
+    qbo_items, default_service_item = sanctuary_qbo.fetch_all_items
 
     qbo_inv = Quickbooks::Model::Invoice.new
     qbo_inv.customer_id = forecast_client.qbo_customer.id
@@ -745,8 +747,8 @@ class InvoiceTracker < ApplicationRecord
     end
 
     invoice_service = Quickbooks::Service::Invoice.new
-    invoice_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
-    invoice_service.access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
+    invoice_service.company_id = sanctuary_qbo.realm_id
+    invoice_service.access_token = sanctuary_qbo.make_and_refresh_qbo_access_token
     created_qbo_inv = invoice_service.create(qbo_inv)
 
     # Assign Quickbooks Ids to our Internal Snapshot

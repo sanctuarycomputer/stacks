@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_05_13_011205) do
+ActiveRecord::Schema.define(version: 2026_05_13_020000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -892,7 +892,7 @@ ActiveRecord::Schema.define(version: 2026_05_13_011205) do
     t.jsonb "data", default: "{}"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
-    t.bigint "qbo_account_id"
+    t.bigint "qbo_account_id", null: false
     t.index ["qbo_account_id"], name: "index_qbo_profit_and_loss_reports_on_qbo_account_id"
   end
 

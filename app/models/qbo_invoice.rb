@@ -81,7 +81,7 @@ class QboInvoice < ApplicationRecord
     end
 
     begin
-      invoice = Stacks::Quickbooks.fetch_invoice_by_id(qbo_id)
+      invoice = qbo_account.fetch_invoice_by_id(qbo_id)
       update! data: invoice.as_json
       self
     rescue => e

@@ -331,19 +331,21 @@ class ProfitSharePass < ApplicationRecord
   end
 
   def pull_outstanding_invoices
-    access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
+    sanctuary_qbo = Enterprise.sanctuary.qbo_account
+    access_token = sanctuary_qbo.make_and_refresh_qbo_access_token
 
     invoice_service = Quickbooks::Service::Invoice.new
-    invoice_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
+    invoice_service.company_id = sanctuary_qbo.realm_id
     invoice_service.access_token = access_token
     invoice_service.query("Select * From Invoice Where Balance > '0.0'")
   end
 
   def pull_actuals_for_year
     year = created_at.year
-    qbo_access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
+    sanctuary_qbo = Enterprise.sanctuary.qbo_account
+    qbo_access_token = sanctuary_qbo.make_and_refresh_qbo_access_token
     report_service = Quickbooks::Service::Reports.new
-    report_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
+    report_service.company_id = sanctuary_qbo.realm_id
     report_service.access_token = qbo_access_token
 
     time = DateTime.parse("1st Jan #{year}")

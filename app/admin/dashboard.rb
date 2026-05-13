@@ -71,7 +71,7 @@ ActiveAdmin.register_page "Dashboard" do
       Date.current,
     ]
     money = Rails.cache.fetch(money_cache_key, expires_in: 24.hours) do
-      qbo_accounts = Stacks::Quickbooks.fetch_all_accounts
+      qbo_accounts = Enterprise.sanctuary.qbo_account.fetch_all_accounts
       cc_or_bank_accounts = qbo_accounts.select do |a|
         ["Bank", "Credit Card"].include?(a.account_type)
       end
