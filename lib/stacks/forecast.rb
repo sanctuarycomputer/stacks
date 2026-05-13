@@ -15,7 +15,11 @@ class Stacks::Forecast
       ForecastAssignment.delete_all
       ForecastProject.delete_all
       ForecastPerson.delete_all
-      ForecastClient.delete_all
+      # Skip forecast clients that admins have mapped to an Enterprise — that
+      # mapping is curated state, and the FK on enterprise_forecast_clients
+      # would block a blanket delete_all anyway. The upsert below refreshes
+      # the surviving rows and inserts anything new.
+      ForecastClient.where.not(forecast_id: EnterpriseForecastClient.select(:forecast_client_id)).delete_all
       sync_clients!
       sync_people!
       sync_projects!
