@@ -87,6 +87,135 @@ class PayStubTest < ActiveSupport::TestCase
     assert_equal @cycle.ends_at, stub.effective_on_for_display
   end
 
+  # ---------------------------------------------------------------------------
+  # payable? edge cases
+  # ---------------------------------------------------------------------------
+
+  test "payable? returns false for an accepted stub in a cycle that still has pending siblings" do
+    fp2 = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "sibling#{SecureRandom.hex(2)}@example.com", data: {})
+    contributor2 = Contributor.create!(forecast_person: fp2)
+    ledger2 = Ledger.find_or_create_for(enterprise: @enterprise, contributor: contributor2)
+    _pending = PayStub.create!(pay_cycle: @cycle, ledger: ledger2, amount: 1000, blueprint: @blueprint)
+
+    stub = PayStub.create!(pay_cycle: @cycle, ledger: @ledger, amount: 1000, blueprint: @blueprint)
+    stub.update!(accepted_at: DateTime.now, accepted_by: @admin)
+
+    # Cycle still has one unaccepted stub → not :all_accepted → not payable.
+    assert_equal :some_pending, @cycle.reload.stubs_status
+    refute stub.reload.payable?
+  end
+
+  test "payable? returns true for the sole surviving accepted stub when soft-deleted sibling is excluded" do
+    fp2 = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "ghost#{SecureRandom.hex(2)}@example.com", data: {})
+    contributor2 = Contributor.create!(forecast_person: fp2)
+    ledger2 = Ledger.find_or_create_for(enterprise: @enterprise, contributor: contributor2)
+    ghost = PayStub.create!(pay_cycle: @cycle, ledger: ledger2, amount: 1000, blueprint: @blueprint)
+
+    stub = PayStub.create!(pay_cycle: @cycle, ledger: @ledger, amount: 1000, blueprint: @blueprint)
+    stub.update!(accepted_at: DateTime.now, accepted_by: @admin)
+
+    # Soft-delete the sibling — paranoia excludes it from the default scope,
+    # so stubs_status should become :all_accepted.
+    ghost.destroy
+    assert_equal :all_accepted, @cycle.reload.stubs_status
+    assert stub.reload.payable?
+  end
+
+  # ---------------------------------------------------------------------------
+  # toggle_acceptance! repeatability
+  # ---------------------------------------------------------------------------
+
+  test "toggle_acceptance! can be called multiple times in succession (accept/unaccept/accept)" do
+    # Keep a second stub so the cycle never reaches :all_accepted while we flip.
+    fp2 = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "multi#{SecureRandom.hex(2)}@example.com", data: {})
+    contributor2 = Contributor.create!(forecast_person: fp2)
+    ledger2 = Ledger.find_or_create_for(enterprise: @enterprise, contributor: contributor2)
+    PayStub.create!(pay_cycle: @cycle, ledger: ledger2, amount: 1000, blueprint: @blueprint)
+
+    stub = PayStub.create!(pay_cycle: @cycle, ledger: @ledger, amount: 1000, blueprint: @blueprint)
+
+    stub.toggle_acceptance!(by: @admin)
+    assert stub.accepted?
+    assert_equal @admin.id, stub.accepted_by_id
+
+    stub.toggle_acceptance!(by: @admin)
+    refute stub.accepted?
+    assert_nil stub.accepted_by_id
+
+    stub.toggle_acceptance!(by: @admin)
+    assert stub.accepted?
+    assert_equal @admin.id, stub.accepted_by_id
+  end
+
+  # ---------------------------------------------------------------------------
+  # qbo_bill_id partial unique index
+  # ---------------------------------------------------------------------------
+
+  test "DB enforces uniqueness on non-nil qbo_bill_id via partial unique index" do
+    fp2 = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "dup#{SecureRandom.hex(2)}@example.com", data: {})
+    contributor2 = Contributor.create!(forecast_person: fp2)
+    ledger2 = Ledger.find_or_create_for(enterprise: @enterprise, contributor: contributor2)
+
+    shared_id = "DUPBILL-#{SecureRandom.hex(4)}"
+    PayStub.create!(pay_cycle: @cycle, ledger: @ledger, amount: 1000, blueprint: @blueprint)
+      .update_columns(qbo_bill_id: shared_id)
+
+    second = PayStub.create!(pay_cycle: @cycle, ledger: ledger2, amount: 1000, blueprint: @blueprint)
+    # Wrap in a savepoint so PG doesn't leave the outer test transaction in aborted state.
+    ActiveRecord::Base.transaction(requires_new: true) do
+      assert_raises(ActiveRecord::RecordNotUnique) { second.update_columns(qbo_bill_id: shared_id) }
+      raise ActiveRecord::Rollback
+    end
+  end
+
+  test "partial unique index on qbo_bill_id permits multiple nil values" do
+    fp2 = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "nil#{SecureRandom.hex(2)}@example.com", data: {})
+    contributor2 = Contributor.create!(forecast_person: fp2)
+    ledger2 = Ledger.find_or_create_for(enterprise: @enterprise, contributor: contributor2)
+
+    PayStub.create!(pay_cycle: @cycle, ledger: @ledger, amount: 1000, blueprint: @blueprint)
+    second = PayStub.new(pay_cycle: @cycle, ledger: ledger2, amount: 1000, blueprint: @blueprint)
+    # Both have nil qbo_bill_id — partial index should not fire.
+    assert second.valid?, second.errors.full_messages.inspect
+    assert_nothing_raised { second.save! }
+  end
+
+  # ---------------------------------------------------------------------------
+  # amount_matches_blueprint_sum tolerance
+  # ---------------------------------------------------------------------------
+
+  test "amount_matches_blueprint_sum passes when lines split into thirds that round to the same total" do
+    # 33.33 + 33.33 + 33.34 sums to exactly 100.00 at 2dp.  The < 0.01 guard
+    # protects against float epsilon after .round(2); this verifies no false
+    # positive is raised for a legitimately balanced multi-line blueprint.
+    bp = {
+      "lines" => [
+        { "forecast_project" => "fp-1", "hours" => 1, "rate" => 33, "amount" => 33.33, "description" => "A" },
+        { "forecast_project" => "fp-1", "hours" => 1, "rate" => 33, "amount" => 33.33, "description" => "B" },
+        { "forecast_project" => "fp-1", "hours" => 1, "rate" => 34, "amount" => 33.34, "description" => "C" },
+      ],
+    }
+    stub = PayStub.new(pay_cycle: @cycle, ledger: @ledger, amount: 100.0, blueprint: bp)
+    assert stub.valid?, stub.errors.full_messages.inspect
+  end
+
+  # ---------------------------------------------------------------------------
+  # acceptance_pair_consistent validation
+  # ---------------------------------------------------------------------------
+
+  test "acceptance_pair_consistent rejects setting only accepted_by_id without accepted_at" do
+    stub = PayStub.new(
+      pay_cycle: @cycle,
+      ledger: @ledger,
+      amount: 1000,
+      blueprint: @blueprint,
+      accepted_by_id: @admin.id,
+      accepted_at: nil,
+    )
+    refute stub.valid?
+    assert_includes stub.errors[:accepted_at], "must be set when accepted_by_id is set"
+  end
+
   test "new_deal_balance includes accepted PayStub in balance and unaccepted in unsettled" do
     # Accepted stub — cycle has only this one stub so stubs_status == :all_accepted => payable?
     accepted_stub = PayStub.create!(
