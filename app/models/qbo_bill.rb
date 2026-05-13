@@ -1,5 +1,6 @@
 class QboBill < ApplicationRecord
   self.primary_key = "qbo_id"
+  belongs_to :qbo_account
   belongs_to :qbo_vendor, class_name: "QboVendor", foreign_key: "qbo_vendor_id", primary_key: "qbo_id"
 
   before_destroy :delete_qbo_bill!

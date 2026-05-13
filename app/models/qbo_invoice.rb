@@ -1,5 +1,6 @@
 class QboInvoice < ApplicationRecord
   self.primary_key = "qbo_id"
+  belongs_to :qbo_account
 
   scope :orphans, -> {
     where.not(id: [*InvoiceTracker.pluck(:qbo_invoice_id).compact, *AdhocInvoiceTracker.pluck(:qbo_invoice_id).compact])
