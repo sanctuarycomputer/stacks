@@ -101,4 +101,140 @@ class QboAccount < ApplicationRecord
 
     access_token
   end
+
+  def fetch_all_vendors
+    qbo_access_token = make_and_refresh_qbo_access_token
+    service = Quickbooks::Service::Vendor.new
+    service.company_id = realm_id
+    service.access_token = qbo_access_token
+    service.all
+  end
+
+  def fetch_all_invoices
+    qbo_access_token = make_and_refresh_qbo_access_token
+    service = Quickbooks::Service::Invoice.new
+    service.company_id = realm_id
+    service.access_token = qbo_access_token
+    service.all
+  end
+
+  def fetch_all_terms
+    qbo_access_token = make_and_refresh_qbo_access_token
+    terms_service = Quickbooks::Service::Term.new
+    terms_service.company_id = realm_id
+    terms_service.access_token = qbo_access_token
+    terms_service.all
+  end
+
+  def fetch_all_items
+    qbo_access_token = make_and_refresh_qbo_access_token
+    items_service = Quickbooks::Service::Item.new
+    items_service.company_id = realm_id
+    items_service.access_token = qbo_access_token
+    qbo_items = items_service.all
+    default_service_item = qbo_items.find { |s| s.fully_qualified_name == "Services" }
+    [qbo_items, default_service_item]
+  end
+
+  def fetch_all_customers
+    qbo_access_token = make_and_refresh_qbo_access_token
+    service = Quickbooks::Service::Customer.new
+    service.company_id = realm_id
+    service.access_token = qbo_access_token
+    service.all
+  end
+
+  def fetch_all_bills
+    qbo_access_token = make_and_refresh_qbo_access_token
+    service = Quickbooks::Service::Bill.new
+    service.company_id = realm_id
+    service.access_token = qbo_access_token
+    service.all
+  end
+
+  def delete_bill(bill)
+    qbo_access_token = make_and_refresh_qbo_access_token
+    service = Quickbooks::Service::Bill.new
+    service.company_id = realm_id
+    service.access_token = qbo_access_token
+    service.delete(bill)
+  end
+
+  def fetch_bill_by_id(id)
+    qbo_access_token = make_and_refresh_qbo_access_token
+    bill_service = Quickbooks::Service::Bill.new
+    bill_service.company_id = realm_id
+    bill_service.access_token = qbo_access_token
+    bill_service.fetch_by_id(id)
+  end
+
+  def fetch_invoice_by_id(id)
+    qbo_access_token = make_and_refresh_qbo_access_token
+    invoice_service = Quickbooks::Service::Invoice.new
+    invoice_service.company_id = realm_id
+    invoice_service.access_token = qbo_access_token
+    invoice_service.fetch_by_id(id)
+  end
+
+  def sync_all_invoices!
+    data = fetch_all_invoices.map do |i|
+      { qbo_id: i["id"], qbo_account_id: id, data: i.as_json }
+    end
+    QboInvoice.upsert_all(data, unique_by: :index_qbo_invoices_on_qbo_account_and_qbo_id) if data.any?
+  end
+
+  def sync_all_vendors!
+    data = fetch_all_vendors.map do |v|
+      { qbo_id: v.id, qbo_account_id: id, data: v.as_json }
+    end
+    QboVendor.upsert_all(data, unique_by: :index_qbo_vendors_on_qbo_account_and_qbo_id) if data.any?
+  end
+
+  def sync_all_bills!
+    data = fetch_all_bills.map do |b|
+      { qbo_id: b["id"], qbo_account_id: id, data: b.as_json, qbo_vendor_id: b.vendor_ref.value }
+    end
+    QboBill.upsert_all(data, unique_by: :index_qbo_bills_on_qbo_account_and_qbo_id) if data.any?
+    deleted_bills = QboBill.where(qbo_account_id: id).where.not(qbo_id: data.map { |t| t[:qbo_id] })
+    ContributorPayout.with_deleted.where(qbo_bill: deleted_bills).update_all(qbo_bill_id: nil)
+    deleted_bills.delete_all
+  end
+
+  def cleanup_orphaned_qbo_objects!
+    fetch_all_bills.each do |b|
+      splat = (b.doc_number || "").match(/^Stacks_(\d+)(?:_([A-Za-z][A-Za-z0-9_]*\.{3}?))?$/)
+      next unless splat.present?
+
+      case splat[2]
+      when "CP"
+        klass = ContributorPayout
+      when "TU"
+        klass = Trueup
+      when "CA"
+        klass = ContributorAdjustment
+      when "PS"
+        klass = ProfitShare
+      when "ContributorPayout", /^Contri/
+        klass = ContributorPayout
+      when "Trueup"
+        klass = Trueup
+      when "ProfitShare", /^Profit/
+        klass = ProfitShare
+      else
+        klass = ContributorPayout
+      end
+
+      obj = klass.find_by(id: splat[1])
+      next if obj.present?
+
+      if deleted_obj = klass.with_deleted.find_by(id: splat[1])
+        deleted_obj.update(qbo_bill_id: nil)
+        deleted_obj.qbo_bill.destroy! if deleted_obj.qbo_bill.present?
+      elsif qbo_bill = QboBill.where(qbo_account_id: id).find_by(qbo_id: b.id)
+        qbo_bill.destroy!
+      else
+        delete_bill(b)
+      end
+    end
+  end
 end
