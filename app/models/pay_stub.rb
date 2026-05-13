@@ -7,7 +7,6 @@ class PayStub < ApplicationRecord
 
   belongs_to :pay_cycle
   belongs_to :accepted_by, class_name: "AdminUser", optional: true
-  belongs_to :qbo_bill, class_name: "QboBill", foreign_key: "qbo_bill_id", primary_key: "qbo_id", optional: true
 
   validates :amount, presence: true
   validates :blueprint, presence: true

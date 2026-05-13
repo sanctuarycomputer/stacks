@@ -1,17 +1,31 @@
 module SyncsAsQboBill
   extend ActiveSupport::Concern
 
-  # Host models are acts_as_paranoid: destroy soft-deletes the host row but
-  # leaves it referencing qbo_bills via qbo_bill_id. A naive `dependent: :destroy`
-  # on the belongs_to violates the FK because the soft-deleted host still points
-  # at the bill. Detach first, then destroy — same ordering used in load_qbo_bill!.
-  # Wire up via `before_destroy :detach_and_destroy_qbo_bill` on hosts that want
-  # immediate cleanup (CP/CA). Trueup relies on cleanup_orphaned_qbo_objects! cron.
-  def detach_and_destroy_qbo_bill
-    return unless qbo_bill.present?
+  # Hosts including this concern ALSO include LedgerItem, which delegates
+  # :enterprise to :ledger. The concern routes QBO work through the
+  # enterprise's qbo_account; if the enterprise has no connected QBO
+  # account, all sync operations are no-ops.
 
+  # The QboAccount this ledger item's bill belongs to.
+  def qbo_account_for_bill
+    enterprise&.qbo_account
+  end
+
+  # Lookup of the local QboBill record. The (qbo_account_id, qbo_id) pair is
+  # unique post-scoping migration, so we have to scope by both — we removed
+  # the old `belongs_to :qbo_bill` because primary_key: "qbo_id" can't express
+  # composite scoping in AR 6.1.
+  def qbo_bill
+    return nil if qbo_bill_id.blank?
+    qa = qbo_account_for_bill
+    return nil if qa.nil?
+    QboBill.find_by(qbo_account_id: qa.id, qbo_id: qbo_bill_id)
+  end
+
+  def detach_and_destroy_qbo_bill
+    bill = qbo_bill
+    return unless bill.present?
     ActiveRecord::Base.transaction do
-      bill = qbo_bill
       update_attribute(:qbo_bill_id, nil)
       bill.destroy!
     end
@@ -21,11 +35,19 @@ module SyncsAsQboBill
     qbo_bill.try(:qbo_url)
   end
 
-  def find_qbo_account!(qbo_accounts = Stacks::Quickbooks.fetch_all_accounts)
-    account = qbo_accounts.find{|a| a.name == "Contractors - Client Services"}
+  # Returns the QBO Account+Studio tuple to bill against. Default impl picks
+  # "Contractors - Client Services" with a studio-specific subcategory if the
+  # contributor has a studio. Hosts (e.g., ContributorPayout) may override for
+  # special-case routing (internal-client → marketing account).
+  def find_qbo_account!(qbo_accounts = nil)
+    qa = qbo_account_for_bill
+    raise "Enterprise #{enterprise&.name.inspect} has no connected QboAccount" if qa.nil?
+
+    qbo_accounts ||= qa.fetch_all_accounts
+    account = qbo_accounts.find { |a| a.name == "Contractors - Client Services" }
     studio = contributor.forecast_person.studio
     if studio.present?
-      specific_account = qbo_accounts.find{|a| a.name == studio.qbo_subcontractors_categories.first}
+      specific_account = qbo_accounts.find { |a| a.name == studio.qbo_subcontractors_categories.first }
       account = specific_account if specific_account.present?
     end
     raise "No account found in QuickBooks" unless account.present?
@@ -33,17 +55,20 @@ module SyncsAsQboBill
   end
 
   def load_qbo_bill!
-    return nil unless qbo_bill.present?
+    return nil if qbo_bill_id.blank?
+    qa = qbo_account_for_bill
+    return nil if qa.nil?
 
     begin
-      return Stacks::Quickbooks.fetch_bill_by_id(qbo_bill.qbo_id)
+      return qa.fetch_bill_by_id(qbo_bill_id)
     rescue => e
       if e.message.starts_with?("Object Not Found:")
+        # Mirror the cleanup we used to do via load_qbo_bill!
         ActiveRecord::Base.transaction do
-          b = qbo_bill
+          local = qbo_bill
           update_attribute(:qbo_bill_id, nil)
           self.reload
-          b.destroy!
+          local.destroy! if local
         end
       end
       return nil
@@ -51,54 +76,54 @@ module SyncsAsQboBill
   end
 
   # Host models MUST implement:
-  # - bill_txn_date → Date used for the QBO Bill's txn_date and due_date
-  # - bill_description → String used as the QBO Bill line item description
-  #   (conventionally a URL back to the Stacks admin page for the record)
-  # - bill_doc_number_code → Short 2-char tag embedded in the QBO Bill doc_number so
-  #   cleanup_orphaned_qbo_objects! can unambiguously map a QBO bill back to its
-  #   host class. MUST be unique across all host models. Current mappings:
-  #     ContributorPayout     → "CP"
-  #     Trueup                → "TU"
-  #     ContributorAdjustment → "CA"
+  # - bill_txn_date          → Date for QBO Bill txn_date and due_date
+  # - bill_description       → String used as the line item description
+  # - bill_doc_number_code   → Short 2-char tag in the QBO Bill doc_number
+  #   (CP, TU, CA, PS, PSP — must be unique across all host models)
 
   def payable?
     false
   end
 
   def sync_qbo_bill!
-    return unless contributor.qbo_vendor.present?
+    qa = qbo_account_for_bill
+    return if qa.nil?
+
+    vendor = contributor.qbo_vendor_for(qa)
+    return if vendor.nil?
 
     bill = load_qbo_bill! || Quickbooks::Model::Bill.new
     bill.txn_date = bill_txn_date
     bill.due_date = bill_txn_date
-    bill.doc_number = "Stacks_#{id}_#{bill_doc_number_code}" # QBO has a 21 character limit; short code keeps us well under
-    bill.vendor_ref = Quickbooks::Model::BaseReference.new(contributor.qbo_vendor.id)
+    bill.doc_number = "Stacks_#{id}_#{bill_doc_number_code}" # QBO has a 21-char limit
+    bill.vendor_ref = Quickbooks::Model::BaseReference.new(vendor.qbo_id)
 
     line_item = Quickbooks::Model::BillLineItem.new(
       description: bill_description,
       amount: amount,
     )
 
-    account, studio = find_qbo_account!
+    account, _studio = find_qbo_account!
     line_item.account_based_expense_item! do |detail|
       detail.account_ref = Quickbooks::Model::BaseReference.new(account.id)
     end
 
     bill.line_items = [line_item]
     bill_service = Quickbooks::Service::Bill.new
-    bill_service.company_id = Stacks::Utils.config[:quickbooks][:realm_id]
-    bill_service.access_token = Stacks::Quickbooks.make_and_refresh_qbo_access_token
+    bill_service.company_id = qa.realm_id
+    bill_service.access_token = qa.make_and_refresh_qbo_access_token
     bill = bill.id.present? ? bill_service.update(bill) : bill_service.create(bill)
 
     ActiveRecord::Base.transaction do
-      existing_bill_tracker = QboBill.find_by(qbo_id: bill.id)
-      if existing_bill_tracker.present?
-        existing_bill_tracker.update!(data: bill.as_json)
+      existing = QboBill.find_by(qbo_account_id: qa.id, qbo_id: bill.id)
+      if existing.present?
+        existing.update!(data: bill.as_json)
       else
-        qbo_bill_tracker = QboBill.create!(
+        QboBill.create!(
           qbo_id: bill.id,
+          qbo_account_id: qa.id,
           data: bill.as_json,
-          qbo_vendor_id: contributor.qbo_vendor.id
+          qbo_vendor_id: vendor.qbo_id,
         )
       end
       update_attribute(:qbo_bill_id, bill.id)

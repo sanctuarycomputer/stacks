@@ -4,7 +4,8 @@ class ProfitShare < ApplicationRecord
   include SyncsAsQboBill
 
   belongs_to :periodic_report
-  belongs_to :qbo_bill, class_name: "QboBill", foreign_key: "qbo_bill_id", primary_key: "qbo_id", optional: true, dependent: :destroy
+
+  before_destroy :detach_and_destroy_qbo_bill
 
   def applied_at
     periodic_report.period.ends_at

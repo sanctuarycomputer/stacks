@@ -8,7 +8,6 @@ class ContributorPayout < ApplicationRecord
   belongs_to :invoice_tracker
   belongs_to :forecast_person, class_name: "ForecastPerson", foreign_key: "forecast_person_id", primary_key: "forecast_id", optional: true
   belongs_to :created_by, class_name: 'AdminUser'
-  belongs_to :qbo_bill, class_name: "QboBill", foreign_key: "qbo_bill_id", primary_key: "qbo_id", optional: true
 
   # Ephemeral flag — not persisted. Set via the admin edit form to bypass the
   # 70% cap validation for a single save. Resets to nil on each fresh instance.
@@ -28,7 +27,9 @@ class ContributorPayout < ApplicationRecord
   end
 
   def find_qbo_account!
-    qbo_accounts = Stacks::Quickbooks.fetch_all_accounts
+    qa = qbo_account_for_bill
+    raise "Enterprise has no qbo_account" if qa.nil?
+    qbo_accounts = qa.fetch_all_accounts
     account, studio = super(qbo_accounts)
 
     # If the client is not internal, we can use the original account
