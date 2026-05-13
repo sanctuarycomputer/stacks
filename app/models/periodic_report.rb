@@ -142,7 +142,9 @@ class PeriodicReport < ApplicationRecord
   end
 
   def profit_shares_for_studio(studio)
-    rel = profit_shares.includes(contributor: :forecast_person)
+    # ProfitShare's :contributor is delegated via LedgerItem; eager-load through
+    # the actual :ledger association (matches the fix in invoice_tracker.rb).
+    rel = profit_shares.includes(ledger: { contributor: :forecast_person })
     return rel.to_a if studio.nil? || studio.is_garden3d?
     allowed = studio.forecast_people(Studio.all).map(&:forecast_id).to_set
     rel.to_a.select { |ps| allowed.include?(ps.contributor.forecast_person_id) }
