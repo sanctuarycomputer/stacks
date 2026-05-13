@@ -10,6 +10,15 @@ class Enterprise < ApplicationRecord
   accepts_nested_attributes_for :qbo_account, allow_destroy: true
   VERTICAL_MATCHER = /\[(.+)\](.*)/
 
+  # When a new enterprise is created, every existing contributor immediately
+  # gets a ledger for it. Pairs with Contributor.after_create so the
+  # (contributor, enterprise) grid stays full on a long enough timeline.
+  after_create :ensure_ledgers_for_all_contributors!
+
+  def ensure_ledgers_for_all_contributors!
+    Ledger.ensure_for_enterprise!(self)
+  end
+
   # Returns a Date range to pre-fill a new PayCycle's starts_at/ends_at,
   # or nil if this enterprise hasn't been configured to run pay cycles.
   # "monthly"      → entire calendar month containing `date`

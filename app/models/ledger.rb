@@ -17,10 +17,11 @@ class Ledger < ApplicationRecord
   end
 
   # Idempotently creates a Ledger row for every (Enterprise, Contributor) pair.
-  # Runs daily from stacks:daily_enterprise_tasks so a contributor can submit
-  # a reimbursement / receive a pay stub against ANY enterprise without first
-  # needing a ledger to be lazily created. Bulk-loads existing pairs to avoid
-  # N+1 lookups; only INSERTS the missing ones via insert_all.
+  # Runs from:
+  #   - the BackfillAllLedgers migration (so an empty timeline is filled at deploy)
+  #   - stacks:daily_enterprise_tasks (belt-and-suspenders against drift)
+  #   - Contributor.after_create / Enterprise.after_create (eager fill on add)
+  # Bulk-loads existing pairs to avoid N+1; only INSERTS missing rows.
   # Returns the count of rows inserted.
   def self.ensure_all!
     existing = pluck(:enterprise_id, :contributor_id).to_set
@@ -33,6 +34,35 @@ class Ledger < ApplicationRecord
         next if existing.include?([e_id, c_id])
         rows << { enterprise_id: e_id, contributor_id: c_id, created_at: now, updated_at: now }
       end
+    end
+    insert_all(rows) if rows.any?
+    rows.size
+  end
+
+  # Creates a Ledger for this contributor against every existing enterprise.
+  # Invoked from Contributor.after_create so a brand-new contributor immediately
+  # has a ledger for every enterprise — no manual setup, no waiting on cron.
+  def self.ensure_for_contributor!(contributor)
+    existing_enterprise_ids = where(contributor_id: contributor.id).pluck(:enterprise_id).to_set
+    rows = []
+    now = Time.current
+    Enterprise.pluck(:id).each do |e_id|
+      next if existing_enterprise_ids.include?(e_id)
+      rows << { enterprise_id: e_id, contributor_id: contributor.id, created_at: now, updated_at: now }
+    end
+    insert_all(rows) if rows.any?
+    rows.size
+  end
+
+  # Creates a Ledger for this enterprise against every existing contributor.
+  # Invoked from Enterprise.after_create when a new enterprise is added.
+  def self.ensure_for_enterprise!(enterprise)
+    existing_contributor_ids = where(enterprise_id: enterprise.id).pluck(:contributor_id).to_set
+    rows = []
+    now = Time.current
+    Contributor.pluck(:id).each do |c_id|
+      next if existing_contributor_ids.include?(c_id)
+      rows << { enterprise_id: enterprise.id, contributor_id: c_id, created_at: now, updated_at: now }
     end
     insert_all(rows) if rows.any?
     rows.size

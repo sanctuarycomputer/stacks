@@ -8,6 +8,15 @@ class Contributor < ApplicationRecord
   has_many :contributor_qbo_vendors, dependent: :destroy
   has_many :qbo_vendors, through: :contributor_qbo_vendors
 
+  # Every contributor gets a Ledger row for every enterprise so reimbursements
+  # / pay stubs / etc. against any enterprise work the moment the contributor
+  # exists — no manual setup, no waiting on the daily cron.
+  after_create :ensure_ledgers_for_all_enterprises!
+
+  def ensure_ledgers_for_all_enterprises!
+    Ledger.ensure_for_contributor!(self)
+  end
+
   # Looks up this contributor's QboVendor record within a specific QBO account.
   # Returns nil when no mapping exists for that account. Replaces the legacy
   # `qbo_vendor` (singleton, Sanctuary-only) association for code paths that
