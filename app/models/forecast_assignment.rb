@@ -11,7 +11,14 @@ class ForecastAssignment < ApplicationRecord
       service_name = forecast_person.studio.try(:accounting_prefix) || ""
       # Accounting prefix might be comma seperated
       service_name = service_name.split(",").map(&:strip)[0]
-      qbo_items, default_service_item = Enterprise.sanctuary.qbo_account.fetch_all_items
+      # Route through forecast_client → billing_enterprise → qbo_account so
+      # an assignment on a Garden3D-internal project looks up items in
+      # Garden3D's QBO, not Sanctuary's. External (unmapped) forecast clients
+      # default billing_enterprise to Sanctuary, so the legacy behavior is
+      # preserved for them.
+      qa = forecast_project.forecast_client&.billing_enterprise&.qbo_account
+      return nil if qa.nil?
+      qbo_items, default_service_item = qa.fetch_all_items
       qbo_items.find do |s|
         s.fully_qualified_name == service_name
       end || default_service_item

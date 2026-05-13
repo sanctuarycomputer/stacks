@@ -35,8 +35,13 @@ class ForecastClient < ApplicationRecord
         Stacks::System.singleton_class::QBO_NOTES_PAYMENT_TERM_BEARER
       default =
         Stacks::System.singleton_class::DEFAULT_PAYMENT_TERM
-      qbo_terms =
-        Enterprise.sanctuary.qbo_account.fetch_all_terms
+      # Route through billing_enterprise.qbo_account so internal clients
+      # mapped to another enterprise look up terms in THEIR QBO. External
+      # (unmapped) clients fall through to Sanctuary via the billing_enterprise
+      # default — same behavior as before.
+      qa = billing_enterprise&.qbo_account
+      return nil if qa.nil?
+      qbo_terms = qa.fetch_all_terms
 
       term_mapping = (qbo_customer.try(:notes) || "").split(" ").find do |word|
         word.starts_with?(bearer)
@@ -54,7 +59,11 @@ class ForecastClient < ApplicationRecord
   # TODO: Sync qbo_customer and join?
   def qbo_customer(qbo_customers = nil)
     @_qbo_customer ||= (
-      qbo_customers = qbo_customers || Enterprise.sanctuary.qbo_account.fetch_all_customers
+      # Same routing as qbo_term: derive the QBO account from this client's
+      # billing_enterprise (external clients default to Sanctuary).
+      qa = billing_enterprise&.qbo_account
+      return nil if qbo_customers.nil? && qa.nil?
+      qbo_customers = qbo_customers || qa.fetch_all_customers
       bearer =
         Stacks::System.singleton_class::QBO_NOTES_FORECAST_MAPPING_BEARER
       qbo_customers.find do |c|
