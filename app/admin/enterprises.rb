@@ -100,11 +100,14 @@ ActiveAdmin.register Enterprise do
       f.input :forecast_clients,
         as: :select,
         multiple: true,
+        label: "Internal forecast clients",
         collection: ForecastClient.order(:name).pluck(:name, :id),
         input_html: { size: 12 },
-        hint: "Forecast clients whose hours route to this Enterprise's ledger. " \
-              "Each Forecast client can only be linked to ONE Enterprise. " \
-              "Leave empty for general clients billed by Sanctuary."
+        hint: "Forecast clients that represent THIS enterprise's own internal work — " \
+              "hours billed against them generate pay stubs in this enterprise's pay cycles " \
+              "instead of generating an external client invoice. Each forecast client can be " \
+              "internal to only ONE enterprise. Leave a forecast client out of every enterprise's " \
+              "list to treat it as an external client billed by Sanctuary."
 
       f.input :pay_cycle_cadence,
         as: :select,

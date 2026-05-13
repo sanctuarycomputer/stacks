@@ -7,15 +7,14 @@ class PayCycles::GenerateStubsTest < ActiveSupport::TestCase
     @cycle = PayCycle.create!(enterprise: @enterprise, starts_at: Date.new(2026, 5, 1), ends_at: Date.new(2026, 5, 31))
   end
 
-  test "considers only assignments on internal forecast clients of this enterprise" do
-    # Internal client (name is in ForecastClient::INTERNAL_CLIENTS) mapped to THIS enterprise
-    internal_client = ForecastClient.create!(forecast_id: 88_001, name: "garden3d")
+  test "considers only assignments on internal forecast clients (mapped to this enterprise via enterprise_forecast_clients)" do
+    # Internal: mapped to THIS enterprise via the join
+    internal_client = ForecastClient.create!(forecast_id: 88_001, name: "Garden Internal")
     EnterpriseForecastClient.create!(enterprise: @enterprise, forecast_client_id: internal_client.forecast_id)
     internal_project = ForecastProject.create!(forecast_id: 88_001, client_id: internal_client.forecast_id, name: "Internal proj", tags: ["100p/h"])
 
-    # External client (name not in INTERNAL_CLIENTS) on this enterprise — should be ignored
+    # External: NOT mapped to any enterprise_forecast_clients row — should be ignored
     external_client = ForecastClient.create!(forecast_id: 88_002, name: "Acme Corp")
-    EnterpriseForecastClient.create!(enterprise: @enterprise, forecast_client_id: external_client.forecast_id)
     external_project = ForecastProject.create!(forecast_id: 88_002, client_id: external_client.forecast_id, name: "Acme proj", tags: ["100p/h"])
 
     fp = ForecastPerson.create!(forecast_id: 88_001, email: "gen1@example.com")
@@ -26,6 +25,15 @@ class PayCycles::GenerateStubsTest < ActiveSupport::TestCase
     qualifying = PayCycles::GenerateStubs.new(@cycle).qualifying_assignments
     assert_equal 1, qualifying.size
     assert_equal internal_project.forecast_id, qualifying.first.project_id
+  end
+
+  test "ForecastClient#is_internal? is true iff mapped to an enterprise" do
+    mapped = ForecastClient.create!(forecast_id: 89_001, name: "Mapped-#{SecureRandom.hex(2)}")
+    EnterpriseForecastClient.create!(enterprise: @enterprise, forecast_client_id: mapped.forecast_id)
+    assert mapped.reload.is_internal?
+
+    unmapped = ForecastClient.create!(forecast_id: 89_002, name: "Unmapped-#{SecureRandom.hex(2)}")
+    refute unmapped.is_internal?
   end
 
   test "resolve_rate uses per-email override when present" do

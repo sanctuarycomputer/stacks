@@ -39,15 +39,13 @@ module PayCycles
     end
 
     # Returns ForecastAssignments overlapping this cycle whose project's
-    # forecast_client.is_internal? AND whose forecast_client is mapped to
-    # this cycle's enterprise.
+    # forecast_client is mapped to this cycle's enterprise via the
+    # enterprise_forecast_clients join. Presence in the join IS the "internal"
+    # check now — there is no separate ForecastClient::INTERNAL_CLIENTS list.
     def qualifying_assignments
-      internal_names = ForecastClient::INTERNAL_CLIENTS
-
       ForecastAssignment
         .joins(forecast_project: :forecast_client)
         .joins("INNER JOIN enterprise_forecast_clients efc ON efc.forecast_client_id = forecast_clients.forecast_id")
-        .where(forecast_clients: { name: internal_names })
         .where("efc.enterprise_id = ?", pay_cycle.enterprise_id)
         .where("forecast_assignments.start_date <= ?", pay_cycle.ends_at)
         .where("forecast_assignments.end_date >= ?", pay_cycle.starts_at)

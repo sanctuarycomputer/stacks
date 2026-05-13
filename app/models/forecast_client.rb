@@ -16,18 +16,17 @@ class ForecastClient < ApplicationRecord
     "https://forecastapp.com/864444/clients/#{forecast_id}/edit"
   end
 
-  INTERNAL_CLIENTS = [
-    "garden3d",
-    "Sanctuary Computer",
-    "Seaborne",
-    "XXIX",
-    "XXXI",
-    "Crystalizer",
-    "Index Space LLC"
-  ]
-
+  # A forecast client is "internal" if and only if it's mapped to an
+  # enterprise via the enterprise_forecast_clients join. Internal clients
+  # generate pay stubs against that enterprise's ledger; external clients
+  # (unmapped) flow through the InvoiceTracker pipeline and are billed by
+  # Sanctuary by default.
+  #
+  # Until 2026-05-13 this used a hardcoded `INTERNAL_CLIENTS` constant —
+  # the migration MigrateInternalClientsToEnterpriseForecastClients seeded
+  # the join from those names so this refactor doesn't regress behavior.
   def is_internal?
-    INTERNAL_CLIENTS.include?(name)
+    enterprise_forecast_client.present?
   end
 
   def qbo_term
