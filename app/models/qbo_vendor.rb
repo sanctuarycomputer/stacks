@@ -6,6 +6,9 @@ class QboVendor < ApplicationRecord
   # ContributorQboVendor join cleanly via a real bigint FK.
   belongs_to :qbo_account
 
+  validates :qbo_account, presence: true
+  validates :qbo_id, presence: true
+
   def display_name
     data.dig("display_name")
   end

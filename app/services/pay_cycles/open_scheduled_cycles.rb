@@ -17,13 +17,36 @@ module PayCycles
   # (`starts_at = latest.ends_at + 1.day`), respecting the contiguous-
   # timeline validation on PayCycle.
   class OpenScheduledCycles
+    Result = Struct.new(:enterprise, :cycle, :error, keyword_init: true) do
+      def ok? = error.nil?
+    end
+
+    # Runs the cron across all cadence-enabled enterprises. Errors from one
+    # enterprise (e.g., MissingRateError, unexpected exceptions) do NOT
+    # abort the whole run — each enterprise's result is captured and the
+    # iteration continues. Returns an array of Result structs; if any have
+    # `error` present, the rake task raises an aggregate so SystemTask
+    # records the failure but the successful cycles are already persisted.
     def self.call
-      results = []
-      Enterprise.where.not(pay_cycle_cadence: nil).find_each do |enterprise|
-        result = open_cycle_for(enterprise)
-        results << result if result
+      results = Enterprise.where.not(pay_cycle_cadence: nil).find_each.map do |enterprise|
+        begin
+          cycle = open_cycle_for(enterprise)
+          Result.new(enterprise: enterprise, cycle: cycle, error: nil)
+        rescue => e
+          Rails.logger.error("[PayCycles::OpenScheduledCycles] enterprise=#{enterprise.id} failed: #{e.class}: #{e.message}")
+          Result.new(enterprise: enterprise, cycle: nil, error: e)
+        end
       end
-      results
+
+      failures = results.reject(&:ok?)
+      if failures.any?
+        msg = failures.map { |r| "enterprise=#{r.enterprise.id} (#{r.enterprise.name}): #{r.error.class}: #{r.error.message}" }.join("; ")
+        raise "OpenScheduledCycles partial failure (#{failures.size} of #{results.size}): #{msg}"
+      end
+
+      # Caller convenience: return just the cycles that were actually opened
+      # (skipping the nil ones where no cycle was due yet).
+      results.map(&:cycle).compact
     end
 
     def self.open_cycle_for(enterprise)
@@ -46,10 +69,18 @@ module PayCycles
       )
 
       # Generate stubs immediately so admin sees a populated cycle on the
-      # day it opens. MissingRateError surfaces to the cron — let it raise
-      # so SystemTask records the failure and admin investigates the
-      # offending (project, contributor) pair.
-      PayCycles::GenerateStubs.call(cycle)
+      # day it opens. If generation fails (e.g., MissingRateError because
+      # a forecast project lacks a rate), DON'T roll back the cycle — the
+      # cycle row is valid and useful (admin can fix the rate then regen).
+      # We swallow the error here, log it, and let the .call wrapper
+      # propagate it via the aggregate raise so the cron SystemTask
+      # records the failure visibly.
+      begin
+        PayCycles::GenerateStubs.call(cycle)
+      rescue => e
+        Rails.logger.error("[PayCycles::OpenScheduledCycles] cycle=#{cycle.id} opened but GenerateStubs failed: #{e.class}: #{e.message}")
+        raise
+      end
       cycle
     end
 

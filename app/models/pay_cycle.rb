@@ -11,6 +11,10 @@ class PayCycle < ApplicationRecord
   validate :no_date_overlap_with_siblings
   validate :starts_immediately_after_latest_sibling
 
+  before_destroy :reject_destroy_when_any_stub_is_payable_or_paid
+
+  class CycleHasPayableStubsError < StandardError; end
+
   # Computed status across this cycle's stubs.
   #   :no_stubs       → no stubs have been generated yet
   #   :some_pending   → at least one stub is unaccepted
@@ -56,5 +60,18 @@ class PayCycle < ApplicationRecord
     expected = latest.ends_at + 1.day
     return if starts_at == expected
     errors.add(:starts_at, "must be #{expected} (the day after the previous cycle's ends_at #{latest.ends_at}) — pay cycles are a contiguous, append-only timeline")
+  end
+
+  # Soft-deletes are still destructive in spirit — they hide stubs that
+  # may already be QBO-billed/paid, and re-creating a cycle for the same
+  # window would silently bypass the contiguous-timeline invariant.
+  # Refuse to destroy a cycle once ANY of its stubs has been accepted or
+  # already has a qbo_bill_id attached.
+  def reject_destroy_when_any_stub_is_payable_or_paid
+    blocking = pay_stubs.where("accepted_at IS NOT NULL OR qbo_bill_id IS NOT NULL")
+    return if blocking.none?
+    raise CycleHasPayableStubsError,
+      "PayCycle ##{id} cannot be destroyed: #{blocking.count} of its stubs are accepted or have a QBO bill. " \
+      "Add a corrective ContributorAdjustment instead, or unaccept stubs first."
   end
 end
