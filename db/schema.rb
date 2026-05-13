@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_05_13_004210) do
+ActiveRecord::Schema.define(version: 2026_05_13_004757) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -152,6 +152,17 @@ ActiveRecord::Schema.define(version: 2026_05_13_004210) do
     t.index ["invoice_tracker_id"], name: "index_contributor_payouts_on_invoice_tracker_id"
     t.index ["ledger_id"], name: "index_contributor_payouts_on_ledger_id"
     t.index ["qbo_bill_id"], name: "index_contributor_payouts_on_qbo_bill_id"
+  end
+
+  create_table "contributor_qbo_vendors", force: :cascade do |t|
+    t.bigint "contributor_id", null: false
+    t.bigint "qbo_account_id", null: false
+    t.string "qbo_vendor_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["contributor_id", "qbo_account_id"], name: "index_cqv_unique_per_contributor_account", unique: true
+    t.index ["contributor_id"], name: "index_contributor_qbo_vendors_on_contributor_id"
+    t.index ["qbo_account_id"], name: "index_contributor_qbo_vendors_on_qbo_account_id"
   end
 
   create_table "contributors", force: :cascade do |t|
@@ -1150,6 +1161,8 @@ ActiveRecord::Schema.define(version: 2026_05_13_004210) do
   add_foreign_key "contributor_payouts", "admin_users", column: "created_by_id"
   add_foreign_key "contributor_payouts", "invoice_trackers"
   add_foreign_key "contributor_payouts", "ledgers"
+  add_foreign_key "contributor_qbo_vendors", "contributors"
+  add_foreign_key "contributor_qbo_vendors", "qbo_accounts"
   add_foreign_key "deel_invoice_adjustments", "deel_contracts", primary_key: "deel_id"
   add_foreign_key "deel_invoice_adjustments", "ledgers"
   add_foreign_key "enterprise_forecast_clients", "enterprises"
