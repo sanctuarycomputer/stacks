@@ -23,6 +23,19 @@ namespace :stacks do
     end
   end
 
+  desc "Open the next pay cycle for each enterprise on cadence"
+  task :open_pay_cycles => :environment do
+    system_task = SystemTask.create!(name: "stacks:open_pay_cycles")
+    begin
+      opened = PayCycles::OpenScheduledCycles.call
+      Rails.logger.info("[stacks:open_pay_cycles] opened #{opened.size} cycle(s)")
+    rescue => e
+      system_task.mark_as_error(e)
+    else
+      system_task.mark_as_success
+    end
+  end
+
   desc "Daily Enterprise Tasks"
   task :daily_enterprise_tasks => :environment do
     system_task = SystemTask.create!(name: "stacks:daily_enterprise_tasks")
