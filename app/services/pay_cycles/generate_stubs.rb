@@ -102,7 +102,11 @@ module PayCycles
         ledger = Ledger.find_or_create_for(enterprise: pay_cycle.enterprise, contributor: contributor)
         lines = build_lines(fp, assignments)
         amount = lines.sum { |l| l["amount"].to_f }.round(2)
-        next if amount.zero?
+        # Skip zero-amount stubs (no qualifying hours) AND defensively skip
+        # negative-amount stubs (could happen if a Forecast assignment has
+        # a corrupted negative allocation; QBO bill sync would reject them
+        # downstream anyway and we'd rather not persist the bad row).
+        next if amount <= 0
 
         stub = PayStub.with_deleted.find_or_initialize_by(pay_cycle_id: pay_cycle.id, ledger_id: ledger.id)
         preserve_acceptance = stub.persisted? && stub.amount.to_f.round(2) == amount

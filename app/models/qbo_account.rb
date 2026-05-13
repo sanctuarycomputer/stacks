@@ -195,8 +195,20 @@ class QboAccount < ApplicationRecord
       { qbo_id: b["id"], qbo_account_id: id, data: b.as_json, qbo_vendor_id: b.vendor_ref.value }
     end
     QboBill.upsert_all(data, unique_by: :index_qbo_bills_on_qbo_account_and_qbo_id) if data.any?
+
+    # Any local QboBill rows whose qbo_id no longer exists in QBO need to be
+    # cleaned up. There's no `qbo_bill` AR association on host rows anymore
+    # (it was replaced by a composite-scoped method in SyncsAsQboBill); detach
+    # by qbo_bill_id strings, which is what host rows actually store.
     deleted_bills = QboBill.where(qbo_account_id: id).where.not(qbo_id: data.map { |t| t[:qbo_id] })
-    ContributorPayout.with_deleted.where(qbo_bill: deleted_bills).update_all(qbo_bill_id: nil)
+    deleted_qbo_ids = deleted_bills.pluck(:qbo_id)
+    if deleted_qbo_ids.any?
+      ContributorPayout.with_deleted.where(qbo_bill_id: deleted_qbo_ids).update_all(qbo_bill_id: nil)
+      Trueup.with_deleted.where(qbo_bill_id: deleted_qbo_ids).update_all(qbo_bill_id: nil)
+      ContributorAdjustment.with_deleted.where(qbo_bill_id: deleted_qbo_ids).update_all(qbo_bill_id: nil)
+      ProfitShare.with_deleted.where(qbo_bill_id: deleted_qbo_ids).update_all(qbo_bill_id: nil)
+      PayStub.with_deleted.where(qbo_bill_id: deleted_qbo_ids).update_all(qbo_bill_id: nil)
+    end
     deleted_bills.delete_all
   end
 

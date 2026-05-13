@@ -381,16 +381,12 @@ class PayCycles::GenerateStubsTest < ActiveSupport::TestCase
     assert_nil stub2.accepted_at, "changed stub should have accepted_at reset to nil"
   end
 
-  # Test 11: Negative-allocation assignment should not produce a negative-amount stub
+  # Test 11: Negative-allocation assignment should not produce a negative-amount stub.
+  # Defensive: `allocation_during_range_in_seconds` clamps the day count but not the
+  # per-day allocation, so a malformed Forecast row with `allocation: -N` can yield a
+  # negative-amount line. `upsert_stubs` now guards `next if amount <= 0`, so no row
+  # is persisted (and no negative QBO bill is ever attempted).
   test "negative allocation from malformed Forecast data does not produce a persisted stub" do
-    # Defensive: pending fix.
-    # allocation_during_range_in_seconds clamps *days* to 0 via [days, 0].max but then
-    # multiplies by the (negative) per_day_allocation, yielding negative hours/amount.
-    # The amount.zero? guard in upsert_stubs does NOT catch negative values, so a stub
-    # with a negative amount is persisted. Fix: also guard amount <= 0, or clamp hours.
-    skip "Defensive: pending fix — negative allocation bypasses amount.zero? guard, " \
-         "resulting in a persisted stub with a negative amount"
-
     internal_client = ForecastClient.create!(forecast_id: safe_random_id, name: "garden3d")
     EnterpriseForecastClient.create!(enterprise: @enterprise, forecast_client_id: internal_client.forecast_id)
     project = ForecastProject.create!(forecast_id: safe_random_id, client_id: internal_client.forecast_id, name: "Neg Proj #{SecureRandom.hex(2)}", tags: ["100p/h"])

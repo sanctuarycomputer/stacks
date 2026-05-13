@@ -59,20 +59,49 @@ class QboAccountTest < ActiveSupport::TestCase
   # ---------------------------------------------------------------------------
 
   test "sync_all_bills! writes qbo_account_id" do
-    # NOTE: sync_all_bills! has a bug on line 199 of qbo_account.rb — it calls
-    #   ContributorPayout.with_deleted.where(qbo_bill: deleted_bills)
-    # but ContributorPayout has no :qbo_bill association; the column is the
-    # bare string FK qbo_bill_id. AR raises PG::UndefinedColumn even when
-    # deleted_bills is empty. Skip until source is fixed to use:
-    #   where(qbo_bill_id: deleted_bills.pluck(:qbo_id))
-    skip "sync_all_bills! line 199 uses where(qbo_bill:) — undefined association on " \
-         "ContributorPayout; PG::UndefinedColumn raised even on empty deleted_bills scope"
+    bill = OpenStruct.new(
+      "id" => "B-#{SecureRandom.hex(4)}",
+      :id => "B-#{SecureRandom.hex(4)}",
+      :as_json => { "id" => "JSON-ID" },
+      :vendor_ref => OpenStruct.new(value: "VENDOR-#{SecureRandom.hex(2)}"),
+    )
+    @qa.stubs(:fetch_all_bills).returns([bill])
+    @qa.sync_all_bills!
+    row = QboBill.find_by(qbo_account_id: @qa.id, qbo_id: bill["id"])
+    assert_not_nil row
   end
 
-  test "sync_all_bills! soft-deletes ContributorPayout.qbo_bill_id when bill is missing in QBO" do
-    # Same underlying bug as above test.
-    skip "sync_all_bills! line 199 uses where(qbo_bill:) — undefined association on " \
-         "ContributorPayout; PG::UndefinedColumn raised even on empty deleted_bills scope"
+  test "sync_all_bills! detaches qbo_bill_id from host rows when bill no longer exists in QBO" do
+    # Pre-seed a QboBill + PayStub that references it. QboBill.belongs_to
+    # :qbo_vendor (primary_key: qbo_id) requires a matching QboVendor row.
+    vendor_qbo_id = "VEN-#{SecureRandom.hex(4)}"
+    QboVendor.create!(qbo_id: vendor_qbo_id, qbo_account: @qa, data: {})
+    qbo_id = "GONE-#{SecureRandom.hex(4)}"
+    QboBill.create!(qbo_id: qbo_id, qbo_account: @qa, qbo_vendor_id: vendor_qbo_id, data: {})
+
+    # PayStub is the simplest LedgerItem to construct — no invoice_tracker FK
+    # required like ContributorPayout has.
+    fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "syncbill#{SecureRandom.hex(2)}@x.com", data: {})
+    c = Contributor.create!(forecast_person: fp)
+    ledger = Ledger.find_or_create_for(enterprise: Enterprise.sanctuary, contributor: c)
+    cycle = PayCycle.create!(enterprise: Enterprise.sanctuary, starts_at: Date.new(2030, 1, 1), ends_at: Date.new(2030, 1, 31))
+    stub = PayStub.create!(
+      pay_cycle: cycle,
+      ledger: ledger,
+      amount: 100,
+      blueprint: { "lines" => [{ "amount" => 100, "hours" => 1, "rate" => 100, "forecast_project" => "x", "description" => "x" }] },
+    )
+    stub.update_columns(qbo_bill_id: qbo_id)
+    assert_equal qbo_id, stub.reload.qbo_bill_id
+
+    # fetch_all_bills returns NOTHING — the bill is gone in QBO.
+    @qa.stubs(:fetch_all_bills).returns([])
+    @qa.sync_all_bills!
+
+    # Host's qbo_bill_id should be nulled
+    assert_nil stub.reload.qbo_bill_id
+    # QboBill row removed
+    assert_nil QboBill.find_by(qbo_id: qbo_id, qbo_account_id: @qa.id)
   end
 
   # ---------------------------------------------------------------------------
