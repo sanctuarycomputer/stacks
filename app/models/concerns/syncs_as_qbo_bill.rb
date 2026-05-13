@@ -67,6 +67,13 @@ module SyncsAsQboBill
 
   def sync_qbo_bill!
     return unless contributor.qbo_vendor.present?
+    # QBO Bills reject amounts <= 0 ("Enter a transaction amount that is 0 or
+    # greater"). ContributorAdjustment rows folded from the old MiscPayment
+    # table carry negative amounts (representing deductions from the
+    # contributor's ledger balance) and shouldn't manifest as QBO bills.
+    # PayStubs / CPs / Trueups / ProfitShares are always positive, so this
+    # guard is a no-op for them.
+    return if amount.to_f <= 0
 
     bill = load_qbo_bill! || Quickbooks::Model::Bill.new
     bill.txn_date = bill_txn_date
