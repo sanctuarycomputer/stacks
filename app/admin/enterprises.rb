@@ -5,8 +5,8 @@ ActiveAdmin.register Enterprise do
   permit_params :name,
     :deel_legal_entity_id,
     :pay_cycle_cadence,
-    forecast_client_ids: [],
-    admin_user_ids: [],
+    enterprise_forecast_clients_attributes: [:id, :forecast_client_id, :_destroy],
+    enterprise_admins_attributes: [:id, :admin_user_id, :_destroy],
     qbo_account_attributes: [
       :id,
       :_edit,
@@ -97,17 +97,22 @@ ActiveAdmin.register Enterprise do
           hint: "Deel API unreachable — paste the legal_entity.id manually."
       end
 
-      f.input :forecast_clients,
-        as: :select,
-        multiple: true,
-        label: "Internal forecast clients",
-        collection: ForecastClient.order(:name).pluck(:name, :id),
-        input_html: { size: 12 },
-        hint: "Forecast clients that represent THIS enterprise's own internal work — " \
-              "hours billed against them generate pay stubs in this enterprise's pay cycles " \
-              "instead of generating an external client invoice. Each forecast client can be " \
-              "internal to only ONE enterprise. Leave a forecast client out of every enterprise's " \
-              "list to treat it as an external client billed by Sanctuary."
+      f.has_many :enterprise_forecast_clients,
+                 heading: "Internal forecast clients",
+                 allow_destroy: true,
+                 new_record: "Add internal forecast client" do |efc|
+        # Each row maps one ForecastClient as internal to THIS enterprise.
+        # Hours billed against an internal forecast client generate pay stubs
+        # in this enterprise's pay cycles instead of an external client invoice.
+        # A given forecast client can be internal to only ONE enterprise; leave
+        # it out of every enterprise to treat it as an external client billed
+        # by Sanctuary.
+        efc.input :forecast_client_id,
+          as: :select,
+          collection: ForecastClient.order(:name).pluck(:name, :forecast_id),
+          include_blank: "Choose a forecast client…",
+          label: "Forecast client"
+      end
 
       f.input :pay_cycle_cadence,
         as: :select,
@@ -115,12 +120,20 @@ ActiveAdmin.register Enterprise do
         include_blank: "(disabled — no pay cycles)",
         hint: "When set, a background job will open new pay cycles on this enterprise's cadence."
 
-      f.input :admin_users,
-        as: :select,
-        multiple: true,
-        collection: AdminUser.order(:email).pluck(:email, :id),
-        input_html: { size: 8 },
-        hint: "These AdminUsers can approve this enterprise's pay cycles. Global super-admins (hugh@, admin role) can approve any enterprise regardless of this list."
+      f.has_many :enterprise_admins,
+                 heading: "Enterprise admins",
+                 allow_destroy: true,
+                 new_record: "Add enterprise admin" do |ea|
+        # These AdminUsers can approve this enterprise's pay cycles (and,
+        # in a follow-up PR, act as scoped admins for other ledger items).
+        # Global super-admins (hugh@, admin role) bypass this list and can
+        # approve any enterprise regardless.
+        ea.input :admin_user_id,
+          as: :select,
+          collection: AdminUser.order(:email).pluck(:email, :id),
+          include_blank: "Choose an admin…",
+          label: "Admin user"
+      end
 
       f.inputs "QBO Account", for: [:qbo_account, f.object.qbo_account || QboAccount.new] do |qbo_account|
         qbo_account.input :client_id

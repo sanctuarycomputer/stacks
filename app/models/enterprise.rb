@@ -9,6 +9,11 @@ class Enterprise < ApplicationRecord
   has_many :enterprise_admins, dependent: :destroy
   has_many :admin_users, through: :enterprise_admins
 
+  accepts_nested_attributes_for :enterprise_forecast_clients, allow_destroy: true,
+    reject_if: ->(attrs) { attrs[:forecast_client_id].blank? }
+  accepts_nested_attributes_for :enterprise_admins, allow_destroy: true,
+    reject_if: ->(attrs) { attrs[:admin_user_id].blank? }
+
   has_one :qbo_account
   accepts_nested_attributes_for :qbo_account, allow_destroy: true
   VERTICAL_MATCHER = /\[(.+)\](.*)/
