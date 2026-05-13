@@ -6,6 +6,7 @@ ActiveAdmin.register Enterprise do
     :deel_legal_entity_id,
     :pay_cycle_cadence,
     forecast_client_ids: [],
+    admin_user_ids: [],
     qbo_account_attributes: [
       :id,
       :_edit,
@@ -110,6 +111,13 @@ ActiveAdmin.register Enterprise do
         collection: [["Monthly", "monthly"], ["Twice monthly", "twice_monthly"]],
         include_blank: "(disabled — no pay cycles)",
         hint: "When set, a background job will open new pay cycles on this enterprise's cadence."
+
+      f.input :admin_users,
+        as: :select,
+        multiple: true,
+        collection: AdminUser.order(:email).pluck(:email, :id),
+        input_html: { size: 8 },
+        hint: "These AdminUsers can approve this enterprise's pay cycles. Global super-admins (hugh@, admin role) can approve any enterprise regardless of this list."
 
       f.inputs "QBO Account", for: [:qbo_account, f.object.qbo_account || QboAccount.new] do |qbo_account|
         qbo_account.input :client_id

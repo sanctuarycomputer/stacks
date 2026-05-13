@@ -32,8 +32,17 @@ class PayStub < ApplicationRecord
   end
 
   # LedgerItem contract overrides.
+  # A stub is payable iff:
+  #   1. The contributor accepted their own stub
+  #   2. Every OTHER stub in the cycle is also accepted (implicit lock — same
+  #      logic as ContributorPayout-on-InvoiceTracker)
+  #   3. An enterprise admin has approved the cycle as a whole
+  #
+  # Condition (3) is new for pay cycles. The existing invoice-tracker flow
+  # doesn't have an analogue because client invoices are externally enforced
+  # by being client-facing; internal pay cycles need a human approver.
   def payable?
-    accepted? && pay_cycle.stubs_status == :all_accepted
+    accepted? && pay_cycle.stubs_status == :all_accepted && pay_cycle.approved?
   end
 
   def effective_on_for_display

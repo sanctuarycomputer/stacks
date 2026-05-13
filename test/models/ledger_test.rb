@@ -49,6 +49,9 @@ class LedgerWithPayStubsTest < ActiveSupport::TestCase
   test "balance counts payable pay stubs" do
     blueprint = { "lines" => [{ "amount" => 100.0, "hours" => 1, "rate" => 100, "forecast_project" => "x", "description" => "x" }] }
     PayStub.create!(pay_cycle: @cycle, ledger: @ledger, amount: 100, blueprint: blueprint, accepted_at: DateTime.now, accepted_by: @admin)
+    # Cycle approval is now required for payable; grant the admin enterprise-admin and approve.
+    @enterprise.admin_users << @admin
+    @cycle.toggle_approval!(by: @admin)
     assert_equal 100, @ledger.balance.to_f
     assert_equal 0, @ledger.unsettled.to_f
   end

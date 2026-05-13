@@ -49,11 +49,14 @@ class PayStubTest < ActiveSupport::TestCase
     assert_includes stub.errors[:accepted_by_id], "must be set when accepted_at is set"
   end
 
-  test "payable? requires accepted AND all stubs in cycle accepted" do
+  test "payable? requires accepted AND all stubs in cycle accepted AND cycle approved" do
     stub = PayStub.create!(pay_cycle: @cycle, ledger: @ledger, amount: 1000, blueprint: @blueprint)
     refute stub.payable?
     stub.update!(accepted_at: DateTime.now, accepted_by: @admin)
     assert_equal :all_accepted, @cycle.reload.stubs_status
+    refute stub.reload.payable?, "should still be unpayable until the cycle itself is approved"
+    @enterprise.admin_users << @admin
+    @cycle.toggle_approval!(by: @admin)
     assert stub.reload.payable?
   end
 
@@ -118,6 +121,9 @@ class PayStubTest < ActiveSupport::TestCase
     # so stubs_status should become :all_accepted.
     ghost.destroy
     assert_equal :all_accepted, @cycle.reload.stubs_status
+    # Cycle approval is also required for payable now.
+    @enterprise.admin_users << @admin
+    @cycle.toggle_approval!(by: @admin)
     assert stub.reload.payable?
   end
 
@@ -217,7 +223,8 @@ class PayStubTest < ActiveSupport::TestCase
   end
 
   test "new_deal_balance includes accepted PayStub in balance and unaccepted in unsettled" do
-    # Accepted stub — cycle has only this one stub so stubs_status == :all_accepted => payable?
+    # Accepted stub — cycle has only this one stub so stubs_status == :all_accepted.
+    # The cycle itself must also be approved by an enterprise admin to flip payable?.
     accepted_stub = PayStub.create!(
       pay_cycle: @cycle,
       ledger: @ledger,
@@ -226,7 +233,9 @@ class PayStubTest < ActiveSupport::TestCase
       accepted_at: DateTime.now,
       accepted_by: @admin,
     )
-    assert accepted_stub.payable?, "stub should be payable when all stubs in cycle are accepted"
+    @enterprise.admin_users << @admin
+    @cycle.toggle_approval!(by: @admin)
+    assert accepted_stub.payable?, "stub should be payable when accepted + cycle :all_accepted + cycle approved"
 
     balance = @contributor.new_deal_balance
     assert_equal 1000, balance[:balance], "accepted payable stub should appear in balance"

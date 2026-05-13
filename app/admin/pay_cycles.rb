@@ -29,6 +29,23 @@ ActiveAdmin.register PayCycle do
     redirect_to admin_enterprise_pay_cycle_path(resource.enterprise, resource), alert: e.message
   end
 
+  # Cycle-level approval (distinct from per-stub acceptance). Only enterprise
+  # admins for this cycle's enterprise — or global super-admins — can flip it.
+  action_item :toggle_approval, only: :show, if: proc { current_admin_user.admin_of?(resource.enterprise) } do
+    label = resource.approved? ? "Unapprove cycle" : "Approve cycle"
+    link_to label,
+      toggle_approval_admin_enterprise_pay_cycle_path(resource.enterprise, resource),
+      method: :post
+  end
+
+  member_action :toggle_approval, method: :post do
+    resource.toggle_approval!(by: current_admin_user)
+    redirect_to admin_enterprise_pay_cycle_path(resource.enterprise, resource),
+      notice: resource.approved? ? "Cycle approved." : "Cycle un-approved."
+  rescue PayCycle::NotAuthorizedToApprove => e
+    redirect_to admin_enterprise_pay_cycle_path(resource.enterprise, resource), alert: e.message
+  end
+
   show do
     render partial: "show", locals: { resource: resource }
   end

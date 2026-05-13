@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_05_13_190216) do
+ActiveRecord::Schema.define(version: 2026_05_13_195138) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -217,6 +217,16 @@ ActiveRecord::Schema.define(version: 2026_05_13_190216) do
     t.string "deel_id", null: false
     t.jsonb "data", null: false
     t.index ["deel_id"], name: "index_deel_people_on_deel_id", unique: true
+  end
+
+  create_table "enterprise_admins", force: :cascade do |t|
+    t.bigint "enterprise_id", null: false
+    t.bigint "admin_user_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_enterprise_admins_on_admin_user_id"
+    t.index ["enterprise_id", "admin_user_id"], name: "index_enterprise_admins_unique", unique: true
+    t.index ["enterprise_id"], name: "index_enterprise_admins_on_enterprise_id"
   end
 
   create_table "enterprise_forecast_clients", force: :cascade do |t|
@@ -623,6 +633,9 @@ ActiveRecord::Schema.define(version: 2026_05_13_190216) do
     t.datetime "deleted_at"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.datetime "approved_at"
+    t.bigint "approved_by_id"
+    t.index ["approved_by_id"], name: "index_pay_cycles_on_approved_by_id"
     t.index ["created_by_id"], name: "index_pay_cycles_on_created_by_id"
     t.index ["deleted_at"], name: "index_pay_cycles_on_deleted_at"
     t.index ["enterprise_id", "starts_at", "ends_at"], name: "index_pay_cycles_unique_window", unique: true
@@ -1167,6 +1180,8 @@ ActiveRecord::Schema.define(version: 2026_05_13_190216) do
   add_foreign_key "contributor_qbo_vendors", "qbo_vendors"
   add_foreign_key "deel_invoice_adjustments", "deel_contracts", primary_key: "deel_id"
   add_foreign_key "deel_invoice_adjustments", "ledgers"
+  add_foreign_key "enterprise_admins", "admin_users"
+  add_foreign_key "enterprise_admins", "enterprises"
   add_foreign_key "enterprise_forecast_clients", "enterprises"
   add_foreign_key "enterprise_forecast_clients", "forecast_clients", primary_key: "forecast_id"
   add_foreign_key "finalizations", "reviews"
@@ -1194,6 +1209,7 @@ ActiveRecord::Schema.define(version: 2026_05_13_190216) do
   add_foreign_key "old_deal_technical_lead_periods", "admin_users"
   add_foreign_key "old_deal_technical_lead_periods", "project_trackers"
   add_foreign_key "old_deal_technical_lead_periods", "studios"
+  add_foreign_key "pay_cycles", "admin_users", column: "approved_by_id"
   add_foreign_key "pay_cycles", "admin_users", column: "created_by_id"
   add_foreign_key "pay_cycles", "enterprises"
   add_foreign_key "pay_stubs", "admin_users", column: "accepted_by_id"

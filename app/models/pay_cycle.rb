@@ -3,6 +3,7 @@ class PayCycle < ApplicationRecord
 
   belongs_to :enterprise
   belongs_to :created_by, class_name: "AdminUser", optional: true
+  belongs_to :approved_by, class_name: "AdminUser", optional: true
   has_many :pay_stubs, dependent: :destroy
 
   validates :starts_at, :ends_at, presence: true
@@ -14,6 +15,7 @@ class PayCycle < ApplicationRecord
   before_destroy :reject_destroy_when_any_stub_is_payable_or_paid
 
   class CycleHasPayableStubsError < StandardError; end
+  class NotAuthorizedToApprove < StandardError; end
 
   # Computed status across this cycle's stubs.
   #   :no_stubs       → no stubs have been generated yet
@@ -22,6 +24,24 @@ class PayCycle < ApplicationRecord
   def stubs_status
     return :no_stubs unless pay_stubs.exists?
     pay_stubs.where(accepted_at: nil).none? ? :all_accepted : :some_pending
+  end
+
+  def approved?
+    approved_at.present?
+  end
+
+  # Enterprise-admin (or global super-admin) approves the cycle. Distinct from
+  # per-stub acceptance: cycle approval gates whether ANY stub in the cycle
+  # becomes payable, on top of every individual stub being accepted. Until the
+  # cycle is approved AND every stub accepted, no stub is payable.
+  def toggle_approval!(by:)
+    raise NotAuthorizedToApprove, "AdminUser #{by&.email.inspect} cannot approve cycles for #{enterprise.name}" unless by&.admin_of?(enterprise)
+
+    if approved?
+      update!(approved_at: nil, approved_by_id: nil)
+    else
+      update!(approved_at: DateTime.now, approved_by_id: by.id)
+    end
   end
 
   private

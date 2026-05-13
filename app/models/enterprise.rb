@@ -6,6 +6,9 @@ class Enterprise < ApplicationRecord
   has_many :ledgers
   has_many :pay_cycles, dependent: :destroy
 
+  has_many :enterprise_admins, dependent: :destroy
+  has_many :admin_users, through: :enterprise_admins
+
   has_one :qbo_account
   accepts_nested_attributes_for :qbo_account, allow_destroy: true
   VERTICAL_MATCHER = /\[(.+)\](.*)/
