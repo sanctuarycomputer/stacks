@@ -6,15 +6,19 @@ class ContributorAdjustment < ApplicationRecord
   before_destroy :detach_and_destroy_qbo_bill
 
   belongs_to :qbo_invoice, class_name: "QboInvoice", foreign_key: "qbo_invoice_id", primary_key: "qbo_id", optional: true
-  # Match InvoiceTracker: ensure a local QboInvoice row exists so we can sync remote state (ad-hoc QBO invoices, not only system trackers).
-  # We bypass the belongs_to-generated super reader (which uses primary_key: qbo_id
-  # and therefore performs a global, unscoped lookup) and instead scope explicitly by
-  # qbo_account so the (qbo_account_id, qbo_id) composite index is used correctly.
+  # Scoped lookup: bypass the belongs_to super reader (which uses
+  # primary_key: qbo_id and would match a row from any qbo_account) and
+  # restrict to THIS adjustment's enterprise.
+  #
+  # `find_by` rather than `find_or_create_by!` — if no matching row exists,
+  # return nil. The find_or_create path historically created phantom rows
+  # that then triggered cross-realm syncs and cascading destruction (see
+  # InvoiceTracker#qbo_invoice for the full incident write-up).
   def qbo_invoice
     return nil unless qbo_invoice_id.present?
     qa = enterprise&.qbo_account
     return nil if qa.nil?
-    QboInvoice.find_or_create_by!(qbo_id: qbo_invoice_id, qbo_account: qa)
+    QboInvoice.find_by(qbo_id: qbo_invoice_id, qbo_account_id: qa.id)
   end
 
   validates :amount, presence: true

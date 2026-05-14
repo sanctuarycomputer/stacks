@@ -74,6 +74,107 @@ namespace :stacks do
     end
   end
 
+  # One-off recovery for the May 13 invoice-detachment bug. InvoiceTrackers
+  # whose qbo_invoice_id was nulled out by the (now-fixed) QboInvoice#sync!
+  # cross-realm bug — typically internal-client trackers (garden3d / Index
+  # Space / USB Club) whose forecast_client became internal post-migration —
+  # get re-attached by matching against Sanctuary's QBO via invoice_pass
+  # month + customer name.
+  #
+  # Run with dry_run=true (default) first to preview matches. Run with
+  # dry_run=false to actually apply.
+  desc "Recover invoice-trackers detached by the May-13 sync! bug"
+  task :recover_detached_invoice_trackers, [:dry_run] => :environment do |_t, args|
+    dry_run = args[:dry_run].to_s != "false"
+    puts "[recover_detached_invoice_trackers] dry_run=#{dry_run}"
+
+    sanctuary_qa = Enterprise.find_by!(name: Enterprise::SANCTUARY_NAME).qbo_account
+    raise "Sanctuary has no qbo_account" if sanctuary_qa.nil?
+
+    # Refresh local mirror of Sanctuary's invoices first so the match below
+    # works against current QBO state, not stale data.
+    puts "Refreshing Sanctuary qbo_invoices from QBO…"
+    sanctuary_qa.sync_all_invoices!
+    sanc_invoices = QboInvoice.where(qbo_account_id: sanctuary_qa.id).to_a
+    puts "  loaded #{sanc_invoices.size} Sanctuary invoices"
+
+    detached = InvoiceTracker.where(qbo_invoice_id: nil).where.not(blueprint: nil).where.not(blueprint: {})
+    puts "Detached trackers (qbo_invoice_id nil but blueprint set): #{detached.count}"
+
+    matched = []
+    ambiguous = []
+    unmatched = []
+
+    detached.find_each do |t|
+      fc = t.forecast_client
+      ip = t.invoice_pass
+      next if fc.nil? || ip.nil?
+
+      fc_name = fc.name.to_s.downcase
+      target_month = ip.invoice_month
+
+      candidates = sanc_invoices.select do |inv|
+        d = inv.data || {}
+        d.dig("private_note") == target_month &&
+          d.dig("customer_ref", "name").to_s.downcase.include?(fc_name)
+      end
+
+      if candidates.size == 1
+        matched << [t, candidates.first]
+      elsif candidates.size > 1
+        ambiguous << [t, candidates]
+      else
+        unmatched << t
+      end
+    end
+
+    puts ""
+    puts "Match results:"
+    puts "  matched: #{matched.size}"
+    puts "  ambiguous (multiple candidates): #{ambiguous.size}"
+    puts "  unmatched: #{unmatched.size}"
+
+    puts ""
+    puts "Matched details:"
+    matched.first(40).each do |t, inv|
+      puts "  tracker_id=#{t.id} fc=#{t.forecast_client.name.inspect} month=#{t.invoice_pass.invoice_month.inspect} -> qbo_invoice_id=#{inv.qbo_id}"
+    end
+
+    if ambiguous.any?
+      puts ""
+      puts "Ambiguous details (manual review required):"
+      ambiguous.each do |t, candidates|
+        puts "  tracker_id=#{t.id} fc=#{t.forecast_client.name.inspect} month=#{t.invoice_pass.invoice_month.inspect}"
+        candidates.each { |inv| puts "    candidate qbo_id=#{inv.qbo_id} customer=#{inv.data.dig("customer_ref", "name").inspect}" }
+      end
+    end
+
+    if unmatched.any?
+      puts ""
+      puts "Unmatched (manual review required):"
+      unmatched.each do |t|
+        puts "  tracker_id=#{t.id} fc=#{t.forecast_client&.name.inspect} month=#{t.invoice_pass&.invoice_month.inspect}"
+      end
+    end
+
+    if dry_run
+      puts ""
+      puts "[dry-run] no changes applied. Re-run with dry_run=false to apply."
+      next
+    end
+
+    puts ""
+    puts "Applying #{matched.size} reattachments…"
+    applied = 0
+    matched.each do |t, inv|
+      ActiveRecord::Base.transaction do
+        t.update_columns(qbo_invoice_id: inv.qbo_id)
+      end
+      applied += 1
+    end
+    puts "Done. Reattached #{applied} trackers. #{ambiguous.size} ambiguous + #{unmatched.size} unmatched remain for manual review."
+  end
+
   desc "Sync Runn"
   task :sync_runn => :environment do
     system_task = SystemTask.create!(name: "stacks:sync_runn")

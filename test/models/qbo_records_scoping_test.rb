@@ -110,26 +110,23 @@ class ContributorAdjustmentQboInvoiceScopingTest < ActiveSupport::TestCase
     assert_nil @adj.qbo_invoice
   end
 
-  test "qbo_invoice lazy-creates a QboInvoice scoped to the enterprise's qbo_account" do
+  test "qbo_invoice returns the existing row when one exists in this enterprise's qa" do
     inv_id = "INV#{SecureRandom.hex(4)}"
-    # Write qbo_invoice_id directly (bypassing validates) so we can test the reader.
     @adj.update_columns(qbo_invoice_id: inv_id)
+    existing = QboInvoice.create!(qbo_id: inv_id, qbo_account: @sanctuary_qa, data: { "x" => 1 })
 
     inv = @adj.qbo_invoice
-    assert_not_nil inv, "expected a QboInvoice to be found-or-created"
-    assert_equal inv_id, inv.qbo_id
-    assert_equal @sanctuary_qa, inv.qbo_account,
-      "lazy-created QboInvoice must be scoped to the enterprise's qbo_account, not global"
+    assert_equal existing, inv
+    assert_equal @sanctuary_qa, inv.qbo_account
   end
 
-  test "qbo_invoice does not create a second row when called twice" do
+  test "qbo_invoice returns nil and creates NO phantom row when no matching row exists" do
     inv_id = "INV#{SecureRandom.hex(4)}"
     @adj.update_columns(qbo_invoice_id: inv_id)
 
-    @adj.qbo_invoice
-    @adj.qbo_invoice  # second call should find_or_create — no duplicate
-
-    assert_equal 1, QboInvoice.where(qbo_id: inv_id, qbo_account: @sanctuary_qa).count
+    assert_no_difference -> { QboInvoice.count } do
+      assert_nil @adj.qbo_invoice
+    end
   end
 
   # payable? must scope the QboInvoice lookup by qbo_account
@@ -198,28 +195,26 @@ class InvoiceTrackerQboInvoiceScopingTest < ActiveSupport::TestCase
     assert_nil tracker.qbo_invoice
   end
 
-  test "qbo_invoice lazy-creates a QboInvoice scoped to sanctuary's qbo_account" do
+  test "qbo_invoice returns the existing row scoped to sanctuary's qbo_account" do
     inv_id = "ITINV#{SecureRandom.hex(4)}"
     tracker = build_tracker_with_invoice_id(inv_id)
+    existing = QboInvoice.create!(qbo_id: inv_id, qbo_account: @sanctuary_qa, data: { "x" => 1 })
 
     inv = tracker.qbo_invoice
-    assert_not_nil inv
-    assert_equal inv_id, inv.qbo_id
-    assert_equal @sanctuary_qa, inv.qbo_account,
-      "InvoiceTracker.qbo_invoice lazy-create must scope to sanctuary's qbo_account"
+    assert_equal existing, inv
+    assert_equal @sanctuary_qa, inv.qbo_account
   end
 
-  test "qbo_invoice lazy-create is idempotent" do
+  test "qbo_invoice creates NO phantom row when no matching row exists" do
     inv_id = "ITINV2#{SecureRandom.hex(4)}"
     tracker = build_tracker_with_invoice_id(inv_id)
 
-    tracker.qbo_invoice
-    tracker.qbo_invoice
-
-    assert_equal 1, QboInvoice.where(qbo_id: inv_id, qbo_account: @sanctuary_qa).count
+    assert_no_difference -> { QboInvoice.count } do
+      assert_nil tracker.qbo_invoice
+    end
   end
 
-  test "qbo_invoice does not pick up a same-qbo_id invoice belonging to a different qbo_account" do
+  test "qbo_invoice returns nil when a same-qbo_id row exists in a DIFFERENT qbo_account (no cross-qa pickup, no phantom create)" do
     other_ent = Enterprise.find_or_create_by!(name: "OtherIT-#{SecureRandom.hex(2)}")
     other_qa = QboAccount.create!(enterprise: other_ent, client_id: "x", client_secret: "y", realm_id: SecureRandom.hex(8))
 
@@ -227,12 +222,14 @@ class InvoiceTrackerQboInvoiceScopingTest < ActiveSupport::TestCase
     QboInvoice.create!(qbo_id: inv_id, qbo_account: other_qa, data: {})
 
     tracker = build_tracker_with_invoice_id(inv_id)
-    inv = tracker.qbo_invoice
 
-    # find_or_create_by! should have created a NEW row under @sanctuary_qa.
-    assert_equal @sanctuary_qa, inv.qbo_account,
-      "qbo_invoice should resolve against sanctuary_qa, not the other qbo_account"
-    assert_equal 2, QboInvoice.where(qbo_id: inv_id).count,
-      "there should now be one row per account for the shared qbo_id"
+    # Tracker's qa is sanctuary_qa (external client default); only one QboInvoice
+    # exists for inv_id and it's in other_qa. Resolver must return nil and NOT
+    # create a phantom row in sanctuary_qa.
+    assert_no_difference -> { QboInvoice.count } do
+      assert_nil tracker.qbo_invoice
+    end
+    assert_equal 1, QboInvoice.where(qbo_id: inv_id).count,
+      "only the original other-qa row should exist"
   end
 end
