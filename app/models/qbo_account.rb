@@ -54,6 +54,22 @@ class QboAccount < ApplicationRecord
     end
   end
 
+  # Lightweight liveness check. Hits QBO's /companyinfo/{realmId} endpoint,
+  # which is the cheapest authenticated call the API offers, and returns the
+  # CompanyInfo object on success so callers can `pp` company name / country /
+  # fiscal year start as a richer "yes it works" signal than a bare boolean.
+  # Returns nil when no qbo_token has been authorized yet (same convention as
+  # make_and_refresh_qbo_access_token). Re-raises auth / network errors so the
+  # real cause is visible in `rails c`.
+  def ping
+    qbo_access_token = make_and_refresh_qbo_access_token
+    return nil if qbo_access_token.nil?
+    service = Quickbooks::Service::CompanyInfo.new
+    service.company_id = realm_id
+    service.access_token = qbo_access_token
+    service.fetch_by_id(realm_id)
+  end
+
   def fetch_all_accounts
     qbo_access_token = make_and_refresh_qbo_access_token
     service = Quickbooks::Service::Account.new
