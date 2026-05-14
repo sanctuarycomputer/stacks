@@ -74,16 +74,51 @@ namespace :stacks do
     end
   end
 
-  # One-off recovery for the May 13 invoice-detachment bug. InvoiceTrackers
-  # whose qbo_invoice_id was nulled out by the (now-fixed) QboInvoice#sync!
-  # cross-realm bug — typically internal-client trackers (garden3d / Index
-  # Space / USB Club) whose forecast_client became internal post-migration —
-  # get re-attached by matching against Sanctuary's QBO via invoice_pass
-  # month + customer name.
+  # One-off recovery for InvoiceTrackers whose qbo_invoice_id was nulled out
+  # but whose corresponding QBO invoice is still alive in Sanctuary's QBO.
   #
-  # Run with dry_run=true (default) first to preview matches. Run with
-  # dry_run=false to actually apply.
-  desc "Recover invoice-trackers detached by the May-13 sync! bug"
+  # The 18 (tracker_id, qbo_invoice_id) pairs below were derived by:
+  #   1) restoring the May-1 prod backup into a sidecar DB and pulling each
+  #      detached tracker's original qbo_invoice_id (15 hits — the May-13
+  #      cross-realm sync! bug cohort, all internal-client trackers);
+  #   2) probing Sanctuary's live qbo_invoices for any remaining detached
+  #      tracker by (invoice_pass.invoice_month, forecast_client.name) and
+  #      finding 3 more hits (Gnosis May-2022 + Mac Miller Nov/Dec-2025)
+  #      whose detachment predates the backup but whose QBO invoices are
+  #      still alive.
+  #
+  # The remaining 47 detached trackers had no matching live QBO invoice and
+  # are intentionally left alone — they represent legitimately voided /
+  # deleted QBO invoices over the years, plus the manual "we don't invoice
+  # ourselves" pattern your team applied before InvoicePass#make_trackers!
+  # was updated to filter internal clients automatically.
+  #
+  # Per row: tracker_id, expected qbo_invoice_id, expected forecast client
+  # name (sanity check), expected invoice-pass month (sanity check).
+  REATTACH_MAPPINGS = [
+    { tracker_id: 226,  qbo_invoice_id: "12638", fc: "Gnosis",          month: "May 2022" },
+    { tracker_id: 1031, qbo_invoice_id: "21848", fc: "Index Space LLC", month: "June 2025" },
+    { tracker_id: 1064, qbo_invoice_id: "22271", fc: "Index Space LLC", month: "July 2025" },
+    { tracker_id: 1130, qbo_invoice_id: "22653", fc: "Index Space LLC", month: "August 2025" },
+    { tracker_id: 1169, qbo_invoice_id: "24906", fc: "Index Space LLC", month: "September 2025" },
+    { tracker_id: 1198, qbo_invoice_id: "25073", fc: "Index Space LLC", month: "October 2025" },
+    { tracker_id: 1234, qbo_invoice_id: "25433", fc: "Index Space LLC", month: "November 2025" },
+    { tracker_id: 1246, qbo_invoice_id: "26348", fc: "Mac Miller",      month: "November 2025" },
+    { tracker_id: 1263, qbo_invoice_id: "26354", fc: "Mac Miller",      month: "December 2025" },
+    { tracker_id: 1267, qbo_invoice_id: "26047", fc: "Index Space LLC", month: "December 2025" },
+    { tracker_id: 1366, qbo_invoice_id: "26862", fc: "garden3d",        month: "January 2026" },
+    { tracker_id: 1369, qbo_invoice_id: "26613", fc: "Index Space LLC", month: "January 2026" },
+    { tracker_id: 1397, qbo_invoice_id: "27005", fc: "Index Space LLC", month: "February 2026" },
+    { tracker_id: 1399, qbo_invoice_id: "27291", fc: "garden3d",        month: "February 2026" },
+    { tracker_id: 1431, qbo_invoice_id: "27666", fc: "Index Space LLC", month: "March 2026" },
+    { tracker_id: 1432, qbo_invoice_id: "27904", fc: "garden3d",        month: "March 2026" },
+    { tracker_id: 1498, qbo_invoice_id: "28520", fc: "garden3d",        month: "April 2026" },
+    { tracker_id: 1504, qbo_invoice_id: "28311", fc: "Index Space LLC", month: "April 2026" },
+  ].freeze
+
+  # Run with dry_run=true (default) first to preview. Run with dry_run=false
+  # to actually apply.
+  desc "Reattach the 18 InvoiceTrackers detached by sync! / migration bugs"
   task :recover_detached_invoice_trackers, [:dry_run] => :environment do |_t, args|
     dry_run = args[:dry_run].to_s != "false"
     puts "[recover_detached_invoice_trackers] dry_run=#{dry_run}"
@@ -91,70 +126,92 @@ namespace :stacks do
     sanctuary_qa = Enterprise.find_by!(name: Enterprise::SANCTUARY_NAME).qbo_account
     raise "Sanctuary has no qbo_account" if sanctuary_qa.nil?
 
-    # Refresh local mirror of Sanctuary's invoices first so the match below
-    # works against current QBO state, not stale data.
-    puts "Refreshing Sanctuary qbo_invoices from QBO…"
-    sanctuary_qa.sync_all_invoices!
-    sanc_invoices = QboInvoice.where(qbo_account_id: sanctuary_qa.id).to_a
-    puts "  loaded #{sanc_invoices.size} Sanctuary invoices"
+    will_apply = []
+    already_attached = []
+    sanity_failed = []
+    missing_invoice = []
+    missing_tracker = []
 
-    detached = InvoiceTracker.where(qbo_invoice_id: nil).where.not(blueprint: nil).where.not(blueprint: {})
-    puts "Detached trackers (qbo_invoice_id nil but blueprint set): #{detached.count}"
-
-    matched = []
-    ambiguous = []
-    unmatched = []
-
-    detached.find_each do |t|
-      fc = t.forecast_client
-      ip = t.invoice_pass
-      next if fc.nil? || ip.nil?
-
-      fc_name = fc.name.to_s.downcase
-      target_month = ip.invoice_month
-
-      candidates = sanc_invoices.select do |inv|
-        d = inv.data || {}
-        d.dig("private_note") == target_month &&
-          d.dig("customer_ref", "name").to_s.downcase.include?(fc_name)
+    REATTACH_MAPPINGS.each do |m|
+      t = InvoiceTracker.find_by(id: m[:tracker_id])
+      if t.nil?
+        missing_tracker << m
+        next
       end
 
-      if candidates.size == 1
-        matched << [t, candidates.first]
-      elsif candidates.size > 1
-        ambiguous << [t, candidates]
-      else
-        unmatched << t
+      # Skip rows that were already manually reattached.
+      if t.qbo_invoice_id.present?
+        already_attached << { mapping: m, tracker: t }
+        next
       end
+
+      # Sanity-check that the tracker still matches the (fc, month) we
+      # captured at audit time — guards against ID reuse / data drift.
+      fc_name = t.forecast_client&.name
+      month = t.invoice_pass&.invoice_month
+      if fc_name != m[:fc] || month != m[:month]
+        sanity_failed << { mapping: m, actual_fc: fc_name, actual_month: month }
+        next
+      end
+
+      # Ensure the target QboInvoice row exists in Sanctuary's qa — without
+      # it, attaching would point at a row this DB doesn't have, and
+      # tracker.qbo_invoice would return nil anyway.
+      inv = QboInvoice.find_by(qbo_id: m[:qbo_invoice_id], qbo_account_id: sanctuary_qa.id)
+      if inv.nil?
+        missing_invoice << m
+        next
+      end
+
+      will_apply << { mapping: m, tracker: t, invoice: inv }
     end
 
     puts ""
-    puts "Match results:"
-    puts "  matched: #{matched.size}"
-    puts "  ambiguous (multiple candidates): #{ambiguous.size}"
-    puts "  unmatched: #{unmatched.size}"
+    puts "Plan:"
+    puts "  will reattach:       #{will_apply.size}"
+    puts "  already attached:    #{already_attached.size}"
+    puts "  sanity-check failed: #{sanity_failed.size}"
+    puts "  invoice not in DB:   #{missing_invoice.size}"
+    puts "  tracker not in DB:   #{missing_tracker.size}"
 
-    puts ""
-    puts "Matched details:"
-    matched.first(40).each do |t, inv|
-      puts "  tracker_id=#{t.id} fc=#{t.forecast_client.name.inspect} month=#{t.invoice_pass.invoice_month.inspect} -> qbo_invoice_id=#{inv.qbo_id}"
-    end
-
-    if ambiguous.any?
+    if will_apply.any?
       puts ""
-      puts "Ambiguous details (manual review required):"
-      ambiguous.each do |t, candidates|
-        puts "  tracker_id=#{t.id} fc=#{t.forecast_client.name.inspect} month=#{t.invoice_pass.invoice_month.inspect}"
-        candidates.each { |inv| puts "    candidate qbo_id=#{inv.qbo_id} customer=#{inv.data.dig("customer_ref", "name").inspect}" }
+      puts "Will reattach:"
+      will_apply.each do |row|
+        m = row[:mapping]
+        amount = row[:invoice].data&.dig("total")
+        puts "  tracker=#{m[:tracker_id]} (#{m[:fc]} / #{m[:month]})  ->  qbo_invoice_id=#{m[:qbo_invoice_id]}  (invoice total $#{amount})"
       end
     end
 
-    if unmatched.any?
+    if already_attached.any?
       puts ""
-      puts "Unmatched (manual review required):"
-      unmatched.each do |t|
-        puts "  tracker_id=#{t.id} fc=#{t.forecast_client&.name.inspect} month=#{t.invoice_pass&.invoice_month.inspect}"
+      puts "Already attached (skipping):"
+      already_attached.each do |row|
+        puts "  tracker=#{row[:mapping][:tracker_id]}  current qbo_invoice_id=#{row[:tracker].qbo_invoice_id.inspect}"
       end
+    end
+
+    if sanity_failed.any?
+      puts ""
+      puts "Sanity-check failed (skipping — manual review):"
+      sanity_failed.each do |row|
+        puts "  tracker=#{row[:mapping][:tracker_id]} expected fc=#{row[:mapping][:fc].inspect} month=#{row[:mapping][:month].inspect}  got fc=#{row[:actual_fc].inspect} month=#{row[:actual_month].inspect}"
+      end
+    end
+
+    if missing_invoice.any?
+      puts ""
+      puts "Target QboInvoice missing from Sanctuary's local mirror — run sanctuary_qa.sync_all_invoices! first:"
+      missing_invoice.each do |m|
+        puts "  tracker=#{m[:tracker_id]} expected qbo_invoice_id=#{m[:qbo_invoice_id].inspect}"
+      end
+    end
+
+    if missing_tracker.any?
+      puts ""
+      puts "Tracker row missing entirely (skipping):"
+      missing_tracker.each { |m| puts "  tracker_id=#{m[:tracker_id]}" }
     end
 
     if dry_run
@@ -163,16 +220,22 @@ namespace :stacks do
       next
     end
 
+    if will_apply.empty?
+      puts ""
+      puts "Nothing to apply."
+      next
+    end
+
     puts ""
-    puts "Applying #{matched.size} reattachments…"
+    puts "Applying #{will_apply.size} reattachments…"
     applied = 0
-    matched.each do |t, inv|
+    will_apply.each do |row|
       ActiveRecord::Base.transaction do
-        t.update_columns(qbo_invoice_id: inv.qbo_id)
+        row[:tracker].update_columns(qbo_invoice_id: row[:mapping][:qbo_invoice_id])
       end
       applied += 1
     end
-    puts "Done. Reattached #{applied} trackers. #{ambiguous.size} ambiguous + #{unmatched.size} unmatched remain for manual review."
+    puts "Done. Reattached #{applied} trackers."
   end
 
   desc "Sync Runn"
