@@ -13,7 +13,7 @@
   <%= stale ? "Stale" : "In sync" %>
 </p>
 <% if qbo_invoice.present? %>
-  <a href="https://app.qbo.intuit.com/app/invoice?txnId=<%= qbo_invoice.id %>" target="_blank">
+  <a href="https://app.qbo.intuit.com/app/invoice?txnId=<%= qbo_invoice.qbo_id %>" target="_blank">
     <p class="nag" style="margin-bottom: 0px;margin-right: 6px;">
       QBO Invoice ↗
     </p>

@@ -47,14 +47,6 @@ class ContributorQboVendorForTest < ActiveSupport::TestCase
     assert_includes mapping.errors[:qbo_vendor], "must belong to the same qbo_account as the mapping"
   end
 
-  test "backfilled mapping resolves to a qbo_vendor whose qbo_id matches the legacy column" do
-    c = Contributor.where.not(qbo_vendor_id: nil).first
-    next if c.nil?
-    found_vendor = c.qbo_vendor_for(@sanctuary_qa)
-    assert_not_nil found_vendor
-    assert_equal c.qbo_vendor_id, found_vendor.qbo_id
-  end
-
   # Edge case: qbo_vendor_for returns the vendor across multiple qbo_accounts correctly
   test "qbo_vendor_for returns correct vendor when contributor has mappings to multiple qbo_accounts" do
     # Create a second enterprise and QBO account
@@ -111,8 +103,17 @@ class ContributorQboVendorForTest < ActiveSupport::TestCase
     assert_includes mapping.errors[:qbo_vendor], "must exist"
   end
 
-  # Edge case: qbo_account presence validation
-  test "ContributorQboVendor validates qbo_account presence" do
+  # qbo_account presence still required — but is derived from qbo_vendor when
+  # only a vendor is supplied (so the admin form can omit a redundant qa
+  # dropdown). Verified here by leaving BOTH fields blank.
+  test "ContributorQboVendor validates qbo_account presence when neither qbo_account nor qbo_vendor is supplied" do
+    mapping = ContributorQboVendor.new(contributor: @contributor)
+    refute mapping.valid?
+    # belongs_to validates with "must exist" not "can't be blank"
+    assert_includes mapping.errors[:qbo_account], "must exist"
+  end
+
+  test "ContributorQboVendor derives qbo_account from vendor when qbo_account is left nil" do
     vendor = QboVendor.create!(
       qbo_id: "VENDOR#{SecureRandom.hex(3)}",
       qbo_account: @sanctuary_qa,
@@ -121,11 +122,10 @@ class ContributorQboVendorForTest < ActiveSupport::TestCase
     mapping = ContributorQboVendor.new(
       contributor: @contributor,
       qbo_account: nil,
-      qbo_vendor: vendor
+      qbo_vendor: vendor,
     )
-    refute mapping.valid?
-    # belongs_to validates with "must exist" not "can't be blank"
-    assert_includes mapping.errors[:qbo_account], "must exist"
+    assert mapping.valid?, mapping.errors.full_messages.inspect
+    assert_equal @sanctuary_qa.id, mapping.qbo_account_id
   end
 
   # Edge case: uniqueness constraint allows different contributor/qbo_account pairs
@@ -263,5 +263,78 @@ class ContributorQboVendorForTest < ActiveSupport::TestCase
     garden3d_vendors = @contributor.qbo_vendors.where(qbo_account: garden3d_qa)
     assert_equal 1, garden3d_vendors.count
     assert_equal vendor_b, garden3d_vendors.first
+  end
+end
+
+class ContributorQboVendorDeriveQboAccountTest < ActiveSupport::TestCase
+  setup do
+    Thread.current[:sanctuary_enterprise] = nil
+    @sanctuary = Enterprise.find_by!(name: Enterprise::SANCTUARY_NAME)
+    @sanctuary_qa = @sanctuary.qbo_account || QboAccount.create!(
+      enterprise: @sanctuary,
+      client_id: "test_client_id",
+      client_secret: "test_client_secret",
+      realm_id: "test_realm_#{SecureRandom.hex(4)}",
+    )
+    fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "derive#{SecureRandom.hex(2)}@x.com", data: {})
+    @contributor = Contributor.create!(forecast_person: fp)
+    @vendor = QboVendor.create!(qbo_id: "V#{SecureRandom.hex(3)}", qbo_account: @sanctuary_qa, data: { "display_name" => "Derive Test" })
+  end
+
+  test "qbo_account_id is derived from qbo_vendor when not explicitly set" do
+    cqv = ContributorQboVendor.new(contributor: @contributor, qbo_vendor: @vendor)
+    assert cqv.save
+    assert_equal @sanctuary_qa.id, cqv.qbo_account_id
+  end
+
+  test "explicit qbo_account_id is preserved when it matches the vendor's" do
+    cqv = ContributorQboVendor.new(contributor: @contributor, qbo_vendor: @vendor, qbo_account: @sanctuary_qa)
+    assert cqv.save
+    assert_equal @sanctuary_qa.id, cqv.qbo_account_id
+  end
+
+  test "mismatched qbo_account_id (set explicitly to something other than the vendor's) still fails validation" do
+    other_ent = Enterprise.create!(name: "DeriveOther-#{SecureRandom.hex(2)}")
+    other_qa = QboAccount.create!(enterprise: other_ent, client_id: "c", client_secret: "s", realm_id: "r#{SecureRandom.hex(2)}")
+    cqv = ContributorQboVendor.new(contributor: @contributor, qbo_vendor: @vendor, qbo_account: other_qa)
+    refute cqv.save
+    assert_match(/same qbo_account/, cqv.errors[:qbo_vendor].join)
+  end
+end
+
+class ContributorAcceptsNestedQboVendorsTest < ActiveSupport::TestCase
+  setup do
+    Thread.current[:sanctuary_enterprise] = nil
+    @sanctuary = Enterprise.find_by!(name: Enterprise::SANCTUARY_NAME)
+    @sanctuary_qa = @sanctuary.qbo_account || QboAccount.create!(
+      enterprise: @sanctuary,
+      client_id: "test_client_id",
+      client_secret: "test_client_secret",
+      realm_id: "test_realm_#{SecureRandom.hex(4)}",
+    )
+    fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "nest#{SecureRandom.hex(2)}@x.com", data: {})
+    @contributor = Contributor.create!(forecast_person: fp)
+    @vendor = QboVendor.create!(qbo_id: "V#{SecureRandom.hex(3)}", qbo_account: @sanctuary_qa, data: { "display_name" => "Nested Test" })
+  end
+
+  test "creates a contributor_qbo_vendors row from nested attributes (admin form path)" do
+    assert_difference -> { ContributorQboVendor.where(contributor_id: @contributor.id).count }, 1 do
+      @contributor.update!(contributor_qbo_vendors_attributes: [{ qbo_vendor_id: @vendor.id }])
+    end
+    cqv = ContributorQboVendor.find_by(contributor_id: @contributor.id, qbo_vendor_id: @vendor.id)
+    assert_equal @sanctuary_qa.id, cqv.qbo_account_id, "expected qbo_account_id to be derived from the vendor"
+  end
+
+  test "blank qbo_vendor_id rows are silently rejected (reject_if)" do
+    assert_no_difference -> { ContributorQboVendor.where(contributor_id: @contributor.id).count } do
+      @contributor.update!(contributor_qbo_vendors_attributes: [{ qbo_vendor_id: "" }])
+    end
+  end
+
+  test "destroys an existing mapping when _destroy is set" do
+    cqv = ContributorQboVendor.create!(contributor: @contributor, qbo_account: @sanctuary_qa, qbo_vendor: @vendor)
+    assert_difference -> { ContributorQboVendor.where(contributor_id: @contributor.id).count }, -1 do
+      @contributor.update!(contributor_qbo_vendors_attributes: [{ id: cqv.id, _destroy: "1" }])
+    end
   end
 end

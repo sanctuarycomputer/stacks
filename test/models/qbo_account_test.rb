@@ -180,4 +180,27 @@ class QboAccountTest < ActiveSupport::TestCase
   test "make_and_refresh_qbo_access_token refreshes when stale (>10 min)" do
     skip "OAuth refresh hits real Intuit; integration-test only"
   end
+
+  # ---------------------------------------------------------------------------
+  # ping
+  # ---------------------------------------------------------------------------
+
+  test "ping returns nil when no qbo_token exists" do
+    @qa.stubs(:qbo_token).returns(nil)
+    assert_nil @qa.ping
+  end
+
+  test "ping fetches CompanyInfo by realm_id when token is present" do
+    fake_access_token = Object.new
+    @qa.stubs(:make_and_refresh_qbo_access_token).returns(fake_access_token)
+
+    service = mock("CompanyInfoService")
+    service.expects(:company_id=).with(@qa.realm_id)
+    service.expects(:access_token=).with(fake_access_token)
+    fake_company_info = OpenStruct.new(company_name: "Acme Co")
+    service.expects(:fetch_by_id).with(@qa.realm_id).returns(fake_company_info)
+    Quickbooks::Service::CompanyInfo.stubs(:new).returns(service)
+
+    assert_equal fake_company_info, @qa.ping
+  end
 end

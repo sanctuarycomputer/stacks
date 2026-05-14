@@ -33,11 +33,17 @@ class InvoiceTracker < ApplicationRecord
     return nil unless qbo_invoice_id
     # Scope explicitly by qbo_account so the (qbo_account_id, qbo_id) composite
     # index is used and a same-qbo_id row in a different account is never matched.
-    # (The belongs_to-generated super reader uses primary_key: qbo_id and performs
-    # a global, unscoped lookup.)
+    #
+    # `find_by` rather than `find_or_create_by!` — when no matching row exists
+    # for THIS qbo_account, return nil instead of creating an empty phantom
+    # row. The phantom-row path was the May-13 invoice-detachment bug:
+    # internal-client trackers whose forecast_client became internal had
+    # `qbo_account` flip from Sanctuary's qa to the internal qa, and the
+    # phantom row's empty `data` triggered sync! against the wrong QBO
+    # realm, which 404'd and destroyed both the phantom AND the real row.
     qa = qbo_account
     return nil if qa.nil?
-    QboInvoice.find_or_create_by!(qbo_id: qbo_invoice_id, qbo_account: qa)
+    QboInvoice.find_by(qbo_id: qbo_invoice_id, qbo_account_id: qa.id)
   end
 
   def qbo_invoice_link
@@ -682,6 +688,13 @@ class InvoiceTracker < ApplicationRecord
   def make_invoice!
     return if configuration_errors.any?
     return if qbo_invoice.present?
+    # Defense-in-depth: InvoicePass#make_trackers! now filters internal
+    # clients before creating InvoiceTrackers, but legacy rows may still
+    # exist. Refuse to push a QBO invoice for one rather than silently
+    # writing into the internal enterprise's QBO.
+    if forecast_client.is_internal?
+      raise "Refusing to invoice internal client #{forecast_client.name} — internal clients are paid via PayCycles, not InvoiceTrackers."
+    end
     qa = qbo_account
     raise "Billing enterprise (#{billing_enterprise.name}) has no connected QboAccount" if qa.nil?
     qbo_items, default_service_item = qa.fetch_all_items

@@ -2,11 +2,12 @@ class Contributor < ApplicationRecord
   default_scope -> { joins(:forecast_person).order("forecast_people.email ASC") }
 
   belongs_to :forecast_person, class_name: "ForecastPerson", foreign_key: "forecast_person_id", primary_key: "forecast_id"
-  belongs_to :qbo_vendor, class_name: "QboVendor", foreign_key: "qbo_vendor_id", primary_key: "qbo_id", optional: true
   belongs_to :deel_person, class_name: "DeelPerson", foreign_key: "deel_person_id", primary_key: "deel_id", optional: true
 
   has_many :contributor_qbo_vendors, dependent: :destroy
   has_many :qbo_vendors, through: :contributor_qbo_vendors
+  accepts_nested_attributes_for :contributor_qbo_vendors, allow_destroy: true,
+    reject_if: ->(attrs) { attrs[:qbo_vendor_id].blank? }
 
   # Every contributor gets a Ledger row for every enterprise so reimbursements
   # / pay stubs / etc. against any enterprise work the moment the contributor
@@ -18,11 +19,9 @@ class Contributor < ApplicationRecord
   end
 
   # Looks up this contributor's QboVendor record within a specific QBO account.
-  # Returns nil when no mapping exists for that account. Replaces the legacy
-  # `qbo_vendor` (singleton, Sanctuary-only) association for code paths that
-  # need per-enterprise routing. The legacy `contributors.qbo_vendor_id`
-  # column is preserved for backwards compatibility with callers like
-  # `forecast_client.qbo_customer` that haven't been migrated yet.
+  # Returns nil when no mapping exists for that account. This is the canonical
+  # vendor lookup; SyncsAsQboBill#sync_qbo_bill! uses it to route bills to
+  # the correct per-enterprise QBO.
   def qbo_vendor_for(qbo_account)
     return nil if qbo_account.nil?
     qbo_vendors.find_by(qbo_account_id: qbo_account.id)
@@ -187,32 +186,6 @@ class Contributor < ApplicationRecord
     profit_shares.each do |ps|
       ps.sync_qbo_bill!
     end
-  end
-
-  def attempt_populate_qbo_vendor_and_deel_person!
-    deel_people = DeelPerson.all
-    qbo_vendors = QboVendor.all
-    person = forecast_person
-
-    first_name = person.data["first_name"].downcase
-    last_name = person.data["last_name"].downcase
-
-    deel_person = deel_people.find do |dp|
-      dp_first_name, dp_last_name = dp.data["full_name"].split(" ")
-      first_name == dp_first_name.downcase && last_name == dp_last_name.downcase
-    end
-
-    deel_emails = deel_person ? deel_person.data["emails"].map{|e| e["value"]}.compact : []
-
-    qbo_vendor = qbo_vendors.find do |qv|
-      if deel_emails.any?{|e| qv.display_name.downcase.include?(e.downcase)}
-        true
-      else
-        qv.display_name.downcase.include?("#{first_name} #{last_name}")
-      end
-    end
-
-    update(deel_person: deel_person, qbo_vendor: qbo_vendor)
   end
 
   def display_name
