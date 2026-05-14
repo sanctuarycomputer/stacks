@@ -16,7 +16,11 @@ ActiveAdmin.register Contributor do
     helper_method :manual_deel_invoice_visible?
 
     def scoped_collection
-      super.joins(:forecast_person).select("contributors.*, forecast_people.email")
+      # Preload the per-enterprise vendor mappings so the index column can
+      # render one badge per (enterprise, vendor) without an N+1.
+      super.joins(:forecast_person)
+        .select("contributors.*, forecast_people.email")
+        .preload(contributor_qbo_vendors: [:qbo_vendor, { qbo_account: :enterprise }])
     end
 
     def find_resource
@@ -36,7 +40,8 @@ ActiveAdmin.register Contributor do
     end
   end
 
-  permit_params :qbo_vendor_id, :deel_person_id
+  permit_params :qbo_vendor_id, :deel_person_id,
+    contributor_qbo_vendors_attributes: [:id, :qbo_vendor_id, :_destroy]
 
   # Action items below are scoped to the ledger tab the user is viewing.
   # On the "All" tab (no `ledger` query param), there's no single ledger to
@@ -121,15 +126,52 @@ ActiveAdmin.register Contributor do
   form do |f|
     f.inputs do
       f.input :forecast_person, input_html: { disabled: true }
-      f.input :qbo_vendor
+      # Legacy Sanctuary-only mapping (the `contributors.qbo_vendor_id` column).
+      # The per-enterprise `has_many :contributor_qbo_vendors` below is what
+      # the bill-push code actually consults; this field is kept for
+      # backwards compatibility with older callers and will be removed once
+      # they're all migrated.
+      f.input :qbo_vendor, hint: "Legacy Sanctuary-only field. Use the per-enterprise QBO vendor mappings below."
       f.input :deel_person
     end
+
+    # One row per (enterprise, qbo_vendor) mapping. Per-enterprise scoping is
+    # enforced server-side: the join row's qbo_account_id is derived from the
+    # chosen vendor's qbo_account_id in a ContributorQboVendor before_validation
+    # callback, so the admin only needs to pick a vendor.
+    f.has_many :contributor_qbo_vendors,
+               heading: "Per-enterprise QBO vendor mappings",
+               allow_destroy: true,
+               new_record: "Add QBO vendor mapping" do |cqv|
+      vendor_options = QboVendor.includes(qbo_account: :enterprise).all.sort_by do |qv|
+        [qv.qbo_account&.enterprise&.name.to_s, qv.display_name.to_s]
+      end.map do |qv|
+        enterprise_label = qv.qbo_account&.enterprise&.name || "(no enterprise)"
+        ["#{enterprise_label}: #{qv.display_name}", qv.id]
+      end
+      cqv.input :qbo_vendor,
+        as: :select,
+        collection: vendor_options,
+        include_blank: "Choose a QBO vendor…",
+        label: "QBO vendor"
+    end
+
     f.actions
   end
 
   index download_links: false do
     column :forecast_person
-    column :qbo_vendor
+    column "QBO Vendors" do |c|
+      if c.contributor_qbo_vendors.empty?
+        "—"
+      else
+        safe_join(c.contributor_qbo_vendors.sort_by { |cqv| cqv.qbo_account&.enterprise&.name.to_s }.map { |cqv|
+          enterprise_label = cqv.qbo_account&.enterprise&.name || "(no enterprise)"
+          vendor_label = cqv.qbo_vendor&.display_name || "(no vendor)"
+          status_tag("#{enterprise_label}: #{vendor_label}")
+        }, " ")
+      end
+    end
     column :deel_person
     # column :balance do |c|
     #   balance = c.new_deal_balance

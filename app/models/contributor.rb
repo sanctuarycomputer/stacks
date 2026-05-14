@@ -7,6 +7,8 @@ class Contributor < ApplicationRecord
 
   has_many :contributor_qbo_vendors, dependent: :destroy
   has_many :qbo_vendors, through: :contributor_qbo_vendors
+  accepts_nested_attributes_for :contributor_qbo_vendors, allow_destroy: true,
+    reject_if: ->(attrs) { attrs[:qbo_vendor_id].blank? }
 
   # Every contributor gets a Ledger row for every enterprise so reimbursements
   # / pay stubs / etc. against any enterprise work the moment the contributor
