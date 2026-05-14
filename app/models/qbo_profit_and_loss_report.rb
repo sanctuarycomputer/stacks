@@ -48,6 +48,14 @@ class QboProfitAndLossReport < ApplicationRecord
         idx = data[accounting_method]["rows"].index(row)
         top_level_category_row =
           data[accounting_method]["rows"][idx..].find{|r| TOP_LEVEL_CATEGORIES.values.include?(r[0])}
+        # QBO P&L reports emit "Other Income" / "Other Expense" sections
+        # AFTER the main Income / COGS / Expenses sections. A vertical-tagged
+        # row in those below-the-line sections (e.g., "[SC] Depreciation"
+        # under Other Expense) has no following Total X line, so the find
+        # above returns nil. Those rows don't bucket into revenue/cogs/
+        # expenses and are skipped — net_revenue still tracks the main
+        # sections, which is what the dashboard reports against.
+        next acc if top_level_category_row.nil?
         acc[TOP_LEVEL_CATEGORIES.key(top_level_category_row[0])] += row[1].to_f
         acc
       end
