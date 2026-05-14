@@ -162,13 +162,20 @@ ActiveAdmin.register Contributor do
   index download_links: false do
     column :forecast_person
     column "QBO Vendors" do |c|
-      if c.contributor_qbo_vendors.empty?
+      cqvs = c.contributor_qbo_vendors.to_a
+      if cqvs.empty?
         "—"
       else
-        safe_join(c.contributor_qbo_vendors.sort_by { |cqv| cqv.qbo_account&.enterprise&.name.to_s }.map { |cqv|
+        # `status_tag` is an Arbre element that side-effects into the current
+        # cell, so returning a `safe_join(status_tags)` from the column block
+        # ends up rendering each badge twice (once from the side effect, once
+        # from the explicit return — see ActiveAdmin table_for.rb#build_table_cell).
+        # `content_tag(:span, ..., class: "status_tag")` is a pure string
+        # builder and doesn't double up.
+        safe_join(cqvs.sort_by { |cqv| cqv.qbo_account&.enterprise&.name.to_s }.map { |cqv|
           enterprise_label = cqv.qbo_account&.enterprise&.name || "(no enterprise)"
           vendor_label = cqv.qbo_vendor&.display_name || "(no vendor)"
-          status_tag("#{enterprise_label}: #{vendor_label}")
+          content_tag(:span, "#{enterprise_label}: #{vendor_label}", class: "status_tag")
         }, " ")
       end
     end
