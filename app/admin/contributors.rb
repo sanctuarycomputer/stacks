@@ -40,7 +40,7 @@ ActiveAdmin.register Contributor do
     end
   end
 
-  permit_params :qbo_vendor_id, :deel_person_id,
+  permit_params :deel_person_id,
     contributor_qbo_vendors_attributes: [:id, :qbo_vendor_id, :_destroy]
 
   # Action items below are scoped to the ledger tab the user is viewing.
@@ -126,12 +126,6 @@ ActiveAdmin.register Contributor do
   form do |f|
     f.inputs do
       f.input :forecast_person, input_html: { disabled: true }
-      # Legacy Sanctuary-only mapping (the `contributors.qbo_vendor_id` column).
-      # The per-enterprise `has_many :contributor_qbo_vendors` below is what
-      # the bill-push code actually consults; this field is kept for
-      # backwards compatibility with older callers and will be removed once
-      # they're all migrated.
-      f.input :qbo_vendor, hint: "Legacy Sanctuary-only field. Use the per-enterprise QBO vendor mappings below."
       f.input :deel_person
     end
 

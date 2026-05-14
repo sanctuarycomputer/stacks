@@ -47,14 +47,6 @@ class ContributorQboVendorForTest < ActiveSupport::TestCase
     assert_includes mapping.errors[:qbo_vendor], "must belong to the same qbo_account as the mapping"
   end
 
-  test "backfilled mapping resolves to a qbo_vendor whose qbo_id matches the legacy column" do
-    c = Contributor.where.not(qbo_vendor_id: nil).first
-    next if c.nil?
-    found_vendor = c.qbo_vendor_for(@sanctuary_qa)
-    assert_not_nil found_vendor
-    assert_equal c.qbo_vendor_id, found_vendor.qbo_id
-  end
-
   # Edge case: qbo_vendor_for returns the vendor across multiple qbo_accounts correctly
   test "qbo_vendor_for returns correct vendor when contributor has mappings to multiple qbo_accounts" do
     # Create a second enterprise and QBO account

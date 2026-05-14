@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_05_13_202334) do
+ActiveRecord::Schema.define(version: 2026_05_14_180000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -168,12 +168,10 @@ ActiveRecord::Schema.define(version: 2026_05_13_202334) do
 
   create_table "contributors", force: :cascade do |t|
     t.bigint "forecast_person_id", null: false
-    t.bigint "qbo_vendor_id"
     t.string "deel_person_id"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.index ["forecast_person_id"], name: "index_contributors_on_forecast_person_id"
-    t.index ["qbo_vendor_id"], name: "index_contributors_on_qbo_vendor_id"
   end
 
   create_table "deel_contracts", force: :cascade do |t|
