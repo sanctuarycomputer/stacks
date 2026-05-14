@@ -186,4 +186,22 @@ class InvoiceTrackerBillingEnterpriseTest < ActiveSupport::TestCase
     it = InvoiceTracker.new(invoice_pass: ip, forecast_client: fc)
     assert_equal sanctuary.qbo_account, it.qbo_account
   end
+
+  test "make_invoice! refuses to push when forecast_client is internal" do
+    Thread.current[:sanctuary_enterprise] = nil
+    ent = Enterprise.create!(name: "InvRefuse-#{SecureRandom.hex(2)}")
+    fc = ForecastClient.create!(forecast_id: rand(1..2_000_000_000), name: "Internal-#{SecureRandom.hex(2)}")
+    EnterpriseForecastClient.create!(enterprise: ent, forecast_client_id: fc.forecast_id)
+    assert fc.reload.is_internal?, "fixture sanity: mapped client should be internal"
+
+    ip = InvoicePass.find_or_create_by!(start_of_month: Date.new(2031, 1, 1))
+    it = InvoiceTracker.new(invoice_pass: ip, forecast_client: fc)
+    # Guard runs after configuration_errors / qbo_invoice early returns;
+    # stub those so the internal-client check is what trips.
+    it.stubs(:configuration_errors).returns([])
+    it.stubs(:qbo_invoice).returns(nil)
+
+    err = assert_raises(RuntimeError) { it.make_invoice! }
+    assert_match(/internal client/i, err.message)
+  end
 end

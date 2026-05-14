@@ -682,6 +682,13 @@ class InvoiceTracker < ApplicationRecord
   def make_invoice!
     return if configuration_errors.any?
     return if qbo_invoice.present?
+    # Defense-in-depth: InvoicePass#make_trackers! now filters internal
+    # clients before creating InvoiceTrackers, but legacy rows may still
+    # exist. Refuse to push a QBO invoice for one rather than silently
+    # writing into the internal enterprise's QBO.
+    if forecast_client.is_internal?
+      raise "Refusing to invoice internal client #{forecast_client.name} — internal clients are paid via PayCycles, not InvoiceTrackers."
+    end
     qa = qbo_account
     raise "Billing enterprise (#{billing_enterprise.name}) has no connected QboAccount" if qa.nil?
     qbo_items, default_service_item = qa.fetch_all_items

@@ -38,7 +38,10 @@ class InvoicePass < ApplicationRecord
 
   def make_trackers!
     return if statuses == :missing_hours
-    clients_served.each do |c|
+    # Internal clients (mapped via enterprise_forecast_clients) generate pay
+    # stubs against their enterprise's pay cycles instead of being invoiced.
+    # Skip them here so they never enter the InvoiceTracker pipeline.
+    clients_served.reject(&:is_internal?).each do |c|
       InvoiceTracker.find_or_create_by!(
         forecast_client_id: c.forecast_id,
         invoice_pass: self
