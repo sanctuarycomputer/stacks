@@ -27,6 +27,18 @@ namespace :stacks do
   task :daily_enterprise_tasks => :environment do
     system_task = SystemTask.create!(name: "stacks:daily_enterprise_tasks")
     begin
+      # Step 1: proactively refresh every enterprise's QBO token so
+      # downstream steps aren't racing the 10-minute staleness gate or
+      # surprise-401-ing mid-job. Per-enterprise failures are isolated and
+      # only logged — downstream steps continue regardless (a stale token
+      # will surface as an AuthorizationFailure inside sync_all! /
+      # generate_snapshot!, which are already isolated per-enterprise).
+      refresh_results = QboTokens::RefreshAll.call
+      failed_refreshes = refresh_results.reject(&:ok?)
+      if failed_refreshes.any?
+        Rails.logger.warn("[stacks:daily_enterprise_tasks] #{failed_refreshes.size}/#{refresh_results.size} QBO token refreshes failed: #{failed_refreshes.map { |r| "enterprise=#{r.qbo_account.enterprise_id}" }.join(', ')}")
+      end
+
       Parallel.map(QboAccount.all, in_threads: 2) { |e| e.sync_all! }
       Parallel.map(Enterprise.all, in_threads: 2) { |e| e.generate_snapshot! }
 

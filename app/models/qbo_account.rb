@@ -91,7 +91,10 @@ class QboAccount < ApplicationRecord
     })
   end
 
-  def make_and_refresh_qbo_access_token
+  # `force: true` always refreshes regardless of the 10-minute staleness gate
+  # — used by QboTokens::RefreshAll at the start of daily tasks so downstream
+  # work can rely on a guaranteed-fresh token rather than racing the gate.
+  def make_and_refresh_qbo_access_token(force: false)
     oauth2_client = OAuth2::Client.new(client_id, client_secret, {
       site: "https://appcenter.intuit.com/connect/oauth2",
       authorize_url: "https://appcenter.intuit.com/connect/oauth2",
@@ -106,8 +109,8 @@ class QboAccount < ApplicationRecord
       refresh_token: qbo_token.refresh_token
     )
 
-    # Refresh the token if it's been longer than 10 minutes
-    if ((DateTime.now.to_i - qbo_token.updated_at.to_i) / 60) >= 10
+    stale = ((DateTime.now.to_i - qbo_token.updated_at.to_i) / 60) >= 10
+    if force || stale
       access_token = access_token.refresh!
       qbo_token.update!(
         token: access_token.token,
