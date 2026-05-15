@@ -33,7 +33,8 @@ class ProjectTrackerForecastToRunnSyncTask < ApplicationRecord
 
   def sync!(runn_instance)
     runn(runn_instance)
-    # TODO: Ensure we're requesting max page size
+    return if skip_with_reason!
+
     runn_actuals_did_change = false
     forecast_assignments = project_tracker.forecast_assignments.includes(:forecast_person, :forecast_project)
 
@@ -109,7 +110,12 @@ class ProjectTrackerForecastToRunnSyncTask < ApplicationRecord
 
     if pending_writes.any?
       puts "~~~> Flushing #{pending_writes.size} actual write(s) to Runn (bulk endpoint, 100/call)."
-      runn.create_or_update_actuals_bulk(pending_writes)
+      begin
+        runn.create_or_update_actuals_bulk(pending_writes)
+      rescue => e
+        return if runn_rejected_due_to_project_state?(e)
+        raise
+      end
       runn_actuals_did_change = true
     end
 
@@ -133,6 +139,56 @@ class ProjectTrackerForecastToRunnSyncTask < ApplicationRecord
     runn_actuals.reduce(0) do |acc, ra|
       acc += (runn_roles.find{|rr| rr["id"] == ra["roleId"]}["standardRate"] * (ra["billableMinutes"] / 60.0))
     end
+  end
+
+  # When Runn returns a 4xx whose response body signals "this project can't
+  # accept actuals right now" — typically because the project is archived,
+  # was deleted, or is configured as non-billable — log a WARN and return
+  # gracefully instead of raising. The pre-flight skip_with_reason! catches
+  # these when our local mirror is fresh; this is the defensive catch for
+  # when the mirror is stale relative to Runn.
+  RUNN_PROJECT_STATE_ERROR_PATTERNS = [
+    /Project not found/i,
+    /non-billable project/i,
+  ].freeze
+
+  def runn_rejected_due_to_project_state?(error)
+    msg = error.message.to_s
+    return false unless RUNN_PROJECT_STATE_ERROR_PATTERNS.any? { |re| msg.match?(re) }
+    Rails.logger.warn(
+      "[ProjectTrackerForecastToRunnSyncTask] PT #{project_tracker.id} (#{project_tracker.name}): " \
+      "Runn rejected the actuals write (#{msg.slice(0, 160)}). Skipping. " \
+      "Update the Runn project state or relink the project tracker to resolve."
+    )
+    true
+  end
+
+  # Returns true and short-circuits sync! when the linked Runn project is in
+  # a state where syncing actuals can't possibly succeed:
+  #
+  #   - is_archived: Runn returns 400 "Project not found" for any actuals
+  #     write against an archived project.
+  #   - pricing_model == "nb" (non-billable): Runn rejects billable-minute
+  #     writes with 400 "Cannot add billable minutes to non-billable project".
+  #   - The local runn_project row is missing entirely (data drift; the
+  #     project tracker references a runn_id we don't mirror locally).
+  #
+  # These aren't bugs in our code — they're config states where the right
+  # behavior is "don't sync." Logged at WARN so the admin sees the skip
+  # without it polluting the Stacksbot exception feed.
+  def skip_with_reason!
+    rp = project_tracker.runn_project
+    reason =
+      if rp.nil?
+        "no linked Runn project"
+      elsif rp.is_archived
+        "Runn project is archived"
+      elsif rp.pricing_model.to_s == "nb"
+        "Runn project is non-billable (pricing_model='nb')"
+      end
+    return false if reason.nil?
+    Rails.logger.warn("[ProjectTrackerForecastToRunnSyncTask] Skipping PT #{project_tracker.id} (#{project_tracker.name}): #{reason}")
+    true
   end
 
   # Expands multi-day forecast assignments into single-day Runn actuals,

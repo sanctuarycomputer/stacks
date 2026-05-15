@@ -153,4 +153,75 @@ class ProjectTrackerForecastToRunnSyncTaskTest < ActiveSupport::TestCase
     )
     assert_raises(Stacks::Errors::Base) { @task.send(:build_forecast_actuals, [fa]) }
   end
+
+  # skip_with_reason! pre-flight: archived / non-billable / missing Runn
+  # project should short-circuit the sync gracefully (no raise, no
+  # exception notification — just a logged WARN).
+  test "skip_with_reason! returns true when Runn project is archived" do
+    pt = mock("project_tracker")
+    pt.stubs(:id).returns(1)
+    pt.stubs(:name).returns("Archived PT")
+    pt.stubs(:runn_project).returns(stub(is_archived: true, pricing_model: "tm"))
+    @task.stubs(:project_tracker).returns(pt)
+    assert_equal true, @task.send(:skip_with_reason!)
+  end
+
+  test "skip_with_reason! returns true when Runn project is non-billable" do
+    pt = mock("project_tracker")
+    pt.stubs(:id).returns(1)
+    pt.stubs(:name).returns("Non-Billable PT")
+    pt.stubs(:runn_project).returns(stub(is_archived: false, pricing_model: "nb"))
+    @task.stubs(:project_tracker).returns(pt)
+    assert_equal true, @task.send(:skip_with_reason!)
+  end
+
+  test "skip_with_reason! returns true when Runn project is missing entirely" do
+    pt = mock("project_tracker")
+    pt.stubs(:id).returns(1)
+    pt.stubs(:name).returns("Unlinked PT")
+    pt.stubs(:runn_project).returns(nil)
+    @task.stubs(:project_tracker).returns(pt)
+    assert_equal true, @task.send(:skip_with_reason!)
+  end
+
+  test "skip_with_reason! returns false for a normal billable, non-archived project" do
+    pt = mock("project_tracker")
+    pt.stubs(:id).returns(1)
+    pt.stubs(:name).returns("Normal PT")
+    pt.stubs(:runn_project).returns(stub(is_archived: false, pricing_model: "tm"))
+    @task.stubs(:project_tracker).returns(pt)
+    assert_equal false, @task.send(:skip_with_reason!)
+  end
+
+  # runn_rejected_due_to_project_state? — defensive runtime catch for the
+  # cases where our local runn_project mirror is stale relative to Runn.
+  test "runn_rejected_due_to_project_state? matches 'Project not found' responses" do
+    pt = mock("project_tracker")
+    pt.stubs(:id).returns(1)
+    pt.stubs(:name).returns("Stale PT")
+    @task.stubs(:project_tracker).returns(pt)
+
+    err = RuntimeError.new('{"error":"Bad Request","message":"Project not found","statusCode":400}')
+    assert_equal true, @task.send(:runn_rejected_due_to_project_state?, err)
+  end
+
+  test "runn_rejected_due_to_project_state? matches 'non-billable project' responses" do
+    pt = mock("project_tracker")
+    pt.stubs(:id).returns(1)
+    pt.stubs(:name).returns("Non-Billable PT")
+    @task.stubs(:project_tracker).returns(pt)
+
+    err = RuntimeError.new('{"error":"Bad Request","message":"Cannot add billable minutes to non-billable project","statusCode":400}')
+    assert_equal true, @task.send(:runn_rejected_due_to_project_state?, err)
+  end
+
+  test "runn_rejected_due_to_project_state? returns false for unrelated errors (lets them re-raise)" do
+    pt = mock("project_tracker")
+    pt.stubs(:id).returns(1)
+    pt.stubs(:name).returns("PT")
+    @task.stubs(:project_tracker).returns(pt)
+
+    refute @task.send(:runn_rejected_due_to_project_state?, RuntimeError.new("connection refused"))
+    refute @task.send(:runn_rejected_due_to_project_state?, RuntimeError.new('{"statusCode":500}'))
+  end
 end
