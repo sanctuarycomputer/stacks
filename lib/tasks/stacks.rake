@@ -238,6 +238,49 @@ namespace :stacks do
     puts "Done. Reattached #{applied} trackers."
   end
 
+  # Read-only diagnostic for the Stacks::Errors::Base "Failed Runn sync"
+  # exception that ProjectTrackerForecastToRunnSyncTask#sync! raises when
+  # project_tracker.lifetime_value disagrees with the Runn revenue
+  # calculated from current actuals.
+  #
+  # Usage:
+  #   rake stacks:diagnose_runn_sync[27]         # fetch fresh from Runn
+  #   rake stacks:diagnose_runn_sync[27,true]    # use cached tmp/runn_sync_pt_27.json
+  desc "Diagnose Runn ↔ Project-Tracker LTV mismatch for a project_tracker"
+  task :diagnose_runn_sync, [:project_tracker_id, :cache] => :environment do |_t, args|
+    require "stacks/runn_sync_diagnostic"
+
+    pt_id = args[:project_tracker_id].to_i
+    raise "Pass a project_tracker_id: rake 'stacks:diagnose_runn_sync[27]'" if pt_id.zero?
+
+    pt = ProjectTracker.find(pt_id)
+    raise "ProjectTracker #{pt_id} has no associated runn_project" if pt.runn_project.nil?
+
+    use_cache = args[:cache].to_s == "true"
+    cache_path = Rails.root.join("tmp", "runn_sync_pt_#{pt_id}.json")
+
+    if use_cache && cache_path.exist?
+      cached = JSON.parse(cache_path.read)
+      runn_actuals = cached["actuals"]
+      runn_roles = cached["roles"]
+      puts "Loaded cached Runn data from #{cache_path}"
+    else
+      runn = Stacks::Runn.new
+      puts "Fetching Runn actuals (project runn_id=#{pt.runn_project.runn_id})…"
+      runn_actuals = runn.get_actuals_for_project(pt.runn_project.runn_id)
+      puts "  got #{runn_actuals.size} actuals"
+      puts "Fetching Runn roles…"
+      runn_roles = runn.get_roles
+      puts "  got #{runn_roles.size} roles"
+      FileUtils.mkdir_p(cache_path.dirname)
+      File.write(cache_path, JSON.dump("actuals" => runn_actuals, "roles" => runn_roles))
+      puts "Cached Runn data to #{cache_path} (re-run with cache=true to skip the API hit)"
+      puts ""
+    end
+
+    Stacks::RunnSyncDiagnostic.new(pt, runn_actuals: runn_actuals, runn_roles: runn_roles).report!
+  end
+
   desc "Sync Runn"
   task :sync_runn => :environment do
     system_task = SystemTask.create!(name: "stacks:sync_runn")

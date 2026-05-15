@@ -38,36 +38,7 @@ class ProjectTrackerForecastToRunnSyncTask < ApplicationRecord
     forecast_assignments = project_tracker.forecast_assignments.includes(:forecast_person, :forecast_project)
 
     # 1. Expand our multi-day forecast_assignments as single day Runn.io actuals for easy diffing
-    forecast_assigments_as_runn_actuals = forecast_assignments.reduce([]) do |acc, fa|
-      runn_role = find_or_create_runn_role_for_forecast_project(fa.forecast_project)
-      runn_person = find_or_create_runn_person_for_forecast_person(fa.forecast_person)
-
-      (fa.start_date..fa.end_date).each do |date|
-        allocation_in_minutes = (fa.allocation_during_range_in_seconds(date, date, false) / 60.0)
-
-        # Runn rounds to the nearest minute - no seconds are permitted.
-        if allocation_in_minutes % 1 != 0
-          raise Stacks::Errors::Base.new("A Forecast Assignment for '#{fa.forecast_person.email}' on #{date.to_s} for Forecast Project '#{fa.forecast_project.name}' includes seconds. Runn.io only accepts minutes (and we should never bill our clients in seconds). Please update that Forecast Assignment to the nearest minute: #{fa.external_link}")
-        end
-
-        ra = {
-          "date" => date.to_s,
-          "billableMinutes" => allocation_in_minutes,
-          "roleId" => runn_role["id"],
-          "personId" => runn_person["id"],
-        }
-
-        if existing = acc.find{|era| era == ra}
-          # If someone has recorded work to two associated forecast projects,
-          # (and they share) the same billable rate, we simply collapse those
-          # forecast assignments into a single Runn actual.
-          existing["billableMinutes"] += ra["billableMinutes"]
-        else
-          acc << ra
-        end
-      end
-      acc
-    end
+    forecast_assigments_as_runn_actuals = build_forecast_actuals(forecast_assignments)
 
     runn_actuals = runn.get_actuals_for_project(project_tracker.runn_project.runn_id)
     # 2. Find Forecast Assignments that don't have a corresponding Runn actual & write them
@@ -160,6 +131,50 @@ class ProjectTrackerForecastToRunnSyncTask < ApplicationRecord
   def calculate_runn_revenue(runn_actuals)
     runn_actuals.reduce(0) do |acc, ra|
       acc += (runn_roles.find{|rr| rr["id"] == ra["roleId"]}["standardRate"] * (ra["billableMinutes"] / 60.0))
+    end
+  end
+
+  # Expands multi-day forecast assignments into single-day Runn actuals,
+  # collapsing any two entries that share (date, roleId, personId) — even if
+  # their billableMinutes differ. This collapse is critical: Runn's API
+  # stores ONE actual per (date, role, person), so when a contributor logs
+  # hours to two different forecast projects that map to the same Runn role
+  # (i.e., share a rate) on the same day, the per-FA writes overwrite each
+  # other and Runn ends up reflecting only the last one. Summing here
+  # ensures the write to Runn matches the total Stacks lifetime_value.
+  def build_forecast_actuals(forecast_assignments)
+    forecast_assignments.reduce([]) do |acc, fa|
+      runn_role = find_or_create_runn_role_for_forecast_project(fa.forecast_project)
+      runn_person = find_or_create_runn_person_for_forecast_person(fa.forecast_person)
+
+      (fa.start_date..fa.end_date).each do |date|
+        allocation_in_minutes = (fa.allocation_during_range_in_seconds(date, date, false) / 60.0)
+
+        # Runn rounds to the nearest minute - no seconds are permitted.
+        if allocation_in_minutes % 1 != 0
+          raise Stacks::Errors::Base.new("A Forecast Assignment for '#{fa.forecast_person.email}' on #{date.to_s} for Forecast Project '#{fa.forecast_project.name}' includes seconds. Runn.io only accepts minutes (and we should never bill our clients in seconds). Please update that Forecast Assignment to the nearest minute: #{fa.external_link}")
+        end
+
+        ra = {
+          "date" => date.to_s,
+          "billableMinutes" => allocation_in_minutes,
+          "roleId" => runn_role["id"],
+          "personId" => runn_person["id"],
+        }
+
+        existing = acc.find do |era|
+          era["date"] == ra["date"] &&
+            era["roleId"] == ra["roleId"] &&
+            era["personId"] == ra["personId"]
+        end
+
+        if existing
+          existing["billableMinutes"] += ra["billableMinutes"]
+        else
+          acc << ra
+        end
+      end
+      acc
     end
   end
 
