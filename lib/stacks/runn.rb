@@ -133,6 +133,37 @@ class Stacks::Runn
     }
   end
 
+  # Bulk create-or-update for actuals. Runn caps each request at 100, so the
+  # caller can pass any-size array and we chunk transparently. Each entry
+  # must include date / billableMinutes / personId / projectId / roleId
+  # (nonbillableMinutes defaults to 0). Same upsert semantics as the single
+  # endpoint: each (date, person, project, role, workstream) tuple is
+  # overwritten by the supplied minutes, so callers must dedupe by that
+  # tuple before submitting or only the last value sticks.
+  BULK_ACTUALS_CHUNK_SIZE = 100
+
+  def create_or_update_actuals_bulk(actuals)
+    return if actuals.empty?
+    actuals.each_slice(BULK_ACTUALS_CHUNK_SIZE) do |chunk|
+      payload = chunk.map do |a|
+        {
+          "date" => a["date"] || a[:date],
+          "billableMinutes" => a["billableMinutes"] || a[:billableMinutes],
+          "nonbillableMinutes" => a["nonbillableMinutes"] || a[:nonbillableMinutes] || 0,
+          "personId" => a["personId"] || a[:personId],
+          "projectId" => a["projectId"] || a[:projectId],
+          "roleId" => a["roleId"] || a[:roleId],
+        }
+      end
+      handle_response {
+        self.class.post("/actuals/bulk", {
+          body: JSON.dump({ "actuals" => payload }),
+          headers: @headers,
+        })
+      }
+    end
+  end
+
   def create_role(name, default_hour_cost, standard_rate)
      handle_response {
         self.class.post("/roles/", {

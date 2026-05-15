@@ -41,6 +41,14 @@ class ProjectTrackerForecastToRunnSyncTask < ApplicationRecord
     forecast_assigments_as_runn_actuals = build_forecast_actuals(forecast_assignments)
 
     runn_actuals = runn.get_actuals_for_project(project_tracker.runn_project.runn_id)
+    project_runn_id = project_tracker.runn_project.runn_id
+
+    # Collect every (create / update / zero) write into a single buffer so we
+    # can flush via Runn's bulk endpoint (POST /actuals/bulk, 100 per call)
+    # instead of one HTTP round-trip per actual. For PT 27 (The Light Phone)
+    # this collapses ~thousands of POSTs into ~tens.
+    pending_writes = []
+
     # 2. Find Forecast Assignments that don't have a corresponding Runn actual & write them
     forecast_assigments_as_runn_actuals.each do |faara|
       matches = runn_actuals.select do |ra|
@@ -48,68 +56,61 @@ class ProjectTrackerForecastToRunnSyncTask < ApplicationRecord
       end
 
       if matches.empty?
-        # Create faara in Runn
-        puts "~~~> Found new Forecast Assignment, creating it in Runn."
-        runn.create_or_update_actual(
-          faara["date"],
-          faara["billableMinutes"],
-          faara["personId"],
-          project_tracker.runn_project.runn_id,
-          faara["roleId"],
-        )
-        runn_actuals_did_change = true
+        pending_writes << {
+          "date" => faara["date"],
+          "billableMinutes" => faara["billableMinutes"],
+          "personId" => faara["personId"],
+          "projectId" => project_runn_id,
+          "roleId" => faara["roleId"],
+        }
         next
       end
 
-      # Ensure the first match has correct billableMinutes
       keep = matches.shift
       if keep["billableMinutes"] != faara["billableMinutes"]
-        puts "~~~> Found existing Runn Actual with incorrect billable minutes, updating it in Runn."
-        runn.create_or_update_actual(
-          faara["date"],
-          faara["billableMinutes"],
-          faara["personId"],
-          project_tracker.runn_project.runn_id,
-          faara["roleId"],
-        )
-        runn_actuals_did_change = true
+        pending_writes << {
+          "date" => faara["date"],
+          "billableMinutes" => faara["billableMinutes"],
+          "personId" => faara["personId"],
+          "projectId" => project_runn_id,
+          "roleId" => faara["roleId"],
+        }
       end
 
-      # Zero the remainder, this is theoretically impossible as there should only be max 1 for this tri-union
+      # Zero the remainder — theoretically impossible since Runn enforces
+      # one actual per (date, role, person) tuple, but kept as a defensive
+      # cleanup for any historical duplicates.
       matches.each do |ra|
-        puts "~~~> Weird...! Found duplicative Runn Actual, zeroing it out in Runn."
-        # TODO: Can we delete these yet?
-        runn.create_or_update_actual(
-          ra["date"],
-          0,
-          ra["personId"],
-          ra["projectId"],
-          ra["roleId"]
-        )
-        runn_actuals_did_change = true
+        pending_writes << {
+          "date" => ra["date"],
+          "billableMinutes" => 0,
+          "personId" => ra["personId"],
+          "projectId" => ra["projectId"],
+          "roleId" => ra["roleId"],
+        }
       end
     end
 
     # 3. Find Runn Actuals that don't have a corresponding Forecast Assignment and zero them
     runn_actuals.each do |ra|
       next if ra["billableMinutes"] == 0
-
       match = forecast_assigments_as_runn_actuals.find do |faara|
         ra["date"] == faara["date"] && ra["roleId"] == faara["roleId"] && ra["personId"] == faara["personId"]
       end
+      next if match
+      pending_writes << {
+        "date" => ra["date"],
+        "billableMinutes" => 0,
+        "personId" => ra["personId"],
+        "projectId" => ra["projectId"],
+        "roleId" => ra["roleId"],
+      }
+    end
 
-      if match.nil?
-        puts "~~~> Found stale Runn Actual, zeroing it out in Runn."
-        # TODO: Can we delete these yet?
-        runn.create_or_update_actual(
-          ra["date"],
-          0,
-          ra["personId"],
-          ra["projectId"],
-          ra["roleId"]
-        )
-        runn_actuals_did_change = true
-      end
+    if pending_writes.any?
+      puts "~~~> Flushing #{pending_writes.size} actual write(s) to Runn (bulk endpoint, 100/call)."
+      runn.create_or_update_actuals_bulk(pending_writes)
+      runn_actuals_did_change = true
     end
 
     # Reload Runn actuals as they've very likely changed at this point
