@@ -126,9 +126,18 @@ class ProjectTrackerForecastToRunnSyncTask < ApplicationRecord
     end
 
     calculated_runn_revenue = calculate_runn_revenue(runn_actuals)
-    project_tracker_ltv = project_tracker.lifetime_value
+    # Reconcile against the SAME hours we just wrote, not against the
+    # snapshot-bounded `project_tracker.lifetime_value`. `lifetime_value`
+    # uses pt.start_date..pt.end_date which are read from
+    # `project_tracker.snapshot["last_forecast_assignment_end_date"]` —
+    # that snapshot key isn't refreshed in lockstep with FA changes, so
+    # when an FA's end_date extends past the snapshotted value, LTV
+    # silently undercounts while Runn (correctly) reflects the new dates.
+    # Summing FA#value_in_usd directly bypasses the snapshot and matches
+    # exactly what build_forecast_actuals expanded into Runn.
+    project_tracker_ltv = forecast_assignments.sum(&:value_in_usd).to_f
     unless calculated_runn_revenue == project_tracker_ltv
-      puts "~~~> Failure, even after sync, Runn revenue is different to project_tracker.lifetime_value"
+      puts "~~~> Failure, even after sync, Runn revenue is different to total ForecastAssignment value"
       raise Stacks::Errors::Base.new("Failed Runn sync for Project Tracker (#{project_tracker.name} ID: #{project_tracker.id}), Runn Revenue: #{calculated_runn_revenue}, Project Tracker LTV: #{project_tracker_ltv}")
     end
 
