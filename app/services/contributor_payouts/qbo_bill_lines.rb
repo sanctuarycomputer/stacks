@@ -33,12 +33,15 @@ module ContributorPayouts
       commission:              "Commission",
     }.freeze
 
-    # Buckets that map to a specific QBO account by exact name. Buckets not
-    # listed here fall back to the host's `find_qbo_account!` result.
-    SPECIFIC_ACCOUNT_BY_BUCKET = {
-      account_lead_surplus:  "5710 - Bonuses",
-      project_lead_surplus:  "5710 - Bonuses",
-      commission:            "6120 - Commissions",
+    # Buckets that map to a specific QBO account by chart-of-accounts
+    # number. Matching by `acct_num` (rather than `name`) is more stable —
+    # finance teams rename accounts more often than they renumber them.
+    # Buckets not listed here fall back to the host's
+    # `find_qbo_account!` result.
+    SPECIFIC_ACCT_NUM_BY_BUCKET = {
+      account_lead_surplus:  "5710",  # Bonuses
+      project_lead_surplus:  "5710",  # Bonuses
+      commission:            "6120",  # Commissions
     }.freeze
 
     # Substring in description_line that identifies a surplus-share entry
@@ -125,9 +128,9 @@ module ContributorPayouts
     end
 
     def account_for_bucket(bucket)
-      target_name = SPECIFIC_ACCOUNT_BY_BUCKET[bucket]
-      return default_account if target_name.nil?
-      qbo_accounts.find { |a| a.name == target_name } || default_account
+      target_num = SPECIFIC_ACCT_NUM_BY_BUCKET[bucket]
+      return default_account if target_num.nil?
+      qbo_accounts.find { |a| a.respond_to?(:acct_num) && a.acct_num == target_num } || default_account
     end
 
     def default_account

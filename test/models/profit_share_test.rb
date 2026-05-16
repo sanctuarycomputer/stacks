@@ -7,13 +7,13 @@ class ProfitShareTest < ActiveSupport::TestCase
   end
 
   # ProfitShare overrides find_qbo_account! so its bills accrue to a
-  # dedicated liability account ("2340 - Accrued Profit Sharing") rather
+  # dedicated liability account ("Accrued Profit Sharing") rather
   # than the contractor expense accounts used by the default routing.
   test "find_qbo_account! returns the profit-share liability account when present" do
     qa = mock("qbo_account")
     @ps.stubs(:qbo_account_for_bill).returns(qa)
 
-    liability = OpenStruct.new(name: "2340 - Accrued Profit Sharing", id: 2340)
+    liability = OpenStruct.new(name: "Accrued Profit Sharing", acct_num: "2340", id: 2340)
     default = OpenStruct.new(name: "Contractors - Client Services", id: 1)
     qbo_accounts = [liability, default]
 

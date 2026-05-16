@@ -32,8 +32,8 @@ class ContributorPayouts::QboBillLinesTest < ActiveSupport::TestCase
   end
 
   test "multi-line happy path: 6 buckets with specific accounts where defined, fallback otherwise" do
-    bonuses = OpenStruct.new(name: "5710 - Bonuses", id: 5710)
-    commissions = OpenStruct.new(name: "6120 - Commissions", id: 6120)
+    bonuses = OpenStruct.new(name: "Bonuses", acct_num: "5710", id: 5710)
+    commissions = OpenStruct.new(name: "Commissions", acct_num: "6120", id: 6120)
     default = OpenStruct.new(name: "Contractors - Client Services", id: 1)
 
     cp = make_cp(blueprint: all_buckets_blueprint, amount: 129.0, default_account: default)
@@ -47,7 +47,7 @@ class ContributorPayouts::QboBillLinesTest < ActiveSupport::TestCase
     # Commission → 6120
     assert by_account_id[6120].any? { |l| l[:amount] == 10.0 }, "commission line should land at account 6120"
     # AL Surplus + PL Surplus → 5710 (two lines, same account)
-    assert_equal 2, by_account_id[5710].size, "AL Surplus + PL Surplus both route to 5710 - Bonuses"
+    assert_equal 2, by_account_id[5710].size, "AL Surplus + PL Surplus both route to Bonuses"
     # IC + AL Base + PL Base → default
     assert_equal 3, by_account_id[1].size, "IC + AL Base + PL Base fall back to default account"
 
@@ -62,7 +62,7 @@ class ContributorPayouts::QboBillLinesTest < ActiveSupport::TestCase
         { "amount" => 3.0, "description_line" => "- $20 surplus revenue * 15% = $3" },
       ],
     }
-    bonuses = OpenStruct.new(name: "5710 - Bonuses", id: 5710)
+    bonuses = OpenStruct.new(name: "Bonuses", acct_num: "5710", id: 5710)
     default = OpenStruct.new(name: "Contractors - Client Services", id: 1)
     cp = make_cp(blueprint: blueprint, amount: 11.0, default_account: default)
 
@@ -74,7 +74,7 @@ class ContributorPayouts::QboBillLinesTest < ActiveSupport::TestCase
     assert_equal 8.0, base_line[:amount]
     assert_equal 3.0, surplus_line[:amount]
     assert_equal 1,    base_line[:account].id,    "AL base falls back to default"
-    assert_equal 5710, surplus_line[:account].id, "AL surplus routes to 5710 - Bonuses"
+    assert_equal 5710, surplus_line[:account].id, "AL surplus routes to Bonuses"
   end
 
   test "Project Lead bucket is split into base and surplus by 'surplus revenue' marker" do
@@ -84,7 +84,7 @@ class ContributorPayouts::QboBillLinesTest < ActiveSupport::TestCase
         { "amount" => 3.0, "description_line" => "- $20 surplus revenue * 15% = $3" },
       ],
     }
-    bonuses = OpenStruct.new(name: "5710 - Bonuses", id: 5710)
+    bonuses = OpenStruct.new(name: "Bonuses", acct_num: "5710", id: 5710)
     default = OpenStruct.new(name: "Contractors - Client Services", id: 1)
     cp = make_cp(blueprint: blueprint, amount: 8.0, default_account: default)
 
@@ -117,11 +117,11 @@ class ContributorPayouts::QboBillLinesTest < ActiveSupport::TestCase
     blueprint = { "Commission" => [{ "amount" => 10.0, "description_line" => "-" }] }
     default = OpenStruct.new(name: "Contractors - Client Services", id: 1)
     cp = make_cp(blueprint: blueprint, amount: 10.0, default_account: default)
-    # 6120 - Commissions is intentionally NOT in qbo_accounts
+    # Commissions is intentionally NOT in qbo_accounts
     lines = ContributorPayouts::QboBillLines.new(cp, [default]).call
 
     assert_equal 1, lines.size
-    assert_equal 1, lines.first[:account].id, "commission line falls back to default when 6120 - Commissions missing"
+    assert_equal 1, lines.first[:account].id, "commission line falls back to default when Commissions missing"
   end
 
   test "not in_sync? → single-line collapse at default account" do
@@ -168,7 +168,7 @@ class ContributorPayouts::QboBillLinesTest < ActiveSupport::TestCase
         { "amount" => 5.0,  "description_line" => "- 5% of $100 = $5" },
       ],
     }
-    commissions = OpenStruct.new(name: "6120 - Commissions", id: 6120)
+    commissions = OpenStruct.new(name: "Commissions", acct_num: "6120", id: 6120)
     default = OpenStruct.new(name: "Contractors - Client Services", id: 1)
     cp = make_cp(blueprint: blueprint, amount: 15.0, default_account: default)
 
