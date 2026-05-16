@@ -158,8 +158,14 @@ class ProjectTrackerForecastToRunnSyncTask < ApplicationRecord
   # `raise_if_skip_required!` catches these when our local runn_project
   # mirror is fresh; this is the defensive catch for when the mirror is
   # stale relative to live Runn state.
+  # Runn returns two variants of the "project unreachable" error depending
+  # on the endpoint: GET /projects/:id 404s with "Project not found", and
+  # POST /actuals/bulk 400s with "Project with id <X> not found." for
+  # each offending actual. Both indicate the same condition — our local
+  # runn_project mirror points at a Runn project that no longer exists
+  # (or never did) — so we treat them identically.
   RUNN_PROJECT_STATE_ERROR_PATTERNS = [
-    /Project not found/i,
+    /Project (?:with id \S+ )?not found/i,
     /non-billable project/i,
   ].freeze
 

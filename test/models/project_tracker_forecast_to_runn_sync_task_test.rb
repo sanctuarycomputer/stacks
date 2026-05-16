@@ -211,6 +211,20 @@ class ProjectTrackerForecastToRunnSyncTaskTest < ActiveSupport::TestCase
     end
   end
 
+  test "raise_skipped_if_runn_project_state_error! converts bulk-actuals 'Project with id X not found' into Skipped" do
+    # POST /actuals/bulk emits this variant (with the runn project id
+    # embedded in the message) when the project has been deleted upstream.
+    pt = mock("project_tracker")
+    pt.stubs(:id).returns(1)
+    pt.stubs(:name).returns("Stale PT")
+    @task.stubs(:project_tracker).returns(pt)
+
+    err = RuntimeError.new('{"error":"Bad Request","message":"{ actuals[0]: \'Project with id 834099 not found.\', actuals[1]: \'Project with id 834099 not found.\' }","statusCode":400}')
+    assert_raises(Stacks::Errors::Skipped) do
+      @task.send(:raise_skipped_if_runn_project_state_error!, err)
+    end
+  end
+
   test "raise_skipped_if_runn_project_state_error! converts 'non-billable project' into Skipped" do
     pt = mock("project_tracker")
     pt.stubs(:id).returns(1)
