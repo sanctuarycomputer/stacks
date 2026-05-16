@@ -67,13 +67,13 @@ class ContributorPayoutTest < ActiveSupport::TestCase
     assert_not_empty ic_cp.errors[:base]
   end
 
-  test "bill_line_items delegates to ContributorPayoutQboBillLines and converts hashes to BillLineItem objects" do
+  test "bill_line_items delegates to ContributorPayouts::QboBillLines and converts hashes to BillLineItem objects" do
     account = OpenStruct.new(id: 999_888)
     fixture = [
       { amount: 250.0, description: "# Individual Contributor\nABC-1 Foo", account: account },
       { amount: 75.5,  description: "# Commission\nDEF-2 Bar",            account: account },
     ]
-    ContributorPayoutQboBillLines.any_instance.stubs(:call).returns(fixture)
+    ContributorPayouts::QboBillLines.any_instance.stubs(:call).returns(fixture)
 
     cp = ContributorPayout.new
     lines = cp.bill_line_items([])

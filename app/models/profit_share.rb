@@ -31,6 +31,21 @@ class ProfitShare < ApplicationRecord
     end
   end
 
+  # Profit-share bills accrue to the dedicated liability account so finance
+  # can track total profit-sharing exposure separately from contractor
+  # expenses. Falls back to the default SyncsAsQboBill routing if the
+  # account doesn't exist in QBO yet.
+  PROFIT_SHARE_LIABILITY_ACCOUNT_NAME = "2340 - Accrued Profit Sharing".freeze
+
+  def find_qbo_account!(qbo_accounts = nil)
+    qa = qbo_account_for_bill
+    raise "Enterprise has no qbo_account" if qa.nil?
+    qbo_accounts ||= qa.fetch_all_accounts
+    specific = qbo_accounts.find { |a| a.name == PROFIT_SHARE_LIABILITY_ACCOUNT_NAME }
+    return [specific, nil] if specific.present?
+    super(qbo_accounts)
+  end
+
   # SyncsAsQboBill contract
   def bill_txn_date
     applied_at

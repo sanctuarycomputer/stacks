@@ -56,10 +56,10 @@ class ContributorPayout < ApplicationRecord
   # PL surplus, Commission) so finance can attribute spend to per-role
   # QBO accounts. Falls back to a single line at the legacy default
   # account when the payout isn't reconciled — see
-  # ContributorPayoutQboBillLines + the design doc at
+  # ContributorPayouts::QboBillLines + the design doc at
   # docs/superpowers/specs/2026-05-16-multi-line-contributor-payout-bills-design.md
   def bill_line_items(qbo_accounts)
-    lines_data = ContributorPayoutQboBillLines.new(self, qbo_accounts).call
+    lines_data = ContributorPayouts::QboBillLines.new(self, qbo_accounts).call
     lines_data.map do |data|
       line = Quickbooks::Model::BillLineItem.new(
         description: data[:description],
