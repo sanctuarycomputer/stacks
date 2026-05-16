@@ -1,4 +1,5 @@
 require "test_helper"
+require "ostruct"
 
 class ContributorPayoutTest < ActiveSupport::TestCase
   test "as_commission sums Commission blueprint entries" do
@@ -64,6 +65,29 @@ class ContributorPayoutTest < ActiveSupport::TestCase
     ic_cp.stubs(:invoice_tracker).returns(invoice_tracker)
     ic_cp.send(:contributor_payouts_within_seventy_percent)
     assert_not_empty ic_cp.errors[:base]
+  end
+
+  test "bill_line_items delegates to ContributorPayoutQboBillLines and converts hashes to BillLineItem objects" do
+    account = OpenStruct.new(id: 999_888)
+    fixture = [
+      { amount: 250.0, description: "# Individual Contributor\nABC-1 Foo", account: account },
+      { amount: 75.5,  description: "# Commission\nDEF-2 Bar",            account: account },
+    ]
+    ContributorPayoutQboBillLines.any_instance.stubs(:call).returns(fixture)
+
+    cp = ContributorPayout.new
+    lines = cp.bill_line_items([])
+
+    assert_kind_of Array, lines
+    assert_equal fixture.length, lines.length
+    lines.each { |l| assert_kind_of Quickbooks::Model::BillLineItem, l }
+
+    fixture.zip(lines).each do |data, line|
+      assert_equal data[:description], line.description
+      assert_equal data[:amount], line.amount.to_f
+      assert line.account_based_expense_item?
+      assert_equal data[:account].id.to_s, line.account_based_expense_line_detail.account_ref.value.to_s
+    end
   end
 
   test "calculate_surplus uses post-commission working_amount as basis" do
