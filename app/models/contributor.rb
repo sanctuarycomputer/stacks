@@ -18,6 +18,33 @@ class Contributor < ApplicationRecord
     Ledger.ensure_for_contributor!(self)
   end
 
+  # Idempotently creates a Contributor row for every active ForecastPerson
+  # that doesn't already have one. Historically Contributors were created
+  # lazily — only when a person first landed on an invoice / pay cycle —
+  # which meant admins and contractors who hadn't been invoiced yet had
+  # no Contributor → no Ledger anywhere, and couldn't file reimbursements,
+  # accept pay stubs, etc. Running this from the daily task closes that
+  # gap.
+  #
+  # Archived ForecastPersons are intentionally skipped — they represent
+  # off-boarded people who shouldn't accrue new ledger rows.
+  #
+  # Contributor.after_create cascades into Ledger.ensure_for_contributor!,
+  # so each newly created Contributor immediately gets a Ledger for every
+  # existing Enterprise without a second pass.
+  #
+  # Returns the count of Contributors created.
+  def self.ensure_all_for_forecast_people!
+    existing_fp_ids = unscoped.pluck(:forecast_person_id).to_set
+    missing = ForecastPerson.active.where.not(forecast_id: existing_fp_ids)
+    created = 0
+    missing.find_each do |fp|
+      Contributor.create!(forecast_person: fp)
+      created += 1
+    end
+    created
+  end
+
   # Looks up this contributor's QboVendor record within a specific QBO account.
   # Returns nil when no mapping exists for that account. This is the canonical
   # vendor lookup; SyncsAsQboBill#sync_qbo_bill! uses it to route bills to

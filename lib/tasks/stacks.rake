@@ -42,9 +42,21 @@ namespace :stacks do
       Parallel.map(QboAccount.all, in_threads: 2) { |e| e.sync_all! }
       Parallel.map(Enterprise.all, in_threads: 2) { |e| e.generate_snapshot! }
 
+      # Backfill any missing Contributor rows for active ForecastPersons
+      # FIRST — Contributor.after_create cascades into Ledger.ensure_for_contributor!,
+      # so each newly created Contributor lands all its (enterprise) ledgers in
+      # the same pass. Without this, an admin or contractor who exists in
+      # Forecast but hasn't been on an invoice yet would have no Contributor →
+      # no ledgers anywhere, and couldn't file reimbursements / accept pay stubs.
+      inserted_contributor_count = Contributor.ensure_all_for_forecast_people!
+      Rails.logger.info("[stacks:daily_enterprise_tasks] Contributor.ensure_all_for_forecast_people! created #{inserted_contributor_count} contributor(s)")
+
       # Pre-create a Ledger for every (enterprise, contributor) pair so a
       # contributor can submit a reimbursement / receive a pay stub against
       # any enterprise without first needing a ledger to be lazily created.
+      # Belt-and-suspenders against drift — typically inserts 0 rows once
+      # ensure_all_for_forecast_people! and the after_create callbacks have
+      # done their work.
       inserted_ledger_count = Ledger.ensure_all!
       Rails.logger.info("[stacks:daily_enterprise_tasks] Ledger.ensure_all! created #{inserted_ledger_count} ledger(s)")
 
