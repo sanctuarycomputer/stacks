@@ -19,6 +19,10 @@ class Stacks::Notifications
 
     # Persists a Notification row for FKs (tasks, reports, etc.) on System — not a user inbox.
     # Alerts go to Sentry + Twist thread only.
+    #
+    # For Stacks::Errors::Skipped, the notification row is still created (so
+    # callers can surface the reason in admin UIs) but Sentry + Twist are
+    # suppressed — a skip is an intentional config-driven no-op, not a bug.
     def report_exception(exception)
       exception_hash = {
         message: exception.try(:to_s),
@@ -26,14 +30,15 @@ class Stacks::Notifications
         backtrace: exception.try(:backtrace)
       }
       notification = SystemExceptionNotification.with(exception: exception_hash)
-      twist.add_comment_to_thread(
-        TWIST_EXCEPTIONS_THREAD_ID,
-        notification.body,
-        [TWIST_EXCEPTION_NOTIFY_USER_ID]
-      )
+      unless exception.is_a?(Stacks::Errors::Skipped)
+        twist.add_comment_to_thread(
+          TWIST_EXCEPTIONS_THREAD_ID,
+          notification.body,
+          [TWIST_EXCEPTION_NOTIFY_USER_ID]
+        )
+      end
       notification.deliver(System.instance)
-
-      Sentry.capture_exception(exception)
+      Sentry.capture_exception(exception) unless exception.is_a?(Stacks::Errors::Skipped)
       notification
     end
 

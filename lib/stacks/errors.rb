@@ -63,6 +63,14 @@ module Stacks::Errors
     end
   end
 
+  # Raised by a task to indicate that it intentionally did NOT run — typically
+  # because some external precondition (an integration's config, a remote
+  # resource's state) makes the work pointless or impossible right now. These
+  # are NOT bugs; the reason should be surfaced in the admin UI and persisted
+  # alongside the task, but should not page on-call (no Twist, no Sentry).
+  class Skipped < Stacks::Errors::Base
+  end
+
   class Unauthorized < Stacks::Errors::Base
     def initialize(message)
       @message = message

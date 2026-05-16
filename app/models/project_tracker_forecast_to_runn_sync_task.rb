@@ -33,12 +33,174 @@ class ProjectTrackerForecastToRunnSyncTask < ApplicationRecord
 
   def sync!(runn_instance)
     runn(runn_instance)
-    # TODO: Ensure we're requesting max page size
+    raise_if_skip_required!
+
     runn_actuals_did_change = false
     forecast_assignments = project_tracker.forecast_assignments.includes(:forecast_person, :forecast_project)
 
     # 1. Expand our multi-day forecast_assignments as single day Runn.io actuals for easy diffing
-    forecast_assigments_as_runn_actuals = forecast_assignments.reduce([]) do |acc, fa|
+    forecast_assigments_as_runn_actuals = build_forecast_actuals(forecast_assignments)
+
+    runn_actuals = runn.get_actuals_for_project(project_tracker.runn_project.runn_id)
+    project_runn_id = project_tracker.runn_project.runn_id
+
+    # Collect every (create / update / zero) write into a single buffer so we
+    # can flush via Runn's bulk endpoint (POST /actuals/bulk, 100 per call)
+    # instead of one HTTP round-trip per actual. For PT 27 (The Light Phone)
+    # this collapses ~thousands of POSTs into ~tens.
+    pending_writes = []
+
+    # 2. Find Forecast Assignments that don't have a corresponding Runn actual & write them
+    forecast_assigments_as_runn_actuals.each do |faara|
+      matches = runn_actuals.select do |ra|
+        ra["date"] == faara["date"] && ra["roleId"] == faara["roleId"] && ra["personId"] == faara["personId"]
+      end
+
+      if matches.empty?
+        pending_writes << {
+          "date" => faara["date"],
+          "billableMinutes" => faara["billableMinutes"],
+          "personId" => faara["personId"],
+          "projectId" => project_runn_id,
+          "roleId" => faara["roleId"],
+        }
+        next
+      end
+
+      keep = matches.shift
+      if keep["billableMinutes"] != faara["billableMinutes"]
+        pending_writes << {
+          "date" => faara["date"],
+          "billableMinutes" => faara["billableMinutes"],
+          "personId" => faara["personId"],
+          "projectId" => project_runn_id,
+          "roleId" => faara["roleId"],
+        }
+      end
+
+      # Zero the remainder — theoretically impossible since Runn enforces
+      # one actual per (date, role, person) tuple, but kept as a defensive
+      # cleanup for any historical duplicates.
+      matches.each do |ra|
+        pending_writes << {
+          "date" => ra["date"],
+          "billableMinutes" => 0,
+          "personId" => ra["personId"],
+          "projectId" => ra["projectId"],
+          "roleId" => ra["roleId"],
+        }
+      end
+    end
+
+    # 3. Find Runn Actuals that don't have a corresponding Forecast Assignment and zero them
+    runn_actuals.each do |ra|
+      next if ra["billableMinutes"] == 0
+      match = forecast_assigments_as_runn_actuals.find do |faara|
+        ra["date"] == faara["date"] && ra["roleId"] == faara["roleId"] && ra["personId"] == faara["personId"]
+      end
+      next if match
+      pending_writes << {
+        "date" => ra["date"],
+        "billableMinutes" => 0,
+        "personId" => ra["personId"],
+        "projectId" => ra["projectId"],
+        "roleId" => ra["roleId"],
+      }
+    end
+
+    if pending_writes.any?
+      puts "~~~> Flushing #{pending_writes.size} actual write(s) to Runn (bulk endpoint, 100/call)."
+      begin
+        runn.create_or_update_actuals_bulk(pending_writes)
+      rescue => e
+        raise_skipped_if_runn_project_state_error!(e)
+        raise
+      end
+      runn_actuals_did_change = true
+    end
+
+    # Reload Runn actuals as they've very likely changed at this point
+    if runn_actuals_did_change
+      puts "~~~> Runn Actuals did change, reloading fresh from Runn."
+      runn_actuals = runn.get_actuals_for_project(project_tracker.runn_project.runn_id)
+    end
+
+    calculated_runn_revenue = calculate_runn_revenue(runn_actuals)
+    # Reconcile against the SAME hours we just wrote, not against the
+    # snapshot-bounded `project_tracker.lifetime_value`. `lifetime_value`
+    # uses pt.start_date..pt.end_date which are read from
+    # `project_tracker.snapshot["last_forecast_assignment_end_date"]` —
+    # that snapshot key isn't refreshed in lockstep with FA changes, so
+    # when an FA's end_date extends past the snapshotted value, LTV
+    # silently undercounts while Runn (correctly) reflects the new dates.
+    # Summing FA#value_in_usd directly bypasses the snapshot and matches
+    # exactly what build_forecast_actuals expanded into Runn.
+    project_tracker_ltv = forecast_assignments.sum(&:value_in_usd).to_f
+    unless calculated_runn_revenue == project_tracker_ltv
+      puts "~~~> Failure, even after sync, Runn revenue is different to total ForecastAssignment value"
+      raise Stacks::Errors::Base.new("Failed Runn sync for Project Tracker (#{project_tracker.name} ID: #{project_tracker.id}), Runn Revenue: #{calculated_runn_revenue}, Project Tracker LTV: #{project_tracker_ltv}")
+    end
+
+    puts "~~~> Worked! Stacks lifetime_value and runn_actuals revenue are in sync!"
+  end
+
+  def calculate_runn_revenue(runn_actuals)
+    runn_actuals.reduce(0) do |acc, ra|
+      acc += (runn_roles.find{|rr| rr["id"] == ra["roleId"]}["standardRate"] * (ra["billableMinutes"] / 60.0))
+    end
+  end
+
+  # If Runn returns a 4xx whose response body signals "this project can't
+  # accept actuals right now" — archived, deleted, or non-billable — raise
+  # Stacks::Errors::Skipped so the reason is persisted into a Notification
+  # row (visible on the project tracker admin page) but Sentry/Twist are
+  # suppressed (see Stacks::Notifications.report_exception). The pre-flight
+  # `raise_if_skip_required!` catches these when our local runn_project
+  # mirror is fresh; this is the defensive catch for when the mirror is
+  # stale relative to live Runn state.
+  RUNN_PROJECT_STATE_ERROR_PATTERNS = [
+    /Project not found/i,
+    /non-billable project/i,
+  ].freeze
+
+  def raise_skipped_if_runn_project_state_error!(error)
+    msg = error.message.to_s
+    return unless RUNN_PROJECT_STATE_ERROR_PATTERNS.any? { |re| msg.match?(re) }
+    raise Stacks::Errors::Skipped.new(
+      "Runn rejected the actuals write (#{msg.slice(0, 160)}). " \
+      "Update the Runn project state (un-archive, mark billable) or relink the project tracker to resolve."
+    )
+  end
+
+  # Raises Stacks::Errors::Skipped when the linked Runn project is in a state
+  # where syncing actuals can't possibly succeed — archived, non-billable, or
+  # missing from our local mirror. The raise flows through run!'s rescue and
+  # persists a Notification with the reason so it surfaces on the project
+  # tracker admin page (see app/views/admin/project_trackers/_show.html.erb).
+  def raise_if_skip_required!
+    rp = project_tracker.runn_project
+    reason =
+      if rp.nil?
+        "no linked Runn project"
+      elsif rp.is_archived
+        "Runn project is archived"
+      elsif rp.pricing_model.to_s == "nb"
+        "Runn project is non-billable (pricing_model='nb')"
+      end
+    return if reason.nil?
+    raise Stacks::Errors::Skipped.new("Skipping Runn sync — #{reason}.")
+  end
+
+  # Expands multi-day forecast assignments into single-day Runn actuals,
+  # collapsing any two entries that share (date, roleId, personId) — even if
+  # their billableMinutes differ. This collapse is critical: Runn's API
+  # stores ONE actual per (date, role, person), so when a contributor logs
+  # hours to two different forecast projects that map to the same Runn role
+  # (i.e., share a rate) on the same day, the per-FA writes overwrite each
+  # other and Runn ends up reflecting only the last one. Summing here
+  # ensures the write to Runn matches the total Stacks lifetime_value.
+  def build_forecast_actuals(forecast_assignments)
+    forecast_assignments.reduce([]) do |acc, fa|
       runn_role = find_or_create_runn_role_for_forecast_project(fa.forecast_project)
       runn_person = find_or_create_runn_person_for_forecast_person(fa.forecast_person)
 
@@ -57,109 +219,19 @@ class ProjectTrackerForecastToRunnSyncTask < ApplicationRecord
           "personId" => runn_person["id"],
         }
 
-        if existing = acc.find{|era| era == ra}
-          # If someone has recorded work to two associated forecast projects,
-          # (and they share) the same billable rate, we simply collapse those
-          # forecast assignments into a single Runn actual.
+        existing = acc.find do |era|
+          era["date"] == ra["date"] &&
+            era["roleId"] == ra["roleId"] &&
+            era["personId"] == ra["personId"]
+        end
+
+        if existing
           existing["billableMinutes"] += ra["billableMinutes"]
         else
           acc << ra
         end
       end
       acc
-    end
-
-    runn_actuals = runn.get_actuals_for_project(project_tracker.runn_project.runn_id)
-    # 2. Find Forecast Assignments that don't have a corresponding Runn actual & write them
-    forecast_assigments_as_runn_actuals.each do |faara|
-      matches = runn_actuals.select do |ra|
-        ra["date"] == faara["date"] && ra["roleId"] == faara["roleId"] && ra["personId"] == faara["personId"]
-      end
-
-      if matches.empty?
-        # Create faara in Runn
-        puts "~~~> Found new Forecast Assignment, creating it in Runn."
-        runn.create_or_update_actual(
-          faara["date"],
-          faara["billableMinutes"],
-          faara["personId"],
-          project_tracker.runn_project.runn_id,
-          faara["roleId"],
-        )
-        runn_actuals_did_change = true
-        next
-      end
-
-      # Ensure the first match has correct billableMinutes
-      keep = matches.shift
-      if keep["billableMinutes"] != faara["billableMinutes"]
-        puts "~~~> Found existing Runn Actual with incorrect billable minutes, updating it in Runn."
-        runn.create_or_update_actual(
-          faara["date"],
-          faara["billableMinutes"],
-          faara["personId"],
-          project_tracker.runn_project.runn_id,
-          faara["roleId"],
-        )
-        runn_actuals_did_change = true
-      end
-
-      # Zero the remainder, this is theoretically impossible as there should only be max 1 for this tri-union
-      matches.each do |ra|
-        puts "~~~> Weird...! Found duplicative Runn Actual, zeroing it out in Runn."
-        # TODO: Can we delete these yet?
-        runn.create_or_update_actual(
-          ra["date"],
-          0,
-          ra["personId"],
-          ra["projectId"],
-          ra["roleId"]
-        )
-        runn_actuals_did_change = true
-      end
-    end
-
-    # 3. Find Runn Actuals that don't have a corresponding Forecast Assignment and zero them
-    runn_actuals.each do |ra|
-      next if ra["billableMinutes"] == 0
-
-      match = forecast_assigments_as_runn_actuals.find do |faara|
-        ra["date"] == faara["date"] && ra["roleId"] == faara["roleId"] && ra["personId"] == faara["personId"]
-      end
-
-      if match.nil?
-        puts "~~~> Found stale Runn Actual, zeroing it out in Runn."
-        # TODO: Can we delete these yet?
-        runn.create_or_update_actual(
-          ra["date"],
-          0,
-          ra["personId"],
-          ra["projectId"],
-          ra["roleId"]
-        )
-        runn_actuals_did_change = true
-      end
-    end
-
-    # Reload Runn actuals as they've very likely changed at this point
-    if runn_actuals_did_change
-      puts "~~~> Runn Actuals did change, reloading fresh from Runn."
-      runn_actuals = runn.get_actuals_for_project(project_tracker.runn_project.runn_id)
-    end
-
-    calculated_runn_revenue = calculate_runn_revenue(runn_actuals)
-    project_tracker_ltv = project_tracker.lifetime_value
-    unless calculated_runn_revenue == project_tracker_ltv
-      puts "~~~> Failure, even after sync, Runn revenue is different to project_tracker.lifetime_value"
-      raise Stacks::Errors::Base.new("Failed Runn sync for Project Tracker (#{project_tracker.name} ID: #{project_tracker.id}), Runn Revenue: #{calculated_runn_revenue}, Project Tracker LTV: #{project_tracker_ltv}")
-    end
-
-    puts "~~~> Worked! Stacks lifetime_value and runn_actuals revenue are in sync!"
-  end
-
-  def calculate_runn_revenue(runn_actuals)
-    runn_actuals.reduce(0) do |acc, ra|
-      acc += (runn_roles.find{|rr| rr["id"] == ra["roleId"]}["standardRate"] * (ra["billableMinutes"] / 60.0))
     end
   end
 
