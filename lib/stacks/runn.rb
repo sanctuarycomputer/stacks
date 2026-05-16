@@ -37,6 +37,23 @@ class Stacks::Runn
     end
   end
 
+  # Lightweight paginated fetch — called once per "Create Runn project"
+  # admin action to look up a Runn client by name on demand. No local
+  # mirror; the call site matches on name and discards the rest.
+  def get_clients
+    values = []
+    next_cursor = nil
+    loop do
+      response = handle_response {
+        self.class.get("/clients?limit=200&cursor=#{next_cursor}", headers: @headers)
+      }
+      values = [*values, *response["values"]]
+      next_cursor = response["nextCursor"]
+      break if next_cursor.nil?
+    end
+    values
+  end
+
   def get_people
     values = []
     next_cursor = nil
@@ -162,6 +179,34 @@ class Stacks::Runn
         })
       }
     end
+  end
+
+  # Create a new project in Runn under a given client. Used by the "Create
+  # Runn project" admin button on ProjectTracker so admins don't have to
+  # bounce into Runn to set this up manually.
+  #
+  # `name` — display name (typically the ProjectTracker name).
+  # `runn_client_id` — the Runn clientId the project lives under. The call
+  #   site resolves this by matching forecast_client.name against
+  #   get_clients live (no local mirror).
+  # `pricing_model` — "tm" (time and materials, billable), "fp" (fixed
+  #   price), or "nb" (non-billable). Defaults to "tm" since that's what
+  #   the sync expects.
+  # `is_confirmed` — whether the project is confirmed in Runn's pipeline
+  #   model. Defaults false so admins finalize state in Runn.
+  def create_project(name, runn_client_id, pricing_model: "tm", is_confirmed: false)
+    handle_response {
+      self.class.post("/projects/", {
+        body: JSON.dump({
+          "name": name,
+          "clientId": runn_client_id,
+          "pricingModel": pricing_model,
+          "isConfirmed": is_confirmed,
+          "isTemplate": false,
+        }),
+        headers: @headers,
+      })
+    }.parsed_response
   end
 
   def create_role(name, default_hour_cost, standard_rate)

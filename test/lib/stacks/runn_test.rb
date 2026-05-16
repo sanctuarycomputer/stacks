@@ -66,4 +66,47 @@ class Stacks::RunnTest < ActiveSupport::TestCase
     assert_equal 45, parsed[1]["billableMinutes"]
     assert_equal 0, parsed[1]["nonbillableMinutes"]
   end
+
+  # --------------------------------------------------------------------------
+  # create_project
+  # --------------------------------------------------------------------------
+
+  test "create_project POSTs the expected body and returns the parsed response" do
+    parsed = { "id" => 9_999_001, "name" => "New Tracker", "clientId" => 12345 }
+    response = mock("response")
+    response.stubs(:success?).returns(true)
+    response.stubs(:parsed_response).returns(parsed)
+
+    posted_body = nil
+    Stacks::Runn.expects(:post).once.with do |path, opts|
+      posted_body = opts[:body]
+      path == "/projects/"
+    end.returns(response)
+
+    result = @runn.create_project("New Tracker", 12345)
+
+    body = JSON.parse(posted_body)
+    assert_equal "New Tracker", body["name"]
+    assert_equal 12345,         body["clientId"]
+    assert_equal "tm",          body["pricingModel"], "default pricing_model should be 'tm'"
+    assert_equal false,         body["isConfirmed"]
+    assert_equal false,         body["isTemplate"]
+    assert_equal parsed, result
+  end
+
+  test "create_project respects pricing_model and is_confirmed overrides" do
+    response = mock("response")
+    response.stubs(:success?).returns(true)
+    response.stubs(:parsed_response).returns({})
+    posted_body = nil
+    Stacks::Runn.expects(:post).once.with do |_path, opts|
+      posted_body = opts[:body]
+      true
+    end.returns(response)
+
+    @runn.create_project("X", 1, pricing_model: "nb", is_confirmed: true)
+    body = JSON.parse(posted_body)
+    assert_equal "nb", body["pricingModel"]
+    assert_equal true, body["isConfirmed"]
+  end
 end

@@ -207,6 +207,73 @@ ActiveAdmin.register ProjectTracker do
     link_to "Edit Project Lead", admin_project_tracker_project_lead_periods_path(resource)
   end
 
+  # Shown on any project tracker that doesn't have a linked Runn project
+  # yet. The action handler matches the tracker's forecast_client to a
+  # Runn client by exact (case-insensitive, trimmed) name — if no client
+  # with that name exists in Runn, the admin gets a flash error telling
+  # them to either create the Runn client first or rename to match.
+  action_item :create_runn_project, only: [:show, :edit] do
+    next if resource.runn_project.present?
+    link_to "Create Runn Project ↗", create_runn_project_admin_project_tracker_path(resource), method: :post
+  end
+
+  member_action :create_runn_project, method: :post do
+    if resource.runn_project.present?
+      redirect_to admin_project_tracker_path(resource), alert: "This project tracker is already linked to a Runn project."
+      next
+    end
+
+    fc = resource.forecast_projects.first&.forecast_client
+    if fc.nil?
+      redirect_to admin_project_tracker_path(resource), alert: "This project tracker has no Forecast client to match against."
+      next
+    end
+
+    begin
+      runn = Stacks::Runn.new
+      target_name = fc.name.to_s.strip.downcase
+      match = runn.get_clients.find do |c|
+        next if c["isArchived"]
+        c["name"].to_s.strip.downcase == target_name
+      end
+
+      if match.nil?
+        redirect_to admin_project_tracker_path(resource),
+          alert: "Couldn't find an active Runn client named #{fc.name.inspect}. Create it in Runn first (or rename so the names match), then try again."
+        next
+      end
+
+      created = runn.create_project(resource.name, match["id"])
+
+      # External API call done — the project exists in Runn. Wrap only the
+      # local DB writes in a transaction so we don't end up with a local
+      # RunnProject row that isn't linked to the project tracker (which
+      # would cause the next click to create a DUPLICATE Runn project).
+      # Don't put the API call inside the transaction — it'd hold a DB
+      # connection open for the round-trip.
+      rp = nil
+      ActiveRecord::Base.transaction do
+        rp = RunnProject.create!(
+          runn_id: created["id"],
+          name: created["name"],
+          is_template: created["isTemplate"],
+          is_archived: created["isArchived"],
+          is_confirmed: created["isConfirmed"],
+          pricing_model: created["pricingModel"],
+          rate_type: created["rateType"],
+          budget: created["budget"],
+          expenses_budget: created["expensesBudget"],
+          data: created,
+        )
+        resource.update!(runn_project: rp)
+      end
+      redirect_to admin_project_tracker_path(resource), notice: "Created Runn project ##{rp.runn_id} (#{rp.name}) and linked it."
+    rescue => e
+      redirect_to admin_project_tracker_path(resource),
+        alert: "Failed to create Runn project: #{e.message.to_s.slice(0, 200)}"
+    end
+  end
+
   member_action :complete_work, method: :post do
     resource.update_column(:work_completed_at, DateTime.now)
     resource.ensure_project_capsule_exists!
