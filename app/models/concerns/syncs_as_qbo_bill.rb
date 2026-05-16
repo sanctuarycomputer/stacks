@@ -87,6 +87,20 @@ module SyncsAsQboBill
     false
   end
 
+  # Returns the array of Quickbooks::Model::BillLineItem objects that will
+  # be pushed for this host's bill. Default implementation produces a single
+  # line at the host's `find_qbo_account!` result, matching the historic
+  # behavior for Trueup / ContributorAdjustment / ProfitShare / PayStub.
+  # ContributorPayout overrides this to break the bill into per-bucket lines.
+  def bill_line_items(qbo_accounts)
+    account, _studio = find_qbo_account!(qbo_accounts)
+    line = Quickbooks::Model::BillLineItem.new(description: bill_description, amount: amount)
+    line.account_based_expense_item! do |detail|
+      detail.account_ref = Quickbooks::Model::BaseReference.new(account.id)
+    end
+    [line]
+  end
+
   def sync_qbo_bill!
     qa = qbo_account_for_bill
     return if qa.nil?
@@ -108,17 +122,8 @@ module SyncsAsQboBill
     bill.doc_number = "Stacks_#{id}_#{bill_doc_number_code}" # QBO has a 21-char limit
     bill.vendor_ref = Quickbooks::Model::BaseReference.new(vendor.qbo_id)
 
-    line_item = Quickbooks::Model::BillLineItem.new(
-      description: bill_description,
-      amount: amount,
-    )
-
-    account, _studio = find_qbo_account!
-    line_item.account_based_expense_item! do |detail|
-      detail.account_ref = Quickbooks::Model::BaseReference.new(account.id)
-    end
-
-    bill.line_items = [line_item]
+    qbo_accounts = qa.fetch_all_accounts
+    bill.line_items = bill_line_items(qbo_accounts)
     bill_service = Quickbooks::Service::Bill.new
     bill_service.company_id = qa.realm_id
     bill_service.access_token = qa.make_and_refresh_qbo_access_token

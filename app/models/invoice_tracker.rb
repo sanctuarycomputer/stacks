@@ -531,7 +531,7 @@ class InvoiceTracker < ApplicationRecord
       contributor_payouts.each do |cp|
         bp = cp.blueprint || {}
         commission_amount = (bp["Commission"] || []).sum { |e| e["amount"].to_f }
-        other_amount = ["AccountLead", "ProjectLead", "IndividualContributor"].sum do |role|
+        other_amount = ["AccountLead", "AccountLeadSurplus", "ProjectLead", "ProjectLeadSurplus", "IndividualContributor"].sum do |role|
           (bp[role] || []).sum { |e| e["amount"].to_f }
         end
         if commission_amount > 0 && other_amount == 0 && cp.accepted_at.nil?
@@ -554,8 +554,8 @@ class InvoiceTracker < ApplicationRecord
           cp = contributor_payouts.with_deleted.find_or_initialize_by(ledger_id: ledger.id)
 
           new_blueprint = (cp.blueprint || {}).clone
-          new_blueprint["AccountLead"] ||= []
-          new_blueprint["AccountLead"] << {
+          new_blueprint["AccountLeadSurplus"] ||= []
+          new_blueprint["AccountLeadSurplus"] << {
             amount: lead_share,
             description_line: "- #{n2c(c[:surplus])} * 15% = #{n2c(lead_share)} (`#{c[:qbo_line_item].dig("description")}` generated #{n2c(c[:surplus])} surplus revenue, 15% of which is shared with the Account Lead)",
             blueprint_metadata: ContributorPayout.slim_metadata(c[:blueprint_metadata]),
@@ -576,8 +576,8 @@ class InvoiceTracker < ApplicationRecord
           cp = contributor_payouts.with_deleted.find_or_initialize_by(ledger_id: ledger.id)
 
           new_blueprint = (cp.blueprint || {}).clone
-          new_blueprint["ProjectLead"] ||= []
-          new_blueprint["ProjectLead"] << {
+          new_blueprint["ProjectLeadSurplus"] ||= []
+          new_blueprint["ProjectLeadSurplus"] << {
             amount: lead_share,
             description_line: "- #{n2c(c[:surplus])} * 15% = #{n2c(lead_share)} (`#{c[:qbo_line_item].dig("description")})` generated #{n2c(c[:surplus])} surplus revenue, 15% of which is shared with the Project Lead)",
             blueprint_metadata: ContributorPayout.slim_metadata(c[:blueprint_metadata]),
