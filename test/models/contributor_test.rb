@@ -338,3 +338,61 @@ class ContributorAcceptsNestedQboVendorsTest < ActiveSupport::TestCase
     end
   end
 end
+
+class ContributorEnsureAllForForecastPeopleTest < ActiveSupport::TestCase
+  setup do
+    Thread.current[:sanctuary_enterprise] = nil
+  end
+
+  # ForecastPerson.after_create :ensure_contributor_exists! auto-creates a
+  # Contributor on the normal `create!` path, so to test the BACKFILL we
+  # need to simulate "FP exists but Contributor doesn't" — what we'd
+  # actually find in prod for admins who were added pre-callback. The
+  # cleanest way is to suppress the after_create for the FP creation only.
+  def create_fp_without_contributor(email:, archived: false)
+    ForecastPerson.skip_callback(:create, :after, :ensure_contributor_exists!)
+    fp = ForecastPerson.create!(
+      forecast_id: rand(1..2_000_000_000),
+      email: email,
+      data: {},
+      archived: archived,
+    )
+    fp
+  ensure
+    ForecastPerson.set_callback(:create, :after, :ensure_contributor_exists!)
+  end
+
+  test "creates a Contributor for every active ForecastPerson without one" do
+    fp_without = create_fp_without_contributor(email: "without#{SecureRandom.hex(2)}@x.com")
+
+    assert_difference -> { Contributor.unscoped.where(forecast_person_id: fp_without.forecast_id).count }, 1 do
+      Contributor.ensure_all_for_forecast_people!
+    end
+  end
+
+  test "skips archived ForecastPersons" do
+    fp_archived = create_fp_without_contributor(email: "arch#{SecureRandom.hex(2)}@x.com", archived: true)
+
+    assert_no_difference -> { Contributor.unscoped.where(forecast_person_id: fp_archived.forecast_id).count } do
+      Contributor.ensure_all_for_forecast_people!
+    end
+  end
+
+  test "is idempotent — second run inserts zero" do
+    create_fp_without_contributor(email: "idem#{SecureRandom.hex(2)}@x.com")
+    Contributor.ensure_all_for_forecast_people!
+    assert_equal 0, Contributor.ensure_all_for_forecast_people!
+  end
+
+  test "newly created Contributor cascades into Ledgers for every Enterprise" do
+    fp = create_fp_without_contributor(email: "cascade#{SecureRandom.hex(2)}@x.com")
+    enterprise_count = Enterprise.count
+    assert enterprise_count > 0, "test prereq: at least one Enterprise must exist"
+
+    Contributor.ensure_all_for_forecast_people!
+
+    c = Contributor.unscoped.find_by!(forecast_person_id: fp.forecast_id)
+    assert_equal enterprise_count, c.ledgers.count,
+      "Contributor.after_create should fire Ledger.ensure_for_contributor!"
+  end
+end

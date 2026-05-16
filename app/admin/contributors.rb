@@ -200,15 +200,15 @@ ActiveAdmin.register Contributor do
     # Resolve which ledger view to render. Default = "all" (aggregated, with elevated_service).
     ledger_param = params[:ledger]
 
-    ledgers_with_items = resource.ledgers.includes(:enterprise).select do |l|
-      [l.contributor_payouts, l.contributor_adjustments, l.trueups,
-       l.reimbursements, l.profit_shares, l.deel_invoice_adjustments].any?(&:any?)
-    end
+    # Show every enterprise tab regardless of activity — a contributor needs to
+    # be able to navigate to an empty ledger to file a reimbursement, accept a
+    # pay stub, etc. Sorted by enterprise name for stable display.
+    ledgers = resource.ledgers.includes(:enterprise).sort_by { |l| l.enterprise.name.to_s }
 
     view_mode = :all
     current_ledger = nil
     if ledger_param.present? && ledger_param != "all"
-      current_ledger = ledgers_with_items.find { |l| l.id.to_s == ledger_param.to_s }
+      current_ledger = ledgers.find { |l| l.id.to_s == ledger_param.to_s }
       view_mode = :ledger if current_ledger
     end
 
@@ -230,7 +230,7 @@ ActiveAdmin.register Contributor do
       balance: balance,
       pending_tasks: pending_tasks,
       view_mode: view_mode,
-      ledgers_with_items: ledgers_with_items,
+      ledgers: ledgers,
       current_ledger: current_ledger,
     })
   end

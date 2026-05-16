@@ -1,4 +1,6 @@
-<%# Ledger tab bar — "All" + one tab per Enterprise with items.
+<%# Ledger tab bar — "All" + one tab per Enterprise. Every ledger is rendered
+    (even empty ones) so a contributor can navigate to any enterprise's
+    ledger to file a reimbursement, accept a pay stub, etc.
     Uses the existing pill toggle pattern from periodic_reports/_show.html.erb
     (and the studio period filter). The `update(name, value)` JS rewrites the
     query string; an empty value clears the param. %>
@@ -19,7 +21,7 @@ function update(a, b) {
       All
     </p>
   </a>
-  <% ledgers_with_items.each do |ledger| %>
+  <% ledgers.each do |ledger| %>
     <% selected = view_mode == :ledger && current_ledger&.id == ledger.id %>
     <a onclick='update("ledger", "<%= ledger.id %>");' style="margin-right: 6px">
       <p class="nag pill <%= 'complete' if selected %>" style="margin-bottom: 0px;margin-right: 6px;">
