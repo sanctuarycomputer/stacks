@@ -619,7 +619,12 @@ class ProjectTracker < ApplicationRecord
       bp = cp.blueprint || {}
       legacy_team_lead_keys = bp.keys.sort == ["AccountLead", "IndividualContributor", "TeamLead"].sort
       project_lead_keys = bp.keys.sort == ["AccountLead", "IndividualContributor", "ProjectLead"].sort
-      if bp.is_a?(Hash) && (legacy_team_lead_keys || project_lead_keys)
+      # New blueprint shape may also include AccountLeadSurplus / ProjectLeadSurplus
+      # (in any combination — a CP without surplus shares won't have those keys).
+      role_keys = %w[AccountLead AccountLeadSurplus IndividualContributor ProjectLead ProjectLeadSurplus TeamLead Commission]
+      surplus_aware_keys = bp.keys.any? && (bp.keys - role_keys).empty? &&
+        (bp.key?("AccountLeadSurplus") || bp.key?("ProjectLeadSurplus"))
+      if bp.is_a?(Hash) && (legacy_team_lead_keys || project_lead_keys || surplus_aware_keys)
         amount_for_this_tracker = 0
         amount_for_this_tracker = bp.values.flatten.reduce(0) do |acc, v|
           if fpids.include?(v.try(:dig, "blueprint_metadata", "forecast_project"))

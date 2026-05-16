@@ -44,8 +44,12 @@ module ContributorPayouts
       commission:            "6120",  # Commissions
     }.freeze
 
-    # Substring in description_line that identifies a surplus-share entry
-    # inside the mixed AccountLead / ProjectLead buckets in blueprint.
+    # Fallback marker for historical blueprints that pre-date the
+    # AccountLeadSurplus / ProjectLeadSurplus first-class arrays. New
+    # blueprints (post InvoiceTracker#make_contributor_payouts! change)
+    # write surplus entries to their own keys; we only sniff
+    # description_line for entries still living in the mixed
+    # AccountLead / ProjectLead arrays.
     SURPLUS_DESCRIPTION_MARKER = "surplus revenue".freeze
 
     def initialize(contributor_payout, qbo_accounts)
@@ -104,6 +108,12 @@ module ContributorPayouts
       Array(blueprint["IndividualContributor"]).each { |e| buckets[:individual_contributor] << e }
       Array(blueprint["Commission"]).each            { |e| buckets[:commission] << e }
 
+      # First-class surplus arrays (new shape from make_contributor_payouts!).
+      Array(blueprint["AccountLeadSurplus"]).each { |e| buckets[:account_lead_surplus] << e }
+      Array(blueprint["ProjectLeadSurplus"]).each { |e| buckets[:project_lead_surplus] << e }
+
+      # Historical shape: AL / PL arrays mix base and surplus, only
+      # distinguishable by SURPLUS_DESCRIPTION_MARKER in description_line.
       Array(blueprint["AccountLead"]).each do |entry|
         bucket = surplus_entry?(entry) ? :account_lead_surplus : :account_lead_base
         buckets[bucket] << entry

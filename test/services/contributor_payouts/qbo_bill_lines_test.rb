@@ -161,6 +161,65 @@ class ContributorPayouts::QboBillLinesTest < ActiveSupport::TestCase
     assert_equal 0.0, lines.first[:amount]
   end
 
+  test "structured AccountLeadSurplus key routes to :account_lead_surplus without parsing description_line" do
+    # New blueprint shape from make_contributor_payouts!: surplus lives in its
+    # own array, description_line does NOT include 'surplus revenue'.
+    blueprint = {
+      "AccountLead"        => [{ "amount" => 8.0, "description_line" => "- 100hrs * 8% = $8" }],
+      "AccountLeadSurplus" => [{ "amount" => 3.0, "description_line" => "- arbitrary marker-free copy" }],
+    }
+    bonuses = OpenStruct.new(name: "Bonuses", acct_num: "5710", id: 5710)
+    default = OpenStruct.new(name: "Contractors - Client Services", id: 1)
+    cp = make_cp(blueprint: blueprint, amount: 11.0, default_account: default)
+
+    lines = ContributorPayouts::QboBillLines.new(cp, [bonuses, default]).call
+
+    assert_equal 2, lines.size
+    base_line    = lines.find { |l| l[:description].include?("Account Lead\n") }
+    surplus_line = lines.find { |l| l[:description].include?("Account Lead Surplus") }
+    assert_equal 8.0, base_line[:amount]
+    assert_equal 3.0, surplus_line[:amount]
+    assert_equal 5710, surplus_line[:account].id, "structured-key surplus still lands at Bonuses"
+  end
+
+  test "structured ProjectLeadSurplus key routes to :project_lead_surplus" do
+    blueprint = {
+      "ProjectLead"        => [{ "amount" => 5.0, "description_line" => "- 100hrs * 5% = $5" }],
+      "ProjectLeadSurplus" => [{ "amount" => 3.0, "description_line" => "- marker-free copy" }],
+    }
+    bonuses = OpenStruct.new(name: "Bonuses", acct_num: "5710", id: 5710)
+    default = OpenStruct.new(name: "Contractors - Client Services", id: 1)
+    cp = make_cp(blueprint: blueprint, amount: 8.0, default_account: default)
+
+    lines = ContributorPayouts::QboBillLines.new(cp, [bonuses, default]).call
+
+    surplus_line = lines.find { |l| l[:description].include?("Project Lead Surplus") }
+    assert_equal 3.0, surplus_line[:amount]
+    assert_equal 5710, surplus_line[:account].id
+  end
+
+  test "mixed shape: structured AccountLeadSurplus AND legacy AccountLead with marker — both route to surplus" do
+    # Defensive: a CP whose blueprint was partially regenerated could have entries
+    # in BOTH the new key and the legacy mixed array. We should sum them, not drop.
+    blueprint = {
+      "AccountLead"        => [
+        { "amount" => 8.0, "description_line" => "- 100hrs * 8% = $8 base" },
+        { "amount" => 2.0, "description_line" => "- legacy surplus revenue share = $2" },
+      ],
+      "AccountLeadSurplus" => [{ "amount" => 3.0, "description_line" => "- marker-free copy" }],
+    }
+    bonuses = OpenStruct.new(name: "Bonuses", acct_num: "5710", id: 5710)
+    default = OpenStruct.new(name: "Contractors - Client Services", id: 1)
+    cp = make_cp(blueprint: blueprint, amount: 13.0, default_account: default)
+
+    lines = ContributorPayouts::QboBillLines.new(cp, [bonuses, default]).call
+
+    surplus_line = lines.find { |l| l[:description].include?("Account Lead Surplus") }
+    assert_equal 5.0, surplus_line[:amount], "structured ($3) + historical-parsed ($2) sum"
+    base_line = lines.find { |l| l[:description].include?("Account Lead\n") }
+    assert_equal 8.0, base_line[:amount]
+  end
+
   test "description format: role header + entry description_lines + admin URL" do
     blueprint = {
       "Commission" => [

@@ -369,15 +369,21 @@ class ContributorPayout < ApplicationRecord
     end
   end
 
+  # Sums AL base AND AL surplus so callers (reports, balance views) see the
+  # contributor's total AL pay regardless of which blueprint shape produced it.
+  # Pre-AccountLeadSurplus blueprints kept surplus inside AccountLead, so older
+  # CPs still total correctly via the first array.
   def as_account_lead
-    return 0 unless blueprint["AccountLead"].present?
-    blueprint["AccountLead"].sum{|l| l["amount"]}
+    lines = [blueprint["AccountLead"], blueprint["AccountLeadSurplus"]].compact.flatten
+    return 0 if lines.empty?
+    lines.sum { |l| l["amount"].to_f }
   end
 
   def as_project_lead
     legacy = blueprint["TeamLead"]
     current = blueprint["ProjectLead"]
-    lines = [legacy, current].compact.flatten
+    surplus = blueprint["ProjectLeadSurplus"]
+    lines = [legacy, current, surplus].compact.flatten
     return 0 if lines.empty?
     lines.sum { |l| l["amount"].to_f }
   end
