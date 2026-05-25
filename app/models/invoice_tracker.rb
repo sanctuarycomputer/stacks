@@ -2,6 +2,8 @@
 # TODO: Tests
 
 class InvoiceTracker < ApplicationRecord
+  include HasQboInvoiceViaCompositeKey
+
   belongs_to :admin_user, optional: true
   belongs_to :invoice_pass
   belongs_to :forecast_client, class_name: "ForecastClient", foreign_key: "forecast_client_id", primary_key: "forecast_id"
@@ -18,31 +20,9 @@ class InvoiceTracker < ApplicationRecord
 
   delegate :billing_enterprise, to: :forecast_client
 
-  # DB-side: composite FK (qbo_account_id, qbo_invoice_id) → qbo_invoices
-  # (qbo_account_id, qbo_id) with ON DELETE SET NULL. AR-side: catch the
-  # mismatch before the DB rejects with a clean user-facing message.
-  validate :qbo_invoice_must_live_in_qbo_account
-
   def display_name
     "#{qbo_invoice.try(:display_name) || forecast_client.name} (#{status})"
   end
-
-  def qbo_invoice
-    in_memory = association(:qbo_invoice).target
-    return in_memory if in_memory.present?
-    return nil unless qbo_invoice_id && qbo_account_id
-    QboInvoice.find_by(qbo_id: qbo_invoice_id, qbo_account_id: qbo_account_id)
-  end
-
-  private
-
-  def qbo_invoice_must_live_in_qbo_account
-    return if qbo_invoice_id.blank? || qbo_account_id.blank?
-    return if QboInvoice.exists?(qbo_id: qbo_invoice_id, qbo_account_id: qbo_account_id)
-    errors.add(:qbo_invoice_id, "no QboInvoice with qbo_id=#{qbo_invoice_id} exists in qbo_account #{qbo_account_id}")
-  end
-
-  public
 
   def qbo_invoice_link
     return nil unless qbo_invoice_id.present?

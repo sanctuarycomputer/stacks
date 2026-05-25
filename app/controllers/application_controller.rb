@@ -7,7 +7,7 @@ class ApplicationController < ActionController::Base
   end
 
   def current_admin_user
-    if session[:impersonated_admin_user_id].present?
+    if session[:impersonated_admin_user_id].present? && true_admin_user&.is_admin?
       @_impersonated_admin_user ||= AdminUser.find_by(id: session[:impersonated_admin_user_id])
       return @_impersonated_admin_user if @_impersonated_admin_user.present?
       session.delete(:impersonated_admin_user_id)
@@ -16,7 +16,7 @@ class ApplicationController < ActionController::Base
   end
 
   def impersonating?
-    session[:impersonated_admin_user_id].present? && true_admin_user&.id != session[:impersonated_admin_user_id]
+    session[:impersonated_admin_user_id].present? && true_admin_user&.is_admin? && true_admin_user&.id != session[:impersonated_admin_user_id]
   end
   helper_method :true_admin_user, :impersonating?
 
