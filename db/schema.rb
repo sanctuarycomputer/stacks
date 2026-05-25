@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_05_14_180000) do
+ActiveRecord::Schema.define(version: 2026_05_22_180000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -47,7 +47,10 @@ ActiveRecord::Schema.define(version: 2026_05_14_180000) do
     t.bigint "project_tracker_id", null: false
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.bigint "qbo_account_id", null: false
     t.index ["project_tracker_id"], name: "index_adhoc_invoice_trackers_on_project_tracker_id"
+    t.index ["qbo_account_id", "qbo_invoice_id"], name: "index_adhoc_invoice_trackers_on_qa_and_qbo_invoice"
+    t.index ["qbo_account_id"], name: "index_adhoc_invoice_trackers_on_qbo_account_id"
     t.index ["qbo_invoice_id", "project_tracker_id"], name: "index_adhoc_invoice_trackers_on_qbo_invoice_and_project_tracker", unique: true
   end
 
@@ -129,8 +132,11 @@ ActiveRecord::Schema.define(version: 2026_05_14_180000) do
     t.datetime "updated_at", precision: 6, null: false
     t.string "qbo_bill_id"
     t.bigint "ledger_id", null: false
+    t.bigint "qbo_account_id", null: false
     t.index ["deleted_at"], name: "index_contributor_adjustments_on_deleted_at"
     t.index ["ledger_id"], name: "index_contributor_adjustments_on_ledger_id"
+    t.index ["qbo_account_id", "qbo_invoice_id"], name: "index_contributor_adjustments_on_qa_and_qbo_invoice"
+    t.index ["qbo_account_id"], name: "index_contributor_adjustments_on_qbo_account_id"
     t.index ["qbo_bill_id"], name: "index_contributor_adjustments_on_qbo_bill_id"
     t.index ["qbo_invoice_id"], name: "index_contributor_adjustments_on_qbo_invoice_id"
   end
@@ -385,10 +391,13 @@ ActiveRecord::Schema.define(version: 2026_05_14_180000) do
     t.date "allow_early_contributor_payouts_on"
     t.decimal "company_treasury_split", default: "0.3"
     t.datetime "reviewers_last_notified_at"
+    t.bigint "qbo_account_id", null: false
     t.index ["admin_user_id"], name: "index_invoice_trackers_on_admin_user_id"
     t.index ["forecast_client_id", "invoice_pass_id"], name: "idx_invoice_trackers_on_forecast_client_id_and_invoice_pass_id", unique: true
     t.index ["forecast_client_id"], name: "index_invoice_trackers_on_forecast_client_id"
     t.index ["invoice_pass_id"], name: "index_invoice_trackers_on_invoice_pass_id"
+    t.index ["qbo_account_id", "qbo_invoice_id"], name: "index_invoice_trackers_on_qa_and_qbo_invoice"
+    t.index ["qbo_account_id"], name: "index_invoice_trackers_on_qbo_account_id"
     t.check_constraint "(company_treasury_split >= (0)::numeric) AND (company_treasury_split <= (1)::numeric)", name: "check_company_treasury_split_range"
   end
 
@@ -894,6 +903,7 @@ ActiveRecord::Schema.define(version: 2026_05_14_180000) do
     t.jsonb "data"
     t.bigint "qbo_account_id", null: false
     t.index ["qbo_account_id", "qbo_id"], name: "index_qbo_invoices_on_qbo_account_and_qbo_id", unique: true, where: "(qbo_id IS NOT NULL)"
+    t.index ["qbo_account_id", "qbo_id"], name: "qbo_invoices_qbo_account_id_qbo_id_key", unique: true
     t.index ["qbo_account_id"], name: "index_qbo_invoices_on_qbo_account_id"
   end
 
@@ -1165,11 +1175,13 @@ ActiveRecord::Schema.define(version: 2026_05_14_180000) do
   add_foreign_key "account_lead_periods", "admin_users"
   add_foreign_key "account_lead_periods", "project_trackers"
   add_foreign_key "adhoc_invoice_trackers", "project_trackers"
+  add_foreign_key "adhoc_invoice_trackers", "qbo_accounts"
   add_foreign_key "admin_user_salary_windows", "admin_users"
   add_foreign_key "associates_award_agreements", "admin_users"
   add_foreign_key "commissions", "contributors"
   add_foreign_key "commissions", "project_trackers"
   add_foreign_key "contributor_adjustments", "ledgers"
+  add_foreign_key "contributor_adjustments", "qbo_accounts"
   add_foreign_key "contributor_payouts", "admin_users", column: "created_by_id"
   add_foreign_key "contributor_payouts", "invoice_trackers"
   add_foreign_key "contributor_payouts", "ledgers"
@@ -1187,6 +1199,7 @@ ActiveRecord::Schema.define(version: 2026_05_14_180000) do
   add_foreign_key "gifted_profit_shares", "admin_users"
   add_foreign_key "invoice_trackers", "admin_users"
   add_foreign_key "invoice_trackers", "invoice_passes"
+  add_foreign_key "invoice_trackers", "qbo_accounts"
   add_foreign_key "ledgers", "contributors"
   add_foreign_key "ledgers", "enterprises"
   add_foreign_key "mailing_list_subscribers", "mailing_lists"

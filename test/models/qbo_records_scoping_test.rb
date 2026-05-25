@@ -101,7 +101,7 @@ class ContributorAdjustmentQboInvoiceScopingTest < ActiveSupport::TestCase
     ledger = Ledger.find_or_create_for(enterprise: @sanctuary, contributor: contributor)
 
     # A positive adjustment so sync_qbo_bill! would not bail early.
-    @adj = ContributorAdjustment.create!(ledger: ledger, amount: 50, effective_on: Date.new(2030, 7, 15))
+    @adj = ContributorAdjustment.create!(ledger: ledger, amount: 50, effective_on: Date.new(2030, 7, 15), qbo_account: @sanctuary_qa)
   end
 
   # qbo_invoice lazy-create must include qbo_account
@@ -134,16 +134,12 @@ class ContributorAdjustmentQboInvoiceScopingTest < ActiveSupport::TestCase
     assert @adj.payable?
   end
 
-  test "payable? is false when qbo_account is missing from the enterprise" do
-    no_qa_ent = Enterprise.find_or_create_by!(name: "NoQA-#{SecureRandom.hex(2)}")
-    fp2 = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "nq#{SecureRandom.hex(2)}@x.com", data: {})
-    c2 = Contributor.create!(forecast_person: fp2)
-    l2 = Ledger.find_or_create_for(enterprise: no_qa_ent, contributor: c2)
-    adj2 = ContributorAdjustment.create!(ledger: l2, amount: 20, effective_on: Date.new(2030, 7, 10))
-    adj2.update_columns(qbo_invoice_id: "GHOST#{SecureRandom.hex(3)}")
+  test "payable? is false when qbo_invoice_id references a non-existent invoice" do
+    # CA has a qbo_account but the referenced qbo_invoice_id does not exist
+    # in that account — payable? must return false, not raise.
+    @adj.update_columns(qbo_invoice_id: "GHOST#{SecureRandom.hex(3)}")
 
-    # Enterprise has no qbo_account — payable? must return false, not raise.
-    assert_nothing_raised { refute adj2.payable? }
+    assert_nothing_raised { refute @adj.payable? }
   end
 
   test "payable? scopes QboInvoice lookup to the enterprise's qbo_account" do
@@ -182,7 +178,7 @@ class InvoiceTrackerQboInvoiceScopingTest < ActiveSupport::TestCase
   def build_tracker_with_invoice_id(inv_id)
     fc = ForecastClient.create!(forecast_id: rand(1..2_000_000_000), name: "TestClient-#{SecureRandom.hex(2)}")
     ip = InvoicePass.create!(start_of_month: Date.new(2030, 7, 1))
-    tracker = InvoiceTracker.create!(forecast_client: fc, invoice_pass: ip)
+    tracker = InvoiceTracker.create!(forecast_client: fc, invoice_pass: ip, qbo_account: @sanctuary_qa)
     tracker.update_columns(qbo_invoice_id: inv_id)
     tracker
   end
@@ -190,7 +186,7 @@ class InvoiceTrackerQboInvoiceScopingTest < ActiveSupport::TestCase
   test "qbo_invoice returns nil when qbo_invoice_id is blank" do
     fc = ForecastClient.create!(forecast_id: rand(1..2_000_000_000), name: "TC-#{SecureRandom.hex(2)}")
     ip = InvoicePass.create!(start_of_month: Date.new(2030, 8, 1))
-    tracker = InvoiceTracker.create!(forecast_client: fc, invoice_pass: ip)
+    tracker = InvoiceTracker.create!(forecast_client: fc, invoice_pass: ip, qbo_account: @sanctuary_qa)
     assert_nil tracker.qbo_invoice_id
     assert_nil tracker.qbo_invoice
   end

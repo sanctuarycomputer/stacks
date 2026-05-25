@@ -23,9 +23,17 @@ function update(a, b) {
   </a>
   <% ledgers.each do |ledger| %>
     <% selected = view_mode == :ledger && current_ledger&.id == ledger.id %>
+    <% balance_owed = ledger.balance.to_f %>
+    <% unsettled = ledger.unsettled.to_f %>
     <a onclick='update("ledger", "<%= ledger.id %>");' style="margin-right: 6px">
-      <p class="nag pill <%= 'complete' if selected %>" style="margin-bottom: 0px;margin-right: 6px;">
+      <p class="nag pill <%= 'complete' if selected %>" style="margin-bottom: 0px;margin-right: 6px;position: relative;">
         <%= ledger.enterprise.name %>
+        <% if balance_owed > 0 %>
+          <span class="notifier--balance"><%= number_to_currency(balance_owed, precision: 0) %></span>
+        <% end %>
+        <% if unsettled > 0 %>
+          <span class="notifier--unsettled" style="top: auto; bottom: -10px;"><%= number_to_currency(unsettled, precision: 0) %></span>
+        <% end %>
       </p>
     </a>
   <% end %>

@@ -30,6 +30,44 @@ class PayCycle < ApplicationRecord
     approved_at.present?
   end
 
+  # Mirror of InvoiceTracker#changes_in_forecast — computes what
+  # PayCycles::GenerateStubs would produce against current Forecast state and
+  # diffs it against the stored pay stubs. Returns an Array of `[op, email, ...]`
+  # entries the view renders inline:
+  #   ["~", email, was_amount, now_amount]  → contributor's total changed
+  #   ["-", email, "no qualifying hours anymore"]  → contributor would be soft-deleted
+  #   ["+", email, "newly qualifies for hours"]    → contributor would be added
+  # Empty array means stored stubs are in sync with Forecast (or there are no
+  # stubs yet — we don't try to diff against a non-existent baseline).
+  def changes_in_forecast
+    return [] if pay_stubs.empty?
+
+    current_by_fp = PayCycles::GenerateStubs.new(self).compute_per_contributor_lines
+    stored_by_fp = pay_stubs.includes(ledger: { contributor: :forecast_person }).each_with_object({}) do |stub, h|
+      h[stub.contributor.forecast_person] = stub
+    end
+
+    changes = []
+
+    stored_by_fp.each do |fp, stub|
+      lines = current_by_fp[fp]
+      if lines.nil?
+        changes << ["-", fp.email, "no longer has qualifying hours in Forecast"]
+        next
+      end
+      now_amount = lines.sum { |l| l["amount"].to_f }.round(2)
+      was_amount = stub.amount.to_f.round(2)
+      changes << ["~", fp.email, was_amount, now_amount] if (now_amount - was_amount).abs >= 0.01
+    end
+
+    current_by_fp.each_key do |fp|
+      next if stored_by_fp.key?(fp)
+      changes << ["+", fp.email, "newly qualifies for hours — stub would be created"]
+    end
+
+    changes
+  end
+
   # Enterprise-admin (or global super-admin) approves the cycle. Distinct from
   # per-stub acceptance: cycle approval gates whether ANY stub in the cycle
   # becomes payable, on top of every individual stub being accepted. Until the

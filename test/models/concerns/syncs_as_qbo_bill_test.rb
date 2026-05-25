@@ -136,7 +136,7 @@ class SyncsAsQboBillFailureModeTest < ActiveSupport::TestCase
   end
 
   test "sync_qbo_bill! returns nil and creates no QboBill for negative amounts (ContributorAdjustment deduction fold)" do
-    adj = ContributorAdjustment.create!(ledger: @sanctuary_ledger, amount: -50, effective_on: Date.new(2031, 1, 15))
+    adj = ContributorAdjustment.create!(ledger: @sanctuary_ledger, amount: -50, effective_on: Date.new(2031, 1, 15), qbo_account: @sanctuary_qa)
 
     result = nil
     assert_nothing_raised { result = adj.sync_qbo_bill! }

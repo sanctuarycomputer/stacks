@@ -390,6 +390,7 @@ namespace :stacks do
         c.profit_shares.each(&sync_record)
       end
       Trueup.find_each(&sync_record)
+      PayStub.where.not(accepted_at: nil).find_each(&sync_record)
     rescue => e
       system_task.mark_as_error(e)
       next

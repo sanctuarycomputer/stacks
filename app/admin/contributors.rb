@@ -7,7 +7,7 @@ ActiveAdmin.register Contributor do
   config.sort_order = "forecast_people.email_asc"
 
   actions :index, :show, :edit, :update
-  scope :recent_new_deal_contributors, default: true
+  scope "Recent Contributors", :recent_contributors, default: true
   scope :all
 
   filter :forecast_email_cont, as: :string, label: "Email contains"

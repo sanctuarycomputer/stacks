@@ -162,8 +162,17 @@ class Contributor < ApplicationRecord
     self
   end
 
-  scope :recent_new_deal_contributors, -> {
-    joins(:contributor_payouts).where("contributor_payouts.created_at > ?", 3.months.ago).distinct
+  # Contributors with a recent ContributorPayout OR a recent PayStub in the
+  # last 3 months — both flow through the per-enterprise Ledger, so a salaried
+  # team member with no contributor_payouts but a recent pay stub is still a
+  # "recent contributor" for the admin index.
+  scope :recent_contributors, -> {
+    recent = 3.months.ago
+    where(
+      id: ContributorPayout.where("contributor_payouts.created_at > ?", recent).joins(:ledger).select("ledgers.contributor_id"),
+    ).or(
+      where(id: PayStub.where("pay_stubs.created_at > ?", recent).joins(:ledger).select("ledgers.contributor_id"))
+    )
   }
 
   scope :forecast_email_cont, ->(value) {

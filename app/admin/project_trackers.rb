@@ -77,10 +77,25 @@ ActiveAdmin.register ProjectTracker do
     def collection
       c = super
       if action_name == "index" && !@_preloaded_for_render
-        ProjectTracker.preload_for_render(c.to_a)
+        arr = c.to_a
+        ProjectTracker.preload_for_render(arr)
         @_preloaded_for_render = true
+        # Group by account lead on the Active and Dormant tabs (and on the
+        # default unfiltered view). Within each lead, fall back to the
+        # config-level `created_at DESC` tiebreaker. Trackers with no current
+        # account lead sort last.
+        if %w[in_progress dormant].include?(params["scope"]) || params["scope"].blank?
+          sorted = arr.sort_by do |pt|
+            first_lead = pt.current_account_leads.map { |au| au&.name.to_s }.reject(&:empty?).sort.first
+            [first_lead.nil? ? 1 : 0, (first_lead || "").downcase, -pt.created_at.to_i]
+          end
+          # `paginated_collection` (AA view helper) requires a Kaminari-style
+          # page/per interface even when `config.paginate = false`. A bare
+          # Array doesn't qualify, so wrap with Kaminari.paginate_array.
+          @_index_array = Kaminari.paginate_array(sorted).page(1).per(sorted.size.nonzero? || 1)
+        end
       end
-      c
+      @_index_array || c
     end
   end
 

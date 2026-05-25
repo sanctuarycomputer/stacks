@@ -11,7 +11,9 @@ class EnterpriseTest < ActiveSupport::TestCase
   end
 
   test ".sanctuary raises if Sanctuary Computer Inc is missing" do
-    Enterprise.where(name: Enterprise::SANCTUARY_NAME).delete_all
+    ActiveRecord::Base.connection.disable_referential_integrity do
+      Enterprise.where(name: Enterprise::SANCTUARY_NAME).delete_all
+    end
     assert_raises(ActiveRecord::RecordNotFound) { Enterprise.sanctuary }
   end
 

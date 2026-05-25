@@ -830,9 +830,35 @@ a.member_link {
   border: 2.5px solid white;
 }
 
+// Same shape/position as .notifier, but tinted to read as "balance owed"
+// (green — money the contributor is due) and width auto so dollar amounts
+// of any length stay legible.
+.notifier--balance {
+  @extend .notifier;
+  background-color: #26bd50;
+  width: auto;
+  min-width: 28px;
+  padding: 0 8px;
+}
+
+.notifier--unsettled {
+  @extend .notifier;
+  background-color: #e69e3a;
+  width: auto;
+  min-width: 28px;
+  padding: 0 8px;
+}
+
 #header ul.tabs > li:hover > a {
   background-color: $color-black;
   border-radius: 9999px;
+}
+
+#header ul.tabs > li#ledger_balance > a {
+  background-color: transparent !important;
+  padding: 0 4px;
+  position: relative;
+  top: -2px;
 }
 
 table.index_table th {
@@ -1018,6 +1044,11 @@ h2 {
   &.attended
   {
     background-color: $color-green;
+    color: white;
+  }
+  &.pay_stub
+  {
+    background-color: $color-blue;
     color: white;
   }
   &.over_budget,

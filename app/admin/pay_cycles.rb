@@ -8,10 +8,20 @@ ActiveAdmin.register PayCycle do
   controller do
     helper_method :regen_confirm_message
 
+    before_action :require_admin_or_enterprise_admin!, only: [:show]
+
     def regen_confirm_message(cycle)
       n = cycle.pay_stubs.where.not(accepted_at: nil).count
       return nil if n.zero?
       "Regen may reset acceptance on up to #{n} already-accepted stub(s) if amounts change. Continue?"
+    end
+
+    private
+
+    def require_admin_or_enterprise_admin!
+      return if current_admin_user.is_admin?
+      return if current_admin_user.admin_of?(resource.enterprise)
+      redirect_to admin_root_path, alert: "You are not authorized to view this pay cycle."
     end
   end
 

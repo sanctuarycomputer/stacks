@@ -2,10 +2,18 @@
 # TODO: Tests
 
 class InvoiceTracker < ApplicationRecord
+  include HasQboInvoiceViaCompositeKey
+
   belongs_to :admin_user, optional: true
   belongs_to :invoice_pass
   belongs_to :forecast_client, class_name: "ForecastClient", foreign_key: "forecast_client_id", primary_key: "forecast_id"
 
+  # qbo_account is the direct binding — which of our QBO realms holds (or
+  # will hold) this tracker's invoice. Set explicitly on every row; not
+  # derived from forecast_client.billing_enterprise anymore (that conflated
+  # "customer's enterprise mapping" with "issuer's qa", and broke when
+  # Sanctuary historically billed sub-enterprises like garden3d).
+  belongs_to :qbo_account
   belongs_to :qbo_invoice, class_name: "QboInvoice", foreign_key: "qbo_invoice_id", primary_key: "qbo_id", optional: true
 
   has_many :contributor_payouts, dependent: :destroy
@@ -14,36 +22,6 @@ class InvoiceTracker < ApplicationRecord
 
   def display_name
     "#{qbo_invoice.try(:display_name) || forecast_client.name} (#{status})"
-  end
-
-  # The QboAccount this invoice's records live in. Routes through the
-  # forecast client's billing enterprise. In practice this is always
-  # Sanctuary today (only Sanctuary issues external-client invoices), but
-  # the indirection future-proofs the code so when another enterprise
-  # starts billing external clients we don't have to revisit each callsite.
-  def qbo_account
-    billing_enterprise.qbo_account
-  end
-
-  def qbo_invoice
-    # If an in-memory association target was assigned (e.g. InvoiceTracker.new(qbo_invoice: inv)
-    # in tests), honour it directly so AR's normal association cache is not bypassed.
-    in_memory = association(:qbo_invoice).target
-    return in_memory if in_memory.present?
-    return nil unless qbo_invoice_id
-    # Scope explicitly by qbo_account so the (qbo_account_id, qbo_id) composite
-    # index is used and a same-qbo_id row in a different account is never matched.
-    #
-    # `find_by` rather than `find_or_create_by!` — when no matching row exists
-    # for THIS qbo_account, return nil instead of creating an empty phantom
-    # row. The phantom-row path was the May-13 invoice-detachment bug:
-    # internal-client trackers whose forecast_client became internal had
-    # `qbo_account` flip from Sanctuary's qa to the internal qa, and the
-    # phantom row's empty `data` triggered sync! against the wrong QBO
-    # realm, which 404'd and destroyed both the phantom AND the real row.
-    qa = qbo_account
-    return nil if qa.nil?
-    QboInvoice.find_by(qbo_id: qbo_invoice_id, qbo_account_id: qa.id)
   end
 
   def qbo_invoice_link
@@ -198,10 +176,9 @@ class InvoiceTracker < ApplicationRecord
 
   def configuration_errors
     err = []
-    qbo_customer = forecast_client.qbo_customer
-    qbo_term = forecast_client.qbo_term
-    err << [:missing_qbo_customer] if qbo_customer.nil?
-    err << [:missing_qbo_term] if qbo_term.nil?
+    qa = qbo_account
+    err << [:missing_qbo_customer] if forecast_client.qbo_customer(qa: qa).nil?
+    err << [:missing_qbo_term] if forecast_client.qbo_term(qa: qa).nil?
     err
   end
 
@@ -699,13 +676,15 @@ class InvoiceTracker < ApplicationRecord
     raise "Billing enterprise (#{billing_enterprise.name}) has no connected QboAccount" if qa.nil?
     qbo_items, default_service_item = qa.fetch_all_items
 
+    customer = forecast_client.qbo_customer(qa: qa)
+    term = forecast_client.qbo_term(qa: qa)
     qbo_inv = Quickbooks::Model::Invoice.new
-    qbo_inv.customer_id = forecast_client.qbo_customer.id
+    qbo_inv.customer_id = customer.id
     qbo_inv.private_note = invoice_pass.invoice_month
-    qbo_inv.bill_email = forecast_client.qbo_customer.primary_email_address
+    qbo_inv.bill_email = customer.primary_email_address
     qbo_inv.sales_term_ref = Quickbooks::Model::BaseReference.new(
-      forecast_client.qbo_term.name,
-      value: forecast_client.qbo_term.id
+      term.name,
+      value: term.id
     )
     qbo_inv.allow_online_ach_payment = true
     qbo_inv.customer_memo =

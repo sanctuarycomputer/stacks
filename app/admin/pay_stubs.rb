@@ -5,14 +5,33 @@ ActiveAdmin.register PayStub do
   config.paginate = false
   actions :show
 
-  action_item :toggle_acceptance, only: :show do
+  action_item :toggle_acceptance, only: :show, if: proc {
+    current_admin_user.is_admin? || current_admin_user.forecast_person == resource.contributor.forecast_person
+  } do
     label = resource.accepted? ? "Unaccept" : "Accept"
     link_to label,
       toggle_acceptance_admin_pay_cycle_pay_stub_path(resource.pay_cycle, resource),
       method: :post
   end
 
+  action_item :sync_qbo_bill, only: :show, if: proc { current_admin_user.is_admin? } do
+    link_to "Sync QBO Bill",
+      sync_qbo_bill_admin_pay_cycle_pay_stub_path(resource.pay_cycle, resource),
+      method: :post
+  end
+
+  member_action :sync_qbo_bill, method: :post do
+    resource.sync_qbo_bill!
+    redirect_to admin_pay_cycle_pay_stub_path(resource.pay_cycle, resource), notice: "QBO bill synced."
+  rescue => e
+    redirect_to admin_pay_cycle_pay_stub_path(resource.pay_cycle, resource), alert: e.message
+  end
+
   member_action :toggle_acceptance, method: :post do
+    unless current_admin_user.is_admin? || current_admin_user.forecast_person == resource.contributor.forecast_person
+      redirect_to admin_pay_cycle_pay_stub_path(resource.pay_cycle, resource), alert: "You are not authorized to do that."
+      return
+    end
     resource.toggle_acceptance!(by: current_admin_user)
     redirect_to admin_pay_cycle_pay_stub_path(resource.pay_cycle, resource), notice: "Updated."
   rescue RuntimeError => e

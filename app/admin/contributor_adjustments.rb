@@ -2,7 +2,7 @@ ActiveAdmin.register ContributorAdjustment do
   config.filters = false
   config.paginate = false
   actions :index, :new, :show, :edit, :create, :update, :destroy
-  permit_params :amount, :effective_on, :description, :qbo_invoice_id, :ledger_id
+  permit_params :amount, :effective_on, :description, :qbo_invoice_id, :qbo_account_id, :ledger_id
   menu false
 
   belongs_to :ledger
@@ -29,6 +29,37 @@ ActiveAdmin.register ContributorAdjustment do
         resource.reload
       end
       super
+    end
+
+    # Form packs "qa_id:qbo_id" into the qbo_invoice_id field. Split it
+    # back into two columns before AA mass-assignment. When the user picks
+    # blank (None), default qbo_account_id to the ledger's enterprise qa
+    # so the NOT NULL constraint is satisfied.
+    def update
+      split_packed_qbo_invoice_value!(params[:contributor_adjustment])
+      super
+    end
+
+    def create
+      split_packed_qbo_invoice_value!(params[:contributor_adjustment])
+      super
+    end
+
+    private
+
+    def split_packed_qbo_invoice_value!(p)
+      return if p.blank?
+      val = p[:qbo_invoice_id]
+      if val.present? && val.to_s.include?(":")
+        qa_id, qbo_id = val.to_s.split(":", 2)
+        p[:qbo_account_id] = qa_id
+        p[:qbo_invoice_id] = qbo_id
+      elsif val.blank? && p[:ledger_id].present?
+        # No invoice selected — default qa to the ledger's enterprise qa
+        # so the NOT NULL DB constraint is satisfied.
+        ledger = Ledger.find_by(id: p[:ledger_id])
+        p[:qbo_account_id] = ledger&.enterprise&.qbo_account&.id
+      end
     end
   end
 
@@ -59,7 +90,12 @@ ActiveAdmin.register ContributorAdjustment do
       f.input :effective_on, as: :date_picker
       f.input :qbo_invoice,
         as: :select,
-        collection: QboInvoice.order(Arel.sql("(data->>'doc_number')::int DESC")),
+        collection: QboInvoice.includes(qbo_account: :enterprise).order(Arel.sql("(data->>'doc_number')::int DESC")).map { |inv|
+          ent_name = inv.qbo_account&.enterprise&.name || "?"
+          ["[#{ent_name}] #{inv.display_name}", "#{inv.qbo_account_id}:#{inv.qbo_id}"]
+        },
+        selected: (f.object.qbo_invoice_id.present? && f.object.qbo_account_id.present? ?
+          "#{f.object.qbo_account_id}:#{f.object.qbo_invoice_id}" : nil),
         include_blank: "None (available immediately)",
         hint: "Optional. If unset, counts toward balance immediately; if set, the adjustment stays unsettled until that invoice is fully paid in QBO."
       f.input :description, as: :text, input_html: { rows: 4 }

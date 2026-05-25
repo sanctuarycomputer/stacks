@@ -62,6 +62,40 @@ class PayStub < ApplicationRecord
     "SB" # "[S]tu[B]" — distinct from ProfitShare's "PS"
   end
 
+  def find_qbo_account!(qbo_accounts = nil)
+    qa = qbo_account_for_bill
+    raise "Enterprise #{enterprise&.name.inspect} has no connected QboAccount" if qa.nil?
+    qbo_accounts ||= qa.fetch_all_accounts
+    account = qbo_accounts.find { |a| a.name == "Facilities Management Salaries" }
+    raise "No 'Facilities Management Salaries' account found in QuickBooks for #{enterprise&.name}" unless account.present?
+    [account, nil]
+  end
+
+  def bill_line_items(qbo_accounts)
+    account, _ = find_qbo_account!(qbo_accounts)
+    lines = blueprint["lines"] || []
+    grouped = lines.group_by { |l| l["forecast_project"] }
+
+    fp_ids = grouped.keys.compact
+    projects_by_id = ForecastProject.where(forecast_id: fp_ids).index_by(&:forecast_id)
+
+    grouped.map do |fp_id, group|
+      fp = projects_by_id[fp_id]
+      project_name = fp&.display_name || "Forecast project ##{fp_id}"
+      hours = group.sum { |l| l["hours"].to_f }.round(2)
+      line_amount = group.sum { |l| l["amount"].to_f }.round(2)
+
+      line = Quickbooks::Model::BillLineItem.new(
+        description: "#{project_name} — #{hours}h",
+        amount: line_amount,
+      )
+      line.account_based_expense_item! do |detail|
+        detail.account_ref = Quickbooks::Model::BaseReference.new(account.id)
+      end
+      line
+    end
+  end
+
   private
 
   def blueprint_has_lines_array

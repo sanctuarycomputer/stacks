@@ -5,11 +5,13 @@ class DeelContract < ApplicationRecord
 
   belongs_to :deel_person, class_name: "DeelPerson", foreign_key: "deel_person_id"
 
-  # Deel's `/contracts` payload exposes the legal entity under `client.team`
-  # (id + name). The `deel_legal_entity_id` column is also denormalized at sync
-  # time so we can filter by entity at the SQL level.
+  # `client.legal_entity` is only present on `GET /contracts/:id`; the list
+  # endpoint surfaces a team object instead, which is a separate identifier
+  # space in Deel and does not match `Enterprise#deel_legal_entity_id`. The
+  # sync uses the detail endpoint so this read path and the
+  # `deel_legal_entity_id` column both reference the actual legal entity.
   def deel_legal_entity_name
-    data.is_a?(Hash) ? data.dig("client", "team", "name") : nil
+    data.is_a?(Hash) ? data.dig("client", "legal_entity", "name") : nil
   end
 
   # From Deel’s synced contract JSON (`GET /contracts` → stored in `data`).

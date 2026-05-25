@@ -49,8 +49,8 @@ class QboInvoiceTest < ActiveSupport::TestCase
     EnterpriseForecastClient.create!(enterprise: @other_ent, forecast_client_id: fc_internal.forecast_id)
 
     ip = InvoicePass.find_or_create_by!(start_of_month: Date.new(2098, 1, 1))
-    tracker_sanctuary = InvoiceTracker.create!(invoice_pass: ip, forecast_client: fc_external, qbo_invoice_id: shared_qbo_id)
-    tracker_other = InvoiceTracker.create!(invoice_pass: ip, forecast_client: fc_internal, qbo_invoice_id: shared_qbo_id)
+    tracker_sanctuary = InvoiceTracker.create!(invoice_pass: ip, forecast_client: fc_external, qbo_invoice_id: shared_qbo_id, qbo_account: @sanctuary_qa)
+    tracker_other = InvoiceTracker.create!(invoice_pass: ip, forecast_client: fc_internal, qbo_invoice_id: shared_qbo_id, qbo_account: @other_qa)
 
     # Force inv_sanctuary's sync! to hit the "Object Not Found" branch.
     inv_sanctuary.qbo_account.stubs(:fetch_invoice_by_id).raises(StandardError.new("Object Not Found: foo"))
@@ -87,7 +87,8 @@ class InvoiceTrackerQboInvoiceLookupTest < ActiveSupport::TestCase
   test "qbo_invoice returns nil when no matching row exists for this qa (no phantom row created)" do
     fc = ForecastClient.create!(forecast_id: rand(1..2_000_000_000), name: "FC-#{SecureRandom.hex(2)}")
     ip = InvoicePass.find_or_create_by!(start_of_month: Date.new(2097, 1, 1))
-    tracker = InvoiceTracker.create!(invoice_pass: ip, forecast_client: fc, qbo_invoice_id: "GONE#{SecureRandom.hex(3)}")
+    tracker = InvoiceTracker.create!(invoice_pass: ip, forecast_client: fc, qbo_account: @sanctuary_qa)
+    tracker.update_columns(qbo_invoice_id: "GONE#{SecureRandom.hex(3)}")
 
     assert_no_difference -> { QboInvoice.where(qbo_id: tracker.qbo_invoice_id).count } do
       assert_nil tracker.qbo_invoice
@@ -99,7 +100,7 @@ class InvoiceTrackerQboInvoiceLookupTest < ActiveSupport::TestCase
     ip = InvoicePass.find_or_create_by!(start_of_month: Date.new(2097, 2, 1))
     qbo_id = "INV#{SecureRandom.hex(3)}"
     inv = QboInvoice.create!(qbo_id: qbo_id, qbo_account: @sanctuary_qa, data: { "x" => 1 })
-    tracker = InvoiceTracker.create!(invoice_pass: ip, forecast_client: fc, qbo_invoice_id: qbo_id)
+    tracker = InvoiceTracker.create!(invoice_pass: ip, forecast_client: fc, qbo_account: @sanctuary_qa, qbo_invoice_id: qbo_id)
 
     assert_equal inv, tracker.qbo_invoice
   end
@@ -113,10 +114,11 @@ class InvoiceTrackerQboInvoiceLookupTest < ActiveSupport::TestCase
     EnterpriseForecastClient.create!(enterprise: other_ent, forecast_client_id: fc.forecast_id)
     ip = InvoicePass.find_or_create_by!(start_of_month: Date.new(2097, 3, 1))
 
-    # Existing QboInvoice is in Sanctuary, but tracker's forecast_client routes to other_ent.
+    # Existing QboInvoice is in Sanctuary, but tracker's qbo_account is other_qa.
     qbo_id = "INV#{SecureRandom.hex(3)}"
     QboInvoice.create!(qbo_id: qbo_id, qbo_account: @sanctuary_qa, data: { "x" => 1 })
-    tracker = InvoiceTracker.create!(invoice_pass: ip, forecast_client: fc, qbo_invoice_id: qbo_id)
+    tracker = InvoiceTracker.create!(invoice_pass: ip, forecast_client: fc, qbo_account: other_qa)
+    tracker.update_columns(qbo_invoice_id: qbo_id)
 
     # Tracker's qa is other_qa; no QboInvoice matches there.
     assert_equal other_qa, tracker.qbo_account

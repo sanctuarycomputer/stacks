@@ -92,12 +92,18 @@
                 <%= li.effective_on.strftime("%B %d, %Y") %>
               <% elsif li.is_a?(DeelInvoiceAdjustment) %>
                 <%= li.date_submitted.strftime("%B %d, %Y") %>
+              <% elsif li.is_a?(PayStub) %>
+                <%= li.pay_cycle.ends_at.strftime("%B %d, %Y") %>
               <% end %>
             </td>
             <td class="col">
-              <span class="pill <%= li.model_name.human.downcase %>">
-                <%= li.model_name.human %>
-              </span>
+              <% if li.is_a?(PayStub) %>
+                <span class="pill pay_stub">Pay Stub</span>
+              <% else %>
+                <span class="pill <%= li.model_name.human.downcase %>">
+                  <%= li.model_name.human %>
+                </span>
+              <% end %>
             </td>
             <td class="col">
               <% if li.is_a?(ContributorPayout) %>
@@ -158,6 +164,23 @@
                     <%= li.deleted_at.present? ? "Deleted" : li.deel_status.to_s.humanize %>
                   </span>
                 </span>
+              <% elsif li.is_a?(PayStub) %>
+                <% if li.deleted_at.present? %>
+                  <span class="pill deleted">Deleted</span>
+                <% else %>
+                  <span class="pill <%= li.accepted? ? "accepted" : "pending" %>" style="margin-right: 6px;">
+                    Stub Acceptance
+                    <span class="split">
+                      <%= li.accepted? ? "Accepted" : "Pending" %>
+                    </span>
+                  </span>
+                  <span class="pill <%= li.pay_cycle.approved? ? "paid" : "pending" %>" style="margin-right: 6px;">
+                    Cycle Approval
+                    <span class="split">
+                      <%= li.pay_cycle.approved? ? "Approved" : "Pending" %>
+                    </span>
+                  </span>
+                <% end %>
               <% end %>
             </td>
             <td class="col">
@@ -230,6 +253,21 @@
                   <%= number_to_currency(li.amount) %>
                   <span class="pill voided" style="margin-left: 6px;">Not reserved</span>
                 <% end %>
+              <% elsif li.is_a?(PayStub) %>
+                <% if li.deleted_at.present? %>
+                  <del><%= number_to_currency(li.amount) %></del>
+                <% else %>
+                  + <%= number_to_currency(li.amount) %>
+                <% end %>
+
+                <span class="pill <%= li.accepted? ? "accepted" : "pending" %>" style="margin-right: 6px;">
+                  <%= li.accepted? ? "Accepted" : "Pending" %>
+                  <% if current_admin_user.forecast_person == li.contributor.forecast_person || current_admin_user.is_admin? %>
+                    <span class="split">
+                      <%= link_to li.accepted? ? "Unaccept ↗" : "Accept ↗", toggle_acceptance_admin_pay_cycle_pay_stub_path(li.pay_cycle, li), method: :post, style: "font-size: unset;" %>
+                    </span>
+                  <% end %>
+                </span>
               <% end %>
             </td>
             <td class="col text-right">
@@ -246,6 +284,8 @@
                   <%= link_to "Info ↗", admin_ledger_contributor_adjustment_path(li.ledger, li) %>
                 <% elsif li.is_a?(DeelInvoiceAdjustment) %>
                   <%= link_to "Info ↗", admin_contributor_deel_invoice_adjustment_path(contributor, li) %>
+                <% elsif li.is_a?(PayStub) %>
+                  <%= link_to "Info ↗", admin_pay_cycle_pay_stub_path(li.pay_cycle, li) %>
                 <% end %>
               <% end %>
             </td>

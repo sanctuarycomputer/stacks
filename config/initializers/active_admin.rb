@@ -239,10 +239,6 @@ ActiveAdmin.setup do |config|
     admin.authorization_adapter = "AdminAuthorization"
 
     admin.build_menu :utility_navigation do |menu|
-      menu.add id: "manual",
-               label: "🤔 Learn Stacks",
-               url: "https://www.notion.so/garden3d/Using-Stacks-3bb041a0cfe84e4d899707901374a001",
-               html_options: { target: :blank }
       menu.add id: "accounting_method",
                priority: 1,
                html_options: { method: :post },
@@ -257,7 +253,38 @@ ActiveAdmin.setup do |config|
                },
                url: -> { "/toggle_accounting_method" },
                if: :current_active_admin_user?
-      admin.add_current_user_to_menu menu
+      menu.add id: "current_user", priority: 10,
+               label: -> { current_active_admin_user.display_name },
+               url: -> { auto_url_for(current_active_admin_user) },
+               if: :current_active_admin_user?
+      menu.add id: "ledger_balance", priority: 11,
+               html_options: { class: "ledger-balance-nav" },
+               label: -> {
+                 h = ActionController::Base.helpers
+                 contributor = current_active_admin_user.forecast_person&.contributor
+                 if contributor
+                   total_balance = contributor.ledgers.sum { |l| l.balance.to_f }
+                   total_unsettled = contributor.ledgers.sum { |l| l.unsettled.to_f }
+                   if total_balance > 0 || total_unsettled > 0
+                     bal = h.number_to_currency(total_balance, precision: 0)
+                     unsettled = h.number_to_currency(total_unsettled, precision: 0)
+                     pill = "<span class=\"pill accepted\" style=\"vertical-align:middle;\">#{bal}"
+                     pill << " <span class=\"split\">#{unsettled}</span>" if total_unsettled > 0
+                     pill << "</span>"
+                     pill.html_safe
+                   end
+                 end
+               },
+               url: -> {
+                 contributor = current_active_admin_user.forecast_person&.contributor
+                 contributor ? admin_contributor_path(contributor) : admin_root_path
+               },
+               if: -> {
+                 contributor = current_active_admin_user&.forecast_person&.contributor
+                 return false unless contributor
+                 total = contributor.ledgers.sum { |l| l.balance.to_f + l.unsettled.to_f }
+                 total > 0
+               }
       admin.add_logout_button_to_menu menu
     end
   end
@@ -367,6 +394,13 @@ end
 ActiveAdmin::Views::Pages::Base.class_eval do
   def build_page
     within body(class: body_classes) do
+      if controller.impersonating?
+        div id: "impersonation-border", style: "position:fixed;top:0;left:0;right:0;bottom:0;border:4px solid orange;pointer-events:none;z-index:9999;"
+        div id: "impersonation-banner", style: "position:fixed;bottom:0;left:0;right:0;z-index:10000;background:orange;color:#fff;padding:4px 16px;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between;pointer-events:auto;" do
+          span "You are impersonating #{current_admin_user.email}", style: "pointer-events:none;"
+          a "Stop impersonating ✕", href: stop_impersonating_admin_admin_users_path, "data-method": "post", style: "color:#fff;text-decoration:none;font-weight:600;"
+        end
+      end
       div id: "wrapper" do
         build_unsupported_browser
         build_pending_tasks_nag if current_admin_user.pending_tasks.any?

@@ -12,9 +12,20 @@ class QboInvoice < ApplicationRecord
   # AR-level validation surfaces a clean message before the DB rejection.
   validates :qbo_account, presence: true
 
+  # A QboInvoice is "orphan" iff no tracker / adjustment references its
+  # exact (qbo_account_id, qbo_id) pair. Same qbo_id in a different qa is
+  # not the same invoice (Deel-style ID collision), so we have to filter
+  # on the pair, not on qbo_id alone.
   scope :orphans, -> {
-    where.not(qbo_id: [*InvoiceTracker.pluck(:qbo_invoice_id).compact, *AdhocInvoiceTracker.pluck(:qbo_invoice_id).compact])
-      .order(Arel.sql("data->>'doc_number'"))
+    claimed = [
+      *InvoiceTracker.where.not(qbo_invoice_id: nil).pluck(:qbo_account_id, :qbo_invoice_id),
+      *AdhocInvoiceTracker.where.not(qbo_invoice_id: nil).pluck(:qbo_account_id, :qbo_invoice_id),
+      *ContributorAdjustment.where.not(qbo_invoice_id: nil).pluck(:qbo_account_id, :qbo_invoice_id),
+    ]
+    scope = order(Arel.sql("data->>'doc_number'"))
+    return scope if claimed.empty?
+    values_sql = claimed.map { |qa, qid| "(#{qa.to_i}, #{connection.quote(qid)})" }.join(", ")
+    scope.where("(qbo_invoices.qbo_account_id, qbo_invoices.qbo_id) NOT IN (#{values_sql})")
   }
 
   def status
@@ -74,9 +85,14 @@ class QboInvoice < ApplicationRecord
     data.dig("customer_ref") || {}
   end
 
+  # Destroying a QboInvoice cascades through the composite FK
+  # (qbo_account_id, qbo_invoice_id) → qbo_invoices (qbo_account_id, qbo_id)
+  # with ON DELETE SET NULL. Trackers / adjustments in OTHER qa's are
+  # untouched by construction — only rows whose pair matches this row get
+  # their qbo_invoice_id nulled.
   def sync!
     if qbo_id == ""
-      destroy_and_detach_trackers!
+      destroy!
       return false
     end
 
@@ -85,36 +101,8 @@ class QboInvoice < ApplicationRecord
       update! data: invoice.as_json
       self
     rescue => e
-      destroy_and_detach_trackers! if e.message.starts_with?("Object Not Found:")
+      destroy! if e.message.starts_with?("Object Not Found:")
       false
-    end
-  end
-
-  private
-
-  # Detach only trackers whose effective qbo_account matches this row's, so
-  # an "Object Not Found" against (qbo_id, this qa) doesn't clobber a
-  # tracker that's correctly referencing the same qbo_id in a DIFFERENT qa.
-  # The tracker's qa is computed from forecast_client.billing_enterprise, so
-  # the scoping must happen in Ruby rather than SQL.
-  def destroy_and_detach_trackers!
-    ActiveRecord::Base.transaction do
-      InvoiceTracker.where(qbo_invoice_id: qbo_id).find_each do |t|
-        next unless t.qbo_account&.id == qbo_account_id
-        t.update_columns(qbo_invoice_id: nil)
-      end
-
-      AdhocInvoiceTracker.where(qbo_invoice_id: qbo_id).find_each do |t|
-        # AdhocInvoiceTracker doesn't have an enterprise hop today — its
-        # qbo_invoice belongs_to has no qbo_account dynamism. Detach
-        # unconditionally; if a multi-enterprise routing is added later
-        # this should mirror InvoiceTracker's check.
-        t.update_columns(qbo_invoice_id: nil)
-      end
-
-      # destroy! now operates on the auto-increment `id` primary key,
-      # so it deletes only THIS row — not other (qbo_id, other_qa) rows.
-      destroy!
     end
   end
 end

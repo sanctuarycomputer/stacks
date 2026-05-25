@@ -137,6 +137,30 @@ class Stacks::Deel
     }
   end
 
+  # Wrap an HTTParty call so 429 / 502 / 503 get a fixed-interval retry.
+  # Other non-success responses raise immediately (matches existing
+  # `raise response unless response.success?` semantics throughout the
+  # file). Returns the raw response object on success.
+  def handle_response(&block)
+    return if block.nil?
+    retry_count = 0
+    begin
+      response = block.call
+      code = response.respond_to?(:code) ? response.code.to_i : 0
+      if [429, 502, 503].include?(code)
+        raise Stacks::Deel::ApiError.new("HTTP #{code} from Deel — will retry", http_code: code)
+      end
+      raise response.to_s unless response.success?
+      response
+    rescue Stacks::Deel::ApiError => e
+      raise e unless e.retryable_rate_limit? && retry_count < 5
+      retry_count += 1
+      puts "~~~> Deel #{e.http_code}, sleeping 61s then retrying (attempt #{retry_count}/5)"
+      sleep(61.seconds)
+      retry
+    end
+  end
+
   def sync_all!
     # Pure upsert flow. The previous wipe-and-rebuild approach
     # (DeelContract.delete_all etc.) raises ForeignKeyViolation now that
@@ -157,14 +181,15 @@ class Stacks::Deel
   def get_people
     values = []
 
-    response = self.class.get("/people?limit=200", headers: @headers)
+    response = handle_response { self.class.get("/people?limit=200", headers: @headers) }
     values = response["data"]
     page = response["page"]
 
     loop do
       break if page["items_per_page"] + page["offset"] >= page["total_rows"]
-      response = self.class.get("/people?limit=200&offset=#{page["items_per_page"] + page["offset"]}", headers: @headers)
-      raise response unless response.success?
+      response = handle_response {
+        self.class.get("/people?limit=200&offset=#{page["items_per_page"] + page["offset"]}", headers: @headers)
+      }
       values += response["data"]
       page = response["page"]
     end
@@ -185,14 +210,15 @@ class Stacks::Deel
   def get_contracts
     values = []
 
-    response = self.class.get("/contracts?limit=150", headers: @headers)
+    response = handle_response { self.class.get("/contracts?limit=150", headers: @headers) }
     values = response["data"]
     page = response["page"]
 
     loop do
       break if page["cursor"].blank?
-      response = self.class.get("/contracts?limit=150&after_cursor=#{page["cursor"]}", headers: @headers)
-      raise response unless response.success?
+      response = handle_response {
+        self.class.get("/contracts?limit=150&after_cursor=#{page["cursor"]}", headers: @headers)
+      }
       values += response["data"]
       page = response["page"]
     end
@@ -200,24 +226,37 @@ class Stacks::Deel
     values
   end
 
+  # Fetch one contract's full payload. The list endpoint strips
+  # `client.legal_entity`; only `GET /contracts/:id` returns it, so the
+  # sync needs a per-contract fetch to populate `deel_legal_entity_id`
+  # with a value that actually matches `Enterprise#deel_legal_entity_id`
+  # (which is sourced from `/legal-entities`). `client.team.id` from the
+  # list endpoint is a different identifier in Deel's model and does not
+  # cross-reference legal entities.
+  def get_contract_detail(deel_id)
+    response = handle_response { self.class.get("/contracts/#{deel_id}", headers: @headers) }
+    body = response.parsed_response
+    body.is_a?(Hash) ? (body["data"] || body) : body
+  end
+
   def sync_contracts!
     data = get_contracts.map do |c|
       next nil if c.dig("worker", "id").nil?
+      detail = get_contract_detail(c["id"])
       {
         deel_id: c["id"],
         deel_person_id: c.dig("worker", "id"),
-        data: c,
-        # Deel exposes the legal entity as `client.team.{id,name}` on the
-        # contracts API; the id is the same UUID returned by /legal-entities.
-        deel_legal_entity_id: c.dig("client", "team", "id"),
+        data: detail,
+        deel_legal_entity_id: detail.dig("client", "legal_entity", "id"),
       }
     end.compact
     DeelContract.upsert_all(data, unique_by: :deel_id)
   end
 
   def get_off_cycle_payments(contract_id)
-    response = self.class.get("/contracts/#{contract_id}/off-cycle-payments", headers: @headers)
-    raise response unless response.success?
+    response = handle_response {
+      self.class.get("/contracts/#{contract_id}/off-cycle-payments", headers: @headers)
+    }
     response["data"]
   end
 

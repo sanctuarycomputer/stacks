@@ -29,55 +29,57 @@ class ForecastClient < ApplicationRecord
     enterprise_forecast_client.present?
   end
 
-  def qbo_term
-    @_qbo_term ||= (
-      bearer =
-        Stacks::System.singleton_class::QBO_NOTES_PAYMENT_TERM_BEARER
-      default =
-        Stacks::System.singleton_class::DEFAULT_PAYMENT_TERM
-      # Route through billing_enterprise.qbo_account so internal clients
-      # mapped to another enterprise look up terms in THEIR QBO. External
-      # (unmapped) clients fall through to Sanctuary via the billing_enterprise
-      # default — same behavior as before.
-      qa = billing_enterprise&.qbo_account
-      return nil if qa.nil?
-      qbo_terms = qa.fetch_all_terms
+  # `qa:` is the QBO realm to look up the customer/term in. Callers from an
+  # InvoiceTracker context should pass `tracker.qbo_account` so the lookup
+  # happens in the realm that actually holds (or will hold) the invoice —
+  # which can differ from `billing_enterprise.qbo_account` for cross-billing
+  # (e.g. Sanctuary historically invoicing garden3d). When omitted, falls back
+  # to the billing_enterprise default for backward compatibility.
+  def qbo_term(qa: nil)
+    qa ||= billing_enterprise&.qbo_account
+    return nil if qa.nil?
+    @_qbo_term_by_qa ||= {}
+    return @_qbo_term_by_qa[qa.id] if @_qbo_term_by_qa.key?(qa.id)
 
-      term_mapping = (qbo_customer.try(:notes) || "").split(" ").find do |word|
-        word.starts_with?(bearer)
-      end
+    bearer = Stacks::System.singleton_class::QBO_NOTES_PAYMENT_TERM_BEARER
+    default = Stacks::System.singleton_class::DEFAULT_PAYMENT_TERM
+    qbo_terms = qa.fetch_all_terms
 
+    term_mapping = (qbo_customer(qa: qa).try(:notes) || "").split(" ").find do |word|
+      word.starts_with?(bearer)
+    end
+
+    result =
       if term_mapping.present?
         term_days = term_mapping.split(bearer)[1].to_i
         qbo_terms.find { |t| t.due_days == term_days }
       else
         qbo_terms.find { |t| t.due_days == default }
       end
-    )
+    @_qbo_term_by_qa[qa.id] = result
   end
 
-  # TODO: Sync qbo_customer and join?
-  def qbo_customer(qbo_customers = nil)
-    @_qbo_customer ||= (
-      # Same routing as qbo_term: derive the QBO account from this client's
-      # billing_enterprise (external clients default to Sanctuary).
-      qa = billing_enterprise&.qbo_account
-      return nil if qbo_customers.nil? && qa.nil?
-      qbo_customers = qbo_customers || qa.fetch_all_customers
-      bearer =
-        Stacks::System.singleton_class::QBO_NOTES_FORECAST_MAPPING_BEARER
-      qbo_customers.find do |c|
-        mapping = (c.notes || "").split(" ").find do |word|
-          word.starts_with?(bearer)
-        end
-        if mapping.present?
-          splat = mapping.split(bearer)[1]
-          splat = splat.gsub!(/_/, " ") if splat.include?("_")
-          splat == name
-        else
-          c.company_name == name
-        end
+  def qbo_customer(qbo_customers = nil, qa: nil)
+    qa ||= billing_enterprise&.qbo_account
+    return nil if qbo_customers.nil? && qa.nil?
+    @_qbo_customer_by_qa ||= {}
+    key = qa&.id
+    return @_qbo_customer_by_qa[key] if @_qbo_customer_by_qa.key?(key)
+
+    qbo_customers ||= qa.fetch_all_customers
+    bearer = Stacks::System.singleton_class::QBO_NOTES_FORECAST_MAPPING_BEARER
+    result = qbo_customers.find do |c|
+      mapping = (c.notes || "").split(" ").find do |word|
+        word.starts_with?(bearer)
       end
-    )
+      if mapping.present?
+        splat = mapping.split(bearer)[1]
+        splat = splat.gsub!(/_/, " ") if splat.include?("_")
+        splat == name
+      else
+        c.company_name == name
+      end
+    end
+    @_qbo_customer_by_qa[key] = result
   end
 end

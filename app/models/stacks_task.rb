@@ -40,6 +40,9 @@ class StacksTask
     # Survey issues
     survey: "Studio survey response required",
     project_satisfaction_survey: "Project satisfaction survey response required",
+
+    # PayCycle issues
+    pay_cycle_needs_approval: "Pay cycle needs your approval on behalf of your team",
   }.freeze
 
   # type    — Symbol classifying the task (:project_capsule_incomplete, :survey, …)
@@ -91,6 +94,7 @@ class StacksTask
       pt_name = subject.try(:project_capsule).try(:project_tracker).try(:name)
       pt_name.present? ? "#{pt_name} (satisfaction survey)" : "Project Satisfaction Survey ##{subject.id}"
     when Stacks::Notion::Lead then subject.try(:page_title).presence || "Notion Lead"
+    when PayCycle then "#{subject.enterprise.name} — #{subject.starts_at.to_s(:long)} to #{subject.ends_at.to_s(:long)}"
     else
       subject.try(:display_name).presence || subject.try(:name).presence || subject.to_s
     end
@@ -111,6 +115,7 @@ class StacksTask
     when Survey then helpers.admin_survey_path(subject)
     when ProjectSatisfactionSurvey then helpers.admin_project_satisfaction_survey_path(subject)
     when Stacks::Notion::Lead then subject.try(:notion_link) || subject.try(:external_link)
+    when PayCycle then helpers.admin_enterprise_pay_cycle_path(subject.enterprise, subject)
     else subject.try(:external_link)
     end
   end
