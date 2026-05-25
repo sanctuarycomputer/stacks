@@ -166,7 +166,7 @@ class Contributor < ApplicationRecord
   # last 3 months — both flow through the per-enterprise Ledger, so a salaried
   # team member with no contributor_payouts but a recent pay stub is still a
   # "recent contributor" for the admin index.
-  scope :recent_new_deal_contributors, -> {
+  scope :recent_contributors, -> {
     recent = 3.months.ago
     where(
       id: ContributorPayout.where("contributor_payouts.created_at > ?", recent).joins(:ledger).select("ledgers.contributor_id"),
