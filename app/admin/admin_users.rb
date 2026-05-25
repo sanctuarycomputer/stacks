@@ -54,6 +54,24 @@ ActiveAdmin.register AdminUser do
     end
   end
 
+  action_item :impersonate, only: :show, if: proc { !impersonating? && current_admin_user.is_admin? && resource.id != current_admin_user.id } do
+    link_to "Impersonate", impersonate_admin_admin_user_path(resource), method: :post
+  end
+
+  member_action :impersonate, method: :post do
+    unless true_admin_user&.is_admin?
+      redirect_to admin_admin_users_path, alert: "Only admins can impersonate."
+      return
+    end
+    session[:impersonated_admin_user_id] = resource.id
+    redirect_to admin_root_path, notice: "Now impersonating #{resource.email}."
+  end
+
+  collection_action :stop_impersonating, method: :post do
+    session.delete(:impersonated_admin_user_id)
+    redirect_to admin_root_path, notice: "Impersonation ended."
+  end
+
   member_action :demote_admin_user, method: :post do
     resource.update!(roles: [])
     redirect_to admin_admin_user_path(resource), notice: "Success!"

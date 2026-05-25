@@ -42,10 +42,17 @@ class InvoicePass < ApplicationRecord
     # stubs against their enterprise's pay cycles instead of being invoiced.
     # Skip them here so they never enter the InvoiceTracker pipeline.
     clients_served.reject(&:is_internal?).each do |c|
+      # Default the tracker's qa to the client's billing_enterprise qa.
+      # External clients fall through to Sanctuary. Admins can override in
+      # the form for cross-billing (e.g. garden3d invoicing its own external
+      # client, or Sanctuary issuing a one-off for a sub-enterprise).
+      qa = c.billing_enterprise&.qbo_account || Enterprise.sanctuary.qbo_account
       InvoiceTracker.find_or_create_by!(
         forecast_client_id: c.forecast_id,
-        invoice_pass: self
-      )
+        invoice_pass: self,
+      ) do |t|
+        t.qbo_account = qa
+      end
     end
   end
 

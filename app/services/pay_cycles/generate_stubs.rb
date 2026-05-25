@@ -63,6 +63,22 @@ module PayCycles
       !ftp.variable_hours?
     end
 
+    # Read-only counterpart of #call. Returns `Hash<ForecastPerson, Array<line>>`
+    # — what `upsert_stubs` would write if we ran the full generation right now,
+    # without touching the database. Used by PayCycle#changes_in_forecast to
+    # surface drift between stored stubs and current Forecast state.
+    def compute_per_contributor_lines
+      per_contributor = group_qualifying_by_contributor
+      result = {}
+      per_contributor.each do |fp, assignments|
+        lines = build_lines(fp, assignments)
+        amount = lines.sum { |l| l["amount"].to_f }.round(2)
+        next if amount <= 0
+        result[fp] = lines
+      end
+      result
+    end
+
     private
 
     def group_qualifying_by_contributor

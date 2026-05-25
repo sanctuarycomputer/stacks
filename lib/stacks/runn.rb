@@ -86,8 +86,9 @@ class Stacks::Runn
     values = []
     next_cursor = nil
     loop do
-      response = self.class.get("/roles?limit=200&cursor=#{next_cursor}", headers: @headers)
-      raise response.to_s unless response.success?
+      response = handle_response {
+        self.class.get("/roles?limit=200&cursor=#{next_cursor}", headers: @headers)
+      }
       values = [*values, *response["values"]]
       next_cursor = response["nextCursor"]
       break if next_cursor.nil?

@@ -4,7 +4,7 @@ ActiveAdmin.register InvoiceTracker do
   config.paginate = false
   actions :index, :show, :edit, :update
   belongs_to :invoice_pass
-  permit_params :notes, :allow_early_contributor_payouts_on, :company_treasury_split, :qbo_invoice_id
+  permit_params :notes, :allow_early_contributor_payouts_on, :company_treasury_split, :qbo_invoice_id, :qbo_account_id
 
   action_item :attempt_generate, only: :show, if: proc { current_admin_user.is_admin? } do
     link_to(
@@ -312,20 +312,49 @@ ActiveAdmin.register InvoiceTracker do
       super
     end
 
+    # The form's qbo_invoice select packs "qa_id:qbo_id" into one option
+    # value so admins pick a single invoice without thinking about realms.
+    # Split it back into the two columns before AA's mass-assignment runs.
     def update
       if params[:invoice_tracker][:allow_early_contributor_payouts_on].present?
         raise "Only admins can schedule early contributor payouts" unless current_admin_user.is_admin?
       end
+      split_packed_qbo_invoice_value!(params[:invoice_tracker])
       super
+    end
+
+    def create
+      split_packed_qbo_invoice_value!(params[:invoice_tracker])
+      super
+    end
+
+    private
+
+    def split_packed_qbo_invoice_value!(p)
+      val = p&.dig(:qbo_invoice_id)
+      return if val.blank? || !val.to_s.include?(":")
+      qa_id, qbo_id = val.to_s.split(":", 2)
+      p[:qbo_account_id] = qa_id
+      p[:qbo_invoice_id] = qbo_id
     end
   end
 
   form do |f|
     f.inputs(class: "admin_inputs") do
       f.input :forecast_client, input_html: { disabled: true }
+      # Single select across every realm's orphan invoices. Value packs
+      # "qa_id:qbo_id" so the controller can set both columns in one shot;
+      # composite FK on the DB blocks any (qa, qbo_id) pair that doesn't
+      # reference a real row.
       f.input :qbo_invoice,
         as: :select,
-        collection: QboInvoice.orphans,
+        collection: QboInvoice.orphans.includes(qbo_account: :enterprise).map { |inv|
+          ent_name = inv.qbo_account&.enterprise&.name || "?"
+          ["[#{ent_name}] #{inv.display_name}", "#{inv.qbo_account_id}:#{inv.qbo_id}"]
+        },
+        selected: (f.object.qbo_invoice_id.present? && f.object.qbo_account_id.present? ?
+          "#{f.object.qbo_account_id}:#{f.object.qbo_invoice_id}" : nil),
+        include_blank: "None",
         input_html: { disabled: !current_admin_user.is_admin? }
       if current_admin_user.is_admin?
         f.input :company_treasury_split, as: :number, input_html: { step: 0.01 }

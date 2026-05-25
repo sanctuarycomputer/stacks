@@ -37,6 +37,17 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
       return true if subject.contributor.forecast_person.admin_user == user && action == :read
     end
 
+    if subject.is_a?(PayStub)
+      return true if subject.contributor.forecast_person.admin_user == user && action == :read
+    end
+
+    if subject.is_a?(PayCycle)
+      if action == :read && user.forecast_person.present?
+        contributor = user.forecast_person.contributor
+        return true if contributor.present? && subject.pay_stubs.joins(:ledger).exists?(ledgers: { contributor_id: contributor.id })
+      end
+    end
+
     if subject.is_a?(ActiveAdmin::Page)
       return true if subject.name == "Dashboard"
       return true if subject.name == "All Surveys"

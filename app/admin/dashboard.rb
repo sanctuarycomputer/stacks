@@ -70,52 +70,76 @@ ActiveAdmin.register_page "Dashboard" do
       accounting_method,
       Date.current,
     ]
-    money = Rails.cache.fetch(money_cache_key, expires_in: 24.hours) do
-      qbo_accounts = Enterprise.sanctuary.qbo_account.fetch_all_accounts
-      cc_or_bank_accounts = qbo_accounts.select do |a|
-        ["Bank", "Credit Card"].include?(a.account_type)
+    # Cash/burn/runway widget depends on a live QBO call against Sanctuary's
+    # realm (and the cached P&L reports). When the access token is expired or
+    # the QBO API is unreachable, render the dashboard with zeros and surface
+    # the error inline rather than crashing the whole page — the daily
+    # `stacks:daily_enterprise_tasks` token refresh will restore data on the
+    # next run.
+    money =
+      begin
+        Rails.cache.fetch(money_cache_key, expires_in: 24.hours) do
+          qbo_accounts = Enterprise.sanctuary.qbo_account.fetch_all_accounts
+          cc_or_bank_accounts = qbo_accounts.select do |a|
+            ["Bank", "Credit Card"].include?(a.account_type)
+          end
+
+          net_cash = cc_or_bank_accounts.map do |a|
+            if a.classification == "Liability"
+              -1 * a.current_balance.abs
+            else
+              a.current_balance
+            end
+          end.reduce(:+)
+
+          burn_rates =
+            [1, 2, 3].map do |month|
+              report = QboProfitAndLossReport.find_or_fetch_for_range(
+                (Date.today - month.months).beginning_of_month,
+                (Date.today - month.months).end_of_month,
+                false,
+                nil
+              )
+              (
+                report.find_row(accounting_method, "Total Cost of Goods Sold") +
+                report.find_row(accounting_method, "Total Expenses")
+              )
+            end
+          average_burn_rate = burn_rates.sum(0.0) / burn_rates.length
+
+          ledger = Contributor.aggregated_new_deal_balance
+
+          {
+            account_rows: cc_or_bank_accounts.map do |a|
+              {
+                "name" => a.name,
+                "classification" => a.classification,
+                "current_balance" => a.current_balance.to_f,
+              }
+            end,
+            net_cash: net_cash.to_f,
+            average_burn_rate: average_burn_rate.to_f,
+            aggregated_new_deal_balance: {
+              balance: ledger[:balance].to_f,
+              unsettled: ledger[:unsettled].to_f,
+            },
+          }
+        end
+      rescue => e
+        Rails.logger.error("[admin dashboard] QBO fetch failed — rendering with zeros: #{e.class}: #{e.message}")
+        @qbo_dashboard_error = "Couldn't load QBO data for the cash / burn-rate widget (#{e.class}: #{e.message}). The daily sync will refresh this; nothing else on the page is affected."
+        {
+          account_rows: [],
+          net_cash: 0.0,
+          average_burn_rate: 0.0,
+          aggregated_new_deal_balance: { balance: 0.0, unsettled: 0.0 },
+        }
       end
 
-      net_cash = cc_or_bank_accounts.map do |a|
-        if a.classification == "Liability"
-          -1 * a.current_balance.abs
-        else
-          a.current_balance
-        end
-      end.reduce(:+)
-
-      burn_rates =
-        [1, 2, 3].map do |month|
-          report = QboProfitAndLossReport.find_or_fetch_for_range(
-            (Date.today - month.months).beginning_of_month,
-            (Date.today - month.months).end_of_month,
-            false,
-            nil
-          )
-          (
-            report.find_row(accounting_method, "Total Cost of Goods Sold") +
-            report.find_row(accounting_method, "Total Expenses")
-          )
-        end
-      average_burn_rate = burn_rates.sum(0.0) / burn_rates.length
-
-      ledger = Contributor.aggregated_new_deal_balance
-
-      {
-        account_rows: cc_or_bank_accounts.map do |a|
-          {
-            "name" => a.name,
-            "classification" => a.classification,
-            "current_balance" => a.current_balance.to_f,
-          }
-        end,
-        net_cash: net_cash.to_f,
-        average_burn_rate: average_burn_rate.to_f,
-        aggregated_new_deal_balance: {
-          balance: ledger[:balance].to_f,
-          unsettled: ledger[:unsettled].to_f,
-        },
-      }
+    if @qbo_dashboard_error
+      div(class: "flash flash_error", style: "margin-bottom: 1em;") do
+        text_node @qbo_dashboard_error
+      end
     end
 
     render(partial: "dashboard", locals: {
