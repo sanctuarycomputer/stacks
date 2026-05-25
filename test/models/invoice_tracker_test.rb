@@ -178,13 +178,14 @@ class InvoiceTrackerBillingEnterpriseTest < ActiveSupport::TestCase
     assert_equal sanctuary, it.billing_enterprise
   end
 
-  test "qbo_account returns the billing enterprise's qbo_account" do
+  test "qbo_account returns the explicitly set qbo_account" do
     Thread.current[:sanctuary_enterprise] = nil
     sanctuary = Enterprise.find_by!(name: Enterprise::SANCTUARY_NAME)
+    qa = sanctuary.qbo_account
     fc = ForecastClient.create!(forecast_id: rand(1..2_000_000_000), name: "Acme-QA-#{SecureRandom.hex(2)}")
     ip = InvoicePass.find_or_create_by!(start_of_month: Date.new(2030, 2, 1))
-    it = InvoiceTracker.new(invoice_pass: ip, forecast_client: fc)
-    assert_equal sanctuary.qbo_account, it.qbo_account
+    it = InvoiceTracker.new(invoice_pass: ip, forecast_client: fc, qbo_account: qa)
+    assert_equal qa, it.qbo_account
   end
 
   test "make_invoice! refuses to push when forecast_client is internal" do

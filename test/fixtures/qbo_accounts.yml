@@ -1,14 +1,11 @@
-# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
-
 one:
   client_id: MyString
   client_secret: MyString
   realm_id: MyString
-  enterprise_id: 1
+  enterprise: sanctuary
 
 two:
   client_id: MyString
   client_secret: MyString
-  realm_id: MyString
-  enterprise_id: 1
-
+  realm_id: MyString2
+  enterprise: sanctuary

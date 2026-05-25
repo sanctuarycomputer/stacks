@@ -4,6 +4,32 @@ require 'rails/test_help'
 require 'mocha/minitest'
 require 'minitest/autorun'
 
+# Ensure DB triggers that schema.rb cannot capture are present in the test DB.
+# The ScopeQboRecordsByQboAccount migration installs a BEFORE DELETE trigger on
+# qbo_invoices that nullifies qbo_invoice_id on child tables (invoice_trackers,
+# contributor_adjustments, adhoc_invoice_trackers). schema.rb format cannot dump
+# triggers, so we recreate it here idempotently.
+ActiveRecord::Base.connection.execute(<<~SQL)
+  CREATE OR REPLACE FUNCTION nullify_qbo_invoice_id_on_children()
+  RETURNS trigger AS $body$
+  BEGIN
+    UPDATE invoice_trackers SET qbo_invoice_id = NULL
+      WHERE qbo_account_id = OLD.qbo_account_id AND qbo_invoice_id = OLD.qbo_id;
+    UPDATE contributor_adjustments SET qbo_invoice_id = NULL
+      WHERE qbo_account_id = OLD.qbo_account_id AND qbo_invoice_id = OLD.qbo_id;
+    UPDATE adhoc_invoice_trackers SET qbo_invoice_id = NULL
+      WHERE qbo_account_id = OLD.qbo_account_id AND qbo_invoice_id = OLD.qbo_id;
+    RETURN OLD;
+  END;
+  $body$ LANGUAGE plpgsql;
+
+  DROP TRIGGER IF EXISTS trg_qbo_invoices_nullify_children ON qbo_invoices;
+  CREATE TRIGGER trg_qbo_invoices_nullify_children
+    BEFORE DELETE ON qbo_invoices
+    FOR EACH ROW
+    EXECUTE FUNCTION nullify_qbo_invoice_id_on_children();
+SQL
+
 class ActiveSupport::TestCase
   # Run tests in parallel with specified workers
   parallelize(workers: 1)

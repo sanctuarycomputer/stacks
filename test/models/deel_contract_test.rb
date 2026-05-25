@@ -1,8 +1,8 @@
 require "test_helper"
 
 class DeelContractTest < ActiveSupport::TestCase
-  test "deel_legal_entity_name reads from data[client][team][name]" do
-    dc = DeelContract.new(data: { "client" => { "team" => { "name" => "Garden3D LLC" } } })
+  test "deel_legal_entity_name reads from data[client][legal_entity][name]" do
+    dc = DeelContract.new(data: { "client" => { "legal_entity" => { "name" => "Garden3D LLC" } } })
     assert_equal "Garden3D LLC", dc.deel_legal_entity_name
   end
 
