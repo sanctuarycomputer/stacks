@@ -4,7 +4,8 @@
 # older PG versions (Heroku CI uses in-dyno PG which may be < 15).
 class AddQboAccountIdToTrackersAndAdjustments < ActiveRecord::Migration[6.1]
   def up
-    sanctuary_qa_id = Enterprise.find_by!(name: Enterprise::SANCTUARY_NAME).qbo_account.id
+    sanctuary_qa = Enterprise.find_by(name: Enterprise::SANCTUARY_NAME)&.qbo_account
+    sanctuary_qa_id = sanctuary_qa&.id || 0
 
     # Postgres FK targets need a non-partial UNIQUE constraint, not just a
     # unique partial index. qbo_id is NOT NULL on qbo_invoices, so this is a
