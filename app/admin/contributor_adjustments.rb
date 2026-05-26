@@ -54,11 +54,12 @@ ActiveAdmin.register ContributorAdjustment do
         qa_id, qbo_id = val.to_s.split(":", 2)
         p[:qbo_account_id] = qa_id
         p[:qbo_invoice_id] = qbo_id
-      elsif val.blank? && p[:ledger_id].present?
-        # No invoice selected — default qa to the ledger's enterprise qa
-        # so the NOT NULL DB constraint is satisfied.
-        ledger = Ledger.find_by(id: p[:ledger_id])
-        p[:qbo_account_id] = ledger&.enterprise&.qbo_account&.id
+      elsif val.blank?
+        p[:qbo_invoice_id] = nil
+        if p[:ledger_id].present?
+          ledger = Ledger.find_by(id: p[:ledger_id])
+          p[:qbo_account_id] = ledger&.enterprise&.qbo_account&.id
+        end
       end
     end
   end

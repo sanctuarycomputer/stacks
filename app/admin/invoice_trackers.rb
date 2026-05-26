@@ -332,7 +332,11 @@ ActiveAdmin.register InvoiceTracker do
 
     def split_packed_qbo_invoice_value!(p)
       val = p&.dig(:qbo_invoice_id)
-      return if val.blank? || !val.to_s.include?(":")
+      if val.blank?
+        p[:qbo_invoice_id] = nil if p
+        return
+      end
+      return unless val.to_s.include?(":")
       qa_id, qbo_id = val.to_s.split(":", 2)
       p[:qbo_account_id] = qa_id
       p[:qbo_invoice_id] = qbo_id
