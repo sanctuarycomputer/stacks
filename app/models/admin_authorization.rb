@@ -41,6 +41,13 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
       return true if subject.contributor.forecast_person.admin_user == user && action == :read
     end
 
+    if subject.is_a?(Reimbursement) || subject == Reimbursement
+      if user.forecast_person&.contributor.present?
+        return true if action == :create
+        return true if action == :read && subject.is_a?(Reimbursement) && subject.ledger.contributor == user.forecast_person.contributor
+      end
+    end
+
     if subject.is_a?(PayCycle)
       if action == :read && user.forecast_person.present?
         contributor = user.forecast_person.contributor
