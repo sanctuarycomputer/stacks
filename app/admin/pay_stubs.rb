@@ -21,6 +21,19 @@ ActiveAdmin.register PayStub do
   end
 
   member_action :sync_qbo_bill, method: :post do
+    qa = resource.qbo_account_for_bill
+    if qa.nil?
+      redirect_to admin_pay_cycle_pay_stub_path(resource.pay_cycle, resource),
+        alert: "#{resource.enterprise&.name} has no connected QBO account."
+      return
+    end
+    vendor = resource.contributor.qbo_vendor_for(qa)
+    if vendor.nil?
+      email = resource.contributor.forecast_person&.email
+      redirect_to admin_pay_cycle_pay_stub_path(resource.pay_cycle, resource),
+        alert: "#{email} does not have a QBO vendor for #{resource.enterprise.name}. Add one on their Contributor record before syncing."
+      return
+    end
     resource.sync_qbo_bill!
     redirect_to admin_pay_cycle_pay_stub_path(resource.pay_cycle, resource), notice: "QBO bill synced."
   rescue => e
