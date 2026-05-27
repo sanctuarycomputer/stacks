@@ -88,7 +88,7 @@ class StacksTask
     when ForecastPerson then subject.try(:display_name).presence || subject.try(:name).presence || subject.try(:email).presence || "Forecast Person ##{subject.forecast_id}"
     when ForecastAssignment then subject.try(:name).presence || "Forecast Assignment ##{subject.forecast_id}"
     when AdminUser then subject.email
-    when Reimbursement then subject.try(:display_name).presence || subject.try(:name).presence || "Reimbursement ##{subject.id}"
+    when Reimbursement then (subject.try(:display_name).presence || "Reimbursement ##{subject.id}").truncate(50)
     when Survey then subject.try(:title).presence || "Survey ##{subject.id}"
     when ProjectSatisfactionSurvey
       pt_name = subject.try(:project_capsule).try(:project_tracker).try(:name)
