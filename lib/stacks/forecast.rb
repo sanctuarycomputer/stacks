@@ -143,7 +143,7 @@ class Stacks::Forecast
         data: c,
       }
     end
-    ForecastAssignment.upsert_all(data, unique_by: :forecast_id)
+    ForecastAssignment.upsert_all(data, unique_by: :forecast_id) if data.any?
   end
 
   def sync_all_assignments!
