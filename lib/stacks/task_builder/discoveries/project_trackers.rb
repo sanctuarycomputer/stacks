@@ -3,11 +3,6 @@ module Stacks
     module Discoveries
       class ProjectTrackers < Base
         def tasks
-          # NOTE: deliberately do not call ProjectTracker.preload_for_render
-          # here — its `batch_cache_edge_recorded_assignments!` aggregate
-          # query takes 13s+ at production scale and the only edge-date
-          # consumer the discovery needs (likely_should_be_marked_as_completed?)
-          # has a snapshot fast path that doesn't touch forecast_assignments.
           all = ProjectTracker.includes([
             :old_deal_project_lead_periods,
             :adhoc_invoice_trackers,
@@ -16,6 +11,12 @@ module Stacks
             { account_lead_periods: :admin_user },
             { project_lead_periods: :admin_user },
           ]).to_a
+          # current_project_leads / current_account_leads call
+          # period_started_at, which falls back to first_recorded_assignment
+          # per tracker when the lead period's started_at is nil. Cache the
+          # edge dates in one batched DISTINCT ON query so we don't fire N+1
+          # queries against forecast_assignments.
+          ProjectTracker.batch_cache_edge_recorded_assignments!(all)
 
           all.flat_map do |pt|
             issues_for(pt).map do |type|

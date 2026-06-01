@@ -131,11 +131,22 @@ class ProjectTracker < ApplicationRecord
     all_fp_ids = list.flat_map { |t| t.forecast_projects.map(&:forecast_id) }.compact.uniq
     return if all_fp_ids.empty?
 
-    edges_by_project_id = ForecastAssignment
+    # GROUP BY MIN/MAX needed a full sort and took ~13s on a multi-million-row
+    # table. DISTINCT ON + ORDER BY uses the (project_id, start_date) and
+    # (project_id, end_date) indexes for an index-only skip-scan: one tiny
+    # lookup per project_id, runs in ms.
+    firsts = ForecastAssignment
       .where(project_id: all_fp_ids)
-      .group(:project_id)
-      .pluck(:project_id, Arel.sql("MIN(start_date)"), Arel.sql("MAX(end_date)"))
-      .each_with_object({}) { |(pid, min_s, max_e), h| h[pid.to_i] = [min_s, max_e] }
+      .order(:project_id, :start_date)
+      .select(Arel.sql("DISTINCT ON (project_id) project_id, start_date"))
+      .each_with_object({}) { |a, h| h[a.project_id.to_i] = a.start_date }
+    lasts = ForecastAssignment
+      .where(project_id: all_fp_ids)
+      .order(project_id: :asc, end_date: :desc)
+      .select(Arel.sql("DISTINCT ON (project_id) project_id, end_date"))
+      .each_with_object({}) { |a, h| h[a.project_id.to_i] = a.end_date }
+    edges_by_project_id = {}
+    (firsts.keys | lasts.keys).each { |pid| edges_by_project_id[pid] = [firsts[pid], lasts[pid]] }
 
     list.each do |pt|
       fpids = pt.forecast_projects.map { |fp| fp.forecast_id.to_i }
