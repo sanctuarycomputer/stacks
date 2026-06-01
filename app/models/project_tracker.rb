@@ -113,9 +113,17 @@ class ProjectTracker < ApplicationRecord
     list
   end
 
-  # Sets @_first_recorded_assignment and @_last_recorded_assignment from one
-  # ForecastAssignment query per batch (min/max start_date and end_date across each
-  # tracker’s linked forecast projects). Call after forecast_projects are preloaded.
+  # Lightweight stand-in for ForecastAssignment — consumers only ever call
+  # `.start_date` / `.end_date` on the edge assignments, so we hydrate
+  # cheap structs from aggregate SQL instead of loading full AR rows.
+  EdgeAssignment = Struct.new(:start_date, :end_date)
+
+  # Sets @_first_recorded_assignment and @_last_recorded_assignment via two
+  # SQL aggregates (MIN(start_date), MAX(end_date) GROUP BY project_id). The
+  # previous implementation loaded every ForecastAssignment row across every
+  # tracker's forecast projects into memory — fine for a few trackers but
+  # ruinous at scale (timed out the TaskBuilder cache rebuild). Call after
+  # forecast_projects are preloaded.
   def self.batch_cache_edge_recorded_assignments!(project_trackers)
     list = Array(project_trackers).compact
     return if list.empty?
@@ -123,16 +131,28 @@ class ProjectTracker < ApplicationRecord
     all_fp_ids = list.flat_map { |t| t.forecast_projects.map(&:forecast_id) }.compact.uniq
     return if all_fp_ids.empty?
 
-    assignments = ForecastAssignment.where(project_id: all_fp_ids).to_a
+    edges_by_project_id = ForecastAssignment
+      .where(project_id: all_fp_ids)
+      .group(:project_id)
+      .pluck(:project_id, Arel.sql("MIN(start_date)"), Arel.sql("MAX(end_date)"))
+      .each_with_object({}) { |(pid, min_s, max_e), h| h[pid.to_i] = [min_s, max_e] }
+
     list.each do |pt|
-      fpids = pt.forecast_projects.map { |fp| fp.forecast_id.to_i }.to_set
-      rel = assignments.select { |a| fpids.include?(a.project_id.to_i) }
-      if rel.empty?
+      fpids = pt.forecast_projects.map { |fp| fp.forecast_id.to_i }
+      min_starts = []
+      max_ends = []
+      fpids.each do |pid|
+        edge = edges_by_project_id[pid]
+        next unless edge
+        min_starts << edge[0] if edge[0]
+        max_ends << edge[1] if edge[1]
+      end
+      if min_starts.empty? && max_ends.empty?
         pt.instance_variable_set(:@_first_recorded_assignment, nil)
         pt.instance_variable_set(:@_last_recorded_assignment, nil)
       else
-        pt.instance_variable_set(:@_first_recorded_assignment, rel.min_by(&:start_date))
-        pt.instance_variable_set(:@_last_recorded_assignment, rel.max_by(&:end_date))
+        pt.instance_variable_set(:@_first_recorded_assignment, EdgeAssignment.new(min_starts.min, nil))
+        pt.instance_variable_set(:@_last_recorded_assignment, EdgeAssignment.new(nil, max_ends.max))
       end
     end
   end
