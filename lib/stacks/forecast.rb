@@ -10,20 +10,41 @@ class Stacks::Forecast
     }
   end
 
+  # Arbitrary 32-bit int — only purpose is to identify this particular lock.
+  SYNC_ALL_ADVISORY_LOCK_KEY = 84_217_295
+
   def sync_all!
-    ActiveRecord::Base.transaction do
-      # Assignments are genuinely deletable on Forecast (bookings get removed),
-      # so we still nuke-and-pave them to catch upstream deletions. Clients,
-      # people, and projects only get archived in Forecast — they never
-      # disappear from the API — so upsert_all (keyed on forecast_id) handles
-      # both new rows and the archived flag without us needing to delete
-      # anything first. The old delete_all on those three was also colliding
-      # with the new FK on enterprise_forecast_clients.
-      ForecastAssignment.delete_all
-      sync_clients!
-      sync_people!
-      sync_projects!
-      sync_all_assignments!
+    # Heroku scheduler + daily_tasks both call this; two concurrent runs
+    # would deadlock on the ForecastAssignment.delete_all. pg_try_advisory_lock
+    # is non-blocking — if another worker already holds it, we skip rather
+    # than queue, so a 2nd scheduler tick can't pile up behind a long sync.
+    acquired = ActiveRecord::Base.connection.select_value(
+      "SELECT pg_try_advisory_lock(#{SYNC_ALL_ADVISORY_LOCK_KEY})"
+    )
+    unless acquired
+      Rails.logger.warn("Stacks::Forecast#sync_all! skipped — another sync is already running")
+      return
+    end
+
+    begin
+      ActiveRecord::Base.transaction do
+        # Assignments are genuinely deletable on Forecast (bookings get removed),
+        # so we still nuke-and-pave them to catch upstream deletions. Clients,
+        # people, and projects only get archived in Forecast — they never
+        # disappear from the API — so upsert_all (keyed on forecast_id) handles
+        # both new rows and the archived flag without us needing to delete
+        # anything first. The old delete_all on those three was also colliding
+        # with the new FK on enterprise_forecast_clients.
+        ForecastAssignment.delete_all
+        sync_clients!
+        sync_people!
+        sync_projects!
+        sync_all_assignments!
+      end
+    ensure
+      ActiveRecord::Base.connection.select_value(
+        "SELECT pg_advisory_unlock(#{SYNC_ALL_ADVISORY_LOCK_KEY})"
+      )
     end
   end
 
