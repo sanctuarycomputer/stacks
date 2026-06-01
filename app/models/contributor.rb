@@ -71,14 +71,23 @@ class Contributor < ApplicationRecord
   # eager-loads the ledger UI needs. Call it from the admin show action to
   # avoid lazy queries inside `all_items_grouped_by_month`.
 
+  # Preload chains used by `payable?` on each item type. Without these, the
+  # `new_deal_balance` walk fires hundreds of N+1 queries (invoice_pass per
+  # ContributorPayout, pay_cycle.pay_stubs per PayStub, periodic_report per
+  # ProfitShare). Cuts AdminUser show page DB time from ~80s to <2s.
   def contributor_payouts_with_deleted
     @_contributor_payouts_with_deleted ||=
-      ContributorPayout.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id }).to_a
+      ContributorPayout.with_deleted
+        .joins(:ledger)
+        .includes(invoice_tracker: { invoice_pass: {}, contributor_payouts: [] })
+        .where(ledgers: { contributor_id: id }).to_a
   end
 
   def contributor_adjustments_with_deleted
     @_contributor_adjustments_with_deleted ||=
-      ContributorAdjustment.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id }).to_a
+      preload_qbo_invoices_for(
+        ContributorAdjustment.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id }).to_a,
+      )
   end
 
   def trueups_with_deleted
@@ -93,7 +102,10 @@ class Contributor < ApplicationRecord
 
   def profit_shares_with_deleted
     @_profit_shares_with_deleted ||=
-      ProfitShare.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id }).to_a
+      ProfitShare.with_deleted
+        .joins(:ledger)
+        .includes(:periodic_report)
+        .where(ledgers: { contributor_id: id }).to_a
   end
 
   def deel_invoice_adjustments_with_deleted
@@ -103,8 +115,40 @@ class Contributor < ApplicationRecord
 
   def pay_stubs_with_deleted
     @_pay_stubs_with_deleted ||=
-      PayStub.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id }).to_a
+      PayStub.with_deleted
+        .joins(:ledger)
+        .includes(pay_cycle: :pay_stubs)
+        .where(ledgers: { contributor_id: id }).to_a
   end
+
+  private
+
+  # Resolves the composite-key QboInvoice lookup that `payable?` does on
+  # ContributorAdjustment / PayStub. Bulk-fetches every referenced
+  # (qbo_account_id, qbo_id) pair in one query and assigns it onto the AR
+  # association target so subsequent `.qbo_invoice` calls hit the in-memory
+  # cache (see HasQboInvoiceViaCompositeKey#qbo_invoice).
+  def preload_qbo_invoices_for(items)
+    pairs = items.map { |i| [i.qbo_account_id, i.qbo_invoice_id] }
+      .reject { |qa_id, qbo_id| qa_id.blank? || qbo_id.blank? }
+      .uniq
+    return items if pairs.empty?
+
+    qa_ids = pairs.map(&:first).uniq
+    qbo_ids = pairs.map(&:last).uniq
+    invoices = QboInvoice
+      .where(qbo_account_id: qa_ids, qbo_id: qbo_ids)
+      .index_by { |inv| [inv.qbo_account_id, inv.qbo_id] }
+
+    items.each do |item|
+      key = [item.qbo_account_id, item.qbo_invoice_id]
+      inv = invoices[key]
+      item.association(:qbo_invoice).target = inv if inv
+    end
+    items
+  end
+
+  public
 
   # Eager-loads the six *_with_deleted collections with the heavier includes
   # the ledger view body needs (so the partial doesn't trip N+1 inside the

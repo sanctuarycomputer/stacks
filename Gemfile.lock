@@ -336,6 +336,7 @@ GEM
       rack
     rack-test (2.2.0)
       rack (>= 1.3)
+    rack-timeout (0.7.0)
     rails (6.1.7.10)
       actioncable (= 6.1.7.10)
       actionmailbox (= 6.1.7.10)
@@ -520,6 +521,7 @@ DEPENDENCIES
   puma (~> 4.1)
   quickbooks-ruby
   rack-cors (~> 1.1, >= 1.1.1)
+  rack-timeout
   rails (~> 6.1)
   rdiscount
   retriable

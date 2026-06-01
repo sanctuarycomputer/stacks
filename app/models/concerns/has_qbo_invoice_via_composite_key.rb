@@ -22,7 +22,13 @@ module HasQboInvoiceViaCompositeKey
     in_memory = association(:qbo_invoice).target
     return in_memory if in_memory.present?
     return nil unless qbo_invoice_id && qbo_account_id
-    QboInvoice.find_by(qbo_id: qbo_invoice_id, qbo_account_id: qbo_account_id)
+
+    # Cache the lookup on the association target so repeated calls (payable?
+    # → qbo_invoice gets hit hundreds of times when rendering ledger views)
+    # don't re-query the same row.
+    result = QboInvoice.find_by(qbo_id: qbo_invoice_id, qbo_account_id: qbo_account_id)
+    association(:qbo_invoice).target = result if result
+    result
   end
 
   private
