@@ -27,24 +27,33 @@ class Stacks::Forecast
     end
 
     begin
-      ActiveRecord::Base.transaction do
-        # Assignments are genuinely deletable on Forecast (bookings get removed),
-        # so we still nuke-and-pave them to catch upstream deletions. Clients,
-        # people, and projects only get archived in Forecast — they never
-        # disappear from the API — so upsert_all (keyed on forecast_id) handles
-        # both new rows and the archived flag without us needing to delete
-        # anything first. The old delete_all on those three was also colliding
-        # with the new FK on enterprise_forecast_clients.
-        ForecastAssignment.delete_all
-        sync_clients!
-        sync_people!
-        sync_projects!
-        sync_all_assignments!
-      end
+      sync_clients!
+      sync_people!
+      sync_projects!
+      # Upsert-then-targeted-delete: walk every month, upsert what we get,
+      # and remember which forecast_ids we saw. After the walk, delete only
+      # the ids we DIDN'T see — those are assignments removed in Forecast.
+      # Replaces the previous `ForecastAssignment.delete_all` + nuke-and-pave
+      # which held an AccessExclusiveLock on the table for ~6 minutes and
+      # made `/admin` requests time out behind it.
+      seen_ids = sync_all_assignments!
+      prune_assignments_not_in!(seen_ids)
     ensure
       ActiveRecord::Base.connection.select_value(
         "SELECT pg_advisory_unlock(#{SYNC_ALL_ADVISORY_LOCK_KEY})"
       )
+    end
+  end
+
+  # Deletes assignments whose forecast_id wasn't seen in the latest sync.
+  # Chunked so each transaction holds locks for milliseconds, not seconds,
+  # and reads aren't blocked. With ~no stale rows in steady state this is
+  # near-instant; only after a Forecast cleanup does any real work happen.
+  def prune_assignments_not_in!(seen_ids)
+    return if seen_ids.blank?
+
+    ForecastAssignment.where.not(forecast_id: seen_ids).in_batches(of: 1000) do |batch|
+      batch.delete_all
     end
   end
 
@@ -146,6 +155,9 @@ class Stacks::Forecast
     ForecastProject.upsert_all(data, unique_by: :forecast_id)
   end
 
+  # Returns the array of forecast_ids that were upserted in this call, so
+  # sync_all! can collect them across the per-month walk and prune anything
+  # not seen.
   def sync_assignments!(start_date = Date.today, end_date = Date.today)
     data = assignments(start_date, end_date)["assignments"].map do |c|
       {
@@ -164,16 +176,20 @@ class Stacks::Forecast
         data: c,
       }
     end
-    ForecastAssignment.upsert_all(data, unique_by: :forecast_id) if data.any?
+    return [] if data.empty?
+    ForecastAssignment.upsert_all(data, unique_by: :forecast_id)
+    data.map { |row| row[:forecast_id] }
   end
 
   def sync_all_assignments!
     time_start = DateTime.parse("1st Jan 2020")
     time_end = 0.seconds.ago
     time = time_start
+    seen_ids = []
     while time < time_end
-      sync_assignments!(time.beginning_of_month, time.end_of_month)
+      seen_ids.concat(sync_assignments!(time.beginning_of_month, time.end_of_month))
       time = time.advance(months: 1)
     end
+    seen_ids
   end
 end
