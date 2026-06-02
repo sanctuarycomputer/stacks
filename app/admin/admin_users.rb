@@ -82,6 +82,23 @@ ActiveAdmin.register AdminUser do
     redirect_to admin_admin_user_path(resource), notice: "Success!"
   end
 
+  controller do
+    # Precompute the last_month_utilization data ONCE per request instead of
+    # firing Studio.garden3d + a snapshot-array scan + an email scan per row.
+    # The old per-row approach blew up to ~29M allocations for the index page.
+    helper_method :last_month_utilization_by_email
+    def last_month_utilization_by_email
+      return @last_month_utilization_by_email if defined?(@last_month_utilization_by_email)
+      @last_month_utilization_by_email =
+        begin
+          g3d = Studio.garden3d
+          period_label = Stacks::Period.for_gradation(:month).last.label
+          snapshot_row = g3d&.snapshot&.dig("month")&.find { |g| g["label"] == period_label }
+          snapshot_row ? snapshot_row["utilization"].to_h : {}
+        end
+    end
+  end
+
   index download_links: false do
     column :team_member do |resource|
       resource
@@ -91,13 +108,14 @@ ActiveAdmin.register AdminUser do
     end
     if current_admin_user.is_hugh?
       column :last_month_utilization do |resource|
-        latest_key_metrics = resource.latest_key_metrics
-        should_have_sold_hours = latest_key_metrics[:sellable][:value].present? && latest_key_metrics[:sellable][:value] > 0
-        next nil unless should_have_sold_hours
+        v = last_month_utilization_by_email[resource.email]
+        next nil if v.blank?
 
+        sellable = v["sellable"].to_f
+        next nil unless sellable > 0
 
-
-        surplus = (latest_key_metrics[:billable][:value] - latest_key_metrics[:sellable][:value]).round(2)
+        billable = (v["billable"] || {}).values.reduce(0) { |acc, d| acc + d.to_f }
+        surplus = (billable - sellable).round(2)
         extreme = surplus.abs > 20
         health = surplus >= 0 ? (extreme ? :exceptional : :healthy) : (extreme ? :failing : :at_risk)
         bearer = surplus >= 0 ? "+" : "-"
