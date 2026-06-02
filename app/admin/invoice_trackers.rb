@@ -305,9 +305,21 @@ ActiveAdmin.register InvoiceTracker do
   end
 
   controller do
+    # Only re-sync the QBO invoice if our local mirror is stale. Every show
+    # used to fire an OAuth refresh + a QBO API call + an UPDATE to the
+    # QboInvoice row, blowing through 2+ seconds per page load even when
+    # nothing in QBO had changed. 5-minute staleness window is generous
+    # enough to absorb double-renders (back/forward, shift-reload) and still
+    # narrow enough to catch in-flight QBO edits before someone acts on
+    # them. Admins can force a fresh sync via "Sync QBO Invoice".
+    SHOW_SYNC_STALE_AFTER = 5.minutes
+
     def show
-      unless resource.qbo_invoice.try(:sync!)
-        resource.reload
+      inv = resource.qbo_invoice
+      if inv && inv.updated_at < SHOW_SYNC_STALE_AFTER.ago
+        unless inv.sync!
+          resource.reload
+        end
       end
       super
     end
