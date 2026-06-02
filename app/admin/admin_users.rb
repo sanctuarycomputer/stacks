@@ -134,48 +134,12 @@ ActiveAdmin.register AdminUser do
   end
 
   show do
-    COLORS = [
-      "#1F78FF",
-      "#ffa500",
-      "#414141",
-      "#26bd50",
-      "#7B4EFA",
-      "#FF6961",
-      "5E6469",
-    ]
-
-    data = {
-      labels: [],
-      datasets: [],
-    }
-
-    # Eager-load the full chain finalized_score_chart walks
-    # (finalization → workspace → score_trees → scores → trait).
-    # Without this, each review fired ~1+N+M+K queries; production
-    # show was 4.75s in ActiveRecord time.
-    archived_reviews =
-      resource.reviews
-        .includes(finalization: { workspace: { score_trees: { scores: :trait } } })
-        .where.not(archived_at: nil).order("archived_at DESC").map do |r|
-        {
-          label: "#{r.archived_at.strftime("%B %d, %Y")}",
-          chart: r.finalized_score_chart,
-        }
-      end
-
-    if archived_reviews.any?
-      labels =
-        archived_reviews.reduce([]) {|acc, r| [*acc, *r[:chart].keys] }.uniq
-      data = archived_reviews.reduce({ labels: labels, datasets: [] }) do |data, review|
-        data[:datasets] << {
-          label: review[:label],
-          data: data[:labels].map{|l| review[:chart][l] && review[:chart][l][:sum] || 0 },
-          borderColor: COLORS[archived_reviews.index(review)],
-        }
-        data
-      end
-    end
-
+    # Previously built a Chart.js dataset from resource.reviews (with a
+    # finalized_score_chart traversal that walked finalization → workspace
+    # → score_trees → scores → trait). The resulting `data` local was
+    # never actually used by the partial — the chart was dropped from the
+    # page years ago. Removing the dead computation drops AdminUser show
+    # from ~5s to sub-second.
     render(partial: "show", locals: { resource: resource })
   end
 
