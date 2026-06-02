@@ -149,8 +149,14 @@ ActiveAdmin.register AdminUser do
       datasets: [],
     }
 
+    # Eager-load the full chain finalized_score_chart walks
+    # (finalization → workspace → score_trees → scores → trait).
+    # Without this, each review fired ~1+N+M+K queries; production
+    # show was 4.75s in ActiveRecord time.
     archived_reviews =
-      resource.reviews.where.not(archived_at: nil).order("archived_at DESC").map do |r|
+      resource.reviews
+        .includes(finalization: { workspace: { score_trees: { scores: :trait } } })
+        .where.not(archived_at: nil).order("archived_at DESC").map do |r|
         {
           label: "#{r.archived_at.strftime("%B %d, %Y")}",
           chart: r.finalized_score_chart,
