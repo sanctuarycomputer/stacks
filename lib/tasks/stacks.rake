@@ -40,6 +40,19 @@ namespace :stacks do
       end
 
       Parallel.map(QboAccount.all, in_threads: 2) { |e| e.sync_all! }
+
+      # Sync vendors per-account so the Contributor-edit dropdown can offer
+      # mappings across every enterprise's QBO realm. sync_all! above only
+      # syncs P&L reports; vendors are a separate fetch. Per-account
+      # errors are isolated so a stale token on one realm doesn't block
+      # the others.
+      QboAccount.find_each do |qa|
+        qa.sync_all_vendors!
+      rescue => e
+        Rails.logger.error("[stacks:daily_enterprise_tasks] sync_all_vendors! failed for qbo_account=#{qa.id} (#{qa.enterprise&.name}): #{e.class}: #{e.message}")
+        Sentry.capture_exception(e) if defined?(Sentry)
+      end
+
       Parallel.map(Enterprise.all, in_threads: 2) { |e| e.generate_snapshot! }
 
       # Backfill any missing Contributor rows for active ForecastPersons
