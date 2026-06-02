@@ -779,8 +779,13 @@ class InvoiceTracker < ApplicationRecord
       acc
     end
 
-    update!(qbo_invoice_id: created_qbo_inv.id, blueprint: snapshot)
-    QboInvoice.find_or_create_by!(qbo_id: created_qbo_inv.id, qbo_account: qa)
+    # Create the local QboInvoice mirror first — the qbo_invoice_must_live_in_qbo_account
+    # validation on this tracker checks that (qbo_account_id, qbo_invoice_id)
+    # references a real row before the update! lands.
+    ActiveRecord::Base.transaction do
+      QboInvoice.find_or_create_by!(qbo_id: created_qbo_inv.id, qbo_account: qa)
+      update!(qbo_invoice_id: created_qbo_inv.id, blueprint: snapshot)
+    end
     self.reload
     created_qbo_inv
   end
