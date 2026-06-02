@@ -1,5 +1,6 @@
 class Enterprise < ApplicationRecord
   SANCTUARY_NAME = "Sanctuary Computer Inc".freeze
+  GARDEN3D_NAME = "garden3d, LLC".freeze
 
   has_many :enterprise_forecast_clients, dependent: :destroy
   has_many :forecast_clients, through: :enterprise_forecast_clients
@@ -48,6 +49,10 @@ class Enterprise < ApplicationRecord
 
   def self.sanctuary
     Thread.current[:sanctuary_enterprise] ||= Enterprise.find_by!(name: SANCTUARY_NAME)
+  end
+
+  def self.garden3d
+    Thread.current[:garden3d_enterprise] ||= Enterprise.find_by!(name: GARDEN3D_NAME)
   end
 
   def discover_verticals

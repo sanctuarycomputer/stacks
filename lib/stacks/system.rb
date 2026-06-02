@@ -80,7 +80,9 @@ class Stacks::System
         highest_contributor, highest_contributor_data = contributor_payouts_by_contributor.max_by{|k, v| v[:amount]}
 
         hugh = ForecastPerson.find_by(email: "hugh@sanctuary.computer").contributor
-        hugh_ledger = Ledger.find_or_create_for(enterprise: Enterprise.sanctuary, contributor: hugh)
+        # Trueups land on the garden3d ledger now — they're a g3d-level
+        # founder-balance correction, not a Sanctuary obligation.
+        hugh_ledger = Ledger.find_or_create_for(enterprise: Enterprise.garden3d, contributor: hugh)
         trueup = Trueup.find_or_initialize_by(invoice_pass: invoice_pass, ledger: hugh_ledger)
         founder_trueup_amount = highest_contributor_data[:amount] - contributor_payouts_by_contributor[hugh][:amount]
 
