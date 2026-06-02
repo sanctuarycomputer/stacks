@@ -5,7 +5,9 @@ module Stacks
       # SyncsAsQboBill host types) but has no ContributorQboVendor mapping
       # for the ledger's enterprise QBO account. Without that mapping
       # SyncsAsQboBill#sync_qbo_bill! short-circuits and the bill silently
-      # doesn't push to QuickBooks. Enterprise admins own these.
+      # doesn't push to QuickBooks. Routed to global Stacks admins only —
+      # enterprise admins don't have the per-enterprise vendor-mapping UI
+      # in their role; the staff super-admins (admin_fallback) do.
       class MissingQboVendors < Base
         # Tables on the contributor side that mean "this person was paid
         # against this ledger" — drives which ledgers we check.
@@ -18,7 +20,7 @@ module Stacks
 
         def tasks
           ledgers = Ledger
-            .includes(:contributor, enterprise: [:qbo_account, { enterprise_admins: :admin_user }])
+            .includes(:contributor, enterprise: :qbo_account)
             .where("EXISTS (#{any_payable_subquery})")
             .to_a
 
@@ -30,7 +32,7 @@ module Stacks
             task(
               subject: ledger,
               type: :missing_qbo_vendor_for_contributor,
-              owners: ledger.enterprise.admin_users.to_a,
+              owners: @admin_fallback,
             )
           end
         end
