@@ -65,13 +65,14 @@ class ForecastProject < ApplicationRecord
   end
 
   def self.forecast_codes_already_associated_to_project_tracker(except_project_tracker_id = nil)
-    all_ptfps = ProjectTrackerForecastProject.includes(:forecast_project).all
-
-    filtered_ptfps = all_ptfps.reject do |ptfp|
-      ptfp.project_tracker_id == except_project_tracker_id
-    end
-
-    filtered_ptfps.map(&:forecast_project).compact.map(&:code).flatten
+    # Previously loaded every ProjectTrackerForecastProject + its
+    # forecast_project just to filter in Ruby and return the codes. On
+    # the ProjectTracker edit form this fired ~2x the row count of the
+    # join table for a list of strings we could pull with a single
+    # joined pluck.
+    rel = ProjectTrackerForecastProject.joins(:forecast_project)
+    rel = rel.where.not(project_tracker_id: except_project_tracker_id) if except_project_tracker_id
+    rel.where.not(forecast_projects: { code: nil }).distinct.pluck("forecast_projects.code")
   end
 
   def forecast_assignments
