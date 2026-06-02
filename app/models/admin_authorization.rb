@@ -38,7 +38,11 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
     end
 
     if subject.is_a?(PayStub)
-      return true if subject.contributor.forecast_person.admin_user == user && action == :read
+      if subject.contributor.forecast_person.admin_user == user
+        # Their own stub: read it AND accept/unaccept it. The toggle_acceptance
+        # member_action is a POST that ActiveAdmin authorizes as :update.
+        return true if [:read, :update].include?(action)
+      end
     end
 
     if subject.is_a?(Reimbursement) || subject == Reimbursement
