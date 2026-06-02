@@ -137,12 +137,18 @@ class QboAccount < ApplicationRecord
     service.all
   end
 
+  # Cached because the invoice-tracker show page calls qbo_customer/qbo_term
+  # on every render, each of which hits the QBO API + an OAuth token refresh.
+  # That was a 3s view-render cost (1.6M allocations) on _not_made.html.erb
+  # alone. Terms/customers change rarely; 15 min is well within tolerance.
   def fetch_all_terms
-    qbo_access_token = make_and_refresh_qbo_access_token
-    terms_service = Quickbooks::Service::Term.new
-    terms_service.company_id = realm_id
-    terms_service.access_token = qbo_access_token
-    terms_service.all
+    Rails.cache.fetch("qbo_account/#{id}/all_terms/v1", expires_in: 15.minutes) do
+      qbo_access_token = make_and_refresh_qbo_access_token
+      terms_service = Quickbooks::Service::Term.new
+      terms_service.company_id = realm_id
+      terms_service.access_token = qbo_access_token
+      terms_service.all
+    end
   end
 
   def fetch_all_items
@@ -156,11 +162,13 @@ class QboAccount < ApplicationRecord
   end
 
   def fetch_all_customers
-    qbo_access_token = make_and_refresh_qbo_access_token
-    service = Quickbooks::Service::Customer.new
-    service.company_id = realm_id
-    service.access_token = qbo_access_token
-    service.all
+    Rails.cache.fetch("qbo_account/#{id}/all_customers/v1", expires_in: 15.minutes) do
+      qbo_access_token = make_and_refresh_qbo_access_token
+      service = Quickbooks::Service::Customer.new
+      service.company_id = realm_id
+      service.access_token = qbo_access_token
+      service.all
+    end
   end
 
   def fetch_all_bills
