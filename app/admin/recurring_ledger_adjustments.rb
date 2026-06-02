@@ -57,7 +57,7 @@ ActiveAdmin.register RecurringLedgerAdjustment do
     column :next_due_on
     column :last_materialized_on
     column :status do |r|
-      r.paused? ? status_tag("Paused", :warning) : status_tag("Active", :ok)
+      r.paused? ? status_tag("Paused") : status_tag("Active")
     end
     actions
   end
