@@ -20,6 +20,20 @@ ActiveAdmin.register InvoicePass do
         ],
       )
     end
+
+    # calculate_surplus calls invoice_tracker.project_trackers per payout,
+    # which fires 2 queries per tracker without batching. Page had ~120
+    # trackers → 240 queries. Batch-resolve everything in two queries
+    # total before the view renders by hooking find_collection.
+    def find_collection(*args)
+      collection = super
+      if action_name == "index"
+        InvoiceTracker.batch_preload_project_trackers!(
+          collection.to_a.flat_map(&:invoice_trackers),
+        )
+      end
+      collection
+    end
   end
 
   action_item :rerun_invoice_pass, only: :show do

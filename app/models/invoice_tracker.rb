@@ -163,6 +163,39 @@ class InvoiceTracker < ApplicationRecord
       end
   end
 
+  # Batch-resolves project_trackers for a list of InvoiceTrackers using two
+  # SQL round-trips total (down from 2 queries per tracker). Used by the
+  # InvoicePass index, where surplus / value / etc. drag project_trackers
+  # in for every tracker on every page. Result is memoized onto each
+  # tracker's @_project_trackers so the per-instance method returns cache.
+  def self.batch_preload_project_trackers!(invoice_trackers)
+    list = Array(invoice_trackers).reject { |t| t.instance_variable_defined?(:@_project_trackers) }
+    return if list.empty?
+
+    ids_by_tracker = list.each_with_object({}) do |t, h|
+      h[t] = t.forecast_project_ids.compact
+    end
+    all_fp_ids = ids_by_tracker.values.flatten.uniq
+    if all_fp_ids.empty?
+      list.each { |t| t.instance_variable_set(:@_project_trackers, []) }
+      return
+    end
+
+    pt_by_fp_id = ProjectTrackerForecastProject
+      .where(forecast_project_id: all_fp_ids)
+      .pluck(:forecast_project_id, :project_tracker_id)
+      .group_by(&:first)
+      .transform_values { |rows| rows.map(&:last).uniq }
+
+    all_pt_ids = pt_by_fp_id.values.flatten.uniq
+    pts_by_id = ProjectTracker.where(id: all_pt_ids).includes(:forecast_projects).index_by(&:id)
+
+    list.each do |t|
+      pt_ids = ids_by_tracker[t].flat_map { |fp_id| pt_by_fp_id[fp_id] || [] }.uniq
+      t.instance_variable_set(:@_project_trackers, pt_ids.filter_map { |pid| pts_by_id[pid] })
+    end
+  end
+
   def assignments
     # Filter by the client's forecast_project ids at the SQL level. The old
     # version loaded every assignment in the month into memory and then
