@@ -283,27 +283,62 @@ class Studio < ApplicationRecord
   end
 
   def project_trackers_with_recorded_time_in_period(period, all_studios = Studio.all)
-    assignments =
-      ForecastAssignment
-        .includes(
-          forecast_person: [:admin_user],
-          forecast_project: [:forecast_client]
-        ).where(
-          'end_date >= ? AND start_date <= ? AND person_id in (?)',
-          period.starts_at,
-          period.ends_at,
-          forecast_people(all_studios).map(&:forecast_id)
-        )
+    project_trackers_with_recorded_time_by_periods([period], all_studios).fetch(period, [])
+  end
 
-    forecast_projects = assignments.map(&:forecast_project).uniq.reject do |fp|
-      fp.is_internal?
+  # Batched version: one ForecastAssignment query covering the full date range
+  # spanning all periods, then in-memory bucketing per period. Replaces calling
+  # the per-period variant in a loop, which was ~N heavy queries for N periods
+  # (e.g. 30+ quarters on the OKR explorer page).
+  def project_trackers_with_recorded_time_by_periods(periods, all_studios = Studio.all)
+    return {} if periods.empty?
+
+    overall_start = periods.map(&:starts_at).min
+    overall_end = periods.map(&:ends_at).max
+    fp_ids = forecast_people(all_studios).map(&:forecast_id)
+    return periods.index_with { [] } if fp_ids.empty?
+
+    # pluck only the columns needed for bucketing — avoids hydrating
+    # ForecastAssignment AR objects and their forecast_project includes
+    # for potentially tens of thousands of rows.
+    assignment_rows = ForecastAssignment
+      .where(
+        'end_date >= ? AND start_date <= ? AND person_id IN (?)',
+        overall_start, overall_end, fp_ids
+      ).pluck(:project_id, :start_date, :end_date)
+
+    # One batch: load every forecast_project referenced + its client, indexed
+    # for cheap lookup. Filter out internal projects up front.
+    fp_ids_touched = assignment_rows.map { |row| row[0] }.uniq
+    fps_by_id = ForecastProject
+      .includes(:forecast_client)
+      .where(forecast_id: fp_ids_touched)
+      .reject(&:is_internal?)
+      .index_by(&:forecast_id)
+
+    # Bucket per period: an assignment that spans multiple periods belongs to
+    # each it overlaps (same semantics as the per-period query).
+    projects_by_period = periods.index_with do |period|
+      starts_at = period.starts_at
+      ends_at = period.ends_at
+      ids = assignment_rows.each_with_object(Set.new) do |(pid, sd, ed), acc|
+        acc << pid if ed >= starts_at && sd <= ends_at
+      end
+      ids.filter_map { |pid| fps_by_id[pid] }
     end
 
-    ProjectTrackerForecastProject
+    all_fp_ids = projects_by_period.values.flatten.map(&:forecast_id).uniq
+    return periods.index_with { [] } if all_fp_ids.empty?
+
+    trackers_by_fp_id = ProjectTrackerForecastProject
       .includes(:project_tracker)
-      .where(forecast_project_id: forecast_projects.map(&:forecast_id))
-      .map(&:project_tracker)
-      .uniq
+      .where(forecast_project_id: all_fp_ids)
+      .group_by(&:forecast_project_id)
+      .transform_values { |ptfps| ptfps.map(&:project_tracker).uniq }
+
+    projects_by_period.transform_values do |fps|
+      fps.flat_map { |fp| trackers_by_fp_id[fp.forecast_id] || [] }.uniq
+    end
   end
 
   def leads_recieved_in_period(leads = new_biz_leads, period)

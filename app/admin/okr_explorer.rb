@@ -20,12 +20,9 @@ ActiveAdmin.register_page "OKR Explorer" do
 
     preloaded_studios = Studio.all
     all_projects_by_period = if current_okr == "successful_projects"
-      periods.reduce({}) do |acc, period|
-        acc[period] = studio.project_trackers_with_recorded_time_in_period(period, preloaded_studios)
-        acc
-      end.tap do |by_period|
-        ProjectTracker.preload_for_render(by_period.values.flatten.uniq)
-      end
+      by_period = studio.project_trackers_with_recorded_time_by_periods(periods, preloaded_studios)
+      ProjectTracker.preload_for_render(by_period.values.flatten.uniq)
+      by_period
     end
 
     all_proposals_by_period = if current_okr == "successful_proposals"
