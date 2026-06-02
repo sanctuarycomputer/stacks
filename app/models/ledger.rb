@@ -9,6 +9,7 @@ class Ledger < ApplicationRecord
   has_many :profit_shares
   has_many :deel_invoice_adjustments
   has_many :pay_stubs
+  has_many :recurring_ledger_adjustments, dependent: :destroy
 
   validates :enterprise_id, uniqueness: { scope: :contributor_id }
 

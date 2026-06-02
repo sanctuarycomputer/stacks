@@ -66,6 +66,20 @@ namespace :stacks do
       # are already persisted.
       opened_cycles = PayCycles::OpenScheduledCycles.call
       Rails.logger.info("[stacks:daily_enterprise_tasks] OpenScheduledCycles opened #{opened_cycles.size} cycle(s)")
+
+      # Materialize any due RecurringLedgerAdjustments. Each row's
+      # materialize! is transactional and self-advances next_due_on, so
+      # the loop is idempotent across same-day reruns. Per-row errors are
+      # isolated so one bad row doesn't block the rest.
+      materialized = 0
+      RecurringLedgerAdjustment.active.due.find_each do |rla|
+        rla.materialize!
+        materialized += 1
+      rescue => e
+        Rails.logger.error("[stacks:daily_enterprise_tasks] RecurringLedgerAdjustment ##{rla.id} materialize failed: #{e.class}: #{e.message}")
+        Sentry.capture_exception(e) if defined?(Sentry)
+      end
+      Rails.logger.info("[stacks:daily_enterprise_tasks] Materialized #{materialized} recurring ledger adjustment(s)")
     rescue => e
       system_task.mark_as_error(e)
     else

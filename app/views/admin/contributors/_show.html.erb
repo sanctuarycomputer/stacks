@@ -295,3 +295,64 @@
     </table>
   <% end %>
 <% end %>
+
+
+<%# Per-contributor recurring ledger adjustments. Filters by the active
+    ledger when one is selected; shows all ledgers' rows on the All view.
+    Renders a compact table with links to the top-level admin for editing. %>
+<%
+  rec_adjustments =
+    if view_mode == :ledger && current_ledger
+      current_ledger.recurring_ledger_adjustments.includes(ledger: :enterprise).order(:next_due_on).to_a
+    else
+      contributor.recurring_ledger_adjustments.includes(ledger: :enterprise).order(:next_due_on).to_a
+    end
+%>
+<div class="dashboard-modules table index_table index" style="margin-top: 24px;">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Recurring Ledger Adjustments</p>
+      <%= link_to "New ↗", new_admin_recurring_ledger_adjustment_path %>
+    </div>
+    <div class="module-body">
+      <% if rec_adjustments.any? %>
+        <table class="index_table index" style="width: 100%;">
+          <thead>
+            <tr>
+              <th>Enterprise</th>
+              <th>Amount</th>
+              <th>Description</th>
+              <th>Cadence</th>
+              <th>Next due</th>
+              <th>Status</th>
+              <th class="text-right">Edit</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% rec_adjustments.each_with_index do |rla, idx| %>
+              <tr class="<%= idx.even? ? "even" : "odd" %>">
+                <td><%= rla.ledger.enterprise.name %></td>
+                <td><%= number_to_currency(rla.amount) %></td>
+                <td><%= rla.description %></td>
+                <td><%= rla.cadence.humanize %></td>
+                <td><%= rla.next_due_on %></td>
+                <td>
+                  <% if rla.paused? %>
+                    <span class="pill pending">Paused</span>
+                  <% else %>
+                    <span class="pill accepted">Active</span>
+                  <% end %>
+                </td>
+                <td class="text-right">
+                  <%= link_to "Edit ↗", edit_admin_recurring_ledger_adjustment_path(rla) %>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      <% else %>
+        <p style="padding: 12px;"><em>No recurring adjustments configured.</em></p>
+      <% end %>
+    </div>
+  </div>
+</div>

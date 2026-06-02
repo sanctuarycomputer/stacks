@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_05_22_180000) do
+ActiveRecord::Schema.define(version: 2026_06_02_155349) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -953,6 +953,21 @@ ActiveRecord::Schema.define(version: 2026_05_22_180000) do
     t.index ["forecast_client_id"], name: "index_recurring_charges_on_forecast_client_id"
   end
 
+  create_table "recurring_ledger_adjustments", force: :cascade do |t|
+    t.bigint "ledger_id", null: false
+    t.decimal "amount", precision: 12, scale: 2, null: false
+    t.text "description", default: "", null: false
+    t.string "cadence", null: false
+    t.date "next_due_on", null: false
+    t.date "last_materialized_on"
+    t.datetime "paused_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["ledger_id"], name: "index_recurring_ledger_adjustments_on_ledger_id"
+    t.index ["next_due_on"], name: "index_recurring_ledger_adjustments_on_next_due_on"
+    t.index ["paused_at"], name: "index_recurring_ledger_adjustments_on_paused_at"
+  end
+
   create_table "reimbursements", force: :cascade do |t|
     t.decimal "amount", precision: 10, scale: 2, null: false
     t.string "description", null: false
@@ -1176,12 +1191,14 @@ ActiveRecord::Schema.define(version: 2026_05_22_180000) do
   add_foreign_key "account_lead_periods", "project_trackers"
   add_foreign_key "adhoc_invoice_trackers", "project_trackers"
   add_foreign_key "adhoc_invoice_trackers", "qbo_accounts"
+  # Composite FK fk_adhoc_invoice_trackers_qbo_invoice managed by migration (not expressible in schema.rb)
   add_foreign_key "admin_user_salary_windows", "admin_users"
   add_foreign_key "associates_award_agreements", "admin_users"
   add_foreign_key "commissions", "contributors"
   add_foreign_key "commissions", "project_trackers"
   add_foreign_key "contributor_adjustments", "ledgers"
   add_foreign_key "contributor_adjustments", "qbo_accounts"
+  # Composite FK fk_contributor_adjustments_qbo_invoice managed by migration (not expressible in schema.rb)
   add_foreign_key "contributor_payouts", "admin_users", column: "created_by_id"
   add_foreign_key "contributor_payouts", "invoice_trackers"
   add_foreign_key "contributor_payouts", "ledgers"
@@ -1200,6 +1217,7 @@ ActiveRecord::Schema.define(version: 2026_05_22_180000) do
   add_foreign_key "invoice_trackers", "admin_users"
   add_foreign_key "invoice_trackers", "invoice_passes"
   add_foreign_key "invoice_trackers", "qbo_accounts"
+  # Composite FK fk_invoice_trackers_qbo_invoice managed by migration (not expressible in schema.rb)
   add_foreign_key "ledgers", "contributors"
   add_foreign_key "ledgers", "enterprises"
   add_foreign_key "mailing_list_subscribers", "mailing_lists"
@@ -1258,6 +1276,7 @@ ActiveRecord::Schema.define(version: 2026_05_22_180000) do
   add_foreign_key "qbo_profit_and_loss_reports", "qbo_accounts"
   add_foreign_key "qbo_tokens", "qbo_accounts"
   add_foreign_key "qbo_vendors", "qbo_accounts"
+  add_foreign_key "recurring_ledger_adjustments", "ledgers"
   add_foreign_key "reimbursements", "admin_users", column: "accepted_by_id"
   add_foreign_key "reimbursements", "ledgers"
   add_foreign_key "review_trees", "reviews"
