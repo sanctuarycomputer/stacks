@@ -8,7 +8,17 @@ ActiveAdmin.register InvoicePass do
 
   controller do
     def scoped_collection
-      super.includes(invoice_trackers: [:qbo_invoice, :contributor_payouts])
+      # surplus_chunks → calculate_surplus walks every contributor_payout's
+      # ledger → contributor → forecast_person chain. Without these eager
+      # loads each row's surplus column re-fired N queries per tracker per
+      # payout. Production showed /admin/invoice_passes index at 4s for
+      # 12 rows.
+      super.includes(
+        invoice_trackers: [
+          :qbo_invoice,
+          { contributor_payouts: { ledger: { contributor: :forecast_person } } },
+        ],
+      )
     end
   end
 
