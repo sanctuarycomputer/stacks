@@ -131,22 +131,25 @@ class ProjectTracker < ApplicationRecord
     all_fp_ids = list.flat_map { |t| t.forecast_projects.map(&:forecast_id) }.compact.uniq
     return if all_fp_ids.empty?
 
-    # GROUP BY MIN/MAX needed a full sort and took ~13s on a multi-million-row
-    # table. DISTINCT ON + ORDER BY uses the (project_id, start_date) and
-    # (project_id, end_date) indexes for an index-only skip-scan: one tiny
-    # lookup per project_id, runs in ms.
-    firsts = ForecastAssignment
-      .where(project_id: all_fp_ids)
-      .order(:project_id, :start_date)
-      .select(Arel.sql("DISTINCT ON (project_id) project_id, start_date"))
-      .each_with_object({}) { |a, h| h[a.project_id.to_i] = a.start_date }
-    lasts = ForecastAssignment
-      .where(project_id: all_fp_ids)
-      .order(project_id: :asc, end_date: :desc)
-      .select(Arel.sql("DISTINCT ON (project_id) project_id, end_date"))
-      .each_with_object({}) { |a, h| h[a.project_id.to_i] = a.end_date }
-    edges_by_project_id = {}
-    (firsts.keys | lasts.keys).each { |pid| edges_by_project_id[pid] = [firsts[pid], lasts[pid]] }
+    # LATERAL subqueries over an unnest()ed ID array: forces Postgres to do
+    # one index lookup per project_id against (project_id, start_date) and
+    # (project_id, end_date). Reliably uses the indexes regardless of stats.
+    # GROUP BY MIN/MAX and DISTINCT ON both timed out at scale because the
+    # planner picked a seq scan over the (multi-million-row) table.
+    int_ids_csv = all_fp_ids.map(&:to_i).join(",")
+    rows = ActiveRecord::Base.connection.exec_query(<<~SQL)
+      SELECT pt.pid,
+             (SELECT start_date FROM forecast_assignments
+                WHERE project_id = pt.pid
+                ORDER BY start_date ASC LIMIT 1) AS min_start,
+             (SELECT end_date FROM forecast_assignments
+                WHERE project_id = pt.pid
+                ORDER BY end_date DESC LIMIT 1) AS max_end
+      FROM unnest(ARRAY[#{int_ids_csv}]::int[]) AS pt(pid)
+    SQL
+    edges_by_project_id = rows.each_with_object({}) do |row, h|
+      h[row["pid"].to_i] = [row["min_start"], row["max_end"]]
+    end
 
     list.each do |pt|
       fpids = pt.forecast_projects.map { |fp| fp.forecast_id.to_i }

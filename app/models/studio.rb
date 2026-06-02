@@ -159,17 +159,24 @@ class Studio < ApplicationRecord
           utilization_by_period :
           g3d.utilization_by_period_gradation(gradation, periods)
 
-        acc[gradation] = Parallel.map(periods, in_threads: 20) do |period|
+        # in_threads: 5 (was 20) to keep the AR connection pool from exhausting
+        # Postgres's 40-connection limit. 2 web dynos × 2 puma workers × 5 pool
+        # = 20 connections steady-state; this scheduler adds 5 more per
+        # gradation. 20 threads here was checking out 20 connections per
+        # gradation and hitting "FATAL: too many connections for role".
+        acc[gradation] = Parallel.map(periods, in_threads: 5) do |period|
           prev_period = periods[0] == period ? nil : periods[periods.index(period) - 1]
-          snapshot_data_for_period(
-            period,
-            prev_period,
-            utilization_by_period,
-            g3d_utilization_by_period,
-            preloaded_studios,
-            preloaded_new_biz_leads,
-            all_okrs
-          )
+          ActiveRecord::Base.connection_pool.with_connection do
+            snapshot_data_for_period(
+              period,
+              prev_period,
+              utilization_by_period,
+              g3d_utilization_by_period,
+              preloaded_studios,
+              preloaded_new_biz_leads,
+              all_okrs
+            )
+          end
         end
         acc[:finished_at] = DateTime.now.iso8601
         acc
