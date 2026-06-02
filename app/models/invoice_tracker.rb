@@ -164,14 +164,27 @@ class InvoiceTracker < ApplicationRecord
   end
 
   def assignments
-    ForecastAssignment
-      .includes(:forecast_person)
-      .includes(forecast_project: :forecast_client)
-      .where(
-        'end_date >= ? AND start_date <= ?',
-        invoice_pass.start_of_month,
-        invoice_pass.start_of_month.end_of_month
-      ).select{|a| a.forecast_project.forecast_client == forecast_client}
+    # Filter by the client's forecast_project ids at the SQL level. The old
+    # version loaded every assignment in the month into memory and then
+    # did a Ruby select — fine in tests, ruinous in production where the
+    # month-wide set is hundreds of thousands of rows. Also memoize within
+    # the request so changes_in_forecast / make_blueprint! callers don't
+    # re-query.
+    return @_assignments if defined?(@_assignments)
+    fp_ids = forecast_client.forecast_projects.pluck(:forecast_id)
+    @_assignments =
+      if fp_ids.empty?
+        []
+      else
+        ForecastAssignment
+          .includes(:forecast_person, forecast_project: :forecast_client)
+          .where(project_id: fp_ids)
+          .where(
+            'end_date >= ? AND start_date <= ?',
+            invoice_pass.start_of_month,
+            invoice_pass.start_of_month.end_of_month,
+          ).to_a
+      end
   end
 
   def configuration_errors

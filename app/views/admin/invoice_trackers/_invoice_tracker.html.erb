@@ -1,7 +1,7 @@
 <% qbo_invoice = invoice_tracker.qbo_invoice %>
 <% status = invoice_tracker.status %>
 <% changes_in_forecast = invoice_tracker.changes_in_forecast %>
-<% stale = invoice_tracker.changes_in_forecast.any? %>
+<% stale = changes_in_forecast.any? %>
 
 <p class="pill nag" style="margin-right: 6px">
   <%= invoice_tracker.invoice_pass.invoice_month %>
