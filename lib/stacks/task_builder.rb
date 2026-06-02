@@ -8,6 +8,7 @@ require_relative "task_builder/discoveries/reimbursements"
 require_relative "task_builder/discoveries/notion_leads"
 require_relative "task_builder/discoveries/surveys"
 require_relative "task_builder/discoveries/pay_cycles"
+require_relative "task_builder/discoveries/missing_qbo_vendors"
 
 module Stacks
   # Single source of truth for "what needs attention right now" across the system.
@@ -47,6 +48,7 @@ module Stacks
       Discoveries::NotionLeads,
       Discoveries::Surveys,
       Discoveries::PayCycles,
+      Discoveries::MissingQboVendors,
     ].freeze
 
     # Returns Array<StacksTask> — every open task system-wide.

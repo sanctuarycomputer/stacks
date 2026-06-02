@@ -43,6 +43,9 @@ class StacksTask
 
     # PayCycle issues
     pay_cycle_needs_approval: "Pay cycle needs your approval on behalf of your team",
+
+    # Ledger issues
+    missing_qbo_vendor_for_contributor: "Contributor needs a QBO vendor for this enterprise's ledger",
   }.freeze
 
   # type    — Symbol classifying the task (:project_capsule_incomplete, :survey, …)
@@ -95,6 +98,7 @@ class StacksTask
       pt_name.present? ? "#{pt_name} (satisfaction survey)" : "Project Satisfaction Survey ##{subject.id}"
     when Stacks::Notion::Lead then subject.try(:page_title).presence || "Notion Lead"
     when PayCycle then "#{subject.enterprise.name} — #{subject.starts_at.to_s(:long)} to #{subject.ends_at.to_s(:long)}"
+    when Ledger then "#{subject.contributor.forecast_person&.email || "Contributor ##{subject.contributor_id}"} on #{subject.enterprise.name}"
     else
       subject.try(:display_name).presence || subject.try(:name).presence || subject.to_s
     end
@@ -116,6 +120,7 @@ class StacksTask
     when ProjectSatisfactionSurvey then helpers.admin_project_satisfaction_survey_path(subject)
     when Stacks::Notion::Lead then subject.try(:notion_link) || subject.try(:external_link)
     when PayCycle then helpers.admin_enterprise_pay_cycle_path(subject.enterprise, subject)
+    when Ledger then helpers.edit_admin_contributor_path(subject.contributor)
     else subject.try(:external_link)
     end
   end
