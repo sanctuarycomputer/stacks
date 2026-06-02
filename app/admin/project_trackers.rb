@@ -494,7 +494,7 @@ ActiveAdmin.register ProjectTracker do
           prompt: "Choose commission type"
         c.input :contributor,
           as: :select,
-          collection: Contributor.all.map { |co| [co.display_name, co.id] },
+          collection: Contributor.includes(:forecast_person).map { |co| [co.display_name, co.id] },
           prompt: "Choose recipient (Contributor)"
         c.input :rate, hint: "For Percentage: 0.15 = 15%. For Per Hour: dollar amount per billable hour (e.g. 15.00)."
         c.input :notes, as: :text, input_html: { rows: 2 }
