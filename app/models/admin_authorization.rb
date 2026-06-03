@@ -29,24 +29,34 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
       return true if subject.forecast_person.admin_user == user && action == :read
     end
 
-    # For their own ledger items: read AND update. ActiveAdmin authorizes
-    # POST member_actions (Accept / toggle_acceptance) as :update, so :read
-    # alone leaves contributors locked out of accepting what's theirs.
+    # For their own ledger items: ActiveAdmin passes member_action names
+    # through verbatim (NOT mapped to :update by ACTIONS_DICTIONARY), so we
+    # have to whitelist each action symbol explicitly. The controller-level
+    # guards in each member_action stay the source of truth for "can this
+    # user actually flip this row" — these adapter rules only have to let
+    # the request reach the controller.
     if subject.is_a?(ContributorPayout)
-      if subject.contributor.forecast_person.admin_user == user
-        return true if [:read, :update].include?(action)
-      end
+      return true if subject.contributor.forecast_person.admin_user == user && action == :read
     end
 
     if subject.is_a?(ContributorAdjustment)
-      if subject.contributor.forecast_person.admin_user == user
-        return true if [:read, :update].include?(action)
-      end
+      return true if subject.contributor.forecast_person.admin_user == user && action == :read
     end
 
     if subject.is_a?(PayStub)
       if subject.contributor.forecast_person.admin_user == user
-        return true if [:read, :update].include?(action)
+        return true if [:read, :toggle_acceptance].include?(action)
+      end
+    end
+
+    # The "Accept" button on a contributor payout POSTs to
+    # InvoiceTracker#toggle_contributor_payout_acceptance. The member_action
+    # itself re-checks `cp.contributor.forecast_person.admin_user ==
+    # current_admin_user`, so allow the request through the adapter for any
+    # contributor and let the controller filter per-CP.
+    if subject.is_a?(InvoiceTracker)
+      if action == :toggle_contributor_payout_acceptance && user.forecast_person&.contributor.present?
+        return true
       end
     end
 
