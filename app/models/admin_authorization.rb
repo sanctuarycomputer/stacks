@@ -29,18 +29,23 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
       return true if subject.forecast_person.admin_user == user && action == :read
     end
 
+    # For their own ledger items: read AND update. ActiveAdmin authorizes
+    # POST member_actions (Accept / toggle_acceptance) as :update, so :read
+    # alone leaves contributors locked out of accepting what's theirs.
     if subject.is_a?(ContributorPayout)
-      return true if subject.contributor.forecast_person.admin_user == user && action == :read
+      if subject.contributor.forecast_person.admin_user == user
+        return true if [:read, :update].include?(action)
+      end
     end
 
     if subject.is_a?(ContributorAdjustment)
-      return true if subject.contributor.forecast_person.admin_user == user && action == :read
+      if subject.contributor.forecast_person.admin_user == user
+        return true if [:read, :update].include?(action)
+      end
     end
 
     if subject.is_a?(PayStub)
       if subject.contributor.forecast_person.admin_user == user
-        # Their own stub: read it AND accept/unaccept it. The toggle_acceptance
-        # member_action is a POST that ActiveAdmin authorizes as :update.
         return true if [:read, :update].include?(action)
       end
     end
