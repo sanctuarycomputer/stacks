@@ -3,7 +3,13 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
   # own rows. Only :update and :destroy are denied — everything else
   # (read, sync_qbo_bill, toggle_acceptance, …) is fair game because the
   # member_action's own guard re-verifies ownership.
-  OWN_LEDGER_ITEM_CLASSES = [ContributorPayout, ContributorAdjustment, PayStub, ProfitShare].freeze
+  OWN_LEDGER_ITEM_CLASSES = [
+    ContributorPayout,
+    ContributorAdjustment,
+    PayStub,
+    ProfitShare,
+    DeelInvoiceAdjustment,
+  ].freeze
   OWN_LEDGER_ITEM_DENY = [:update, :destroy].freeze
 
   # def scope_collection(collection, action = nil)
@@ -42,9 +48,14 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
     # destructive ones" matches the intent — contributors can read /
     # accept / unaccept / sync, but can't edit fields or delete the row.
     OWN_LEDGER_ITEM_CLASSES.each do |klass|
-      next unless subject.is_a?(klass)
-      next unless subject.contributor.forecast_person.admin_user == user
-      return true unless OWN_LEDGER_ITEM_DENY.include?(action)
+      if subject == klass
+        # Class-level checks (index / new / create) — let any contributor
+        # through to the controller, which gates the per-row policy.
+        return true if user.forecast_person&.contributor.present? && !OWN_LEDGER_ITEM_DENY.include?(action)
+      elsif subject.is_a?(klass)
+        next unless subject.contributor.forecast_person.admin_user == user
+        return true unless OWN_LEDGER_ITEM_DENY.include?(action)
+      end
     end
 
     # The "Accept" button on a contributor payout POSTs to
