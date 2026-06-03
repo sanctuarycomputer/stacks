@@ -58,14 +58,17 @@ class DeelContract < ApplicationRecord
   end
 
   # Pay-as-you-go contracts first, then by label (matches Deel Withdrawal ActiveAdmin form).
-  # When `deel_legal_entity_id:` is provided, restrict to contracts under that legal entity
-  # so withdrawals can only be created against the entity the calling ledger maps to.
-  # `nil` means no scoping (legacy enterprises without a Deel entity assigned yet).
+  # When `deel_legal_entity_id:` is passed (even as an empty string — which is how
+  # an enterprise without a Deel entity configured surfaces from the DB), restrict
+  # to contracts that match it exactly. Previously a blank id was treated as "no
+  # filter" and leaked contracts from other legal entities into the dropdown.
+  # Only `nil` skips scoping, for callers that genuinely want every contract for
+  # a person.
   def self.sorted_for_balance_withdrawal_select(deel_person_id, deel_legal_entity_id: nil)
     return [] if deel_person_id.blank?
 
     scope = where(deel_person_id: deel_person_id)
-    scope = scope.where(deel_legal_entity_id: deel_legal_entity_id) if deel_legal_entity_id.present?
+    scope = scope.where(deel_legal_entity_id: deel_legal_entity_id) unless deel_legal_entity_id.nil?
     scope.to_a.sort_by do |dc|
       [dc.pay_as_you_go_family? ? 0 : 1, dc.display_name_for_deel_invoice_select.to_s.downcase]
     end
