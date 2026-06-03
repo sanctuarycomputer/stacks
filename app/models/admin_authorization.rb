@@ -1,4 +1,11 @@
 class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
+  # Ledger-item classes a contributor is allowed to interact with on their
+  # own rows. Only :update and :destroy are denied — everything else
+  # (read, sync_qbo_bill, toggle_acceptance, …) is fair game because the
+  # member_action's own guard re-verifies ownership.
+  OWN_LEDGER_ITEM_CLASSES = [ContributorPayout, ContributorAdjustment, PayStub, ProfitShare].freeze
+  OWN_LEDGER_ITEM_DENY = [:update, :destroy].freeze
+
   # def scope_collection(collection, action = nil)
   #   # This automatically filters the Index page
   #   if user.admin?
@@ -29,24 +36,15 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
       return true if subject.forecast_person.admin_user == user && action == :read
     end
 
-    # For their own ledger items: ActiveAdmin passes member_action names
-    # through verbatim (NOT mapped to :update by ACTIONS_DICTIONARY), so we
-    # have to whitelist each action symbol explicitly. The controller-level
-    # guards in each member_action stay the source of truth for "can this
-    # user actually flip this row" — these adapter rules only have to let
-    # the request reach the controller.
-    if subject.is_a?(ContributorPayout)
-      return true if subject.contributor.forecast_person.admin_user == user && action == :read
-    end
-
-    if subject.is_a?(ContributorAdjustment)
-      return true if subject.contributor.forecast_person.admin_user == user && action == :read
-    end
-
-    if subject.is_a?(PayStub)
-      if subject.contributor.forecast_person.admin_user == user
-        return true if [:read, :toggle_acceptance].include?(action)
-      end
+    # For their own ledger items: allow ANY action except :update and
+    # :destroy. ActiveAdmin passes custom member_action names through
+    # verbatim, so enumerating each one is fragile; "anything but the
+    # destructive ones" matches the intent — contributors can read /
+    # accept / unaccept / sync, but can't edit fields or delete the row.
+    OWN_LEDGER_ITEM_CLASSES.each do |klass|
+      next unless subject.is_a?(klass)
+      next unless subject.contributor.forecast_person.admin_user == user
+      return true unless OWN_LEDGER_ITEM_DENY.include?(action)
     end
 
     # The "Accept" button on a contributor payout POSTs to
