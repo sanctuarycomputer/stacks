@@ -48,17 +48,18 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
     # destructive ones" matches the intent — contributors can read /
     # accept / unaccept / sync, but can't edit fields or delete the row.
     OWN_LEDGER_ITEM_CLASSES.each do |klass|
-      if subject == klass
-        # Class-level checks (index / new / create) — let any contributor
-        # through to the controller, which gates the per-row policy.
-        return true if user.forecast_person&.contributor.present? && !OWN_LEDGER_ITEM_DENY.include?(action)
-      elsif subject.is_a?(klass)
-        # subject can be a freshly-built instance (during :new) with no
-        # ledger yet — fall through if we can't resolve the owner.
-        owner = subject.contributor&.forecast_person&.admin_user rescue nil
-        next unless owner == user
-        return true unless OWN_LEDGER_ITEM_DENY.include?(action)
-      end
+      next unless subject == klass || subject.is_a?(klass)
+
+      # Bare collection / non-row actions (:index, :new, :create) — subject
+      # is either the class or a freshly-built instance with no ledger
+      # yet. Permit any user with a contributor; controller-level filters
+      # (e.g. verify_deel_invoice_access!) decide per-request.
+      return true if [:index, :new, :create].include?(action) && user.forecast_person&.contributor.present?
+
+      # Row-level actions — require ownership and deny only updates/destroys.
+      owner = (subject.contributor&.forecast_person&.admin_user rescue nil)
+      next unless owner == user
+      return true unless OWN_LEDGER_ITEM_DENY.include?(action)
     end
 
     # The "Accept" button on a contributor payout POSTs to
