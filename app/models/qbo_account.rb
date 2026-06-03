@@ -137,12 +137,13 @@ class QboAccount < ApplicationRecord
     service.all
   end
 
-  # Cached because the invoice-tracker show page calls qbo_customer/qbo_term
-  # on every render, each of which hits the QBO API + an OAuth token refresh.
-  # That was a 3s view-render cost (1.6M allocations) on _not_made.html.erb
-  # alone. Terms/customers change rarely; 15 min is well within tolerance.
+  # Per-request memoized only — the quickbooks-ruby gem's Customer/Term
+  # objects carry Procs that don't marshal, so Rails.cache (file/memcache
+  # in prod) raises "no _dump_data is defined for class Proc". Each request
+  # still pays the first fetch, but repeats inside the same render
+  # short-circuit to the @-var.
   def fetch_all_terms
-    Rails.cache.fetch("qbo_account/#{id}/all_terms/v1", expires_in: 15.minutes) do
+    @_fetch_all_terms ||= begin
       qbo_access_token = make_and_refresh_qbo_access_token
       terms_service = Quickbooks::Service::Term.new
       terms_service.company_id = realm_id
@@ -162,7 +163,7 @@ class QboAccount < ApplicationRecord
   end
 
   def fetch_all_customers
-    Rails.cache.fetch("qbo_account/#{id}/all_customers/v1", expires_in: 15.minutes) do
+    @_fetch_all_customers ||= begin
       qbo_access_token = make_and_refresh_qbo_access_token
       service = Quickbooks::Service::Customer.new
       service.company_id = realm_id
