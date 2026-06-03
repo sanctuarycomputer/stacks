@@ -53,7 +53,10 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
         # through to the controller, which gates the per-row policy.
         return true if user.forecast_person&.contributor.present? && !OWN_LEDGER_ITEM_DENY.include?(action)
       elsif subject.is_a?(klass)
-        next unless subject.contributor.forecast_person.admin_user == user
+        # subject can be a freshly-built instance (during :new) with no
+        # ledger yet — fall through if we can't resolve the owner.
+        owner = subject.contributor&.forecast_person&.admin_user rescue nil
+        next unless owner == user
         return true unless OWN_LEDGER_ITEM_DENY.include?(action)
       end
     end
