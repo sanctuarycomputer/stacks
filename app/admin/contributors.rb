@@ -48,18 +48,11 @@ ActiveAdmin.register Contributor do
   # write against, so the buttons short-circuit to a JS alert instead.
   LEDGER_REQUIRED_ALERT = "Select the appropriate ledger before you can perform this action.".freeze
 
-  action_item :deel_invoice, only: :show, if: proc {
-    manual_deel_invoice_visible?(resource)
-  } do
-    selected_ledger = params[:ledger].present? && resource.ledgers.find_by(id: params[:ledger])
-    if selected_ledger
-      link_to "New Deel Withdrawal",
-        new_admin_contributor_deel_invoice_adjustment_path(resource, ledger: selected_ledger.id)
-    else
-      link_to "New Deel Withdrawal", "#",
-        onclick: "alert(#{LEDGER_REQUIRED_ALERT.to_json}); return false;"
-    end
-  end
+  # "New Deel Withdrawal" was retired: contributors now submit a Ledger
+  # Withdrawal Request and admins process it via Deel from that request's
+  # show page (or via QBO Bill Pay). The legacy
+  # admin/contributors/:id/deel_invoice_adjustments routes remain so
+  # historical rows are viewable, but no entry point is exposed here.
 
   action_item :new_contributor_adjustment, only: :show, if: proc { current_admin_user.is_admin? } do
     selected_ledger = params[:ledger].present? && resource.ledgers.find_by(id: params[:ledger])

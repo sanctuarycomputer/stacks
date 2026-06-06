@@ -44,6 +44,7 @@ ActiveAdmin.register LedgerWithdrawalRequest do
       processed_by: current_admin_user,
       contract_id: params.require(:contract_id),
       description: params[:description].to_s,
+      amount: params[:amount].presence,
       date_submitted: params[:date_submitted].presence || Date.current,
     )
     redirect_to admin_ledger_withdrawal_request_path(resource), notice: "Processed via Deel."

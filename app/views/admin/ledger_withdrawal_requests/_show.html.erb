@@ -39,34 +39,48 @@
 
 <% if resource.pending? && current_admin_user.is_admin? %>
   <%
-    # Filter Deel contracts to the request's enterprise legal entity (if set)
-    # using the same filter the existing per-row Deel withdrawal form uses.
     deel_contracts = DeelContract.sorted_for_balance_withdrawal_select(
       resource.contributor.deel_person_id,
       deel_legal_entity_id: resource.enterprise.deel_legal_entity_id,
     )
+
+    # Default description lists each Bill that's being settled by this
+    # request so the line that lands in Deel reads like an itemized
+    # statement. Admin can still rewrite it inline before submitting.
+    bill_lines = resource.bills.includes(:qbo_account).map do |b|
+      effective = b.qbo_bill && b.qbo_bill.data.is_a?(Hash) ? b.qbo_bill.data["txn_date"] : nil
+      "##{b.qbo_bill_id} (#{number_to_currency(b.amount_snapshot)}#{effective ? ", #{effective}" : ""})"
+    end
+    default_description = "Stacks withdrawal request ##{resource.id} — #{bill_lines.join("; ")}"
   %>
   <div class="dashboard-modules table index_table index" style="margin-top: 16px;">
     <div class="dashboard-module">
       <div class="module-header"><p>Process via Deel</p></div>
-      <div class="module-body" style="padding: 12px;">
+      <div class="module-body" style="padding: 16px;">
         <% if resource.contributor.deel_person_id.blank? || deel_contracts.empty? %>
           <p><em>No Deel contracts available for this contributor on <%= resource.enterprise.name %>. Use the QBO path instead.</em></p>
         <% else %>
           <%= form_with url: process_via_deel_admin_ledger_withdrawal_request_path(resource), method: :post, local: true do |f| %>
             <p>
-              <label>Contract:</label>
+              <label>Contract:</label><br />
               <%= select_tag :contract_id, options_for_select(deel_contracts.map { |dc| [dc.display_name_for_deel_invoice_select, dc.deel_id] }) %>
             </p>
             <p>
-              <label>Description:</label>
-              <%= text_field_tag :description, "Stacks withdrawal request ##{resource.id}", size: 60 %>
+              <label>Amount (USD):</label><br />
+              <%= number_field_tag :amount, resource.total_amount, step: 0.01, min: 0.01,
+                    style: "width: 200px;" %>
+              <span style="opacity: 0.6;">Defaults to the request total. Override if Deel needs a different number.</span>
             </p>
             <p>
-              <label>Date submitted:</label>
+              <label>Description (sent to Deel):</label><br />
+              <%= text_area_tag :description, default_description, rows: 3,
+                    style: "width: 100%; box-sizing: border-box;" %>
+            </p>
+            <p>
+              <label>Date submitted:</label><br />
               <%= date_field_tag :date_submitted, Date.current %>
             </p>
-            <p><%= submit_tag "Process via Deel — #{number_to_currency(resource.total_amount)}", class: "button", data: { confirm: "Submit a Deel invoice adjustment for #{number_to_currency(resource.total_amount)} and mark this request processed?" } %></p>
+            <p><%= submit_tag "Process via Deel", class: "button", data: { confirm: "Submit a Deel invoice adjustment and mark this request processed?" } %></p>
           <% end %>
         <% end %>
       </div>

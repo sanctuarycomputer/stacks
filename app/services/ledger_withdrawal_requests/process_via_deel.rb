@@ -14,11 +14,12 @@ module LedgerWithdrawalRequests
       new(**kwargs).call
     end
 
-    def initialize(request:, processed_by:, contract_id:, description:, date_submitted: Date.current)
+    def initialize(request:, processed_by:, contract_id:, description:, amount: nil, date_submitted: Date.current)
       @request = request
       @processed_by = processed_by
       @contract_id = contract_id.to_s
       @description = description.to_s
+      @amount = amount.presence # nil → fall back to request.total_amount
       @date_submitted = date_submitted
     end
 
@@ -29,7 +30,7 @@ module LedgerWithdrawalRequests
         contributor: @request.contributor,
         ledger: @request.ledger,
         contract_id: @contract_id,
-        amount: @request.total_amount,
+        amount: @amount || @request.total_amount,
         description: @description.presence || "Stacks withdrawal request ##{@request.id}",
         date_submitted: @date_submitted,
         skip_balance_validation: @processed_by&.is_admin? || false,

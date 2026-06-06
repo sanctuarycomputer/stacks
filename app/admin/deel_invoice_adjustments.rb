@@ -27,6 +27,17 @@ ActiveAdmin.register DeelInvoiceAdjustment do
     end
 
     def verify_deel_invoice_access!
+      # :new / :create were retired in favor of the LedgerWithdrawalRequest
+      # flow — only admins can still reach them (for legacy backfills /
+      # corrections). :index and :show stay available to the owning
+      # contributor so they can audit their existing Deel withdrawals.
+      if [:new, :create].include?(action_name.to_sym)
+        return if current_admin_user.is_admin?
+        redirect_to admin_contributor_path(parent),
+          alert: "Direct Deel withdrawals are admin-only now. Submit a Ledger Withdrawal Request instead."
+        return
+      end
+
       return if manual_deel_invoice_submission_allowed?(parent)
 
       redirect_to admin_contributor_path(parent), alert: "That action is not available."
