@@ -219,19 +219,28 @@ ActiveAdmin.register LedgerWithdrawalRequest do
         .sort_by { |r| [r.effective_on || Date.new(1970, 1, 1), r.qbo_bill_id.to_s] }
         .reverse
 
-      f.semantic_errors
-
-      panel "Request payment — #{ledger.enterprise.name}" do
-        para "Pick the bills you want to be paid for. Once submitted, the request lands on the financial controller's desk to process via Deel or QBO Bill Pay."
-      end
-
-      f.input :ledger_id, as: :hidden, input_html: { value: ledger.id }
-
       if candidates.empty?
-        panel "Nothing to request" do
-          para "No bills on this ledger are ready to request payment for. Anything not yet payable or already paid in QuickBooks won't appear here."
+        # No bills available — render the empty-state panel only. No Notes
+        # input, no submit button (there's nothing to submit), no Deel/QBO
+        # column. Just an explanation and a way back to the ledger.
+        panel "Nothing to request right now" do
+          para "No bills on your #{ledger.enterprise.name} ledger are ready to request payment for yet."
+          para "Anything that's not yet payable (e.g. waiting on cycle approval), already paid in QuickBooks, or already included in another open request won't show up here. Once a new bill becomes payable, come back and submit a request."
+          div(style: "margin-top: 16px;") do
+            a "Back to ledger ↗",
+              href: admin_contributor_path(ledger.contributor, ledger: ledger.id),
+              class: "button"
+          end
         end
       else
+        f.semantic_errors
+
+        panel "Request payment — #{ledger.enterprise.name}" do
+          para "Pick the bills you want to be paid for. Once submitted, the request lands on the financial controller's desk to process via Deel or QBO Bill Pay."
+        end
+
+        f.input :ledger_id, as: :hidden, input_html: { value: ledger.id }
+
         panel "Bills ready to request" do
           table_for candidates do
             column do |row|
@@ -248,15 +257,15 @@ ActiveAdmin.register LedgerWithdrawalRequest do
             end
           end
         end
-      end
 
-      f.inputs "Notes" do
-        f.input :notes, as: :text, input_html: { rows: 3 }, label: false, hint: "Optional. Anything the financial controller should know."
-      end
+        f.inputs "Notes" do
+          f.input :notes, as: :text, input_html: { rows: 3 }, label: false, hint: "Optional. Anything the financial controller should know."
+        end
 
-      f.actions do
-        f.action :submit, label: "Submit Withdrawal Request"
-        f.cancel_link(admin_contributor_path(ledger.contributor))
+        f.actions do
+          f.action :submit, label: "Submit Withdrawal Request"
+          f.cancel_link(admin_contributor_path(ledger.contributor))
+        end
       end
     end
   end
