@@ -287,7 +287,7 @@
                   <% end %>
                 </span>
               <% elsif li.is_a?(LedgerWithdrawalRequest) %>
-                <em style="opacity: 0.6;"><%= number_to_currency(li.total_amount) %></em>
+                <em style="opacity: 0.6;">- <%= number_to_currency(li.total_amount) %></em>
               <% end %>
             </td>
             <td class="col text-right">
