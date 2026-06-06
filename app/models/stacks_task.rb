@@ -46,6 +46,9 @@ class StacksTask
 
     # Ledger issues
     missing_qbo_vendor_for_contributor: "Contributor needs a QBO vendor for this enterprise's ledger",
+
+    # Withdrawal request issues
+    ledger_withdrawal_request_needs_processing: "Withdrawal request needs processing",
   }.freeze
 
   # type    — Symbol classifying the task (:project_capsule_incomplete, :survey, …)
@@ -99,6 +102,8 @@ class StacksTask
     when Stacks::Notion::Lead then subject.try(:page_title).presence || "Notion Lead"
     when PayCycle then "#{subject.enterprise.name} — #{subject.starts_at.to_s(:long)} to #{subject.ends_at.to_s(:long)}"
     when Ledger then "#{subject.contributor.forecast_person&.email || "Contributor ##{subject.contributor_id}"} on #{subject.enterprise.name}"
+    when LedgerWithdrawalRequest
+      "#{subject.contributor.forecast_person&.email} on #{subject.enterprise.name} — #{ActionController::Base.helpers.number_to_currency(subject.total_amount)} (#{subject.bills.size} bills)"
     else
       subject.try(:display_name).presence || subject.try(:name).presence || subject.to_s
     end
@@ -121,6 +126,7 @@ class StacksTask
     when Stacks::Notion::Lead then subject.try(:notion_link) || subject.try(:external_link)
     when PayCycle then helpers.admin_enterprise_pay_cycle_path(subject.enterprise, subject)
     when Ledger then helpers.edit_admin_contributor_path(subject.contributor)
+    when LedgerWithdrawalRequest then helpers.admin_ledger_withdrawal_request_path(subject)
     else subject.try(:external_link)
     end
   end

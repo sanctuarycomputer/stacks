@@ -5,11 +5,76 @@ ActiveAdmin.register LedgerWithdrawalRequest do
 
   permit_params :ledger_id, :notes, bills_attributes: [:qbo_account_id, :qbo_bill_id, :amount_snapshot]
 
+  action_item :process_via_qbo, only: :show, if: proc { resource.pending? && current_admin_user.is_admin? } do
+    url = qbo_vendor_url_for(resource)
+    if url.present?
+      link_to "Open Vendor in QBO ↗", url, target: "_blank", rel: "noopener"
+    else
+      msg = "No QBO vendor mapped for this contributor on #{resource.enterprise.name}"
+      link_to "Open Vendor in QBO ↗", "#", onclick: "alert(#{msg.to_json}); return false;"
+    end
+  end
+
+  action_item :mark_processed_manual, only: :show, if: proc { resource.pending? && current_admin_user.is_admin? } do
+    link_to "Mark Processed",
+      mark_processed_admin_ledger_withdrawal_request_path(resource),
+      method: :post,
+      data: { confirm: "Mark this request processed without changing any bills?" }
+  end
+
+  action_item :cancel, only: :show, if: proc { resource.pending? && current_admin_user.is_admin? } do
+    link_to "Cancel Request", cancel_admin_ledger_withdrawal_request_path(resource), method: :post,
+      data: { confirm: "Cancel this withdrawal request? Bills go back to selectable for the contributor." }
+  end
+
+  member_action :process_via_deel, method: :post do
+    LedgerWithdrawalRequests::ProcessViaDeel.call(
+      request: resource,
+      processed_by: current_admin_user,
+      contract_id: params.require(:contract_id),
+      description: params[:description].to_s,
+      date_submitted: params[:date_submitted].presence || Date.current,
+    )
+    redirect_to admin_ledger_withdrawal_request_path(resource), notice: "Processed via Deel."
+  rescue LedgerWithdrawalRequests::ProcessViaDeel::Error => e
+    redirect_to admin_ledger_withdrawal_request_path(resource), alert: e.message
+  end
+
+  member_action :mark_processed, method: :post do
+    resource.update!(processed_at: Time.current, paid_via: LedgerWithdrawalRequest::PAID_VIA_MANUAL)
+    redirect_to admin_ledger_withdrawal_request_path(resource), notice: "Marked processed."
+  end
+
+  member_action :cancel, method: :post do
+    resource.update!(
+      cancelled_at: Time.current,
+      cancelled_by: current_admin_user,
+      cancelled_reason: params[:reason].to_s.presence || "Cancelled by admin",
+    )
+    redirect_to admin_ledger_withdrawal_request_path(resource), notice: "Request cancelled."
+  end
+
   controller do
-    helper_method :enumerate_candidates_for, :contributor_owns_ledger?
+    helper_method :enumerate_candidates_for, :contributor_owns_ledger?, :qbo_vendor_url_for
 
     before_action :require_ledger_param, only: [:new]
     before_action :verify_ledger_access!, only: [:new, :create]
+    before_action :require_admin_for_processing!, only: [:process_via_deel, :process_manual, :cancel]
+
+    def require_admin_for_processing!
+      return if current_admin_user.is_admin?
+      redirect_to admin_ledger_withdrawal_request_path(resource), alert: "Only Stacks admins can process or cancel requests."
+    end
+
+    # Best-effort deep link to the connected QBO vendor record for this
+    # ledger's contributor. Used by the "Process via QBO" action.
+    def qbo_vendor_url_for(request)
+      qa = request.enterprise.qbo_account
+      return nil if qa.nil?
+      vendor = request.contributor.qbo_vendor_for(qa)
+      return nil if vendor.nil?
+      "https://qbo.intuit.com/app/vendordetail?nameId=#{vendor.qbo_id}"
+    end
 
     def require_ledger_param
       return if params[:ledger_id].present?
