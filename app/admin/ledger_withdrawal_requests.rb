@@ -104,11 +104,12 @@ ActiveAdmin.register LedgerWithdrawalRequest do
       LedgerWithdrawalRequests::EnumerateCandidateBills.call(ledger)
     end
 
-    def new
-      ledger = Ledger.find(params[:ledger_id])
-      @ledger = ledger
-      @candidates = enumerate_candidates_for(ledger)
-      @ledger_withdrawal_request = LedgerWithdrawalRequest.new(ledger: ledger)
+    # Pre-set the ledger from the URL param so AA's form DSL has access to it.
+    def build_resource
+      resource = super
+      ledger_id = params[:ledger_id] || params.dig(:ledger_withdrawal_request, :ledger_id)
+      resource.ledger ||= Ledger.find_by(id: ledger_id) if ledger_id.present?
+      resource
     end
 
     def create
@@ -178,5 +179,59 @@ ActiveAdmin.register LedgerWithdrawalRequest do
 
   show do
     render partial: "show", locals: { resource: resource }
+  end
+
+  form do |f|
+    ledger = f.object.ledger
+    if ledger.nil?
+      panel "Pick a ledger first" do
+        para "Open this form from a contributor's ledger tab so we know which enterprise to bill against."
+      end
+    else
+      candidates = LedgerWithdrawalRequests::EnumerateCandidateBills.call(ledger)
+        .select(&:selectable)
+        .sort_by { |r| [r.effective_on || Date.new(1970, 1, 1), r.qbo_bill_id.to_s] }
+        .reverse
+
+      f.semantic_errors
+
+      panel "Request payment — #{ledger.enterprise.name}" do
+        para "Pick the bills you want to be paid for. Once submitted, the request lands on the financial controller's desk to process via Deel or QBO Bill Pay."
+      end
+
+      f.input :ledger_id, as: :hidden, input_html: { value: ledger.id }
+
+      if candidates.empty?
+        panel "Nothing to request" do
+          para "No bills on this ledger are ready to request payment for. Anything not yet payable or already paid in QuickBooks won't appear here."
+        end
+      else
+        panel "Bills ready to request" do
+          table_for candidates do
+            column do |row|
+              key = "#{row.qbo_account_id}:#{row.qbo_bill_id}"
+              check_box_tag "ledger_withdrawal_request[selected_bill_keys][]", key, false
+            end
+            column("Date") { |row| row.effective_on }
+            column("Type") { |row| row.description }
+            column("Amount") { |row| number_to_currency(row.amount) }
+            column("QBO") do |row|
+              if row.qbo_bill.present?
+                link_to "View ↗", row.qbo_bill.qbo_url, target: "_blank", rel: "noopener"
+              end
+            end
+          end
+        end
+      end
+
+      f.inputs "Notes" do
+        f.input :notes, as: :text, input_html: { rows: 3 }, label: false, hint: "Optional. Anything the financial controller should know."
+      end
+
+      f.actions do
+        f.action :submit, label: "Submit Withdrawal Request"
+        f.cancel_link(admin_contributor_path(ledger.contributor))
+      end
+    end
   end
 end

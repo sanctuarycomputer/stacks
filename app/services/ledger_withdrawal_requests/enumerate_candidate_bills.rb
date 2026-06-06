@@ -13,7 +13,7 @@ module LedgerWithdrawalRequests
       PayStub,
     ].freeze
 
-    Row = Struct.new(:host, :qbo_bill, :qbo_bill_id, :qbo_account_id, :amount, :selectable, :reason, :description, keyword_init: true)
+    Row = Struct.new(:host, :qbo_bill, :qbo_bill_id, :qbo_account_id, :amount, :selectable, :reason, :description, :effective_on, keyword_init: true)
 
     def self.call(ledger)
       new(ledger).call
@@ -46,6 +46,7 @@ module LedgerWithdrawalRequests
             qbo_account_id: qbo_account_id,
             amount: host.respond_to?(:amount) ? host.amount.to_f : 0,
             description: row_description(host),
+            effective_on: host.respond_to?(:effective_on_for_display) ? host.effective_on_for_display : nil,
             selectable: false,
             reason: nil,
           )
@@ -96,11 +97,10 @@ module LedgerWithdrawalRequests
         .to_set
     end
 
+    # Plain "type" label — date and description are rendered separately so
+    # we don't pile everything into one column.
     def row_description(host)
-      type = host.class.name.titleize
-      effective = host.respond_to?(:effective_on_for_display) ? host.effective_on_for_display : nil
-      base = effective.present? ? "#{type} — #{effective}" : type
-      host.respond_to?(:description) && host.description.present? ? "#{base}: #{host.description.to_s.truncate(60)}" : base
+      host.class.name.titleize
     end
   end
 end
