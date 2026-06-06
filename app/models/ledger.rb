@@ -134,6 +134,8 @@ class Ledger < ApplicationRecord
   end
 
   # Includes soft-deleted rows — used by items_grouped_by_month for display.
+  # LedgerWithdrawalRequests render as milestone rows here; they're left out
+  # of `visible_items` so they don't move balance/unsettled.
   def all_items_with_deleted
     [
       ContributorPayout.with_deleted.includes(invoice_tracker: :invoice_pass).where(ledger_id: id).to_a,
@@ -143,6 +145,7 @@ class Ledger < ApplicationRecord
       ProfitShare.with_deleted.includes(:periodic_report).where(ledger_id: id).to_a,
       DeelInvoiceAdjustment.with_deleted.where(ledger_id: id).to_a,
       PayStub.with_deleted.includes(:pay_cycle).where(ledger_id: id).to_a,
+      LedgerWithdrawalRequest.includes(:bills, :cancelled_by).where(ledger_id: id).to_a,
     ].flatten
   end
 end

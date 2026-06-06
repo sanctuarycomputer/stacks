@@ -59,6 +59,17 @@ class LedgerWithdrawalRequest < ApplicationRecord
     bills.any? && bills.all?(&:paid?)
   end
 
+  # Lets Ledger#items_grouped_by_month / Contributor#all_items_grouped_by_month
+  # splice withdrawal requests into the timeline alongside regular ledger items
+  # without a custom code path — they're rendered as informational milestones
+  # ("contributor asked for these bills to be paid on this date") rather than
+  # balance-affecting rows. No payable?/signed_amount on purpose: the balance
+  # walks never branch on this class, so withdrawal requests stay invisible to
+  # balance / unsettled / total_income.
+  def effective_on_for_display
+    requested_at&.to_date
+  end
+
   # Auto-process: when every Bill in this request is Paid in QBO, flip
   # processed_at without requiring a controller click. Called by the daily
   # QBO sync after the QboBill mirror updates. Idempotent.
