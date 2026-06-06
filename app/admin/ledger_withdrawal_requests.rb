@@ -65,7 +65,27 @@ ActiveAdmin.register LedgerWithdrawalRequest do
 
     before_action :require_ledger_param, only: [:new]
     before_action :verify_ledger_access!, only: [:new, :create]
+    before_action :verify_qbo_vendor_mapping!, only: [:new, :create]
     before_action :require_admin_for_processing!, only: [:process_via_deel, :cancel]
+
+    # Fail fast (with a friendly screen, not a redirect) when the contributor
+    # has no ContributorQboVendor for the ledger's enterprise QBO account.
+    # Withdrawal requests can only resolve into Bills that need to be paid
+    # against a specific vendor; without that mapping nothing downstream
+    # will work and the form would only produce a confusing dead end.
+    def verify_qbo_vendor_mapping!
+      ledger_id = params[:ledger_id] || params.dig(:ledger_withdrawal_request, :ledger_id)
+      ledger = Ledger.find_by(id: ledger_id)
+      return if ledger.nil?
+
+      qa = ledger.enterprise.qbo_account
+      vendor = qa && ledger.contributor.qbo_vendor_for(qa)
+      return if vendor.present?
+
+      @missing_vendor_ledger = ledger
+      @missing_vendor_qbo_account = qa
+      render :missing_qbo_vendor, status: :unprocessable_entity
+    end
 
     def require_admin_for_processing!
       return if current_admin_user.is_admin?
