@@ -234,32 +234,17 @@ ActiveAdmin.register LedgerWithdrawalRequest do
       else
         f.semantic_errors
 
-        panel "Request payment — #{ledger.enterprise.name}" do
-          para "Pick the bills you want to be paid for. Once submitted, the request lands on the financial controller's desk to process via Deel or QBO Bill Pay."
-        end
+        # Reach for the same dashboard-modules / module-header / module-body
+        # / index_table HTML the rest of Stacks uses (see the Contributor
+        # ledger view) so the chrome here matches without us trying to skin
+        # AA's .panel and fieldset chrome from the outside.
+        render partial: "admin/ledger_withdrawal_requests/intro_panel", locals: { ledger: ledger }
 
         f.input :ledger_id, as: :hidden, input_html: { value: ledger.id }
 
-        panel "Bills ready to request" do
-          table_for candidates do
-            column do |row|
-              key = "#{row.qbo_account_id}:#{row.qbo_bill_id}"
-              check_box_tag "ledger_withdrawal_request[selected_bill_keys][]", key, false
-            end
-            column("Date") { |row| row.effective_on }
-            column("Type") { |row| row.description }
-            column("Amount") { |row| number_to_currency(row.amount) }
-            column("QBO") do |row|
-              if row.qbo_bill.present?
-                link_to "View ↗", row.qbo_bill.qbo_url, target: "_blank", rel: "noopener"
-              end
-            end
-          end
-        end
+        render partial: "admin/ledger_withdrawal_requests/bills_panel", locals: { candidates: candidates }
 
-        f.inputs "Notes" do
-          f.input :notes, as: :text, input_html: { rows: 3 }, label: false, hint: "Optional. Anything the financial controller should know."
-        end
+        render partial: "admin/ledger_withdrawal_requests/notes_panel", locals: { f: f }
 
         f.actions do
           f.action :submit, label: "Submit Withdrawal Request"
