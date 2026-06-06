@@ -1166,3 +1166,55 @@ body.logged_out #login a {
   background-image: none !important;
 }
 
+// Match the Active Admin .panel chrome on the LedgerWithdrawalRequest
+// forms to the .dashboard-module look used elsewhere in Stacks (white
+// rounded card, dashed header divider, bold grey title). Scoped to the
+// resource so we don't accidentally re-skin panels everywhere.
+body.admin_ledger_withdrawal_requests {
+  .panel {
+    background: white;
+    box-shadow: 0 1px 20px #b7b7b7;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    overflow: hidden;
+
+    > h3 {
+      display: block;
+      padding: 20px;
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+      color: $color-grey;
+      border-bottom: 1px dashed $color-light-grey;
+      background: none;
+    }
+
+    > .panel_contents {
+      padding: 20px;
+      margin-top: 0;
+    }
+  }
+
+  // Formtastic fieldset for the Notes block should match the same chrome.
+  form fieldset.inputs {
+    background: white;
+    box-shadow: 0 1px 20px #b7b7b7;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    padding: 0;
+
+    > legend > span {
+      display: block;
+      padding: 20px;
+      font-size: 18px;
+      font-weight: 700;
+      color: $color-grey;
+      border-bottom: 1px dashed $color-light-grey;
+    }
+
+    > ol {
+      padding: 20px;
+    }
+  }
+}
+
