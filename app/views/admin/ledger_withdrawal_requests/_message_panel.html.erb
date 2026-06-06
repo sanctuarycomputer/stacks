@@ -14,8 +14,11 @@
         <p><%= p %></p>
       <% end %>
       <p style="margin-top: 24px;">
+        <%# Mirrors the AA form-submit pill (background #414141, white text,
+            999px border-radius, 14px/30px padding) since `class="button"` is
+            only styled when inside a <form>. %>
         <%= link_to "Back to ledger ↗", back_path,
-              style: "display: inline-block; background: #1F78FF; color: white; border-radius: 999px; padding: 14px 30px; font-size: 18px; text-decoration: none;" %>
+              style: "display: inline-block; background: #414141; color: white; border-radius: 999px; padding: 14px 30px; font-size: 18px; font-weight: 700; text-decoration: none; border: none;" %>
       </p>
     </div>
   </div>
