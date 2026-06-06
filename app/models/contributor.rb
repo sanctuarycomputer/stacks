@@ -64,6 +64,7 @@ class Contributor < ApplicationRecord
   has_many :deel_invoice_adjustments, through: :ledgers
   has_many :pay_stubs, through: :ledgers
   has_many :recurring_ledger_adjustments, through: :ledgers
+  has_many :ledger_withdrawal_requests, through: :ledgers
 
   # Each *_with_deleted method below is memoized per-instance. The first call
   # fires a query; subsequent calls return the cached array.

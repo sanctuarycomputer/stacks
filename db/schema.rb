@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_06_02_155349) do
+ActiveRecord::Schema.define(version: 2026_06_06_135814) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -399,6 +399,36 @@ ActiveRecord::Schema.define(version: 2026_06_02_155349) do
     t.index ["qbo_account_id", "qbo_invoice_id"], name: "index_invoice_trackers_on_qa_and_qbo_invoice"
     t.index ["qbo_account_id"], name: "index_invoice_trackers_on_qbo_account_id"
     t.check_constraint "(company_treasury_split >= (0)::numeric) AND (company_treasury_split <= (1)::numeric)", name: "check_company_treasury_split_range"
+  end
+
+  create_table "ledger_withdrawal_request_bills", force: :cascade do |t|
+    t.bigint "ledger_withdrawal_request_id", null: false
+    t.bigint "qbo_account_id", null: false
+    t.string "qbo_bill_id", null: false
+    t.decimal "amount_snapshot", precision: 12, scale: 2, null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["ledger_withdrawal_request_id", "qbo_account_id", "qbo_bill_id"], name: "idx_lwrb_unique_per_bill", unique: true
+    t.index ["ledger_withdrawal_request_id"], name: "idx_lwrb_on_request_id"
+    t.index ["qbo_account_id", "qbo_bill_id"], name: "idx_lwrb_on_bill"
+  end
+
+  create_table "ledger_withdrawal_requests", force: :cascade do |t|
+    t.bigint "ledger_id", null: false
+    t.datetime "requested_at", null: false
+    t.datetime "processed_at"
+    t.datetime "cancelled_at"
+    t.bigint "cancelled_by_id"
+    t.text "cancelled_reason"
+    t.text "notes"
+    t.string "paid_via"
+    t.bigint "deel_invoice_adjustment_id"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["cancelled_at"], name: "index_ledger_withdrawal_requests_on_cancelled_at"
+    t.index ["cancelled_by_id"], name: "index_ledger_withdrawal_requests_on_cancelled_by_id"
+    t.index ["ledger_id"], name: "index_ledger_withdrawal_requests_on_ledger_id"
+    t.index ["processed_at"], name: "index_ledger_withdrawal_requests_on_processed_at"
   end
 
   create_table "ledgers", force: :cascade do |t|
@@ -1191,14 +1221,14 @@ ActiveRecord::Schema.define(version: 2026_06_02_155349) do
   add_foreign_key "account_lead_periods", "project_trackers"
   add_foreign_key "adhoc_invoice_trackers", "project_trackers"
   add_foreign_key "adhoc_invoice_trackers", "qbo_accounts"
-  # Composite FK fk_adhoc_invoice_trackers_qbo_invoice managed by migration (not expressible in schema.rb)
+  add_foreign_key "adhoc_invoice_trackers", "qbo_invoices", column: "qbo_account_id", primary_key: "qbo_account_id", name: "fk_adhoc_invoice_trackers_qbo_invoice"
   add_foreign_key "admin_user_salary_windows", "admin_users"
   add_foreign_key "associates_award_agreements", "admin_users"
   add_foreign_key "commissions", "contributors"
   add_foreign_key "commissions", "project_trackers"
   add_foreign_key "contributor_adjustments", "ledgers"
   add_foreign_key "contributor_adjustments", "qbo_accounts"
-  # Composite FK fk_contributor_adjustments_qbo_invoice managed by migration (not expressible in schema.rb)
+  add_foreign_key "contributor_adjustments", "qbo_invoices", column: "qbo_account_id", primary_key: "qbo_account_id", name: "fk_contributor_adjustments_qbo_invoice"
   add_foreign_key "contributor_payouts", "admin_users", column: "created_by_id"
   add_foreign_key "contributor_payouts", "invoice_trackers"
   add_foreign_key "contributor_payouts", "ledgers"
@@ -1217,7 +1247,10 @@ ActiveRecord::Schema.define(version: 2026_06_02_155349) do
   add_foreign_key "invoice_trackers", "admin_users"
   add_foreign_key "invoice_trackers", "invoice_passes"
   add_foreign_key "invoice_trackers", "qbo_accounts"
-  # Composite FK fk_invoice_trackers_qbo_invoice managed by migration (not expressible in schema.rb)
+  add_foreign_key "invoice_trackers", "qbo_invoices", column: "qbo_account_id", primary_key: "qbo_account_id", name: "fk_invoice_trackers_qbo_invoice"
+  add_foreign_key "ledger_withdrawal_request_bills", "ledger_withdrawal_requests"
+  add_foreign_key "ledger_withdrawal_requests", "admin_users", column: "cancelled_by_id"
+  add_foreign_key "ledger_withdrawal_requests", "ledgers"
   add_foreign_key "ledgers", "contributors"
   add_foreign_key "ledgers", "enterprises"
   add_foreign_key "mailing_list_subscribers", "mailing_lists"
