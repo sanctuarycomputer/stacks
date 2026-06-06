@@ -14,10 +14,31 @@
 
 QBO_HOST_KLASSES = [ContributorPayout, ContributorAdjustment, ProfitShare, Trueup, PayStub].freeze
 
-def post_cutover_balance(ledger_items)
+# Three deletion scopes for the "off-platform payment offset" pattern:
+#   :strict — negative CAs whose description references a Deel URL
+#   :mid    — negative CAs whose description starts with "Misc payment:"
+#             (covers Deel, Justworks, BUS, S-Corp draws, etc. — all
+#             off-platform offsets entered by hand)
+#   :broad  — every negative ContributorAdjustment
+#
+# Each scope assumes the corresponding QBO Bill that the CA was offsetting
+# has since been marked Paid in QBO (so under the new rules it drops out
+# of balance naturally).
+def deletion_scope_matches?(li, scope)
+  return false unless li.is_a?(ContributorAdjustment)
+  return false unless li.amount.to_f < 0
+  case scope
+  when :strict then li.description.to_s.match?(/deel\.com/i)
+  when :mid    then li.description.to_s.start_with?("Misc payment:")
+  when :broad  then true
+  end
+end
+
+def post_cutover_balance(ledger_items, scope:)
   ledger_items[:all].reduce({ balance: 0, unsettled: 0 }) do |acc, li|
     next acc if li.respond_to?(:deleted_at) && li.deleted_at.present?
     next acc if li.is_a?(DeelInvoiceAdjustment) # no longer deducts under new rules
+    next acc if deletion_scope_matches?(li, scope) # treat as deleted
 
     if li.is_a?(ContributorPayout)
       if li.payable?
@@ -79,11 +100,17 @@ paid_host_contrib_ids = QBO_HOST_KLASSES.flat_map do |klass|
   end
 end.uniq
 
-candidate_ids = (dia_contrib_ids + paid_host_contrib_ids).uniq
-puts "Candidates: #{candidate_ids.size} contributor(s) (#{dia_contrib_ids.size} have DIA, #{paid_host_contrib_ids.size} have paid-in-QBO bills)"
+neg_ca_contrib_ids =
+  ContributorAdjustment.where("amount < 0").joins(:ledger).pluck("ledgers.contributor_id").uniq
+
+candidate_ids = (dia_contrib_ids + paid_host_contrib_ids + neg_ca_contrib_ids).uniq
+puts "Candidates: #{candidate_ids.size} contributor(s)"
+puts "  with DIA:                 #{dia_contrib_ids.size}"
+puts "  with paid-in-QBO bills:    #{paid_host_contrib_ids.size}"
+puts "  with negative CA rows:     #{neg_ca_contrib_ids.size}"
 puts
 
-affected = []
+results_per_scope = { strict: [], mid: [], broad: [] }
 
 Contributor.unscoped.where(id: candidate_ids).find_each do |c|
   next if c.forecast_person.nil?
@@ -91,34 +118,50 @@ Contributor.unscoped.where(id: candidate_ids).find_each do |c|
   items = c.all_items_grouped_by_month(false)
 
   current = c.new_deal_balance(items)
-  proposed = post_cutover_balance(items)
 
-  d_bal = (proposed[:balance] - current[:balance]).to_f.round(2)
-  d_uns = (proposed[:unsettled] - current[:unsettled]).to_f.round(2)
-  next if d_bal.abs < 0.01 && d_uns.abs < 0.01
-
-  affected << {
-    id: c.id,
-    email: c.forecast_person.email,
-    cur_bal: current[:balance].to_f.round(2),
-    new_bal: proposed[:balance].to_f.round(2),
-    d_bal: d_bal,
-    d_uns: d_uns,
-  }
+  [:strict, :mid, :broad].each do |scope|
+    proposed = post_cutover_balance(items, scope: scope)
+    d_bal = (proposed[:balance] - current[:balance]).to_f.round(2)
+    d_uns = (proposed[:unsettled] - current[:unsettled]).to_f.round(2)
+    next if d_bal.abs < 0.01 && d_uns.abs < 0.01
+    results_per_scope[scope] << {
+      id: c.id,
+      email: c.forecast_person.email,
+      cur_bal: current[:balance].to_f.round(2),
+      new_bal: proposed[:balance].to_f.round(2),
+      d_bal: d_bal,
+      d_uns: d_uns,
+    }
+  end
 end
 
-puts "Affected: #{affected.size} contributor(s) with non-zero delta"
-puts
-if affected.any?
+[:strict, :mid, :broad].each do |scope|
+  affected = results_per_scope[scope]
+  label = case scope
+          when :strict then 'STRICT — delete CAs whose description references a Deel URL'
+          when :mid    then 'MID    — delete CAs starting with "Misc payment:"'
+          when :broad  then 'BROAD  — delete every negative CA'
+          end
+  puts '=' * 78
+  puts "SCENARIO: #{label}"
+  puts '=' * 78
+  if affected.empty?
+    puts "  Zero drift on all candidates — invariant holds."
+    puts
+    next
+  end
   total_d_bal = affected.sum { |r| r[:d_bal] }.round(2)
   total_d_uns = affected.sum { |r| r[:d_uns] }.round(2)
   pos = affected.count { |r| r[:d_bal] > 0 }
   neg = affected.count { |r| r[:d_bal] < 0 }
-  puts "  Sum Δbalance: #{total_d_bal} (Δunsettled: #{total_d_uns})"
-  puts "  #{pos} would go UP (under-deducted historically), #{neg} would go DOWN (over-deducted)"
+  near_zero = affected.count { |r| r[:d_bal].abs < 1.0 }
+  puts "  Affected:   #{affected.size} contributor(s) with non-zero delta"
+  puts "  Δbalance:   #{total_d_bal} sum  (#{pos} UP, #{neg} DOWN, #{near_zero} within $1)"
+  puts "  Δunsettled: #{total_d_uns}"
   puts
-  puts "  Top 20 by |Δbalance|:"
-  affected.sort_by { |r| -r[:d_bal].abs }.first(20).each do |r|
+  puts "  Top 15 by |Δbalance|:"
+  affected.sort_by { |r| -r[:d_bal].abs }.first(15).each do |r|
     puts "    ##{r[:id]} #{r[:email]}: $#{r[:cur_bal]} → $#{r[:new_bal]} (Δ#{r[:d_bal]})"
   end
+  puts
 end
