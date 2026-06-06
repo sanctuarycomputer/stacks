@@ -3,6 +3,10 @@ ActiveAdmin.register LedgerWithdrawalRequest do
   config.filters = false
   actions :index, :new, :create, :show
 
+  scope :pending, default: true
+  scope "Paid", :processed
+  scope :cancelled
+
   permit_params :ledger_id, :notes, bills_attributes: [:qbo_account_id, :qbo_bill_id, :amount_snapshot]
 
   action_item :process_via_qbo, only: :show, if: proc { resource.pending? && current_admin_user.is_admin? } do
