@@ -1,22 +1,28 @@
 module Stacks
   class TaskBuilder
     module Discoveries
-      # Surfaces every pending LedgerWithdrawalRequest as a task for global
-      # Stacks admins (mirrors MissingQboVendors — the per-enterprise admins
-      # don't have the QBO Bill Pay UI surfaced to them, so this lands on
-      # the financial controller / super-admin cohort).
+      # Surfaces ONE aggregate task for global Stacks admins whenever
+      # there's at least one pending LedgerWithdrawalRequest in the
+      # queue — clicking it lands them on the pending scope of the
+      # index, not on a specific request. The subject is the oldest
+      # pending row so the cache descriptor is stable as long as any
+      # row remains pending; the display name + URL on StacksTask
+      # treat the request as an indicator for the whole queue.
       class LedgerWithdrawalRequests < Base
         def tasks
-          LedgerWithdrawalRequest
+          oldest_pending = LedgerWithdrawalRequest
             .pending
-            .includes(:ledger)
-            .map do |req|
-              task(
-                subject: req,
-                type: :ledger_withdrawal_request_needs_processing,
-                owners: @admin_fallback,
-              )
-            end
+            .order(:requested_at)
+            .first
+          return [] if oldest_pending.nil?
+
+          [
+            task(
+              subject: oldest_pending,
+              type: :ledger_withdrawal_request_needs_processing,
+              owners: @admin_fallback,
+            ),
+          ]
         end
       end
     end

@@ -1,4 +1,9 @@
 class LedgerWithdrawalRequest < ApplicationRecord
+  # Any change to processed_at / cancelled_at flips this row's
+  # discovery-eligibility, so bust the TaskBuilder cache on save/destroy
+  # so the next admin page render rebuilds the queue.
+  include BustsTaskCache
+
   PAID_VIA_DEEL = "deel".freeze
   PAID_VIA_QBO_BILL_PAY = "qbo_bill_pay".freeze
   PAID_VIA_MANUAL = "manual".freeze

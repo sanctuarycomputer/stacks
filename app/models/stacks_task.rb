@@ -48,7 +48,7 @@ class StacksTask
     missing_qbo_vendor_for_contributor: "Contributor needs a QBO vendor for this enterprise's ledger",
 
     # Withdrawal request issues
-    ledger_withdrawal_request_needs_processing: "Withdrawal request needs processing",
+    ledger_withdrawal_request_needs_processing: "You have pending ledger withdrawal requests",
   }.freeze
 
   # type    — Symbol classifying the task (:project_capsule_incomplete, :survey, …)
@@ -103,7 +103,16 @@ class StacksTask
     when PayCycle then "#{subject.enterprise.name} — #{subject.starts_at.to_s(:long)} to #{subject.ends_at.to_s(:long)}"
     when Ledger then "#{subject.contributor.forecast_person&.email || "Contributor ##{subject.contributor_id}"} on #{subject.enterprise.name}"
     when LedgerWithdrawalRequest
-      "#{subject.contributor.forecast_person&.email} on #{subject.enterprise.name} — #{ActionController::Base.helpers.number_to_currency(subject.total_amount)} (#{subject.bills.size} bills)"
+      # The discovery surfaces ONE aggregate task that stands in for the
+      # whole pending queue, so prefer a count-based label over the
+      # specific subject row's details. Falls back to per-row info if
+      # this is ever wired as a per-row task.
+      if type == :ledger_withdrawal_request_needs_processing
+        count = LedgerWithdrawalRequest.pending.count
+        "#{count} pending ledger withdrawal request#{"s" if count != 1}"
+      else
+        "#{subject.contributor.forecast_person&.email} on #{subject.enterprise.name} — #{ActionController::Base.helpers.number_to_currency(subject.total_amount)} (#{subject.bills.size} bills)"
+      end
     else
       subject.try(:display_name).presence || subject.try(:name).presence || subject.to_s
     end
@@ -126,7 +135,12 @@ class StacksTask
     when Stacks::Notion::Lead then subject.try(:notion_link) || subject.try(:external_link)
     when PayCycle then helpers.admin_enterprise_pay_cycle_path(subject.enterprise, subject)
     when Ledger then helpers.edit_admin_contributor_path(subject.contributor)
-    when LedgerWithdrawalRequest then helpers.admin_ledger_withdrawal_request_path(subject)
+    when LedgerWithdrawalRequest
+      if type == :ledger_withdrawal_request_needs_processing
+        helpers.admin_ledger_withdrawal_requests_path(scope: "pending")
+      else
+        helpers.admin_ledger_withdrawal_request_path(subject)
+      end
     else subject.try(:external_link)
     end
   end
