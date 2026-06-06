@@ -1,30 +1,15 @@
-<div class="dashboard-modules table index_table index" style="margin-top: 24px;">
-  <div class="dashboard-module">
-    <div class="module-header">
-      <p>🔌 This ledger isn't connected to QuickBooks yet</p>
-    </div>
-    <div class="module-body" style="padding: 16px;">
-      <p>
-        Your <strong><%= @missing_vendor_ledger.enterprise.name %></strong> ledger
-        doesn't have a QBO vendor record attached to your contributor account, so
-        we can't send a withdrawal request to QuickBooks.
-      </p>
-      <p>
-        Please ask the Stacks admin team to associate a QBO vendor record to your
-        Stacks contributor account on <strong><%= @missing_vendor_ledger.enterprise.name %></strong>.
-        Once that's set up, this page will let you submit a request.
-      </p>
-      <% if @missing_vendor_qbo_account.nil? %>
-        <p style="opacity: 0.7;">
-          <em>Heads up:</em> this enterprise isn't connected to a QuickBooks account
-          at all yet. The admin team will need to set that up first.
-        </p>
-      <% end %>
-      <p style="margin-top: 24px;">
-        <%= link_to "Back to ledger ↗",
-              admin_contributor_path(@missing_vendor_ledger.contributor, ledger: @missing_vendor_ledger.id),
-              class: "button" %>
-      </p>
-    </div>
-  </div>
-</div>
+<%
+  enterprise_name = @missing_vendor_ledger.enterprise.name
+  paragraphs = [
+    "Your <strong>#{ERB::Util.html_escape(enterprise_name)}</strong> ledger doesn't have a QBO vendor record attached to your contributor account, so we can't send a withdrawal request to QuickBooks.".html_safe,
+    "Please ask the Stacks admin team to associate a QBO vendor record to your Stacks contributor account on <strong>#{ERB::Util.html_escape(enterprise_name)}</strong>. Once that's set up, this page will let you submit a request.".html_safe,
+  ]
+  if @missing_vendor_qbo_account.nil?
+    paragraphs << "<em>Heads up:</em> this enterprise isn't connected to a QuickBooks account at all yet. The admin team will need to set that up first.".html_safe
+  end
+%>
+<%= render partial: "message_panel", locals: {
+  title: "🔌 This ledger isn't connected to QuickBooks yet",
+  paragraphs: paragraphs,
+  back_path: admin_contributor_path(@missing_vendor_ledger.contributor, ledger: @missing_vendor_ledger.id),
+} %>

@@ -220,18 +220,17 @@ ActiveAdmin.register LedgerWithdrawalRequest do
         .reverse
 
       if candidates.empty?
-        # No bills available — render the empty-state panel only. No Notes
-        # input, no submit button (there's nothing to submit), no Deel/QBO
-        # column. Just an explanation and a way back to the ledger.
-        panel "Nothing to request right now" do
-          para "No bills on your #{ledger.enterprise.name} ledger are ready to request payment for yet."
-          para "Anything that's not yet payable (e.g. waiting on cycle approval), already paid in QuickBooks, or already included in another open request won't show up here. Once a new bill becomes payable, come back and submit a request."
-          div(style: "margin-top: 16px;") do
-            a "Back to ledger ↗",
-              href: admin_contributor_path(ledger.contributor, ledger: ledger.id),
-              class: "button"
-          end
-        end
+        # No bills available — render the shared message panel (same chrome
+        # as the missing-QBO-vendor screen) instead of the AA panel default.
+        # No Notes input, no submit button — there's nothing to submit.
+        render partial: "admin/ledger_withdrawal_requests/message_panel", locals: {
+          title: "📭 Nothing to request right now",
+          paragraphs: [
+            "No bills on your #{ledger.enterprise.name} ledger are ready to request payment for yet.",
+            "Anything that's not yet payable (e.g. waiting on cycle approval), already paid in QuickBooks, or already included in another open request won't show up here. Once a new bill becomes payable, come back and submit a request.",
+          ],
+          back_path: admin_contributor_path(ledger.contributor, ledger: ledger.id),
+        }
       else
         f.semantic_errors
 

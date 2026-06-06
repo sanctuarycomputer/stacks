@@ -1,0 +1,21 @@
+<%# Shared panel for empty/error states on the withdrawal request flow.
+    Locals:
+      title       — string shown in the module header
+      paragraphs  — Array of strings, each rendered as its own <p>
+      back_path   — URL the "Back to ledger ↗" button points at
+%>
+<div class="dashboard-modules table index_table index" style="margin-top: 24px;">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p><%= title %></p>
+    </div>
+    <div class="module-body" style="padding: 16px;">
+      <% paragraphs.each do |p| %>
+        <p><%= p %></p>
+      <% end %>
+      <p style="margin-top: 24px;">
+        <%= link_to "Back to ledger ↗", back_path, class: "button" %>
+      </p>
+    </div>
+  </div>
+</div>
