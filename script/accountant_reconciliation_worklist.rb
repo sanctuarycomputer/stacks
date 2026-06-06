@@ -8,14 +8,57 @@
 #   - SyncsAsQboBill hosts drop out of balance when their QboBill mirror
 #     is Paid
 #
+# Ledgers whose contributor has NO QBO vendor mapping for the ledger's
+# enterprise QBO account are excluded entirely — items on those ledgers
+# can't sync as QBO Bills in the first place, so the cutover model has
+# nothing to act on. Most of the "missing data on either side" noise in
+# the previous report lived in exactly these ledgers (job@thedeskofjob,
+# info@driesbos, etc.).
+#
 # After the accountant goes through every affected contributor's open
 # QBO bills and marks the ones that have genuinely been paid, the
 # Stacks balance should converge to the QBO truth.
 
 QBO_HOST_KLASSES = [ContributorPayout, ContributorAdjustment, ProfitShare, Trueup, PayStub].freeze
 
-def post_cutover_balance(ledger_items)
+def eligible_ledger_ids_for(contributor)
+  contributor.ledgers.includes(:enterprise).filter_map do |l|
+    qa = l.enterprise.qbo_account
+    next nil if qa.nil?
+    vendor = contributor.qbo_vendor_for(qa)
+    next nil if vendor.nil?
+    l.id
+  end.to_set
+end
+
+def current_balance_filtered(ledger_items, eligible_ids)
   ledger_items[:all].reduce({ balance: 0, unsettled: 0 }) do |acc, li|
+    next acc unless li.respond_to?(:ledger_id) && eligible_ids.include?(li.ledger_id)
+    next acc if li.respond_to?(:deleted_at) && li.deleted_at.present?
+
+    case li
+    when ContributorPayout
+      if li.payable? then acc[:balance] += li.amount else acc[:unsettled] += li.amount end
+    when Reimbursement
+      if li.accepted? then acc[:balance] += li.amount else acc[:unsettled] += li.amount end
+    when Trueup
+      acc[:balance] += li.amount
+    when ProfitShare
+      if li.payable? then acc[:balance] += li.amount else acc[:unsettled] += li.amount end
+    when ContributorAdjustment
+      if li.payable? then acc[:balance] += li.amount else acc[:unsettled] += li.amount end
+    when PayStub
+      if li.payable? then acc[:balance] += li.amount else acc[:unsettled] += li.amount end
+    when DeelInvoiceAdjustment
+      acc[:balance] -= li.amount if li.deducts_balance?
+    end
+    acc
+  end
+end
+
+def post_cutover_balance(ledger_items, eligible_ids)
+  ledger_items[:all].reduce({ balance: 0, unsettled: 0 }) do |acc, li|
+    next acc unless li.respond_to?(:ledger_id) && eligible_ids.include?(li.ledger_id)
     next acc if li.respond_to?(:deleted_at) && li.deleted_at.present?
     next acc if li.is_a?(DeelInvoiceAdjustment)
     next acc if li.is_a?(ContributorAdjustment) && li.amount.to_f < 0
@@ -50,12 +93,17 @@ end
 open_bills_by_contributor = Hash.new { |h, k| h[k] = [] }
 
 QBO_HOST_KLASSES.each do |klass|
-  klass.where.not(qbo_bill_id: nil).includes(:ledger).find_each do |row|
+  klass.where.not(qbo_bill_id: nil).includes(ledger: :enterprise).find_each do |row|
     qb = row.qbo_bill rescue nil
     next if qb.nil? || qb.paid?
-    contributor_id = row.ledger&.contributor_id
-    next if contributor_id.nil?
-    open_bills_by_contributor[contributor_id] << {
+    contributor = row.ledger&.contributor
+    next if contributor.nil?
+    # Only count this open bill if the contributor has a QBO vendor
+    # mapping for the ledger's enterprise — otherwise the bill couldn't
+    # have synced in the first place.
+    qa = row.ledger.enterprise.qbo_account
+    next if qa.nil? || contributor.qbo_vendor_for(qa).nil?
+    open_bills_by_contributor[contributor.id] << {
       host_class: klass.name,
       host_id: row.id,
       qbo_url: qb.qbo_url,
@@ -72,13 +120,21 @@ candidate_ids = (dia_contrib_ids + neg_ca_contrib_ids + open_bills_by_contributo
 
 rows = []
 
+skipped_no_vendor = 0
+
 Contributor.unscoped.where(id: candidate_ids).find_each do |c|
   next if c.forecast_person.nil?
+  eligible_ids = eligible_ledger_ids_for(c)
+  if eligible_ids.empty?
+    skipped_no_vendor += 1
+    next
+  end
+
   c.preload_for_ledger_view!
   items = c.all_items_grouped_by_month(false)
 
-  current = c.new_deal_balance(items)
-  proposed = post_cutover_balance(items)
+  current = current_balance_filtered(items, eligible_ids)
+  proposed = post_cutover_balance(items, eligible_ids)
 
   d_bal = (proposed[:balance] - current[:balance]).to_f.round(2)
   open_bills = open_bills_by_contributor[c.id] || []
@@ -96,6 +152,9 @@ Contributor.unscoped.where(id: candidate_ids).find_each do |c|
     sum_open: sum_open,
   }
 end
+
+puts "Skipped #{skipped_no_vendor} contributors with no QBO vendor mapping on any ledger"
+puts
 
 total_d_bal = rows.sum { |r| r[:d_bal] }.round(2)
 sum_all_open = rows.sum { |r| r[:sum_open] }.round(2)
