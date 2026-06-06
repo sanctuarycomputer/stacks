@@ -73,6 +73,18 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
       end
     end
 
+    # Ledger withdrawal requests: any contributor can browse / submit / view
+    # them at the adapter level; the controller's verify_ledger_access!
+    # filters whose ledger they can request against.
+    if subject.is_a?(LedgerWithdrawalRequest) || subject == LedgerWithdrawalRequest
+      if user.forecast_person&.contributor.present?
+        return true if [:index, :new, :create, :read].include?(action)
+        if subject.is_a?(LedgerWithdrawalRequest) && subject.ledger.contributor_id == user.forecast_person.contributor.id
+          return true unless OWN_LEDGER_ITEM_DENY.include?(action)
+        end
+      end
+    end
+
     if subject.is_a?(Reimbursement) || subject == Reimbursement
       if user.forecast_person&.contributor.present?
         return true if action == :create

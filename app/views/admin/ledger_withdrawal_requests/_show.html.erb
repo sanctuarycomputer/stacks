@@ -1,0 +1,66 @@
+<h2>
+  Withdrawal Request #<%= resource.id %>
+  <small style="opacity: 0.7;">
+    <%= resource.contributor.forecast_person&.email %> · <%= resource.enterprise.name %>
+  </small>
+</h2>
+
+<div class="dashboard-modules table index_table index" style="margin-top: 16px;">
+  <div class="dashboard-module">
+    <div class="module-body factoid-parent" style="padding: 16px;">
+      <p style="margin: 0;">
+        <strong>Status:</strong>
+        <% if resource.cancelled? %>
+          <span class="pill error">Cancelled <%= resource.cancelled_at.to_date %></span>
+          <% if resource.cancelled_reason.present? %>
+            — <em><%= resource.cancelled_reason %></em>
+          <% end %>
+        <% elsif resource.processed? %>
+          <span class="pill accepted">Processed via <%= resource.paid_via %> on <%= resource.processed_at.to_date %></span>
+        <% else %>
+          <span class="pill pending">Pending</span>
+        <% end %>
+        &nbsp;·&nbsp;
+        <strong>Requested:</strong> <%= resource.requested_at.to_date %>
+        &nbsp;·&nbsp;
+        <strong>Total:</strong> <%= number_to_currency(resource.total_amount) %>
+        &nbsp;·&nbsp;
+        <strong>Bills:</strong> <%= resource.paid_bills.size %> / <%= resource.bills.size %> paid in QBO
+      </p>
+      <% if resource.notes.present? %>
+        <p style="margin: 12px 0 0;"><strong>Notes:</strong> <%= resource.notes %></p>
+      <% end %>
+    </div>
+  </div>
+</div>
+
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-top: 16px;">
+  <thead>
+    <tr>
+      <th>Bill</th>
+      <th>Amount (at request time)</th>
+      <th>Paid in QBO?</th>
+      <th class="text-right">QBO</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% resource.bills.each_with_index do |bill, idx| %>
+      <tr class="<%= idx.even? ? "even" : "odd" %>">
+        <td>#<%= bill.qbo_bill_id %></td>
+        <td><%= number_to_currency(bill.amount_snapshot) %></td>
+        <td>
+          <% if bill.paid? %>
+            <span class="pill accepted">Paid</span>
+          <% else %>
+            <span class="pill pending">Open</span>
+          <% end %>
+        </td>
+        <td class="text-right">
+          <% if bill.qbo_bill.present? %>
+            <%= link_to "Open in QBO ↗", bill.qbo_bill.qbo_url, target: "_blank", rel: "noopener" %>
+          <% end %>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
