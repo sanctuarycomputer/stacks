@@ -1,6 +1,12 @@
 <%# Bills selection table. Mirrors the structure used by
     contributors/_show.html.erb so it picks up the existing index_table /
-    .even / .odd styling for free. %>
+    .even / .odd styling for free.
+
+    Rows are pre-checked by default — most contributors want to request
+    everything they have available — and a header checkbox toggles them in
+    bulk. JS below recomputes the running total whenever a row toggles and
+    rewrites the submit button label so the contributor knows what they're
+    about to request before they click. %>
 <div class="dashboard-modules table index_table index" style="margin-top: 24px;">
   <div class="dashboard-module">
     <div class="module-header">
@@ -10,7 +16,9 @@
       <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="width: 100%;">
         <thead>
           <tr>
-            <th></th>
+            <th><%= check_box_tag "lwr_select_all", "1", true,
+                    class: "lwr-select-all",
+                    title: "Toggle all" %></th>
             <th>Date</th>
             <th>Type</th>
             <th>Amount</th>
@@ -21,7 +29,9 @@
           <% candidates.each_with_index do |row, idx| %>
             <% key = "#{row.qbo_account_id}:#{row.qbo_bill_id}" %>
             <tr class="<%= idx.even? ? "even" : "odd" %>">
-              <td><%= check_box_tag "ledger_withdrawal_request[selected_bill_keys][]", key, false %></td>
+              <td><%= check_box_tag "ledger_withdrawal_request[selected_bill_keys][]", key, true,
+                        class: "lwr-bill-checkbox",
+                        data: { amount: row.amount } %></td>
               <td><%= row.effective_on %></td>
               <td><%= row.description %></td>
               <td><%= number_to_currency(row.amount) %></td>
@@ -37,3 +47,59 @@
     </div>
   </div>
 </div>
+
+<script>
+(function() {
+  // Wire the header "select all" + per-row checkboxes to a running total
+  // shown on the form's submit button. We scope by class because the
+  // formtastic-rendered submit is the only [type="submit"] in this form.
+  var form = document.querySelector('form.ledger_withdrawal_request');
+  if (!form) return;
+
+  var bills = form.querySelectorAll('.lwr-bill-checkbox');
+  var selectAll = form.querySelector('.lwr-select-all');
+  var submit = form.querySelector('input[type="submit"]');
+  if (!submit || bills.length === 0) return;
+
+  function formatCurrency(n) {
+    return '$' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+
+  function recompute() {
+    var total = 0;
+    var count = 0;
+    bills.forEach(function(cb) {
+      if (cb.checked) {
+        total += parseFloat(cb.dataset.amount) || 0;
+        count++;
+      }
+    });
+    if (count === 0) {
+      submit.value = 'Select bills to request';
+      submit.disabled = true;
+    } else {
+      submit.value = 'Submit Withdrawal Request for ' + formatCurrency(total);
+      submit.disabled = false;
+    }
+  }
+
+  if (selectAll) {
+    selectAll.addEventListener('change', function() {
+      bills.forEach(function(cb) { cb.checked = selectAll.checked; });
+      recompute();
+    });
+  }
+
+  bills.forEach(function(cb) {
+    cb.addEventListener('change', function() {
+      if (selectAll) {
+        var allChecked = Array.prototype.every.call(bills, function(b) { return b.checked; });
+        selectAll.checked = allChecked;
+      }
+      recompute();
+    });
+  });
+
+  recompute();
+})();
+</script>

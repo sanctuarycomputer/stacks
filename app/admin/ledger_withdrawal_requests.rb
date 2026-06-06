@@ -246,8 +246,13 @@ ActiveAdmin.register LedgerWithdrawalRequest do
 
         render partial: "admin/ledger_withdrawal_requests/notes_panel", locals: { f: f }
 
+        # Initial label reflects "everything selected" (the default state on
+        # first render). JS in _bills_panel keeps it in sync as the user
+        # toggles rows.
+        initial_total = candidates.sum(&:amount)
         f.actions do
-          f.action :submit, label: "Submit Withdrawal Request"
+          f.action :submit,
+            label: "Submit Withdrawal Request for #{number_to_currency(initial_total)}"
           f.cancel_link(admin_contributor_path(ledger.contributor))
         end
       end
