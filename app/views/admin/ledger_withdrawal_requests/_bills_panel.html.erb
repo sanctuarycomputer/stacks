@@ -50,56 +50,65 @@
 
 <script>
 (function() {
-  // Wire the header "select all" + per-row checkboxes to a running total
-  // shown on the form's submit button. We scope by class because the
-  // formtastic-rendered submit is the only [type="submit"] in this form.
-  var form = document.querySelector('form.ledger_withdrawal_request');
-  if (!form) return;
+  // The submit button is emitted by f.actions AFTER this partial, so the
+  // DOM isn't fully assembled at script-parse time. Defer init until the
+  // doc is ready. Handles both regular page loads and the
+  // already-loaded-by-the-time-this-runs case (bfcache / dev reloads).
+  function init() {
+    var form = document.querySelector('form.ledger_withdrawal_request');
+    if (!form) return;
 
-  var bills = form.querySelectorAll('.lwr-bill-checkbox');
-  var selectAll = form.querySelector('.lwr-select-all');
-  var submit = form.querySelector('input[type="submit"]');
-  if (!submit || bills.length === 0) return;
+    var bills = form.querySelectorAll('.lwr-bill-checkbox');
+    var selectAll = form.querySelector('.lwr-select-all');
+    var submit = form.querySelector('input[type="submit"]');
+    if (!submit || bills.length === 0) return;
+
+    function recompute() {
+      var total = 0;
+      var count = 0;
+      bills.forEach(function(cb) {
+        if (cb.checked) {
+          total += parseFloat(cb.dataset.amount) || 0;
+          count++;
+        }
+      });
+      if (count === 0) {
+        submit.value = 'Select bills to request';
+        submit.disabled = true;
+      } else {
+        submit.value = 'Submit Withdrawal Request for ' + formatCurrency(total);
+        submit.disabled = false;
+      }
+    }
+
+    if (selectAll) {
+      selectAll.addEventListener('change', function() {
+        bills.forEach(function(cb) { cb.checked = selectAll.checked; });
+        recompute();
+      });
+    }
+
+    bills.forEach(function(cb) {
+      cb.addEventListener('change', function() {
+        if (selectAll) {
+          var allChecked = Array.prototype.every.call(bills, function(b) { return b.checked; });
+          selectAll.checked = allChecked;
+        }
+        recompute();
+      });
+    });
+
+    recompute();
+  }
 
   function formatCurrency(n) {
     return '$' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   }
 
-  function recompute() {
-    var total = 0;
-    var count = 0;
-    bills.forEach(function(cb) {
-      if (cb.checked) {
-        total += parseFloat(cb.dataset.amount) || 0;
-        count++;
-      }
-    });
-    if (count === 0) {
-      submit.value = 'Select bills to request';
-      submit.disabled = true;
-    } else {
-      submit.value = 'Submit Withdrawal Request for ' + formatCurrency(total);
-      submit.disabled = false;
-    }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
   }
-
-  if (selectAll) {
-    selectAll.addEventListener('change', function() {
-      bills.forEach(function(cb) { cb.checked = selectAll.checked; });
-      recompute();
-    });
-  }
-
-  bills.forEach(function(cb) {
-    cb.addEventListener('change', function() {
-      if (selectAll) {
-        var allChecked = Array.prototype.every.call(bills, function(b) { return b.checked; });
-        selectAll.checked = allChecked;
-      }
-      recompute();
-    });
-  });
-
-  recompute();
 })();
 </script>
