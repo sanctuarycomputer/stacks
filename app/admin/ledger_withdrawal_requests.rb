@@ -84,7 +84,7 @@ ActiveAdmin.register LedgerWithdrawalRequest do
 
       @missing_vendor_ledger = ledger
       @missing_vendor_qbo_account = qa
-      render :missing_qbo_vendor, status: :unprocessable_entity
+      render :missing_qbo_vendor, layout: "active_admin", status: :unprocessable_entity
     end
 
     def require_admin_for_processing!
