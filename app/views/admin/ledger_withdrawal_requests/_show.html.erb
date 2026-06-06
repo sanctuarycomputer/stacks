@@ -44,14 +44,22 @@
       deel_legal_entity_id: resource.enterprise.deel_legal_entity_id,
     )
 
-    # Default description lists each Bill that's being settled by this
-    # request so the line that lands in Deel reads like an itemized
-    # statement. Admin can still rewrite it inline before submitting.
+    # Default description is an itemized statement of every Bill this
+    # request is settling. One line per bill; each line names the source
+    # ledger item type (Contributor Payout / Pay Stub / etc.), the
+    # effective date when we can resolve it, the snapshot amount, and a
+    # deep link into QBO so the Deel recipient can verify. Admin can
+    # rewrite the whole thing inline before submit.
     bill_lines = resource.bills.includes(:qbo_account).map do |b|
-      effective = b.qbo_bill && b.qbo_bill.data.is_a?(Hash) ? b.qbo_bill.data["txn_date"] : nil
-      "##{b.qbo_bill_id} (#{number_to_currency(b.amount_snapshot)}#{effective ? ", #{effective}" : ""})"
+      parts = [b.host_label]
+      parts << b.host_effective_on.to_s if b.host_effective_on.present?
+      parts << number_to_currency(b.amount_snapshot)
+      qbo_url = b.qbo_bill&.qbo_url || "https://qbo.intuit.com/app/bill?&txnId=#{b.qbo_bill_id}"
+      "- #{parts.join(" — ")} (QBO Bill ##{b.qbo_bill_id}: #{qbo_url})"
     end
-    default_description = "Stacks withdrawal request ##{resource.id} — #{bill_lines.join("; ")}"
+
+    default_description = +"Stacks withdrawal request ##{resource.id} — settling the following bills:\n\n"
+    default_description << bill_lines.join("\n")
   %>
   <div class="dashboard-modules table index_table index" style="margin-top: 16px;">
     <div class="dashboard-module">
@@ -79,6 +87,14 @@
             <p>
               <label>Date submitted:</label><br />
               <%= date_field_tag :date_submitted, Date.current %>
+            </p>
+            <p>
+              <label style="display: inline-flex; align-items: center; gap: 6px;">
+                <%= check_box_tag :allow_overpayment, "1", false %>
+                Allow overpayment (skip the contributor's settled-balance check)
+              </label>
+              <br />
+              <span style="opacity: 0.6;">By default the Deel API call will fail if the amount exceeds the contributor's Stacks balance. Tick this only when you mean to advance a balance.</span>
             </p>
             <p><%= submit_tag "Process via Deel", class: "button", data: { confirm: "Submit a Deel invoice adjustment and mark this request processed?" } %></p>
           <% end %>

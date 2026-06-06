@@ -14,13 +14,17 @@ module LedgerWithdrawalRequests
       new(**kwargs).call
     end
 
-    def initialize(request:, processed_by:, contract_id:, description:, amount: nil, date_submitted: Date.current)
+    def initialize(request:, processed_by:, contract_id:, description:, amount: nil, date_submitted: Date.current, allow_overpayment: false)
       @request = request
       @processed_by = processed_by
       @contract_id = contract_id.to_s
       @description = description.to_s
       @amount = amount.presence # nil → fall back to request.total_amount
       @date_submitted = date_submitted
+      # Skipping the settled-balance cap is an admin-only override. Default
+      # false so a typo doesn't silently submit a withdrawal that exceeds
+      # the contributor's actual balance.
+      @allow_overpayment = allow_overpayment && @processed_by&.is_admin?
     end
 
     def call
@@ -33,7 +37,7 @@ module LedgerWithdrawalRequests
         amount: @amount || @request.total_amount,
         description: @description.presence || "Stacks withdrawal request ##{@request.id}",
         date_submitted: @date_submitted,
-        skip_balance_validation: @processed_by&.is_admin? || false,
+        skip_balance_validation: @allow_overpayment,
       )
 
       @request.update!(

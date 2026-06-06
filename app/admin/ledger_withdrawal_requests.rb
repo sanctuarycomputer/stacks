@@ -46,6 +46,7 @@ ActiveAdmin.register LedgerWithdrawalRequest do
       description: params[:description].to_s,
       amount: params[:amount].presence,
       date_submitted: params[:date_submitted].presence || Date.current,
+      allow_overpayment: ActiveModel::Type::Boolean.new.cast(params[:allow_overpayment]),
     )
     redirect_to admin_ledger_withdrawal_request_path(resource), notice: "Processed via Deel."
   rescue LedgerWithdrawalRequests::ProcessViaDeel::Error => e
