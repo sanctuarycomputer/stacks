@@ -12,8 +12,11 @@
         <strong>Status:</strong>
         <% if resource.cancelled? %>
           <span class="pill error">Cancelled <%= resource.cancelled_at.to_date %></span>
+          by <strong><%= resource.cancelled_by&.email || "(unknown)" %></strong>
           <% if resource.cancelled_reason.present? %>
             — <em><%= resource.cancelled_reason %></em>
+          <% else %>
+            <em>(no reason given)</em>
           <% end %>
         <% elsif resource.processed? %>
           <span class="pill accepted">Processed via <%= resource.paid_via %> on <%= resource.processed_at.to_date %></span>

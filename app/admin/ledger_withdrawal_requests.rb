@@ -15,16 +15,27 @@ ActiveAdmin.register LedgerWithdrawalRequest do
     end
   end
 
-  action_item :mark_processed_manual, only: :show, if: proc { resource.pending? && current_admin_user.is_admin? } do
-    link_to "Mark Processed",
-      mark_processed_admin_ledger_withdrawal_request_path(resource),
-      method: :post,
-      data: { confirm: "Mark this request processed without changing any bills?" }
-  end
-
   action_item :cancel, only: :show, if: proc { resource.pending? && current_admin_user.is_admin? } do
-    link_to "Cancel Request", cancel_admin_ledger_withdrawal_request_path(resource), method: :post,
-      data: { confirm: "Cancel this withdrawal request? Bills go back to selectable for the contributor." }
+    # Browser-prompt for the reason so the controller doesn't have to bounce
+    # through a separate form just to capture one string. JS submits the
+    # reason as a form param via a synthesized POST.
+    confirm_msg = "Cancel this withdrawal request? The bills go back to selectable for the contributor."
+    cancel_url = cancel_admin_ledger_withdrawal_request_path(resource)
+    link_to "Cancel Request", "#", onclick: <<~JS.html_safe
+      (function(){
+        if (!confirm(#{confirm_msg.to_json})) return false;
+        var reason = prompt("Reason for cancelling? (optional)");
+        if (reason === null) return false;
+        var token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+        var form = document.createElement('form');
+        form.method = 'post';
+        form.action = #{cancel_url.to_json};
+        var t = document.createElement('input'); t.type = 'hidden'; t.name = 'authenticity_token'; t.value = token; form.appendChild(t);
+        if (reason) { var r = document.createElement('input'); r.type = 'hidden'; r.name = 'reason'; r.value = reason; form.appendChild(r); }
+        document.body.appendChild(form); form.submit();
+        return false;
+      })(); return false;
+    JS
   end
 
   member_action :process_via_deel, method: :post do
@@ -40,16 +51,11 @@ ActiveAdmin.register LedgerWithdrawalRequest do
     redirect_to admin_ledger_withdrawal_request_path(resource), alert: e.message
   end
 
-  member_action :mark_processed, method: :post do
-    resource.update!(processed_at: Time.current, paid_via: LedgerWithdrawalRequest::PAID_VIA_MANUAL)
-    redirect_to admin_ledger_withdrawal_request_path(resource), notice: "Marked processed."
-  end
-
   member_action :cancel, method: :post do
     resource.update!(
       cancelled_at: Time.current,
       cancelled_by: current_admin_user,
-      cancelled_reason: params[:reason].to_s.presence || "Cancelled by admin",
+      cancelled_reason: params[:reason].to_s.presence,
     )
     redirect_to admin_ledger_withdrawal_request_path(resource), notice: "Request cancelled."
   end
@@ -59,7 +65,7 @@ ActiveAdmin.register LedgerWithdrawalRequest do
 
     before_action :require_ledger_param, only: [:new]
     before_action :verify_ledger_access!, only: [:new, :create]
-    before_action :require_admin_for_processing!, only: [:process_via_deel, :process_manual, :cancel]
+    before_action :require_admin_for_processing!, only: [:process_via_deel, :cancel]
 
     def require_admin_for_processing!
       return if current_admin_user.is_admin?
