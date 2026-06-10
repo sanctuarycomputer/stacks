@@ -262,3 +262,74 @@ class PayStubTest < ActiveSupport::TestCase
     cycle2.destroy
   end
 end
+
+class PayStubBillLinesTest < ActiveSupport::TestCase
+  setup do
+    Thread.current[:sanctuary_enterprise] = nil
+    @sanctuary = Enterprise.find_by!(name: Enterprise::SANCTUARY_NAME)
+    @qa = @sanctuary.qbo_account || QboAccount.create!(
+      enterprise: @sanctuary, client_id: "x", client_secret: "y", realm_id: "test_realm_#{SecureRandom.hex(4)}",
+    )
+    fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "ps#{SecureRandom.hex(2)}@x.com", data: {})
+    @contributor = Contributor.create!(forecast_person: fp)
+    @ledger = Ledger.find_or_create_for(enterprise: @sanctuary, contributor: @contributor)
+    @cycle = PayCycle.create!(enterprise: @sanctuary, starts_at: Date.new(2032, 1, 1), ends_at: Date.new(2032, 1, 31))
+
+    @facilities = QboChartAccount.create!(qbo_account: @qa, qbo_id: "880", name: "Facilities Management Salaries", data: {})
+    QboBillAccountMapping.create!(enterprise: @sanctuary, line_item_key: "pay_stub", qbo_chart_account_qbo_id: "880")
+  end
+
+  test "bill_line_items groups lines per forecast project at the pay_stub mapping" do
+    blueprint = { "lines" => [
+      { "amount" => 100.0, "hours" => 2.0, "forecast_project" => 111, "description" => "a" },
+      { "amount" => 50.0,  "hours" => 1.0, "forecast_project" => 111, "description" => "b" },
+      { "amount" => 25.0,  "hours" => 0.5, "forecast_project" => 222, "description" => "c" },
+    ] }
+    stub = PayStub.create!(pay_cycle: @cycle, ledger: @ledger, amount: 175, blueprint: blueprint)
+
+    lines = stub.bill_line_items
+
+    assert_equal 2, lines.size
+    amounts = lines.map(&:amount).sort
+    assert_equal [25.0, 150.0], amounts
+    lines.each do |line|
+      assert_equal "880", line.account_based_expense_line_detail.account_ref.value
+    end
+  end
+
+  test "bill_line_items honors a project-tracker-level pay_stub override" do
+    tracker = ProjectTracker.new(name: "PSO-#{SecureRandom.hex(2)}")
+    tracker.save!(validate: false)
+    fc = ForecastClient.create!(forecast_id: rand(1..2_000_000_000), name: "PSC-#{SecureRandom.hex(2)}", data: {})
+    fproj = ForecastProject.new(forecast_id: 333, client_id: fc.forecast_id, data: {})
+    fproj.save!(validate: false)
+    ProjectTrackerForecastProject.create!(project_tracker: tracker, forecast_project: fproj)
+
+    override_acct = QboChartAccount.create!(qbo_account: @qa, qbo_id: "881", name: "Special Salaries", data: {})
+    QboBillAccountMapping.create!(
+      enterprise: @sanctuary, line_item_key: "pay_stub",
+      project_tracker: tracker, qbo_chart_account_qbo_id: "881",
+    )
+
+    blueprint = { "lines" => [
+      { "amount" => 100.0, "hours" => 2.0, "forecast_project" => 333, "description" => "tracked" },
+      { "amount" => 50.0,  "hours" => 1.0, "forecast_project" => 999, "description" => "untracked" },
+    ] }
+    stub = PayStub.create!(pay_cycle: @cycle, ledger: @ledger, amount: 150, blueprint: blueprint)
+
+    lines = stub.bill_line_items
+
+    tracked = lines.find { |l| l.amount == 100.0 }
+    untracked = lines.find { |l| l.amount == 50.0 }
+    assert_equal "881", tracked.account_based_expense_line_detail.account_ref.value
+    assert_equal "880", untracked.account_based_expense_line_detail.account_ref.value
+  end
+
+  test "bill_line_items raises Qbo::UnmappedLineItemError when pay_stub is unmapped" do
+    QboBillAccountMapping.where(enterprise: @sanctuary, line_item_key: "pay_stub").destroy_all
+    blueprint = { "lines" => [{ "amount" => 10.0, "hours" => 1.0, "forecast_project" => 111, "description" => "x" }] }
+    stub = PayStub.create!(pay_cycle: @cycle, ledger: @ledger, amount: 10, blueprint: blueprint)
+
+    assert_raises(Qbo::UnmappedLineItemError) { stub.bill_line_items }
+  end
+end
