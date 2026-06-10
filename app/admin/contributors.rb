@@ -123,6 +123,25 @@ ActiveAdmin.register Contributor do
     )
   end
 
+  sidebar "QBO Bill Account Mappings", only: :show do
+    mappings = QboBillAccountMapping.where(contributor_id: resource.id).includes(:enterprise)
+    if mappings.any?
+      table_for mappings do
+        column("Enterprise") { |m| m.enterprise.name }
+        column("Line item", :line_item_key)
+        column("Account") { |m| m.chart_account&.display_label || m.qbo_chart_account_qbo_id }
+        column("") { |m| link_to "Edit", edit_admin_qbo_bill_account_mapping_path(m) }
+      end
+    else
+      para "No contributor-specific account overrides."
+    end
+    div do
+      link_to "Add override", new_admin_qbo_bill_account_mapping_path(
+        qbo_bill_account_mapping: { contributor_id: resource.id },
+      )
+    end
+  end
+
   form do |f|
     f.inputs do
       f.input :forecast_person, input_html: { disabled: true }

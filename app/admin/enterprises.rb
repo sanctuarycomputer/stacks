@@ -182,6 +182,61 @@ ActiveAdmin.register Enterprise do
       next
     end
 
+    panel "QBO Bill Account Mappings" do
+      defaults = QboBillAccountMapping
+        .where(enterprise: resource, contributor_id: nil, project_tracker_id: nil)
+        .index_by(&:line_item_key)
+      chart_by_qbo_id = QboChartAccount
+        .where(qbo_account_id: resource.qbo_account.id)
+        .index_by(&:qbo_id)
+
+      table_for QboBillAccountMapping::LINE_ITEM_KEYS do
+        column("Line item") { |key| key }
+        column("Entity default account") do |key|
+          m = defaults[key]
+          if m.nil?
+            status_tag("unmapped", class: "error")
+          else
+            chart_by_qbo_id[m.qbo_chart_account_qbo_id]&.display_label || m.qbo_chart_account_qbo_id
+          end
+        end
+        column("") do |key|
+          m = defaults[key]
+          if m
+            link_to "Edit", edit_admin_qbo_bill_account_mapping_path(m)
+          else
+            link_to "Set", new_admin_qbo_bill_account_mapping_path(
+              qbo_bill_account_mapping: { enterprise_id: resource.id, line_item_key: key },
+            )
+          end
+        end
+      end
+
+      overrides = QboBillAccountMapping
+        .where(enterprise: resource)
+        .where("contributor_id IS NOT NULL OR project_tracker_id IS NOT NULL")
+        .includes(:project_tracker)
+      begin
+        overrides = overrides.includes(:contributor)
+      rescue => e
+        Rails.logger.warn("[Admin::Enterprises] couldn't eager-load contributor on overrides: #{e.message}")
+      end
+      if overrides.any?
+        h4 "Overrides (#{overrides.size})"
+        table_for overrides.first(25) do
+          column("Subject") { |m| m.subject_label }
+          column("Line item", :line_item_key)
+          column("Account") { |m| chart_by_qbo_id[m.qbo_chart_account_qbo_id]&.display_label || m.qbo_chart_account_qbo_id }
+          column("") { |m| link_to "Edit", edit_admin_qbo_bill_account_mapping_path(m) }
+        end
+      end
+
+      div do
+        link_to "All mappings for this enterprise →",
+          admin_qbo_bill_account_mappings_path(q: { enterprise_id_eq: resource.id })
+      end
+    end
+
     COLORS = Stacks::Utils::COLORS
     accounting_method = session[:accounting_method] || "cash"
 
