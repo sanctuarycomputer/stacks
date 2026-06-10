@@ -19,9 +19,15 @@ module Qbo
   #   clients are all internal to the enterprise (the deleted
   #   ContributorPayout#find_qbo_account! internal-client override).
   #
-  # Accounts missing from the mirror are skipped and reported — affected
-  # line kinds then fail strictly at sync time, which is the agreed
-  # behavior.
+  # Accounts missing from the mirror are skipped and reported. A skipped
+  # ENTITY DEFAULT means that line kind fails strictly at sync time (the
+  # agreed behavior); skipped contributor/tracker overrides just fall
+  # through to the next resolution level, matching legacy semantics.
+  #
+  # Mixed-client trackers (internal AND external forecast clients) get NO
+  # Marketing row: legacy routed per invoice tracker (one client each), a
+  # per-project-tracker mapping can't express that split, and routing the
+  # external share to Marketing would be worse than falling back.
   class SeedBillAccountMappings
     CONTRACTOR_SERVICES_KEYS = %w[
       payout_individual_contributor
@@ -40,6 +46,10 @@ module Qbo
     def self.call(sync_chart_accounts: true)
       Enterprise.all.map do |enterprise|
         new(enterprise, sync_chart_accounts: sync_chart_accounts).call
+      rescue => e
+        # A dead OAuth token on one realm must not abort seeding the rest.
+        # Re-running the task is safe (idempotent), so capture and move on.
+        { enterprise: enterprise.name, created: 0, skipped: [], error: "#{e.class}: #{e.message}" }
       end
     end
 
@@ -82,10 +92,12 @@ module Qbo
       client_services = by_name("Contractors - Client Services")
       CONTRACTOR_SERVICES_KEYS.each { |key| upsert(key, client_services) }
 
-      bonuses = by_acct_num("5710")
+      # Legacy parity: QboBillLines fell back to the contractor default when
+      # the specific acct_num was missing from the realm.
+      bonuses = by_acct_num("5710") || client_services
       upsert("payout_account_lead_surplus", bonuses)
       upsert("payout_project_lead_surplus", bonuses)
-      upsert("payout_commission", by_acct_num("6120"))
+      upsert("payout_commission", by_acct_num("6120") || client_services)
 
       # Legacy parity: ProfitShare fell back to the contractor default when
       # acct 2340 was missing from the realm.

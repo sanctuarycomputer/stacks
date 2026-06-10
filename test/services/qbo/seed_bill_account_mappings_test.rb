@@ -82,6 +82,40 @@ class Qbo::SeedBillAccountMappingsTest < ActiveSupport::TestCase
       "five contractor-services kinds snapshotted"
   end
 
+  test "surpluses and commission fall back to the contractor default when 5710/6120 are absent (legacy parity)" do
+    @bonuses.destroy!
+    @commissions.destroy!
+    seed!
+    assert_equal "1", default_mapping("payout_account_lead_surplus").qbo_chart_account_qbo_id
+    assert_equal "1", default_mapping("payout_commission").qbo_chart_account_qbo_id
+  end
+
+  test "a tracker with mixed internal and external clients gets no Marketing rows" do
+    internal_fc = ForecastClient.create!(forecast_id: rand(1..2_000_000_000), name: "Int-#{SecureRandom.hex(2)}", data: {})
+    EnterpriseForecastClient.create!(enterprise: @enterprise, forecast_client: internal_fc)
+    external_fc = ForecastClient.create!(forecast_id: rand(1..2_000_000_000), name: "Ext-#{SecureRandom.hex(2)}", data: {})
+
+    tracker = ProjectTracker.new(name: "MIX-#{SecureRandom.hex(2)}")
+    tracker.save!(validate: false)
+    [internal_fc, external_fc].each do |fc|
+      fproj = ForecastProject.new(forecast_id: rand(1..2_000_000_000), client_id: fc.forecast_id, data: {})
+      fproj.save!(validate: false)
+      ProjectTrackerForecastProject.create!(project_tracker: tracker, forecast_project: fproj)
+    end
+
+    seed!
+
+    assert_equal 0, QboBillAccountMapping.where(enterprise: @enterprise, project_tracker: tracker).count,
+      "mixed-client trackers must not be routed to Marketing"
+  end
+
+  test "self.call isolates a failing enterprise and reports the error" do
+    Qbo::SeedBillAccountMappings.any_instance.stubs(:call).raises(RuntimeError, "token dead")
+    results = Qbo::SeedBillAccountMappings.call(sync_chart_accounts: false)
+    assert results.any?, "expected per-enterprise results"
+    assert results.all? { |r| r[:error].present? }, "errors should be captured per enterprise, not raised"
+  end
+
   test "maps internal-client project trackers to Marketing Services" do
     fc = ForecastClient.create!(forecast_id: rand(1..2_000_000_000), name: "Internal-#{SecureRandom.hex(2)}", data: {})
     EnterpriseForecastClient.create!(enterprise: @enterprise, forecast_client: fc)
