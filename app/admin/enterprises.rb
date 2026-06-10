@@ -215,12 +215,7 @@ ActiveAdmin.register Enterprise do
       overrides = QboBillAccountMapping
         .where(enterprise: resource)
         .where("contributor_id IS NOT NULL OR project_tracker_id IS NOT NULL")
-        .includes(:project_tracker)
-      begin
-        overrides = overrides.includes(:contributor)
-      rescue => e
-        Rails.logger.warn("[Admin::Enterprises] couldn't eager-load contributor on overrides: #{e.message}")
-      end
+        .includes(:contributor, :project_tracker)
       if overrides.any?
         h4 "Overrides (#{overrides.size})"
         table_for overrides.first(25) do

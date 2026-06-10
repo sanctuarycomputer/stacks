@@ -75,7 +75,7 @@ ActiveAdmin.register QboBillAccountMapping do
         collection: ProjectTracker.order(:name).pluck(:name, :id),
         include_blank: "(none — leave blank unless this is a project-tracker override)"
       f.input :contributor_id, as: :select,
-        collection: Contributor.all.map { |c| [c.display_name, c.id] },
+        collection: Contributor.includes(:forecast_person).map { |c| [c.display_name, c.id] },
         include_blank: "(none — leave blank unless this is a contributor override)",
         hint: "Set a project tracker OR a contributor, not both. Both blank = entity-level default."
       f.input :qbo_chart_account_qbo_id, as: :select,
