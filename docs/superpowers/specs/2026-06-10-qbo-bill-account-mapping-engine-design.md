@@ -25,7 +25,7 @@ for every line kind, overridable per contributor and per project tracker.
 
 ## Decisions (made during brainstorming)
 
-1. **Resolution precedence:** project tracker → contributor → studio → entity
+1. **Resolution precedence:** project tracker → contributor → entity
    default. Project tracker wins over contributor.
 2. **Unmapped is a hard error.** No silent fallback to legacy code; the
    legacy hard-coded routing is deleted.
@@ -33,8 +33,11 @@ for every line kind, overridable per contributor and per project tracker.
    reproduce today's behavior exactly, so day one is behavior-identical.
 4. **Payout bucket lines split per project tracker** so each line can carry
    its own account.
-5. **Studio is a fourth resolution level** (between contributor and entity),
-   preserving today's studio routing with one row per studio.
+5. **No studio level.** Three levels are easier to reason about than four.
+   Today's studio routing is preserved at seed time as a one-time snapshot:
+   contributor-level rows derived from each contributor's current studio.
+   Mappings do not follow studio changes afterward; admins adjust the
+   contributor rows.
 6. **Chart of accounts is mirrored locally** as `QboChartAccount`, following
    the existing `QboVendor`/`QboBill` mirror pattern. (In the QBO API the
    object is `Account`; that name is taken locally by the realm-connection
@@ -70,15 +73,15 @@ Table `qbo_bill_account_mappings`:
   `payout_account_lead_surplus`, `payout_project_lead_base`,
   `payout_project_lead_surplus`, `payout_commission`, `trueup`,
   `contributor_adjustment`, `profit_share`, `pay_stub`
-- `subject_type` / `subject_id` (polymorphic, nullable) — `ProjectTracker`,
-  `Contributor`, or `Studio`; `NULL` means entity-level default
+- `subject_type` / `subject_id` (polymorphic, nullable) — `ProjectTracker`
+  or `Contributor`; `NULL` means entity-level default
 - `qbo_chart_account_qbo_id` (string) — required; resolved against
   `QboChartAccount` scoped by the enterprise's realm (composite lookup, the
   same style `SyncsAsQboBill#qbo_bill` uses)
 - Unique index on `(enterprise_id, line_item_key, subject_type, subject_id)`
 
 Validations: the referenced chart account must exist and be active for the
-enterprise's `qbo_account`; `subject_type` must be one of the three allowed
+enterprise's `qbo_account`; `subject_type` must be one of the two allowed
 classes when present.
 
 ### 3. `Qbo::BillAccountResolver`
@@ -95,8 +98,7 @@ Lookup order for the `(enterprise, line_item_key)` pair:
 
 1. `subject = project_tracker` (when given)
 2. `subject = contributor`
-3. `subject = contributor.forecast_person.studio` (when present)
-4. `subject = NULL` (entity default)
+3. `subject = NULL` (entity default)
 
 First match wins. If no mapping matches, or the mapped chart account is
 missing or inactive, raise `Qbo::UnmappedLineItemError` naming the
@@ -121,7 +123,7 @@ doc_number, QBO API calls in `sync_qbo_bill!`) is unchanged.
   resolved with `project_tracker: nil`. The existing safety behavior is
   kept: out-of-sync blueprints and drifted bucket sums collapse to a single
   line, resolved as `payout_individual_contributor` with
-  `project_tracker: nil` (contributor → studio → entity), matching today's
+  `project_tracker: nil` (contributor → entity), matching today's
   collapse-to-default behavior.
 - **PayStub**: lines are already grouped per forecast project; each group
   resolves its project tracker via `ProjectTracker#forecast_project_ids` and
@@ -141,10 +143,13 @@ first, then write mappings reproducing today's behavior:
   acct num `5710`; `payout_commission` → acct num `6120`; `profit_share` →
   acct num `2340`; `pay_stub` → account named `"Facilities Management
   Salaries"`.
-- **Studio level:** for each studio with an `accounting_prefix`, map the five
-  contractor-services kinds (IC, AL base, PL base, trueup, adjustment) to
-  the account named `"Contractors - <first prefix>"` (garden3d: `"Total [SC]
-  Subcontractors"`).
+- **Contributor level (studio snapshot):** for each contributor whose
+  current studio (`contributor.forecast_person.studio`) has an
+  `accounting_prefix`, map the five contractor-services kinds (IC, AL base,
+  PL base, trueup, adjustment) to the account named
+  `"Contractors - <first prefix>"` (garden3d: `"Total [SC] Subcontractors"`).
+  This is a one-time snapshot of today's studio routing; it does not follow
+  later studio changes.
 - **Project-tracker level:** for each project tracker whose forecast client
   is internal to the enterprise, map IC, AL base, and PL base to
   `"Contractors - Marketing Services"`.
@@ -161,8 +166,8 @@ agreed behavior.
   `"Name (acct_num)"`. Below it, a table of all override rows for the
   enterprise (subject, line kind, account) with CRUD. Plus the
   "Refresh chart of accounts" action.
-- **ProjectTracker / Contributor / Studio pages:** a panel listing that
-  subject's mapping rows with add/edit/remove, scoped per enterprise.
+- **ProjectTracker / Contributor pages:** a panel listing that subject's
+  mapping rows with add/edit/remove, scoped per enterprise.
 - The Enterprise admin page's existing live `fetch_all_accounts` call
   (`enterprises.rb:183`) switches to the mirror.
 
@@ -174,7 +179,12 @@ agreed behavior.
   can be added without schema changes.
 - **Single-line fallback for out-of-sync payouts** resolves
   `payout_individual_contributor` with no project tracker (i.e., contributor
-  → studio → entity), which matches today's collapse-to-default behavior.
+  → entity), which matches today's collapse-to-default behavior.
+- **Studio routing no longer follows studio membership.** The seeded
+  contributor rows snapshot each contributor's studio account at migration
+  time; when a contributor changes studios, an admin updates their
+  contributor-level mappings (or removes them to fall back to the entity
+  default).
 - **Multi-tracker payouts produce more bill lines** than before (one per
   bucket × tracker). Totals are unchanged; QBO bill regeneration on already
   -synced bills will rewrite their line structure the next time they sync.
@@ -185,7 +195,7 @@ agreed behavior.
 
 - `Qbo::UnmappedLineItemError < StandardError` with a message like:
   `Enterprise "Sanctuary" has no QBO account mapping for payout_commission
-  (tried ProjectTracker#42, Contributor#7, Studio#3, entity default)`.
+  (tried ProjectTracker#42, Contributor#7, entity default)`.
 - Nightly chart-account sync logs a warning listing mappings whose chart
   account became inactive/missing, so finance hears about renames/deletions
   before a bill push fails.
@@ -193,7 +203,7 @@ agreed behavior.
 ## Testing
 
 - Resolver: precedence order, each level, strict error paths (no mapping;
-  inactive chart account), studio derivation from contributor.
+  inactive chart account).
 - `QboBillLines`: per-(bucket × tracker) splitting, unattributable entries,
   out-of-sync collapse, totals always equal `cp.amount`.
 - PayStub line generation with and without a matching project tracker.
