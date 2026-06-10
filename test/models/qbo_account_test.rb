@@ -203,4 +203,70 @@ class QboAccountTest < ActiveSupport::TestCase
 
     assert_equal fake_company_info, @qa.ping
   end
+
+  # ---------------------------------------------------------------------------
+  # sync_all_chart_accounts!
+  # ---------------------------------------------------------------------------
+
+  test "sync_all_chart_accounts! upserts mirror rows with metadata columns" do
+    fake = OpenStruct.new(
+      id: 99, name: "Bonuses", acct_num: "5710",
+      classification: "Expense", account_type: "Expense",
+      as_json: { "name" => "Bonuses", "current_balance" => 0 },
+    )
+    @qa.stubs(:fetch_all_accounts).returns([fake])
+
+    @qa.sync_all_chart_accounts!
+
+    row = QboChartAccount.find_by(qbo_account_id: @qa.id, qbo_id: "99")
+    assert_not_nil row
+    assert_equal "Bonuses", row.name
+    assert_equal "5710", row.acct_num
+    assert_equal "Expense", row.account_type
+    assert row.active?
+    assert_equal fake.as_json, row.data
+  end
+
+  test "sync_all_chart_accounts! is idempotent and updates changed names in place" do
+    fake = OpenStruct.new(id: 99, name: "Bonuses", acct_num: "5710", classification: "Expense", account_type: "Expense", as_json: {})
+    @qa.stubs(:fetch_all_accounts).returns([fake])
+    @qa.sync_all_chart_accounts!
+
+    renamed = OpenStruct.new(id: 99, name: "Bonuses & Awards", acct_num: "5710", classification: "Expense", account_type: "Expense", as_json: {})
+    @qa.stubs(:fetch_all_accounts).returns([renamed])
+    @qa.sync_all_chart_accounts!
+
+    rows = QboChartAccount.where(qbo_account_id: @qa.id, qbo_id: "99")
+    assert_equal 1, rows.count
+    assert_equal "Bonuses & Awards", rows.first.name
+  end
+
+  test "sync_all_chart_accounts! deactivates rows that disappear from QBO and reactivates returning ones" do
+    a = OpenStruct.new(id: "1", name: "Keep", acct_num: nil, classification: "Expense", account_type: "Expense", as_json: {})
+    b = OpenStruct.new(id: "2", name: "Gone", acct_num: nil, classification: "Expense", account_type: "Expense", as_json: {})
+    @qa.stubs(:fetch_all_accounts).returns([a, b])
+    @qa.sync_all_chart_accounts!
+
+    @qa.stubs(:fetch_all_accounts).returns([a])
+    @qa.sync_all_chart_accounts!
+
+    assert QboChartAccount.find_by(qbo_account_id: @qa.id, qbo_id: "1").active?
+    refute QboChartAccount.find_by(qbo_account_id: @qa.id, qbo_id: "2").active?
+
+    @qa.stubs(:fetch_all_accounts).returns([a, b])
+    @qa.sync_all_chart_accounts!
+    assert QboChartAccount.find_by(qbo_account_id: @qa.id, qbo_id: "2").active?, "returning account should reactivate"
+  end
+
+  test "sync_all_chart_accounts! is a no-op when QBO returns no accounts" do
+    a = OpenStruct.new(id: "1", name: "Keep", acct_num: nil, classification: "Expense", account_type: "Expense", as_json: {})
+    @qa.stubs(:fetch_all_accounts).returns([a])
+    @qa.sync_all_chart_accounts!
+
+    @qa.stubs(:fetch_all_accounts).returns([])
+    @qa.sync_all_chart_accounts!
+
+    assert QboChartAccount.find_by(qbo_account_id: @qa.id, qbo_id: "1").active?,
+      "an empty fetch (likely an API hiccup) must not deactivate the whole mirror"
+  end
 end
