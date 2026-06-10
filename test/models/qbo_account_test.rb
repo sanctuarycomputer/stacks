@@ -269,4 +269,33 @@ class QboAccountTest < ActiveSupport::TestCase
     assert QboChartAccount.find_by(qbo_account_id: @qa.id, qbo_id: "1").active?,
       "an empty fetch (likely an API hiccup) must not deactivate the whole mirror"
   end
+
+  test "sync_all_chart_accounts! logs a warning when a mapping points at a deactivated account" do
+    a = OpenStruct.new(id: "1", name: "Keep", acct_num: nil, classification: "Expense", account_type: "Expense", as_json: {})
+    b = OpenStruct.new(id: "2", name: "Mapped Then Gone", acct_num: nil, classification: "Expense", account_type: "Expense", as_json: {})
+    @qa.stubs(:fetch_all_accounts).returns([a, b])
+    @qa.sync_all_chart_accounts!
+
+    # save!(validate: false): the sanctuary enterprise has TWO fixture
+    # QboAccounts, and has_one :qbo_account may return the other one —
+    # the chart_account_exists_and_active validation would then look in
+    # the wrong realm. The warn path under test matches on enterprise_id
+    # + qbo_chart_account_qbo_id, which doesn't care.
+    QboBillAccountMapping.new(
+      enterprise: @enterprise, line_item_key: "trueup", qbo_chart_account_qbo_id: "2",
+    ).save!(validate: false)
+
+    old_logger = Rails.logger
+    io = StringIO.new
+    Rails.logger = Logger.new(io)
+    begin
+      @qa.stubs(:fetch_all_accounts).returns([a])
+      @qa.sync_all_chart_accounts!
+    ensure
+      Rails.logger = old_logger
+    end
+
+    assert_match(/no longer active/, io.string)
+    refute QboChartAccount.find_by(qbo_account_id: @qa.id, qbo_id: "2").active?
+  end
 end

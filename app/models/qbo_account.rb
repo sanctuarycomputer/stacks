@@ -240,11 +240,27 @@ class QboAccount < ApplicationRecord
     end
     return if data.empty?
 
-    QboChartAccount.upsert_all(data, unique_by: :index_qbo_chart_accounts_on_qbo_account_and_qbo_id)
-    QboChartAccount
-      .where(qbo_account_id: id, active: true)
-      .where.not(qbo_id: data.map { |d| d[:qbo_id] })
-      .update_all(active: false)
+    QboChartAccount.transaction do
+      QboChartAccount.upsert_all(data, unique_by: :index_qbo_chart_accounts_on_qbo_account_and_qbo_id)
+
+      newly_inactive = QboChartAccount
+        .where(qbo_account_id: id, active: true)
+        .where.not(qbo_id: data.map { |d| d[:qbo_id] })
+
+      # Surface mappings that point at a just-deactivated account BEFORE a
+      # bill sync hard-fails on them (strict resolver, no fallback).
+      affected = QboBillAccountMapping
+        .where(enterprise_id: enterprise_id, qbo_chart_account_qbo_id: newly_inactive.select(:qbo_id))
+      affected.find_each do |m|
+        Rails.logger.warn(
+          "[QboAccount#sync_all_chart_accounts!] mapping ##{m.id} (#{m.line_item_key}, #{m.subject_label}) " \
+          "points at QBO chart account #{m.qbo_chart_account_qbo_id} which is no longer active in realm #{realm_id} — " \
+          "bill syncs using it will fail until it's remapped"
+        )
+      end
+
+      newly_inactive.update_all(active: false)
+    end
   end
 
   def sync_all_bills!
