@@ -84,7 +84,7 @@ class PayStub < ApplicationRecord
       fp = projects_by_id[fp_id]
       project_name = fp&.display_name || "Forecast project ##{fp_id}"
       tracker = trackers.find { |pt| pt.forecast_project_ids.include?(fp_id) }
-      account = resolver.account_for("pay_stub", contributor: contributor, project_tracker: tracker)
+      account = resolver.account_for(bill_line_item_key, contributor: contributor, project_tracker: tracker)
 
       hours = group.sum { |l| l["hours"].to_f }.round(2)
       line_amount = group.sum { |l| l["amount"].to_f }.round(2)

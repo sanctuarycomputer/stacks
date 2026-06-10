@@ -325,6 +325,20 @@ class PayStubBillLinesTest < ActiveSupport::TestCase
     assert_equal "880", untracked.account_based_expense_line_detail.account_ref.value
   end
 
+  test "lines without a forecast_project group together and resolve contributor -> entity" do
+    blueprint = { "lines" => [
+      { "amount" => 30.0, "hours" => 1.0, "forecast_project" => nil, "description" => "x" },
+      { "amount" => 20.0, "hours" => 0.5, "description" => "y" },
+    ] }
+    stub = PayStub.create!(pay_cycle: @cycle, ledger: @ledger, amount: 50, blueprint: blueprint)
+
+    lines = stub.bill_line_items
+
+    assert_equal 1, lines.size, "nil and missing forecast_project entries form one group"
+    assert_equal 50.0, lines.first.amount
+    assert_equal "880", lines.first.account_based_expense_line_detail.account_ref.value
+  end
+
   test "bill_line_items raises Qbo::UnmappedLineItemError when pay_stub is unmapped" do
     QboBillAccountMapping.where(enterprise: @sanctuary, line_item_key: "pay_stub").destroy_all
     blueprint = { "lines" => [{ "amount" => 10.0, "hours" => 1.0, "forecast_project" => 111, "description" => "x" }] }
