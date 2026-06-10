@@ -32,4 +32,8 @@ class Trueup < ApplicationRecord
   def bill_doc_number_code
     "TU"
   end
+
+  def bill_line_item_key
+    "trueup"
+  end
 end

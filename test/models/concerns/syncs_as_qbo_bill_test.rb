@@ -146,13 +146,25 @@ class SyncsAsQboBillFailureModeTest < ActiveSupport::TestCase
   end
 
   # ---------------------------------------------------------------------------
-  # find_qbo_account! failure path
+  # bill_line_items via the mapping engine
   # ---------------------------------------------------------------------------
 
-  test "find_qbo_account! raises a descriptive error when enterprise has no qbo_account" do
-    stub = PayStub.create!(pay_cycle: @other_cycle, ledger: @other_ledger, amount: 100, blueprint: @blueprint)
-    err = assert_raises(RuntimeError) { stub.find_qbo_account! }
-    assert_match(/has no connected QboAccount/, err.message)
+  test "default bill_line_items raises Qbo::UnmappedLineItemError when nothing is mapped" do
+    adj = ContributorAdjustment.create!(ledger: @sanctuary_ledger, amount: 50, effective_on: Date.new(2031, 1, 15), qbo_account: @sanctuary_qa)
+    err = assert_raises(Qbo::UnmappedLineItemError) { adj.bill_line_items }
+    assert_match(/no QBO account mapping for contributor_adjustment/, err.message)
+  end
+
+  test "default bill_line_items builds a single line at the resolved chart account" do
+    QboChartAccount.create!(qbo_account: @sanctuary_qa, qbo_id: "777", name: "Contractors - Client Services", data: {})
+    QboBillAccountMapping.create!(enterprise: @sanctuary, line_item_key: "contributor_adjustment", qbo_chart_account_qbo_id: "777")
+
+    adj = ContributorAdjustment.create!(ledger: @sanctuary_ledger, amount: 50, effective_on: Date.new(2031, 1, 15), qbo_account: @sanctuary_qa)
+    lines = adj.bill_line_items
+
+    assert_equal 1, lines.size
+    assert_equal "777", lines.first.account_based_expense_line_detail.account_ref.value
+    assert_equal 50, lines.first.amount
   end
 
   # ---------------------------------------------------------------------------
