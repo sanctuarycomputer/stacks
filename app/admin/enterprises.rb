@@ -20,10 +20,26 @@ ActiveAdmin.register Enterprise do
     link_to "Regenerate Data", trigger_generate_snapshot_admin_enterprise_path(resource), method: :post
   end
 
+  action_item :refresh_chart_accounts, only: :show, if: proc { resource.qbo_account.present? } do
+    link_to "Refresh Chart of Accounts", refresh_chart_accounts_admin_enterprise_path(resource), method: :post
+  end
+
   member_action :trigger_generate_snapshot, method: :post do
     resource.qbo_account.sync_all!
+    resource.qbo_account.sync_all_chart_accounts!
     resource.generate_snapshot!
     redirect_to admin_enterprise_path(resource), notice: "Regenerated!"
+  end
+
+  member_action :refresh_chart_accounts, method: :post do
+    # The action_item is hidden without a qbo_account, but the endpoint is
+    # still reachable by direct POST — guard rather than 500.
+    if resource.qbo_account.blank?
+      redirect_to admin_enterprise_path(resource), alert: "No QBO account configured."
+      next
+    end
+    resource.qbo_account.sync_all_chart_accounts!
+    redirect_to admin_enterprise_path(resource), notice: "Chart of accounts refreshed from QuickBooks."
   end
 
   index download_links: false do
@@ -166,6 +182,56 @@ ActiveAdmin.register Enterprise do
       next
     end
 
+    panel "QBO Bill Account Mappings" do
+      defaults = QboBillAccountMapping
+        .where(enterprise: resource, contributor_id: nil, project_tracker_id: nil)
+        .index_by(&:line_item_key)
+      chart_by_qbo_id = QboChartAccount
+        .where(qbo_account_id: resource.qbo_account.id)
+        .index_by(&:qbo_id)
+
+      table_for QboBillAccountMapping::LINE_ITEM_KEYS do
+        column("Line item") { |key| key }
+        column("Entity default account") do |key|
+          m = defaults[key]
+          if m.nil?
+            status_tag("unmapped", class: "error")
+          else
+            chart_by_qbo_id[m.qbo_chart_account_qbo_id]&.display_label || m.qbo_chart_account_qbo_id
+          end
+        end
+        column("") do |key|
+          m = defaults[key]
+          if m
+            link_to "Edit", edit_admin_qbo_bill_account_mapping_path(m)
+          else
+            link_to "Set", new_admin_qbo_bill_account_mapping_path(
+              qbo_bill_account_mapping: { enterprise_id: resource.id, line_item_key: key },
+            )
+          end
+        end
+      end
+
+      overrides = QboBillAccountMapping
+        .where(enterprise: resource)
+        .where("contributor_id IS NOT NULL OR project_tracker_id IS NOT NULL")
+        .includes(:contributor, :project_tracker)
+      if overrides.any?
+        h4 "Overrides (#{overrides.size})"
+        table_for overrides.first(25) do
+          column("Subject") { |m| m.subject_label }
+          column("Line item", :line_item_key)
+          column("Account") { |m| chart_by_qbo_id[m.qbo_chart_account_qbo_id]&.display_label || m.qbo_chart_account_qbo_id }
+          column("") { |m| link_to "Edit", edit_admin_qbo_bill_account_mapping_path(m) }
+        end
+      end
+
+      div do
+        link_to "All mappings for this enterprise →",
+          admin_qbo_bill_account_mappings_path(q: { enterprise_id_eq: resource.id })
+      end
+    end
+
     COLORS = Stacks::Utils::COLORS
     accounting_method = session[:accounting_method] || "cash"
 
@@ -180,7 +246,13 @@ ActiveAdmin.register Enterprise do
     current_gradation =
       default_gradation unless all_gradations.include?(current_gradation)
 
-    qbo_accounts = resource.qbo_account.fetch_all_accounts
+    # Read bank/CC balances from the local chart-of-accounts mirror (synced
+    # daily + via the Refresh / Regenerate actions) instead of a live QBO
+    # fetch on every page load. Prime the mirror lazily on first view.
+    if QboChartAccount.active.where(qbo_account_id: resource.qbo_account.id).none?
+      resource.qbo_account.sync_all_chart_accounts!
+    end
+    qbo_accounts = QboChartAccount.active.where(qbo_account_id: resource.qbo_account.id)
     cc_or_bank_accounts = qbo_accounts.select do |a|
       ["Bank", "Credit Card"].include?(a.account_type)
     end

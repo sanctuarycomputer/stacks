@@ -37,4 +37,8 @@ class ContributorAdjustment < ApplicationRecord
   def bill_doc_number_code
     "CA"
   end
+
+  def bill_line_item_key
+    "contributor_adjustment"
+  end
 end

@@ -31,20 +31,12 @@ class ProfitShare < ApplicationRecord
     end
   end
 
-  # Profit-share bills accrue to the dedicated liability account so finance
-  # can track total profit-sharing exposure separately from contractor
-  # expenses. Match by `acct_num` (canonical chart-of-accounts identifier,
-  # more stable than name across rename events). Falls back to the
-  # default SyncsAsQboBill routing if the account doesn't exist in QBO.
-  PROFIT_SHARE_LIABILITY_ACCT_NUM = "2340".freeze  # Accrued Profit Sharing
-
-  def find_qbo_account!(qbo_accounts = nil)
-    qa = qbo_account_for_bill
-    raise "Enterprise has no qbo_account" if qa.nil?
-    qbo_accounts ||= qa.fetch_all_accounts
-    specific = qbo_accounts.find { |a| a.respond_to?(:acct_num) && a.acct_num == PROFIT_SHARE_LIABILITY_ACCT_NUM }
-    return [specific, nil] if specific.present?
-    super(qbo_accounts)
+  # Profit-share bills accrue to the account mapped for "profit_share" —
+  # seeded to the dedicated liability account (acct 2340, Accrued Profit
+  # Sharing) so finance can track exposure separately from contractor
+  # expenses. See Qbo::BillAccountResolver.
+  def bill_line_item_key
+    "profit_share"
   end
 
   # SyncsAsQboBill contract

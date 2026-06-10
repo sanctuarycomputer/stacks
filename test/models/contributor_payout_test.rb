@@ -68,15 +68,17 @@ class ContributorPayoutTest < ActiveSupport::TestCase
   end
 
   test "bill_line_items delegates to ContributorPayouts::QboBillLines and converts hashes to BillLineItem objects" do
-    account = OpenStruct.new(id: 999_888)
+    account = OpenStruct.new(qbo_id: "55")
     fixture = [
       { amount: 250.0, description: "# Individual Contributor\nABC-1 Foo", account: account },
       { amount: 75.5,  description: "# Commission\nDEF-2 Bar",            account: account },
     ]
-    ContributorPayouts::QboBillLines.any_instance.stubs(:call).returns(fixture)
+    fake_lines = mock("qbo_bill_lines")
+    fake_lines.expects(:call).returns(fixture)
+    ContributorPayouts::QboBillLines.expects(:new).with(instance_of(ContributorPayout)).returns(fake_lines)
 
     cp = ContributorPayout.new
-    lines = cp.bill_line_items([])
+    lines = cp.bill_line_items
 
     assert_kind_of Array, lines
     assert_equal fixture.length, lines.length
@@ -86,7 +88,7 @@ class ContributorPayoutTest < ActiveSupport::TestCase
       assert_equal data[:description], line.description
       assert_equal data[:amount], line.amount.to_f
       assert line.account_based_expense_item?
-      assert_equal data[:account].id.to_s, line.account_based_expense_line_detail.account_ref.value.to_s
+      assert_equal "55", line.account_based_expense_line_detail.account_ref.value.to_s
     end
   end
 

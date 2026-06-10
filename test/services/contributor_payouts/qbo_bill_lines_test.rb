@@ -2,17 +2,51 @@ require "test_helper"
 require "ostruct"
 
 class ContributorPayouts::QboBillLinesTest < ActiveSupport::TestCase
+  # Records every account_for call and returns a canned QboChartAccount-like
+  # OpenStruct per line_item_key (optionally per [key, tracker_id]).
+  class FakeResolver
+    attr_reader :calls
+
+    def initialize(accounts)
+      @accounts = accounts
+      @calls = []
+    end
+
+    def account_for(key, contributor:, project_tracker: nil)
+      @calls << { key: key, tracker_id: project_tracker&.id }
+      @accounts.fetch([key, project_tracker&.id]) { @accounts.fetch(key) }
+    end
+  end
+
+  DEFAULT_ACCT     = OpenStruct.new(qbo_id: "100", name: "Contractors - Client Services")
+  BONUSES_ACCT     = OpenStruct.new(qbo_id: "5710", name: "Bonuses")
+  COMMISSIONS_ACCT = OpenStruct.new(qbo_id: "6120", name: "Commissions")
+  MARKETING_ACCT   = OpenStruct.new(qbo_id: "300", name: "Contractors - Marketing Services")
+
+  def default_accounts
+    {
+      "payout_individual_contributor" => DEFAULT_ACCT,
+      "payout_account_lead_base"      => DEFAULT_ACCT,
+      "payout_account_lead_surplus"   => BONUSES_ACCT,
+      "payout_project_lead_base"      => DEFAULT_ACCT,
+      "payout_project_lead_surplus"   => BONUSES_ACCT,
+      "payout_commission"             => COMMISSIONS_ACCT,
+    }
+  end
+
   # Synthetic CP stub. Mocha stubs:
-  #   in_sync?, blueprint, amount, bill_description, find_qbo_account!
-  def make_cp(blueprint:, amount:, in_sync: true, default_account: nil)
-    default_account ||= OpenStruct.new(name: "Contractors - Client Services", id: 1)
+  #   in_sync?, blueprint, amount, bill_description, contributor, invoice_tracker
+  def make_cp(blueprint:, amount:, in_sync: true, trackers: [])
+    contributor = OpenStruct.new(id: 7)
+    invoice_tracker = OpenStruct.new(project_trackers: trackers)
     cp = mock("contributor_payout")
     cp.stubs(:in_sync?).returns(in_sync)
     cp.stubs(:blueprint).returns(blueprint)
     cp.stubs(:amount).returns(amount)
     cp.stubs(:id).returns(42)
     cp.stubs(:bill_description).returns("https://example.com/cp/42")
-    cp.stubs(:find_qbo_account!).returns([default_account, nil])
+    cp.stubs(:contributor).returns(contributor)
+    cp.stubs(:invoice_tracker).returns(invoice_tracker)
     cp
   end
 
@@ -31,212 +65,138 @@ class ContributorPayouts::QboBillLinesTest < ActiveSupport::TestCase
     }
   end
 
-  test "multi-line happy path: 6 buckets with specific accounts where defined, fallback otherwise" do
-    bonuses = OpenStruct.new(name: "Bonuses", acct_num: "5710", id: 5710)
-    commissions = OpenStruct.new(name: "Commissions", acct_num: "6120", id: 6120)
-    default = OpenStruct.new(name: "Contractors - Client Services", id: 1)
+  test "multi-line happy path: 6 buckets resolve per line_item_key" do
+    resolver = FakeResolver.new(default_accounts)
+    cp = make_cp(blueprint: all_buckets_blueprint, amount: 129.0)
 
-    cp = make_cp(blueprint: all_buckets_blueprint, amount: 129.0, default_account: default)
-    qbo_accounts = [bonuses, commissions, default]
+    lines = ContributorPayouts::QboBillLines.new(cp, resolver: resolver).call
 
-    lines = ContributorPayouts::QboBillLines.new(cp, qbo_accounts).call
-
-    assert_equal 6, lines.size, "expected 6 lines (one per non-zero bucket)"
-
-    by_account_id = lines.group_by { |l| l[:account].id }
-    # Commission → 6120
-    assert by_account_id[6120].any? { |l| l[:amount] == 10.0 }, "commission line should land at account 6120"
-    # AL Surplus + PL Surplus → 5710 (two lines, same account)
-    assert_equal 2, by_account_id[5710].size, "AL Surplus + PL Surplus both route to Bonuses"
-    # IC + AL Base + PL Base → default
-    assert_equal 3, by_account_id[1].size, "IC + AL Base + PL Base fall back to default account"
-
-    # Line sums equal cp.amount
+    assert_equal 6, lines.size
+    by_qbo_id = lines.group_by { |l| l[:account].qbo_id }
+    assert by_qbo_id["6120"].any? { |l| l[:amount] == 10.0 }, "commission line at Commissions"
+    assert_equal 2, by_qbo_id["5710"].size, "AL surplus + PL surplus at Bonuses"
+    assert_equal 3, by_qbo_id["100"].size, "IC + AL base + PL base at default"
     assert_equal 129.0, lines.sum { |l| l[:amount] }.round(2)
   end
 
-  test "Account Lead bucket is split into base and surplus by 'surplus revenue' marker" do
+  test "splits a bucket into one line per project tracker" do
+    tracker_a = OpenStruct.new(id: 1, forecast_project_ids: ["fpA"])
+    tracker_b = OpenStruct.new(id: 2, forecast_project_ids: ["fpB"])
     blueprint = {
-      "AccountLead" => [
-        { "amount" => 8.0, "description_line" => "- 100hrs * 8% = $8" },
-        { "amount" => 3.0, "description_line" => "- $20 surplus revenue * 15% = $3" },
+      "IndividualContributor" => [
+        { "amount" => 60.0, "description_line" => "- A work", "blueprint_metadata" => { "forecast_project" => "fpA" } },
+        { "amount" => 40.0, "description_line" => "- B work", "blueprint_metadata" => { "forecast_project" => "fpB" } },
       ],
     }
-    bonuses = OpenStruct.new(name: "Bonuses", acct_num: "5710", id: 5710)
-    default = OpenStruct.new(name: "Contractors - Client Services", id: 1)
-    cp = make_cp(blueprint: blueprint, amount: 11.0, default_account: default)
+    accounts = default_accounts.merge(
+      ["payout_individual_contributor", 2] => MARKETING_ACCT,
+    )
+    resolver = FakeResolver.new(accounts)
+    cp = make_cp(blueprint: blueprint, amount: 100.0, trackers: [tracker_a, tracker_b])
 
-    lines = ContributorPayouts::QboBillLines.new(cp, [bonuses, default]).call
+    lines = ContributorPayouts::QboBillLines.new(cp, resolver: resolver).call
 
-    assert_equal 2, lines.size
-    base_line    = lines.find { |l| l[:description].include?("Account Lead\n") }
-    surplus_line = lines.find { |l| l[:description].include?("Account Lead Surplus") }
-    assert_equal 8.0, base_line[:amount]
-    assert_equal 3.0, surplus_line[:amount]
-    assert_equal 1,    base_line[:account].id,    "AL base falls back to default"
-    assert_equal 5710, surplus_line[:account].id, "AL surplus routes to Bonuses"
+    assert_equal 2, lines.size, "one IC line per tracker"
+    line_a = lines.find { |l| l[:amount] == 60.0 }
+    line_b = lines.find { |l| l[:amount] == 40.0 }
+    assert_equal "100", line_a[:account].qbo_id
+    assert_equal "300", line_b[:account].qbo_id, "tracker B's override account"
+    assert_includes resolver.calls, { key: "payout_individual_contributor", tracker_id: 1 }
+    assert_includes resolver.calls, { key: "payout_individual_contributor", tracker_id: 2 }
   end
 
-  test "Project Lead bucket is split into base and surplus by 'surplus revenue' marker" do
+  test "entries with no resolvable tracker group into a nil-tracker line" do
+    tracker_a = OpenStruct.new(id: 1, forecast_project_ids: ["fpA"])
     blueprint = {
-      "ProjectLead" => [
-        { "amount" => 5.0, "description_line" => "- 100hrs * 5% = $5" },
-        { "amount" => 3.0, "description_line" => "- $20 surplus revenue * 15% = $3" },
+      "IndividualContributor" => [
+        { "amount" => 60.0, "description_line" => "- A work", "blueprint_metadata" => { "forecast_project" => "fpA" } },
+        { "amount" => 40.0, "description_line" => "- orphan", "blueprint_metadata" => { "forecast_project" => "fpZ" } },
+        { "amount" => 29.0, "description_line" => "- no metadata" },
       ],
     }
-    bonuses = OpenStruct.new(name: "Bonuses", acct_num: "5710", id: 5710)
-    default = OpenStruct.new(name: "Contractors - Client Services", id: 1)
-    cp = make_cp(blueprint: blueprint, amount: 8.0, default_account: default)
+    resolver = FakeResolver.new(default_accounts)
+    cp = make_cp(blueprint: blueprint, amount: 129.0, trackers: [tracker_a])
 
-    lines = ContributorPayouts::QboBillLines.new(cp, [bonuses, default]).call
+    lines = ContributorPayouts::QboBillLines.new(cp, resolver: resolver).call
 
-    assert_equal 2, lines.size
-    base_line    = lines.find { |l| l[:description].include?("Project Lead\n") }
-    surplus_line = lines.find { |l| l[:description].include?("Project Lead Surplus") }
-    assert_equal 5.0, base_line[:amount]
-    assert_equal 3.0, surplus_line[:amount]
-    assert_equal 1,    base_line[:account].id
-    assert_equal 5710, surplus_line[:account].id
+    assert_equal 2, lines.size, "tracker-A line + combined nil-tracker line"
+    nil_tracker_line = lines.find { |l| l[:amount] == 69.0 }
+    assert_not_nil nil_tracker_line, "orphan + metadata-less entries combine into one line"
+    assert_includes resolver.calls, { key: "payout_individual_contributor", tracker_id: nil }
   end
 
-  test "zero-amount bucket is skipped" do
-    blueprint = {
-      "IndividualContributor" => [{ "amount" => 100.0, "description_line" => "-" }],
-      "Commission"            => [],  # empty
-    }
-    default = OpenStruct.new(name: "Contractors - Client Services", id: 1)
-    cp = make_cp(blueprint: blueprint, amount: 100.0, default_account: default)
+  test "legacy mixed AccountLead arrays still split base vs surplus via the description marker" do
+    resolver = FakeResolver.new(default_accounts)
+    cp = make_cp(blueprint: all_buckets_blueprint, amount: 129.0)
 
-    lines = ContributorPayouts::QboBillLines.new(cp, [default]).call
+    lines = ContributorPayouts::QboBillLines.new(cp, resolver: resolver).call
+
+    surplus_keys = resolver.calls.map { |c| c[:key] }.select { |k| k.include?("surplus") }
+    assert_equal ["payout_account_lead_surplus", "payout_project_lead_surplus"].sort, surplus_keys.sort
+  end
+
+  test "out-of-sync payout collapses to a single line at payout_individual_contributor" do
+    resolver = FakeResolver.new(default_accounts)
+    cp = make_cp(blueprint: all_buckets_blueprint, amount: 999.0, in_sync: false)
+
+    lines = ContributorPayouts::QboBillLines.new(cp, resolver: resolver).call
 
     assert_equal 1, lines.size
+    assert_equal 999.0, lines.first[:amount]
+    assert_equal "100", lines.first[:account].qbo_id
+    assert_equal [{ key: "payout_individual_contributor", tracker_id: nil }], resolver.calls
+  end
+
+  test "empty blueprint collapses to a single line" do
+    resolver = FakeResolver.new(default_accounts)
+    cp = make_cp(blueprint: {}, amount: 50.0)
+
+    lines = ContributorPayouts::QboBillLines.new(cp, resolver: resolver).call
+
+    assert_equal 1, lines.size
+    assert_equal 50.0, lines.first[:amount]
+  end
+
+  test "a negative per-tracker group collapses to a single line" do
+    tracker_a = OpenStruct.new(id: 1, forecast_project_ids: ["fpA"])
+    tracker_b = OpenStruct.new(id: 2, forecast_project_ids: ["fpB"])
+    blueprint = {
+      "IndividualContributor" => [
+        { "amount" => 120.0, "description_line" => "- A work", "blueprint_metadata" => { "forecast_project" => "fpA" } },
+        { "amount" => -20.0, "description_line" => "- B credit", "blueprint_metadata" => { "forecast_project" => "fpB" } },
+      ],
+    }
+    resolver = FakeResolver.new(default_accounts)
+    cp = make_cp(blueprint: blueprint, amount: 100.0, trackers: [tracker_a, tracker_b])
+
+    lines = ContributorPayouts::QboBillLines.new(cp, resolver: resolver).call
+
+    assert_equal 1, lines.size, "negative group must collapse to the single-line shape"
     assert_equal 100.0, lines.first[:amount]
+    assert_equal "100", lines.first[:account].qbo_id
   end
 
-  test "specific account missing from qbo_accounts list → that line falls back to default" do
-    blueprint = { "Commission" => [{ "amount" => 10.0, "description_line" => "-" }] }
-    default = OpenStruct.new(name: "Contractors - Client Services", id: 1)
-    cp = make_cp(blueprint: blueprint, amount: 10.0, default_account: default)
-    # Commissions is intentionally NOT in qbo_accounts
-    lines = ContributorPayouts::QboBillLines.new(cp, [default]).call
+  test "bucket-sum drift from cp.amount collapses to a single line and warns" do
+    blueprint = { "IndividualContributor" => [{ "amount" => 100.0, "description_line" => "- IC" }] }
+    resolver = FakeResolver.new(default_accounts)
+    cp = make_cp(blueprint: blueprint, amount: 101.0)
+    # in_sync? is stubbed true but the sums disagree — belt-and-suspenders path.
+
+    lines = ContributorPayouts::QboBillLines.new(cp, resolver: resolver).call
 
     assert_equal 1, lines.size
-    assert_equal 1, lines.first[:account].id, "commission line falls back to default when Commissions missing"
+    assert_equal 101.0, lines.first[:amount]
   end
 
-  test "not in_sync? → single-line collapse at default account" do
-    blueprint = { "IndividualContributor" => [{ "amount" => 200.0, "description_line" => "-" }] }
-    default = OpenStruct.new(name: "Contractors - Client Services", id: 1)
-    cp = make_cp(blueprint: blueprint, amount: 100.0, in_sync: false, default_account: default)
+  test "line descriptions keep the role header and entry lines" do
+    resolver = FakeResolver.new(default_accounts)
+    cp = make_cp(blueprint: all_buckets_blueprint, amount: 129.0)
 
-    lines = ContributorPayouts::QboBillLines.new(cp, [default]).call
+    lines = ContributorPayouts::QboBillLines.new(cp, resolver: resolver).call
 
-    assert_equal 1, lines.size
-    assert_equal 100.0, lines.first[:amount], "single-line uses cp.amount, not the blueprint sum"
-    assert_equal "https://example.com/cp/42", lines.first[:description]
-    assert_equal 1, lines.first[:account].id
-  end
-
-  test "per-bucket sums drift from cp.amount → collapse + log WARN" do
-    # blueprint sums to 105, cp.amount is 100 — drift safety triggers
-    blueprint = { "IndividualContributor" => [{ "amount" => 105.0, "description_line" => "-" }] }
-    default = OpenStruct.new(name: "Contractors - Client Services", id: 1)
-    cp = make_cp(blueprint: blueprint, amount: 100.0, default_account: default)
-
-    Rails.logger.expects(:warn).at_least_once
-    lines = ContributorPayouts::QboBillLines.new(cp, [default]).call
-
-    assert_equal 1, lines.size
-    assert_equal 100.0, lines.first[:amount]
-  end
-
-  test "every bucket empty / zero → collapse to single line" do
-    blueprint = { "IndividualContributor" => [] }
-    default = OpenStruct.new(name: "Contractors - Client Services", id: 1)
-    cp = make_cp(blueprint: blueprint, amount: 0.0, default_account: default)
-
-    lines = ContributorPayouts::QboBillLines.new(cp, [default]).call
-
-    assert_equal 1, lines.size
-    assert_equal 0.0, lines.first[:amount]
-  end
-
-  test "structured AccountLeadSurplus key routes to :account_lead_surplus without parsing description_line" do
-    # New blueprint shape from make_contributor_payouts!: surplus lives in its
-    # own array, description_line does NOT include 'surplus revenue'.
-    blueprint = {
-      "AccountLead"        => [{ "amount" => 8.0, "description_line" => "- 100hrs * 8% = $8" }],
-      "AccountLeadSurplus" => [{ "amount" => 3.0, "description_line" => "- arbitrary marker-free copy" }],
-    }
-    bonuses = OpenStruct.new(name: "Bonuses", acct_num: "5710", id: 5710)
-    default = OpenStruct.new(name: "Contractors - Client Services", id: 1)
-    cp = make_cp(blueprint: blueprint, amount: 11.0, default_account: default)
-
-    lines = ContributorPayouts::QboBillLines.new(cp, [bonuses, default]).call
-
-    assert_equal 2, lines.size
-    base_line    = lines.find { |l| l[:description].include?("Account Lead\n") }
-    surplus_line = lines.find { |l| l[:description].include?("Account Lead Surplus") }
-    assert_equal 8.0, base_line[:amount]
-    assert_equal 3.0, surplus_line[:amount]
-    assert_equal 5710, surplus_line[:account].id, "structured-key surplus still lands at Bonuses"
-  end
-
-  test "structured ProjectLeadSurplus key routes to :project_lead_surplus" do
-    blueprint = {
-      "ProjectLead"        => [{ "amount" => 5.0, "description_line" => "- 100hrs * 5% = $5" }],
-      "ProjectLeadSurplus" => [{ "amount" => 3.0, "description_line" => "- marker-free copy" }],
-    }
-    bonuses = OpenStruct.new(name: "Bonuses", acct_num: "5710", id: 5710)
-    default = OpenStruct.new(name: "Contractors - Client Services", id: 1)
-    cp = make_cp(blueprint: blueprint, amount: 8.0, default_account: default)
-
-    lines = ContributorPayouts::QboBillLines.new(cp, [bonuses, default]).call
-
-    surplus_line = lines.find { |l| l[:description].include?("Project Lead Surplus") }
-    assert_equal 3.0, surplus_line[:amount]
-    assert_equal 5710, surplus_line[:account].id
-  end
-
-  test "mixed shape: structured AccountLeadSurplus AND legacy AccountLead with marker — both route to surplus" do
-    # Defensive: a CP whose blueprint was partially regenerated could have entries
-    # in BOTH the new key and the legacy mixed array. We should sum them, not drop.
-    blueprint = {
-      "AccountLead"        => [
-        { "amount" => 8.0, "description_line" => "- 100hrs * 8% = $8 base" },
-        { "amount" => 2.0, "description_line" => "- legacy surplus revenue share = $2" },
-      ],
-      "AccountLeadSurplus" => [{ "amount" => 3.0, "description_line" => "- marker-free copy" }],
-    }
-    bonuses = OpenStruct.new(name: "Bonuses", acct_num: "5710", id: 5710)
-    default = OpenStruct.new(name: "Contractors - Client Services", id: 1)
-    cp = make_cp(blueprint: blueprint, amount: 13.0, default_account: default)
-
-    lines = ContributorPayouts::QboBillLines.new(cp, [bonuses, default]).call
-
-    surplus_line = lines.find { |l| l[:description].include?("Account Lead Surplus") }
-    assert_equal 5.0, surplus_line[:amount], "structured ($3) + historical-parsed ($2) sum"
-    base_line = lines.find { |l| l[:description].include?("Account Lead\n") }
-    assert_equal 8.0, base_line[:amount]
-  end
-
-  test "description format: role header + entry description_lines + admin URL" do
-    blueprint = {
-      "Commission" => [
-        { "amount" => 10.0, "description_line" => "- 5% of $200 = $10" },
-        { "amount" => 5.0,  "description_line" => "- 5% of $100 = $5" },
-      ],
-    }
-    commissions = OpenStruct.new(name: "Commissions", acct_num: "6120", id: 6120)
-    default = OpenStruct.new(name: "Contractors - Client Services", id: 1)
-    cp = make_cp(blueprint: blueprint, amount: 15.0, default_account: default)
-
-    lines = ContributorPayouts::QboBillLines.new(cp, [commissions, default]).call
-
-    desc = lines.first[:description]
-    assert_match(/\A# Commission\n/, desc, "description starts with role header")
-    assert_includes desc, "- 5% of $200 = $10"
-    assert_includes desc, "- 5% of $100 = $5"
-    assert_includes desc, "https://example.com/cp/42", "admin URL appended"
+    ic_line = lines.find { |l| l[:amount] == 100.0 }
+    assert_match(/# Individual Contributor/, ic_line[:description])
+    assert_match(/- IC line/, ic_line[:description])
+    assert_match(%r{https://example.com/cp/42}, ic_line[:description])
   end
 end

@@ -218,6 +218,51 @@ class QboAccount < ApplicationRecord
     QboVendor.upsert_all(data, unique_by: :index_qbo_vendors_on_qbo_account_and_qbo_id) if data.any?
   end
 
+  # Mirrors this realm's QBO chart of accounts into QboChartAccount rows,
+  # following the sync_all_vendors! upsert pattern. QBO's query API only
+  # returns active accounts by default, so anything absent from the fetch
+  # is soft-deactivated (and reactivated if it comes back). An empty fetch
+  # is treated as an API hiccup and skipped entirely rather than
+  # deactivating the whole mirror.
+  def sync_all_chart_accounts!
+    accounts = fetch_all_accounts
+    data = accounts.map do |a|
+      {
+        qbo_id: a.id.to_s,
+        qbo_account_id: id,
+        name: a.name,
+        acct_num: (a.respond_to?(:acct_num) ? a.acct_num : nil),
+        classification: a.classification,
+        account_type: a.account_type,
+        active: true,
+        data: a.as_json,
+      }
+    end
+    return if data.empty?
+
+    QboChartAccount.transaction do
+      QboChartAccount.upsert_all(data, unique_by: :index_qbo_chart_accounts_on_qbo_account_and_qbo_id)
+
+      newly_inactive = QboChartAccount
+        .where(qbo_account_id: id, active: true)
+        .where.not(qbo_id: data.map { |d| d[:qbo_id] })
+
+      # Surface mappings that point at a just-deactivated account BEFORE a
+      # bill sync hard-fails on them (strict resolver, no fallback).
+      affected = QboBillAccountMapping
+        .where(enterprise_id: enterprise_id, qbo_chart_account_qbo_id: newly_inactive.select(:qbo_id))
+      affected.find_each do |m|
+        Rails.logger.warn(
+          "[QboAccount#sync_all_chart_accounts!] mapping ##{m.id} (#{m.line_item_key}, #{m.subject_label}) " \
+          "points at QBO chart account #{m.qbo_chart_account_qbo_id} which is no longer active in realm #{realm_id} — " \
+          "bill syncs using it will fail until it's remapped"
+        )
+      end
+
+      newly_inactive.update_all(active: false)
+    end
+  end
+
   def sync_all_bills!
     data = fetch_all_bills.map do |b|
       { qbo_id: b["id"], qbo_account_id: id, data: b.as_json, qbo_vendor_id: b.vendor_ref.value }

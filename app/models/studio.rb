@@ -665,10 +665,4 @@ class Studio < ApplicationRecord
     name == "Sanctuary Computer" && mini_name == "sanctu"
   end
 
-  def qbo_subcontractors_categories
-    return ["Total [SC] Subcontractors"] if is_garden3d?
-    accounting_prefix.split(",").map(&:strip).map do |p|
-      "Contractors - #{p}"
-    end
-  end
 end

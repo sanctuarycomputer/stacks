@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_06_02_155349) do
+ActiveRecord::Schema.define(version: 2026_06_10_000002) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -887,6 +887,23 @@ ActiveRecord::Schema.define(version: 2026_06_02_155349) do
     t.index ["enterprise_id"], name: "index_qbo_accounts_on_enterprise_id"
   end
 
+  create_table "qbo_bill_account_mappings", force: :cascade do |t|
+    t.bigint "enterprise_id", null: false
+    t.string "line_item_key", null: false
+    t.bigint "project_tracker_id"
+    t.bigint "contributor_id"
+    t.string "qbo_chart_account_qbo_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["contributor_id"], name: "index_qbo_bill_account_mappings_on_contributor_id"
+    t.index ["enterprise_id", "line_item_key", "contributor_id"], name: "idx_qbo_bill_acct_mappings_contributor", unique: true, where: "(contributor_id IS NOT NULL)"
+    t.index ["enterprise_id", "line_item_key", "project_tracker_id"], name: "idx_qbo_bill_acct_mappings_tracker", unique: true, where: "(project_tracker_id IS NOT NULL)"
+    t.index ["enterprise_id", "line_item_key"], name: "idx_qbo_bill_acct_mappings_default", unique: true, where: "((project_tracker_id IS NULL) AND (contributor_id IS NULL))"
+    t.index ["enterprise_id"], name: "index_qbo_bill_account_mappings_on_enterprise_id"
+    t.index ["project_tracker_id"], name: "index_qbo_bill_account_mappings_on_project_tracker_id"
+    t.check_constraint "(project_tracker_id IS NULL) OR (contributor_id IS NULL)", name: "qbo_bill_acct_mappings_one_subject"
+  end
+
   create_table "qbo_bills", force: :cascade do |t|
     t.string "qbo_id", null: false
     t.jsonb "data"
@@ -896,6 +913,19 @@ ActiveRecord::Schema.define(version: 2026_06_02_155349) do
     t.index ["qbo_account_id"], name: "index_qbo_bills_on_qbo_account_id"
     t.index ["qbo_id"], name: "index_qbo_bills_on_qbo_id"
     t.index ["qbo_vendor_id"], name: "index_qbo_bills_on_qbo_vendor_id"
+  end
+
+  create_table "qbo_chart_accounts", force: :cascade do |t|
+    t.string "qbo_id", null: false
+    t.bigint "qbo_account_id", null: false
+    t.string "name", null: false
+    t.string "acct_num"
+    t.string "classification"
+    t.string "account_type"
+    t.boolean "active", default: true, null: false
+    t.jsonb "data"
+    t.index ["qbo_account_id", "qbo_id"], name: "index_qbo_chart_accounts_on_qbo_account_and_qbo_id", unique: true
+    t.index ["qbo_account_id"], name: "index_qbo_chart_accounts_on_qbo_account_id"
   end
 
   create_table "qbo_invoices", force: :cascade do |t|
@@ -1271,7 +1301,11 @@ ActiveRecord::Schema.define(version: 2026_06_02_155349) do
   add_foreign_key "project_tracker_links", "project_trackers"
   add_foreign_key "project_trackers", "runn_projects", primary_key: "runn_id"
   add_foreign_key "qbo_accounts", "enterprises"
+  add_foreign_key "qbo_bill_account_mappings", "contributors"
+  add_foreign_key "qbo_bill_account_mappings", "enterprises"
+  add_foreign_key "qbo_bill_account_mappings", "project_trackers"
   add_foreign_key "qbo_bills", "qbo_accounts"
+  add_foreign_key "qbo_chart_accounts", "qbo_accounts"
   add_foreign_key "qbo_invoices", "qbo_accounts"
   add_foreign_key "qbo_profit_and_loss_reports", "qbo_accounts"
   add_foreign_key "qbo_tokens", "qbo_accounts"

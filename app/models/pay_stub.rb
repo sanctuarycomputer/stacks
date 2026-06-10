@@ -62,26 +62,30 @@ class PayStub < ApplicationRecord
     "SB" # "[S]tu[B]" — distinct from ProfitShare's "PS"
   end
 
-  def find_qbo_account!(qbo_accounts = nil)
-    qa = qbo_account_for_bill
-    raise "Enterprise #{enterprise&.name.inspect} has no connected QboAccount" if qa.nil?
-    qbo_accounts ||= qa.fetch_all_accounts
-    account = qbo_accounts.find { |a| a.name == "Facilities Management Salaries" }
-    raise "No 'Facilities Management Salaries' account found in QuickBooks for #{enterprise&.name}" unless account.present?
-    [account, nil]
+  def bill_line_item_key
+    "pay_stub"
   end
 
-  def bill_line_items(qbo_accounts)
-    account, _ = find_qbo_account!(qbo_accounts)
+  # Multi-line override: one line per forecast project in the blueprint.
+  # Each group resolves its own account so project-tracker-level pay_stub
+  # mappings apply; groups with no matching tracker resolve
+  # contributor → entity default.
+  def bill_line_items
+    resolver = Qbo::BillAccountResolver.new(enterprise)
     lines = blueprint["lines"] || []
     grouped = lines.group_by { |l| l["forecast_project"] }
 
     fp_ids = grouped.keys.compact
     projects_by_id = ForecastProject.where(forecast_id: fp_ids).index_by(&:forecast_id)
+    trackers = ProjectTracker.joins(:forecast_projects)
+      .where(forecast_projects: { forecast_id: fp_ids }).distinct.to_a
 
     grouped.map do |fp_id, group|
       fp = projects_by_id[fp_id]
       project_name = fp&.display_name || "Forecast project ##{fp_id}"
+      tracker = trackers.find { |pt| pt.forecast_project_ids.include?(fp_id) }
+      account = resolver.account_for(bill_line_item_key, contributor: contributor, project_tracker: tracker)
+
       hours = group.sum { |l| l["hours"].to_f }.round(2)
       line_amount = group.sum { |l| l["amount"].to_f }.round(2)
 
@@ -90,7 +94,7 @@ class PayStub < ApplicationRecord
         amount: line_amount,
       )
       line.account_based_expense_item! do |detail|
-        detail.account_ref = Quickbooks::Model::BaseReference.new(account.id)
+        detail.account_ref = Quickbooks::Model::BaseReference.new(account.qbo_id)
       end
       line
     end

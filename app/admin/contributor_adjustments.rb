@@ -20,6 +20,10 @@ ActiveAdmin.register ContributorAdjustment do
       admin_ledger_contributor_adjustment_path(adj.ledger, adj),
       notice: "Success"
     )
+  rescue Qbo::UnmappedLineItemError => e
+    # Unmapped is an expected operational state (new enterprise, pre-seed
+    # window) — surface the actionable message instead of a 500.
+    redirect_to admin_ledger_contributor_adjustment_path(adj.ledger, adj), alert: e.message
   end
 
   controller do
