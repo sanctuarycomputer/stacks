@@ -48,8 +48,12 @@ namespace :stacks do
       # the others.
       QboAccount.find_each do |qa|
         qa.sync_all_vendors!
+        # Keep the chart-of-accounts mirror fresh so bill account mappings
+        # (QboBillAccountMapping) validate against current data and admin
+        # pickers don't need a live QBO call.
+        qa.sync_all_chart_accounts!
       rescue => e
-        Rails.logger.error("[stacks:daily_enterprise_tasks] sync_all_vendors! failed for qbo_account=#{qa.id} (#{qa.enterprise&.name}): #{e.class}: #{e.message}")
+        Rails.logger.error("[stacks:daily_enterprise_tasks] QBO mirror sync failed for qbo_account=#{qa.id} (#{qa.enterprise&.name}): #{e.class}: #{e.message}")
         Sentry.capture_exception(e) if defined?(Sentry)
       end
 

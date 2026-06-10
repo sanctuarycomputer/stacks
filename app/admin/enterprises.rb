@@ -20,10 +20,20 @@ ActiveAdmin.register Enterprise do
     link_to "Regenerate Data", trigger_generate_snapshot_admin_enterprise_path(resource), method: :post
   end
 
+  action_item :refresh_chart_accounts, only: :show, if: proc { resource.qbo_account.present? } do
+    link_to "Refresh Chart of Accounts", refresh_chart_accounts_admin_enterprise_path(resource), method: :post
+  end
+
   member_action :trigger_generate_snapshot, method: :post do
     resource.qbo_account.sync_all!
+    resource.qbo_account.sync_all_chart_accounts!
     resource.generate_snapshot!
     redirect_to admin_enterprise_path(resource), notice: "Regenerated!"
+  end
+
+  member_action :refresh_chart_accounts, method: :post do
+    resource.qbo_account.sync_all_chart_accounts!
+    redirect_to admin_enterprise_path(resource), notice: "Chart of accounts refreshed from QuickBooks."
   end
 
   index download_links: false do
@@ -180,7 +190,13 @@ ActiveAdmin.register Enterprise do
     current_gradation =
       default_gradation unless all_gradations.include?(current_gradation)
 
-    qbo_accounts = resource.qbo_account.fetch_all_accounts
+    # Read bank/CC balances from the local chart-of-accounts mirror (synced
+    # daily + via the Refresh / Regenerate actions) instead of a live QBO
+    # fetch on every page load. Prime the mirror lazily on first view.
+    if QboChartAccount.where(qbo_account_id: resource.qbo_account.id).none?
+      resource.qbo_account.sync_all_chart_accounts!
+    end
+    qbo_accounts = QboChartAccount.active.where(qbo_account_id: resource.qbo_account.id)
     cc_or_bank_accounts = qbo_accounts.select do |a|
       ["Bank", "Credit Card"].include?(a.account_type)
     end
