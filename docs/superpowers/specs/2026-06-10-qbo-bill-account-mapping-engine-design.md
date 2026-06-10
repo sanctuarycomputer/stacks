@@ -57,7 +57,7 @@ Table `qbo_chart_accounts`:
 - `data` (jsonb — full QBO payload, same convention as `QboVendor`)
 - Unique composite index on `(qbo_account_id, qbo_id)`
 
-Sync: `QboAccount#sync_chart_accounts!` upserts all accounts from
+Sync: `QboAccount#sync_all_chart_accounts!` upserts all accounts from
 `Quickbooks::Service::Account#all` (what `fetch_all_accounts` calls today).
 Rows that disappear from QBO are marked `active: false`, never deleted, so
 mappings cannot dangle silently. Called from the daily sync task and from an
@@ -168,12 +168,12 @@ agreed behavior.
 
 ### 6. Admin UI (ActiveAdmin)
 
-- **Enterprise page:** "Bill Account Mappings" panel — the ten line kinds
-  with an account select per kind (entity defaults), options from
-  `QboChartAccount.where(qbo_account:, active: true)` labeled
-  `"Name (acct_num)"`. Below it, a table of all override rows for the
-  enterprise (subject, line kind, account) with CRUD. Plus the
-  "Refresh chart of accounts" action.
+- **Enterprise page:** "QBO Bill Account Mappings" panel — a table of the
+  ten line kinds showing each entity default (or an `unmapped` tag) with
+  Set/Edit links into the mapping form, plus an overrides table and a link
+  to the filtered mappings index. Account pickers in the mapping form read
+  `QboChartAccount.active` labeled `"Name (acct_num)"`. Plus the
+  "Refresh Chart of Accounts" action.
 - **ProjectTracker / Contributor pages:** a panel listing that subject's
   mapping rows with add/edit/remove, scoped per enterprise.
 - The Enterprise admin page's existing live `fetch_all_accounts` call
