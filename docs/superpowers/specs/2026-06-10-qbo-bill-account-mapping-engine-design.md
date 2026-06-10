@@ -29,8 +29,8 @@ for every line kind, overridable per contributor and per project tracker.
    default. Project tracker wins over contributor.
 2. **Unmapped is a hard error.** No silent fallback to legacy code; the
    legacy hard-coded routing is deleted.
-3. **Seed from current values.** A data migration writes mappings that
-   reproduce today's behavior exactly, so day one is behavior-identical.
+3. **Seed from current values.** An idempotent seeding task writes mappings
+   that reproduce today's behavior exactly, so day one is behavior-identical.
 4. **Payout bucket lines split per project tracker** so each line can carry
    its own account.
 5. **No studio level.** Three levels are easier to reason about than four.
@@ -73,16 +73,19 @@ Table `qbo_bill_account_mappings`:
   `payout_account_lead_surplus`, `payout_project_lead_base`,
   `payout_project_lead_surplus`, `payout_commission`, `trueup`,
   `contributor_adjustment`, `profit_share`, `pay_stub`
-- `subject_type` / `subject_id` (polymorphic, nullable) — `ProjectTracker`
-  or `Contributor`; `NULL` means entity-level default
+- `project_tracker_id` / `contributor_id` (nullable FKs) — at most one set
+  (check constraint); both `NULL` means entity-level default. Explicit FK
+  columns instead of a polymorphic subject: real referential integrity,
+  simpler admin forms, and Postgres unique indexes treat NULLs as distinct
+  so partial indexes are needed either way.
 - `qbo_chart_account_qbo_id` (string) — required; resolved against
   `QboChartAccount` scoped by the enterprise's realm (composite lookup, the
   same style `SyncsAsQboBill#qbo_bill` uses)
-- Unique index on `(enterprise_id, line_item_key, subject_type, subject_id)`
+- Three partial unique indexes cover the three mapping levels: entity
+  default (both subjects NULL), per-contributor, per-tracker
 
 Validations: the referenced chart account must exist and be active for the
-enterprise's `qbo_account`; `subject_type` must be one of the two allowed
-classes when present.
+enterprise's `qbo_account`; at most one subject column may be set.
 
 ### 3. `Qbo::BillAccountResolver`
 
@@ -131,10 +134,15 @@ doc_number, QBO API calls in `sync_qbo_bill!`) is unchanged.
 - **Trueup / ContributorAdjustment / ProfitShare**: single line, resolved
   with contributor context only.
 
-### 5. Seeding migration
+### 5. Seeding service
 
-For each enterprise with a connected `QboAccount`: sync `QboChartAccount`
-first, then write mappings reproducing today's behavior:
+Seeding is an idempotent service + rake task
+(`Qbo::SeedBillAccountMappings`, `rake stacks:seed_qbo_bill_account_mappings`)
+rather than a Rails migration — it makes live QBO API calls (chart sync),
+which don't belong in migrations, and being re-runnable matters when one
+realm's OAuth token is dead. For each enterprise with a connected
+`QboAccount`: sync `QboChartAccount` first, then write mappings reproducing
+today's behavior:
 
 - **Entity defaults:** `payout_individual_contributor`,
   `payout_account_lead_base`, `payout_project_lead_base`, `trueup`,
@@ -190,6 +198,23 @@ agreed behavior.
   -synced bills will rewrite their line structure the next time they sync.
 - Resolution context never consults `is_internal?` or account names/numbers
   at runtime — those concepts survive only as seeded data.
+- **Internal-project routing nuance:** the legacy internal-client override
+  only applied when the contributor's studio was nil or client-services;
+  seeded tracker-level Marketing mappings win over contributor-level studio
+  snapshots unconditionally (tracker beats contributor). Contributors in
+  non-client-services studios working on internal projects therefore now
+  route to Marketing where they previously kept their studio account.
+  Accepted: fix per-case by deleting the tracker mapping or adding a more
+  specific one if it matters in practice.
+- **Mixed-client trackers get no Marketing seed:** legacy routed per
+  invoice tracker (one client each); a per-project-tracker mapping can't
+  express an internal/external split, so trackers spanning both kinds of
+  client fall back to contributor/entity resolution rather than risk
+  routing external work to Marketing.
+- **Internality is enterprise-scoped at seed time** (client internal to
+  THIS enterprise), where legacy `is_internal?` was any-enterprise. Only
+  affects cross-enterprise billing; verify against production data during
+  rollout.
 
 ## Error handling
 
