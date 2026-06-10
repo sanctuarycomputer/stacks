@@ -15,7 +15,11 @@ class Enterprise < ApplicationRecord
   accepts_nested_attributes_for :enterprise_admins, allow_destroy: true,
     reject_if: ->(attrs) { attrs[:admin_user_id].blank? }
 
-  has_one :qbo_account
+  # One QBO realm per enterprise is a standing assumption across the app
+  # (SyncsAsQboBill, QboBillAccountMapping validation, BillAccountResolver
+  # all derive the realm via enterprise.qbo_account). Test fixtures carry a
+  # second row for sanctuary, so order(:id) keeps the lookup deterministic.
+  has_one :qbo_account, -> { order(:id) }
   accepts_nested_attributes_for :qbo_account, allow_destroy: true
   VERTICAL_MATCHER = /\[(.+)\](.*)/
 

@@ -58,6 +58,30 @@ class QboBillAccountMappingTest < ActiveSupport::TestCase
     refute dup.valid?
   end
 
+  test "default, contributor-level, and tracker-level rows coexist for the same line_item_key" do
+    fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "c#{SecureRandom.hex(2)}@x.com", data: {})
+    contributor = Contributor.create!(forecast_person: fp)
+    tracker = ProjectTracker.new(name: "PT-#{SecureRandom.hex(2)}")
+    tracker.save!(validate: false)
+
+    default = QboBillAccountMapping.create!(enterprise: @enterprise, line_item_key: "trueup", qbo_chart_account_qbo_id: "77")
+    by_contributor = QboBillAccountMapping.create!(enterprise: @enterprise, line_item_key: "trueup", contributor: contributor, qbo_chart_account_qbo_id: "77")
+    by_tracker = QboBillAccountMapping.create!(enterprise: @enterprise, line_item_key: "trueup", project_tracker: tracker, qbo_chart_account_qbo_id: "77")
+
+    assert_equal "Entity default", default.subject_label
+    assert_equal "Contributor: #{contributor.display_name}", by_contributor.subject_label
+    assert_equal "Project: #{tracker.name}", by_tracker.subject_label
+  end
+
+  test "duplicate contributor-level rows are rejected" do
+    fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "d#{SecureRandom.hex(2)}@x.com", data: {})
+    contributor = Contributor.create!(forecast_person: fp)
+
+    QboBillAccountMapping.create!(enterprise: @enterprise, line_item_key: "trueup", contributor: contributor, qbo_chart_account_qbo_id: "77")
+    dup = QboBillAccountMapping.new(enterprise: @enterprise, line_item_key: "trueup", contributor: contributor, qbo_chart_account_qbo_id: "77")
+    refute dup.valid?
+  end
+
   test "chart_account returns the mirror row" do
     m = QboBillAccountMapping.create!(enterprise: @enterprise, line_item_key: "trueup", qbo_chart_account_qbo_id: "77")
     assert_equal @chart_account, m.chart_account
