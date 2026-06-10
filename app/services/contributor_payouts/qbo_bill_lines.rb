@@ -79,6 +79,18 @@ module ContributorPayouts
 
       return single_line if lines.empty?
 
+      # Per-tracker splitting can surface a negative group that the old
+      # whole-bucket sum used to net out (e.g. a credit line's entries on
+      # one tracker). QBO rejects negative line amounts, so collapse to the
+      # trusted single-line shape instead of pushing a doomed bill.
+      if lines.any? { |l| l[:amount].negative? }
+        Rails.logger.warn(
+          "ContributorPayouts::QboBillLines: negative per-(bucket x tracker) line " \
+          "(cp_id=#{cp.id}); falling back to single-line bill"
+        )
+        return single_line
+      end
+
       if lines.sum { |l| l[:amount] }.round(2) != cp.amount.to_f.round(2)
         Rails.logger.warn(
           "ContributorPayouts::QboBillLines: per-line sums drifted from cp.amount " \

@@ -157,6 +157,25 @@ class ContributorPayouts::QboBillLinesTest < ActiveSupport::TestCase
     assert_equal 50.0, lines.first[:amount]
   end
 
+  test "a negative per-tracker group collapses to a single line" do
+    tracker_a = OpenStruct.new(id: 1, forecast_project_ids: ["fpA"])
+    tracker_b = OpenStruct.new(id: 2, forecast_project_ids: ["fpB"])
+    blueprint = {
+      "IndividualContributor" => [
+        { "amount" => 120.0, "description_line" => "- A work", "blueprint_metadata" => { "forecast_project" => "fpA" } },
+        { "amount" => -20.0, "description_line" => "- B credit", "blueprint_metadata" => { "forecast_project" => "fpB" } },
+      ],
+    }
+    resolver = FakeResolver.new(default_accounts)
+    cp = make_cp(blueprint: blueprint, amount: 100.0, trackers: [tracker_a, tracker_b])
+
+    lines = ContributorPayouts::QboBillLines.new(cp, resolver: resolver).call
+
+    assert_equal 1, lines.size, "negative group must collapse to the single-line shape"
+    assert_equal 100.0, lines.first[:amount]
+    assert_equal "100", lines.first[:account].qbo_id
+  end
+
   test "bucket-sum drift from cp.amount collapses to a single line and warns" do
     blueprint = { "IndividualContributor" => [{ "amount" => 100.0, "description_line" => "- IC" }] }
     resolver = FakeResolver.new(default_accounts)

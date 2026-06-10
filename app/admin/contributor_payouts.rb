@@ -39,6 +39,10 @@ ActiveAdmin.register ContributorPayout do
       admin_invoice_tracker_contributor_payout_path(cp.invoice_tracker, cp),
       notice: "Success",
     )
+  rescue Qbo::UnmappedLineItemError => e
+    # Unmapped is an expected operational state (new enterprise, pre-seed
+    # window) — surface the actionable message instead of a 500.
+    redirect_to admin_invoice_tracker_contributor_payout_path(cp.invoice_tracker, cp), alert: e.message
   end
 
   member_action :remap_blueprint_entry, method: :post do
