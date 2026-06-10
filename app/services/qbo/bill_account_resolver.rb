@@ -13,6 +13,10 @@ module Qbo
   # Raises Qbo::UnmappedLineItemError when no mapping matches or the mapped
   # chart account is missing/inactive in the local mirror. No silent
   # fallback — replaces the legacy hard-coded find_qbo_account! routing.
+  #
+  # Callers building QBO BillLineItems must reference the returned
+  # QboChartAccount's `.qbo_id` (the QBO-side account id), NOT `.id`
+  # (the local DB primary key) — QBO would silently accept a wrong id.
   class BillAccountResolver
     def initialize(enterprise)
       @enterprise = enterprise

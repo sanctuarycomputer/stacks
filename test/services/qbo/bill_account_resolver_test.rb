@@ -52,6 +52,33 @@ class Qbo::BillAccountResolverTest < ActiveSupport::TestCase
     assert_equal @default_acct, @resolver.account_for("payout_individual_contributor", contributor: @contributor)
   end
 
+  test "another contributor's mapping does not apply" do
+    map!("trueup", "100")
+    map!("trueup", "200", contributor: @contributor)
+
+    other_fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "o#{SecureRandom.hex(2)}@x.com", data: {})
+    other_contributor = Contributor.create!(forecast_person: other_fp)
+
+    assert_equal @default_acct, @resolver.account_for("trueup", contributor: other_contributor)
+  end
+
+  test "another tracker's mapping does not apply" do
+    map!("trueup", "100")
+    map!("trueup", "300", project_tracker: @tracker)
+
+    other_tracker = ProjectTracker.new(name: "OT-#{SecureRandom.hex(2)}")
+    other_tracker.save!(validate: false)
+
+    assert_equal @default_acct, @resolver.account_for("trueup", contributor: @contributor, project_tracker: other_tracker)
+  end
+
+  test "raises UnmappedLineItemError when the mapped chart account is missing from the mirror" do
+    map!("trueup", "100")
+    @default_acct.delete
+    err = assert_raises(Qbo::UnmappedLineItemError) { @resolver.account_for("trueup", contributor: @contributor) }
+    assert_match(/missing/, err.message)
+  end
+
   test "raises UnmappedLineItemError naming the chain when nothing matches" do
     err = assert_raises(Qbo::UnmappedLineItemError) do
       @resolver.account_for("pay_stub", contributor: @contributor, project_tracker: @tracker)
