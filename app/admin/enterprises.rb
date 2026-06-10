@@ -32,6 +32,12 @@ ActiveAdmin.register Enterprise do
   end
 
   member_action :refresh_chart_accounts, method: :post do
+    # The action_item is hidden without a qbo_account, but the endpoint is
+    # still reachable by direct POST — guard rather than 500.
+    if resource.qbo_account.blank?
+      redirect_to admin_enterprise_path(resource), alert: "No QBO account configured."
+      next
+    end
     resource.qbo_account.sync_all_chart_accounts!
     redirect_to admin_enterprise_path(resource), notice: "Chart of accounts refreshed from QuickBooks."
   end
@@ -193,7 +199,7 @@ ActiveAdmin.register Enterprise do
     # Read bank/CC balances from the local chart-of-accounts mirror (synced
     # daily + via the Refresh / Regenerate actions) instead of a live QBO
     # fetch on every page load. Prime the mirror lazily on first view.
-    if QboChartAccount.where(qbo_account_id: resource.qbo_account.id).none?
+    if QboChartAccount.active.where(qbo_account_id: resource.qbo_account.id).none?
       resource.qbo_account.sync_all_chart_accounts!
     end
     qbo_accounts = QboChartAccount.active.where(qbo_account_id: resource.qbo_account.id)
