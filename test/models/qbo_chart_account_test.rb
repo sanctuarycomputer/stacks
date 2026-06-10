@@ -25,6 +25,14 @@ class QboChartAccountTest < ActiveSupport::TestCase
     assert_equal 0.0, bare.current_balance
   end
 
+  test "active scope excludes inactive rows" do
+    QboChartAccount.create!(qbo_account: @qa, qbo_id: "20", name: "Live", data: {}, active: true)
+    QboChartAccount.create!(qbo_account: @qa, qbo_id: "21", name: "Dead", data: {}, active: false)
+    names = QboChartAccount.active.where(qbo_account_id: @qa.id).pluck(:name)
+    assert_includes names, "Live"
+    refute_includes names, "Dead"
+  end
+
   test "(qbo_account_id, qbo_id) must be unique" do
     QboChartAccount.create!(qbo_account: @qa, qbo_id: "14", name: "A", data: {})
     assert_raises(ActiveRecord::RecordNotUnique) do

@@ -7,6 +7,7 @@
 class QboChartAccount < ApplicationRecord
   belongs_to :qbo_account
 
+  validates :qbo_account, presence: true
   validates :qbo_id, presence: true
   validates :name, presence: true
 
