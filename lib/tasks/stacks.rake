@@ -324,6 +324,15 @@ namespace :stacks do
     Stacks::RunnSyncDiagnostic.new(pt, runn_actuals: runn_actuals, runn_roles: runn_roles).report!
   end
 
+  desc "Seed QBO bill account mappings from the legacy hard-coded routing (idempotent)"
+  task :seed_qbo_bill_account_mappings => :environment do
+    results = Qbo::SeedBillAccountMappings.call
+    results.each do |r|
+      puts "#{r[:enterprise]}: created #{r[:created]} mapping(s), #{r[:skipped].size} skipped"
+      r[:skipped].each { |s| puts "  skipped: #{s}" }
+    end
+  end
+
   desc "Sync Runn"
   task :sync_runn => :environment do
     system_task = SystemTask.create!(name: "stacks:sync_runn")
