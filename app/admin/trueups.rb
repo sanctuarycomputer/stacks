@@ -25,6 +25,10 @@ ActiveAdmin.register Trueup do
       admin_ledger_trueup_path(tu.ledger, tu),
       notice: "Success",
     )
+  rescue Qbo::UnmappedLineItemError => e
+    # Unmapped is an expected operational state (new enterprise, pre-seed
+    # window) — surface the actionable message instead of a 500.
+    redirect_to admin_ledger_trueup_path(tu.ledger, tu), alert: e.message
   end
 
   show do
