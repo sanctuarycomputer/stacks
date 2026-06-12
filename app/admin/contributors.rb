@@ -85,6 +85,27 @@ ActiveAdmin.register Contributor do
     end
   end
 
+  member_action :withdraw_via_deel, method: :post do
+    ledger = Ledger.find(params.require(:ledger_id))
+    unless ledger.deel_enabled?
+      redirect_back fallback_location: admin_contributor_path(resource), alert: "Deel is not enabled for this ledger."
+      return
+    end
+
+    DeelInvoiceAdjustments::CreateForLedger.call(
+      ledger: ledger,
+      amount: params.require(:amount),
+      contract_id: params.require(:contract_id),
+      description: params[:description].to_s,
+      date_submitted: params[:date_submitted].presence || Date.current,
+      initiated_by: current_admin_user,
+    )
+
+    redirect_back fallback_location: admin_contributor_path(resource), notice: "Withdrew via Deel."
+  rescue DeelInvoiceAdjustments::CreateForLedger::Error => e
+    redirect_back fallback_location: admin_contributor_path(resource), alert: e.message
+  end
+
   member_action :toggle_contributor_payout_acceptance, method: :post do
     cp = ContributorPayout.find(params[:contributor_payout_id])
     return unless cp.contributor.forecast_person.try(:admin_user) == current_admin_user || current_admin_user.is_admin?
