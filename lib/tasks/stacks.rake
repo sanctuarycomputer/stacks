@@ -93,22 +93,6 @@ namespace :stacks do
         Sentry.capture_exception(e) if defined?(Sentry)
       end
       Rails.logger.info("[stacks:daily_enterprise_tasks] Materialized #{materialized} recurring ledger adjustment(s)")
-
-      # Auto-process any pending LedgerWithdrawalRequests whose Bills have
-      # all flipped to Paid in QBO since the last run. The QboAccount
-      # sync_all! step above refreshes the QboBill mirror; this propagates
-      # "Bill paid in QBO" into "withdrawal request processed". Idempotent
-      # across same-day reruns.
-      auto_processed = 0
-      LedgerWithdrawalRequest.pending.find_each do |req|
-        before = req.processed_at
-        req.maybe_auto_process!
-        auto_processed += 1 if req.processed_at.present? && before.nil?
-      rescue => e
-        Rails.logger.error("[stacks:daily_enterprise_tasks] LedgerWithdrawalRequest ##{req.id} auto-process failed: #{e.class}: #{e.message}")
-        Sentry.capture_exception(e) if defined?(Sentry)
-      end
-      Rails.logger.info("[stacks:daily_enterprise_tasks] Auto-processed #{auto_processed} withdrawal request(s)")
     rescue => e
       system_task.mark_as_error(e)
     else

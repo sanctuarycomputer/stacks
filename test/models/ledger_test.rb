@@ -189,14 +189,6 @@ class LedgerModeAndPaymentMethodsTest < ActiveSupport::TestCase
 end
 
 class HostInBalanceUnderQboBoundTest < ActiveSupport::TestCase
-  setup do
-    Thread.current[:sanctuary_enterprise] = nil
-    @enterprise = Enterprise.find_or_create_by!(name: "QBoundPred-#{SecureRandom.hex(2)}")
-    fp = ForecastPerson.create!(forecast_id: 993_001, email: "qbp#{SecureRandom.hex(2)}@example.com", data: {})
-    @contributor = Contributor.create!(forecast_person: fp)
-    @ledger = Ledger.find_or_create_for(enterprise: @enterprise, contributor: @contributor)
-  end
-
   test "DeelInvoiceAdjustment is never in balance under qbo_bound" do
     dia = DeelInvoiceAdjustment.new(amount: 100, deel_status: "approved")
     refute dia.in_balance_under_qbo_bound?
@@ -228,7 +220,7 @@ class HostInBalanceUnderQboBoundTest < ActiveSupport::TestCase
     refute cp.in_balance_under_qbo_bound?
   end
 
-  test "Trueup: in balance when qbo_bill unpaid (no payable? check)" do
+  test "Trueup: in balance when qbo_bill unpaid (payable? always true; bill state governs)" do
     t = Trueup.new
     t.stubs(:qbo_bill).returns(nil)
     assert t.in_balance_under_qbo_bound?

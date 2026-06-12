@@ -20,7 +20,8 @@ class Trueup < ApplicationRecord
     true
   end
 
-  # Trueups always represent settled income; no payable? gate.
+  # Trueups always represent settled income; payable? always returns true so
+  # only the qbo_bill payment state governs the qbo_bound balance rule.
   def in_balance_under_qbo_bound?
     !qbo_bill&.paid?
   end
