@@ -1,0 +1,46 @@
+<h2>Payable QBO Bills</h2>
+
+<div class="payable-qbo-bills-tabs" style="margin-bottom: 1em;">
+  <% @qbo_accounts.each do |qa| %>
+    <%= link_to qa.enterprise.name, admin_money_payable_qbo_bills_path(qbo_account_id: qa.id),
+                style: "margin-right: 1em; #{'font-weight: bold' if @active_qa&.id == qa.id}" %>
+  <% end %>
+</div>
+
+<% if @active_qa.nil? %>
+  <p><em>No QBO accounts connected.</em></p>
+<% else %>
+  <div style="margin-bottom: 1em;">
+    <%= button_to "Refresh all on this tab",
+                  admin_money_refresh_tab_path(qbo_account_id: @active_qa.id),
+                  method: :post %>
+  </div>
+
+  <% if @rows.empty? %>
+    <p><em>No payable bills on <%= @active_qa.enterprise.name %>.</em></p>
+  <% else %>
+    <% @rows.group_by(&:contributor).each do |contributor, contributor_rows| %>
+      <h3>
+        <%= contributor.forecast_person&.email || "Contributor ##{contributor.id}" %>
+        — <%= number_to_currency(contributor_rows.sum(&:amount)) %>
+        (<%= contributor_rows.size %> bills)
+      </h3>
+      <ul>
+        <% contributor_rows.each do |row| %>
+          <li>
+            <%= row.host.class.name %> #<%= row.host.id %>
+            — <%= number_to_currency(row.amount) %>
+            — <%= link_to "Pay in QBO ↗", row.qbo_bill.qbo_url, target: "_blank", rel: "noopener" %>
+            — <%= button_to "Refresh",
+                            admin_money_refresh_bill_path(
+                              qbo_account_id: @active_qa.id,
+                              host_class: row.host.class.name,
+                              host_id: row.host.id,
+                            ),
+                            method: :post, form: { style: "display: inline" } %>
+          </li>
+        <% end %>
+      </ul>
+    <% end %>
+  <% end %>
+<% end %>
