@@ -94,15 +94,11 @@
                 <%= li.date_submitted.strftime("%B %d, %Y") %>
               <% elsif li.is_a?(PayStub) %>
                 <%= li.pay_cycle.ends_at.strftime("%B %d, %Y") %>
-              <% elsif li.is_a?(LedgerWithdrawalRequest) %>
-                <%= li.requested_at.to_date.strftime("%B %d, %Y") %>
               <% end %>
             </td>
             <td class="col">
               <% if li.is_a?(PayStub) %>
                 <span class="pill pay_stub">Pay Stub</span>
-              <% elsif li.is_a?(LedgerWithdrawalRequest) %>
-                <span class="pill voided">Withdrawal Request</span>
               <% else %>
                 <span class="pill <%= li.model_name.human.downcase %>">
                   <%= li.model_name.human %>
@@ -183,20 +179,6 @@
                     <span class="split">
                       <%= li.pay_cycle.approved? ? "Approved" : "Pending" %>
                     </span>
-                  </span>
-                <% end %>
-              <% elsif li.is_a?(LedgerWithdrawalRequest) %>
-                <% if li.cancelled? %>
-                  <span class="pill deleted">Cancelled</span>
-                <% elsif li.processed? %>
-                  <span class="pill paid">
-                    Processed
-                    <span class="split"><%= li.paid_via&.humanize %></span>
-                  </span>
-                <% else %>
-                  <span class="pill pending">
-                    Pending
-                    <span class="split"><%= li.paid_bills.size %> / <%= li.bills.size %> bills paid</span>
                   </span>
                 <% end %>
               <% end %>
@@ -286,8 +268,6 @@
                     </span>
                   <% end %>
                 </span>
-              <% elsif li.is_a?(LedgerWithdrawalRequest) %>
-                <em style="opacity: 0.6;">- <%= number_to_currency(li.total_amount) %></em>
               <% end %>
             </td>
             <td class="col text-right">
@@ -306,8 +286,6 @@
                   <%= link_to "Info ↗", admin_contributor_deel_invoice_adjustment_path(contributor, li) %>
                 <% elsif li.is_a?(PayStub) %>
                   <%= link_to "Info ↗", admin_pay_cycle_pay_stub_path(li.pay_cycle, li) %>
-                <% elsif li.is_a?(LedgerWithdrawalRequest) %>
-                  <%= link_to "Request ##{li.id} ↗", admin_ledger_withdrawal_request_path(li) %>
                 <% end %>
               <% end %>
             </td>

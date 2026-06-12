@@ -64,17 +64,6 @@ ActiveAdmin.register Contributor do
     end
   end
 
-  action_item :request_payment, only: :show do
-    selected_ledger = params[:ledger].present? && resource.ledgers.find_by(id: params[:ledger])
-    if selected_ledger
-      link_to "Request Payment",
-        new_admin_ledger_withdrawal_request_path(ledger_id: selected_ledger.id)
-    else
-      link_to "Request Payment", "#",
-        onclick: "alert(#{LEDGER_REQUIRED_ALERT.to_json}); return false;"
-    end
-  end
-
   action_item :submit_reimbursement, only: :show do
     selected_ledger = params[:ledger].present? && resource.ledgers.find_by(id: params[:ledger])
     if selected_ledger

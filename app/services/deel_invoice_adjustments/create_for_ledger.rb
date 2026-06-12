@@ -1,7 +1,6 @@
 module DeelInvoiceAdjustments
   # Creates a DeelInvoiceAdjustment in Deel for a given ledger + contract,
-  # then persists the response as a Stacks-side DIA. Replaces the
-  # withdrawal-request-mediated path from LedgerWithdrawalRequests::ProcessViaDeel.
+  # then persists the response as a Stacks-side DIA.
   class CreateForLedger
     class Error < StandardError; end
 

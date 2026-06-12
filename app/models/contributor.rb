@@ -64,7 +64,6 @@ class Contributor < ApplicationRecord
   has_many :deel_invoice_adjustments, through: :ledgers
   has_many :pay_stubs, through: :ledgers
   has_many :recurring_ledger_adjustments, through: :ledgers
-  has_many :ledger_withdrawal_requests, through: :ledgers
 
   # Each *_with_deleted method below is memoized per-instance. The first call
   # fires a query; subsequent calls return the cached array.
@@ -120,17 +119,6 @@ class Contributor < ApplicationRecord
       PayStub.with_deleted
         .joins(:ledger)
         .includes(pay_cycle: :pay_stubs)
-        .where(ledgers: { contributor_id: id }).to_a
-  end
-
-  # Withdrawal requests are not soft-deletable — `_with_deleted` is a naming
-  # convention here so the splice into all_items_grouped_by_month reads
-  # uniformly with the other ledger-item collections.
-  def ledger_withdrawal_requests_with_deleted
-    @_ledger_withdrawal_requests_with_deleted ||=
-      LedgerWithdrawalRequest
-        .joins(:ledger)
-        .includes(:bills, :cancelled_by)
         .where(ledgers: { contributor_id: id }).to_a
   end
 
@@ -198,9 +186,6 @@ class Contributor < ApplicationRecord
     @_pay_stubs_with_deleted =
       PayStub.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
         .includes(:ledger, :pay_cycle).to_a
-    @_ledger_withdrawal_requests_with_deleted =
-      LedgerWithdrawalRequest.joins(:ledger).where(ledgers: { contributor_id: id })
-        .includes(:ledger, :bills, :cancelled_by).to_a
 
     # Short-circuit `item.contributor` (and any downstream delegate hop) to
     # this Contributor. All preloaded items belong to ledgers whose contributor
@@ -213,7 +198,6 @@ class Contributor < ApplicationRecord
       @_profit_shares_with_deleted,
       @_deel_invoice_adjustments_with_deleted,
       @_pay_stubs_with_deleted,
-      @_ledger_withdrawal_requests_with_deleted,
     ].each do |items|
       items.each do |item|
         item.ledger.association(:contributor).target = self
@@ -414,7 +398,6 @@ class Contributor < ApplicationRecord
     preloaded_adjustments = contributor_adjustments_with_deleted
     preloaded_deel_invoice_adjustments = deel_invoice_adjustments_with_deleted
     preloaded_pay_stubs = pay_stubs_with_deleted
-    preloaded_withdrawal_requests = ledger_withdrawal_requests_with_deleted
 
     if override_ledger_ends_at.present?
       ledger_ends_at = override_ledger_ends_at
@@ -425,7 +408,6 @@ class Contributor < ApplicationRecord
         *preloaded_adjustments,
         *preloaded_deel_invoice_adjustments,
         *preloaded_pay_stubs,
-        *preloaded_withdrawal_requests,
       ].reduce(Date.today) do |acc, li|
         if li.is_a?(ContributorPayout)
           acc = li.invoice_tracker.invoice_pass.start_of_month if li.invoice_tracker.invoice_pass.start_of_month > acc
@@ -443,9 +425,6 @@ class Contributor < ApplicationRecord
         elsif li.is_a?(PayStub)
           d = li.effective_on_for_display
           acc = d if d > acc
-        elsif li.is_a?(LedgerWithdrawalRequest)
-          d = li.effective_on_for_display
-          acc = d if d && d > acc
         end
         acc
       end + 2.months
@@ -509,11 +488,6 @@ class Contributor < ApplicationRecord
         ps.effective_on_for_display <= period.ends_at
       end
 
-      withdrawal_requests_in_period = preloaded_withdrawal_requests.select do |wr|
-        d = wr.effective_on_for_display
-        d.present? && d >= period.starts_at && d <= period.ends_at
-      end
-
       sorted =
         [
           *contributor_payouts_in_period,
@@ -523,7 +497,6 @@ class Contributor < ApplicationRecord
           *adjustments_in_period,
           *deel_invoice_in_period,
           *pay_stubs_in_period,
-          *withdrawal_requests_in_period,
         ].sort do |a, b|
         date_a = nil
         if a.is_a?(Trueup)
@@ -539,8 +512,6 @@ class Contributor < ApplicationRecord
         elsif a.is_a?(DeelInvoiceAdjustment)
           date_a = a.date_submitted
         elsif a.is_a?(PayStub)
-          date_a = a.effective_on_for_display
-        elsif a.is_a?(LedgerWithdrawalRequest)
           date_a = a.effective_on_for_display
         end
 
@@ -558,8 +529,6 @@ class Contributor < ApplicationRecord
         elsif b.is_a?(DeelInvoiceAdjustment)
           date_b = b.date_submitted
         elsif b.is_a?(PayStub)
-          date_b = b.effective_on_for_display
-        elsif b.is_a?(LedgerWithdrawalRequest)
           date_b = b.effective_on_for_display
         end
 
