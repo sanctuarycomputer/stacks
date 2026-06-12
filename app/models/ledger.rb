@@ -2,6 +2,18 @@ class Ledger < ApplicationRecord
   belongs_to :enterprise
   belongs_to :contributor
 
+  enum mode: { legacy: 0, qbo_bound: 1 }
+
+  PAYMENT_METHODS = %w[deel qbo].freeze
+
+  def deel_enabled?
+    payment_methods.include?("deel")
+  end
+
+  def qbo_enabled?
+    payment_methods.include?("qbo")
+  end
+
   has_many :contributor_payouts
   has_many :contributor_adjustments
   has_many :trueups
@@ -10,7 +22,6 @@ class Ledger < ApplicationRecord
   has_many :deel_invoice_adjustments
   has_many :pay_stubs
   has_many :recurring_ledger_adjustments, dependent: :destroy
-  has_many :ledger_withdrawal_requests, dependent: :destroy
 
   validates :enterprise_id, uniqueness: { scope: :contributor_id }
 
@@ -133,9 +144,17 @@ class Ledger < ApplicationRecord
     ].flatten
   end
 
+  # qbo_bound mode: drop DIAs (audit only) and negative CAs (audit only).
+  # Everything else flows through the same per-host predicate
+  # in_balance_under_qbo_bound?.
+  def qbo_bound_visible_items
+    visible_items.reject do |li|
+      li.is_a?(DeelInvoiceAdjustment) ||
+        (li.is_a?(ContributorAdjustment) && li.amount.to_f < 0)
+    end
+  end
+
   # Includes soft-deleted rows — used by items_grouped_by_month for display.
-  # LedgerWithdrawalRequests render as milestone rows here; they're left out
-  # of `visible_items` so they don't move balance/unsettled.
   def all_items_with_deleted
     [
       ContributorPayout.with_deleted.includes(invoice_tracker: :invoice_pass).where(ledger_id: id).to_a,
@@ -145,7 +164,6 @@ class Ledger < ApplicationRecord
       ProfitShare.with_deleted.includes(:periodic_report).where(ledger_id: id).to_a,
       DeelInvoiceAdjustment.with_deleted.where(ledger_id: id).to_a,
       PayStub.with_deleted.includes(:pay_cycle).where(ledger_id: id).to_a,
-      LedgerWithdrawalRequest.includes(:bills, :cancelled_by).where(ledger_id: id).to_a,
     ].flatten
   end
 end

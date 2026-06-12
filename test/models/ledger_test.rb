@@ -151,3 +151,39 @@ class LedgerAfterCreateCallbacksTest < ActiveSupport::TestCase
     assert_equal 0, Ledger.ensure_for_contributor!(c), "expected zero new rows on second call"
   end
 end
+
+class LedgerModeAndPaymentMethodsTest < ActiveSupport::TestCase
+  setup do
+    Thread.current[:sanctuary_enterprise] = nil
+    @enterprise = Enterprise.find_or_create_by!(name: "ModeTest-#{SecureRandom.hex(2)}")
+    fp = ForecastPerson.create!(forecast_id: 992_001, email: "mode#{SecureRandom.hex(2)}@example.com", data: {})
+    @contributor = Contributor.create!(forecast_person: fp)
+    @ledger = Ledger.find_or_create_for(enterprise: @enterprise, contributor: @contributor)
+  end
+
+  test "mode defaults to legacy" do
+    assert_equal "legacy", @ledger.mode
+    assert @ledger.legacy?
+    refute @ledger.qbo_bound?
+  end
+
+  test "mode flips to qbo_bound" do
+    @ledger.update!(mode: :qbo_bound)
+    assert @ledger.qbo_bound?
+    refute @ledger.legacy?
+  end
+
+  test "deel_enabled? and qbo_enabled? reflect payment_methods" do
+    @ledger.update!(payment_methods: %w[deel])
+    assert @ledger.deel_enabled?
+    refute @ledger.qbo_enabled?
+
+    @ledger.update!(payment_methods: %w[qbo])
+    refute @ledger.deel_enabled?
+    assert @ledger.qbo_enabled?
+  end
+
+  test "PAYMENT_METHODS is the canonical list" do
+    assert_equal %w[deel qbo], Ledger::PAYMENT_METHODS
+  end
+end
