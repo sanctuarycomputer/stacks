@@ -81,15 +81,20 @@ class Ledger < ApplicationRecord
     rows.size
   end
 
-  # Balance/unsettled at the per-ledger (per-enterprise) level. Excludes soft-deleted rows
-  # via the default acts_as_paranoid scope. Each host's `payable?` decides which bucket the
-  # row lands in; `signed_amount` lets withdrawals deduct.
+  # Balance/unsettled split. legacy preserves today's rules; qbo_bound trusts
+  # the QBO Bill Paid status as the single source of truth.
   def balance
-    visible_items.select(&:payable?).sum(&:signed_amount)
+    case mode
+    when "legacy"    then visible_items.select(&:payable?).sum(&:signed_amount)
+    when "qbo_bound" then qbo_bound_visible_items.select(&:in_balance_under_qbo_bound?).sum(&:signed_amount)
+    end
   end
 
   def unsettled
-    visible_items.reject(&:payable?).sum(&:signed_amount)
+    case mode
+    when "legacy"    then visible_items.reject(&:payable?).sum(&:signed_amount)
+    when "qbo_bound" then qbo_bound_visible_items.reject(&:in_balance_under_qbo_bound?).sum(&:signed_amount)
+    end
   end
 
   # Per-ledger by-month grouping for display. Includes soft-deleted rows so the contributor

@@ -248,3 +248,62 @@ class HostInBalanceUnderQboBoundTest < ActiveSupport::TestCase
     end
   end
 end
+
+class LedgerBalanceUnderQboBoundTest < ActiveSupport::TestCase
+  setup do
+    Thread.current[:sanctuary_enterprise] = nil
+    @enterprise = Enterprise.find_or_create_by!(name: "QBoundBal-#{SecureRandom.hex(2)}")
+    fp = ForecastPerson.create!(forecast_id: 994_001, email: "qbb#{SecureRandom.hex(2)}@example.com", data: {})
+    @contributor = Contributor.create!(forecast_person: fp)
+    @ledger = Ledger.find_or_create_for(enterprise: @enterprise, contributor: @contributor)
+  end
+
+  test "legacy mode uses legacy rule (Reimbursement counts when accepted?)" do
+    @ledger.update!(mode: :legacy)
+    admin = AdminUser.create!(email: "qbblg#{SecureRandom.hex(2)}@example.com", password: "password123", password_confirmation: "password123")
+    r = Reimbursement.create!(ledger: @ledger, amount: 100, description: "test reimbursement", receipts: "", accepted_at: Time.current, accepted_by: admin)
+    assert_equal 100, @ledger.balance.to_f
+  end
+
+  test "qbo_bound mode drops a positive host whose qbo_bill is paid" do
+    @ledger.update!(mode: :qbo_bound)
+    paid = mock("qbo_bill"); paid.stubs(:paid?).returns(true)
+    payout = mock("payout")
+    payout.stubs(:payable?).returns(true)
+    payout.stubs(:qbo_bill).returns(paid)
+    payout.stubs(:in_balance_under_qbo_bound?).returns(false)
+    payout.stubs(:signed_amount).returns(100)
+    payout.stubs(:is_a?).returns(false)
+    payout.stubs(:is_a?).with(DeelInvoiceAdjustment).returns(false)
+    payout.stubs(:is_a?).with(ContributorAdjustment).returns(false)
+
+    @ledger.stubs(:visible_items).returns([payout])
+    assert_equal 0, @ledger.balance.to_f
+  end
+
+  test "qbo_bound mode ignores DIAs entirely" do
+    @ledger.update!(mode: :qbo_bound)
+    dia = mock("dia")
+    dia.stubs(:is_a?).returns(false)
+    dia.stubs(:is_a?).with(DeelInvoiceAdjustment).returns(true)
+    dia.stubs(:signed_amount).returns(-50)
+
+    @ledger.stubs(:visible_items).returns([dia])
+    assert_equal 0, @ledger.balance.to_f
+    assert_equal 0, @ledger.unsettled.to_f
+  end
+
+  test "qbo_bound mode ignores negative CAs" do
+    @ledger.update!(mode: :qbo_bound)
+    neg = mock("neg_ca")
+    neg.stubs(:is_a?).returns(false)
+    neg.stubs(:is_a?).with(DeelInvoiceAdjustment).returns(false)
+    neg.stubs(:is_a?).with(ContributorAdjustment).returns(true)
+    neg.stubs(:amount).returns(-100)
+    neg.stubs(:signed_amount).returns(-100)
+
+    @ledger.stubs(:visible_items).returns([neg])
+    assert_equal 0, @ledger.balance.to_f
+    assert_equal 0, @ledger.unsettled.to_f
+  end
+end
