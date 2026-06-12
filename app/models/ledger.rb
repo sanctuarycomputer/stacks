@@ -84,16 +84,22 @@ class Ledger < ApplicationRecord
   # Balance/unsettled split. legacy preserves today's rules; qbo_bound trusts
   # the QBO Bill Paid status as the single source of truth.
   def balance
-    case mode
-    when "legacy"    then visible_items.select(&:payable?).sum(&:signed_amount)
-    when "qbo_bound" then qbo_bound_visible_items.select(&:in_balance_under_qbo_bound?).sum(&:signed_amount)
+    if legacy?
+      visible_items.select(&:payable?).sum(&:signed_amount)
+    elsif qbo_bound?
+      qbo_bound_visible_items.select(&:in_balance_under_qbo_bound?).sum(&:signed_amount)
+    else
+      raise "Unknown ledger mode: #{mode.inspect}"
     end
   end
 
   def unsettled
-    case mode
-    when "legacy"    then visible_items.reject(&:payable?).sum(&:signed_amount)
-    when "qbo_bound" then qbo_bound_visible_items.reject(&:in_balance_under_qbo_bound?).sum(&:signed_amount)
+    if legacy?
+      visible_items.reject(&:payable?).sum(&:signed_amount)
+    elsif qbo_bound?
+      qbo_bound_visible_items.reject(&:in_balance_under_qbo_bound?).sum(&:signed_amount)
+    else
+      raise "Unknown ledger mode: #{mode.inspect}"
     end
   end
 
