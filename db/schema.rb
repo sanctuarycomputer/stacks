@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_06_06_135814) do
+ActiveRecord::Schema.define(version: 2026_06_12_214545) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -401,44 +401,18 @@ ActiveRecord::Schema.define(version: 2026_06_06_135814) do
     t.check_constraint "(company_treasury_split >= (0)::numeric) AND (company_treasury_split <= (1)::numeric)", name: "check_company_treasury_split_range"
   end
 
-  create_table "ledger_withdrawal_request_bills", force: :cascade do |t|
-    t.bigint "ledger_withdrawal_request_id", null: false
-    t.bigint "qbo_account_id", null: false
-    t.string "qbo_bill_id", null: false
-    t.decimal "amount_snapshot", precision: 12, scale: 2, null: false
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["ledger_withdrawal_request_id", "qbo_account_id", "qbo_bill_id"], name: "idx_lwrb_unique_per_bill", unique: true
-    t.index ["ledger_withdrawal_request_id"], name: "idx_lwrb_on_request_id"
-    t.index ["qbo_account_id", "qbo_bill_id"], name: "idx_lwrb_on_bill"
-  end
-
-  create_table "ledger_withdrawal_requests", force: :cascade do |t|
-    t.bigint "ledger_id", null: false
-    t.datetime "requested_at", null: false
-    t.datetime "processed_at"
-    t.datetime "cancelled_at"
-    t.bigint "cancelled_by_id"
-    t.text "cancelled_reason"
-    t.text "notes"
-    t.string "paid_via"
-    t.bigint "deel_invoice_adjustment_id"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["cancelled_at"], name: "index_ledger_withdrawal_requests_on_cancelled_at"
-    t.index ["cancelled_by_id"], name: "index_ledger_withdrawal_requests_on_cancelled_by_id"
-    t.index ["ledger_id"], name: "index_ledger_withdrawal_requests_on_ledger_id"
-    t.index ["processed_at"], name: "index_ledger_withdrawal_requests_on_processed_at"
-  end
-
   create_table "ledgers", force: :cascade do |t|
     t.bigint "enterprise_id", null: false
     t.bigint "contributor_id", null: false
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.integer "mode", default: 0, null: false
+    t.string "payment_methods", default: [], null: false, array: true
     t.index ["contributor_id"], name: "index_ledgers_on_contributor_id"
     t.index ["enterprise_id", "contributor_id"], name: "index_ledgers_on_enterprise_id_and_contributor_id", unique: true
     t.index ["enterprise_id"], name: "index_ledgers_on_enterprise_id"
+    t.index ["mode"], name: "index_ledgers_on_mode"
+    t.index ["payment_methods"], name: "index_ledgers_on_payment_methods", using: :gin
   end
 
   create_table "mailing_list_subscribers", force: :cascade do |t|
@@ -917,6 +891,23 @@ ActiveRecord::Schema.define(version: 2026_06_06_135814) do
     t.index ["enterprise_id"], name: "index_qbo_accounts_on_enterprise_id"
   end
 
+  create_table "qbo_bill_account_mappings", force: :cascade do |t|
+    t.bigint "enterprise_id", null: false
+    t.string "line_item_key", null: false
+    t.bigint "project_tracker_id"
+    t.bigint "contributor_id"
+    t.string "qbo_chart_account_qbo_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["contributor_id"], name: "index_qbo_bill_account_mappings_on_contributor_id"
+    t.index ["enterprise_id", "line_item_key", "contributor_id"], name: "idx_qbo_bill_acct_mappings_contributor", unique: true, where: "(contributor_id IS NOT NULL)"
+    t.index ["enterprise_id", "line_item_key", "project_tracker_id"], name: "idx_qbo_bill_acct_mappings_tracker", unique: true, where: "(project_tracker_id IS NOT NULL)"
+    t.index ["enterprise_id", "line_item_key"], name: "idx_qbo_bill_acct_mappings_default", unique: true, where: "((project_tracker_id IS NULL) AND (contributor_id IS NULL))"
+    t.index ["enterprise_id"], name: "index_qbo_bill_account_mappings_on_enterprise_id"
+    t.index ["project_tracker_id"], name: "index_qbo_bill_account_mappings_on_project_tracker_id"
+    t.check_constraint "(project_tracker_id IS NULL) OR (contributor_id IS NULL)", name: "qbo_bill_acct_mappings_one_subject"
+  end
+
   create_table "qbo_bills", force: :cascade do |t|
     t.string "qbo_id", null: false
     t.jsonb "data"
@@ -926,6 +917,19 @@ ActiveRecord::Schema.define(version: 2026_06_06_135814) do
     t.index ["qbo_account_id"], name: "index_qbo_bills_on_qbo_account_id"
     t.index ["qbo_id"], name: "index_qbo_bills_on_qbo_id"
     t.index ["qbo_vendor_id"], name: "index_qbo_bills_on_qbo_vendor_id"
+  end
+
+  create_table "qbo_chart_accounts", force: :cascade do |t|
+    t.string "qbo_id", null: false
+    t.bigint "qbo_account_id", null: false
+    t.string "name", null: false
+    t.string "acct_num"
+    t.string "classification"
+    t.string "account_type"
+    t.boolean "active", default: true, null: false
+    t.jsonb "data"
+    t.index ["qbo_account_id", "qbo_id"], name: "index_qbo_chart_accounts_on_qbo_account_and_qbo_id", unique: true
+    t.index ["qbo_account_id"], name: "index_qbo_chart_accounts_on_qbo_account_id"
   end
 
   create_table "qbo_invoices", force: :cascade do |t|
@@ -1248,9 +1252,6 @@ ActiveRecord::Schema.define(version: 2026_06_06_135814) do
   add_foreign_key "invoice_trackers", "invoice_passes"
   add_foreign_key "invoice_trackers", "qbo_accounts"
   add_foreign_key "invoice_trackers", "qbo_invoices", column: "qbo_account_id", primary_key: "qbo_account_id", name: "fk_invoice_trackers_qbo_invoice"
-  add_foreign_key "ledger_withdrawal_request_bills", "ledger_withdrawal_requests"
-  add_foreign_key "ledger_withdrawal_requests", "admin_users", column: "cancelled_by_id"
-  add_foreign_key "ledger_withdrawal_requests", "ledgers"
   add_foreign_key "ledgers", "contributors"
   add_foreign_key "ledgers", "enterprises"
   add_foreign_key "mailing_list_subscribers", "mailing_lists"
@@ -1304,7 +1305,11 @@ ActiveRecord::Schema.define(version: 2026_06_06_135814) do
   add_foreign_key "project_tracker_links", "project_trackers"
   add_foreign_key "project_trackers", "runn_projects", primary_key: "runn_id"
   add_foreign_key "qbo_accounts", "enterprises"
+  add_foreign_key "qbo_bill_account_mappings", "contributors"
+  add_foreign_key "qbo_bill_account_mappings", "enterprises"
+  add_foreign_key "qbo_bill_account_mappings", "project_trackers"
   add_foreign_key "qbo_bills", "qbo_accounts"
+  add_foreign_key "qbo_chart_accounts", "qbo_accounts"
   add_foreign_key "qbo_invoices", "qbo_accounts"
   add_foreign_key "qbo_profit_and_loss_reports", "qbo_accounts"
   add_foreign_key "qbo_tokens", "qbo_accounts"
