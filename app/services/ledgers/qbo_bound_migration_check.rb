@@ -41,11 +41,12 @@ module Ledgers
     end
 
     # Open QBO bills that explain why qbo_bound balance != legacy balance.
-    # Skips audit-only rows (DIAs and negative CAs) since they're handled by
-    # the qbo_bound rule itself, not by reconciling individual bills.
+    # Skips audit-only rows (DIAs, negative CAs) and rows that don't sync
+    # as QBO Bills at all (e.g. Reimbursement).
     def self.collect_blocking_bills(items)
       items.filter_map do |li|
         next nil if Ledger.audit_only_under_qbo_bound?(li)
+        next nil unless li.respond_to?(:qbo_bill)
         next nil unless li.payable?
 
         qb = li.qbo_bill

@@ -9,13 +9,17 @@ ActiveAdmin.register Ledger do
   permit_params
 
   member_action :migrate_to_qbo_bound, method: :post do
+    unless resource.legacy?
+      redirect_to admin_ledger_path(resource), alert: "Already QBO-bound."
+      return
+    end
     result = Ledgers::QboBoundMigrationCheck.call(resource)
     if result.ready?
       resource.update!(mode: :qbo_bound)
       redirect_to admin_ledger_path(resource), notice: "Migrated to QBO-bound."
     else
       redirect_to admin_ledger_path(resource),
-        alert: "Cannot migrate: Δbalance #{result.balance_delta}, Δunsettled #{result.unsettled_delta}."
+        alert: "Cannot migrate: Δbalance #{number_to_currency(result.balance_delta)}, Δunsettled #{number_to_currency(result.unsettled_delta)}."
     end
   end
 
@@ -32,9 +36,9 @@ ActiveAdmin.register Ledger do
       panel "Migrate to QBO-bound" do
         result = Ledgers::QboBoundMigrationCheck.call(resource)
         div do
-          para "Current (legacy):  balance $#{result.current_balance}   unsettled $#{result.current_unsettled}"
-          para "Proposed (qbo_bound):  balance $#{result.proposed_balance}   unsettled $#{result.proposed_unsettled}"
-          para "Δ balance #{result.balance_delta}, Δ unsettled #{result.unsettled_delta}"
+          para "Current (legacy):  balance #{number_to_currency(result.current_balance)}   unsettled #{number_to_currency(result.current_unsettled)}"
+          para "Proposed (qbo_bound):  balance #{number_to_currency(result.proposed_balance)}   unsettled #{number_to_currency(result.proposed_unsettled)}"
+          para "Δ balance #{number_to_currency(result.balance_delta)}, Δ unsettled #{number_to_currency(result.unsettled_delta)}"
         end
         if result.ready?
           div do
@@ -48,7 +52,7 @@ ActiveAdmin.register Ledger do
               ul do
                 result.blocking_bills.first(20).each do |bb|
                   li do
-                    text_node "#{bb.host.class.name} ##{bb.host.id} — $#{bb.amount.to_f.round(2)} — "
+                    text_node "#{bb.host.class.name} ##{bb.host.id} — #{number_to_currency(bb.amount.to_f)} — "
                     link_to "Pay in QBO ↗", bb.qbo_bill.qbo_url, target: "_blank", rel: "noopener"
                   end
                 end
@@ -58,7 +62,7 @@ ActiveAdmin.register Ledger do
               para "Negative CAs (audit-only after migration):"
               ul do
                 result.ignored_negative_cas.first(10).each do |ca|
-                  li "CA ##{ca.id} — $#{ca.amount.to_f.round(2)}"
+                  li "CA ##{ca.id} — #{number_to_currency(ca.amount.to_f)}"
                 end
               end
             end
