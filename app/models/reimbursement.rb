@@ -33,6 +33,11 @@ class Reimbursement < ApplicationRecord
     accepted?
   end
 
+  # Reimbursements aren't synced as QBO bills; same gate as legacy.
+  def in_balance_under_qbo_bound?
+    accepted?
+  end
+
   def effective_on_for_display
     created_at.to_date
   end

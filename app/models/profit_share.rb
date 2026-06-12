@@ -47,6 +47,10 @@ class ProfitShare < ApplicationRecord
     super(qbo_accounts)
   end
 
+  def in_balance_under_qbo_bound?
+    payable? && !qbo_bill&.paid?
+  end
+
   # SyncsAsQboBill contract
   def bill_txn_date
     applied_at

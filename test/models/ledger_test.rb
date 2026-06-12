@@ -187,3 +187,64 @@ class LedgerModeAndPaymentMethodsTest < ActiveSupport::TestCase
     assert_equal %w[deel qbo], Ledger::PAYMENT_METHODS
   end
 end
+
+class HostInBalanceUnderQboBoundTest < ActiveSupport::TestCase
+  setup do
+    Thread.current[:sanctuary_enterprise] = nil
+    @enterprise = Enterprise.find_or_create_by!(name: "QBoundPred-#{SecureRandom.hex(2)}")
+    fp = ForecastPerson.create!(forecast_id: 993_001, email: "qbp#{SecureRandom.hex(2)}@example.com", data: {})
+    @contributor = Contributor.create!(forecast_person: fp)
+    @ledger = Ledger.find_or_create_for(enterprise: @enterprise, contributor: @contributor)
+  end
+
+  test "DeelInvoiceAdjustment is never in balance under qbo_bound" do
+    dia = DeelInvoiceAdjustment.new(amount: 100, deel_status: "approved")
+    refute dia.in_balance_under_qbo_bound?
+  end
+
+  test "Reimbursement uses accepted? for qbo_bound" do
+    r_accepted = Reimbursement.new
+    r_accepted.stubs(:accepted?).returns(true)
+    assert r_accepted.in_balance_under_qbo_bound?
+
+    r_pending = Reimbursement.new
+    r_pending.stubs(:accepted?).returns(false)
+    refute r_pending.in_balance_under_qbo_bound?
+  end
+
+  test "ContributorPayout: in balance when payable and qbo_bill unpaid" do
+    cp = ContributorPayout.new
+    cp.stubs(:payable?).returns(true)
+    cp.stubs(:qbo_bill).returns(nil)
+    assert cp.in_balance_under_qbo_bound?
+
+    paid = mock("qbo_bill")
+    paid.stubs(:paid?).returns(true)
+    cp.stubs(:qbo_bill).returns(paid)
+    refute cp.in_balance_under_qbo_bound?
+
+    cp.stubs(:payable?).returns(false)
+    cp.stubs(:qbo_bill).returns(nil)
+    refute cp.in_balance_under_qbo_bound?
+  end
+
+  test "Trueup: in balance when qbo_bill unpaid (no payable? check)" do
+    t = Trueup.new
+    t.stubs(:qbo_bill).returns(nil)
+    assert t.in_balance_under_qbo_bound?
+
+    paid = mock("qbo_bill")
+    paid.stubs(:paid?).returns(true)
+    t.stubs(:qbo_bill).returns(paid)
+    refute t.in_balance_under_qbo_bound?
+  end
+
+  test "ProfitShare, PayStub, ContributorAdjustment all follow the payable?-and-unpaid pattern" do
+    [ProfitShare, PayStub, ContributorAdjustment].each do |klass|
+      h = klass.new
+      h.stubs(:payable?).returns(true)
+      h.stubs(:qbo_bill).returns(nil)
+      assert h.in_balance_under_qbo_bound?, "#{klass.name} should be in balance when payable and unpaid"
+    end
+  end
+end
