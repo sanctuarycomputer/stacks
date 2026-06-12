@@ -11,8 +11,17 @@ class ContributorAdjustment < ApplicationRecord
 
   validates :amount, presence: true
   validates :effective_on, presence: true
+  validate :no_negative_on_qbo_bound_ledger
 
   # No linked invoice: counts toward balance like other payable rows. Linked invoice: only when fully paid in QBO.
+  def no_negative_on_qbo_bound_ledger
+    return unless ledger&.qbo_bound? && amount.to_f < 0
+    errors.add(
+      :amount,
+      "negative adjustments are not allowed on QBO-bound ledgers — mark the corresponding QBO bill Paid instead",
+    )
+  end
+
   def payable?
     return true if qbo_invoice_id.blank?
     inv = qbo_invoice
