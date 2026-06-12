@@ -3,7 +3,7 @@ module Ledgers
   # change to balance or unsettled. Returns a Result struct exposing
   # the deltas and the open QBO bills that explain any gap.
   class QboBoundMigrationCheck
-    TOLERANCE = 0.01.freeze
+    TOLERANCE = 0.01
 
     Result = Struct.new(
       :current_balance, :current_unsettled,
@@ -40,14 +40,15 @@ module Ledgers
       )
     end
 
+    # Open QBO bills that explain why qbo_bound balance != legacy balance.
+    # Skips audit-only rows (DIAs and negative CAs) since they're handled by
+    # the qbo_bound rule itself, not by reconciling individual bills.
     def self.collect_blocking_bills(items)
       items.filter_map do |li|
-        next nil if li.is_a?(DeelInvoiceAdjustment)
-        next nil if li.is_a?(ContributorAdjustment) && li.amount.to_f < 0
-        next nil unless li.respond_to?(:qbo_bill)
-        next nil unless li.respond_to?(:payable?) && li.payable?
+        next nil if Ledger.audit_only_under_qbo_bound?(li)
+        next nil unless li.payable?
 
-        qb = (li.qbo_bill rescue nil)
+        qb = li.qbo_bill
         next nil if qb.nil? || qb.paid?
 
         BlockingBill.new(host: li, qbo_bill: qb, amount: li.amount.to_f)

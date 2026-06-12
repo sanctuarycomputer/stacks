@@ -27,8 +27,6 @@ class Ledgers::QboBoundMigrationCheckTest < ActiveSupport::TestCase
   end
 
   test "ledger is blocked when ledger.balance under qbo_bound != legacy" do
-    @ledger.stubs(:mode).returns("legacy")
-
     paid_qb = mock("qbo_bill"); paid_qb.stubs(:paid?).returns(true)
     cp = ContributorPayout.new(amount: 100)
     cp.stubs(:payable?).returns(true)
@@ -37,7 +35,6 @@ class Ledgers::QboBoundMigrationCheckTest < ActiveSupport::TestCase
     cp.stubs(:in_balance_under_qbo_bound?).returns(false)
 
     neg_ca = ContributorAdjustment.new(amount: -50)
-    neg_ca.stubs(:payable?).returns(true)
     neg_ca.stubs(:signed_amount).returns(-50)
 
     @ledger.stubs(:visible_items).returns([cp, neg_ca])

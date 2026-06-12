@@ -140,7 +140,15 @@ class Ledger < ApplicationRecord
     end
   end
 
-  private
+  # Rows that are bookkeeping-only under qbo_bound. Shared between
+  # qbo_bound_visible_items and Ledgers::QboBoundMigrationCheck so the
+  # two cannot drift.
+  def self.audit_only_under_qbo_bound?(item)
+    item.is_a?(DeelInvoiceAdjustment) ||
+      (item.is_a?(ContributorAdjustment) && item.amount.to_f < 0)
+  end
+
+  protected
 
   # Non-deleted only — used by balance/unsettled sums.
   def visible_items
@@ -155,15 +163,13 @@ class Ledger < ApplicationRecord
     ].flatten
   end
 
-  # qbo_bound mode: drop DIAs (audit only) and negative CAs (audit only).
-  # Everything else flows through the same per-host predicate
-  # in_balance_under_qbo_bound?.
+  # qbo_bound mode: drop audit-only rows; everything else flows through
+  # the per-host predicate in_balance_under_qbo_bound?.
   def qbo_bound_visible_items
-    visible_items.reject do |li|
-      li.is_a?(DeelInvoiceAdjustment) ||
-        (li.is_a?(ContributorAdjustment) && li.amount.to_f < 0)
-    end
+    visible_items.reject { |li| self.class.audit_only_under_qbo_bound?(li) }
   end
+
+  private
 
   # Includes soft-deleted rows — used by items_grouped_by_month for display.
   def all_items_with_deleted
