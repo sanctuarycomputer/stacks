@@ -134,7 +134,12 @@ class StacksTask
     when ProjectSatisfactionSurvey then helpers.admin_project_satisfaction_survey_path(subject)
     when Stacks::Notion::Lead then subject.try(:notion_link) || subject.try(:external_link)
     when PayCycle then helpers.admin_enterprise_pay_cycle_path(subject.enterprise, subject)
-    when Ledger then helpers.edit_admin_contributor_path(subject.contributor)
+    when Ledger
+      if type == :legacy_ledger_needs_qbo_migration
+        helpers.admin_ledger_path(subject)
+      else
+        helpers.edit_admin_contributor_path(subject.contributor)
+      end
     when LedgerWithdrawalRequest
       if type == :ledger_withdrawal_request_needs_processing
         helpers.admin_ledger_withdrawal_requests_path(scope: "pending")
