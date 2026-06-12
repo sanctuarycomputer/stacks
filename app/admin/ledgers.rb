@@ -19,7 +19,7 @@ ActiveAdmin.register Ledger do
       redirect_to admin_ledger_path(resource), notice: "Migrated to QBO-bound."
     else
       redirect_to admin_ledger_path(resource),
-        alert: "Cannot migrate: Δbalance #{number_to_currency(result.balance_delta)}, Δunsettled #{number_to_currency(result.unsettled_delta)}."
+        alert: "Cannot migrate: Δbalance #{helpers.number_to_currency(result.balance_delta)}, Δunsettled #{helpers.number_to_currency(result.unsettled_delta)}."
     end
   end
 
