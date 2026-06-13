@@ -8,6 +8,19 @@ ActiveAdmin.register Ledger do
   actions :index, :show
   permit_params
 
+  member_action :refresh_qbo_vendor, method: :post do
+    qa = resource.enterprise&.qbo_account
+    if qa.nil?
+      redirect_to admin_ledger_path(resource), alert: "No QBO account connected for #{resource.enterprise&.name}."
+      return
+    end
+    qa.sync_all_vendors!
+    redirect_to admin_ledger_path(resource), notice: "Refreshed QBO vendor data for #{resource.enterprise.name}."
+  rescue => e
+    Rails.logger.error("[refresh_qbo_vendor] ledger=#{resource.id}: #{e.class}: #{e.message}")
+    redirect_to admin_ledger_path(resource), alert: "Refresh failed: #{e.message}"
+  end
+
   member_action :migrate_to_qbo_bound, method: :post do
     unless resource.legacy?
       redirect_to admin_ledger_path(resource), alert: "Already QBO-bound."
@@ -55,6 +68,15 @@ ActiveAdmin.register Ledger do
                 para "Stacks shows MORE owed than QBO. Likely cause: an Expense-to-AP or vendor credit in QBO that reduces AP, which Stacks can't see. Reconcile in QBO first (add the missing offset in Stacks, or verify the QBO entry is correct)."
               else
                 para "QBO shows MORE owed than Stacks. Likely cause: an open Bill in QBO that Stacks doesn't know about (host without qbo_bill_id, or a Bill created outside Stacks). Sync the missing Bill or verify the QBO entry."
+              end
+              div style: "margin-top: 0.5em;" do
+                button_to "Refresh QBO vendor data",
+                          refresh_qbo_vendor_admin_ledger_path(resource),
+                          method: :post,
+                          data: { confirm: "Fetch all vendors for #{resource.enterprise.name} from QBO? Takes a few seconds." }
+                para style: "font-size: 0.85em; opacity: 0.7;" do
+                  text_node "Refreshes the cached vendor balance. Use if you just synced a new bill to QBO and the diff matches a known Stacks-side amount."
+                end
               end
             end
           end
