@@ -22,7 +22,7 @@ module Ledgers
       legacy_b = legacy_visible.select(&:payable?).sum(&:signed_amount).to_f
       legacy_u = legacy_visible.reject(&:payable?).sum(&:signed_amount).to_f
       new_b    = qbb_visible.select(&:in_balance_under_qbo_bound?).sum(&:signed_amount).to_f
-      new_u    = qbb_visible.reject(&:in_balance_under_qbo_bound?).sum(&:signed_amount).to_f
+      new_u    = qbb_visible.reject(&:payable?).sum(&:signed_amount).to_f
 
       db = (new_b - legacy_b).round(2)
       du = (new_u - legacy_u).round(2)

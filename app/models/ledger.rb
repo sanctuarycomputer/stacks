@@ -81,8 +81,13 @@ class Ledger < ApplicationRecord
     rows.size
   end
 
-  # Balance/unsettled split. legacy preserves today's rules; qbo_bound trusts
-  # the QBO Bill Paid status as the single source of truth.
+  # Balance/unsettled split.
+  #   legacy:    balance = payable items, unsettled = non-payable items.
+  #   qbo_bound: balance = payable items whose QBO bill isn't paid yet;
+  #              unsettled = non-payable items (waiting on Stacks-side approval).
+  #              Items where the QBO bill IS paid drop from BOTH buckets — they're
+  #              settled in QBO and shouldn't show up in either Stacks total. This
+  #              keeps the qbo_bound ledger one-to-one with the QBO vendor record.
   def balance
     if legacy?
       visible_items.select(&:payable?).sum(&:signed_amount)
@@ -97,7 +102,7 @@ class Ledger < ApplicationRecord
     if legacy?
       visible_items.reject(&:payable?).sum(&:signed_amount)
     elsif qbo_bound?
-      qbo_bound_visible_items.reject(&:in_balance_under_qbo_bound?).sum(&:signed_amount)
+      qbo_bound_visible_items.reject(&:payable?).sum(&:signed_amount)
     else
       raise "Unknown ledger mode: #{mode.inspect}"
     end

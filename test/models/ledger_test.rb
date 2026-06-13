@@ -257,7 +257,7 @@ class LedgerBalanceUnderQboBoundTest < ActiveSupport::TestCase
     assert_equal 100, @ledger.balance.to_f
   end
 
-  test "qbo_bound mode drops a positive host whose qbo_bill is paid" do
+  test "qbo_bound mode drops a paid host from BOTH balance and unsettled" do
     @ledger.update!(mode: :qbo_bound)
     paid = mock("qbo_bill"); paid.stubs(:paid?).returns(true)
     payout = mock("payout")
@@ -270,7 +270,23 @@ class LedgerBalanceUnderQboBoundTest < ActiveSupport::TestCase
     payout.stubs(:is_a?).with(ContributorAdjustment).returns(false)
 
     @ledger.stubs(:visible_items).returns([payout])
+    assert_equal 0, @ledger.balance.to_f, "paid host must not be in balance"
+    assert_equal 0, @ledger.unsettled.to_f, "paid host must not be in unsettled either — it's done"
+  end
+
+  test "qbo_bound mode keeps a non-payable host in unsettled" do
+    @ledger.update!(mode: :qbo_bound)
+    pending = mock("pending_payout")
+    pending.stubs(:payable?).returns(false)
+    pending.stubs(:in_balance_under_qbo_bound?).returns(false)
+    pending.stubs(:signed_amount).returns(100)
+    pending.stubs(:is_a?).returns(false)
+    pending.stubs(:is_a?).with(DeelInvoiceAdjustment).returns(false)
+    pending.stubs(:is_a?).with(ContributorAdjustment).returns(false)
+
+    @ledger.stubs(:visible_items).returns([pending])
     assert_equal 0, @ledger.balance.to_f
+    assert_equal 100, @ledger.unsettled.to_f
   end
 
   test "qbo_bound mode ignores DIAs entirely" do
