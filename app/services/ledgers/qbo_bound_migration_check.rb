@@ -45,6 +45,13 @@ module Ledgers
       qbo_diff = qbo_vendor_balance ? (stacks_open_total - qbo_vendor_balance).round(2) : nil
       qbo_match = qbo_diff && qbo_diff.abs < TOLERANCE
 
+      # Trivially empty ledgers: zero on both sides under both rules. Migration
+      # changes nothing visible, so no QBO comparison needed — auto-flip them.
+      # This catches the cross-product (every Contributor × every Enterprise)
+      # ledgers that have no activity and no QBO vendor mapping.
+      trivial = legacy_b.abs < TOLERANCE && legacy_u.abs < TOLERANCE &&
+                new_b.abs    < TOLERANCE && new_u.abs    < TOLERANCE
+
       Result.new(
         current_balance: legacy_b.round(2),
         current_unsettled: legacy_u.round(2),
@@ -57,7 +64,7 @@ module Ledgers
         qbo_diff: qbo_diff,
         qbo_match?: qbo_match,
         qbo_vendor_missing?: vendor.nil?,
-        ready?: !vendor.nil? && qbo_match,
+        ready?: trivial || (!vendor.nil? && qbo_match),
         removed_neg_cas: legacy_visible.select { |li| li.is_a?(ContributorAdjustment) && li.amount.to_f < 0 },
         removed_dias: legacy_visible.select { |li| li.is_a?(DeelInvoiceAdjustment) && li.payable? },
         dropped_paid_hosts: collect_dropped_paid_hosts(legacy_visible),
