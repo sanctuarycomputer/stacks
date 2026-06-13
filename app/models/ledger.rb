@@ -92,7 +92,9 @@ class Ledger < ApplicationRecord
     if legacy?
       visible_items.select(&:payable?).sum(&:signed_amount)
     elsif qbo_bound?
-      qbo_bound_visible_items.select(&:in_balance_under_qbo_bound?).sum(&:signed_amount)
+      qbo_bound_visible_items.select(&:in_balance_under_qbo_bound?).sum do |li|
+        li.respond_to?(:qbo_bound_balance_amount) ? li.qbo_bound_balance_amount : li.signed_amount
+      end
     else
       raise "Unknown ledger mode: #{mode.inspect}"
     end

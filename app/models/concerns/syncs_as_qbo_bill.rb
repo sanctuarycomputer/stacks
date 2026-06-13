@@ -87,6 +87,16 @@ module SyncsAsQboBill
     false
   end
 
+  # Contribution to qbo_bound balance. Uses the QBO bill's remaining unpaid
+  # balance when a bill exists so partial payments are reflected one-to-one
+  # with QBO's vendor AP. Falls back to the host amount when there's no
+  # synced bill.
+  def qbo_bound_balance_amount
+    qb = qbo_bill
+    return amount.to_f if qb.nil?
+    qb.remaining_balance
+  end
+
   # Returns the array of Quickbooks::Model::BillLineItem objects that will
   # be pushed for this host's bill. Default implementation produces a single
   # line at the host's `find_qbo_account!` result, matching the historic

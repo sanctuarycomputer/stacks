@@ -28,6 +28,13 @@ class QboBill < ApplicationRecord
     (data&.dig("total_amt") || data&.dig("total"))&.to_f
   end
 
+  # Remaining unpaid balance on the bill. Reflects partial payments — a bill
+  # for $1,778.40 paid down to $0.40 returns 0.4 here. Used by qbo_bound
+  # balance computation to mirror QBO's vendor AP exactly.
+  def remaining_balance
+    data&.dig("balance").to_f
+  end
+
   def delete_qbo_bill!
     begin
       qbo_account.delete_bill(qbo_account.fetch_bill_by_id(qbo_id))
