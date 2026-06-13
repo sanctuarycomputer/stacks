@@ -106,6 +106,9 @@ ActiveAdmin.register Contributor do
     return unless current_admin_user.is_admin?
 
     if r.accepted?
+      # Un-accepting: detach + destroy the QBO bill so the books stay aligned.
+      # No-op if the bill was never synced.
+      r.detach_and_destroy_qbo_bill if r.qbo_bill_id.present?
       r.update!(
         accepted_by: nil,
         accepted_at: nil
@@ -115,6 +118,14 @@ ActiveAdmin.register Contributor do
         accepted_by: current_admin_user,
         accepted_at: DateTime.now
       )
+      # Push to QBO so the reimbursement is payable through the same flow as
+      # every other host. Best-effort: log + continue if the QBO push fails
+      # (admin can retry manually).
+      begin
+        r.sync_qbo_bill!
+      rescue => e
+        Rails.logger.error("[reimbursement_accept] sync_qbo_bill! failed for ##{r.id}: #{e.class}: #{e.message}")
+      end
     end
 
     return redirect_to(
