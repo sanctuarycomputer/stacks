@@ -120,9 +120,6 @@ ActiveAdmin.register Contributor do
     return unless current_admin_user.is_admin?
 
     if r.accepted?
-      # Un-accepting: detach + destroy the QBO bill so the books stay aligned.
-      # No-op if the bill was never synced.
-      r.detach_and_destroy_qbo_bill if r.qbo_bill_id.present?
       r.update!(
         accepted_by: nil,
         accepted_at: nil
