@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_06_02_155349) do
+ActiveRecord::Schema.define(version: 2026_06_13_225103) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -978,9 +978,11 @@ ActiveRecord::Schema.define(version: 2026_06_02_155349) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.bigint "ledger_id", null: false
+    t.string "qbo_bill_id"
     t.index ["accepted_by_id"], name: "index_reimbursements_on_accepted_by_id"
     t.index ["deleted_at"], name: "index_reimbursements_on_deleted_at"
     t.index ["ledger_id"], name: "index_reimbursements_on_ledger_id"
+    t.index ["qbo_bill_id"], name: "index_reimbursements_on_qbo_bill_id"
   end
 
   create_table "review_trees", force: :cascade do |t|

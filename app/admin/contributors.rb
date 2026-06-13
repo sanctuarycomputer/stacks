@@ -117,6 +117,15 @@ ActiveAdmin.register Contributor do
       )
     end
 
+    # Keep QBO in sync after either toggle. sync_qbo_bill! is idempotent —
+    # creates if missing, updates the existing bill otherwise. Best-effort:
+    # log + continue on failure; admin can retry manually.
+    begin
+      r.sync_qbo_bill!
+    rescue => e
+      Rails.logger.error("[reimbursement_accept] sync_qbo_bill! failed for ##{r.id}: #{e.class}: #{e.message}")
+    end
+
     return redirect_to(
       admin_contributor_path(params[:id], format: :html),
       notice: "Success",
