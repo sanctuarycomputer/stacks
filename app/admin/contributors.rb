@@ -129,14 +129,15 @@ ActiveAdmin.register Contributor do
         accepted_by: current_admin_user,
         accepted_at: DateTime.now
       )
-      # Push to QBO so the reimbursement is payable through the same flow as
-      # every other host. Best-effort: log + continue if the QBO push fails
-      # (admin can retry via the Payable QBO Bills page).
-      begin
-        r.sync_qbo_bill!
-      rescue => e
-        Rails.logger.error("[reimbursement_accept] sync_qbo_bill! failed for ##{r.id}: #{e.class}: #{e.message}")
-      end
+    end
+
+    # Keep QBO in sync after either toggle. sync_qbo_bill! is idempotent —
+    # creates if missing, updates the existing bill otherwise. Best-effort:
+    # log + continue on failure; admin can retry via the Payable QBO Bills page.
+    begin
+      r.sync_qbo_bill!
+    rescue => e
+      Rails.logger.error("[reimbursement_accept] sync_qbo_bill! failed for ##{r.id}: #{e.class}: #{e.message}")
     end
 
     return redirect_to(
