@@ -23,7 +23,7 @@ class LedgersRakeTest < ActiveSupport::TestCase
     @ledger.update!(mode: :legacy)
     blocked = Ledgers::QboBoundMigrationCheck::Result.new(
       current_balance: 0, current_unsettled: 0, proposed_balance: 100, proposed_unsettled: 0,
-      balance_delta: 100, unsettled_delta: 0, ready?: false, blocking_bills: [], ignored_negative_cas: [],
+      balance_delta: 100, unsettled_delta: 0, ready?: false, removed_neg_cas: [], removed_dias: [], dropped_paid_hosts: [], open_qbo_bills: [],
     )
     Ledgers::QboBoundMigrationCheck.stubs(:call).returns(blocked)
 

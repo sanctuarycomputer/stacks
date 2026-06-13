@@ -22,8 +22,10 @@ class Ledgers::QboBoundMigrationCheckTest < ActiveSupport::TestCase
     assert_respond_to r, :proposed_balance
     assert_respond_to r, :balance_delta
     assert_respond_to r, :ready?
-    assert_respond_to r, :blocking_bills
-    assert_respond_to r, :ignored_negative_cas
+    assert_respond_to r, :removed_neg_cas
+    assert_respond_to r, :removed_dias
+    assert_respond_to r, :dropped_paid_hosts
+    assert_respond_to r, :open_qbo_bills
   end
 
   test "ledger is blocked when ledger.balance under qbo_bound != legacy" do

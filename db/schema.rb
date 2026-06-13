@@ -891,23 +891,6 @@ ActiveRecord::Schema.define(version: 2026_06_12_214545) do
     t.index ["enterprise_id"], name: "index_qbo_accounts_on_enterprise_id"
   end
 
-  create_table "qbo_bill_account_mappings", force: :cascade do |t|
-    t.bigint "enterprise_id", null: false
-    t.string "line_item_key", null: false
-    t.bigint "project_tracker_id"
-    t.bigint "contributor_id"
-    t.string "qbo_chart_account_qbo_id", null: false
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["contributor_id"], name: "index_qbo_bill_account_mappings_on_contributor_id"
-    t.index ["enterprise_id", "line_item_key", "contributor_id"], name: "idx_qbo_bill_acct_mappings_contributor", unique: true, where: "(contributor_id IS NOT NULL)"
-    t.index ["enterprise_id", "line_item_key", "project_tracker_id"], name: "idx_qbo_bill_acct_mappings_tracker", unique: true, where: "(project_tracker_id IS NOT NULL)"
-    t.index ["enterprise_id", "line_item_key"], name: "idx_qbo_bill_acct_mappings_default", unique: true, where: "((project_tracker_id IS NULL) AND (contributor_id IS NULL))"
-    t.index ["enterprise_id"], name: "index_qbo_bill_account_mappings_on_enterprise_id"
-    t.index ["project_tracker_id"], name: "index_qbo_bill_account_mappings_on_project_tracker_id"
-    t.check_constraint "(project_tracker_id IS NULL) OR (contributor_id IS NULL)", name: "qbo_bill_acct_mappings_one_subject"
-  end
-
   create_table "qbo_bills", force: :cascade do |t|
     t.string "qbo_id", null: false
     t.jsonb "data"
@@ -917,19 +900,6 @@ ActiveRecord::Schema.define(version: 2026_06_12_214545) do
     t.index ["qbo_account_id"], name: "index_qbo_bills_on_qbo_account_id"
     t.index ["qbo_id"], name: "index_qbo_bills_on_qbo_id"
     t.index ["qbo_vendor_id"], name: "index_qbo_bills_on_qbo_vendor_id"
-  end
-
-  create_table "qbo_chart_accounts", force: :cascade do |t|
-    t.string "qbo_id", null: false
-    t.bigint "qbo_account_id", null: false
-    t.string "name", null: false
-    t.string "acct_num"
-    t.string "classification"
-    t.string "account_type"
-    t.boolean "active", default: true, null: false
-    t.jsonb "data"
-    t.index ["qbo_account_id", "qbo_id"], name: "index_qbo_chart_accounts_on_qbo_account_and_qbo_id", unique: true
-    t.index ["qbo_account_id"], name: "index_qbo_chart_accounts_on_qbo_account_id"
   end
 
   create_table "qbo_invoices", force: :cascade do |t|
@@ -1225,14 +1195,14 @@ ActiveRecord::Schema.define(version: 2026_06_12_214545) do
   add_foreign_key "account_lead_periods", "project_trackers"
   add_foreign_key "adhoc_invoice_trackers", "project_trackers"
   add_foreign_key "adhoc_invoice_trackers", "qbo_accounts"
-  # Composite FK fk_adhoc_invoice_trackers_qbo_invoice managed by migration (not expressible in schema.rb)
+  add_foreign_key "adhoc_invoice_trackers", "qbo_invoices", column: "qbo_account_id", primary_key: "qbo_account_id", name: "fk_adhoc_invoice_trackers_qbo_invoice"
   add_foreign_key "admin_user_salary_windows", "admin_users"
   add_foreign_key "associates_award_agreements", "admin_users"
   add_foreign_key "commissions", "contributors"
   add_foreign_key "commissions", "project_trackers"
   add_foreign_key "contributor_adjustments", "ledgers"
   add_foreign_key "contributor_adjustments", "qbo_accounts"
-  # Composite FK fk_contributor_adjustments_qbo_invoice managed by migration (not expressible in schema.rb)
+  add_foreign_key "contributor_adjustments", "qbo_invoices", column: "qbo_account_id", primary_key: "qbo_account_id", name: "fk_contributor_adjustments_qbo_invoice"
   add_foreign_key "contributor_payouts", "admin_users", column: "created_by_id"
   add_foreign_key "contributor_payouts", "invoice_trackers"
   add_foreign_key "contributor_payouts", "ledgers"
@@ -1251,7 +1221,7 @@ ActiveRecord::Schema.define(version: 2026_06_12_214545) do
   add_foreign_key "invoice_trackers", "admin_users"
   add_foreign_key "invoice_trackers", "invoice_passes"
   add_foreign_key "invoice_trackers", "qbo_accounts"
-  # Composite FK fk_invoice_trackers_qbo_invoice managed by migration (not expressible in schema.rb)
+  add_foreign_key "invoice_trackers", "qbo_invoices", column: "qbo_account_id", primary_key: "qbo_account_id", name: "fk_invoice_trackers_qbo_invoice"
   add_foreign_key "ledgers", "contributors"
   add_foreign_key "ledgers", "enterprises"
   add_foreign_key "mailing_list_subscribers", "mailing_lists"
@@ -1305,11 +1275,7 @@ ActiveRecord::Schema.define(version: 2026_06_12_214545) do
   add_foreign_key "project_tracker_links", "project_trackers"
   add_foreign_key "project_trackers", "runn_projects", primary_key: "runn_id"
   add_foreign_key "qbo_accounts", "enterprises"
-  add_foreign_key "qbo_bill_account_mappings", "contributors"
-  add_foreign_key "qbo_bill_account_mappings", "enterprises"
-  add_foreign_key "qbo_bill_account_mappings", "project_trackers"
   add_foreign_key "qbo_bills", "qbo_accounts"
-  add_foreign_key "qbo_chart_accounts", "qbo_accounts"
   add_foreign_key "qbo_invoices", "qbo_accounts"
   add_foreign_key "qbo_profit_and_loss_reports", "qbo_accounts"
   add_foreign_key "qbo_tokens", "qbo_accounts"
