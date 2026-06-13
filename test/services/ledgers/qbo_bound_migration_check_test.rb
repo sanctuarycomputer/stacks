@@ -39,18 +39,45 @@ class Ledgers::QboBoundMigrationCheckTest < ActiveSupport::TestCase
   end
 
   test "blocked when Stacks open total does not match QBO vendor balance" do
+    # Need a non-trivial ledger so the empty-ledger bypass doesn't kick in.
+    payable_payout = mock("payout")
+    payable_payout.stubs(:payable?).returns(true)
+    payable_payout.stubs(:in_balance_under_qbo_bound?).returns(true)
+    payable_payout.stubs(:signed_amount).returns(100)
+    payable_payout.stubs(:is_a?).returns(false)
+    payable_payout.stubs(:is_a?).with(DeelInvoiceAdjustment).returns(false)
+    payable_payout.stubs(:is_a?).with(ContributorAdjustment).returns(false)
+    @ledger.stubs(:visible_items).returns([payable_payout])
+    @ledger.stubs(:qbo_bound_visible_items).returns([payable_payout])
+
     @qbo_vendor.update!(data: { "balance" => "999.0", "display_name" => "Test" })
     result = Ledgers::QboBoundMigrationCheck.call(@ledger)
     refute result.ready?
     refute result.qbo_match?
-    assert_in_delta(-999, result.qbo_diff, 0.01)
+    assert_in_delta(-899, result.qbo_diff, 0.01)
   end
 
-  test "blocked when contributor has no QBO vendor mapping" do
+  test "blocked when contributor has no QBO vendor mapping and ledger has activity" do
+    payable_payout = mock("payout")
+    payable_payout.stubs(:payable?).returns(true)
+    payable_payout.stubs(:in_balance_under_qbo_bound?).returns(true)
+    payable_payout.stubs(:signed_amount).returns(100)
+    payable_payout.stubs(:is_a?).returns(false)
+    payable_payout.stubs(:is_a?).with(DeelInvoiceAdjustment).returns(false)
+    payable_payout.stubs(:is_a?).with(ContributorAdjustment).returns(false)
+    @ledger.stubs(:visible_items).returns([payable_payout])
+    @ledger.stubs(:qbo_bound_visible_items).returns([payable_payout])
+
     ContributorQboVendor.where(contributor: @contributor).destroy_all
     result = Ledgers::QboBoundMigrationCheck.call(@ledger)
     refute result.ready?
     assert result.qbo_vendor_missing?
+  end
+
+  test "trivially-empty ledger is ready even without QBO vendor mapping" do
+    ContributorQboVendor.where(contributor: @contributor).destroy_all
+    result = Ledgers::QboBoundMigrationCheck.call(@ledger)
+    assert result.ready?, "empty ledger should auto-flip regardless of QBO vendor state"
   end
 
   test "Δ between legacy and qbo_bound is surfaced as diagnostic info" do
