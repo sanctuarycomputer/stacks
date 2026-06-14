@@ -297,24 +297,6 @@
 <% end %>
 
 
-<% if view_mode == :ledger && current_ledger&.deel_enabled? %>
-  <div class="dashboard-modules table index_table index" style="margin-top: 24px;">
-    <div class="dashboard-module">
-      <div class="module-header">
-        <p>Withdraw via Deel</p>
-      </div>
-      <div class="module-body" style="padding: 12px;">
-        <%= form_tag(withdraw_via_deel_admin_contributor_path(contributor), method: :post, style: "display: inline") do %>
-          <%= hidden_field_tag :ledger_id, current_ledger.id %>
-          <%= number_field_tag :amount, current_ledger.balance.to_f, step: "0.01", min: "0.01", max: current_ledger.balance.to_f %>
-          <%= select_tag :contract_id, options_for_select(contributor.deel_person&.deel_contracts&.map { |c| [c.deel_contract_type_label, c.deel_id] } || []) %>
-          <%= submit_tag "Withdraw via Deel" %>
-        <% end %>
-      </div>
-    </div>
-  </div>
-<% end %>
-
 <%# Per-contributor recurring ledger adjustments. Filters by the active
     ledger when one is selected; shows all ledgers' rows on the All view.
     Renders a compact table with links to the top-level admin for editing. %>

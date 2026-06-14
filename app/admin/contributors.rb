@@ -48,11 +48,20 @@ ActiveAdmin.register Contributor do
   # write against, so the buttons short-circuit to a JS alert instead.
   LEDGER_REQUIRED_ALERT = "Select the appropriate ledger before you can perform this action.".freeze
 
-  # "New Deel Withdrawal" was retired: contributors now submit a Ledger
-  # Withdrawal Request and admins process it via Deel from that request's
-  # show page (or via QBO Bill Pay). The legacy
-  # admin/contributors/:id/deel_invoice_adjustments routes remain so
-  # historical rows are viewable, but no entry point is exposed here.
+  action_item :new_deel_withdrawal, only: :show do
+    selected_ledger = params[:ledger].present? && resource.ledgers.find_by(id: params[:ledger])
+    if selected_ledger&.deel_enabled?
+      link_to "New Deel Withdrawal", new_admin_contributor_deel_invoice_adjustment_path(resource, ledger_id: selected_ledger.id)
+    elsif selected_ledger
+      # Ledger selected but Deel not in payment_methods — keep the button visible but inert,
+      # mirroring the other action_items' UX.
+      link_to "New Deel Withdrawal", "#",
+        onclick: "alert(#{"Deel is not enabled for this ledger's payment methods.".to_json}); return false;"
+    else
+      link_to "New Deel Withdrawal", "#",
+        onclick: "alert(#{LEDGER_REQUIRED_ALERT.to_json}); return false;"
+    end
+  end
 
   action_item :new_contributor_adjustment, only: :show, if: proc { current_admin_user.is_admin? } do
     selected_ledger = params[:ledger].present? && resource.ledgers.find_by(id: params[:ledger])
@@ -72,27 +81,6 @@ ActiveAdmin.register Contributor do
       link_to "Submit Reimbursement", "#",
         onclick: "alert(#{LEDGER_REQUIRED_ALERT.to_json}); return false;"
     end
-  end
-
-  member_action :withdraw_via_deel, method: :post do
-    ledger = Ledger.find(params.require(:ledger_id))
-    unless ledger.deel_enabled?
-      redirect_back fallback_location: admin_contributor_path(resource), alert: "Deel is not enabled for this ledger."
-      return
-    end
-
-    DeelInvoiceAdjustments::CreateForLedger.call(
-      ledger: ledger,
-      amount: params.require(:amount),
-      contract_id: params.require(:contract_id),
-      description: params[:description].to_s,
-      date_submitted: params[:date_submitted].presence || Date.current,
-      initiated_by: current_admin_user,
-    )
-
-    redirect_back fallback_location: admin_contributor_path(resource), notice: "Withdrew via Deel."
-  rescue DeelInvoiceAdjustments::CreateForLedger::Error => e
-    redirect_back fallback_location: admin_contributor_path(resource), alert: e.message
   end
 
   member_action :toggle_contributor_payout_acceptance, method: :post do
