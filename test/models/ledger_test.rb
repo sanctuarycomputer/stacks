@@ -280,6 +280,7 @@ class LedgerBalanceUnderQboBoundTest < ActiveSupport::TestCase
     pending.stubs(:payable?).returns(false)
     pending.stubs(:in_balance_under_qbo_bound?).returns(false)
     pending.stubs(:signed_amount).returns(100)
+    pending.stubs(:qbo_bill).returns(nil)
     pending.stubs(:is_a?).returns(false)
     pending.stubs(:is_a?).with(DeelInvoiceAdjustment).returns(false)
     pending.stubs(:is_a?).with(ContributorAdjustment).returns(false)

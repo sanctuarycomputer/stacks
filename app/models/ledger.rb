@@ -92,9 +92,7 @@ class Ledger < ApplicationRecord
     if legacy?
       visible_items.select(&:payable?).sum(&:signed_amount)
     elsif qbo_bound?
-      qbo_bound_visible_items.select(&:in_balance_under_qbo_bound?).sum do |li|
-        li.respond_to?(:qbo_bound_balance_amount) ? li.qbo_bound_balance_amount : li.signed_amount
-      end
+      qbo_bound_open_items.select(&:payable?).sum { |li| qbo_bound_contribution(li) }
     else
       raise "Unknown ledger mode: #{mode.inspect}"
     end
@@ -104,7 +102,7 @@ class Ledger < ApplicationRecord
     if legacy?
       visible_items.reject(&:payable?).sum(&:signed_amount)
     elsif qbo_bound?
-      qbo_bound_visible_items.reject(&:payable?).sum(&:signed_amount)
+      qbo_bound_open_items.reject(&:payable?).sum { |li| qbo_bound_contribution(li) }
     else
       raise "Unknown ledger mode: #{mode.inspect}"
     end
@@ -174,6 +172,26 @@ class Ledger < ApplicationRecord
   # the per-host predicate in_balance_under_qbo_bound?.
   def qbo_bound_visible_items
     visible_items.reject { |li| self.class.audit_only_under_qbo_bound?(li) }
+  end
+
+  # qbo_bound mode: items that should still appear somewhere (balance or
+  # unsettled). Audit-only items are dropped, AND any host whose QBO bill
+  # is fully Paid is dropped — paid bills are settled in QBO and shouldn't
+  # show up in Stacks at all. Partial-paid bills survive (their remaining
+  # balance is the contribution).
+  def qbo_bound_open_items
+    qbo_bound_visible_items.reject { |li| (li.qbo_bill rescue nil)&.paid? }
+  end
+
+  # qbo_bound mode: per-item dollar amount. Uses the QBO bill's remaining
+  # balance when a bill exists so partial payments are reflected one-to-one
+  # with QBO's vendor AP; falls back to the host's signed_amount otherwise.
+  def qbo_bound_contribution(li)
+    if li.respond_to?(:qbo_bound_balance_amount)
+      li.qbo_bound_balance_amount
+    else
+      li.signed_amount
+    end
   end
 
   private

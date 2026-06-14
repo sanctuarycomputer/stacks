@@ -28,14 +28,12 @@ module Ledgers
 
     def self.call(ledger)
       legacy_visible = ledger.send(:visible_items)
-      qbb_visible    = ledger.send(:qbo_bound_visible_items)
+      qbb_open       = ledger.send(:qbo_bound_open_items)
 
       legacy_b = legacy_visible.select(&:payable?).sum(&:signed_amount).to_f
       legacy_u = legacy_visible.reject(&:payable?).sum(&:signed_amount).to_f
-      new_b    = qbb_visible.select(&:in_balance_under_qbo_bound?).sum do |li|
-        (li.respond_to?(:qbo_bound_balance_amount) ? li.qbo_bound_balance_amount : li.signed_amount).to_f
-      end
-      new_u    = qbb_visible.reject(&:payable?).sum(&:signed_amount).to_f
+      new_b    = qbb_open.select(&:payable?).sum { |li| ledger.send(:qbo_bound_contribution, li).to_f }
+      new_u    = qbb_open.reject(&:payable?).sum { |li| ledger.send(:qbo_bound_contribution, li).to_f }
 
       db = (new_b - legacy_b).round(2)
       du = (new_u - legacy_u).round(2)

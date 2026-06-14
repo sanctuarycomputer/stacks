@@ -44,11 +44,13 @@ class Ledgers::QboBoundMigrationCheckTest < ActiveSupport::TestCase
     payable_payout.stubs(:payable?).returns(true)
     payable_payout.stubs(:in_balance_under_qbo_bound?).returns(true)
     payable_payout.stubs(:signed_amount).returns(100)
+    payable_payout.stubs(:qbo_bill).returns(nil)
     payable_payout.stubs(:is_a?).returns(false)
     payable_payout.stubs(:is_a?).with(DeelInvoiceAdjustment).returns(false)
     payable_payout.stubs(:is_a?).with(ContributorAdjustment).returns(false)
     @ledger.stubs(:visible_items).returns([payable_payout])
     @ledger.stubs(:qbo_bound_visible_items).returns([payable_payout])
+    @ledger.stubs(:qbo_bound_open_items).returns([payable_payout])
 
     @qbo_vendor.update!(data: { "balance" => "999.0", "display_name" => "Test" })
     result = Ledgers::QboBoundMigrationCheck.call(@ledger)
@@ -62,11 +64,13 @@ class Ledgers::QboBoundMigrationCheckTest < ActiveSupport::TestCase
     payable_payout.stubs(:payable?).returns(true)
     payable_payout.stubs(:in_balance_under_qbo_bound?).returns(true)
     payable_payout.stubs(:signed_amount).returns(100)
+    payable_payout.stubs(:qbo_bill).returns(nil)
     payable_payout.stubs(:is_a?).returns(false)
     payable_payout.stubs(:is_a?).with(DeelInvoiceAdjustment).returns(false)
     payable_payout.stubs(:is_a?).with(ContributorAdjustment).returns(false)
     @ledger.stubs(:visible_items).returns([payable_payout])
     @ledger.stubs(:qbo_bound_visible_items).returns([payable_payout])
+    @ledger.stubs(:qbo_bound_open_items).returns([payable_payout])
 
     ContributorQboVendor.where(contributor: @contributor).destroy_all
     result = Ledgers::QboBoundMigrationCheck.call(@ledger)
