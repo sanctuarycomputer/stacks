@@ -9,6 +9,7 @@ module Money
       ProfitShare,
       Trueup,
       PayStub,
+      Reimbursement,
     ].freeze
 
     Row = Struct.new(:host, :ledger, :contributor, :qbo_bill, :amount, keyword_init: true)
@@ -23,7 +24,7 @@ module Money
           .includes(ledger: :contributor)
           .find_each.filter_map do |row|
             next nil unless row.payable?
-            qb = (row.qbo_bill rescue nil)
+            qb = row.try(:qbo_bill)
             next nil if qb.nil? || qb.paid?
 
             Row.new(

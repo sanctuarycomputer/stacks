@@ -11,6 +11,7 @@ module Stacks
           profit_shares
           pay_stubs
           trueups
+          reimbursements
         ].freeze
 
         def tasks

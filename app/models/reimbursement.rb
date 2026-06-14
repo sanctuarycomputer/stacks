@@ -34,13 +34,6 @@ class Reimbursement < ApplicationRecord
     accepted?
   end
 
-  # Reimbursements sync as QBO Bills like every other payable host. They
-  # stay in balance until the QBO bill is marked Paid — same lifecycle as
-  # ContributorPayout/Adjustment/ProfitShare/Trueup/PayStub.
-  def in_balance_under_qbo_bound?
-    accepted? && !qbo_bill&.paid?
-  end
-
   # SyncsAsQboBill contract
   def bill_txn_date
     accepted_at&.to_date || created_at.to_date

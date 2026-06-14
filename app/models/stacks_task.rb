@@ -46,6 +46,7 @@ class StacksTask
 
     # Ledger issues
     missing_qbo_vendor_for_contributor: "Contributor needs a QBO vendor for this enterprise's ledger",
+    legacy_ledger_needs_qbo_migration: "Legacy ledger needs migration to QBO-bound",
 
   }.freeze
 

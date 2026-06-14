@@ -186,60 +186,52 @@ class LedgerModeAndPaymentMethodsTest < ActiveSupport::TestCase
   test "PAYMENT_METHODS is the canonical list" do
     assert_equal %w[deel qbo], Ledger::PAYMENT_METHODS
   end
-end
 
-class HostInBalanceUnderQboBoundTest < ActiveSupport::TestCase
-  test "DeelInvoiceAdjustment is never in balance under qbo_bound" do
-    dia = DeelInvoiceAdjustment.new(amount: 100, deel_status: "approved")
-    refute dia.in_balance_under_qbo_bound?
+  test "validation rejects unknown payment_methods values" do
+    @ledger.payment_methods = %w[deel justworks]
+    refute @ledger.valid?
+    assert_match(/justworks/, @ledger.errors[:payment_methods].join)
   end
 
-  test "Reimbursement uses accepted? for qbo_bound" do
-    r_accepted = Reimbursement.new
-    r_accepted.stubs(:accepted?).returns(true)
-    assert r_accepted.in_balance_under_qbo_bound?
-
-    r_pending = Reimbursement.new
-    r_pending.stubs(:accepted?).returns(false)
-    refute r_pending.in_balance_under_qbo_bound?
+  test "payment_methods_for: non-US Deel contributor → [deel]" do
+    dp = DeelPerson.create!(deel_id: "dp#{SecureRandom.hex(2)}", data: { "country" => "CA" })
+    c = Contributor.create!(forecast_person: ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "fr#{SecureRandom.hex(2)}@example.com", data: {}), deel_person_id: dp.deel_id)
+    assert_equal %w[deel], Ledger.payment_methods_for(c)
   end
 
-  test "ContributorPayout: in balance when payable and qbo_bill unpaid" do
-    cp = ContributorPayout.new
-    cp.stubs(:payable?).returns(true)
-    cp.stubs(:qbo_bill).returns(nil)
-    assert cp.in_balance_under_qbo_bound?
-
-    paid = mock("qbo_bill")
-    paid.stubs(:paid?).returns(true)
-    cp.stubs(:qbo_bill).returns(paid)
-    refute cp.in_balance_under_qbo_bound?
-
-    cp.stubs(:payable?).returns(false)
-    cp.stubs(:qbo_bill).returns(nil)
-    refute cp.in_balance_under_qbo_bound?
+  test "payment_methods_for: US Deel contributor → [qbo]" do
+    dp = DeelPerson.create!(deel_id: "dp#{SecureRandom.hex(2)}", data: { "country" => "US" })
+    c = Contributor.create!(forecast_person: ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "us#{SecureRandom.hex(2)}@example.com", data: {}), deel_person_id: dp.deel_id)
+    assert_equal %w[qbo], Ledger.payment_methods_for(c)
   end
 
-  test "Trueup: in balance when qbo_bill unpaid (payable? always true; bill state governs)" do
-    t = Trueup.new
-    t.stubs(:qbo_bill).returns(nil)
-    assert t.in_balance_under_qbo_bound?
-
-    paid = mock("qbo_bill")
-    paid.stubs(:paid?).returns(true)
-    t.stubs(:qbo_bill).returns(paid)
-    refute t.in_balance_under_qbo_bound?
+  test "payment_methods_for: no Deel attachment → [qbo]" do
+    c = Contributor.create!(forecast_person: ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "nd#{SecureRandom.hex(2)}@example.com", data: {}))
+    assert_equal %w[qbo], Ledger.payment_methods_for(c)
   end
 
-  test "ProfitShare, PayStub, ContributorAdjustment all follow the payable?-and-unpaid pattern" do
-    [ProfitShare, PayStub, ContributorAdjustment].each do |klass|
-      h = klass.new
-      h.stubs(:payable?).returns(true)
-      h.stubs(:qbo_bill).returns(nil)
-      assert h.in_balance_under_qbo_bound?, "#{klass.name} should be in balance when payable and unpaid"
+  test "ensure_for_contributor! sets payment_methods from contributor's deel country" do
+    Enterprise.find_or_create_by!(name: "DefaultPMBulk-#{SecureRandom.hex(2)}")
+    dp = DeelPerson.create!(deel_id: "dp#{SecureRandom.hex(2)}", data: { "country" => "DE" })
+    c = Contributor.create!(forecast_person: ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "dpm#{SecureRandom.hex(2)}@example.com", data: {}), deel_person_id: dp.deel_id)
+    # Contributor.after_create runs Ledger.ensure_for_contributor!; every ledger
+    # for c should have payment_methods set from payment_methods_for(c).
+    Ledger.where(contributor: c).each do |l|
+      assert_equal %w[deel], l.payment_methods, "ensure_for_contributor! should populate payment_methods"
     end
   end
+
+  test "default_payment_methods callback fires when a Ledger is built directly" do
+    # Build (not create) so the auto-create from Contributor.after_create doesn't preempt us.
+    dp = DeelPerson.create!(deel_id: "dp#{SecureRandom.hex(2)}", data: { "country" => "DE" })
+    c = Contributor.create!(forecast_person: ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "cb#{SecureRandom.hex(2)}@example.com", data: {}), deel_person_id: dp.deel_id)
+    l = Ledger.new(enterprise: Enterprise.find_or_create_by!(name: "CB-#{SecureRandom.hex(2)}"), contributor: c)
+    assert_equal [], l.payment_methods, "blank before validation"
+    l.valid?
+    assert_equal %w[deel], l.payment_methods, "callback should fill the default"
+  end
 end
+
 
 class LedgerBalanceUnderQboBoundTest < ActiveSupport::TestCase
   setup do
@@ -263,7 +255,6 @@ class LedgerBalanceUnderQboBoundTest < ActiveSupport::TestCase
     payout = mock("payout")
     payout.stubs(:payable?).returns(true)
     payout.stubs(:qbo_bill).returns(paid)
-    payout.stubs(:in_balance_under_qbo_bound?).returns(false)
     payout.stubs(:signed_amount).returns(100)
     payout.stubs(:is_a?).returns(false)
     payout.stubs(:is_a?).with(DeelInvoiceAdjustment).returns(false)
@@ -278,7 +269,6 @@ class LedgerBalanceUnderQboBoundTest < ActiveSupport::TestCase
     @ledger.update!(mode: :qbo_bound)
     pending = mock("pending_payout")
     pending.stubs(:payable?).returns(false)
-    pending.stubs(:in_balance_under_qbo_bound?).returns(false)
     pending.stubs(:signed_amount).returns(100)
     pending.stubs(:qbo_bill).returns(nil)
     pending.stubs(:is_a?).returns(false)
@@ -313,6 +303,24 @@ class LedgerBalanceUnderQboBoundTest < ActiveSupport::TestCase
 
     @ledger.stubs(:visible_items).returns([neg])
     assert_equal 0, @ledger.balance.to_f
+    assert_equal 0, @ledger.unsettled.to_f
+  end
+
+  test "qbo_bound mode contributes the QBO bill's remaining balance for partial payments" do
+    @ledger.update!(mode: :qbo_bound)
+    partial = mock("qbo_bill"); partial.stubs(:paid?).returns(false); partial.stubs(:remaining_balance).returns(0.4)
+    host = mock("partial_payout")
+    host.stubs(:payable?).returns(true)
+    host.stubs(:qbo_bill).returns(partial)
+    host.stubs(:qbo_bound_balance_amount).returns(0.4)
+    host.stubs(:amount).returns(1778.4)
+    host.stubs(:signed_amount).returns(1778.4)
+    host.stubs(:is_a?).returns(false)
+    host.stubs(:is_a?).with(DeelInvoiceAdjustment).returns(false)
+    host.stubs(:is_a?).with(ContributorAdjustment).returns(false)
+
+    @ledger.stubs(:visible_items).returns([host])
+    assert_in_delta 0.4, @ledger.balance.to_f, 0.001, "contribution should be qbo_bill.remaining_balance, not amount"
     assert_equal 0, @ledger.unsettled.to_f
   end
 end

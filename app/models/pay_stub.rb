@@ -45,10 +45,6 @@ class PayStub < ApplicationRecord
     accepted? && pay_cycle.stubs_status == :all_accepted && pay_cycle.approved?
   end
 
-  def in_balance_under_qbo_bound?
-    payable? && !qbo_bill&.paid?
-  end
-
   def effective_on_for_display
     pay_cycle.ends_at
   end

@@ -51,7 +51,7 @@ ActiveAdmin.register Contributor do
   action_item :new_deel_withdrawal, only: :show do
     selected_ledger = params[:ledger].present? && resource.ledgers.find_by(id: params[:ledger])
     if selected_ledger&.deel_enabled?
-      link_to "New Deel Withdrawal", new_admin_contributor_deel_invoice_adjustment_path(resource, ledger_id: selected_ledger.id)
+      link_to "New Deel Withdrawal", new_admin_contributor_deel_invoice_adjustment_path(resource, ledger: selected_ledger.id)
     elsif selected_ledger
       # Ledger selected but Deel not in payment_methods — keep the button visible but inert,
       # mirroring the other action_items' UX.

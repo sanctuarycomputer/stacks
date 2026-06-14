@@ -45,6 +45,14 @@ class LedgerMigrationTest < ActionDispatch::IntegrationTest
     assert @ledger.legacy?
   end
 
+  test "Refresh QBO vendor data calls sync_all_vendors! and redirects" do
+    QboAccount.any_instance.expects(:sync_all_vendors!).once
+    post refresh_qbo_vendor_admin_ledger_path(@ledger)
+    assert_response :redirect
+    follow_redirect!
+    assert_response :success
+  end
+
   private
 
   def sign_in(admin)

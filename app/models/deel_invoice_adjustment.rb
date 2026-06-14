@@ -16,11 +16,6 @@ class DeelInvoiceAdjustment < ApplicationRecord
   NON_DEDUCTING_STATUSES = %w[rejected cancelled canceled declined void voided].freeze
   APPROVED_LEDGER_STATUSES = %w[approved paid].freeze
 
-  # DIAs are audit-only on qbo_bound ledgers — never in balance.
-  def in_balance_under_qbo_bound?
-    false
-  end
-
   # Withdrawals deduct from balance.
   def signed_amount
     -amount

@@ -398,12 +398,6 @@ class ContributorPayout < ApplicationRecord
     blueprint["Commission"].sum { |l| l["amount"].to_f }
   end
 
-  # QBO-bound balance rule: in balance only if Stacks considers the row
-  # settled AND its QBO Bill mirror has not yet been marked Paid.
-  def in_balance_under_qbo_bound?
-    payable? && !qbo_bill&.paid?
-  end
-
   # SyncsAsQboBill contract
   def bill_txn_date
     invoice_tracker.invoice_pass.start_of_month.end_of_month

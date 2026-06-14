@@ -24,6 +24,20 @@ class Ledger < ApplicationRecord
   has_many :recurring_ledger_adjustments, dependent: :destroy
 
   validates :enterprise_id, uniqueness: { scope: :contributor_id }
+  validate :payment_methods_are_known
+
+  before_validation :default_payment_methods, on: :create
+
+  # Inferred default payment methods for a contributor. Non-US Deel contractor
+  # → ["deel"]; everyone else → ["qbo"]. Shared between the schema backfill,
+  # the ensure_* bulk paths, and the per-record before_validation hook.
+  def self.payment_methods_for(contributor)
+    return %w[qbo] if contributor.nil?
+    dp = contributor.deel_person
+    country = dp&.data.is_a?(Hash) ? dp.data["country"].to_s.upcase : nil
+    return %w[deel] if dp.present? && country.present? && country != "US"
+    %w[qbo]
+  end
 
   def self.find_or_create_for(enterprise:, contributor:)
     find_or_create_by!(enterprise: enterprise, contributor: contributor)
@@ -38,14 +52,15 @@ class Ledger < ApplicationRecord
   # Returns the count of rows inserted.
   def self.ensure_all!
     existing = pluck(:enterprise_id, :contributor_id).to_set
-    contributor_ids = Contributor.pluck(:id)
+    contributors = Contributor.includes(:deel_person).index_by(&:id)
     enterprise_ids = Enterprise.pluck(:id)
     rows = []
     now = Time.current
-    contributor_ids.each do |c_id|
+    contributors.each_value do |contributor|
+      pm = payment_methods_for(contributor)
       enterprise_ids.each do |e_id|
-        next if existing.include?([e_id, c_id])
-        rows << { enterprise_id: e_id, contributor_id: c_id, created_at: now, updated_at: now }
+        next if existing.include?([e_id, contributor.id])
+        rows << { enterprise_id: e_id, contributor_id: contributor.id, payment_methods: "{#{pm.join(",")}}", created_at: now, updated_at: now }
       end
     end
     insert_all(rows) if rows.any?
@@ -57,11 +72,12 @@ class Ledger < ApplicationRecord
   # has a ledger for every enterprise — no manual setup, no waiting on cron.
   def self.ensure_for_contributor!(contributor)
     existing_enterprise_ids = where(contributor_id: contributor.id).pluck(:enterprise_id).to_set
+    pm = payment_methods_for(contributor)
     rows = []
     now = Time.current
     Enterprise.pluck(:id).each do |e_id|
       next if existing_enterprise_ids.include?(e_id)
-      rows << { enterprise_id: e_id, contributor_id: contributor.id, created_at: now, updated_at: now }
+      rows << { enterprise_id: e_id, contributor_id: contributor.id, payment_methods: "{#{pm.join(",")}}", created_at: now, updated_at: now }
     end
     insert_all(rows) if rows.any?
     rows.size
@@ -71,11 +87,12 @@ class Ledger < ApplicationRecord
   # Invoked from Enterprise.after_create when a new enterprise is added.
   def self.ensure_for_enterprise!(enterprise)
     existing_contributor_ids = where(enterprise_id: enterprise.id).pluck(:contributor_id).to_set
+    contributors = Contributor.where.not(id: existing_contributor_ids).includes(:deel_person)
     rows = []
     now = Time.current
-    Contributor.pluck(:id).each do |c_id|
-      next if existing_contributor_ids.include?(c_id)
-      rows << { enterprise_id: enterprise.id, contributor_id: c_id, created_at: now, updated_at: now }
+    contributors.each do |contributor|
+      pm = payment_methods_for(contributor)
+      rows << { enterprise_id: enterprise.id, contributor_id: contributor.id, payment_methods: "{#{pm.join(",")}}", created_at: now, updated_at: now }
     end
     insert_all(rows) if rows.any?
     rows.size
@@ -89,23 +106,11 @@ class Ledger < ApplicationRecord
   #              settled in QBO and shouldn't show up in either Stacks total. This
   #              keeps the qbo_bound ledger one-to-one with the QBO vendor record.
   def balance
-    if legacy?
-      visible_items.select(&:payable?).sum(&:signed_amount)
-    elsif qbo_bound?
-      qbo_bound_open_items.select(&:payable?).sum { |li| qbo_bound_contribution(li) }
-    else
-      raise "Unknown ledger mode: #{mode.inspect}"
-    end
+    sum_for_bucket(payable: true)
   end
 
   def unsettled
-    if legacy?
-      visible_items.reject(&:payable?).sum(&:signed_amount)
-    elsif qbo_bound?
-      qbo_bound_open_items.reject(&:payable?).sum { |li| qbo_bound_contribution(li) }
-    else
-      raise "Unknown ledger mode: #{mode.inspect}"
-    end
+    sum_for_bucket(payable: false)
   end
 
   # Per-ledger by-month grouping for display. Includes soft-deleted rows so the contributor
@@ -168,8 +173,8 @@ class Ledger < ApplicationRecord
     ].flatten
   end
 
-  # qbo_bound mode: drop audit-only rows; everything else flows through
-  # the per-host predicate in_balance_under_qbo_bound?.
+  # qbo_bound mode: drop audit-only rows. The remaining items are then split
+  # by `qbo_bound_open_items` (paid bills drop too) and bucketed by `payable?`.
   def qbo_bound_visible_items
     visible_items.reject { |li| self.class.audit_only_under_qbo_bound?(li) }
   end
@@ -180,7 +185,7 @@ class Ledger < ApplicationRecord
   # show up in Stacks at all. Partial-paid bills survive (their remaining
   # balance is the contribution).
   def qbo_bound_open_items
-    qbo_bound_visible_items.reject { |li| (li.qbo_bill rescue nil)&.paid? }
+    qbo_bound_visible_items.reject { |li| li.try(:qbo_bill)&.paid? }
   end
 
   # qbo_bound mode: per-item dollar amount. Uses the QBO bill's remaining
@@ -195,6 +200,27 @@ class Ledger < ApplicationRecord
   end
 
   private
+
+  def default_payment_methods
+    return unless payment_methods.blank?
+    self.payment_methods = self.class.payment_methods_for(contributor)
+  end
+
+  def sum_for_bucket(payable:)
+    if legacy?
+      visible_items.select { |li| li.payable? == payable }.sum(&:signed_amount)
+    elsif qbo_bound?
+      qbo_bound_open_items.select { |li| li.payable? == payable }.sum { |li| qbo_bound_contribution(li) }
+    else
+      raise "Unknown ledger mode: #{mode.inspect}"
+    end
+  end
+
+  def payment_methods_are_known
+    return if payment_methods.blank?
+    bad = payment_methods - PAYMENT_METHODS
+    errors.add(:payment_methods, "contains unknown value(s): #{bad.join(", ")}") if bad.any?
+  end
 
   # Includes soft-deleted rows — used by items_grouped_by_month for display.
   def all_items_with_deleted

@@ -34,10 +34,6 @@ class ContributorAdjustment < ApplicationRecord
     effective_on
   end
 
-  def in_balance_under_qbo_bound?
-    payable? && !qbo_bill&.paid?
-  end
-
   # SyncsAsQboBill contract
   def bill_txn_date
     effective_on

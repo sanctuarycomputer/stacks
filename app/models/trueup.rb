@@ -20,12 +20,6 @@ class Trueup < ApplicationRecord
     true
   end
 
-  # Trueups always represent settled income; payable? always returns true so
-  # only the qbo_bill payment state governs the qbo_bound balance rule.
-  def in_balance_under_qbo_bound?
-    !qbo_bill&.paid?
-  end
-
   # SyncsAsQboBill contract
   def bill_txn_date
     invoice_pass.start_of_month.end_of_month

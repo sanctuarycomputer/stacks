@@ -13,14 +13,8 @@ class AddModeAndPaymentMethodsToLedgers < ActiveRecord::Migration[6.1]
     Ledger.reset_column_information
 
     Ledger.includes(contributor: :deel_person).find_each do |ledger|
-      contributor = ledger.contributor
-      next if contributor.nil?
-
-      dp = contributor.deel_person
-      country = dp&.data.is_a?(Hash) ? dp.data["country"].to_s.upcase : nil
-      is_non_us_deel = dp.present? && country.present? && country != "US"
-
-      ledger.update_column(:payment_methods, is_non_us_deel ? %w[deel] : %w[qbo])
+      next if ledger.contributor.nil?
+      ledger.update_column(:payment_methods, Ledger.payment_methods_for(ledger.contributor))
     end
   end
 

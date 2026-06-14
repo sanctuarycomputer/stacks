@@ -42,7 +42,6 @@ class Ledgers::QboBoundMigrationCheckTest < ActiveSupport::TestCase
     # Need a non-trivial ledger so the empty-ledger bypass doesn't kick in.
     payable_payout = mock("payout")
     payable_payout.stubs(:payable?).returns(true)
-    payable_payout.stubs(:in_balance_under_qbo_bound?).returns(true)
     payable_payout.stubs(:signed_amount).returns(100)
     payable_payout.stubs(:qbo_bill).returns(nil)
     payable_payout.stubs(:is_a?).returns(false)
@@ -62,7 +61,6 @@ class Ledgers::QboBoundMigrationCheckTest < ActiveSupport::TestCase
   test "blocked when contributor has no QBO vendor mapping and ledger has activity" do
     payable_payout = mock("payout")
     payable_payout.stubs(:payable?).returns(true)
-    payable_payout.stubs(:in_balance_under_qbo_bound?).returns(true)
     payable_payout.stubs(:signed_amount).returns(100)
     payable_payout.stubs(:qbo_bill).returns(nil)
     payable_payout.stubs(:is_a?).returns(false)
@@ -90,7 +88,6 @@ class Ledgers::QboBoundMigrationCheckTest < ActiveSupport::TestCase
     cp.stubs(:payable?).returns(true)
     cp.stubs(:qbo_bill).returns(paid_qb)
     cp.stubs(:signed_amount).returns(100)
-    cp.stubs(:in_balance_under_qbo_bound?).returns(false)
 
     neg_ca = ContributorAdjustment.new(amount: -50)
     neg_ca.stubs(:signed_amount).returns(-50)
