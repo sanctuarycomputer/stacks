@@ -2,6 +2,18 @@ class Ledger < ApplicationRecord
   belongs_to :enterprise
   belongs_to :contributor
 
+  enum mode: { legacy: 0, qbo_bound: 1 }
+
+  PAYMENT_METHODS = %w[deel qbo].freeze
+
+  def deel_enabled?
+    payment_methods.include?("deel")
+  end
+
+  def qbo_enabled?
+    payment_methods.include?("qbo")
+  end
+
   has_many :contributor_payouts
   has_many :contributor_adjustments
   has_many :trueups
@@ -12,6 +24,20 @@ class Ledger < ApplicationRecord
   has_many :recurring_ledger_adjustments, dependent: :destroy
 
   validates :enterprise_id, uniqueness: { scope: :contributor_id }
+  validate :payment_methods_are_known
+
+  before_validation :default_payment_methods, on: :create
+
+  # Inferred default payment methods for a contributor. Non-US Deel contractor
+  # → ["deel"]; everyone else → ["qbo"]. Shared between the schema backfill,
+  # the ensure_* bulk paths, and the per-record before_validation hook.
+  def self.payment_methods_for(contributor)
+    return %w[qbo] if contributor.nil?
+    dp = contributor.deel_person
+    country = dp&.data.is_a?(Hash) ? dp.data["country"].to_s.upcase : nil
+    return %w[deel] if dp.present? && country.present? && country != "US"
+    %w[qbo]
+  end
 
   def self.find_or_create_for(enterprise:, contributor:)
     find_or_create_by!(enterprise: enterprise, contributor: contributor)
@@ -26,14 +52,15 @@ class Ledger < ApplicationRecord
   # Returns the count of rows inserted.
   def self.ensure_all!
     existing = pluck(:enterprise_id, :contributor_id).to_set
-    contributor_ids = Contributor.pluck(:id)
+    contributors = Contributor.includes(:deel_person).index_by(&:id)
     enterprise_ids = Enterprise.pluck(:id)
     rows = []
     now = Time.current
-    contributor_ids.each do |c_id|
+    contributors.each_value do |contributor|
+      pm = payment_methods_for(contributor)
       enterprise_ids.each do |e_id|
-        next if existing.include?([e_id, c_id])
-        rows << { enterprise_id: e_id, contributor_id: c_id, created_at: now, updated_at: now }
+        next if existing.include?([e_id, contributor.id])
+        rows << { enterprise_id: e_id, contributor_id: contributor.id, payment_methods: "{#{pm.join(",")}}", created_at: now, updated_at: now }
       end
     end
     insert_all(rows) if rows.any?
@@ -45,11 +72,12 @@ class Ledger < ApplicationRecord
   # has a ledger for every enterprise — no manual setup, no waiting on cron.
   def self.ensure_for_contributor!(contributor)
     existing_enterprise_ids = where(contributor_id: contributor.id).pluck(:enterprise_id).to_set
+    pm = payment_methods_for(contributor)
     rows = []
     now = Time.current
     Enterprise.pluck(:id).each do |e_id|
       next if existing_enterprise_ids.include?(e_id)
-      rows << { enterprise_id: e_id, contributor_id: contributor.id, created_at: now, updated_at: now }
+      rows << { enterprise_id: e_id, contributor_id: contributor.id, payment_methods: "{#{pm.join(",")}}", created_at: now, updated_at: now }
     end
     insert_all(rows) if rows.any?
     rows.size
@@ -59,25 +87,30 @@ class Ledger < ApplicationRecord
   # Invoked from Enterprise.after_create when a new enterprise is added.
   def self.ensure_for_enterprise!(enterprise)
     existing_contributor_ids = where(enterprise_id: enterprise.id).pluck(:contributor_id).to_set
+    contributors = Contributor.where.not(id: existing_contributor_ids).includes(:deel_person)
     rows = []
     now = Time.current
-    Contributor.pluck(:id).each do |c_id|
-      next if existing_contributor_ids.include?(c_id)
-      rows << { enterprise_id: enterprise.id, contributor_id: c_id, created_at: now, updated_at: now }
+    contributors.each do |contributor|
+      pm = payment_methods_for(contributor)
+      rows << { enterprise_id: enterprise.id, contributor_id: contributor.id, payment_methods: "{#{pm.join(",")}}", created_at: now, updated_at: now }
     end
     insert_all(rows) if rows.any?
     rows.size
   end
 
-  # Balance/unsettled at the per-ledger (per-enterprise) level. Excludes soft-deleted rows
-  # via the default acts_as_paranoid scope. Each host's `payable?` decides which bucket the
-  # row lands in; `signed_amount` lets withdrawals deduct.
+  # Balance/unsettled split.
+  #   legacy:    balance = payable items, unsettled = non-payable items.
+  #   qbo_bound: balance = payable items whose QBO bill isn't paid yet;
+  #              unsettled = non-payable items (waiting on Stacks-side approval).
+  #              Items where the QBO bill IS paid drop from BOTH buckets — they're
+  #              settled in QBO and shouldn't show up in either Stacks total. This
+  #              keeps the qbo_bound ledger one-to-one with the QBO vendor record.
   def balance
-    visible_items.select(&:payable?).sum(&:signed_amount)
+    sum_for_bucket(payable: true)
   end
 
   def unsettled
-    visible_items.reject(&:payable?).sum(&:signed_amount)
+    sum_for_bucket(payable: false)
   end
 
   # Per-ledger by-month grouping for display. Includes soft-deleted rows so the contributor
@@ -117,7 +150,15 @@ class Ledger < ApplicationRecord
     end
   end
 
-  private
+  # Rows that are bookkeeping-only under qbo_bound. Shared between
+  # qbo_bound_visible_items and Ledgers::QboBoundMigrationCheck so the
+  # two cannot drift.
+  def self.audit_only_under_qbo_bound?(item)
+    item.is_a?(DeelInvoiceAdjustment) ||
+      (item.is_a?(ContributorAdjustment) && item.amount.to_f < 0)
+  end
+
+  protected
 
   # Non-deleted only — used by balance/unsettled sums.
   def visible_items
@@ -130,6 +171,55 @@ class Ledger < ApplicationRecord
       deel_invoice_adjustments.to_a,
       pay_stubs.to_a,
     ].flatten
+  end
+
+  # qbo_bound mode: drop audit-only rows. The remaining items are then split
+  # by `qbo_bound_open_items` (paid bills drop too) and bucketed by `payable?`.
+  def qbo_bound_visible_items
+    visible_items.reject { |li| self.class.audit_only_under_qbo_bound?(li) }
+  end
+
+  # qbo_bound mode: items that should still appear somewhere (balance or
+  # unsettled). Audit-only items are dropped, AND any host whose QBO bill
+  # is fully Paid is dropped — paid bills are settled in QBO and shouldn't
+  # show up in Stacks at all. Partial-paid bills survive (their remaining
+  # balance is the contribution).
+  def qbo_bound_open_items
+    qbo_bound_visible_items.reject { |li| li.try(:qbo_bill)&.paid? }
+  end
+
+  # qbo_bound mode: per-item dollar amount. Uses the QBO bill's remaining
+  # balance when a bill exists so partial payments are reflected one-to-one
+  # with QBO's vendor AP; falls back to the host's signed_amount otherwise.
+  def qbo_bound_contribution(li)
+    if li.respond_to?(:qbo_bound_balance_amount)
+      li.qbo_bound_balance_amount
+    else
+      li.signed_amount
+    end
+  end
+
+  private
+
+  def default_payment_methods
+    return unless payment_methods.blank?
+    self.payment_methods = self.class.payment_methods_for(contributor)
+  end
+
+  def sum_for_bucket(payable:)
+    if legacy?
+      visible_items.select { |li| li.payable? == payable }.sum(&:signed_amount)
+    elsif qbo_bound?
+      qbo_bound_open_items.select { |li| li.payable? == payable }.sum { |li| qbo_bound_contribution(li) }
+    else
+      raise "Unknown ledger mode: #{mode.inspect}"
+    end
+  end
+
+  def payment_methods_are_known
+    return if payment_methods.blank?
+    bad = payment_methods - PAYMENT_METHODS
+    errors.add(:payment_methods, "contains unknown value(s): #{bad.join(", ")}") if bad.any?
   end
 
   # Includes soft-deleted rows — used by items_grouped_by_month for display.

@@ -65,3 +65,34 @@ class ContributorAdjustmentTest < ActiveSupport::TestCase
     refute adj.payable?, "should be false when qbo_invoice does not exist in the qbo_account"
   end
 end
+
+class ContributorAdjustmentNegativeOnQboBoundTest < ActiveSupport::TestCase
+  setup do
+    Thread.current[:sanctuary_enterprise] = nil
+    @enterprise = Enterprise.find_or_create_by!(name: "NegCAGuard-#{SecureRandom.hex(2)}")
+    fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "ncag#{SecureRandom.hex(2)}@example.com", data: {})
+    @contributor = Contributor.create!(forecast_person: fp)
+    @ledger = Ledger.find_or_create_for(enterprise: @enterprise, contributor: @contributor)
+  end
+
+  test "negative CA on legacy ledger is allowed" do
+    @ledger.update!(mode: :legacy)
+    ca = ContributorAdjustment.new(ledger: @ledger, amount: -100, description: "off-platform payment")
+    ca.valid?
+    refute ca.errors[:amount].any? { |m| m.include?("QBO-bound") }, "should not trigger qbo_bound guard on legacy"
+  end
+
+  test "negative CA on qbo_bound ledger is rejected with the right error" do
+    @ledger.update!(mode: :qbo_bound)
+    ca = ContributorAdjustment.new(ledger: @ledger, amount: -100, description: "off-platform payment")
+    refute ca.valid?
+    assert ca.errors[:amount].any? { |m| m.include?("QBO-bound") }, "expected an error mentioning QBO-bound"
+  end
+
+  test "positive CA on qbo_bound ledger is allowed" do
+    @ledger.update!(mode: :qbo_bound)
+    ca = ContributorAdjustment.new(ledger: @ledger, amount: 100, description: "bonus")
+    ca.valid?
+    refute ca.errors[:amount].any? { |m| m.include?("QBO-bound") }
+  end
+end

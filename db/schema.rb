@@ -406,9 +406,13 @@ ActiveRecord::Schema.define(version: 2026_06_13_225103) do
     t.bigint "contributor_id", null: false
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.integer "mode", default: 0, null: false
+    t.string "payment_methods", default: [], null: false, array: true
     t.index ["contributor_id"], name: "index_ledgers_on_contributor_id"
     t.index ["enterprise_id", "contributor_id"], name: "index_ledgers_on_enterprise_id_and_contributor_id", unique: true
     t.index ["enterprise_id"], name: "index_ledgers_on_enterprise_id"
+    t.index ["mode"], name: "index_ledgers_on_mode"
+    t.index ["payment_methods"], name: "index_ledgers_on_payment_methods", using: :gin
   end
 
   create_table "mailing_list_subscribers", force: :cascade do |t|

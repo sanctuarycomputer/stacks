@@ -48,13 +48,15 @@ ActiveAdmin.register Contributor do
   # write against, so the buttons short-circuit to a JS alert instead.
   LEDGER_REQUIRED_ALERT = "Select the appropriate ledger before you can perform this action.".freeze
 
-  action_item :deel_invoice, only: :show, if: proc {
-    manual_deel_invoice_visible?(resource)
-  } do
+  action_item :new_deel_withdrawal, only: :show do
     selected_ledger = params[:ledger].present? && resource.ledgers.find_by(id: params[:ledger])
-    if selected_ledger
-      link_to "New Deel Withdrawal",
-        new_admin_contributor_deel_invoice_adjustment_path(resource, ledger: selected_ledger.id)
+    if selected_ledger&.deel_enabled?
+      link_to "New Deel Withdrawal", new_admin_contributor_deel_invoice_adjustment_path(resource, ledger: selected_ledger.id)
+    elsif selected_ledger
+      # Ledger selected but Deel not in payment_methods — keep the button visible but inert,
+      # mirroring the other action_items' UX.
+      link_to "New Deel Withdrawal", "#",
+        onclick: "alert(#{"Deel is not enabled for this ledger's payment methods.".to_json}); return false;"
     else
       link_to "New Deel Withdrawal", "#",
         onclick: "alert(#{LEDGER_REQUIRED_ALERT.to_json}); return false;"
@@ -119,7 +121,7 @@ ActiveAdmin.register Contributor do
 
     # Keep QBO in sync after either toggle. sync_qbo_bill! is idempotent —
     # creates if missing, updates the existing bill otherwise. Best-effort:
-    # log + continue on failure; admin can retry manually.
+    # log + continue on failure; admin can retry via the Payable QBO Bills page.
     begin
       r.sync_qbo_bill!
     rescue => e

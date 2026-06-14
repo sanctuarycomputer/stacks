@@ -49,6 +49,7 @@ module Stacks
       Discoveries::Surveys,
       Discoveries::PayCycles,
       Discoveries::MissingQboVendors,
+      Discoveries::LegacyLedgersPendingQboMigration,
     ].freeze
 
     # Returns Array<StacksTask> — every open task system-wide.

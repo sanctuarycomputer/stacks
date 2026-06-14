@@ -46,6 +46,8 @@ class StacksTask
 
     # Ledger issues
     missing_qbo_vendor_for_contributor: "Contributor needs a QBO vendor for this enterprise's ledger",
+    legacy_ledger_needs_qbo_migration: "Legacy ledger needs migration to QBO-bound",
+
   }.freeze
 
   # type    — Symbol classifying the task (:project_capsule_incomplete, :survey, …)
@@ -120,7 +122,12 @@ class StacksTask
     when ProjectSatisfactionSurvey then helpers.admin_project_satisfaction_survey_path(subject)
     when Stacks::Notion::Lead then subject.try(:notion_link) || subject.try(:external_link)
     when PayCycle then helpers.admin_enterprise_pay_cycle_path(subject.enterprise, subject)
-    when Ledger then helpers.edit_admin_contributor_path(subject.contributor)
+    when Ledger
+      if type == :legacy_ledger_needs_qbo_migration
+        helpers.admin_ledger_path(subject)
+      else
+        helpers.edit_admin_contributor_path(subject.contributor)
+      end
     else subject.try(:external_link)
     end
   end

@@ -271,7 +271,7 @@
               <% end %>
             </td>
             <td class="col text-right">
-              <% unless li.deleted_at.present? %>
+              <% unless li.try(:deleted_at).present? %>
                 <% if li.is_a?(ContributorPayout) %>
                   <%= link_to "#{li.display_name} ↗", admin_invoice_tracker_contributor_payout_path(li.invoice_tracker, li) %>
                 <% elsif li.is_a?(ProfitShare) %>
