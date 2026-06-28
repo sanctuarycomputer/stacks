@@ -9,6 +9,10 @@ class LedgerMigrationTest < ActionDispatch::IntegrationTest
     fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "mp#{SecureRandom.hex(2)}@example.com", data: {})
     @contributor = Contributor.create!(forecast_person: fp)
     @ledger = Ledger.find_or_create_for(enterprise: @enterprise, contributor: @contributor)
+    # New ledgers default to :qbo_bound, but the operator-driven migration flow
+    # only exists for legacy ledgers — pin this fixture to legacy so the flip
+    # action has work to do.
+    @ledger.update!(mode: :legacy)
     ContributorQboVendor.create!(contributor: @contributor, qbo_account: @qa, qbo_vendor: @qbo_vendor)
 
     @admin = AdminUser.create!(

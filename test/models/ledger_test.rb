@@ -161,10 +161,10 @@ class LedgerModeAndPaymentMethodsTest < ActiveSupport::TestCase
     @ledger = Ledger.find_or_create_for(enterprise: @enterprise, contributor: @contributor)
   end
 
-  test "mode defaults to legacy" do
-    assert_equal "legacy", @ledger.mode
-    assert @ledger.legacy?
-    refute @ledger.qbo_bound?
+  test "mode defaults to qbo_bound for newly created ledgers" do
+    assert_equal "qbo_bound", @ledger.mode
+    assert @ledger.qbo_bound?
+    refute @ledger.legacy?
   end
 
   test "mode flips to qbo_bound" do

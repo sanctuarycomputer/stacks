@@ -14,6 +14,16 @@ ActiveAdmin.register Reimbursement do
     end
   end
 
+  action_item :sync_qbo_bill, only: :show, if: proc { current_admin_user.is_admin? } do
+    link_to "Sync QBO Bill", sync_qbo_bill_admin_ledger_reimbursement_path(resource.ledger, resource),
+      method: :post
+  end
+
+  member_action :sync_qbo_bill, method: :post do
+    resource.sync_qbo_bill!
+    redirect_to admin_ledger_reimbursement_path(resource.ledger, resource), notice: "Success"
+  end
+
   index download_links: false do
     column :description
     column :contributor
@@ -58,5 +68,9 @@ ActiveAdmin.register Reimbursement do
     end
 
     f.actions
+  end
+
+  show do
+    render(partial: "show", locals: { resource: resource })
   end
 end

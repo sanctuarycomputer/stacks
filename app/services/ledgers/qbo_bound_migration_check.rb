@@ -21,10 +21,12 @@ module Ledgers
       :qbo_match?, :qbo_vendor_missing?,
       :ready?,
       :removed_neg_cas, :removed_dias, :dropped_paid_hosts, :open_qbo_bills,
+      :unsynced_hosts, :unsynced_total,
       keyword_init: true,
     )
 
     OpenBill = Struct.new(:host, :qbo_bill, :amount, keyword_init: true)
+    UnsyncedHost = Struct.new(:host, :amount, keyword_init: true)
 
     def self.call(ledger)
       legacy_visible = ledger.send(:visible_items)
@@ -52,6 +54,9 @@ module Ledgers
       trivial = legacy_b.abs < TOLERANCE && legacy_u.abs < TOLERANCE &&
                 new_b.abs    < TOLERANCE && new_u.abs    < TOLERANCE
 
+      unsynced = collect_unsynced_hosts(qbb_open)
+      unsynced_total = unsynced.sum { |h| h.amount.to_f }.round(2)
+
       Result.new(
         current_balance: legacy_b.round(2),
         current_unsettled: legacy_u.round(2),
@@ -69,6 +74,8 @@ module Ledgers
         removed_dias: legacy_visible.select { |li| li.is_a?(DeelInvoiceAdjustment) && li.payable? },
         dropped_paid_hosts: collect_dropped_paid_hosts(legacy_visible),
         open_qbo_bills: collect_open_qbo_bills(legacy_visible),
+        unsynced_hosts: unsynced,
+        unsynced_total: unsynced_total,
       )
     end
 
@@ -84,6 +91,19 @@ module Ledgers
         next nil if qb.nil? || !qb.paid?
 
         OpenBill.new(host: li, qbo_bill: qb, amount: li.amount.to_f)
+      end
+    end
+
+    # Payable hosts that should sync to QBO but have NO qbo_bill_id yet.
+    # These contribute to Stacks open total but not to QBO vendor balance —
+    # syncing them (via SyncsAsQboBill#sync_qbo_bill!) eliminates the diff.
+    def self.collect_unsynced_hosts(items)
+      items.filter_map do |li|
+        next nil unless li.respond_to?(:qbo_bill)
+        next nil unless li.payable?
+        next nil unless li.qbo_bill.nil?
+
+        UnsyncedHost.new(host: li, amount: li.signed_amount.to_f)
       end
     end
 

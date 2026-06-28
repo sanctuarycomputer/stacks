@@ -49,7 +49,7 @@ ActiveAdmin.register Contributor do
   LEDGER_REQUIRED_ALERT = "Select the appropriate ledger before you can perform this action.".freeze
 
   action_item :new_deel_withdrawal, only: :show do
-    selected_ledger = params[:ledger].present? && resource.ledgers.find_by(id: params[:ledger])
+    selected_ledger = params[:ledger].presence && resource.ledgers.find_by(id: params[:ledger])
     if selected_ledger&.deel_enabled?
       link_to "New Deel Withdrawal", new_admin_contributor_deel_invoice_adjustment_path(resource, ledger: selected_ledger.id)
     elsif selected_ledger
@@ -64,7 +64,7 @@ ActiveAdmin.register Contributor do
   end
 
   action_item :new_contributor_adjustment, only: :show, if: proc { current_admin_user.is_admin? } do
-    selected_ledger = params[:ledger].present? && resource.ledgers.find_by(id: params[:ledger])
+    selected_ledger = params[:ledger].presence && resource.ledgers.find_by(id: params[:ledger])
     if selected_ledger
       link_to "New Adjustment", new_admin_ledger_contributor_adjustment_path(selected_ledger)
     else
@@ -74,7 +74,7 @@ ActiveAdmin.register Contributor do
   end
 
   action_item :submit_reimbursement, only: :show do
-    selected_ledger = params[:ledger].present? && resource.ledgers.find_by(id: params[:ledger])
+    selected_ledger = params[:ledger].presence && resource.ledgers.find_by(id: params[:ledger])
     if selected_ledger
       link_to "Submit Reimbursement", new_admin_ledger_reimbursement_path(selected_ledger)
     else

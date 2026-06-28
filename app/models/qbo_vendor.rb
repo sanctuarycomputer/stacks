@@ -12,4 +12,8 @@ class QboVendor < ApplicationRecord
   def display_name
     data.dig("display_name")
   end
+
+  def qbo_url
+    "https://qbo.intuit.com/app/vendordetail?nameId=#{qbo_id}"
+  end
 end

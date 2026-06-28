@@ -1,46 +1,213 @@
-<h2>Payable QBO Bills</h2>
+<%# QBO-account tab bar — "All" + one tab per Enterprise's QboAccount. Mirrors
+    the contributor-ledger Explorer tab pattern (nag pill + complete = selected,
+    update("qbo_account_id", id) query-string toggle). Selecting "All" shows
+    payable bills from every connected QboAccount in a single combined view.
+    A red .notifier badge surfaces the pending-bill count on each tab. %>
+<script>
+function update(a, b) {
+  var searchParams = new URLSearchParams(window.location.search);
+  if (b !== '')
+    searchParams.set(a, b);
+  else
+    searchParams.delete(a);
+  window.location.search = searchParams.toString();
+}
+</script>
 
-<div class="payable-qbo-bills-tabs" style="margin-bottom: 1em;">
+<%# Per-host detail link — mirrors the "Info ↗" column in app/views/admin/contributors/_show.html.erb
+    so clicking through from the Money page lands on the same row detail. %>
+<%
+ledger_item_path = ->(li) {
+  case li
+  when ContributorPayout       then admin_invoice_tracker_contributor_payout_path(li.invoice_tracker, li)
+  when ProfitShare             then admin_periodic_report_path(li.periodic_report)
+  when Reimbursement           then admin_ledger_reimbursement_path(li.ledger, li)
+  when Trueup                  then admin_ledger_trueup_path(li.ledger, li)
+  when ContributorAdjustment   then admin_ledger_contributor_adjustment_path(li.ledger, li)
+  when PayStub                 then admin_pay_cycle_pay_stub_path(li.pay_cycle, li)
+  end
+}
+%>
+
+<div style="margin-bottom: 20px">
+  <a onclick='update("qbo_account_id", "");' style="margin-right: 6px">
+    <p class="nag pill <%= 'complete' if @active_qa.nil? %>" style="margin-bottom: 0px;margin-right: 6px;position: relative;">
+      All
+      <% total_pending = @rows_by_account.values.sum(&:size) %>
+      <% if total_pending > 0 %>
+        <span class="notifier"><%= total_pending %></span>
+      <% end %>
+    </p>
+  </a>
   <% @qbo_accounts.each do |qa| %>
-    <%= link_to qa.enterprise.name, admin_money_payable_qbo_bills_path(qbo_account_id: qa.id),
-                style: "margin-right: 1em; #{'font-weight: bold' if @active_qa&.id == qa.id}" %>
+    <% selected = @active_qa&.id == qa.id %>
+    <% pending = @rows_by_account[qa].size %>
+    <a onclick='update("qbo_account_id", "<%= qa.id %>");' style="margin-right: 6px">
+      <p class="nag pill <%= 'complete' if selected %>" style="margin-bottom: 0px;margin-right: 6px;position: relative;">
+        <%= qa.enterprise.name %>
+        <% if pending > 0 %>
+          <span class="notifier"><%= pending %></span>
+        <% end %>
+      </p>
+    </a>
   <% end %>
 </div>
 
-<% if @active_qa.nil? %>
-  <p><em>No QBO accounts connected.</em></p>
-<% else %>
-  <div style="margin-bottom: 1em;">
-    <%= button_to "Refresh all on this tab",
-                  admin_money_refresh_tab_path(qbo_account_id: @active_qa.id),
-                  method: :post %>
+<div class="title_bar" id="title_bar" style="padding: 0px 0px 20px 0px;">
+  <div id="titlebar_left"></div>
+  <div id="titlebar_right">
+    <%= button_to "Sync all to QBO",
+                  admin_money_refresh_tab_path(qbo_account_id: @active_qa&.id),
+                  method: :post,
+                  data: { confirm: "Re-sync every payable bill on this view from QBO? Takes a few seconds per bill." },
+                  class: "action_item",
+                  form: { style: "display: inline" } %>
   </div>
+</div>
+
+<% if @qbo_accounts.empty? %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <p><em>No QBO accounts connected.</em></p>
+      </div>
+    </div>
+  </div>
+<% else %>
+  <%# Summary card — always visible. Mirrors the per-contributor Balance/Unsettled card. %>
+  <% error_rows = @rows.select { |r| r.qbo_bill.nil? } %>
+  <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+    <tbody>
+      <tr class="even">
+        <td class="col"><strong>Total Payable</strong></td>
+        <td class="col text-right">
+          <%= number_to_currency(@rows.sum(&:amount)) %>
+          <span style="opacity: 0.6;">(<%= @rows.size %> ledger item<%= "s" if @rows.size != 1 %>)</span>
+        </td>
+      </tr>
+      <tr class="odd">
+        <td class="col"><strong>Total Unsettled</strong></td>
+        <td class="col text-right">
+          <%= number_to_currency(@unsettled_total) %>
+          <span style="opacity: 0.6;">(<%= @unsettled_count %> ledger item<%= "s" if @unsettled_count != 1 %>)</span>
+        </td>
+      </tr>
+      <% if error_rows.any? %>
+        <tr class="even">
+          <td class="col"><strong>Sync Errors</strong></td>
+          <td class="col text-right">
+            <span class="pill error"><%= error_rows.size %> ledger item<%= "s" if error_rows.size != 1 %> with no QBO bill</span>
+            &nbsp;<span style="opacity: 0.6;"><%= number_to_currency(error_rows.sum(&:amount)) %></span>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
 
   <% if @rows.empty? %>
-    <p><em>No payable bills on <%= @active_qa.enterprise.name %>.</em></p>
+    <div class="dashboard-modules table index_table index">
+      <div class="dashboard-module">
+        <div class="module-body factoid-parent">
+          <p style="margin: 20px 0;"><em>No payable bills<% unless @active_qa.nil? %> on <%= @active_qa.enterprise.name %><% end %>.</em></p>
+        </div>
+      </div>
+    </div>
   <% else %>
-    <% @rows.group_by(&:contributor).each do |contributor, contributor_rows| %>
-      <h3>
-        <%= contributor.forecast_person&.email || "Contributor ##{contributor.id}" %>
-        — <%= number_to_currency(contributor_rows.sum(&:amount)) %>
-        (<%= contributor_rows.size %> bills)
-      </h3>
-      <ul>
-        <% contributor_rows.each do |row| %>
-          <li>
-            <%= row.host.class.name %> #<%= row.host.id %>
-            — <%= number_to_currency(row.amount) %>
-            — <%= link_to "Pay in QBO ↗", row.qbo_bill.qbo_url, target: "_blank", rel: "noopener" %>
-            — <%= button_to "Refresh",
-                            admin_money_refresh_bill_path(
-                              qbo_account_id: @active_qa.id,
-                              host_class: row.host.class.name,
-                              host_id: row.host.id,
-                            ),
-                            method: :post, form: { style: "display: inline" } %>
-          </li>
-        <% end %>
-      </ul>
+    <% @rows.group_by(&:contributor).sort_by { |c, _| (c.forecast_person&.email || "z").downcase }.each do |contributor, contributor_rows| %>
+      <%# Distinct (qbo_account, qbo_vendor) pairs across this contributor's rows —
+          on a single-enterprise tab there's just one; on "All" there may be a few. %>
+      <% vendor_pairs = contributor_rows
+            .map { |r| r.ledger.enterprise.qbo_account }
+            .uniq
+            .filter_map { |qa| qa && [qa, contributor.qbo_vendor_for(qa)] }
+            .select { |_qa, v| v.present? } %>
+      <div class="title_bar" id="title_bar" style="padding: 40px 0px 20px 0px;">
+        <div id="titlebar_left">
+          <h2 id="page_title">
+            <%= link_to (contributor.forecast_person&.email || "Contributor ##{contributor.id}"),
+                        admin_contributor_path(contributor) %>
+          </h2>
+        </div>
+        <div id="titlebar_right">
+          <span class="pill complete">
+            <%= number_to_currency(contributor_rows.sum(&:amount)) %>
+            <span class="split"><%= contributor_rows.size %> ledger item<%= "s" if contributor_rows.size != 1 %></span>
+          </span>
+          <% vendor_pairs.each do |qa, vendor| %>
+            &nbsp;
+            <%= link_to "Open in QBO#{vendor_pairs.size > 1 ? " (#{qa.enterprise.name})" : ""} ↗",
+                        vendor.qbo_url, target: "_blank", rel: "noopener" %>
+          <% end %>
+        </div>
+      </div>
+
+      <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="table-layout: fixed; width: 100%;">
+        <thead>
+          <tr>
+            <% if @active_qa.nil? %>
+              <th class="col">Enterprise</th>
+            <% end %>
+            <th class="col">Type</th>
+            <th class="col">Ledger Item</th>
+            <th class="col">Amount</th>
+            <th class="col text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% contributor_rows.each_with_index do |row, index| %>
+            <tr class="<%= index.even? ? "even" : "odd" %>">
+              <% if @active_qa.nil? %>
+                <td class="col"><%= row.ledger.enterprise.name %></td>
+              <% end %>
+              <td class="col">
+                <% if row.host.is_a?(PayStub) %>
+                  <span class="pill pay_stub">Pay Stub</span>
+                <% else %>
+                  <span class="pill <%= row.host.model_name.human.downcase %>">
+                    <%= row.host.model_name.human %>
+                  </span>
+                <% end %>
+              </td>
+              <td class="col">
+                <% path = ledger_item_path.call(row.host) %>
+                <% if path %>
+                  <%= link_to "#{row.host.class.name} ##{row.host.id} ↗", path %>
+                <% else %>
+                  <%= row.host.class.name %> #<%= row.host.id %>
+                <% end %>
+              </td>
+              <td class="col">
+                <%= number_to_currency(row.amount) %>
+              </td>
+              <td class="col text-right">
+                <% if row.qbo_bill.present? %>
+                  <%= link_to "Pay in QBO ↗", row.qbo_bill.qbo_url, target: "_blank", rel: "noopener" %>
+                  &nbsp;
+                  <%= link_to "Sync to QBO ↺",
+                              admin_money_refresh_bill_path(
+                                qbo_account_id: @active_qa&.id,
+                                host_class: row.host.class.name,
+                                host_id: row.host.id,
+                              ),
+                              method: :post,
+                              data: { confirm: "Re-sync this bill from QBO?" } %>
+                <% else %>
+                  <span class="pill error">No QBO bill</span>
+                  &nbsp;
+                  <%= link_to "Sync to QBO ↺",
+                              admin_money_refresh_bill_path(
+                                qbo_account_id: @active_qa&.id,
+                                host_class: row.host.class.name,
+                                host_id: row.host.id,
+                              ),
+                              method: :post,
+                              data: { confirm: "Push this ledger item to QBO as a bill?" } %>
+                <% end %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
     <% end %>
   <% end %>
 <% end %>
