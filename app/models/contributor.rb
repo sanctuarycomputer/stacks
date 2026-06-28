@@ -258,15 +258,10 @@ class Contributor < ApplicationRecord
   end
 
   def sync_qbo_bills!
-    contributor_payouts.each do |cp|
-      cp.sync_qbo_bill!
-    end
-    contributor_adjustments.each do |adj|
-      adj.sync_qbo_bill!
-    end
-    profit_shares.each do |ps|
-      ps.sync_qbo_bill!
-    end
+    cache = Qbo::AccountsCache.new
+    contributor_payouts.each { |cp| cp.sync_qbo_bill!(accounts_cache: cache) }
+    contributor_adjustments.each { |adj| adj.sync_qbo_bill!(accounts_cache: cache) }
+    profit_shares.each { |ps| ps.sync_qbo_bill!(accounts_cache: cache) }
   end
 
   def display_name

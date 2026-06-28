@@ -101,9 +101,10 @@ module SyncsAsQboBill
     [line]
   end
 
-  def sync_qbo_bill!
+  def sync_qbo_bill!(accounts_cache: nil)
     qa = qbo_account_for_bill
     return if qa.nil?
+    accounts_cache ||= Qbo::AccountsCache.new
 
     vendor = contributor.qbo_vendor_for(qa)
     return if vendor.nil?
@@ -122,8 +123,13 @@ module SyncsAsQboBill
     bill.doc_number = "Stacks_#{id}_#{bill_doc_number_code}" # QBO has a 21-char limit
     bill.vendor_ref = Quickbooks::Model::BaseReference.new(vendor.qbo_id)
 
-    qbo_accounts = qa.fetch_all_accounts
-    bill.line_items = bill_line_items(qbo_accounts)
+    bill.line_items = Qbo::BillRouter.new(self, accounts_cache: accounts_cache).lines.map do |data|
+      line = Quickbooks::Model::BillLineItem.new(description: data[:description], amount: data[:amount])
+      line.account_based_expense_item! do |detail|
+        detail.account_ref = Quickbooks::Model::BaseReference.new(data[:account].id)
+      end
+      line
+    end
     bill_service = Quickbooks::Service::Bill.new
     bill_service.company_id = qa.realm_id
     bill_service.access_token = qa.make_and_refresh_qbo_access_token

@@ -314,4 +314,23 @@ class Qbo::BillRouterTest < ActiveSupport::TestCase
     assert_equal "tu-url", lines.first[:description]
     assert_same default, lines.first[:account]
   end
+
+  test "two routers sharing one cache fetch the chart of accounts only once" do
+    accounts = [acct("5000", 5000)]
+    qa = mock("qa"); qa.stubs(:id).returns(99)
+    qa.expects(:fetch_all_accounts).once.returns(accounts)
+
+    cache = Qbo::AccountsCache.new
+    item1 = line_item_stub(Trueup, amount: 1.0, description: "u1")
+    item2 = line_item_stub(Trueup, amount: 2.0, description: "u2")
+
+    [item1, item2].each do |it|
+      r = Qbo::BillRouter.new(it, accounts_cache: cache)
+      r.stubs(:studio).returns(nil)
+      r.stubs(:qbo_account).returns(qa)
+      r.stubs(:enterprise).returns(OpenStruct.new(name: "Test Enterprise"))
+      r.stubs(:enterprise_gl_map).returns({ subcontractor_default: "5000" })
+      r.lines
+    end
+  end
 end
