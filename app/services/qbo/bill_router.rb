@@ -49,6 +49,17 @@ module Qbo
       Enterprise::GARDEN3D_NAME  => :garden3d,
     }.freeze
 
+    ROLE_LABEL_BY_BUCKET = {
+      individual_contributor: "Individual Contributor",
+      account_lead_base:      "Account Lead",
+      account_lead_surplus:   "Account Lead Surplus",
+      project_lead_base:      "Project Lead",
+      project_lead_surplus:   "Project Lead Surplus",
+      commission:             "Commission",
+    }.freeze
+
+    SURPLUS_DESCRIPTION_MARKER = "surplus revenue".freeze
+
     def initialize(item, accounts_cache:)
       @item = item
       @accounts_cache = accounts_cache
@@ -90,7 +101,85 @@ module Qbo
     end
 
     def payout_concept_lines
-      [single_line(:subcontractor)] # replaced in Task 4
+      return [collapsed_payout_line] unless item.in_sync?
+
+      buckets = bucket_blueprint(item.blueprint || {})
+
+      lines = ROLE_LABEL_BY_BUCKET.keys.each_with_object([]) do |bucket, acc|
+        entries = buckets[bucket]
+        next if entries.blank?
+
+        amount = entries.sum { |e| e["amount"].to_f }.round(2)
+        next if amount.zero?
+
+        acc << {
+          amount: amount,
+          description: build_bucket_description(bucket, entries),
+          concept: concept_for_bucket(bucket),
+        }
+      end
+
+      return [collapsed_payout_line] if lines.empty?
+
+      if lines.sum { |l| l[:amount] }.round(2) != item.amount.to_f.round(2)
+        Rails.logger.warn(
+          "Qbo::BillRouter: per-bucket sums drifted from cp.amount " \
+          "(cp_id=#{item.id}, cp.amount=#{item.amount}, " \
+          "bucket_sum=#{lines.sum { |l| l[:amount] }}); falling back to single-line bill"
+        )
+        return [collapsed_payout_line]
+      end
+
+      lines
+    end
+
+    def collapsed_payout_line
+      { amount: item.amount, description: item.bill_description, concept: base_concept }
+    end
+
+    def concept_for_bucket(bucket)
+      case bucket
+      when :account_lead_surplus, :project_lead_surplus then :bonuses
+      when :commission then :commission
+      else base_concept
+      end
+    end
+
+    # base_concept is :subcontractor here; Task 5 adds the internal-client
+    # :marketing override.
+    def base_concept
+      :subcontractor
+    end
+
+    def bucket_blueprint(blueprint)
+      buckets = ROLE_LABEL_BY_BUCKET.keys.each_with_object({}) { |k, h| h[k] = [] }
+
+      Array(blueprint["IndividualContributor"]).each { |e| buckets[:individual_contributor] << e }
+      Array(blueprint["Commission"]).each            { |e| buckets[:commission] << e }
+      Array(blueprint["AccountLeadSurplus"]).each    { |e| buckets[:account_lead_surplus] << e }
+      Array(blueprint["ProjectLeadSurplus"]).each    { |e| buckets[:project_lead_surplus] << e }
+
+      Array(blueprint["AccountLead"]).each do |entry|
+        bucket = surplus_entry?(entry) ? :account_lead_surplus : :account_lead_base
+        buckets[bucket] << entry
+      end
+
+      Array(blueprint["ProjectLead"]).each do |entry|
+        bucket = surplus_entry?(entry) ? :project_lead_surplus : :project_lead_base
+        buckets[bucket] << entry
+      end
+
+      buckets
+    end
+
+    def surplus_entry?(entry)
+      entry["description_line"].to_s.include?(SURPLUS_DESCRIPTION_MARKER)
+    end
+
+    def build_bucket_description(bucket, entries)
+      role_header = "# #{ROLE_LABEL_BY_BUCKET.fetch(bucket)}"
+      entry_lines = entries.map { |e| e["description_line"].to_s }
+      ([role_header] + entry_lines + [item.bill_description]).join("\n")
     end
 
     def gl_code_for(concept)

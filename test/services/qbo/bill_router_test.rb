@@ -109,4 +109,160 @@ class Qbo::BillRouterTest < ActiveSupport::TestCase
     lines = router_for_routing(item).concept_lines
     assert_equal [{ amount: 15.0, description: "ca-url", concept: :subcontractor }], lines
   end
+
+  # --- routing: ContributorPayout multi-line (ported from QboBillLinesTest) ---
+
+  # cp mock with the payout-routing surface; base_concept is stubbed on the
+  # router so these tests are independent of the internal-client logic (Task 5).
+  def make_cp(blueprint:, amount:, in_sync: true)
+    cp = mock("contributor_payout")
+    cp.stubs(:is_a?).returns(false)
+    cp.stubs(:is_a?).with(ContributorPayout).returns(true)
+    cp.stubs(:in_sync?).returns(in_sync)
+    cp.stubs(:blueprint).returns(blueprint)
+    cp.stubs(:amount).returns(amount)
+    cp.stubs(:bill_description).returns("https://example.com/cp/42")
+    cp.stubs(:id).returns(42)
+    cp
+  end
+
+  def payout_router(cp, base_concept: :subcontractor)
+    r = Qbo::BillRouter.new(cp, accounts_cache: Qbo::AccountsCache.new)
+    r.stubs(:base_concept).returns(base_concept)
+    r
+  end
+
+  def all_buckets_blueprint
+    {
+      "IndividualContributor" => [{ "amount" => 100.0, "description_line" => "- IC line" }],
+      "AccountLead"           => [
+        { "amount" => 8.0, "description_line" => "- 100hrs * 8% = $8 base" },
+        { "amount" => 3.0, "description_line" => "- $20 surplus revenue * 15% = $3" },
+      ],
+      "ProjectLead"           => [
+        { "amount" => 5.0, "description_line" => "- 100hrs * 5% = $5 base" },
+        { "amount" => 3.0, "description_line" => "- $20 surplus revenue * 15% = $3" },
+      ],
+      "Commission"            => [{ "amount" => 10.0, "description_line" => "- 5% of $200 = $10" }],
+    }
+  end
+
+  test "multi-line happy path: 6 buckets with correct concepts" do
+    cp = make_cp(blueprint: all_buckets_blueprint, amount: 129.0)
+    lines = payout_router(cp).concept_lines
+
+    assert_equal 6, lines.size
+    by_concept = lines.group_by { |l| l[:concept] }
+    assert_equal 1, by_concept[:commission].size
+    assert_equal 10.0, by_concept[:commission].first[:amount]
+    assert_equal 2, by_concept[:bonuses].size, "AL + PL surplus both -> :bonuses"
+    assert_equal 3, by_concept[:subcontractor].size, "IC + AL base + PL base -> base concept"
+    assert_equal 129.0, lines.sum { |l| l[:amount] }.round(2)
+  end
+
+  test "Account Lead split into base/surplus by 'surplus revenue' marker" do
+    blueprint = { "AccountLead" => [
+      { "amount" => 8.0, "description_line" => "- 100hrs * 8% = $8" },
+      { "amount" => 3.0, "description_line" => "- $20 surplus revenue * 15% = $3" },
+    ] }
+    lines = payout_router(make_cp(blueprint: blueprint, amount: 11.0)).concept_lines
+
+    base    = lines.find { |l| l[:description].include?("Account Lead\n") }
+    surplus = lines.find { |l| l[:description].include?("Account Lead Surplus") }
+    assert_equal [8.0, :subcontractor], [base[:amount], base[:concept]]
+    assert_equal [3.0, :bonuses], [surplus[:amount], surplus[:concept]]
+  end
+
+  test "Project Lead split into base/surplus by marker" do
+    blueprint = { "ProjectLead" => [
+      { "amount" => 5.0, "description_line" => "- 100hrs * 5% = $5" },
+      { "amount" => 3.0, "description_line" => "- $20 surplus revenue * 15% = $3" },
+    ] }
+    lines = payout_router(make_cp(blueprint: blueprint, amount: 8.0)).concept_lines
+
+    surplus = lines.find { |l| l[:description].include?("Project Lead Surplus") }
+    assert_equal [3.0, :bonuses], [surplus[:amount], surplus[:concept]]
+  end
+
+  test "zero-amount bucket is skipped" do
+    blueprint = {
+      "IndividualContributor" => [{ "amount" => 100.0, "description_line" => "-" }],
+      "Commission"            => [],
+    }
+    lines = payout_router(make_cp(blueprint: blueprint, amount: 100.0)).concept_lines
+    assert_equal 1, lines.size
+    assert_equal 100.0, lines.first[:amount]
+  end
+
+  test "not in_sync? -> single collapsed line at base concept and cp.amount" do
+    blueprint = { "IndividualContributor" => [{ "amount" => 200.0, "description_line" => "-" }] }
+    lines = payout_router(make_cp(blueprint: blueprint, amount: 100.0, in_sync: false)).concept_lines
+    assert_equal 1, lines.size
+    assert_equal 100.0, lines.first[:amount]
+    assert_equal "https://example.com/cp/42", lines.first[:description]
+    assert_equal :subcontractor, lines.first[:concept]
+  end
+
+  test "per-bucket drift from cp.amount -> collapse + WARN" do
+    blueprint = { "IndividualContributor" => [{ "amount" => 105.0, "description_line" => "-" }] }
+    Rails.logger.expects(:warn).at_least_once
+    lines = payout_router(make_cp(blueprint: blueprint, amount: 100.0)).concept_lines
+    assert_equal 1, lines.size
+    assert_equal 100.0, lines.first[:amount]
+  end
+
+  test "every bucket empty -> collapse to single line" do
+    blueprint = { "IndividualContributor" => [] }
+    lines = payout_router(make_cp(blueprint: blueprint, amount: 0.0)).concept_lines
+    assert_equal 1, lines.size
+    assert_equal 0.0, lines.first[:amount]
+  end
+
+  test "structured AccountLeadSurplus key routes to :bonuses without marker" do
+    blueprint = {
+      "AccountLead"        => [{ "amount" => 8.0, "description_line" => "- 100hrs * 8% = $8" }],
+      "AccountLeadSurplus" => [{ "amount" => 3.0, "description_line" => "- marker-free copy" }],
+    }
+    lines = payout_router(make_cp(blueprint: blueprint, amount: 11.0)).concept_lines
+    surplus = lines.find { |l| l[:description].include?("Account Lead Surplus") }
+    assert_equal [3.0, :bonuses], [surplus[:amount], surplus[:concept]]
+  end
+
+  test "structured ProjectLeadSurplus key routes to :bonuses" do
+    blueprint = {
+      "ProjectLead"        => [{ "amount" => 5.0, "description_line" => "- 100hrs * 5% = $5" }],
+      "ProjectLeadSurplus" => [{ "amount" => 3.0, "description_line" => "- marker-free copy" }],
+    }
+    lines = payout_router(make_cp(blueprint: blueprint, amount: 8.0)).concept_lines
+    surplus = lines.find { |l| l[:description].include?("Project Lead Surplus") }
+    assert_equal [3.0, :bonuses], [surplus[:amount], surplus[:concept]]
+  end
+
+  test "mixed structured + legacy AccountLead surplus entries are summed" do
+    blueprint = {
+      "AccountLead"        => [
+        { "amount" => 8.0, "description_line" => "- 100hrs * 8% = $8 base" },
+        { "amount" => 2.0, "description_line" => "- legacy surplus revenue share = $2" },
+      ],
+      "AccountLeadSurplus" => [{ "amount" => 3.0, "description_line" => "- marker-free copy" }],
+    }
+    lines = payout_router(make_cp(blueprint: blueprint, amount: 13.0)).concept_lines
+    surplus = lines.find { |l| l[:description].include?("Account Lead Surplus") }
+    assert_equal 5.0, surplus[:amount], "structured $3 + parsed legacy $2"
+    base = lines.find { |l| l[:description].include?("Account Lead\n") }
+    assert_equal 8.0, base[:amount]
+  end
+
+  test "description format: role header + entry lines + admin URL" do
+    blueprint = { "Commission" => [
+      { "amount" => 10.0, "description_line" => "- 5% of $200 = $10" },
+      { "amount" => 5.0,  "description_line" => "- 5% of $100 = $5" },
+    ] }
+    lines = payout_router(make_cp(blueprint: blueprint, amount: 15.0)).concept_lines
+    desc = lines.first[:description]
+    assert_match(/\A# Commission\n/, desc)
+    assert_includes desc, "- 5% of $200 = $10"
+    assert_includes desc, "- 5% of $100 = $5"
+    assert_includes desc, "https://example.com/cp/42"
+  end
 end
