@@ -92,6 +92,16 @@ module Qbo
       end
     end
 
+    def lines
+      concept_lines.map do |line|
+        {
+          amount: line[:amount],
+          description: line[:description],
+          account: resolve(line[:concept]),
+        }
+      end
+    end
+
     private
 
     attr_reader :item
@@ -145,10 +155,21 @@ module Qbo
       end
     end
 
-    # base_concept is :subcontractor here; Task 5 adds the internal-client
-    # :marketing override.
     def base_concept
-      :subcontractor
+      return :subcontractor unless internal_client?
+
+      # Internal client → marketing, except when the contributor sits on a
+      # non-client-services studio (then the studio's own cost account applies).
+      if studio.nil? || studio.client_services?
+        :marketing
+      else
+        :subcontractor
+      end
+    end
+
+    def internal_client?
+      item.respond_to?(:invoice_tracker) &&
+        item.invoice_tracker.forecast_client.is_internal?
     end
 
     def bucket_blueprint(blueprint)

@@ -265,4 +265,53 @@ class Qbo::BillRouterTest < ActiveSupport::TestCase
     assert_includes desc, "- 5% of $100 = $5"
     assert_includes desc, "https://example.com/cp/42"
   end
+
+  # --- base_concept (internal-client marketing override) ---
+
+  def base_concept_router(internal:, studio:)
+    r = Qbo::BillRouter.new(Object.new, accounts_cache: Qbo::AccountsCache.new)
+    r.stubs(:internal_client?).returns(internal)
+    r.stubs(:studio).returns(studio)
+    r
+  end
+
+  test "base_concept is :subcontractor for a non-internal client" do
+    r = base_concept_router(internal: false, studio: nil)
+    assert_equal :subcontractor, r.send(:base_concept)
+  end
+
+  test "base_concept is :marketing for an internal client with no studio" do
+    r = base_concept_router(internal: true, studio: nil)
+    assert_equal :marketing, r.send(:base_concept)
+  end
+
+  test "base_concept is :marketing for an internal client on a client-services studio" do
+    studio = OpenStruct.new(name: "CS", client_services?: true)
+    r = base_concept_router(internal: true, studio: studio)
+    assert_equal :marketing, r.send(:base_concept)
+  end
+
+  test "base_concept stays :subcontractor for an internal client on a NON-client-services studio" do
+    studio = OpenStruct.new(name: "Internal Studio", client_services?: false)
+    r = base_concept_router(internal: true, studio: studio)
+    assert_equal :subcontractor, r.send(:base_concept)
+  end
+
+  # --- #lines joins routing to resolution ---
+
+  test "#lines resolves each concept line to a concrete account" do
+    item = line_item_stub(Trueup, amount: 42.0, description: "tu-url")
+    r = Qbo::BillRouter.new(item, accounts_cache: Qbo::AccountsCache.new)
+    r.stubs(:studio).returns(nil)
+    default = acct("5000", 5000)
+    r.stubs(:accounts).returns([default])
+    r.stubs(:enterprise).returns(OpenStruct.new(name: "Test Enterprise"))
+    r.stubs(:enterprise_gl_map).returns({ subcontractor_default: "5000" })
+
+    lines = r.lines
+    assert_equal 1, lines.size
+    assert_equal 42.0, lines.first[:amount]
+    assert_equal "tu-url", lines.first[:description]
+    assert_same default, lines.first[:account]
+  end
 end
