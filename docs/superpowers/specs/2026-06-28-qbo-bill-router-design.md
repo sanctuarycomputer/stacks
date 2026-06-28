@@ -16,6 +16,10 @@ line items) lands in is scattered across at least six places:
    per-bucket multi-line splitter (surplus → acct `5710`, commission → acct `6120`).
 5. `ProfitShare#find_qbo_account!` — → acct `2340` (Accrued Profit Sharing).
 6. `PayStub#find_qbo_account!` — → `"Facilities Management Salaries"`.
+7. `PayStub#bill_line_items` — groups `blueprint["lines"]` by `forecast_project`
+   into one line per project (`"<project> — <hours>h"`), all at the salaries
+   account. (This is the line-splitting half of PayStub; the router must port it,
+   not just `find_qbo_account!`.)
 
 Plus `Studio#qbo_subcontractors_categories`, which builds studio-specific account
 *names* from `accounting_prefix`.
@@ -87,7 +91,8 @@ Concepts:
 
 Routing rules by item type:
 
-- **`PayStub`** → one line, `:salaries`.
+- **`PayStub`** → one line per `forecast_project` (grouping `blueprint["lines"]`),
+  each `:salaries`, described `"<project> — <hours>h"`. Empty lines → no bill.
 - **`ProfitShare`** → one line, `:profit_share_liability`.
 - **`Trueup`, `ContributorAdjustment`** → one line, `:subcontractor` (if the
   contributor has a studio) falling back to `:subcontractor_default`.
@@ -206,7 +211,8 @@ Removed in the same PR once the router is green:
 - `SyncsAsQboBill#find_qbo_account!` and `#bill_line_items`.
 - `ContributorPayout#find_qbo_account!` and `#bill_line_items`.
 - `ProfitShare#find_qbo_account!`.
-- `PayStub#find_qbo_account!`.
+- `PayStub#find_qbo_account!` and `PayStub#bill_line_items` (per-project splitting
+  ported into the router).
 - `Studio#qbo_subcontractors_categories` (and its sole consumer, now the router).
 
 `qbo_account_for_bill`, `qbo_bill`, `load_qbo_bill!`, `detach_and_destroy_qbo_bill`,
