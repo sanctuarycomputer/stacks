@@ -26,52 +26,6 @@ class ContributorPayout < ApplicationRecord
     end
   end
 
-  def find_qbo_account!(qbo_accounts = nil)
-    qa = qbo_account_for_bill
-    raise "Enterprise has no qbo_account" if qa.nil?
-    qbo_accounts ||= qa.fetch_all_accounts
-    account, studio = super(qbo_accounts)
-
-    # If the client is not internal, we can use the original account
-    internal_client = invoice_tracker.forecast_client.is_internal?
-    return [account, studio] unless internal_client
-
-    # If the client is internal, we need to override external client services accounts with the
-    # marketing account
-    marketing_account = qbo_accounts.find{|a| a.name == "Contractors - Marketing Services"}
-
-    # In this case, either we don't know the studio, sor is present and it's a
-    # client services studio, so we override to use the marketing account
-    if studio.nil? || (studio.present? && studio.client_services?)
-      return [marketing_account, studio]
-    end
-
-    # In this case, the studio is present but it's a non-client services studio
-    # we assume that the original account is correct.
-    [account, studio]
-  end
-
-  # Multi-line override of SyncsAsQboBill#bill_line_items: breaks the bill
-  # into up to six per-bucket lines (IC, AL base, AL surplus, PL base,
-  # PL surplus, Commission) so finance can attribute spend to per-role
-  # QBO accounts. Falls back to a single line at the legacy default
-  # account when the payout isn't reconciled — see
-  # ContributorPayouts::QboBillLines + the design doc at
-  # docs/superpowers/specs/2026-05-16-multi-line-contributor-payout-bills-design.md
-  def bill_line_items(qbo_accounts)
-    lines_data = ContributorPayouts::QboBillLines.new(self, qbo_accounts).call
-    lines_data.map do |data|
-      line = Quickbooks::Model::BillLineItem.new(
-        description: data[:description],
-        amount: data[:amount],
-      )
-      line.account_based_expense_item! do |detail|
-        detail.account_ref = Quickbooks::Model::BaseReference.new(data[:account].id)
-      end
-      line
-    end
-  end
-
   # jsonb normally returns a Hash; some legacy rows store a JSON string, or the setter
   # fell through to super(val) on JSON::ParserError and persisted Hash#inspect text.
   def blueprint

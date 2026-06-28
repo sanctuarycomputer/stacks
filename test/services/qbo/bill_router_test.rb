@@ -110,7 +110,7 @@ class Qbo::BillRouterTest < ActiveSupport::TestCase
     assert_equal [{ amount: 15.0, description: "ca-url", concept: :subcontractor }], lines
   end
 
-  # --- routing: ContributorPayout multi-line (ported from QboBillLinesTest) ---
+  # --- routing: ContributorPayout multi-line ---
 
   # cp mock with the payout-routing surface; base_concept is stubbed on the
   # router so these tests are independent of the internal-client logic (Task 5).

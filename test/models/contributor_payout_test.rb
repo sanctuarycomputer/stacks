@@ -67,29 +67,6 @@ class ContributorPayoutTest < ActiveSupport::TestCase
     assert_not_empty ic_cp.errors[:base]
   end
 
-  test "bill_line_items delegates to ContributorPayouts::QboBillLines and converts hashes to BillLineItem objects" do
-    account = OpenStruct.new(id: 999_888)
-    fixture = [
-      { amount: 250.0, description: "# Individual Contributor\nABC-1 Foo", account: account },
-      { amount: 75.5,  description: "# Commission\nDEF-2 Bar",            account: account },
-    ]
-    ContributorPayouts::QboBillLines.any_instance.stubs(:call).returns(fixture)
-
-    cp = ContributorPayout.new
-    lines = cp.bill_line_items([])
-
-    assert_kind_of Array, lines
-    assert_equal fixture.length, lines.length
-    lines.each { |l| assert_kind_of Quickbooks::Model::BillLineItem, l }
-
-    fixture.zip(lines).each do |data, line|
-      assert_equal data[:description], line.description
-      assert_equal data[:amount], line.amount.to_f
-      assert line.account_based_expense_item?
-      assert_equal data[:account].id.to_s, line.account_based_expense_line_detail.account_ref.value.to_s
-    end
-  end
-
   test "calculate_surplus uses post-commission working_amount as basis" do
     qbo_line = { "id" => "5", "amount" => 1000.0, "description" => "ABC-1 Foo" }
     qbo_invoice = mock("qbo_invoice")
