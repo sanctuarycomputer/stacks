@@ -70,4 +70,43 @@ class Qbo::BillRouterTest < ActiveSupport::TestCase
     r = router_with(accounts: accounts, gl_map: gl_map)
     assert_raises(RuntimeError) { r.resolve(:profit_share_liability) }
   end
+
+  # --- routing: single-line items ---
+
+  def line_item_stub(klass, amount:, description:)
+    m = mock(klass.name)
+    m.stubs(:is_a?).returns(false)
+    m.stubs(:is_a?).with(klass).returns(true)
+    m.stubs(:amount).returns(amount)
+    m.stubs(:bill_description).returns(description)
+    m
+  end
+
+  def router_for_routing(item)
+    Qbo::BillRouter.new(item, accounts_cache: Qbo::AccountsCache.new)
+  end
+
+  test "PayStub routes to a single :salaries line" do
+    item = line_item_stub(PayStub, amount: 1000.0, description: "stub-url")
+    lines = router_for_routing(item).concept_lines
+    assert_equal [{ amount: 1000.0, description: "stub-url", concept: :salaries }], lines
+  end
+
+  test "ProfitShare routes to a single :profit_share_liability line" do
+    item = line_item_stub(ProfitShare, amount: 250.0, description: "ps-url")
+    lines = router_for_routing(item).concept_lines
+    assert_equal [{ amount: 250.0, description: "ps-url", concept: :profit_share_liability }], lines
+  end
+
+  test "Trueup routes to a single :subcontractor line" do
+    item = line_item_stub(Trueup, amount: 42.0, description: "tu-url")
+    lines = router_for_routing(item).concept_lines
+    assert_equal [{ amount: 42.0, description: "tu-url", concept: :subcontractor }], lines
+  end
+
+  test "ContributorAdjustment routes to a single :subcontractor line" do
+    item = line_item_stub(ContributorAdjustment, amount: 15.0, description: "ca-url")
+    lines = router_for_routing(item).concept_lines
+    assert_equal [{ amount: 15.0, description: "ca-url", concept: :subcontractor }], lines
+  end
 end

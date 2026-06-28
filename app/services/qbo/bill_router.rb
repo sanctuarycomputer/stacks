@@ -68,9 +68,30 @@ module Qbo
             "(gl #{gl.inspect}) in enterprise #{enterprise.name.inspect}"
     end
 
+    def concept_lines
+      case item
+      when PayStub
+        [single_line(:salaries)]
+      when ProfitShare
+        [single_line(:profit_share_liability)]
+      when ContributorPayout
+        payout_concept_lines
+      else # Trueup, ContributorAdjustment
+        [single_line(:subcontractor)]
+      end
+    end
+
     private
 
     attr_reader :item
+
+    def single_line(concept)
+      { amount: item.amount, description: item.bill_description, concept: concept }
+    end
+
+    def payout_concept_lines
+      [single_line(:subcontractor)] # replaced in Task 4
+    end
 
     def gl_code_for(concept)
       if concept == :subcontractor
