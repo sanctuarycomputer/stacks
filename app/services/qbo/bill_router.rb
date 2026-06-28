@@ -71,8 +71,13 @@ module Qbo
       return account if account
 
       if FALLBACKABLE_CONCEPTS.include?(concept)
-        fallback = find_account(gl_code_for(:subcontractor_default))
+        fallback_gl = gl_code_for(:subcontractor_default)
+        fallback = find_account(fallback_gl)
         return fallback if fallback
+
+        raise "Qbo::BillRouter: no account for concept #{concept.inspect} " \
+              "(gl #{gl.inspect}) and fallback :subcontractor_default " \
+              "(gl #{fallback_gl.inspect}) in enterprise #{enterprise.name.inspect}"
       end
 
       raise "Qbo::BillRouter: no account for concept #{concept.inspect} " \
@@ -82,7 +87,7 @@ module Qbo
     def concept_lines
       case item
       when PayStub
-        [single_line(:salaries)]
+        paystub_concept_lines
       when ProfitShare
         [single_line(:profit_share_liability)]
       when ContributorPayout
@@ -108,6 +113,27 @@ module Qbo
 
     def single_line(concept)
       { amount: item.amount, description: item.bill_description, concept: concept }
+    end
+
+    def paystub_concept_lines
+      lines = item.blueprint&.dig("lines") || []
+      grouped = lines.group_by { |l| l["forecast_project"] }
+
+      fp_ids = grouped.keys.compact
+      projects_by_id = ForecastProject.where(forecast_id: fp_ids).index_by(&:forecast_id)
+
+      grouped.map do |fp_id, group|
+        fp = projects_by_id[fp_id]
+        project_name = fp&.display_name || "Forecast project ##{fp_id}"
+        hours = group.sum { |l| l["hours"].to_f }.round(2)
+        line_amount = group.sum { |l| l["amount"].to_f }.round(2)
+
+        {
+          amount: line_amount,
+          description: "#{project_name} — #{hours}h",
+          concept: :salaries,
+        }
+      end
     end
 
     def payout_concept_lines

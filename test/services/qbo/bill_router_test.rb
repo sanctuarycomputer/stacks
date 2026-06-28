@@ -86,10 +86,48 @@ class Qbo::BillRouterTest < ActiveSupport::TestCase
     Qbo::BillRouter.new(item, accounts_cache: Qbo::AccountsCache.new)
   end
 
-  test "PayStub routes to a single :salaries line" do
-    item = line_item_stub(PayStub, amount: 1000.0, description: "stub-url")
+  test "PayStub: empty blueprint lines yields []" do
+    item = mock("PayStub")
+    item.stubs(:is_a?).returns(false)
+    item.stubs(:is_a?).with(PayStub).returns(true)
+    item.stubs(:blueprint).returns({ "lines" => [] })
     lines = router_for_routing(item).concept_lines
-    assert_equal [{ amount: 1000.0, description: "stub-url", concept: :salaries }], lines
+    assert_equal [], lines
+  end
+
+  test "PayStub: multi-project blueprint produces one :salaries line per forecast_project" do
+    item = mock("PayStub")
+    item.stubs(:is_a?).returns(false)
+    item.stubs(:is_a?).with(PayStub).returns(true)
+    item.stubs(:blueprint).returns({
+      "lines" => [
+        { "forecast_project" => 101, "hours" => 8.0,  "amount" => 800.0 },
+        { "forecast_project" => 101, "hours" => 2.0,  "amount" => 200.0 },
+        { "forecast_project" => 202, "hours" => 4.0,  "amount" => 400.0 },
+      ]
+    })
+
+    fp101 = OpenStruct.new(forecast_id: 101, display_name: "Alpha Project")
+    fp202 = OpenStruct.new(forecast_id: 202, display_name: "Beta Project")
+    projects_by_id = { 101 => fp101, 202 => fp202 }
+
+    rel = mock("relation")
+    rel.stubs(:index_by).returns(projects_by_id)
+    ForecastProject.stubs(:where).with(forecast_id: [101, 202]).returns(rel)
+
+    lines = router_for_routing(item).concept_lines
+
+    assert_equal 2, lines.size
+    assert lines.all? { |l| l[:concept] == :salaries }, "all lines should be :salaries"
+
+    alpha = lines.find { |l| l[:description].include?("Alpha Project") }
+    beta  = lines.find { |l| l[:description].include?("Beta Project") }
+
+    assert_equal 1000.0, alpha[:amount]
+    assert_equal "Alpha Project — 10.0h", alpha[:description]
+
+    assert_equal 400.0, beta[:amount]
+    assert_equal "Beta Project — 4.0h", beta[:description]
   end
 
   test "ProfitShare routes to a single :profit_share_liability line" do
@@ -332,5 +370,27 @@ class Qbo::BillRouterTest < ActiveSupport::TestCase
       r.stubs(:enterprise_gl_map).returns({ subcontractor_default: "5000" })
       r.lines
     end
+  end
+
+  # --- Finding 2: double-miss fallback error message ---
+
+  test "resolve raises with subcontractor_default in message when both fallbackable concept AND default are missing" do
+    gl_map = { bonuses: "5710", subcontractor_default: "5000" }
+    accounts = [] # both 5710 and 5000 absent
+    r = router_with(accounts: accounts, gl_map: gl_map)
+    err = assert_raises(RuntimeError) { r.resolve(:bonuses) }
+    assert_match(/bonuses/, err.message)
+    assert_match(/5710/, err.message)
+    assert_match(/subcontractor_default/, err.message)
+    assert_match(/5000/, err.message)
+  end
+
+  # --- Finding 3: CONCEPT_GL_BY_ENTERPRISE constant integrity ---
+
+  test "CONCEPT_GL_BY_ENTERPRISE[:sanctuary] has correct known GL codes" do
+    map = Qbo::BillRouter::CONCEPT_GL_BY_ENTERPRISE[:sanctuary]
+    assert_equal "5710", map[:bonuses]
+    assert_equal "6120", map[:commission]
+    assert_equal "2340", map[:profit_share_liability]
   end
 end
