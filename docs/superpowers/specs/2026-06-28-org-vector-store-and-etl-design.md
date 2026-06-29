@@ -44,10 +44,25 @@ below). It splits cleanly into two layers, and **this spec builds only the first
   and the five read-layer views. Tracks "who said they'd do what, by when, and whether
   it happened." Out of scope here; it is only as good as the corpus underneath it.
 
-People are modelled on the existing `AdminUser` (canonical, email-keyed across
-`@sanctuary.computer` / `@xxix.co`) and `Contributor` (via `forecast_person`). Google
-auth reuses the service-account domain-wide delegation in `lib/stacks/calendar.rb` /
-`team.rb`.
+People are anchored by the **existing `contacts` table** — its stated vision is
+"everyone we know," it is unique on `email`, and it already carries Apollo enrichment
+(`apollo_data`) and a `sources` provenance array. It is the right universal spine
+because the other tables only cover people we already formally know: `AdminUser` is
+workspace logins only (`@sanctuary.computer`/`@xxix.co`), `Contributor` is
+Forecast-tracked staff/contractors. Org activity is full of people who are neither —
+external meeting guests, clients on `@gmail`/their own domains — and a `Contact`
+already exists (or is cheaply created) for them, gaining Apollo enrichment for free.
+
+So `contact_id` is the FK target everywhere. We extend `contacts` with two nullable
+bridge links — `admin_user_id` (Google-authoritative identity) and `contributor_id`
+(rich internal org info: ledgers, assignments, skill trees) — populated by the
+resolver. Because `email` is unique, a person appearing under both
+`@sanctuary.computer` and `@xxix.co` is two `contacts` rows that point at the **same**
+`admin_user_id`, so internal people regroup cleanly via the bridge; external
+multi-email people stay separate rows (the existing `Contact#dedupe!` handles merges).
+Ingesting transcript people broadens `contacts` to truly everyone, tagged with a
+`meet` source. Google auth reuses the service-account domain-wide delegation in
+`lib/stacks/calendar.rb` / `team.rb`.
 
 ## Goals
 
@@ -65,8 +80,9 @@ auth reuses the service-account domain-wide delegation in `lib/stacks/calendar.r
   + ongoing, full speaker/participant fidelity, display-name → person resolution.
 - A generalized **exclusion layer** walling sensitive material (1:1s, reviews, comp,
   HR) off from the agent across any source.
-- **Identity resolution** so people on any document resolve to `AdminUser` /
-  `Contributor` and cross-cutting "everything involving person X" works.
+- **Identity resolution** so people on any document resolve to a `Contact` (linked to
+  `AdminUser`/`Contributor` when internal) and cross-cutting "everything involving
+  person X" works.
 - **Provenance-ready chunks**: stable chunk spans so the later `evidence` layer can
   cite exact quotes.
 
@@ -97,7 +113,7 @@ auth reuses the service-account domain-wide delegation in `lib/stacks/calendar.r
 | History (Meet) | Bounded backfill (default 90 days, configurable) + ongoing. |
 | Source mechanism (Meet) | **Hybrid**: Meet REST API for ongoing (rich), Drive sweep for backfill. |
 | Sensitive access | **Fully walled off** — stored for humans (ActiveAdmin only), never chunked, embedded, or returned by MCP. |
-| People | Resolve to `AdminUser` (→ `Contributor`); display-name fuzziness handled by `mentions` + an unresolved queue; guests kept, never dropped. |
+| People | Canonical FK is the existing `contacts` table ("everyone we know", email-unique, Apollo-enriched), extended with nullable `admin_user_id`/`contributor_id` bridge links. Resolve email → `Contact` (+ cross-domain `AdminUser` bridge); display-name fuzziness + leftovers go to the `mentions` queue; guests kept, never dropped. |
 | Job infra | Existing SystemTask-wrapped rake tasks via Heroku Scheduler; embed inline, retry next run. |
 | Tenancy | Internal single-tenant. |
 | MCP impl | Official `mcp` Ruby gem, Streamable HTTP at `/mcp`, run stateless if >1 web dyno. |
@@ -136,7 +152,7 @@ lib/stacks/etl/
   connector.rb        # base: extract→classify→version→chunk→embed→resolve + watermark
   chunker.rb          # source-agnostic chunking (~512 tokens, overlap, stable spans)
   embedder.rb         # Voyage AI wrapper (swappable provider/model) → embeddings table
-  mention_resolver.rb # raw display-name/handle/email → AdminUser (+ confidence/queue)
+  mention_resolver.rb # raw display-name/handle/email → Contact (+ confidence/queue)
   search.rb           # cross-source hybrid query layer (MCP-facing)
   meet/
     connector.rb · auth.rb · meet_api_source.rb · drive_source.rb · classifier.rb
@@ -185,14 +201,20 @@ corpus-eligible documents.
 and run two models side by side. (voyage-3 = 1024 dims, comfortably under HNSW's
 2000-dim cap; a >2000-dim model would use `halfvec` — noted, not needed now.)
 
-**`mentions`** — raw mention → canonical person. `chunk_id` (or `document_id`),
-`raw_text` (display name / handle / email as it appeared), `admin_user_id` (nullable),
+**`contacts`** (existing — extended) — the canonical person spine and FK target for
+everyone. Already: `email` (unique), `sources` array, `apollo_id`/`apollo_data`,
+`metadata` jsonb. **Added by this spec:** `display_name` (Meet gives names, not IDs),
+`admin_user_id` (nullable bridge → Google identity), `contributor_id` (nullable bridge
+→ internal org info). External/unknown people are a `Contact` with both bridges null.
+
+**`mentions`** — raw mention → canonical contact. `chunk_id` (or `document_id`),
+`raw_text` (display name / handle / email as it appeared), `contact_id` (nullable),
 `confidence`, `status` (`resolved`/`unresolved`/`ambiguous`). The **unresolved-mention
 queue** is how "Drew said he'd do it" stops silently dropping when a transcript only
 gives a display name. Reviewed/corrected in ActiveAdmin.
 
-**`document_people`** — clean document↔person facet for search filters.
-`document_id`, `admin_user_id` (nullable), `email`, `name`, `role`
+**`document_people`** — clean document↔contact facet for search filters.
+`document_id`, `contact_id` (nullable), `email`, `name`, `role`
 (`participant`/`speaker`/…). Populated from resolved mentions + connector participants.
 
 **`source_syncs`** — ETL watermark + run record. `source`, `cursor` (jsonb — e.g. last
@@ -205,10 +227,10 @@ conference end-time, last Drive `modifiedTime`), `last_run_at`, `status`, `stats
   nullable), `drive_transcript_doc_id` (unique, nullable), `meet_source`
   (`meet_api`/`drive`), `title`, `organizer_email`, `started_at`, `ended_at`,
   `participant_count`, `raw_metadata`.
-- **`meeting_participants`** — `meeting_id`, `name`, `email`, `admin_user_id`
+- **`meeting_participants`** — `meeting_id`, `name`, `email`, `contact_id`
   (nullable), `join_at`, `leave_at`.
 - **`meeting_transcript_segments`** — `meeting_id`, `speaker_name`, `speaker_email`
-  (when the API provides it), `speaker_admin_user_id` (nullable, via mention
+  (when the API provides it), `speaker_contact_id` (nullable, via mention
   resolution), `started_at`, `ended_at`, `position`, `text`. Human-readable source of
   truth; the connector derives `chunks` from these (chunked per/across speaker turns).
 
@@ -232,8 +254,9 @@ Per document, inside a transaction:
    only if `content_hash` changed (else skip).
 2. Build/refresh the rich source record (e.g. `Meeting` + segments + participants).
 3. **Resolve people** → `mentions` (+ `document_people`, segment/participant
-   `admin_user_id`) via `MentionResolver` over the `AdminUser` cross-domain matcher;
-   unresolved names land in the queue, never dropped.
+   `contact_id`) via `MentionResolver`: email → `Contact` (`create_or_find_by`,
+   tagging the `meet` source), bridging `admin_user_id`/`contributor_id` through the
+   `AdminUser` cross-domain matcher; unresolved names land in the queue, never dropped.
 4. Run `exclusion_for` (unless human-locked: `manually_excluded`/`manually_included`
    are never overwritten).
 5. For corpus-eligible documents only: chunk the new version → `chunks`, then **embed
@@ -296,15 +319,24 @@ moment it loads** — no per-source MCP work.
 
 ## Identity resolution
 
-`email` → `AdminUser` via the established cross-domain uid matching
-(`AdminUser.find_or_create_by_g3d_uid!`, reconciling `@sanctuary.computer` /
-`@xxix.co`); `Contributor` via `admin_user.forecast_person.contributor`. Meet
-transcripts often give **display names, not IDs/emails**, so `MentionResolver` does
-fuzzy display-name → `AdminUser` matching with a confidence score, routing low/no
-confidence into the unresolved-mention queue. A full `person_identities` map (per the
-target schema, for GitHub/Figma/Twist handles) is introduced when those sources
-arrive; for Meet, email + display-name resolution to `AdminUser` suffices. Unresolved
-external people are retained, never dropped.
+Every person resolves to a `Contact` (the spine). Resolution:
+
+1. `email` → `Contact` via the unique-email index (`create_or_find_by`, lowercased,
+   adding a `meet` source tag).
+2. Bridge to internal identity: `email` → `AdminUser` via the established cross-domain
+   uid matching (`AdminUser.find_or_create_by_g3d_uid!`, reconciling
+   `@sanctuary.computer` / `@xxix.co`), then `Contributor` via
+   `admin_user.forecast_person.contributor`; store both as the `contacts` bridge
+   links. This is also what regroups the two domain-variant `contacts` rows onto one
+   internal person.
+3. Meet transcripts often give **display names, not IDs/emails**, so `MentionResolver`
+   does fuzzy display-name → `Contact` matching (scoped to the meeting's known
+   participants first) with a confidence score, routing low/no confidence into the
+   unresolved-mention queue.
+
+Unresolved external people are retained as `contacts` with null bridges, never
+dropped. (The target schema's `person_identities` — GitHub/Figma/Twist handles —
+arrives with those sources; `contacts` + bridges cover the email-shaped sources now.)
 
 ## Governance & consent
 
@@ -357,7 +389,9 @@ may take or leave these):
 The full institutional-memory design is 16 tables in five layers; **bold = built in
 this foundation spec**, the rest belong to the later intelligence spec:
 
-- **Identity:** `people` (= existing `AdminUser`), `person_identities`.
+- **Identity:** **`contacts`** (= existing "everyone we know" table, the spine,
+  extended with `admin_user_id`/`contributor_id` bridges), `person_identities` (later,
+  for non-email handles).
 - Org structure: `projects`, `milestones` (synced from Notion).
 - **Raw substrate:** **`documents`**, **`document_versions`**, **`chunks`**,
   **`mentions`** (+ **`document_people`**, **`source_syncs`** as our additions).
