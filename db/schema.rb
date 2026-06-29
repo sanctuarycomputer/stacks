@@ -1195,12 +1195,14 @@ ActiveRecord::Schema.define(version: 2026_06_28_000001) do
   add_foreign_key "account_lead_periods", "project_trackers"
   add_foreign_key "adhoc_invoice_trackers", "project_trackers"
   add_foreign_key "adhoc_invoice_trackers", "qbo_accounts"
+  # Composite FK fk_adhoc_invoice_trackers_qbo_invoice managed by migration (not expressible in schema.rb)
   add_foreign_key "admin_user_salary_windows", "admin_users"
   add_foreign_key "associates_award_agreements", "admin_users"
   add_foreign_key "commissions", "contributors"
   add_foreign_key "commissions", "project_trackers"
   add_foreign_key "contributor_adjustments", "ledgers"
   add_foreign_key "contributor_adjustments", "qbo_accounts"
+  # Composite FK fk_contributor_adjustments_qbo_invoice managed by migration (not expressible in schema.rb)
   add_foreign_key "contributor_payouts", "admin_users", column: "created_by_id"
   add_foreign_key "contributor_payouts", "invoice_trackers"
   add_foreign_key "contributor_payouts", "ledgers"
@@ -1219,6 +1221,7 @@ ActiveRecord::Schema.define(version: 2026_06_28_000001) do
   add_foreign_key "invoice_trackers", "admin_users"
   add_foreign_key "invoice_trackers", "invoice_passes"
   add_foreign_key "invoice_trackers", "qbo_accounts"
+  # Composite FK fk_invoice_trackers_qbo_invoice managed by migration (not expressible in schema.rb)
   add_foreign_key "ledgers", "contributors"
   add_foreign_key "ledgers", "enterprises"
   add_foreign_key "mailing_list_subscribers", "mailing_lists"
