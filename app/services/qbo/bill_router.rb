@@ -15,21 +15,42 @@ module Qbo
     # a liability is worse than failing the sync.
     FALLBACKABLE_CONCEPTS = %i[subcontractor bonuses commission].freeze
 
-    # Stable enterprise key -> concept -> GL code. The known real codes are
-    # bonuses (5710), commission (6120), profit_share_liability (2340). All "____"
-    # entries are placeholders filled from live data in Task 9. Per-studio
-    # subcontractor codes are nested under :subcontractor_by_studio.
+    # Stable enterprise key -> concept -> GL code, for every enterprise that
+    # syncs bills (Sanctuary, Index Space, garden3d, USB Club). The known real
+    # codes are Sanctuary's bonuses (5710), commission (6120), and
+    # profit_share_liability (2340). All "____" entries are placeholders pending
+    # confirmation against each enterprise's live chart of accounts. An unfilled
+    # ("____") code never matches a real acct_num, so it falls back or raises —
+    # it can never silently bill the wrong account. Per-studio subcontractor
+    # codes are nested under :subcontractor_by_studio (keyed by Studio#name; an
+    # unlisted studio falls back to that enterprise's :subcontractor_default).
     CONCEPT_GL_BY_ENTERPRISE = {
       sanctuary: {
-        subcontractor_default:  "____",
-        marketing:              "____",
-        salaries:               "____",
+        subcontractor_default:  "____", # Contractors - Client Services
+        marketing:              "____", # Contractors - Marketing Services
+        salaries:               "____", # Facilities Management Salaries
         bonuses:                "5710",
         commission:             "6120",
         profit_share_liability: "2340",
         subcontractor_by_studio: {
-          # "<studio name>" => "<gl code>",
+          # "Biz Dev"            => "____", # Contractors - Business Development
+          # "Index"              => "____", # Contractors - Community Services
+          # "Marketing"          => "____", # Contractors - Marketing Services
+          # "Operations"         => "____", # Contractors - Admin and Operations
+          # "Reinvestment"       => "____", # Contractors - Reinvestment Services
+          # "Sanctuary Computer" => "____", # Contractors - Development Services
+          # "Seaborne"           => "____", # Contractors - Sustainability Services
+          # "XXIX"               => "____", # Contractors - Brand Design Services
         },
+      },
+      index_space: {
+        subcontractor_default:  "____",
+        marketing:              "____",
+        salaries:               "____",
+        bonuses:                "____",
+        commission:             "____",
+        profit_share_liability: "____",
+        subcontractor_by_studio: {},
       },
       garden3d: {
         subcontractor_default:  "____",
@@ -39,14 +60,25 @@ module Qbo
         commission:             "____",
         profit_share_liability: "____",
         subcontractor_by_studio: {
-          # garden3d routes all subcontractors to one account today.
+          # "garden3d" => "____", # Total [SC] Subcontractors
         },
+      },
+      usb_club: {
+        subcontractor_default:  "____",
+        marketing:              "____",
+        salaries:               "____",
+        bonuses:                "____",
+        commission:             "____",
+        profit_share_liability: "____",
+        subcontractor_by_studio: {},
       },
     }.freeze
 
     ENTERPRISE_KEY_BY_NAME = {
-      Enterprise::SANCTUARY_NAME => :sanctuary,
-      Enterprise::GARDEN3D_NAME  => :garden3d,
+      Enterprise::SANCTUARY_NAME   => :sanctuary,
+      Enterprise::INDEX_SPACE_NAME => :index_space,
+      Enterprise::GARDEN3D_NAME    => :garden3d,
+      Enterprise::USB_CLUB_NAME    => :usb_club,
     }.freeze
 
     ROLE_LABEL_BY_BUCKET = {

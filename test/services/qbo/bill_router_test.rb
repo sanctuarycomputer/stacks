@@ -393,4 +393,30 @@ class Qbo::BillRouterTest < ActiveSupport::TestCase
     assert_equal "6120", map[:commission]
     assert_equal "2340", map[:profit_share_liability]
   end
+
+  # Guards the multi-enterprise regression: every enterprise that syncs bills
+  # must be routable. ENTERPRISE_KEY_BY_NAME must cover all four bill-syncing
+  # enterprise names, each pointing at a complete CONCEPT_GL_BY_ENTERPRISE entry.
+  REQUIRED_CONCEPT_KEYS = %i[
+    subcontractor_default marketing salaries
+    bonuses commission profit_share_liability subcontractor_by_studio
+  ].freeze
+
+  test "every bill-syncing enterprise name maps to a complete GL entry" do
+    expected_names = [
+      Enterprise::SANCTUARY_NAME,
+      Enterprise::INDEX_SPACE_NAME,
+      Enterprise::GARDEN3D_NAME,
+      Enterprise::USB_CLUB_NAME,
+    ]
+    assert_equal expected_names.sort, Qbo::BillRouter::ENTERPRISE_KEY_BY_NAME.keys.sort
+
+    Qbo::BillRouter::ENTERPRISE_KEY_BY_NAME.each_value do |key|
+      entry = Qbo::BillRouter::CONCEPT_GL_BY_ENTERPRISE[key]
+      assert entry, "no CONCEPT_GL_BY_ENTERPRISE entry for #{key.inspect}"
+      REQUIRED_CONCEPT_KEYS.each do |concept|
+        assert entry.key?(concept), "#{key.inspect} entry missing #{concept.inspect}"
+      end
+    end
+  end
 end
