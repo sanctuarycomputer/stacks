@@ -10,7 +10,7 @@ class Stacks::Etl::ConnectorTest < ActiveSupport::TestCase
     def exclusion_for(_n) = @exclusion
   end
 
-  def normalized(external_id:, hash:, excluded: false)
+  def normalized(external_id:, hash:)
     {
       external_id: external_id, title: 'T', url: 'http://x', occurred_at: Time.utc(2026, 1, 1),
       content_hash: hash,
@@ -45,6 +45,18 @@ class Stacks::Etl::ConnectorTest < ActiveSupport::TestCase
     doc = Document.find_by!(external_id: 'm2')
     assert doc.auto_excluded?
     assert_equal 0, doc.chunks.count
+  end
+
+  test 'a doc reclassified eligible -> excluded loses its existing chunks' do
+    FakeConnector.new([normalized(external_id: 'm4', hash: 'h4')]).run
+    doc = Document.find_by!(external_id: 'm4')
+    assert_equal 1, doc.chunks.count
+
+    FakeConnector.new([normalized(external_id: 'm4', hash: 'h4b')], exclusion: [:auto_excluded, :one_on_one]).run
+    doc.reload
+    assert doc.auto_excluded?
+    assert_equal 0, doc.chunks.count
+    assert_equal 0, Embedding.where(owner_type: 'Chunk', owner_id: Chunk.where(document_id: doc.id).select(:id)).count
   end
 
   test 'human-locked exclusion is not overwritten by the classifier' do
