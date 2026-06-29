@@ -285,13 +285,14 @@ class QboAccount < ApplicationRecord
         end
       end
 
-      # Unknown code OR known-class lookups returned no live/deleted owner.
-      # If there's a local QboBill mirror, destroy it (which also deletes the
-      # remote via QboBill's before_destroy). If there isn't, the remote bill
-      # is the only thing left — delete it directly. This replaces the old
-      # behavior that defaulted unknown codes to ContributorPayout (which
-      # could wrongly destroy a healthy bill whose id happened to collide
-      # with a real CP).
+      # Last defense: even when this bill's doc_number suffix is unknown OR
+      # the known-class lookups came up empty, refuse to destroy the bill if
+      # ANY SyncsAsQboBill host still references its qbo_id. Otherwise we'd
+      # nuke a healthy bill whose label is malformed/legacy/unknown.
+      next if Money::PayableQboBills::HOST_KLASSES.any? { |k| k.with_deleted.where(qbo_bill_id: b.id).exists? }
+
+      # Truly orphan now — clean up local mirror (which also tears down the
+      # remote via QboBill#before_destroy) or delete the remote directly.
       if qbo_bill = QboBill.where(qbo_account_id: id).find_by(qbo_id: b.id)
         qbo_bill.destroy!
       else

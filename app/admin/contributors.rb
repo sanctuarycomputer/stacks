@@ -112,8 +112,10 @@ ActiveAdmin.register Contributor do
     # Un-accepting a Reimbursement whose QBO bill is already PAID is destructive:
     # we'd delete a paid bill in QBO, orphaning the BillPayment in vendor AP.
     # Refuse — admin has to reconcile in QBO first (void the payment, then come
-    # back here).
-    if was_accepted && r.qbo_bill.present? && r.qbo_bill.paid?
+    # back here). Snapshot the bill into a local so we don't double-fetch (and
+    # so .paid? can't NPE on a row that disappears between the two calls).
+    qb = was_accepted ? r.qbo_bill : nil
+    if qb&.paid?
       return redirect_to(
         admin_contributor_path(params[:id], format: :html),
         alert: "Cannot un-accept: this reimbursement's QBO bill is already paid. Void the payment in QBO first, then retry.",

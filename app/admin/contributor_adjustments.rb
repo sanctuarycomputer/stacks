@@ -45,6 +45,16 @@ ActiveAdmin.register ContributorAdjustment do
       super
     end
 
+    # Catch the SyncsAsQboBill paid-bill guard so 'Delete' on a CA whose QBO
+    # bill is already paid surfaces a clean flash instead of a 500.
+    def destroy
+      super
+    rescue SyncsAsQboBill::PaidQboBillError => e
+      Rails.logger.error("[contributor_adjustment_destroy] ca=#{params[:id]}: #{e.message}")
+      redirect_to admin_ledger_contributor_adjustments_path(parent),
+        alert: "Cannot delete: linked QBO bill is paid. Void the BillPayment in QBO first, then retry."
+    end
+
     private
 
     def split_packed_qbo_invoice_value!(p)

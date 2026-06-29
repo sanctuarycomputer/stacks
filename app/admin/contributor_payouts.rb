@@ -139,6 +139,16 @@ ActiveAdmin.register ContributorPayout do
       params[:contributor_payout]["blueprint"] = {}
       super
     end
+
+    # Catch the SyncsAsQboBill paid-bill guard so 'Delete' on a CP whose QBO
+    # bill is already paid surfaces a clean flash instead of a 500.
+    def destroy
+      super
+    rescue SyncsAsQboBill::PaidQboBillError => e
+      Rails.logger.error("[contributor_payout_destroy] cp=#{params[:id]}: #{e.message}")
+      redirect_to admin_invoice_tracker_contributor_payouts_path(parent),
+        alert: "Cannot delete: linked QBO bill is paid. Void the BillPayment in QBO first, then retry."
+    end
   end
 
   index download_links: false do

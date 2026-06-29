@@ -210,6 +210,13 @@ class LedgerModeAndPaymentMethodsTest < ActiveSupport::TestCase
     assert_equal %w[qbo], Ledger.payment_methods_for(c)
   end
 
+  test "payment_methods_for: Deel attachment with missing/empty country → [deel]" do
+    dp = DeelPerson.create!(deel_id: "dp#{SecureRandom.hex(2)}", data: {})
+    c = Contributor.create!(forecast_person: ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "mc#{SecureRandom.hex(2)}@example.com", data: {}), deel_person_id: dp.deel_id)
+    # Preserve the Deel withdrawal workflow even when addresses data is incomplete.
+    assert_equal %w[deel], Ledger.payment_methods_for(c)
+  end
+
   test "ensure_for_contributor! sets payment_methods from contributor's deel country" do
     Enterprise.find_or_create_by!(name: "DefaultPMBulk-#{SecureRandom.hex(2)}")
     dp = DeelPerson.create!(deel_id: "dp#{SecureRandom.hex(2)}", data: { "addresses" => [{ "country" => "DE" }] })

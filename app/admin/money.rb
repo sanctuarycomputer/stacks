@@ -17,11 +17,12 @@ ActiveAdmin.register_page "Money" do
     # Cross-enterprise AP totals + admin-only sync_qbo_bill! triggers are
     # staff-only. Without this gate, any logged-in AdminUser (including the
     # contributor-linked AdminUsers our admin app supports) could load every
-    # enterprise's payable bills and POST refresh actions.
+    # enterprise's payable bills and POST refresh actions. Non-admins land on
+    # invoice_passes — the same destination the Money nav historically forwarded
+    # everyone to before this PR, so the nav link still works for contributors.
     def verify_admin!
       return if current_admin_user&.is_admin?
-      flash[:alert] = "Admins only."
-      redirect_to admin_root_path
+      redirect_to admin_invoice_passes_path, alert: "Admins only."
     end
   end
 
