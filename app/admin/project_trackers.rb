@@ -49,6 +49,17 @@ ActiveAdmin.register ProjectTracker do
     ]
 
   controller do
+    # ProjectTracker's nested form supports destroying adhoc_invoice_trackers.
+    # InvoiceTracker has_many :contributor_payouts, dependent: :destroy, so
+    # the cascade hits ContributorPayout#before_destroy → SyncsAsQboBill's
+    # paid-bill guard. Catch it with a flash instead of a 500 — operator can
+    # void the QBO BillPayment(s) first and retry.
+    rescue_from SyncsAsQboBill::PaidQboBillError do |e|
+      Rails.logger.error("[project_tracker_destroy_cascade] #{e.message}")
+      redirect_back fallback_location: admin_project_trackers_path,
+        alert: "Cannot save: a contributor payout linked to this tracker has a paid QBO bill. Void the BillPayment in QBO first, then retry."
+    end
+
     def new
       build_resource
       resource.project_tracker_links << ProjectTrackerLink.new({

@@ -34,32 +34,42 @@ module SyncsAsQboBill
     bill = qbo_bill
     return unless bill.present?
 
-    # Refresh the bill against QBO before checking paid? — cached
-    # data['balance'] may be stale (last sync_all_bills! could be hours ago,
-    # and Finance might have paid the bill in QBO since). If we can fetch
-    # fresh state, use it; if QBO is unreachable, fall back to cached.
-    # Either way, refuse if the bill is paid (destroying a paid bill in QBO
-    # orphans the BillPayment in vendor AP).
-    fresh_balance =
+    # Refresh the bill against QBO before the paid-check — cached data may be
+    # hours stale. Note: load_qbo_bill! has a documented side effect — on
+    # "Object Not Found" it destroys the local mirror AND nils qbo_bill_id
+    # via update_attribute + self.reload. So after this call, qbo_bill_id may
+    # already be blank (cleanup done) or the bill in-memory may be stale.
+    remote =
       begin
-        remote = load_qbo_bill!
-        remote ? remote.try(:balance).to_f : nil
+        load_qbo_bill!
       rescue
         nil
       end
 
-    paid = fresh_balance.present? ? fresh_balance <= 0 : bill.paid?
-    if paid
+    # If load_qbo_bill! cleaned up the local mirror because the remote was
+    # already gone, there's nothing left to do.
+    return if qbo_bill_id.blank?
+
+    # Has-payments check uses BOTH balance < total — partial-paid bills
+    # bypass paid? (balance > 0) but still have BillPayments that would
+    # orphan if we destroyed the bill. Prefer fresh remote; fall back to
+    # cached only if remote inspection couldn't establish balance & total.
+    has_payments =
+      if remote && remote.try(:balance).present? && remote.try(:total_amt).present?
+        remote.balance.to_f < remote.total_amt.to_f
+      else
+        bill.has_payments?
+      end
+
+    if has_payments
       raise PaidQboBillError,
-        "#{self.class.name} ##{id}: refusing to destroy QBO bill #{bill.qbo_id} — it is paid. Void the BillPayment in QBO first."
+        "#{self.class.name} ##{id}: refusing to destroy QBO bill #{bill.qbo_id} — at least one BillPayment exists (full or partial). Void the BillPayment(s) in QBO first."
     end
 
     ActiveRecord::Base.transaction do
       update_attribute(:qbo_bill_id, nil)
-      # Re-read the local QboBill in case load_qbo_bill!'s rescue path nulled
-      # qbo_bill_id (Object Not Found) — bill would then be a stale reference.
-      bill = QboBill.find_by(qbo_account_id: qbo_account_for_bill&.id, qbo_id: bill.qbo_id)
-      bill&.destroy!
+      local = QboBill.find_by(qbo_account_id: qbo_account_for_bill&.id, qbo_id: bill.qbo_id)
+      local&.destroy!
     end
   end
 

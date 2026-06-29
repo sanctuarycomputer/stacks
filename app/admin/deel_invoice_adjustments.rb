@@ -49,6 +49,13 @@ ActiveAdmin.register DeelInvoiceAdjustment do
             parent.ledgers.find_by(id: params[:ledger])
           elsif params.dig(:deel_invoice_adjustment, :ledger_id).present?
             parent.ledgers.find_by(id: params[:deel_invoice_adjustment][:ledger_id])
+          else
+            # No explicit ledger param: build_resource / create fall back to
+            # the contributor's Sanctuary ledger. Resolve THAT here so the
+            # deel-enabled check covers the fallback path too (otherwise a
+            # contributor self-submit with no ledger param would silently
+            # land on a qbo_bound Sanctuary ledger).
+            Ledger.find_by(enterprise: Enterprise.sanctuary, contributor: parent)
           end
         if target_ledger && !target_ledger.deel_enabled?
           redirect_to admin_contributor_path(parent),

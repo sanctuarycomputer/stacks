@@ -15,6 +15,16 @@ class QboBill < ApplicationRecord
     "https://qbo.intuit.com/app/bill?&txnId=#{qbo_id}"
   end
 
+  # QBO realms allocate vendor ids independently, so the same `qbo_id` can
+  # belong to different vendors across enterprises. The bare belongs_to is
+  # unscoped (primary_key: "qbo_id" only), which would resolve to whichever
+  # row AR finds first — potentially in a DIFFERENT QBO realm. This helper
+  # scopes the lookup to THIS bill's qbo_account.
+  def vendor
+    return nil if qbo_vendor_id.blank?
+    QboVendor.find_by(qbo_account_id: qbo_account_id, qbo_id: qbo_vendor_id)
+  end
+
   # QBO Bills are settled when their balance hits zero (full or partial
   # payments are reflected by BillPayments which deduct from balance).
   # `data` is the JSONB blob synced from QBO via QboAccount#fetch_bill_by_id.
@@ -26,6 +36,17 @@ class QboBill < ApplicationRecord
 
   def total_amount
     (data&.dig("total_amt") || data&.dig("total"))&.to_f
+  end
+
+  # True if ANY BillPayment has landed against this bill (full or partial).
+  # Destroying a bill with payments orphans the BillPayment(s) in QBO vendor
+  # AP, so detach_and_destroy_qbo_bill uses this — not `paid?` alone — to
+  # decide whether to refuse.
+  def has_payments?
+    bal = data&.dig("balance")
+    total = total_amount
+    return false if bal.nil? || total.nil?
+    bal.to_f < total.to_f
   end
 
   # Remaining unpaid balance on the bill. Reflects partial payments — a bill

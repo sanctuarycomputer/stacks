@@ -52,6 +52,15 @@ ActiveAdmin.register_page "Money" do
     raise ActionController::BadRequest, "unsupported host class" unless Money::PayableQboBills::HOST_KLASSES.map(&:name).include?(raw_class)
     klass = raw_class.constantize
     host = klass.find(params.require(:host_id))
+    # Refuse to push an unapproved host to QBO. sync_qbo_bill! has no
+    # payable?/accepted? guard — without this check a stale browser tab or
+    # crafted POST could land an unaccepted row in QBO vendor AP, where
+    # Finance could pay it before any Stacks approval (cash leak).
+    unless host.payable?
+      flash[:alert] = "Cannot sync #{klass.name} ##{host.id}: not yet payable (acceptance/approval still pending)."
+      redirect_back(fallback_location: admin_money_payable_qbo_bills_path(qbo_account_id: params[:qbo_account_id]))
+      return
+    end
     begin
       host.sync_qbo_bill!
       host.reload

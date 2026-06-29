@@ -16,8 +16,11 @@
       QBO Bill ↗
     </p>
   </a>
-  <% if resource.qbo_bill.qbo_vendor.present? %>
-    <a href="<%= resource.qbo_bill.qbo_vendor.qbo_url %>" target="_blank" rel="noopener">
+  <%# Use the qbo_account-scoped vendor accessor — the bare belongs_to is
+      unscoped and can alias across QBO realms when ids collide. %>
+  <% vendor = resource.qbo_bill.vendor %>
+  <% if vendor.present? %>
+    <a href="<%= vendor.qbo_url %>" target="_blank" rel="noopener">
       <p class="nag" style="margin-bottom: 0px;margin-right: 6px;">
         QBO Vendor ↗
       </p>
