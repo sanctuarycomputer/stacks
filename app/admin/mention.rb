@@ -1,5 +1,6 @@
 ActiveAdmin.register Mention do
-  menu parent: 'MCP', label: 'ETL: Mentions'
+  # Reached by drilling into a Document/Chunk (not a top-level menu item).
+  menu false
   actions :index, :show
 
   scope('Unresolved') { |s| s.unresolved }

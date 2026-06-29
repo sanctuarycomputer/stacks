@@ -1,5 +1,6 @@
 ActiveAdmin.register Chunk do
-  menu parent: 'MCP', label: 'ETL: Chunks'
+  # Reached by drilling into a Document (not a top-level menu item).
+  menu false
   actions :index, :show
 
   filter :speaker_name
