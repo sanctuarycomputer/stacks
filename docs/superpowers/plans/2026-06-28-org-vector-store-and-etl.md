@@ -6,18 +6,18 @@
 
 **Architecture:** A source-agnostic core (`documents → chunks`, a polymorphic `embeddings` side-table, `mentions`, `document_contacts`, `source_syncs`) sits under a connector/ETL framework (`Stacks::Etl::Connector`). The Meet connector (Meet REST API v2 for ongoing + Drive export for backfill) projects rich `meetings`/`segments`/`participants` into the core. Hybrid keyword+semantic search is exposed via the official `mcp` gem over Streamable HTTP. Identity is anchored on the existing `contacts` table.
 
-**Tech Stack:** Rails 6.1, Ruby 3.1.7, PostgreSQL + pgvector (via `neighbor`), `google-apis-meet_v2`, `google-apis-drive_v3`, Voyage AI embeddings (HTTP via `httparty`), the `mcp` Ruby gem, ActiveAdmin, Minitest + `mocha`.
+**Tech Stack:** Rails 6.1, Ruby 3.1.7, PostgreSQL + pgvector (via `neighbor`), `google-apis-meet_v2`, `google-apis-drive_v3`, local embeddings via `informers` (ONNX, quantized mxbai), the `mcp` Ruby gem, ActiveAdmin, Minitest + `mocha`.
 
 ## Global Constraints
 
 - **Ruby 3.1.7 / Rails 6.1** — pin gem versions that still support Ruby 3.1: `neighbor "~> 0.4.3"`, `google-apis-meet_v2 "0.13.0"`. For `google-apis-drive_v3` and `mcp`, pin the newest version whose gemspec `required_ruby_version` allows 3.1 (verify with `gem spec <gem> -v <version> required_ruby_version` or `bundle update` failing). Do **not** assume latest.
 - **Heroku Postgres prerequisite:** pgvector is only on Standard/Premium/Private/Shield tiers (PG 15+, pgvector 0.8.0). The `vector` extension must be enabled (`CREATE EXTENSION vector;`). If the target DB is Essential/Mini, the deploy will fail — confirm tier before shipping.
 - **Tests:** Minitest with `mocha/minitest`. No WebMock/VCR — stub external HTTP/service objects with mocha. Fixtures via `fixtures :all`. Run with `bin/rails test <path>` (single test: `bin/rails test <path> -n <name>`).
-- **Config:** secrets via the existing `Stacks::Utils.config` mechanism (same as `config[:google_oauth2][:service_account]`). Add `config[:voyage][:api_key]` and `config[:mcp][:bearer_token]`.
+- **Config:** secrets via the existing `Stacks::Utils.config` mechanism (Rails encrypted credentials, keyed by host). **MCP reuses the existing private API key** — `config[:stacks][:private_api_key]`, sent as the `X-Api-Key` header, authenticated exactly like `ApiController#check_private_api_key!`. No new MCP token. No embedding API key is needed: embeddings run **locally** via `informers` (the quantized model is downloaded and cached on first real run; unit tests stub the embedder).
 - **Background work:** no job framework. Long-running work is rake tasks wrapped in a `SystemTask` record (`SystemTask.create!(name:)` → `mark_as_success` / `mark_as_error(e)`), scheduled by Heroku Scheduler — mirror `stacks:sync_forecast`.
 - **Identity:** every person resolves to a `Contact` by email (`create_or_find_by`, lowercased, tag `sources` with `"meet"`). No `AdminUser`/`Contributor` reconciliation.
 - **Exclusion:** corpus eligibility = `excluded IN (not_excluded, manually_included)`. Excluded documents get **no** chunks and **no** embeddings, and are never returned by MCP.
-- **Embeddings:** model `voyage-3`, 1024 dims, cosine. Stored in the `embeddings` side-table, never as a column on `chunks`.
+- **Embeddings:** `mixedbread-ai/mxbai-embed-large-v1` (quantized ONNX) via `informers`, 1024 dims, cosine, run locally. Search queries get the prefix `Represent this sentence for searching relevant passages: `; stored chunks do not. Stored in the `embeddings` side-table, never a column on `chunks`.
 - Commit after every task. Conventional-commit messages.
 
 ---
@@ -64,13 +64,14 @@ In `Gemfile` (near the other `google-apis-*` gems):
 gem 'google-apis-meet_v2', '0.13.0'
 gem 'google-apis-drive_v3'        # pin newest version whose gemspec allows Ruby 3.1
 gem 'neighbor', '~> 0.4.3'
+gem 'informers'                   # local ONNX embeddings; pin newest version allowing Ruby 3.1
 gem 'mcp'                          # pin newest version whose gemspec allows Ruby 3.1
 ```
 
 - [ ] **Step 2: Install and pin**
 
 Run: `bundle install`
-Expected: resolves. If `google-apis-drive_v3` or `mcp` fail on `required_ruby_version`, append an explicit older version constraint and re-run until green. Record the resolved versions in `Gemfile.lock`.
+Expected: resolves. If `google-apis-drive_v3`, `mcp`, or `informers` fail on `required_ruby_version`, append an explicit older version constraint and re-run until green. Record the resolved versions in `Gemfile.lock`.
 
 - [ ] **Step 3: Write the extension migration**
 
@@ -429,19 +430,19 @@ class EmbeddingTest < ActiveSupport::TestCase
   end
 
   test 'stores a vector and finds nearest neighbors by cosine' do
-    near = Embedding.create!(owner: @chunk, model: 'voyage-3', embedding: Array.new(1024) { 0.0 }.tap { |v| v[0] = 1.0 })
+    near = Embedding.create!(owner: @chunk, model: 'mxbai-embed-large-v1', embedding: Array.new(1024) { 0.0 }.tap { |v| v[0] = 1.0 })
     other = Chunk.create!(document: @doc, position: 1, content: 'bye', source: :meet)
-    Embedding.create!(owner: other, model: 'voyage-3', embedding: Array.new(1024) { 0.0 }.tap { |v| v[1] = 1.0 })
+    Embedding.create!(owner: other, model: 'mxbai-embed-large-v1', embedding: Array.new(1024) { 0.0 }.tap { |v| v[1] = 1.0 })
 
     query = Array.new(1024) { 0.0 }.tap { |v| v[0] = 1.0 }
-    result = Embedding.where(model: 'voyage-3').nearest_neighbors(:embedding, query, distance: 'cosine').first
+    result = Embedding.where(model: 'mxbai-embed-large-v1').nearest_neighbors(:embedding, query, distance: 'cosine').first
     assert_equal near.id, result.id
   end
 
   test 'one embedding per owner per model' do
-    Embedding.create!(owner: @chunk, model: 'voyage-3', embedding: Array.new(1024, 0.0))
+    Embedding.create!(owner: @chunk, model: 'mxbai-embed-large-v1', embedding: Array.new(1024, 0.0))
     assert_raises(ActiveRecord::RecordNotUnique) do
-      Embedding.create!(owner: @chunk, model: 'voyage-3', embedding: Array.new(1024, 0.0))
+      Embedding.create!(owner: @chunk, model: 'mxbai-embed-large-v1', embedding: Array.new(1024, 0.0))
     end
   end
 end
@@ -846,48 +847,42 @@ git commit -m "feat(etl): meet connector tables (meetings/participants/segments)
 
 ---
 
-## Task 10: Voyage embedder
+## Task 10: Local embedder (informers / quantized mxbai)
 
 **Files:**
 - Create: `lib/stacks/etl/embedder.rb`
 - Test: `test/lib/stacks/etl/embedder_test.rb`
 
 **Interfaces:**
-- Produces: `Stacks::Etl::Embedder.embed(texts, input_type: 'document') -> { vectors: [[Float]], total_tokens: Integer }`. `MODEL = 'voyage-3'`, `DIMENSIONS = 1024`.
+- Produces: `Stacks::Etl::Embedder.embed(texts, input_type: 'document') -> { vectors: [[Float]] }`. Constants `MODEL = 'mixedbread-ai/mxbai-embed-large-v1'`, `DIMENSIONS = 1024`, `QUERY_PREFIX = 'Represent this sentence for searching relevant passages: '`. Loads a memoized **quantized** ONNX pipeline via `informers`; `input_type: 'query'` prepends the prefix, `'document'` does not. Runs locally — no API key, no network.
 
 - [ ] **Step 1: Write the failing test**
+
+The `informers` pipeline is stubbed (so the suite stays offline and fast). The pipeline is a callable mapping an array of strings to an array of vectors.
 
 ```ruby
 require 'test_helper'
 
 class Stacks::Etl::EmbedderTest < ActiveSupport::TestCase
-  test 'embed posts to voyage and returns vectors ordered by index' do
-    fake = mock('resp')
-    fake.stubs(:success?).returns(true)
-    fake.stubs(:parsed_response).returns({
-      'data' => [
-        { 'index' => 1, 'embedding' => [0.2] * 1024 },
-        { 'index' => 0, 'embedding' => [0.1] * 1024 }
-      ],
-      'usage' => { 'total_tokens' => 42 }
-    })
-    Stacks::Utils.stubs(:config).returns(voyage: { api_key: 'k' })
-    HTTParty.expects(:post).with do |url, opts|
-      url == 'https://api.voyageai.com/v1/embeddings' &&
-        JSON.parse(opts[:body])['model'] == 'voyage-3' &&
-        JSON.parse(opts[:body])['input'] == %w[a b]
-    end.returns(fake)
-
-    out = Stacks::Etl::Embedder.embed(%w[a b])
-    assert_equal [[0.1] * 1024, [0.2] * 1024], out[:vectors]
-    assert_equal 42, out[:total_tokens]
+  test 'embeds a batch of documents into vectors (no prefix)' do
+    captured = nil
+    Stacks::Etl::Embedder.stubs(:pipeline).returns(->(arr) { captured = arr; arr.map { [0.1] * 1024 } })
+    out = Stacks::Etl::Embedder.embed(%w[alpha beta])
+    assert_equal %w[alpha beta], captured
+    assert_equal [[0.1] * 1024, [0.1] * 1024], out[:vectors]
   end
 
-  test 'raises on a non-success response' do
-    fake = mock('resp'); fake.stubs(:success?).returns(false); fake.stubs(:code).returns(429); fake.stubs(:body).returns('rate limited')
-    Stacks::Utils.stubs(:config).returns(voyage: { api_key: 'k' })
-    HTTParty.stubs(:post).returns(fake)
-    assert_raises(Stacks::Etl::Embedder::Error) { Stacks::Etl::Embedder.embed(['x']) }
+  test 'prepends the query prefix for the query input_type' do
+    captured = nil
+    Stacks::Etl::Embedder.stubs(:pipeline).returns(->(arr) { captured = arr; arr.map { [0.0] * 1024 } })
+    Stacks::Etl::Embedder.embed(['gateway'], input_type: 'query')
+    assert_equal ['Represent this sentence for searching relevant passages: gateway'], captured
+  end
+
+  test 'normalizes a single-string return into an array of vectors' do
+    Stacks::Etl::Embedder.stubs(:pipeline).returns(->(_arr) { [0.2] * 1024 })
+    out = Stacks::Etl::Embedder.embed('solo')
+    assert_equal [[0.2] * 1024], out[:vectors]
   end
 end
 ```
@@ -903,26 +898,21 @@ Expected: FAIL
 module Stacks
   module Etl
     class Embedder
-      Error = Class.new(StandardError)
-      ENDPOINT = 'https://api.voyageai.com/v1/embeddings'.freeze
-      MODEL = 'voyage-3'.freeze
+      MODEL = 'mixedbread-ai/mxbai-embed-large-v1'.freeze
       DIMENSIONS = 1024
+      QUERY_PREFIX = 'Represent this sentence for searching relevant passages: '.freeze
 
-      def self.embed(texts, input_type: 'document', model: MODEL)
-        body = { input: Array(texts), model: model, input_type: input_type, truncation: true }
-        response = HTTParty.post(
-          ENDPOINT,
-          headers: {
-            'Authorization' => "Bearer #{Stacks::Utils.config[:voyage][:api_key]}",
-            'Content-Type' => 'application/json'
-          },
-          body: body.to_json
-        )
-        raise Error, "Voyage #{response.code}: #{response.body}" unless response.success?
+      # Memoized, quantized ONNX pipeline. Downloads + caches the model on first call.
+      def self.pipeline
+        @pipeline ||= Informers.pipeline('embedding', MODEL, quantized: true)
+      end
 
-        parsed = response.parsed_response
-        vectors = parsed['data'].sort_by { |d| d['index'] }.map { |d| d['embedding'] }
-        { vectors: vectors, total_tokens: parsed.dig('usage', 'total_tokens') }
+      def self.embed(texts, input_type: 'document')
+        inputs = Array(texts).map(&:to_s)
+        inputs = inputs.map { |t| QUERY_PREFIX + t } if input_type == 'query'
+        raw = pipeline.call(inputs)
+        vectors = raw.first.is_a?(Array) ? raw : [raw]
+        { vectors: vectors }
       end
     end
   end
@@ -938,7 +928,7 @@ Expected: PASS
 
 ```bash
 git add lib/stacks/etl/embedder.rb test/lib/stacks/etl/embedder_test.rb
-git commit -m "feat(etl): Voyage embedder"
+git commit -m "feat(etl): local informers embedder (quantized mxbai, 1024-dim)"
 ```
 
 ---
@@ -2028,8 +2018,8 @@ class Stacks::Etl::SearchTest < ActiveSupport::TestCase
   end
 
   test 'semantic mode embeds the query and ranks by neighbor distance' do
-    Embedding.create!(owner: @hit, model: 'voyage-3', embedding: Array.new(1024) { 0.0 }.tap { |v| v[0] = 1.0 })
-    Embedding.create!(owner: @miss, model: 'voyage-3', embedding: Array.new(1024) { 0.0 }.tap { |v| v[1] = 1.0 })
+    Embedding.create!(owner: @hit, model: Stacks::Etl::Embedder::MODEL, embedding: Array.new(1024) { 0.0 }.tap { |v| v[0] = 1.0 })
+    Embedding.create!(owner: @miss, model: Stacks::Etl::Embedder::MODEL, embedding: Array.new(1024) { 0.0 }.tap { |v| v[1] = 1.0 })
     Stacks::Etl::Embedder.expects(:embed).with(['gateway'], input_type: 'query').returns(vectors: [Array.new(1024) { 0.0 }.tap { |v| v[0] = 1.0 }], total_tokens: 1)
 
     results = Stacks::Etl::Search.call(query: 'gateway', mode: :semantic)
@@ -2251,7 +2241,7 @@ git commit -m "feat(mcp): read-only tools (search/get/list documents/sources)"
 
 ---
 
-## Task 22: MCP server endpoint (bearer auth + Streamable HTTP)
+## Task 22: MCP server endpoint (X-Api-Key auth + Streamable HTTP)
 
 **Files:**
 - Create: `app/services/mcp/server.rb`, `app/controllers/api/mcp_controller.rb`
@@ -2259,27 +2249,28 @@ git commit -m "feat(mcp): read-only tools (search/get/list documents/sources)"
 - Test: `test/integration/mcp_endpoint_test.rb`
 
 **Interfaces:**
-- Consumes: the four tools, the `mcp` gem.
-- Produces: `Mcp::Server.build -> MCP::Server`; `Api::McpController#handle` authenticates `Authorization: Bearer <config token>`, logs the call, and dispatches to a stateless `StreamableHTTPTransport`. Route: `POST /api/mcp`.
+- Consumes: the four tools, the `mcp` gem, `ApiController#check_private_api_key!`.
+- Produces: `Mcp::Server.build -> MCP::Server`; `Api::McpController < ApiController` authenticates via the existing `check_private_api_key!` (`X-Api-Key` header vs `config[:stacks][:private_api_key]`; missing/wrong key raises `Stacks::Errors::Unauthorized` → 403), logs the call, and dispatches to a stateless `StreamableHTTPTransport`. Route: `/api/mcp` via POST/GET/DELETE.
 
 - [ ] **Step 1: Confirm the transport dispatch API** for the pinned `mcp` version: check whether the controller calls `transport.handle_request(request)` or rack `transport.call(env)`. Use whichever the gem exposes (the gem's `examples/` show the canonical call). Adjust Step 3 accordingly.
 
-- [ ] **Step 2: Write the failing test**
+- [ ] **Step 2: Write the failing test** (mirrors `test/controllers/api/contacts_controller_test.rb` auth)
 
 ```ruby
 require 'test_helper'
 
 class McpEndpointTest < ActionDispatch::IntegrationTest
-  setup { Stacks::Utils.stubs(:config).returns(mcp: { bearer_token: 'secret' }) }
-
-  test 'rejects a missing/incorrect bearer token' do
+  test 'rejects a request without the private API key' do
     post '/api/mcp', params: {}.to_json, headers: { 'CONTENT_TYPE' => 'application/json' }
-    assert_response :unauthorized
+    assert_response :forbidden
   end
 
-  test 'accepts a tools/list JSON-RPC request with a valid token' do
+  test 'accepts a tools/list JSON-RPC request with the private API key' do
     body = { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }.to_json
-    post '/api/mcp', params: body, headers: { 'CONTENT_TYPE' => 'application/json', 'Authorization' => 'Bearer secret' }
+    post '/api/mcp', params: body, headers: {
+      'CONTENT_TYPE' => 'application/json',
+      'X-Api-Key' => Stacks::Utils.config[:stacks][:private_api_key]
+    }
     assert_response :success
     assert_includes response.body, 'search'
   end
@@ -2304,12 +2295,13 @@ module Mcp
 end
 ```
 
-`app/controllers/api/mcp_controller.rb`:
+`app/controllers/api/mcp_controller.rb` (reuses the existing API-key auth):
 
 ```ruby
 module Api
-  class McpController < ActionController::API
-    before_action :authenticate_bearer!
+  class McpController < ApiController
+    skip_before_action :verify_authenticity_token
+    before_action :check_private_api_key!
 
     def handle
       transport = MCP::Server::Transports::StreamableHTTPTransport.new(Mcp::Server.build, stateless: true)
@@ -2317,13 +2309,6 @@ module Api
       status, headers, body = transport.handle_request(request)  # confirm API in Step 1
       headers.each { |k, v| response.set_header(k, v) }
       render status: status, plain: Array(body).join
-    end
-
-    private
-
-    def authenticate_bearer!
-      token = request.headers['Authorization'].to_s.sub(/\ABearer /, '')
-      head :unauthorized unless ActiveSupport::SecurityUtils.secure_compare(token, Stacks::Utils.config[:mcp][:bearer_token].to_s)
     end
   end
 end
@@ -2344,7 +2329,7 @@ Expected: PASS. If the transport dispatch differs in the pinned gem, adjust `#ha
 
 ```bash
 git add app/services/mcp/server.rb app/controllers/api/mcp_controller.rb config/routes.rb test/integration/mcp_endpoint_test.rb
-git commit -m "feat(mcp): streamable-http endpoint with bearer auth + audit log"
+git commit -m "feat(mcp): streamable-http endpoint reusing X-Api-Key auth + audit log"
 ```
 
 ---

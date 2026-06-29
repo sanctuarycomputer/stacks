@@ -71,7 +71,7 @@ service-account domain-wide delegation in `lib/stacks/calendar.rb` / `team.rb`.
   connector and never touches search. Each connector decides what to *promote*
   (full ingest vs. distilled slice).
 - A **read-only MCP server** searching across *all* sources at once
-  (keyword/semantic/hybrid), `source`-filterable, with per-client scoped tokens and
+  (keyword/semantic/hybrid), `source`-filterable, authenticated by the existing private API key and
   audit logging.
 - The **Meet connector** as source #1: org-wide transcript capture, bounded backfill
   + ongoing, full speaker/participant fidelity, display-name → contact resolution.
@@ -120,7 +120,7 @@ service-account domain-wide delegation in `lib/stacks/calendar.rb` / `team.rb`.
 ```
                 ┌─────────────────────────────────────────┐
    MCP server   │ read-only: search / get / list across    │
-   (api ns)     │ ALL sources · scoped tokens · audit log   │
+   (api ns)     │ ALL sources · X-Api-Key auth · audit log │
                 └───────────────────▲─────────────────────┘
                                     │ queries (hybrid: vector ⋈ tsvector ⋈ SQL)
                 ┌───────────────────┴─────────────────────┐
@@ -148,7 +148,7 @@ service-account domain-wide delegation in `lib/stacks/calendar.rb` / `team.rb`.
 lib/stacks/etl/
   connector.rb        # base: extract→classify→chunk→embed→resolve + watermark
   chunker.rb          # source-agnostic chunking (~512 tokens, overlap, stable spans)
-  embedder.rb         # Voyage AI wrapper (swappable provider/model) → embeddings table
+  embedder.rb         # local embeddings via informers/ONNX (mxbai, swappable) → embeddings
   mention_resolver.rb # raw display-name/handle/email → Contact (+ confidence/queue)
   search.rb           # cross-source hybrid query layer (MCP-facing)
   meet/
@@ -194,10 +194,10 @@ embedding column** — embeddings live in the side-table. Created only for
 corpus-eligible documents.
 
 **`embeddings`** — versioned, polymorphic vector store. `owner_type`/`owner_id`
-(currently `Chunk`; later also extracted objects), `model` (e.g. `voyage-3`),
+(currently `Chunk`; later also extracted objects), `model` (e.g. `mxbai-embed-large-v1`),
 `dimensions`, `embedding vector`, `created_at`. Unique on
 `(owner_type, owner_id, model)`, HNSW index. Re-embed / swap models with no migration
-and run two models side by side. (voyage-3 = 1024 dims, comfortably under HNSW's
+and run two models side by side. (mxbai-embed-large-v1 = 1024 dims, under HNSW's
 2000-dim cap; a >2000-dim model would use `halfvec` — noted, not needed now.)
 
 **`contacts`** (existing — extended) — the canonical identity and FK target for
@@ -289,12 +289,18 @@ The **Meet classifier** sets initial state on new meetings: 1:1
 
 ## Embeddings
 
-- Provider **Voyage AI** (Anthropic's recommended embedding provider; no native
-  Anthropic embeddings API), model `voyage-3` (1024 dims), wrapped behind
-  `Stacks::Etl::Embedder` so model/provider is swappable and config-driven. API key
-  via `Stacks::Utils.config`.
+- **Local, no API key** — `mixedbread-ai/mxbai-embed-large-v1` (1024 dims, a top-tier
+  open English embedding model) run via the `informers` gem (ONNX Runtime), wrapped
+  behind `Stacks::Etl::Embedder` so the model is swappable. Embeddings are computed
+  **on our own infrastructure** — no chunk text is sent to a third party, a privacy win
+  for internal-meeting content. Per the model's convention, search *queries* get the
+  prefix `"Represent this sentence for searching relevant passages: "`; stored chunks
+  do not.
 - Written to the `embeddings` side-table per chunk, corpus-eligible content only,
   inline during the sync run. Idempotent per `(owner, model)`.
+- Deploy note: we run the **quantized** ONNX variant (~340 MB, int8) — fits a standard dyno; `sync_meet` /
+  `backfill_meet` load the memoized model once per run. The model downloads and caches
+  on first run.
 
 ## MCP server (read-only, cross-source)
 
@@ -302,7 +308,7 @@ The **Meet classifier** sets initial state on new meetings: 1:1
   `api` namespace at `/mcp`, so claude.ai and Claude Code can both connect. Tools are
   classes carrying `read_only_hint`. Run **stateless** if more than one web dyno
   (the transport otherwise keeps session/SSE state in memory).
-- **Security:** per-client **scoped bearer tokens**, **audit-log every call**, and
+- **Security:** reuse the existing **private API key** (`X-Api-Key` header, `config[:stacks][:private_api_key]`, same as `ApiController#check_private_api_key!`), **audit-log every call**, and
   **treat all retrieved content as untrusted** — indexed text was written by people
   who are not the agent's operator, so tool results are tagged as data, not
   instructions (prompt-injection surface in both directions).
@@ -361,7 +367,7 @@ may take or leave these):
 - A **one-time notice** to employees that transcribed meetings (and, as sources are
   added, other communications) are retained and searchable by internal tooling, with
   the exclusion categories listed.
-- **Per-client scoped tokens + audit logging** are the access boundary; treat tokens
+- **The private API key + audit logging** are the access boundary; treat the key
   as secrets, rotate them.
 - The **exclusion layer is the privacy control**: sensitive material is retained for
   the human record but walled off from the agent.
@@ -424,7 +430,7 @@ resolution exist specifically so the intelligence layer slots on top without rew
   Docs export MIME) against a real "Meet Recordings" folder.
 - Scope the `MentionResolver` effort — fuzzy display-name matching is the riskiest
   Meet-specific piece (transcripts give names, not IDs).
-- Confirm Voyage model/dimensions and budget for the backfill embedding run.
+- Confirm `informers` + `onnxruntime` native lib builds in the Heroku slug, and that the quantized mxbai model downloads/caches on the dyno on first run (consider baking it into the slug or a persistent cache).
 - Decide chunking parameters (size/overlap) and per-segment vs across-segment chunking
   for Meet.
 - Confirm `mcp` gem Streamable-HTTP statelessness given the prod dyno count.
