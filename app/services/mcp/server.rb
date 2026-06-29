@@ -5,7 +5,8 @@
 # MCP::Server is defined before we define Mcp::Server.
 unless defined?(MCP::Server)
   mcp_gem = Gem.loaded_specs['mcp']
-  require File.join(mcp_gem.gem_dir, 'lib', 'mcp', 'server') if mcp_gem
+  raise "mcp gem not found in Gem.loaded_specs; cannot resolve MCP::Server" unless mcp_gem
+  require File.join(mcp_gem.gem_dir, 'lib', 'mcp', 'server')
 end
 
 module Mcp
