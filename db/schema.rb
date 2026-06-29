@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_06_28_000002) do
+ActiveRecord::Schema.define(version: 2026_06_28_000003) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -94,6 +94,23 @@ ActiveRecord::Schema.define(version: 2026_06_28_000002) do
     t.integer "installment_amount", default: 104167
     t.string "contract_url"
     t.index ["admin_user_id"], name: "index_associates_award_agreements_on_admin_user_id"
+  end
+
+  create_table "chunks", force: :cascade do |t|
+    t.bigint "document_id", null: false
+    t.integer "position", null: false
+    t.text "content", null: false
+    t.integer "start_offset"
+    t.integer "end_offset"
+    t.string "speaker_name"
+    t.bigint "speaker_contact_id"
+    t.integer "source", default: 0, null: false
+    t.datetime "occurred_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["document_id", "position"], name: "index_chunks_on_document_id_and_position", unique: true
+    t.index ["document_id"], name: "index_chunks_on_document_id"
+    t.index ["speaker_contact_id"], name: "index_chunks_on_speaker_contact_id"
   end
 
   create_table "commissions", force: :cascade do |t|
@@ -1218,6 +1235,8 @@ ActiveRecord::Schema.define(version: 2026_06_28_000002) do
   # Composite FK fk_adhoc_invoice_trackers_qbo_invoice managed by migration (not expressible in schema.rb)
   add_foreign_key "admin_user_salary_windows", "admin_users"
   add_foreign_key "associates_award_agreements", "admin_users"
+  add_foreign_key "chunks", "contacts", column: "speaker_contact_id"
+  add_foreign_key "chunks", "documents"
   add_foreign_key "commissions", "contributors"
   add_foreign_key "commissions", "project_trackers"
   add_foreign_key "contributor_adjustments", "ledgers"
