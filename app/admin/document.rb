@@ -16,6 +16,31 @@ ActiveAdmin.register Document do
     actions
   end
 
+  # Re-include a previously-excluded document and index it from its STORED transcript
+  # segments (no Google re-fetch) so it becomes searchable by the agent.
+  member_action :include_and_index, method: :put do
+    resource.update!(excluded: :manually_included, excluded_reason: :none, excluded_by: current_admin_user.email)
+    indexed = Stacks::Etl::Reindexer.call(resource)
+    notice = indexed ? "Included & indexed (#{resource.chunks.count} chunks)." : 'Included (no stored segments to index).'
+    redirect_to admin_document_path(resource), notice: notice
+  end
+
+  # Exclude a document: wall it off from the agent and drop its chunks/embeddings
+  # (the raw Meeting + transcript segments are retained, so this is reversible).
+  member_action :exclude, method: :put do
+    resource.update!(excluded: :manually_excluded, excluded_reason: :manual, excluded_by: current_admin_user.email)
+    resource.chunks.destroy_all
+    redirect_to admin_document_path(resource), notice: 'Excluded (chunks removed; transcript retained).'
+  end
+
+  action_item :include_and_index, only: :show, if: proc { !resource.corpus_eligible? } do
+    link_to 'Include & index', include_and_index_admin_document_path(resource), method: :put
+  end
+
+  action_item :exclude, only: :show, if: proc { resource.corpus_eligible? } do
+    link_to 'Exclude', exclude_admin_document_path(resource), method: :put
+  end
+
   show do
     attributes_table do
       row :source

@@ -26,5 +26,28 @@ namespace :stacks do
         system_task.mark_as_success
       end
     end
+
+    # --- Org-wide multi-user sweeps ---------------------------------------------
+    # These impersonate EVERY active Workspace user, error-isolated (one user's
+    # failure never aborts the run), deduped by the global conference-record / Drive-
+    # doc IDs. Meant to run on a Performance dyno (the local embedding model needs RAM).
+
+    desc 'Org-wide Drive backfill of Meet transcripts for ALL users (default 90 days)'
+    task :backfill_meet_all, [:days] => :environment do |_t, args|
+      Stacks::Etl::Meet.sweep_all_users!(
+        task_name: 'stacks:etl:backfill_meet_all',
+        mode: :drive,
+        since: (args[:days] || 90).to_i.days.ago
+      )
+    end
+
+    desc 'Org-wide ongoing Meet API sync for ALL users (default last 7 days)'
+    task :sync_meet_all, [:days] => :environment do |_t, args|
+      Stacks::Etl::Meet.sweep_all_users!(
+        task_name: 'stacks:etl:sync_meet_all',
+        mode: :api,
+        since: (args[:days] || 7).to_i.days.ago
+      )
+    end
   end
 end
