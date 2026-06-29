@@ -293,9 +293,18 @@ class QboAccount < ApplicationRecord
 
       # Last defense: even when this bill's doc_number suffix is unknown OR
       # the known-class lookups came up empty, refuse to destroy the bill if
-      # ANY SyncsAsQboBill host still references its qbo_id. Otherwise we'd
-      # nuke a healthy bill whose label is malformed/legacy/unknown.
-      next if Money::PayableQboBills::HOST_KLASSES.any? { |k| k.with_deleted.where(qbo_bill_id: b.id).exists? }
+      # ANY SyncsAsQboBill host on a ledger belonging to THIS QboAccount still
+      # references its qbo_id. Scoping by qbo_account_id (via ledger →
+      # enterprise → qbo_account) is critical — host.qbo_bill_id is just a
+      # string, so without the scope a host in a DIFFERENT QBO realm with the
+      # same id would falsely satisfy `exists?` and leak this orphan forever.
+      next if Money::PayableQboBills::HOST_KLASSES.any? do |k|
+        k.with_deleted
+          .joins(ledger: { enterprise: :qbo_account })
+          .where(qbo_accounts: { id: id })
+          .where(qbo_bill_id: b.id)
+          .exists?
+      end
 
       # Truly orphan now — clean up local mirror (which also tears down the
       # remote via QboBill#before_destroy) or delete the remote directly.

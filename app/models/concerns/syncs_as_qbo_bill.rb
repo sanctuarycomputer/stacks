@@ -35,27 +35,30 @@ module SyncsAsQboBill
     return unless bill.present?
 
     # Refresh the bill against QBO before the paid-check — cached data may be
-    # hours stale. Note: load_qbo_bill! has a documented side effect — on
-    # "Object Not Found" it destroys the local mirror AND nils qbo_bill_id
-    # via update_attribute + self.reload. So after this call, qbo_bill_id may
-    # already be blank (cleanup done) or the bill in-memory may be stale.
-    remote =
-      begin
-        load_qbo_bill!
-      rescue
-        nil
-      end
+    # hours stale. load_qbo_bill! NEVER raises (it rescues internally): on
+    # Object-Not-Found it destroys the local mirror + nils qbo_bill_id and
+    # returns nil; on any other failure (timeout, 5xx, auth) it returns nil
+    # WITHOUT cleaning up.
+    remote = load_qbo_bill!
 
-    # If load_qbo_bill! cleaned up the local mirror because the remote was
-    # already gone, there's nothing left to do.
+    # Object-Not-Found cleanup already nulled qbo_bill_id — nothing to do.
     return if qbo_bill_id.blank?
+
+    # remote == nil here means a transient QBO failure. Don't fall back to
+    # stale cached state — a payment may have landed during the outage and
+    # we'd silently delete a paid bill, orphaning the BillPayment. Fail
+    # closed; operator retries once QBO is reachable.
+    if remote.nil?
+      raise PaidQboBillError,
+        "#{self.class.name} ##{id}: cannot verify QBO bill #{bill.qbo_id} state (transient QBO failure). Retry once QBO is reachable."
+    end
 
     # Has-payments check uses BOTH balance < total — partial-paid bills
     # bypass paid? (balance > 0) but still have BillPayments that would
-    # orphan if we destroyed the bill. Prefer fresh remote; fall back to
-    # cached only if remote inspection couldn't establish balance & total.
+    # orphan if we destroyed the bill. If remote balance/total are present
+    # use them; otherwise (atypical/partial response) fall back to cached.
     has_payments =
-      if remote && remote.try(:balance).present? && remote.try(:total_amt).present?
+      if remote.try(:balance).present? && remote.try(:total_amt).present?
         remote.balance.to_f < remote.total_amt.to_f
       else
         bill.has_payments?

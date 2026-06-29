@@ -264,12 +264,16 @@ class Contributor < ApplicationRecord
     profit_shares.each { |ps| ps.sync_qbo_bill!(accounts_cache: cache) }
     # Reimbursement is a SyncsAsQboBill host too — without this it would be
     # silently skipped by any caller that expects "sync everything for this
-    # contributor" (admin button, daily cron rake task). Filter to accepted_at
-    # so a pending reimbursement never gets pushed to QBO vendor AP —
-    # SyncsAsQboBill#sync_qbo_bill! has no payable?/accepted? guard, and the
-    # admin per-resource sync_qbo_bill action explicitly refuses on
-    # `unless resource.accepted?` for the same reason.
-    reimbursements.where.not(accepted_at: nil).each { |r| r.sync_qbo_bill!(accounts_cache: cache) }
+    # contributor" (admin button, daily cron rake task). Filter to:
+    #   - accepted_at presence (pending reimbursements must not land in vendor AP)
+    #   - ledger.payment_methods includes 'qbo' (Deel-only ledger could still
+    #     have a connected qbo_account + vendor mapping; without this gate we'd
+    #     create a Bill on top of the planned Deel payout → double-payment).
+    reimbursements
+      .where.not(accepted_at: nil)
+      .joins(:ledger)
+      .where("'qbo' = ANY(ledgers.payment_methods)")
+      .each { |r| r.sync_qbo_bill!(accounts_cache: cache) }
   end
 
   def display_name
@@ -301,17 +305,61 @@ class Contributor < ApplicationRecord
     end
   end
 
-  # Dashboard widget total — same delegation pattern as new_deal_balance, but
-  # across every Ledger. Each ledger's balance/unsettled already applies its
-  # own legacy-vs-qbo_bound rules (audit-only filter, paid-bill drop,
-  # remaining_balance for partial pays), so the dashboard total stays
-  # consistent with per-contributor and per-ledger surfaces.
+  # Dashboard widget — preserves the pre-PR per-class summation semantics:
+  #   - future-dated items are excluded (the dashboard is "as-of-today")
+  #   - DIAs contribute only when deducts_balance? (not rejected/cancelled)
+  #   - PayStubs are NOT included (predates SyncsAsQboBill)
+  # Delegating to Ledger#balance/unsettled would have changed all three.
+  # qbo_bound rules are layered ON TOP of the original per-class iteration so
+  # paid bills and audit-only rows drop, and partial-paid bills contribute
+  # remaining_balance instead of full amount — same financial truth as the
+  # per-ledger pill, just date-filtered for the dashboard view.
   def self.aggregated_new_deal_balance
-    Ledger.includes(:contributor, :enterprise).reduce({ balance: 0, unsettled: 0 }) do |acc, l|
-      acc[:balance]   += l.balance.to_f
-      acc[:unsettled] += l.unsettled.to_f
-      acc
+    acc = { balance: 0, unsettled: 0 }
+
+    add = ->(li, amount, is_balance) {
+      if li.ledger&.qbo_bound?
+        return if Ledger.audit_only_under_qbo_bound?(li)
+        return if li.try(:qbo_bill)&.paid?
+        amount = li.qbo_bound_balance_amount if li.respond_to?(:qbo_bound_balance_amount)
+      end
+      acc[is_balance ? :balance : :unsettled] += amount
+    }
+
+    ContributorPayout.includes(:ledger, invoice_tracker: :invoice_pass).find_each do |cp|
+      next if cp.invoice_tracker.invoice_pass.start_of_month > Date.today
+      add.call(cp, cp.amount, cp.payable?)
     end
+
+    Reimbursement.includes(:ledger).find_each do |r|
+      next if r.created_at > Date.today
+      add.call(r, r.amount, r.accepted?)
+    end
+
+    Trueup.includes(:ledger).find_each do |tu|
+      next if tu.payment_date > Date.today
+      add.call(tu, tu.amount, true)
+    end
+
+    ProfitShare.includes(:ledger).find_each do |ps|
+      next if ps.applied_at > Date.today
+      add.call(ps, ps.amount, true)
+    end
+
+    ContributorAdjustment.includes(:ledger).find_each do |adj|
+      next if adj.effective_on > Date.today
+      add.call(adj, adj.amount, adj.payable?)
+    end
+
+    DeelInvoiceAdjustment.includes(:ledger).find_each do |row|
+      next if row.date_submitted > Date.today
+      next unless row.deducts_balance?
+      # DIAs deduct from balance (negative contribution) — qbo_bound filter
+      # drops them entirely, which the `add.call` lambda handles.
+      add.call(row, -row.amount, true)
+    end
+
+    acc
   end
 
   # Cross-enterprise aggregation. `elevated_service` is fundamentally an ALL-ENTERPRISES
