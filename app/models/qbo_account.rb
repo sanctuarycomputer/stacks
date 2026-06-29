@@ -231,11 +231,17 @@ class QboAccount < ApplicationRecord
     deleted_bills = QboBill.where(qbo_account_id: id).where.not(qbo_id: data.map { |t| t[:qbo_id] })
     deleted_qbo_ids = deleted_bills.pluck(:qbo_id)
     if deleted_qbo_ids.any?
+      # Every SyncsAsQboBill host has to be detached when its remote bill
+      # vanishes — otherwise the host still points at a dead qbo_id, gets
+      # surfaced as "No QBO bill" on the Money page, and a "Sync to QBO" click
+      # creates a duplicate bill in QBO vendor AP. Keep this list aligned with
+      # Money::PayableQboBills::HOST_KLASSES.
       ContributorPayout.with_deleted.where(qbo_bill_id: deleted_qbo_ids).update_all(qbo_bill_id: nil)
       Trueup.with_deleted.where(qbo_bill_id: deleted_qbo_ids).update_all(qbo_bill_id: nil)
       ContributorAdjustment.with_deleted.where(qbo_bill_id: deleted_qbo_ids).update_all(qbo_bill_id: nil)
       ProfitShare.with_deleted.where(qbo_bill_id: deleted_qbo_ids).update_all(qbo_bill_id: nil)
       PayStub.with_deleted.where(qbo_bill_id: deleted_qbo_ids).update_all(qbo_bill_id: nil)
+      Reimbursement.with_deleted.where(qbo_bill_id: deleted_qbo_ids).update_all(qbo_bill_id: nil)
     end
     deleted_bills.delete_all
   end
@@ -254,6 +260,10 @@ class QboAccount < ApplicationRecord
         klass = ContributorAdjustment
       when "PS"
         klass = ProfitShare
+      when "SB"
+        klass = PayStub
+      when "RB"
+        klass = Reimbursement
       when "ContributorPayout", /^Contri/
         klass = ContributorPayout
       when "Trueup"
@@ -261,16 +271,44 @@ class QboAccount < ApplicationRecord
       when "ProfitShare", /^Profit/
         klass = ProfitShare
       else
-        klass = ContributorPayout
+        klass = nil
       end
 
-      obj = klass.find_by(id: splat[1])
-      next if obj.present?
+      if klass.present?
+        obj = klass.find_by(id: splat[1])
+        next if obj.present?
 
-      if deleted_obj = klass.with_deleted.find_by(id: splat[1])
-        deleted_obj.update(qbo_bill_id: nil)
-        deleted_obj.qbo_bill.destroy! if deleted_obj.qbo_bill.present?
-      elsif qbo_bill = QboBill.where(qbo_account_id: id).find_by(qbo_id: b.id)
+        if deleted_obj = klass.with_deleted.find_by(id: splat[1])
+          # Snapshot the bill BEFORE nulling — `deleted_obj.qbo_bill` does a
+          # qbo_id lookup that returns nil after qbo_bill_id is set to nil,
+          # which is why the old `deleted_obj.qbo_bill.destroy! if present?`
+          # never actually fired (the local QboBill row and the remote bill
+          # both stuck around as orphans).
+          bill = deleted_obj.qbo_bill
+          deleted_obj.update(qbo_bill_id: nil)
+          bill.destroy! if bill.present?
+          next
+        end
+      end
+
+      # Last defense: even when this bill's doc_number suffix is unknown OR
+      # the known-class lookups came up empty, refuse to destroy the bill if
+      # ANY SyncsAsQboBill host on a ledger belonging to THIS QboAccount still
+      # references its qbo_id. Scoping by qbo_account_id (via ledger →
+      # enterprise → qbo_account) is critical — host.qbo_bill_id is just a
+      # string, so without the scope a host in a DIFFERENT QBO realm with the
+      # same id would falsely satisfy `exists?` and leak this orphan forever.
+      next if Money::PayableQboBills::HOST_KLASSES.any? do |k|
+        k.with_deleted
+          .joins(ledger: { enterprise: :qbo_account })
+          .where(qbo_accounts: { id: id })
+          .where(qbo_bill_id: b.id)
+          .exists?
+      end
+
+      # Truly orphan now — clean up local mirror (which also tears down the
+      # remote via QboBill#before_destroy) or delete the remote directly.
+      if qbo_bill = QboBill.where(qbo_account_id: id).find_by(qbo_id: b.id)
         qbo_bill.destroy!
       else
         delete_bill(b)

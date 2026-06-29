@@ -136,6 +136,9 @@ class SyncsAsQboBillFailureModeTest < ActiveSupport::TestCase
   end
 
   test "sync_qbo_bill! returns nil and creates no QboBill for negative amounts (ContributorAdjustment deduction fold)" do
+    # Negative CAs are only valid on legacy ledgers (the qbo_bound mode rejects
+    # them on create); flip this fixture to legacy so the row exists at all.
+    @sanctuary_ledger.update!(mode: :legacy)
     adj = ContributorAdjustment.create!(ledger: @sanctuary_ledger, amount: -50, effective_on: Date.new(2031, 1, 15), qbo_account: @sanctuary_qa)
 
     result = nil

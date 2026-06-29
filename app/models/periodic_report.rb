@@ -250,7 +250,22 @@ class PeriodicReport < ApplicationRecord
           profit_share.restore! if profit_share.deleted?
           touched << profit_share
         end
-        (profit_shares - touched).each(&:destroy_fully!)
+        # Destroy obsolete ProfitShares ONE-BY-ONE with per-row rescue. The
+        # new SyncsAsQboBill#detach_and_destroy_qbo_bill (fired via
+        # ProfitShare's before_destroy) raises PaidQboBillError when its QBO
+        # bill is already paid — without this rescue the exception would
+        # bubble out, roll back the entire report-regeneration transaction,
+        # and every contributor's new profit-share amount would stay stale
+        # until a human voids the BillPayment in QBO. Skip the obsolete row
+        # with a log; the report still updates and the operator can manually
+        # reconcile that one paid bill.
+        (profit_shares - touched).each do |obsolete|
+          begin
+            obsolete.destroy_fully!
+          rescue SyncsAsQboBill::PaidQboBillError => e
+            Rails.logger.error("[periodic_report_sync_profit_shares] ##{id} cannot destroy obsolete ProfitShare ##{obsolete.id}: #{e.message}")
+          end
+        end
       end
 
       update!(blueprint: {

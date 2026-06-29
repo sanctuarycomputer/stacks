@@ -48,13 +48,15 @@ ActiveAdmin.register Contributor do
   # write against, so the buttons short-circuit to a JS alert instead.
   LEDGER_REQUIRED_ALERT = "Select the appropriate ledger before you can perform this action.".freeze
 
-  action_item :deel_invoice, only: :show, if: proc {
-    manual_deel_invoice_visible?(resource)
-  } do
-    selected_ledger = params[:ledger].present? && resource.ledgers.find_by(id: params[:ledger])
-    if selected_ledger
-      link_to "New Deel Withdrawal",
-        new_admin_contributor_deel_invoice_adjustment_path(resource, ledger: selected_ledger.id)
+  action_item :new_deel_withdrawal, only: :show, if: proc { manual_deel_invoice_visible?(resource) } do
+    selected_ledger = params[:ledger].presence && resource.ledgers.find_by(id: params[:ledger])
+    if selected_ledger&.deel_enabled?
+      link_to "New Deel Withdrawal", new_admin_contributor_deel_invoice_adjustment_path(resource, ledger: selected_ledger.id)
+    elsif selected_ledger
+      # Ledger selected but Deel not in payment_methods — keep the button visible but inert,
+      # mirroring the other action_items' UX.
+      link_to "New Deel Withdrawal", "#",
+        onclick: "alert(#{"Deel is not enabled for this ledger's payment methods.".to_json}); return false;"
     else
       link_to "New Deel Withdrawal", "#",
         onclick: "alert(#{LEDGER_REQUIRED_ALERT.to_json}); return false;"
@@ -62,7 +64,7 @@ ActiveAdmin.register Contributor do
   end
 
   action_item :new_contributor_adjustment, only: :show, if: proc { current_admin_user.is_admin? } do
-    selected_ledger = params[:ledger].present? && resource.ledgers.find_by(id: params[:ledger])
+    selected_ledger = params[:ledger].presence && resource.ledgers.find_by(id: params[:ledger])
     if selected_ledger
       link_to "New Adjustment", new_admin_ledger_contributor_adjustment_path(selected_ledger)
     else
@@ -72,7 +74,7 @@ ActiveAdmin.register Contributor do
   end
 
   action_item :submit_reimbursement, only: :show do
-    selected_ledger = params[:ledger].present? && resource.ledgers.find_by(id: params[:ledger])
+    selected_ledger = params[:ledger].presence && resource.ledgers.find_by(id: params[:ledger])
     if selected_ledger
       link_to "Submit Reimbursement", new_admin_ledger_reimbursement_path(selected_ledger)
     else
@@ -105,25 +107,81 @@ ActiveAdmin.register Contributor do
     r = Reimbursement.find(params[:reimbursement_id])
     return unless current_admin_user.is_admin?
 
-    if r.accepted?
-      r.update!(
-        accepted_by: nil,
-        accepted_at: nil
-      )
-    else
-      r.update!(
-        accepted_by: current_admin_user,
-        accepted_at: DateTime.now
+    was_accepted = r.accepted?
+
+    # Un-accepting a Reimbursement whose QBO bill is already PAID is destructive:
+    # we'd delete a paid bill in QBO, orphaning the BillPayment in vendor AP.
+    # Refuse — admin has to reconcile in QBO first (void the payment, then come
+    # back here). Snapshot the bill into a local so we don't double-fetch (and
+    # so .paid? can't NPE on a row that disappears between the two calls).
+    qb = was_accepted ? r.qbo_bill : nil
+    if qb&.paid?
+      return redirect_to(
+        admin_contributor_path(params[:id], format: :html),
+        alert: "Cannot un-accept: this reimbursement's QBO bill is already paid. Void the payment in QBO first, then retry.",
       )
     end
 
-    # Keep QBO in sync after either toggle. sync_qbo_bill! is idempotent —
-    # creates if missing, updates the existing bill otherwise. Best-effort:
-    # log + continue on failure; admin can retry manually.
-    begin
-      r.sync_qbo_bill!
-    rescue => e
-      Rails.logger.error("[reimbursement_accept] sync_qbo_bill! failed for ##{r.id}: #{e.class}: #{e.message}")
+    # ON UN-ACCEPT: destroy the QBO bill FIRST, then commit the Stacks state
+    # change. If we did it in the other order, a transient QBO failure would
+    # leave Stacks "unaccepted" with an orphan bill in QBO — and the bill
+    # would no longer appear on the Payable QBO Bills page (it filters by
+    # payable?) so the operator has no way to retry.
+    # ON ACCEPT: commit Stacks state first, THEN sync. If sync fails the
+    # operator can retry from the Payable QBO Bills page (the row is now
+    # payable and shows there).
+    qbo_error = nil
+    if was_accepted
+      begin
+        r.detach_and_destroy_qbo_bill
+      rescue => e
+        qbo_error = e
+        Rails.logger.error("[reimbursement_unaccept] QBO destroy failed for ##{r.id}: #{e.class}: #{e.message}")
+      end
+
+      if qbo_error
+        return redirect_to(
+          admin_contributor_path(params[:id], format: :html),
+          alert: "Un-accept aborted — QBO bill did NOT destroy: #{qbo_error.message}. Stacks state unchanged; retry once QBO is reachable.",
+        )
+      end
+
+      r.update!(accepted_by: nil, accepted_at: nil)
+    else
+      r.update!(accepted_by: current_admin_user, accepted_at: DateTime.now)
+      # Only push to QBO when the ledger is qbo-enabled. A Deel-only ledger
+      # might still have an enterprise-level qbo_account + vendor mapping
+      # (some enterprises have both); without this gate the accept would
+      # create a Bill in vendor AP that Finance could pay on top of the Deel
+      # payout — double-payment risk.
+      if r.ledger.payment_methods.include?("qbo")
+        begin
+          r.sync_qbo_bill!
+        rescue => e
+          qbo_error = e
+          Rails.logger.error("[reimbursement_accept] QBO sync failed for ##{r.id}: #{e.class}: #{e.message}")
+        end
+      end
+    end
+
+    if qbo_error
+      return redirect_to(
+        admin_contributor_path(params[:id], format: :html),
+        alert: "Accepted, but QBO bill did NOT sync: #{qbo_error.message}. Retry from the Payable QBO Bills page.",
+      )
+    end
+
+    # sync_qbo_bill! silently early-returns nil (no raise) when the contributor
+    # has no QBO vendor mapping for the enterprise, when there's no QBO account,
+    # or when amount is non-positive. Surface that as a real warning ONLY on
+    # ledgers that actually expect QBO sync — Deel-only ledgers legitimately
+    # have no QBO bill, and a noisy "no QBO bill was created" alert there would
+    # both confuse the operator and mask real QBO drift on qbo-enabled ledgers.
+    if !was_accepted && r.ledger.payment_methods.include?("qbo") && r.reload.qbo_bill_id.nil?
+      return redirect_to(
+        admin_contributor_path(params[:id], format: :html),
+        alert: "Acceptance saved, but no QBO bill was created. Check that the contributor has a QBO vendor mapping on #{r.ledger.enterprise.name}, then 'Sync to QBO' from the Payable QBO Bills tab.",
+      )
     end
 
     return redirect_to(
@@ -228,7 +286,17 @@ ActiveAdmin.register Contributor do
         current_ledger.items_grouped_by_month
       end
 
-    balance = resource.new_deal_balance(items_result)
+    # Balance/Unsettled summary card scopes to the current view:
+    #   :all     — sum across every ledger
+    #   :ledger  — just the currently selected ledger
+    # Otherwise the header would silently disagree with the per-ledger pill and
+    # the items list rendered below (which IS scoped to current_ledger).
+    balance =
+      if view_mode == :ledger && current_ledger
+        { balance: current_ledger.balance.to_f, unsettled: current_ledger.unsettled.to_f }
+      else
+        resource.new_deal_balance
+      end
     admin = resource.forecast_person&.admin_user
     pending_tasks = admin&.pending_tasks || []
 

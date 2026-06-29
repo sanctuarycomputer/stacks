@@ -24,8 +24,17 @@ ActiveAdmin.register RecurringLedgerAdjustment do
       return
     end
     adj = resource.materialize!
-    redirect_to admin_ledger_contributor_adjustment_path(adj.ledger, adj),
-      notice: "Created ContributorAdjustment ##{adj.id}."
+    if adj.nil?
+      # materialize! returns nil when it auto-pauses (negative CA on a
+      # qbo_bound ledger would land as audit-only). resource is now paused;
+      # reload + alert.
+      resource.reload
+      redirect_to edit_admin_recurring_ledger_adjustment_path(resource),
+        alert: "Auto-paused — negative recurring on a QBO-bound ledger would land as audit-only and never deduct. Resume only after fixing the underlying setup."
+    else
+      redirect_to admin_ledger_contributor_adjustment_path(adj.ledger, adj),
+        notice: "Created ContributorAdjustment ##{adj.id}."
+    end
   rescue => e
     redirect_to edit_admin_recurring_ledger_adjustment_path(resource), alert: e.message
   end

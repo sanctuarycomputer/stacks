@@ -27,9 +27,42 @@ ActiveAdmin.register DeelInvoiceAdjustment do
     end
 
     def verify_deel_invoice_access!
-      return if manual_deel_invoice_submission_allowed?(parent)
+      # :new / :create / :index / :show all share the same predicate —
+      # `deel_invoice_actions_visible_to?` permits both staff admins AND the
+      # contributor's own linked AdminUser, so a contributor can self-submit
+      # a Deel withdrawal from their own contributor page. Earlier hard-coding
+      # to `is_admin?` here silently broke that self-submit path.
+      unless manual_deel_invoice_submission_allowed?(parent)
+        redirect_to admin_contributor_path(parent), alert: "That action is not available."
+        return
+      end
 
-      redirect_to admin_contributor_path(parent), alert: "That action is not available."
+      # On :new / :create, also enforce that the target ledger has 'deel' in
+      # payment_methods. The UI button is already gated, but a direct POST
+      # (deep link, stale bookmark) could otherwise land a DIA on a qbo_bound
+      # ledger — audit_only_under_qbo_bound? would silently filter it from
+      # both balance and unsettled, so the contributor's recorded Deel
+      # withdrawal never deducts from their Stacks balance.
+      if [:new, :create].include?(action_name.to_sym)
+        target_ledger =
+          if params[:ledger].present?
+            parent.ledgers.find_by(id: params[:ledger])
+          elsif params.dig(:deel_invoice_adjustment, :ledger_id).present?
+            parent.ledgers.find_by(id: params[:deel_invoice_adjustment][:ledger_id])
+          else
+            # No explicit ledger param: build_resource / create fall back to
+            # the contributor's Sanctuary ledger. Resolve THAT here so the
+            # deel-enabled check covers the fallback path too (otherwise a
+            # contributor self-submit with no ledger param would silently
+            # land on a qbo_bound Sanctuary ledger).
+            Ledger.find_by(enterprise: Enterprise.sanctuary, contributor: parent)
+          end
+        if target_ledger && !target_ledger.deel_enabled?
+          redirect_to admin_contributor_path(parent),
+            alert: "Deel is not enabled for this ledger's payment methods."
+          return
+        end
+      end
     end
 
     def show

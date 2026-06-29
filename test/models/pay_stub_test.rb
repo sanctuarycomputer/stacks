@@ -251,8 +251,11 @@ class PayStubTest < ActiveSupport::TestCase
     pending_stub = PayStub.create!(pay_cycle: cycle2, ledger: @ledger, amount: 500, blueprint: blueprint2)
     refute pending_stub.payable?, "unaccepted stub should not be payable"
 
-    # Re-check contributor (reset memoized cache by reloading)
-    @contributor.instance_variable_set(:@_pay_stubs_with_deleted, nil)
+    # Re-check contributor — `new_deal_balance` now delegates to per-ledger
+    # `Ledger#balance/unsettled` (so qbo_bound rules apply consistently with
+    # _ledger_tabs). Reload to clear cached `ledgers` and per-ledger
+    # `pay_stubs` so the second-cycle pending_stub is visible.
+    @contributor.reload
     balance2 = @contributor.new_deal_balance
     assert_equal 1000, balance2[:balance], "accepted stub still in balance"
     assert_equal 500, balance2[:unsettled], "unaccepted stub appears in unsettled"

@@ -22,12 +22,57 @@ module SyncsAsQboBill
     QboBill.find_by(qbo_account_id: qa.id, qbo_id: qbo_bill_id)
   end
 
+  # Tearing down the local QboBill triggers QboBill#delete_qbo_bill! which
+  # destroys the remote bill in QBO. Doing that on a PAID bill orphans the
+  # QBO BillPayment (payment exists with no parent bill — corrupts vendor AP).
+  # Refuse to proceed; operator must void the payment in QBO first. This guard
+  # protects every SyncsAsQboBill host's before_destroy chain (Reimbursement,
+  # ContributorPayout, etc.) AND the un-accept paths in admin actions.
+  class PaidQboBillError < StandardError; end
+
   def detach_and_destroy_qbo_bill
     bill = qbo_bill
     return unless bill.present?
+
+    # Refresh the bill against QBO before the paid-check — cached data may be
+    # hours stale. load_qbo_bill! NEVER raises (it rescues internally): on
+    # Object-Not-Found it destroys the local mirror + nils qbo_bill_id and
+    # returns nil; on any other failure (timeout, 5xx, auth) it returns nil
+    # WITHOUT cleaning up.
+    remote = load_qbo_bill!
+
+    # Object-Not-Found cleanup already nulled qbo_bill_id — nothing to do.
+    return if qbo_bill_id.blank?
+
+    # remote == nil here means a transient QBO failure. Don't fall back to
+    # stale cached state — a payment may have landed during the outage and
+    # we'd silently delete a paid bill, orphaning the BillPayment. Fail
+    # closed; operator retries once QBO is reachable.
+    if remote.nil?
+      raise PaidQboBillError,
+        "#{self.class.name} ##{id}: cannot verify QBO bill #{bill.qbo_id} state (transient QBO failure). Retry once QBO is reachable."
+    end
+
+    # Has-payments check uses BOTH balance < total — partial-paid bills
+    # bypass paid? (balance > 0) but still have BillPayments that would
+    # orphan if we destroyed the bill. If remote balance/total are present
+    # use them; otherwise (atypical/partial response) fall back to cached.
+    has_payments =
+      if remote.try(:balance).present? && remote.try(:total_amt).present?
+        remote.balance.to_f < remote.total_amt.to_f
+      else
+        bill.has_payments?
+      end
+
+    if has_payments
+      raise PaidQboBillError,
+        "#{self.class.name} ##{id}: refusing to destroy QBO bill #{bill.qbo_id} — at least one BillPayment exists (full or partial). Void the BillPayment(s) in QBO first."
+    end
+
     ActiveRecord::Base.transaction do
       update_attribute(:qbo_bill_id, nil)
-      bill.destroy!
+      local = QboBill.find_by(qbo_account_id: qbo_account_for_bill&.id, qbo_id: bill.qbo_id)
+      local&.destroy!
     end
   end
 
@@ -66,6 +111,18 @@ module SyncsAsQboBill
 
   def payable?
     false
+  end
+
+  # Contribution to qbo_bound balance. Uses the QBO bill's remaining unpaid
+  # balance when a bill exists so partial payments are reflected one-to-one
+  # with QBO's vendor AP. Falls back to the host amount when there's no
+  # synced bill OR when the bill's data doesn't carry a balance (otherwise
+  # an incomplete sync would silently zero the contributor's qbo_bound
+  # balance).
+  def qbo_bound_balance_amount
+    qb = qbo_bill
+    return amount.to_f if qb.nil?
+    qb.remaining_balance || amount.to_f
   end
 
   def sync_qbo_bill!(accounts_cache: nil)
