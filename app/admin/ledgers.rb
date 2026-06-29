@@ -69,7 +69,12 @@ ActiveAdmin.register Ledger do
 
         div do
           h4 "QBO match check"
-          if result.qbo_vendor_missing?
+          if !resource.payment_methods.include?("qbo")
+            para style: "padding: 0.5em; background: #fde2e2; border-left: 3px solid #c00;" do
+              strong("Not applicable — this ledger isn't QBO-enabled. ")
+              text_node "payment_methods=#{resource.payment_methods.inspect}. Under qbo_bound, DeelInvoiceAdjustments are filtered as audit-only and would never deduct from the balance — silent over-payment risk. Add 'qbo' to payment_methods first if this contributor is actually paid through both Deel AND QBO bills."
+            end
+          elsif result.qbo_vendor_missing?
             para strong("No QBO vendor mapping for this contributor on #{resource.enterprise.name}.")
             para "Set up the vendor mapping before migrating — we can't compare against QBO without it."
           else
