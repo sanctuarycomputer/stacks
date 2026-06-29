@@ -13,6 +13,9 @@ class Stacks::TaskBuilder::Discoveries::LegacyLedgersPendingQboMigrationTest < A
     fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "disc#{SecureRandom.hex(2)}@example.com", data: {})
     @contributor = Contributor.create!(forecast_person: fp)
     @ledger = Ledger.find_or_create_for(enterprise: @enterprise, contributor: @contributor)
+    # New ledgers default to qbo_bound; pin the fixture to legacy so the
+    # discovery has a candidate to surface.
+    @ledger.update!(mode: :legacy)
     @admin = AdminUser.create!(email: "ldisc#{SecureRandom.hex(2)}@example.com", password: "password123", password_confirmation: "password123", roles: ["admin"])
   end
 
