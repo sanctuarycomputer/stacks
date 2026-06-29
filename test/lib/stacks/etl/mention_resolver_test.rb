@@ -40,6 +40,15 @@ class Stacks::Etl::MentionResolverTest < ActiveSupport::TestCase
     assert_equal 'ambiguous', r[:status]
   end
 
+  test 'does not substring-match a shorter name onto a longer one' do
+    christine = Contact.create!(email: 'christine@sanctuary.computer', display_name: 'Christine Lee')
+    participants = [{ name: 'Christine Lee', contact: christine }]
+    # "Chris" must NOT resolve to "Christine" (substring), nor "an" to "Joanna".
+    r = Stacks::Etl::MentionResolver.resolve_display_name('Chris', participants: participants)
+    assert_nil r[:contact]
+    assert_equal 'unresolved', r[:status]
+  end
+
   test 'participant with nil contact does not produce a resolved result' do
     participants_with_nil = [{ name: 'Ghost User', contact: nil }]
     r = Stacks::Etl::MentionResolver.resolve_display_name('Ghost User', participants: participants_with_nil)

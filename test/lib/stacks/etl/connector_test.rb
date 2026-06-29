@@ -66,6 +66,19 @@ class Stacks::Etl::ConnectorTest < ActiveSupport::TestCase
     assert Document.find_by!(external_id: 'm3').manually_excluded?
   end
 
+  test 'two attendees resolving to the same contact do not crash the ingest' do
+    dup = normalized(external_id: 'dupc', hash: 'hdupc').merge(
+      contacts: [
+        { email: 'a@x.co', name: 'A', role: 'attendee' },
+        { email: 'A@X.co', name: 'A (dup invite)', role: 'attendee' } # resolves to the same Contact
+      ]
+    )
+    assert_nothing_raised { FakeConnector.new([dup]).run }
+    doc = Document.find_by!(external_id: 'dupc')
+    assert_equal 1, doc.document_contacts.count # the duplicate (same contact + role) was skipped
+    assert_equal 1, doc.chunks.count            # ...and the meeting still indexed
+  end
+
   test 'advances the watermark' do
     sync = FakeConnector.new([normalized(external_id: 'm1', hash: 'h1')]).run
     assert_equal 'success', sync.status

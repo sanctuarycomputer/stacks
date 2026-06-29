@@ -6,7 +6,7 @@ module Stacks
 
       def self.call(segments:)
         chunks = []
-        segments.each do |seg|
+        coalesce(Array(segments)).each do |seg|
           words = seg[:text].to_s.split
           next if words.empty?
           slices(words).each do |slice|
@@ -22,6 +22,25 @@ module Stacks
         end
         chunks.each_with_index { |c, i| c[:start_offset] = i }
         chunks
+      end
+
+      # Merge consecutive segments from the SAME speaker into one turn before chunking.
+      # The Meet REST API emits one segment per short utterance, so without this a monologue
+      # becomes dozens of tiny 3-10 word chunks that embed poorly; coalescing yields
+      # paragraph-sized chunks matching the Drive path. Speaker changes still break the turn,
+      # so each chunk keeps a single-speaker attribution.
+      def self.coalesce(segments)
+        segments.each_with_object([]) do |seg, out|
+          text = seg[:text].to_s.strip
+          next if text.empty?
+          last = out.last
+          if last && last[:speaker_name] == seg[:speaker_name] && last[:speaker_email] == seg[:speaker_email]
+            last[:text] = "#{last[:text]} #{text}".strip
+            last[:ended_at] = seg[:ended_at] if seg[:ended_at]
+          else
+            out << seg.merge(text: text)
+          end
+        end
       end
 
       def self.slices(words)

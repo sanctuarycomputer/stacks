@@ -19,4 +19,13 @@ class Stacks::Etl::Meet::ClassifierTest < ActiveSupport::TestCase
   test 'ordinary group meeting is not excluded' do
     assert_equal [:not_excluded, :none], C.call(title: 'Gateway redesign kickoff', participant_count: 6)
   end
+
+  test 'unknown count (0 or nil) is not a 1:1; title rules still apply' do
+    # 0 = "unknown" (e.g. the participants endpoint returned empty) — must not wall off a
+    # legitimate large meeting.
+    assert_equal [:not_excluded, :none], C.call(title: 'All Hands', participant_count: 0)
+    assert_equal [:not_excluded, :none], C.call(title: 'All Hands', participant_count: nil)
+    # ...but a sensitive title is still excluded regardless of the unknown count.
+    assert_equal [:auto_excluded, :performance_review], C.call(title: 'Performance Review', participant_count: 0)
+  end
 end

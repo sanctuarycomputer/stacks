@@ -20,6 +20,20 @@ class Stacks::Etl::ChunkerTest < ActiveSupport::TestCase
     assert chunks.all? { |c| c[:content].split.size <= Stacks::Etl::Chunker::MAX_WORDS }
   end
 
+  test 'coalesces consecutive same-speaker segments into one chunk (Meet-API tiny utterances)' do
+    segs = [
+      { speaker_name: 'A', speaker_email: 'a@x.co', text: 'one', started_at: Time.utc(2026, 1, 1, 9) },
+      { speaker_name: 'A', speaker_email: 'a@x.co', text: 'two', started_at: Time.utc(2026, 1, 1, 9, 0, 5) },
+      { speaker_name: 'B', speaker_email: 'b@x.co', text: 'three', started_at: Time.utc(2026, 1, 1, 9, 1) },
+      { speaker_name: 'A', speaker_email: 'a@x.co', text: 'four', started_at: Time.utc(2026, 1, 1, 9, 2) }
+    ]
+    chunks = Stacks::Etl::Chunker.call(segments: segs)
+    # A's first two utterances merge; B breaks the run; A's later turn is its own chunk.
+    assert_equal ['one two', 'three', 'four'], chunks.map { |c| c[:content] }
+    assert_equal %w[A B A], chunks.map { |c| c[:speaker_name] }
+    assert_equal Time.utc(2026, 1, 1, 9), chunks.first[:occurred_at] # first turn's timestamp
+  end
+
   test 'does not emit a trailing near-duplicate chunk' do
     # 720 words: the 2nd window reaches the end, so exactly 2 chunks (the old sliding
     # loop emitted a 3rd window that was ~entirely overlap).

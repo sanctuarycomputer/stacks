@@ -23,7 +23,10 @@ module Stacks
             q = "#{QUERY} and createdTime > '#{@since.utc.iso8601}'"
             q += " and createdTime < '#{@until_time.utc.iso8601}'" if @until_time
             resp = @service.list_files(q: q, fields: 'nextPageToken, files(id,name,createdTime)', page_token: page)
-            Array(resp.files).each { |f| yield normalize(f) }
+            Array(resp.files).each do |f|
+              n = normalize(f)
+              yield n if n
+            end
             page = resp.next_page_token
             break unless page
           end
@@ -32,6 +35,13 @@ module Stacks
         private
 
         def normalize(file)
+          # Reverse side of the Drive/API dedup: if the ongoing Meet API sync already
+          # ingested this exact transcript (it records the Drive doc id in raw_metadata),
+          # defer to that Document instead of creating a second one keyed on file.id. This
+          # is the common ordering — the API sweep runs continuously, so for meetings in the
+          # Drive/API overlap window the API Document usually exists first.
+          return nil if Document.where(source: :meet)
+                                .where("raw_metadata->>'drive_doc_id' = ?", file.id).exists?
           text = @service.export_file(file.id, 'text/plain')
           # Drive transcripts have no per-line timestamps; stamp every segment with the
           # doc's created time so chunks get a real occurred_at (date-scoped search needs it).
@@ -72,29 +82,42 @@ module Stacks
 
         # Meet names transcript docs like "Title - Transcript" or
         # "Title (2026/06/27 17:00 GMT-7) - Transcript". Strip the "- Transcript" suffix and
-        # ONLY a trailing parenthetical that looks like Meet's date stamp (starts with a
-        # digit / contains GMT) — so a real title like "Roadmap (Q3 2026)" or "Sync (NYC)"
-        # keeps its parenthetical.
+        # ONLY a trailing parenthetical that is actually Meet's date/time stamp — a date
+        # (Y/M/D), a clock time (HH:MM), or a "GMT" marker. A real parenthetical like
+        # "Roadmap (Q3 2026)", "Planning (3 items)" or "Sync (NYC)" is preserved, because the
+        # cleaned title is the key the Drive Calendar enricher matches on.
+        DATE_STAMP = %r{\s*\((?:\d{2,4}[/-]\d{1,2}[/-]\d{1,2}|\d{1,2}:\d{2}|[^)]*\bGMT\b)[^)]*\)\s*\z}
         def clean_title(name)
           name.to_s
               .sub(/\s*-\s*Transcript\s*\z/i, '')
-              .sub(/\s*\((?:\d|[^)]*GMT)[^)]*\)\s*\z/, '')
+              .sub(DATE_STAMP, '')
               .strip
               .presence || name.to_s
         end
 
-        # A speaker line is "Name: <text>" — the colon MUST be followed by whitespace.
-        # That single requirement excludes URLs ("https://…", colon+slash) and timestamps
-        # ("10:30 …", colon+digit) without over-constraining the name, so legitimate
-        # speakers like "J.R.:" or "John Doe (Guest):" keep their lines (and their text).
-        SPEAKER_LINE = /\A\s*([^:]{1,60}):\s+(\S.*)\z/
+        # A speaker line is "Name: <text>". The name must LOOK like a name: capitalized
+        # words, initials ("J.R."), or a "(Guest)"-style label, joined by spaces, commas
+        # or "&". Requiring a name-shaped prefix (not just "anything before a colon")
+        # rejects spoken sentences that happen to contain a colon — e.g.
+        # "I think the answer is: yes" — which would otherwise become phantom speakers and
+        # inflate the distinct-speaker count the 1:1 privacy classifier falls back on.
+        NAME_WORD = /(?:\p{Lu}[\p{L}.'’-]*|\([^)]*\))/
+        SPEAKER_LINE = /\A\s*(#{NAME_WORD}(?:[ ,&]+#{NAME_WORD}){0,4}):\s+(\S.*)\z/
 
         def parse_segments(text)
-          text.to_s.each_line.filter_map do |line|
-            if (m = line.chomp.match(SPEAKER_LINE))
-              { speaker_name: m[1].strip, speaker_email: nil, text: m[2].strip, started_at: nil, ended_at: nil }
+          segments = []
+          text.to_s.each_line do |raw|
+            line = raw.chomp
+            if (m = line.match(SPEAKER_LINE))
+              segments << { speaker_name: m[1].strip, speaker_email: nil, text: m[2].strip, started_at: nil, ended_at: nil }
+            elsif segments.any? && line.strip.present?
+              # A non-speaker line is a wrapped continuation of the current turn — append it
+              # rather than dropping it, so long utterances keep their full text.
+              segments.last[:text] = "#{segments.last[:text]} #{line.strip}".strip
             end
+            # A non-matching line before the first speaker (header/preamble) is ignored.
           end
+          segments
         end
 
         def build_meeting(doc, file, segments, title)

@@ -12,7 +12,10 @@ module Stacks
         ].freeze
 
         def self.call(title:, participant_count:)
-          return [:auto_excluded, :one_on_one] if participant_count && participant_count <= 2
+          # Only a KNOWN small head-count (1 or 2) flags a 1:1. A count of 0 means
+          # "unknown" — e.g. the Meet participants endpoint returned empty on a glitch —
+          # and must NOT auto-exclude a legitimately large meeting; title rules still apply.
+          return [:auto_excluded, :one_on_one] if participant_count&.positive? && participant_count <= 2
           RULES.each do |reason, rx|
             return [:auto_excluded, reason] if title.to_s.match?(rx)
           end

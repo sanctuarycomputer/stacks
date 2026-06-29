@@ -47,6 +47,43 @@ class Stacks::Etl::Meet::DriveSourceTest < ActiveSupport::TestCase
     assert_equal ['kicking off', 'joining late', 'welcome'], segs.map { |s| s[:text] }
   end
 
+  test 'a spoken sentence containing a colon is NOT a new speaker (privacy: keeps 1:1 count honest)' do
+    src = Stacks::Etl::Meet::DriveSource.allocate
+    segs = src.send(:parse_segments, "Alice: I think the answer is: yes\nBob: agreed")
+    # Only two real speakers — the mid-sentence "is:" must not spawn a phantom 3rd speaker.
+    assert_equal ['Alice', 'Bob'], segs.map { |s| s[:speaker_name] }
+    assert_equal 'I think the answer is: yes', segs.first[:text]
+  end
+
+  test 'wrapped continuation lines are appended to the current turn, not dropped' do
+    src = Stacks::Etl::Meet::DriveSource.allocate
+    segs = src.send(:parse_segments, "Alice: first part of a long thought\nthat wrapped onto a second line\nBob: ok")
+    assert_equal ['Alice', 'Bob'], segs.map { |s| s[:speaker_name] }
+    assert_equal 'first part of a long thought that wrapped onto a second line', segs.first[:text]
+  end
+
+  test 'clean_title preserves legitimate parentheticals, strips only the Meet date stamp' do
+    src = Stacks::Etl::Meet::DriveSource.allocate
+    assert_equal 'Planning (3 items)', src.send(:clean_title, 'Planning (3 items) - Transcript')
+    assert_equal 'Roadmap (Q3 2026)', src.send(:clean_title, 'Roadmap (Q3 2026) - Transcript')
+    assert_equal 'Goals (2026 Goals)', src.send(:clean_title, 'Goals (2026 Goals) - Transcript')
+    assert_equal 'Standup', src.send(:clean_title, 'Standup (2026/06/27 17:00 GMT-7) - Transcript')
+  end
+
+  test 'skips a Drive doc the Meet API sync already ingested (reverse dedup)' do
+    # The API sync created a Document keyed on the conference record, recording the Drive
+    # doc id in raw_metadata. The Drive backfill must defer to it, not double-ingest.
+    Document.create!(source: :meet, external_id: 'conferenceRecords/7', raw_metadata: { 'drive_doc_id' => 'docDUP' })
+    file = OpenStruct.new(id: 'docDUP', name: 'Sync - Transcript', created_time: '2026-01-01T09:00:00Z')
+    svc = mock('drive')
+    svc.stubs(:list_files).returns(OpenStruct.new(files: [file], next_page_token: nil))
+    Stacks::Etl::Meet::Auth.stubs(:drive_service).returns(svc)
+
+    yielded = []
+    Stacks::Etl::Meet::DriveSource.new('hugh@sanctuary.computer', since: Time.utc(2025, 1, 1)).each_meeting { |n| yielded << n }
+    assert_empty yielded # deferred to the existing API Document; no export_file call, no dup
+  end
+
   test 'until_time bounds the Drive query to an older window (partitioned dedup)' do
     captured = nil
     svc = mock('drive')

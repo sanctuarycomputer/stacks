@@ -11,9 +11,13 @@ module Stacks
         exact = candidates.select { |p| p[:name].to_s.downcase.strip == needle }
         return resolved(exact.first[:contact], 1.0) if exact.size == 1
 
+        # Partial match on WHOLE name tokens (a spoken first name matching a fuller
+        # participant name), never on raw substrings — substring matching wrongly resolves
+        # "Chris" -> "Christine" or "an" -> "Joanna" and mis-attributes who said what.
+        needle_tokens = needle.split
         partial = candidates.select do |p|
-          full = p[:name].to_s.downcase
-          full.split.include?(needle) || full.include?(needle)
+          name_tokens = p[:name].to_s.downcase.split
+          needle_tokens.any? && (needle_tokens - name_tokens).empty?
         end
         return resolved(partial.first[:contact], 0.6) if partial.size == 1
         return { contact: nil, confidence: nil, status: 'ambiguous' } if partial.size > 1

@@ -19,10 +19,11 @@ module Stacks
         end
 
         def exclusion_for(normalized)
-          # Use the meeting's real participant_count (not contacts.size, which may be the
-          # Calendar attendee list or a speaker-name fallback) so a big meeting where few
-          # people spoke isn't mis-flagged as a 1:1.
-          count = normalized[:participant_count] || normalized[:contacts].size
+          # Use the largest reliable head-count we have — the Meet/Calendar participant
+          # count OR the resolved contact list — so a big meeting where few people spoke
+          # isn't mis-flagged as a 1:1. 0 means "unknown" (neither signal available); the
+          # Classifier treats that as not-a-1:1 and falls back to title rules.
+          count = [normalized[:participant_count].to_i, normalized[:contacts].size].max
           Classifier.call(title: normalized[:title], participant_count: count)
         end
 

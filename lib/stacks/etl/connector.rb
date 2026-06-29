@@ -5,6 +5,9 @@ module Stacks
       # which first saw the meeting still gets pulled (transcripts generate async).
       LOOKBACK = 2.days
 
+      # Max chunks embedded per Embedder.embed call (bounds peak memory on long meetings).
+      EMBED_BATCH = 32
+
       # track: advance/read the shared per-source SourceSync cursor. Multi-user sweeps
       # and explicit backfills pass their own `since` and set track:false so they don't
       # clobber the ongoing single-user cursor (or each other's).
@@ -33,7 +36,11 @@ module Stacks
         return if chunk_rows.empty?
 
         participants = document.document_contacts.map { |dc| { name: dc.name, contact: dc.contact } }
-        embeddings = Embedder.embed(chunk_rows.map { |c| c[:content] })[:vectors]
+        # Embed in batches so one very long meeting (hundreds of chunks) doesn't run the
+        # local ONNX model over every chunk at once and spike memory past the dyno limit.
+        embeddings = chunk_rows.map { |c| c[:content] }
+                               .each_slice(EMBED_BATCH)
+                               .flat_map { |batch| Embedder.embed(batch)[:vectors] }
 
         chunk_rows.each_with_index do |row, i|
           speaker = row[:speaker_email].present? ? MentionResolver.resolve_email(row[:speaker_email], name: row[:speaker_name]) : nil
@@ -91,8 +98,14 @@ module Stacks
 
       def sync_document_contacts(doc, contacts)
         doc.document_contacts.destroy_all
+        seen = Set.new
         Array(contacts).each do |c|
           contact = c[:email].present? ? MentionResolver.resolve_email(c[:email], name: c[:name]) : nil
+          # Two attendees can resolve to the SAME Contact (a duplicated/expanded invite).
+          # The (document_id, contact_id, role) unique index would then raise RecordNotUnique
+          # mid-transaction and roll back the whole meeting, so skip the duplicate. Rows with
+          # an unresolved (nil) contact are left alone — NULLs don't collide in the index.
+          next if contact && !seen.add?([contact.id, c[:role]])
           doc.document_contacts.create!(contact: contact, email: c[:email], name: c[:name], role: c[:role])
         end
       end
