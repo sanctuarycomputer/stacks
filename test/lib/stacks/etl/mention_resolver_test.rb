@@ -49,13 +49,13 @@ class Stacks::Etl::MentionResolverTest < ActiveSupport::TestCase
     assert_equal 'unresolved', r[:status]
   end
 
-  test 'a first name resolves to a hyphenated/compound participant name' do
+  test 'a bare component of a hyphenated name does not mis-resolve (prefer unresolved)' do
     anne = Contact.create!(email: 'anne@sanctuary.computer', display_name: 'Anne-Marie Smith')
     participants = [{ name: 'Anne-Marie Smith', contact: anne }]
-    # "Anne" is a whole token of "Anne-Marie" (split on the hyphen) -> resolves.
-    r = Stacks::Etl::MentionResolver.resolve_display_name('Anne', participants: participants)
-    assert_equal anne.id, r[:contact].id
-    assert_equal 'resolved', r[:status]
+    # "Marie" is only a sub-part of the hyphenated token "Anne-Marie" — resolving it would
+    # mis-attribute, so we leave it unresolved. The full name still matches exactly.
+    assert_equal 'unresolved', Stacks::Etl::MentionResolver.resolve_display_name('Marie', participants: participants)[:status]
+    assert_equal anne.id, Stacks::Etl::MentionResolver.resolve_display_name('Anne-Marie Smith', participants: participants)[:contact].id
   end
 
   test 'participant with nil contact does not produce a resolved result' do

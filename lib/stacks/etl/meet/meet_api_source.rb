@@ -36,8 +36,12 @@ module Stacks
           return nil if segments.empty?
           # If the Drive backfill already ingested this exact transcript, defer to it —
           # don't create a duplicate. Read-only existence check (the shared Document scope
-          # owns the key), NOT a merge, so it can't mix the two sources' exclusion/content.
-          return nil if drive_doc_id && Document.for_drive_doc(drive_doc_id).exists?
+          # owns the key), NOT a merge. Exclude THIS meeting's own row (external_id ==
+          # cr.name) — for_drive_doc also matches via raw_metadata.drive_doc_id, so without
+          # this a LOOKBACK re-scan would skip our own doc and never re-ingest a transcript
+          # that finalized/corrected after first sighting.
+          return nil if drive_doc_id &&
+                        Document.for_drive_doc(drive_doc_id).where.not(external_id: cr.name).exists?
 
           text = segments.map { |s| s[:text] }.join("\n")
           code, uri = space_label(cr.space)

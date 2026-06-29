@@ -18,6 +18,10 @@ class Document < ApplicationRecord
   # keys itself on the conference-record id and records the Drive doc id in raw_metadata.
   # Owning the key (and its two storage shapes) here keeps the Drive<->API dedup in one
   # place instead of duplicating the JSON path across both sources.
+  #
+  # NOTE: BOTH sources store drive_doc_id in raw_metadata, so a source's OWN row matches
+  # this scope. A caller using it to dedup against the OTHER source must exclude its own
+  # row with `.where.not(external_id: <its external_id>)`, or a re-scan skips itself.
   scope :for_drive_doc, lambda { |drive_doc_id|
     meet.where("external_id = :id OR raw_metadata->>'drive_doc_id' = :id", id: drive_doc_id)
   }

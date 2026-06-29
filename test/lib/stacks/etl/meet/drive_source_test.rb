@@ -61,6 +61,14 @@ class Stacks::Etl::Meet::DriveSourceTest < ActiveSupport::TestCase
     assert_equal ['Speaker 1', 'Speaker 2', 'Alice'], segs.map { |s| s[:speaker_name] }
   end
 
+  test 'body lines like "Action 1:" are NOT phantom speakers (keeps 1:1 count honest)' do
+    src = Stacks::Etl::Meet::DriveSource.allocate
+    # A real 1:1 (Alice + Bob) whose body contains "Action 1:" / "Phase 2:" must stay a
+    # 2-speaker meeting — a phantom 3rd speaker would lift it out of the 1:1 exclusion.
+    segs = src.send(:parse_segments, "Alice: lets plan\nAction 1: ship it\nPhase 2: review\nBob: sounds good")
+    assert_equal ['Alice', 'Bob'], segs.map { |s| s[:speaker_name] }
+  end
+
   test 'drops system/footer lines instead of misattributing them to a speaker' do
     src = Stacks::Etl::Meet::DriveSource.allocate
     segs = src.send(:parse_segments, "Alice: kicking off the sync\nRecording stopped\nBob left the call\nBob: see you")

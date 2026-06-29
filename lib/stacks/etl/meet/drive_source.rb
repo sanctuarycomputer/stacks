@@ -68,7 +68,7 @@ module Stacks
             # no-shows (which would let a 1:1 leak), so we deliberately use speakers, NOT
             # attendees, here — see Connector#exclusion_for. (Calendar attendees are still
             # used for contact/email attribution below, just not for the head-count.)
-            participant_count: segments.map { |s| s[:speaker_name] }.compact.uniq.size,
+            participant_count: distinct_speaker_count(segments),
             contacts: contacts,
             segments: segments,
             raw_metadata: { 'drive_doc_id' => file.id },
@@ -79,6 +79,12 @@ module Stacks
         def coerce(t)
           return nil if t.nil?
           t.is_a?(String) ? Time.parse(t) : t
+        end
+
+        # Distinct speakers heard in the transcript — the actual-attendance head-count for
+        # the 1:1 privacy classifier. parse_segments never yields a nil speaker_name.
+        def distinct_speaker_count(segments)
+          segments.map { |s| s[:speaker_name] }.uniq.size
         end
 
         # Meet names transcript docs like "Title - Transcript" or
@@ -97,16 +103,18 @@ module Stacks
               .presence || name.to_s
         end
 
-        # A speaker line is "Name: <text>". The name must LOOK like a name. The FIRST token
-        # must start with an uppercase letter (\p{Lu}) or a caseless-script letter (\p{Lo},
-        # e.g. CJK) — which rejects timestamps ("10:30 …", leading digit) and spoken English
-        # sentences ("i think the answer is: yes", leading lowercase). Later tokens may also
-        # be a numeric label, so Meet's anonymous "Speaker 1:" / "Speaker 2:" still parse,
-        # or a "(Guest)" parenthetical. Requiring a name shape keeps the distinct-speaker
-        # count (the 1:1 privacy signal) honest.
-        NAME_HEAD = /[\p{Lu}\p{Lo}][\p{L}.'’-]*/
-        NAME_TAIL = /(?:[\p{Lu}\p{Lo}][\p{L}.'’-]*|\d{1,4}|\([^)]*\))/
-        SPEAKER_LINE = /\A\s*(#{NAME_HEAD}(?:[ ,&]+#{NAME_TAIL}){0,6}):\s+(\S.*)\z/
+        # A speaker line is "Name: <text>". The name must LOOK like a name: each token starts
+        # with an uppercase letter (\p{Lu}) or a caseless-script letter (\p{Lo}, e.g. CJK),
+        # optionally a "(Guest)" parenthetical, joined by spaces/commas/"&". A leading
+        # uppercase/caseless letter rejects timestamps ("10:30 …", leading digit) and spoken
+        # English sentences ("i think the answer is: yes", leading lowercase). Tokens are NOT
+        # allowed to be bare numbers, so body lines like "Action 1:" / "Phase 2:" don't parse
+        # as phantom speakers (which would inflate the distinct-speaker 1:1 count and leak a
+        # private 1:1). Meet's anonymous labels are matched explicitly as "Speaker N" etc.
+        # Keeping the name shape tight keeps the distinct-speaker privacy signal honest.
+        NAME_WORD = /(?:[\p{Lu}\p{Lo}][\p{L}.'’-]*|\([^)]*\))/
+        ANON_LABEL = /(?:Speaker|Guest|Participant) \d{1,4}/
+        SPEAKER_LINE = /\A\s*(#{ANON_LABEL}|#{NAME_WORD}(?:[ ,&]+#{NAME_WORD}){0,6}):\s+(\S.*)\z/
 
         def parse_segments(text)
           text.to_s.each_line.filter_map do |raw|
@@ -124,7 +132,7 @@ module Stacks
         def build_meeting(doc, file, segments, title)
           meeting = Meeting.find_or_initialize_by(drive_transcript_doc_id: file.id)
           meeting.update!(meet_source: :drive, title: title, started_at: file.created_time,
-                          participant_count: segments.map { |s| s[:speaker_name] }.compact.uniq.size,
+                          participant_count: distinct_speaker_count(segments),
                           raw_metadata: { 'document_id' => doc.id })
           meeting.segments.destroy_all
           segments.each_with_index do |s, i|
