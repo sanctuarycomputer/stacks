@@ -1,5 +1,6 @@
 module Mcp
   class ListDocumentsTool < MCP::Tool
+    tool_name 'list_documents'
     description 'List corpus-eligible documents, optionally filtered by source.'
     input_schema(properties: { source: { type: 'string' }, limit: { type: 'integer' } })
     annotations(read_only_hint: true, destructive_hint: false, idempotent_hint: true)

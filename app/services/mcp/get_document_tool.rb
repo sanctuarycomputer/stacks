@@ -1,5 +1,6 @@
 module Mcp
   class GetDocumentTool < MCP::Tool
+    tool_name 'get_document'
     description 'Fetch one corpus-eligible document with its transcript segments.'
     input_schema(properties: { id: { type: 'integer' } }, required: ['id'])
     annotations(read_only_hint: true, destructive_hint: false, idempotent_hint: true)

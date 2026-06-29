@@ -1,5 +1,6 @@
 module Mcp
   class SearchTool < MCP::Tool
+    tool_name 'search'
     description 'Search org meeting transcripts (and future sources) by keyword, semantic, or hybrid.'
     input_schema(
       properties: {
