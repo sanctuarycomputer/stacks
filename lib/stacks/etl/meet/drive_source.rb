@@ -36,12 +36,11 @@ module Stacks
 
         def normalize(file)
           # Reverse side of the Drive/API dedup: if the ongoing Meet API sync already
-          # ingested this exact transcript (it records the Drive doc id in raw_metadata),
-          # defer to that Document instead of creating a second one keyed on file.id. This
-          # is the common ordering — the API sweep runs continuously, so for meetings in the
-          # Drive/API overlap window the API Document usually exists first.
-          return nil if Document.where(source: :meet)
-                                .where("raw_metadata->>'drive_doc_id' = ?", file.id).exists?
+          # ingested this exact transcript, defer to that Document instead of creating a
+          # second one keyed on file.id. Exclude THIS Drive doc (external_id == file.id) from
+          # the check — otherwise a re-scan would match the row the Drive sync itself created
+          # last run and skip re-ingesting a corrected/finalized or re-included transcript.
+          return nil if Document.for_drive_doc(file.id).where.not(external_id: file.id).exists?
           text = @service.export_file(file.id, 'text/plain')
           # Drive transcripts have no per-line timestamps; stamp every segment with the
           # doc's created time so chunks get a real occurred_at (date-scoped search needs it).
@@ -64,10 +63,12 @@ module Stacks
             url: "https://docs.google.com/document/d/#{file.id}",
             occurred_at: file.created_time,
             content_hash: Digest::SHA256.hexdigest(text.to_s),
-            # Prefer the Calendar attendee count (accurate) for the 1:1 classifier; the
-            # distinct-speaker count is only a fallback and would mis-flag a big meeting
-            # where few people spoke as a 1:1.
-            participant_count: attendees.any? ? attendees.size : segments.map { |s| s[:speaker_name] }.compact.uniq.size,
+            # Head-count for the 1:1 privacy classifier = distinct speakers actually heard.
+            # Drive has no actual-attendance list, and the Calendar invite count over-counts
+            # no-shows (which would let a 1:1 leak), so we deliberately use speakers, NOT
+            # attendees, here — see Connector#exclusion_for. (Calendar attendees are still
+            # used for contact/email attribution below, just not for the head-count.)
+            participant_count: segments.map { |s| s[:speaker_name] }.compact.uniq.size,
             contacts: contacts,
             segments: segments,
             raw_metadata: { 'drive_doc_id' => file.id },
@@ -82,11 +83,12 @@ module Stacks
 
         # Meet names transcript docs like "Title - Transcript" or
         # "Title (2026/06/27 17:00 GMT-7) - Transcript". Strip the "- Transcript" suffix and
-        # ONLY a trailing parenthetical that is actually Meet's date/time stamp — a date
-        # (Y/M/D), a clock time (HH:MM), or a "GMT" marker. A real parenthetical like
-        # "Roadmap (Q3 2026)", "Planning (3 items)" or "Sync (NYC)" is preserved, because the
-        # cleaned title is the key the Drive Calendar enricher matches on.
-        DATE_STAMP = %r{\s*\((?:\d{2,4}[/-]\d{1,2}[/-]\d{1,2}|\d{1,2}:\d{2}|[^)]*\bGMT\b)[^)]*\)\s*\z}
+        # ONLY a trailing parenthetical that is actually Meet's date stamp — which always
+        # carries a date (Y/M/D) AND/OR a "GMT" marker. We deliberately do NOT match a bare
+        # clock time, so a real title like "Retro (5:00 format)", "Roadmap (Q3 2026)" or
+        # "Planning (3 items)" survives — the cleaned title is the key the Drive Calendar
+        # enricher matches on.
+        DATE_STAMP = %r{\s*\((?:\d{2,4}[/-]\d{1,2}[/-]\d{1,2}|[^)]*\bGMT\b)[^)]*\)\s*\z}
         def clean_title(name)
           name.to_s
               .sub(/\s*-\s*Transcript\s*\z/i, '')
@@ -95,29 +97,28 @@ module Stacks
               .presence || name.to_s
         end
 
-        # A speaker line is "Name: <text>". The name must LOOK like a name: capitalized
-        # words, initials ("J.R."), or a "(Guest)"-style label, joined by spaces, commas
-        # or "&". Requiring a name-shaped prefix (not just "anything before a colon")
-        # rejects spoken sentences that happen to contain a colon — e.g.
-        # "I think the answer is: yes" — which would otherwise become phantom speakers and
-        # inflate the distinct-speaker count the 1:1 privacy classifier falls back on.
-        NAME_WORD = /(?:\p{Lu}[\p{L}.'’-]*|\([^)]*\))/
-        SPEAKER_LINE = /\A\s*(#{NAME_WORD}(?:[ ,&]+#{NAME_WORD}){0,4}):\s+(\S.*)\z/
+        # A speaker line is "Name: <text>". The name must LOOK like a name. The FIRST token
+        # must start with an uppercase letter (\p{Lu}) or a caseless-script letter (\p{Lo},
+        # e.g. CJK) — which rejects timestamps ("10:30 …", leading digit) and spoken English
+        # sentences ("i think the answer is: yes", leading lowercase). Later tokens may also
+        # be a numeric label, so Meet's anonymous "Speaker 1:" / "Speaker 2:" still parse,
+        # or a "(Guest)" parenthetical. Requiring a name shape keeps the distinct-speaker
+        # count (the 1:1 privacy signal) honest.
+        NAME_HEAD = /[\p{Lu}\p{Lo}][\p{L}.'’-]*/
+        NAME_TAIL = /(?:[\p{Lu}\p{Lo}][\p{L}.'’-]*|\d{1,4}|\([^)]*\))/
+        SPEAKER_LINE = /\A\s*(#{NAME_HEAD}(?:[ ,&]+#{NAME_TAIL}){0,6}):\s+(\S.*)\z/
 
         def parse_segments(text)
-          segments = []
-          text.to_s.each_line do |raw|
-            line = raw.chomp
-            if (m = line.match(SPEAKER_LINE))
-              segments << { speaker_name: m[1].strip, speaker_email: nil, text: m[2].strip, started_at: nil, ended_at: nil }
-            elsif segments.any? && line.strip.present?
-              # A non-speaker line is a wrapped continuation of the current turn — append it
-              # rather than dropping it, so long utterances keep their full text.
-              segments.last[:text] = "#{segments.last[:text]} #{line.strip}".strip
+          text.to_s.each_line.filter_map do |raw|
+            if (m = raw.chomp.match(SPEAKER_LINE))
+              { speaker_name: m[1].strip, speaker_email: nil, text: m[2].strip, started_at: nil, ended_at: nil }
             end
-            # A non-matching line before the first speaker (header/preamble) is ignored.
+            # Lines without a name-shaped "Name:" prefix — system/footer notes like
+            # "Recording stopped" or "X left the call" — are dropped. Google Docs exports
+            # each speaker turn as one paragraph/line, so these are not wrapped continuations;
+            # appending them to the previous speaker would MISATTRIBUTE that text to a real
+            # person in search, which is worse for the corpus than omitting it.
           end
-          segments
         end
 
         def build_meeting(doc, file, segments, title)

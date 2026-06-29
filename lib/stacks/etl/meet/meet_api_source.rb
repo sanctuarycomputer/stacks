@@ -34,11 +34,10 @@ module Stacks
           # No transcript yet (still generating, or none): skip. The cursor LOOKBACK
           # re-checks recent meetings on later runs, so we pick it up once it's ready.
           return nil if segments.empty?
-          # If the Drive backfill already ingested this exact transcript (Drive Documents
-          # are keyed on the Drive doc id), defer to it — don't create a duplicate. This
-          # is a read-only existence check, NOT a merge, so it can't mix the two sources'
-          # exclusion/content. Safe at the Drive/API partition boundary.
-          return nil if drive_doc_id && Document.where(source: :meet, external_id: drive_doc_id).exists?
+          # If the Drive backfill already ingested this exact transcript, defer to it —
+          # don't create a duplicate. Read-only existence check (the shared Document scope
+          # owns the key), NOT a merge, so it can't mix the two sources' exclusion/content.
+          return nil if drive_doc_id && Document.for_drive_doc(drive_doc_id).exists?
 
           text = segments.map { |s| s[:text] }.join("\n")
           code, uri = space_label(cr.space)

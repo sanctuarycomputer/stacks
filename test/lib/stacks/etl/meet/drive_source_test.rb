@@ -55,11 +55,19 @@ class Stacks::Etl::Meet::DriveSourceTest < ActiveSupport::TestCase
     assert_equal 'I think the answer is: yes', segs.first[:text]
   end
 
-  test 'wrapped continuation lines are appended to the current turn, not dropped' do
+  test 'recognizes Meet anonymous "Speaker N" labels as speakers' do
     src = Stacks::Etl::Meet::DriveSource.allocate
-    segs = src.send(:parse_segments, "Alice: first part of a long thought\nthat wrapped onto a second line\nBob: ok")
+    segs = src.send(:parse_segments, "Speaker 1: hello\nSpeaker 2: hi there\nAlice: welcome")
+    assert_equal ['Speaker 1', 'Speaker 2', 'Alice'], segs.map { |s| s[:speaker_name] }
+  end
+
+  test 'drops system/footer lines instead of misattributing them to a speaker' do
+    src = Stacks::Etl::Meet::DriveSource.allocate
+    segs = src.send(:parse_segments, "Alice: kicking off the sync\nRecording stopped\nBob left the call\nBob: see you")
+    # Footer/system lines are dropped, NOT glued onto Alice's (or Bob's) turn.
     assert_equal ['Alice', 'Bob'], segs.map { |s| s[:speaker_name] }
-    assert_equal 'first part of a long thought that wrapped onto a second line', segs.first[:text]
+    assert_equal 'kicking off the sync', segs.first[:text]
+    assert_equal 'see you', segs.last[:text]
   end
 
   test 'clean_title preserves legitimate parentheticals, strips only the Meet date stamp' do
@@ -67,6 +75,7 @@ class Stacks::Etl::Meet::DriveSourceTest < ActiveSupport::TestCase
     assert_equal 'Planning (3 items)', src.send(:clean_title, 'Planning (3 items) - Transcript')
     assert_equal 'Roadmap (Q3 2026)', src.send(:clean_title, 'Roadmap (Q3 2026) - Transcript')
     assert_equal 'Goals (2026 Goals)', src.send(:clean_title, 'Goals (2026 Goals) - Transcript')
+    assert_equal 'Retro (5:00 format)', src.send(:clean_title, 'Retro (5:00 format) - Transcript') # bare clock time kept
     assert_equal 'Standup', src.send(:clean_title, 'Standup (2026/06/27 17:00 GMT-7) - Transcript')
   end
 
@@ -82,6 +91,23 @@ class Stacks::Etl::Meet::DriveSourceTest < ActiveSupport::TestCase
     yielded = []
     Stacks::Etl::Meet::DriveSource.new('hugh@sanctuary.computer', since: Time.utc(2025, 1, 1)).each_meeting { |n| yielded << n }
     assert_empty yielded # deferred to the existing API Document; no export_file call, no dup
+  end
+
+  test 're-scan does NOT skip the Drive doc the Drive sync itself created (re-ingests changes)' do
+    # The Drive sync keys its own Document on external_id == file.id (and also stores it in
+    # raw_metadata). The reverse-dedup must exclude THIS doc, or a corrected/re-included
+    # transcript would never be re-yielded and its chunks would go stale.
+    Document.create!(source: :meet, external_id: 'docSELF', raw_metadata: { 'drive_doc_id' => 'docSELF' })
+    file = OpenStruct.new(id: 'docSELF', name: 'Sync - Transcript', created_time: '2026-01-01T09:00:00Z')
+    svc = mock('drive')
+    svc.stubs(:list_files).returns(OpenStruct.new(files: [file], next_page_token: nil))
+    svc.stubs(:export_file).returns("Alice: still here")
+    Stacks::Etl::Meet::Auth.stubs(:drive_service).returns(svc)
+    Stacks::Etl::Meet::CalendarEnricher.any_instance.stubs(:enrich).returns(title: 'Sync', attendees: [])
+
+    yielded = []
+    Stacks::Etl::Meet::DriveSource.new('hugh@sanctuary.computer', since: Time.utc(2025, 1, 1)).each_meeting { |n| yielded << n }
+    assert_equal ['docSELF'], yielded.map { |n| n[:external_id] } # re-yielded, not skipped
   end
 
   test 'until_time bounds the Drive query to an older window (partitioned dedup)' do

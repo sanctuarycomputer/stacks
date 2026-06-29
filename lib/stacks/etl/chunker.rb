@@ -36,8 +36,9 @@ module Stacks
           last = out.last
           if last && last[:speaker_name] == seg[:speaker_name] && last[:speaker_email] == seg[:speaker_email]
             last[:text] = "#{last[:text]} #{text}".strip
-            last[:ended_at] = seg[:ended_at] if seg[:ended_at]
           else
+            # Keep the first turn's started_at as the merged turn's occurred_at; the chunker
+            # only consumes started_at, so end times are intentionally not tracked here.
             out << seg.merge(text: text)
           end
         end

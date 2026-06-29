@@ -19,11 +19,16 @@ module Stacks
         end
 
         def exclusion_for(normalized)
-          # Use the largest reliable head-count we have — the Meet/Calendar participant
-          # count OR the resolved contact list — so a big meeting where few people spoke
-          # isn't mis-flagged as a 1:1. 0 means "unknown" (neither signal available); the
-          # Classifier treats that as not-a-1:1 and falls back to title rules.
-          count = [normalized[:participant_count].to_i, normalized[:contacts].size].max
+          # 1:1 PRIVACY POLICY (deliberate — do NOT "improve" this to max() with the
+          # contacts/Calendar count): the head-count must reflect who was ACTUALLY in the
+          # meeting, never who was invited. Invite counts over-count (a no-show on a 1:1
+          # makes it look like 3 people and the private transcript leaks). So we use the
+          # actual-attendance signal each source provides — Meet participants (API) or
+          # distinct speakers (Drive) — in participant_count, even when it's 0 ("couldn't
+          # confirm a group" -> conservatively excluded). Only when that signal is wholly
+          # ABSENT (nil) do we fall back to the contact count. Under-counting at worst
+          # over-excludes a quiet group meeting (recoverable); over-counting would leak.
+          count = normalized[:participant_count] || normalized[:contacts].size
           Classifier.call(title: normalized[:title], participant_count: count)
         end
 

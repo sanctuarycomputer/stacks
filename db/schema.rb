@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_06_28_000008) do
+ActiveRecord::Schema.define(version: 2026_06_29_000001) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -274,6 +274,7 @@ ActiveRecord::Schema.define(version: 2026_06_28_000008) do
     t.jsonb "raw_metadata", default: {}, null: false
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.index "((raw_metadata ->> 'drive_doc_id'::text))", name: "index_documents_on_drive_doc_id"
     t.index ["occurred_at"], name: "index_documents_on_occurred_at"
     t.index ["source", "external_id"], name: "index_documents_on_source_and_external_id", unique: true
     t.index ["source_record_type", "source_record_id"], name: "index_documents_on_source_record"

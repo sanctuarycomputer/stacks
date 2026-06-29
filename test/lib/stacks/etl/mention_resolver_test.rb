@@ -49,6 +49,15 @@ class Stacks::Etl::MentionResolverTest < ActiveSupport::TestCase
     assert_equal 'unresolved', r[:status]
   end
 
+  test 'a first name resolves to a hyphenated/compound participant name' do
+    anne = Contact.create!(email: 'anne@sanctuary.computer', display_name: 'Anne-Marie Smith')
+    participants = [{ name: 'Anne-Marie Smith', contact: anne }]
+    # "Anne" is a whole token of "Anne-Marie" (split on the hyphen) -> resolves.
+    r = Stacks::Etl::MentionResolver.resolve_display_name('Anne', participants: participants)
+    assert_equal anne.id, r[:contact].id
+    assert_equal 'resolved', r[:status]
+  end
+
   test 'participant with nil contact does not produce a resolved result' do
     participants_with_nil = [{ name: 'Ghost User', contact: nil }]
     r = Stacks::Etl::MentionResolver.resolve_display_name('Ghost User', participants: participants_with_nil)

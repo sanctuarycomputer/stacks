@@ -13,6 +13,15 @@ class Document < ApplicationRecord
 
   scope :corpus_eligible, -> { where(excluded: [excludeds[:not_excluded], excludeds[:manually_included]]) }
 
+  # The Meet document that already represents a given Google Drive transcript, regardless
+  # of which source ingested it: the Drive sync keys it as external_id; the Meet API sync
+  # keys itself on the conference-record id and records the Drive doc id in raw_metadata.
+  # Owning the key (and its two storage shapes) here keeps the Drive<->API dedup in one
+  # place instead of duplicating the JSON path across both sources.
+  scope :for_drive_doc, lambda { |drive_doc_id|
+    meet.where("external_id = :id OR raw_metadata->>'drive_doc_id' = :id", id: drive_doc_id)
+  }
+
   def corpus_eligible?
     not_excluded? || manually_included?
   end

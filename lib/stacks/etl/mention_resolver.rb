@@ -14,10 +14,12 @@ module Stacks
         # Partial match on WHOLE name tokens (a spoken first name matching a fuller
         # participant name), never on raw substrings — substring matching wrongly resolves
         # "Chris" -> "Christine" or "an" -> "Joanna" and mis-attributes who said what.
-        needle_tokens = needle.split
+        # Tokenize on any non-letter run so hyphenated/compound names split too, letting
+        # "Anne" still resolve to "Anne-Marie Smith" without resurrecting substring matching.
+        needle_tokens = tokenize(needle)
+        return { contact: nil, confidence: nil, status: 'unresolved' } if needle_tokens.empty?
         partial = candidates.select do |p|
-          name_tokens = p[:name].to_s.downcase.split
-          needle_tokens.any? && (needle_tokens - name_tokens).empty?
+          (needle_tokens - tokenize(p[:name])).empty?
         end
         return resolved(partial.first[:contact], 0.6) if partial.size == 1
         return { contact: nil, confidence: nil, status: 'ambiguous' } if partial.size > 1
@@ -27,6 +29,11 @@ module Stacks
 
       def self.resolved(contact, confidence)
         { contact: contact, confidence: confidence, status: 'resolved' }
+      end
+
+      # Lowercase name tokens, splitting on any non-letter run so "Anne-Marie" -> [anne, marie].
+      def self.tokenize(name)
+        name.to_s.downcase.split(/[^\p{L}]+/).reject(&:empty?)
       end
     end
   end
