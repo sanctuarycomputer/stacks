@@ -1,0 +1,86 @@
+module Stacks
+  module Etl
+    class Connector
+      def run(since: nil)
+        sync = SourceSync.for(source)
+        count = 0
+        Array(extract(since: since || sync.cursor['since'])).each do |normalized|
+          ingest(normalized)
+          count += 1
+        end
+        sync.advance!(cursor: { 'since' => Time.current.iso8601 }, stats: { 'documents' => count })
+        sync
+      end
+
+      def exclusion_for(_normalized) = [:not_excluded, :none]
+
+      private
+
+      def ingest(normalized)
+        ActiveRecord::Base.transaction do
+          doc = Document.find_or_initialize_by(source: source, external_id: normalized[:external_id])
+          changed = doc.new_record? || doc.content_hash != normalized[:content_hash]
+
+          doc.assign_attributes(
+            title: normalized[:title], url: normalized[:url],
+            occurred_at: normalized[:occurred_at], content_hash: normalized[:content_hash],
+            raw_metadata: normalized[:raw_metadata] || {}
+          )
+          doc.source_record = normalized[:build_source_record]&.call(doc)
+          apply_exclusion(doc, normalized) unless doc.human_locked?
+          doc.save!
+
+          sync_document_contacts(doc, normalized[:contacts])
+
+          if changed && doc.corpus_eligible?
+            rebuild_chunks(doc, normalized[:segments])
+          elsif !doc.corpus_eligible?
+            doc.chunks.destroy_all
+          end
+        end
+      end
+
+      def apply_exclusion(doc, normalized)
+        excluded, reason = exclusion_for(normalized)
+        doc.excluded = excluded
+        doc.excluded_reason = reason
+      end
+
+      def sync_document_contacts(doc, contacts)
+        doc.document_contacts.destroy_all
+        Array(contacts).each do |c|
+          contact = c[:email].present? ? MentionResolver.resolve_email(c[:email], name: c[:name]) : nil
+          doc.document_contacts.create!(contact: contact, email: c[:email], name: c[:name], role: c[:role])
+        end
+      end
+
+      def rebuild_chunks(doc, segments)
+        doc.chunks.destroy_all
+        chunk_rows = Chunker.call(segments: Array(segments))
+        return if chunk_rows.empty?
+
+        participants = doc.document_contacts.map { |dc| { name: dc.name, contact: dc.contact } }
+        embeddings = Embedder.embed(chunk_rows.map { |c| c[:content] })[:vectors]
+
+        chunk_rows.each_with_index do |row, i|
+          speaker = row[:speaker_email].present? ? MentionResolver.resolve_email(row[:speaker_email], name: row[:speaker_name]) : nil
+          chunk = doc.chunks.create!(
+            position: i, content: row[:content],
+            start_offset: row[:start_offset], end_offset: row[:end_offset],
+            speaker_name: row[:speaker_name], speaker_contact: speaker,
+            source: source, occurred_at: row[:occurred_at]
+          )
+          resolve_mention(chunk, row, participants, speaker)
+          Embedding.create!(owner: chunk, model: Embedder::MODEL, embedding: embeddings[i])
+        end
+      end
+
+      def resolve_mention(chunk, row, participants, speaker)
+        return if speaker.present? || row[:speaker_name].blank?
+        r = MentionResolver.resolve_display_name(row[:speaker_name], participants: participants)
+        chunk.update!(speaker_contact: r[:contact]) if r[:contact]
+        chunk.mentions.create!(raw_text: row[:speaker_name], contact: r[:contact], confidence: r[:confidence], status: r[:status])
+      end
+    end
+  end
+end
