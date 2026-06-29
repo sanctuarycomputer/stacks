@@ -428,6 +428,3 @@ resolution exist specifically so the intelligence layer slots on top without rew
 - Decide chunking parameters (size/overlap) and per-segment vs across-segment chunking
   for Meet.
 - Confirm `mcp` gem Streamable-HTTP statelessness given the prod dyno count.
-- Scope `stacks:sync_contacts` (Apollo) so the flood of new `meet`-sourced contacts
-  isn't all pushed to Apollo — likely scope Apollo enrichment to its existing
-  mailing-list sources, leaving `meet`-only contacts un-enriched.
