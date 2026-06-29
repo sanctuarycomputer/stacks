@@ -49,13 +49,23 @@ class Stacks::Etl::MentionResolverTest < ActiveSupport::TestCase
     assert_equal 'unresolved', r[:status]
   end
 
-  test 'a bare component of a hyphenated name does not mis-resolve (prefer unresolved)' do
+  test 'a trailing component of a hyphenated name does not mis-resolve (prefer unresolved)' do
     anne = Contact.create!(email: 'anne@sanctuary.computer', display_name: 'Anne-Marie Smith')
     participants = [{ name: 'Anne-Marie Smith', contact: anne }]
-    # "Marie" is only a sub-part of the hyphenated token "Anne-Marie" — resolving it would
-    # mis-attribute, so we leave it unresolved. The full name still matches exactly.
+    # "Marie" is only the TRAILING segment of "Anne-Marie" — too weak; leave it unresolved.
     assert_equal 'unresolved', Stacks::Etl::MentionResolver.resolve_display_name('Marie', participants: participants)[:status]
+    # The full name still matches exactly.
     assert_equal anne.id, Stacks::Etl::MentionResolver.resolve_display_name('Anne-Marie Smith', participants: participants)[:contact].id
+  end
+
+  test 'a leading first name shared by two participants is ambiguous, not a confident wrong pick' do
+    aj = Contact.create!(email: 'aj@sanctuary.computer', display_name: 'Anne Jones')
+    am = Contact.create!(email: 'am@sanctuary.computer', display_name: 'Anne-Marie Smith')
+    participants = [{ name: 'Anne Jones', contact: aj }, { name: 'Anne-Marie Smith', contact: am }]
+    # "Anne" leads both "Anne Jones" and "Anne-Marie" -> ambiguous (must NOT resolve to one).
+    r = Stacks::Etl::MentionResolver.resolve_display_name('Anne', participants: participants)
+    assert_nil r[:contact]
+    assert_equal 'ambiguous', r[:status]
   end
 
   test 'participant with nil contact does not produce a resolved result' do

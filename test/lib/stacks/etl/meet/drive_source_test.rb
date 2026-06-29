@@ -69,6 +69,14 @@ class Stacks::Etl::Meet::DriveSourceTest < ActiveSupport::TestCase
     assert_equal ['Alice', 'Bob'], segs.map { |s| s[:speaker_name] }
   end
 
+  test 'a line beginning with a parenthetical is NOT a phantom speaker' do
+    src = Stacks::Etl::Meet::DriveSource.allocate
+    # The first token of a speaker name must be a letter, so "(Recording note):" can't
+    # become a 3rd speaker that lifts this 1:1 out of exclusion.
+    segs = src.send(:parse_segments, "Alice: hi\n(Recording note): system message\nBob: bye")
+    assert_equal ['Alice', 'Bob'], segs.map { |s| s[:speaker_name] }
+  end
+
   test 'drops system/footer lines instead of misattributing them to a speaker' do
     src = Stacks::Etl::Meet::DriveSource.allocate
     segs = src.send(:parse_segments, "Alice: kicking off the sync\nRecording stopped\nBob left the call\nBob: see you")

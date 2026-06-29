@@ -11,21 +11,30 @@ module Stacks
         exact = candidates.select { |p| p[:name].to_s.downcase.strip == needle }
         return resolved(exact.first[:contact], 1.0) if exact.size == 1
 
-        # Partial match on WHOLE whitespace-separated tokens (a spoken first name matching a
-        # fuller participant name), never on raw substrings — substring matching wrongly
-        # resolves "Chris" -> "Christine" or "an" -> "Joanna" and mis-attributes who said
-        # what. We deliberately do NOT split on hyphens either: matching a single component
-        # of a compound name ("Marie" -> "Anne-Marie Smith") is also a mis-attribution, so
-        # such mentions stay unresolved (safe) unless the full name matched exactly above.
+        # Partial match: a spoken first name matching a fuller participant name. A needle
+        # token matches a participant name token only if it equals the whole token OR is its
+        # LEADING hyphen-segment. This threads two failure modes:
+        #   - never substring-match  ("Chris" must NOT match "Christine")
+        #   - "Anne" SHOULD match "Anne-Marie Smith" (its leading segment) so that, when an
+        #     "Anne Jones" is also present, the mention resolves to 'ambiguous' (safe) rather
+        #     than confidently to the wrong Anne
+        #   - "Marie" (a TRAILING segment) must NOT match "Anne-Marie Smith" — too weak a
+        #     signal, would mis-attribute
         needle_tokens = needle.split
         return { contact: nil, confidence: nil, status: 'unresolved' } if needle_tokens.empty?
         partial = candidates.select do |p|
-          (needle_tokens - p[:name].to_s.downcase.split).empty?
+          needle_tokens.all? { |nt| name_token_matches?(nt, p[:name]) }
         end
         return resolved(partial.first[:contact], 0.6) if partial.size == 1
         return { contact: nil, confidence: nil, status: 'ambiguous' } if partial.size > 1
 
         { contact: nil, confidence: nil, status: 'unresolved' }
+      end
+
+      # True if needle_token equals a whitespace token of name, or is that token's leading
+      # hyphen-segment ("anne" matches "anne-marie", but "marie" and "chris" do not).
+      def self.name_token_matches?(needle_token, name)
+        name.to_s.downcase.split.any? { |t| t == needle_token || t.start_with?("#{needle_token}-") }
       end
 
       def self.resolved(contact, confidence)

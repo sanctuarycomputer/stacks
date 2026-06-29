@@ -57,6 +57,7 @@ module Stacks
             else
               segments.map { |s| { email: nil, name: s[:speaker_name], role: 'speaker' } }.uniq
             end
+          speaker_count = distinct_speaker_count(segments)
           {
             external_id: file.id,
             title: title,
@@ -68,11 +69,11 @@ module Stacks
             # no-shows (which would let a 1:1 leak), so we deliberately use speakers, NOT
             # attendees, here — see Connector#exclusion_for. (Calendar attendees are still
             # used for contact/email attribution below, just not for the head-count.)
-            participant_count: distinct_speaker_count(segments),
+            participant_count: speaker_count,
             contacts: contacts,
             segments: segments,
             raw_metadata: { 'drive_doc_id' => file.id },
-            build_source_record: ->(doc) { build_meeting(doc, file, segments, title) }
+            build_source_record: ->(doc) { build_meeting(doc, file, segments, title, speaker_count) }
           }
         end
 
@@ -103,18 +104,19 @@ module Stacks
               .presence || name.to_s
         end
 
-        # A speaker line is "Name: <text>". The name must LOOK like a name: each token starts
-        # with an uppercase letter (\p{Lu}) or a caseless-script letter (\p{Lo}, e.g. CJK),
-        # optionally a "(Guest)" parenthetical, joined by spaces/commas/"&". A leading
-        # uppercase/caseless letter rejects timestamps ("10:30 …", leading digit) and spoken
-        # English sentences ("i think the answer is: yes", leading lowercase). Tokens are NOT
-        # allowed to be bare numbers, so body lines like "Action 1:" / "Phase 2:" don't parse
-        # as phantom speakers (which would inflate the distinct-speaker 1:1 count and leak a
+        # A speaker line is "Name: <text>". The name must LOOK like a name. The FIRST token
+        # (NAME_HEAD) must start with an uppercase letter (\p{Lu}) or a caseless-script
+        # letter (\p{Lo}, e.g. CJK) — that rejects timestamps ("10:30 …", leading digit),
+        # spoken sentences ("i think the answer is: yes", leading lowercase) AND a leading
+        # parenthetical ("(Recording note): …", which must not be a phantom speaker).
+        # Trailing tokens (NAME_TAIL) may add more letter-words or a "(Guest)" parenthetical,
+        # but NOT bare numbers, so body lines like "Action 1:" / "Phase 2:" don't parse as
+        # speakers (a phantom speaker would inflate the distinct-speaker 1:1 count and leak a
         # private 1:1). Meet's anonymous labels are matched explicitly as "Speaker N" etc.
-        # Keeping the name shape tight keeps the distinct-speaker privacy signal honest.
-        NAME_WORD = /(?:[\p{Lu}\p{Lo}][\p{L}.'’-]*|\([^)]*\))/
+        NAME_HEAD = /[\p{Lu}\p{Lo}][\p{L}.'’-]*/
+        NAME_TAIL = /(?:[\p{Lu}\p{Lo}][\p{L}.'’-]*|\([^)]*\))/
         ANON_LABEL = /(?:Speaker|Guest|Participant) \d{1,4}/
-        SPEAKER_LINE = /\A\s*(#{ANON_LABEL}|#{NAME_WORD}(?:[ ,&]+#{NAME_WORD}){0,6}):\s+(\S.*)\z/
+        SPEAKER_LINE = /\A\s*(#{ANON_LABEL}|#{NAME_HEAD}(?:[ ,&]+#{NAME_TAIL}){0,6}):\s+(\S.*)\z/
 
         def parse_segments(text)
           text.to_s.each_line.filter_map do |raw|
@@ -129,10 +131,10 @@ module Stacks
           end
         end
 
-        def build_meeting(doc, file, segments, title)
+        def build_meeting(doc, file, segments, title, speaker_count)
           meeting = Meeting.find_or_initialize_by(drive_transcript_doc_id: file.id)
           meeting.update!(meet_source: :drive, title: title, started_at: file.created_time,
-                          participant_count: distinct_speaker_count(segments),
+                          participant_count: speaker_count,
                           raw_metadata: { 'document_id' => doc.id })
           meeting.segments.destroy_all
           segments.each_with_index do |s, i|
