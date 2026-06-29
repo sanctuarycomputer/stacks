@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_06_28_000003) do
+ActiveRecord::Schema.define(version: 2026_06_28_000004) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -264,6 +264,18 @@ ActiveRecord::Schema.define(version: 2026_06_28_000003) do
     t.index ["occurred_at"], name: "index_documents_on_occurred_at"
     t.index ["source", "external_id"], name: "index_documents_on_source_and_external_id", unique: true
     t.index ["source_record_type", "source_record_id"], name: "index_documents_on_source_record"
+  end
+
+  create_table "embeddings", force: :cascade do |t|
+    t.string "owner_type", null: false
+    t.bigint "owner_id", null: false
+    t.string "model", null: false
+    t.vector "embedding", limit: 1024
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["embedding"], name: "index_embeddings_on_embedding", opclass: :vector_cosine_ops, using: :hnsw
+    t.index ["owner_type", "owner_id", "model"], name: "index_embeddings_on_owner_and_model", unique: true
+    t.index ["owner_type", "owner_id"], name: "index_embeddings_on_owner"
   end
 
   create_table "enterprise_admins", force: :cascade do |t|
