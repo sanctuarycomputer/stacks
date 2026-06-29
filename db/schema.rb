@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_06_28_000001) do
+ActiveRecord::Schema.define(version: 2026_06_28_000002) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -223,6 +223,26 @@ ActiveRecord::Schema.define(version: 2026_06_28_000001) do
     t.string "deel_id", null: false
     t.jsonb "data", null: false
     t.index ["deel_id"], name: "index_deel_people_on_deel_id", unique: true
+  end
+
+  create_table "documents", force: :cascade do |t|
+    t.integer "source", default: 0, null: false
+    t.string "external_id", null: false
+    t.string "source_record_type"
+    t.bigint "source_record_id"
+    t.string "title"
+    t.string "url"
+    t.datetime "occurred_at"
+    t.string "content_hash"
+    t.integer "excluded", default: 0, null: false
+    t.integer "excluded_reason", default: 0, null: false
+    t.string "excluded_by"
+    t.jsonb "raw_metadata", default: {}, null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["occurred_at"], name: "index_documents_on_occurred_at"
+    t.index ["source", "external_id"], name: "index_documents_on_source_and_external_id", unique: true
+    t.index ["source_record_type", "source_record_id"], name: "index_documents_on_source_record"
   end
 
   create_table "enterprise_admins", force: :cascade do |t|
