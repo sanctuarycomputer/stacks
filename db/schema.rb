@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_06_28_000006) do
+ActiveRecord::Schema.define(version: 2026_06_28_000007) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -1126,6 +1126,19 @@ ActiveRecord::Schema.define(version: 2026_06_28_000006) do
     t.index ["trait_id"], name: "index_scores_on_trait_id"
   end
 
+  create_table "source_syncs", force: :cascade do |t|
+    t.string "source", null: false
+    t.jsonb "cursor", default: {}, null: false
+    t.datetime "last_run_at"
+    t.string "status"
+    t.jsonb "stats", default: {}, null: false
+    t.bigint "system_task_id"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["source"], name: "index_source_syncs_on_source", unique: true
+    t.index ["system_task_id"], name: "index_source_syncs_on_system_task_id"
+  end
+
   create_table "studio_memberships", force: :cascade do |t|
     t.bigint "admin_user_id", null: false
     t.bigint "studio_id", null: false
@@ -1374,6 +1387,7 @@ ActiveRecord::Schema.define(version: 2026_06_28_000006) do
   add_foreign_key "score_trees", "workspaces"
   add_foreign_key "scores", "score_trees"
   add_foreign_key "scores", "traits"
+  add_foreign_key "source_syncs", "system_tasks"
   add_foreign_key "studio_memberships", "admin_users"
   add_foreign_key "studio_memberships", "studios"
   add_foreign_key "survey_free_text_question_responses", "survey_free_text_questions"
