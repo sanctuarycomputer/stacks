@@ -27,4 +27,10 @@ class ContactResolveEmailTest < ActiveSupport::TestCase
     c = Contact.resolve_email('named@gmail.com', name: 'Different')
     assert_equal 'Original', c.display_name
   end
+
+  test 'returns nil for a malformed email instead of raising' do
+    assert_nil Contact.resolve_email('not-an-email')
+    assert_nil Contact.resolve_email('')
+    assert_nil Contact.resolve_email(nil)
+  end
 end

@@ -33,7 +33,7 @@ module Stacks
                                      time_min: (at - WINDOW).utc.iso8601,
                                      time_max: (at + WINDOW).utc.iso8601,
                                      single_events: true, max_results: 50)
-          event = pick_event(Array(resp.items), meeting_code, title_hint)
+          event = pick_event(Array(resp.items), meeting_code, title_hint, at)
           return { title: fallback_title, attendees: [] } unless event
 
           { title: event.summary.presence || fallback_title, attendees: attendees_for(event) }
@@ -47,13 +47,20 @@ module Stacks
           @service ||= Auth.calendar_service(sub: @user_email)
         end
 
-        def pick_event(events, meeting_code, title_hint)
+        def pick_event(events, meeting_code, title_hint, at)
           if meeting_code.present?
             events.find { |e| e.conference_data&.conference_id == meeting_code }
           elsif title_hint.present?
             hint = normalize_title(title_hint)
-            events.find { |e| normalize_title(e.summary) == hint }
+            # Several events may share a title in the window (e.g. two "Weekly Sync"s);
+            # pick the one whose start is closest to the transcript's time.
+            events.select { |e| normalize_title(e.summary) == hint }
+                  .min_by { |e| (coerce_time(event_start(e)).to_i - at.to_i).abs }
           end
+        end
+
+        def event_start(e)
+          e.start&.date_time || e.start&.date
         end
 
         def normalize_title(str)

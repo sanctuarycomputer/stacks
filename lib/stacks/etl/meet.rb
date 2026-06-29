@@ -15,7 +15,8 @@ module Stacks
         failed = []
 
         emails.each do |email|
-          Connector.new(admin_email: email, mode: mode).run(since: since)
+          # track:false so per-user runs don't clobber the shared :meet cursor.
+          Connector.new(admin_email: email, mode: mode).run(since: since, track: false)
           ok += 1
         rescue StandardError => e
           failed << "#{email}: #{e.class}: #{e.message.to_s[0, 140]}"
@@ -23,7 +24,13 @@ module Stacks
 
         Rails.logger.info("[#{task_name}] #{ok}/#{emails.size} users ok, #{failed.size} failed")
         failed.first(25).each { |f| Rails.logger.warn("[#{task_name}] FAIL #{f}") }
-        system_task.mark_as_success
+
+        # A total failure (e.g. org-wide auth broken) must NOT report green.
+        if ok.zero? && emails.any?
+          system_task.mark_as_error(RuntimeError.new("#{task_name}: all #{emails.size} users failed; first: #{failed.first(3).join(' | ')}"))
+        else
+          system_task.mark_as_success
+        end
         { ok: ok, failed: failed.size, total: emails.size }
       rescue StandardError => e
         system_task&.mark_as_error(e)

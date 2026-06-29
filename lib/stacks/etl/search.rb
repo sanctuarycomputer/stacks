@@ -18,7 +18,8 @@ module Stacks
         scope = scope.where(occurred_at: date_range) if date_range
         if contact
           c = contact.is_a?(Contact) ? contact : Contact.find_by(email: contact.to_s.downcase)
-          scope = scope.where(speaker_contact_id: c&.id)
+          return scope.none if c.nil? # unknown contact filter -> empty, not "speaker IS NULL"
+          scope = scope.where(speaker_contact_id: c.id)
         end
         scope
       end
@@ -28,10 +29,11 @@ module Stacks
       end
 
       def self.semantic_ids(scope, query, limit)
-        owner_ids = scope.pluck(:id)
-        return [] if owner_ids.empty?
+        return [] unless scope.exists?
         vector = Embedder.embed([query], input_type: 'query')[:vectors].first
-        Embedding.where(model: Embedder::MODEL, owner_type: 'Chunk', owner_id: owner_ids)
+        # Constrain to corpus-eligible chunks via a SUBQUERY (scope.select(:id)), not a
+        # materialized id list — keeps the wall airtight without a giant IN (...) array.
+        Embedding.where(model: Embedder::MODEL, owner_type: 'Chunk', owner_id: scope.select(:id))
                  .nearest_neighbors(:embedding, vector, distance: 'cosine')
                  .limit(limit).map(&:owner_id)
       end

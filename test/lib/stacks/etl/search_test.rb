@@ -17,6 +17,11 @@ class Stacks::Etl::SearchTest < ActiveSupport::TestCase
     refute_includes ids, @miss.id
   end
 
+  test 'a contact filter with an unknown email returns nothing (not unattributed chunks)' do
+    results = Stacks::Etl::Search.call(query: 'gateway', mode: :keyword, contact: 'stranger@nowhere.com')
+    assert_empty results
+  end
+
   test 'semantic mode embeds the query, ranks by neighbor distance, and walls off excluded chunks' do
     Embedding.create!(owner: @hit, model: Stacks::Etl::Embedder::MODEL, embedding: Array.new(1024) { 0.0 }.tap { |v| v[0] = 1.0 })
     Embedding.create!(owner: @miss, model: Stacks::Etl::Embedder::MODEL, embedding: Array.new(1024) { 0.0 }.tap { |v| v[1] = 1.0 })

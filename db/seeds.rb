@@ -37,3 +37,16 @@ Enterprise.find_or_create_by!(name: Enterprise::SANCTUARY_NAME)
 Enterprise.find_or_create_by!(name: "Garden3D LLC")
 Enterprise.find_or_create_by!(name: "USB Club LLC")
 # "Index" already exists in prod from earlier P&L work — no seed needed.
+
+# The chunks.content_tsv generated column + its GIN index are added by the
+# CreateChunks migration but can't be represented in db/schema.rb (Rails 6.1
+# can't dump generated columns). On a migrate-based deploy they exist; this
+# idempotent recreation makes a `db:setup`/`db:schema:load`-built database
+# (dev bootstrap, review apps) work for keyword/hybrid search too.
+if ActiveRecord::Base.connection.table_exists?(:chunks)
+  ActiveRecord::Base.connection.execute(<<~SQL)
+    ALTER TABLE chunks ADD COLUMN IF NOT EXISTS content_tsv tsvector
+      GENERATED ALWAYS AS (to_tsvector('english', content)) STORED;
+    CREATE INDEX IF NOT EXISTS index_chunks_on_content_tsv ON chunks USING gin (content_tsv);
+  SQL
+end

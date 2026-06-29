@@ -17,7 +17,10 @@ module Stacks
             opts = { page_token: page }
             opts[:filter] = "start_time >= \"#{@since.utc.iso8601}\"" if @since
             resp = @service.list_conference_records(**opts)
-            Array(resp.conference_records).each { |cr| yield normalize(cr) }
+            Array(resp.conference_records).each do |cr|
+              normalized = normalize(cr)
+              yield normalized if normalized # skip meetings with no transcript yet
+            end
             page = resp.next_page_token
             break unless page
           end
@@ -27,7 +30,11 @@ module Stacks
 
         def normalize(cr)
           participants = fetch_participants(cr.name)
-          segments = fetch_segments(cr.name, participants)
+          segments, drive_doc_id = fetch_segments(cr.name, participants)
+          # No transcript yet (still generating, or none): skip. The cursor LOOKBACK
+          # re-checks recent meetings on later runs, so we pick it up once it's ready.
+          return nil if segments.empty?
+
           text = segments.map { |s| s[:text] }.join("\n")
           code, uri = space_label(cr.space)
           enrichment = @enricher.enrich(started_at: cr.start_time, meeting_code: code, fallback_title: code || cr.space)
@@ -41,15 +48,17 @@ module Stacks
               participants.values.map { |p| { email: p[:email], name: p[:name], role: 'participant' } }
             end
           {
-            external_id: cr.name,
+            # Key on the transcript's Drive doc id when present so a meeting ingested via
+            # both the Meet API and the Drive backfill reconciles onto ONE document.
+            external_id: drive_doc_id || cr.name,
             title: title,
             url: uri || (code ? "https://meet.google.com/#{code}" : nil),
             occurred_at: cr.start_time,
             content_hash: Digest::SHA256.hexdigest(text),
             contacts: contacts,
             segments: segments,
-            raw_metadata: { 'conference_record' => cr.name, 'space' => cr.space },
-            build_source_record: ->(doc) { build_meeting(doc, cr, participants, segments, title) }
+            raw_metadata: { 'conference_record' => cr.name, 'space' => cr.space, 'drive_doc_id' => drive_doc_id },
+            build_source_record: ->(doc) { build_meeting(doc, cr, participants, segments, title, drive_doc_id) }
           }
         end
 
@@ -77,12 +86,16 @@ module Stacks
           map
         end
 
+        # Returns [segments, drive_doc_id] — drive_doc_id is the transcript's Drive Doc
+        # (docs_destination.document), the shared key for cross-source dedup.
         def fetch_segments(cr_name, participants)
           segments = []
+          drive_doc_id = nil
           tpage = nil
           loop do
             tresp = @service.list_conference_record_transcripts(cr_name, page_token: tpage)
             Array(tresp.transcripts).each do |t|
+              drive_doc_id ||= t.docs_destination&.document
               epage = nil
               loop do
                 eresp = @service.list_conference_record_transcript_entries(t.name, page_size: 100, page_token: epage)
@@ -98,12 +111,19 @@ module Stacks
             tpage = tresp.next_page_token
             break unless tpage
           end
-          segments
+          [segments, drive_doc_id]
         end
 
-        def build_meeting(doc, cr, participants, segments, title)
-          meeting = Meeting.find_or_initialize_by(meet_conference_record_id: cr.name)
-          meeting.update!(meet_source: :meet_api, title: title, started_at: cr.start_time,
+        def build_meeting(doc, cr, participants, segments, title, drive_doc_id)
+          # Key on the Drive doc id when present (so a Drive-backfilled meeting and its
+          # later Meet-API sync share one Meeting row); else on the conference record.
+          meeting = if drive_doc_id
+                      Meeting.find_or_initialize_by(drive_transcript_doc_id: drive_doc_id)
+                    else
+                      Meeting.find_or_initialize_by(meet_conference_record_id: cr.name)
+                    end
+          meeting.update!(meet_source: :meet_api, meet_conference_record_id: cr.name,
+                          drive_transcript_doc_id: drive_doc_id, title: title, started_at: cr.start_time,
                           ended_at: cr.end_time, participant_count: participants.size,
                           raw_metadata: { 'document_id' => doc.id })
           meeting.participants.destroy_all

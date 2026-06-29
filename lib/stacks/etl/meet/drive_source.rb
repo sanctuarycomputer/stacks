@@ -31,7 +31,9 @@ module Stacks
 
         def normalize(file)
           text = @service.export_file(file.id, 'text/plain')
-          segments = parse_segments(text)
+          # Drive transcripts have no per-line timestamps; stamp every segment with the
+          # doc's created time so chunks get a real occurred_at (date-scoped search needs it).
+          segments = parse_segments(text).each { |s| s[:started_at] = file.created_time }
           title = clean_title(file.name)
           # Drive transcripts have no Meet code, so enrich by matching a Calendar event
           # with the SAME title near the doc's time (best-effort) for attendee emails.

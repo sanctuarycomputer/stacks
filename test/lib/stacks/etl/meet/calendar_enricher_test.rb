@@ -46,6 +46,16 @@ class Stacks::Etl::Meet::CalendarEnricherTest < ActiveSupport::TestCase
     assert_empty r[:attendees]
   end
 
+  test 'among same-title events it picks the one closest in time (Drive path)' do
+    near = event(summary: 'Weekly Sync', conf_id: 'a', attendees: [['near@x.co', nil]])
+    near.start = OpenStruct.new(date_time: '2026-01-01T09:05:00Z')
+    far = event(summary: 'Weekly Sync', conf_id: 'b', attendees: [['far@x.co', nil]])
+    far.start = OpenStruct.new(date_time: '2026-01-01T11:30:00Z')
+    enr = enricher_returning([far, near])
+    r = enr.enrich(started_at: Time.utc(2026, 1, 1, 9), meeting_code: nil, fallback_title: 'Weekly Sync', title_hint: 'weekly sync')
+    assert_equal ['near@x.co'], r[:attendees].map { |x| x[:email] }
+  end
+
   test 'skips room-resource attendees' do
     enr = enricher_returning([event(summary: 'S', conf_id: 'abc', attendees: [['room@resource.calendar.google.com', nil], ['c@x.co', nil]])])
     r = enr.enrich(started_at: Time.utc(2026, 1, 1, 9), meeting_code: 'abc', fallback_title: 'S')

@@ -34,6 +34,14 @@ The MCP endpoint is served by the existing web dyno (mounted at `/api/mcp`); no 
 process type is required, so the `Procfile` is unchanged. The Streamable-HTTP
 transport runs **stateless**, so it's safe across multiple web dynos.
 
+## Web dyno sizing (for semantic/hybrid MCP search)
+
+`search` with `mode: semantic|hybrid` embeds the **query** at request time using the
+local model **on the web dyno** serving `/api/mcp`. So that dyno needs enough RAM for
+the quantized model (~340 MB) and eats a one-time model load on the first semantic
+query (slow first request, then cached for the dyno's life). Use a **Standard-2X+ /
+Performance** web dyno, or preload the model at boot. Keyword search has no such cost.
+
 ## 2. Connect the agent to MCP
 
 Point the agent (claude.ai / Claude Code) at:

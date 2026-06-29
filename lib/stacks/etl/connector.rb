@@ -1,14 +1,22 @@
 module Stacks
   module Etl
     class Connector
-      def run(since: nil)
-        sync = SourceSync.for(source)
+      # Re-scan recent meetings each run so a transcript that finalized AFTER the run
+      # which first saw the meeting still gets pulled (transcripts generate async).
+      LOOKBACK = 2.days
+
+      # track: advance/read the shared per-source SourceSync cursor. Multi-user sweeps
+      # and explicit backfills pass their own `since` and set track:false so they don't
+      # clobber the ongoing single-user cursor (or each other's).
+      def run(since: nil, track: true)
+        sync = track ? SourceSync.for(source) : nil
+        effective_since = since || sync&.cursor&.dig('since')
         count = 0
-        Array(extract(since: since || sync.cursor['since'])).each do |normalized|
+        Array(extract(since: effective_since)).each do |normalized|
           ingest(normalized)
           count += 1
         end
-        sync.advance!(cursor: { 'since' => Time.current.iso8601 }, stats: { 'documents' => count })
+        sync&.advance!(cursor: { 'since' => (Time.current - LOOKBACK).iso8601 }, stats: { 'documents' => count })
         sync
       end
 

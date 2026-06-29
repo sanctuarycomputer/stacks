@@ -17,6 +17,19 @@ class Stacks::Etl::Meet::SweepTest < ActiveSupport::TestCase
     assert_nil task.notification_id, 'a per-user failure must not fail the whole task'
   end
 
+  test 'marks the SystemTask errored when every user fails (no silent green)' do
+    Stacks::Etl::Meet::Workspace.stubs(:all_active_user_emails).returns(%w[a@x.co b@x.co])
+    bad = mock('bad'); bad.stubs(:run).raises(StandardError, 'no access')
+    Stacks::Etl::Meet::Connector.stubs(:new).returns(bad)
+    task = mock('systemtask')
+    task.expects(:mark_as_error).once
+    task.expects(:mark_as_success).never
+    SystemTask.stubs(:create!).returns(task)
+
+    result = Stacks::Etl::Meet.sweep_all_users!(task_name: 'stacks:etl:test_allfail', mode: :api, since: 7.days.ago)
+    assert_equal({ ok: 0, failed: 2, total: 2 }, result)
+  end
+
   test 'a catastrophic error (e.g. user listing fails) marks the SystemTask as errored' do
     Stacks::Etl::Meet::Workspace.stubs(:all_active_user_emails).raises(StandardError, 'directory down')
     Stacks::Notifications.stubs(:report_exception).returns(OpenStruct.new(record: nil))
