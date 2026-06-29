@@ -36,7 +36,7 @@ The long-term target is a 16-table institutional-memory schema (see *Target sche
 below). It splits cleanly into two layers, and **this spec builds only the first**:
 
 - **Foundation (this spec):** raw substrate + retrieval + the Meet connector —
-  `documents`, `document_versions`, `chunks`, `mentions`, people resolution,
+  `documents`, `chunks`, `mentions`, contact resolution,
   `embeddings`, plus the read-only MCP server. Designed to be forward-compatible.
 - **Intelligence layer (later spec):** the extracted semantic objects
   (`decisions`, `commitments`, `tasks`, `opportunities`), the provenance/bitemporal
@@ -46,29 +46,26 @@ below). It splits cleanly into two layers, and **this spec builds only the first
 
 People are anchored by the **existing `contacts` table** — its stated vision is
 "everyone we know," it is unique on `email`, and it already carries Apollo enrichment
-(`apollo_data`) and a `sources` provenance array. It is the right universal spine
-because the other tables only cover people we already formally know: `AdminUser` is
-workspace logins only (`@sanctuary.computer`/`@xxix.co`), `Contributor` is
-Forecast-tracked staff/contractors. Org activity is full of people who are neither —
-external meeting guests, clients on `@gmail`/their own domains — and a `Contact`
-already exists (or is cheaply created) for them, gaining Apollo enrichment for free.
+(`apollo_data`) and a `sources` provenance array. **`Contact` is the identity, full
+stop.** Every person on any document resolves to a `Contact` purely by email
+(`create_or_find_by`, lowercased, tagged with a `meet` source) — including
+`@sanctuary.computer` / `@xxix.co` workspace people. If we don't have a `Contact` for
+someone yet (workspace or external), we just make one; we deliberately do **not**
+reconcile against `AdminUser` or `Contributor`. So `contact_id` is the FK target
+everywhere, and ingesting transcript people broadens `contacts` toward truly everyone.
 
-So `contact_id` is the FK target everywhere. We extend `contacts` with two nullable
-bridge links — `admin_user_id` (Google-authoritative identity) and `contributor_id`
-(rich internal org info: ledgers, assignments, skill trees) — populated by the
-resolver. Because `email` is unique, a person appearing under both
-`@sanctuary.computer` and `@xxix.co` is two `contacts` rows that point at the **same**
-`admin_user_id`, so internal people regroup cleanly via the bridge; external
-multi-email people stay separate rows (the existing `Contact#dedupe!` handles merges).
-Ingesting transcript people broadens `contacts` to truly everyone, tagged with a
-`meet` source. Google auth reuses the service-account domain-wide delegation in
-`lib/stacks/calendar.rb` / `team.rb`.
+A consequence we accept: with no cross-domain reconciliation, a workspace person seen
+under both `@sanctuary.computer` and `@xxix.co` is two `contacts` rows; the existing
+`Contact#dedupe!` handles merges, and it can be revisited later. Internal org info from
+`Contributor` (ledgers, assignments, skill trees) is joinable later by email if the
+intelligence layer wants it — not part of resolution now. Google auth reuses the
+service-account domain-wide delegation in `lib/stacks/calendar.rb` / `team.rb`.
 
 ## Goals
 
-- A **source-agnostic vector store**: `documents` → `document_versions` → `chunks`,
+- A **source-agnostic vector store**: `documents` → `chunks`,
   with a versioned `embeddings` side-table, full-text, and facets (`source`,
-  `occurred_at`, people).
+  `occurred_at`, contacts).
 - A **connector / ETL framework**: a common interface (`extract → normalize → chunk
   → embed → load`) with incremental sync watermarks, so adding a source is one
   connector and never touches search. Each connector decides what to *promote*
@@ -77,12 +74,12 @@ Ingesting transcript people broadens `contacts` to truly everyone, tagged with a
   (keyword/semantic/hybrid), `source`-filterable, with per-client scoped tokens and
   audit logging.
 - The **Meet connector** as source #1: org-wide transcript capture, bounded backfill
-  + ongoing, full speaker/participant fidelity, display-name → person resolution.
+  + ongoing, full speaker/participant fidelity, display-name → contact resolution.
 - A generalized **exclusion layer** walling sensitive material (1:1s, reviews, comp,
   HR) off from the agent across any source.
-- **Identity resolution** so people on any document resolve to a `Contact` (linked to
-  `AdminUser`/`Contributor` when internal) and cross-cutting "everything involving
-  person X" works.
+- **Identity resolution** so everyone on any document resolves to a `Contact` (by
+  email, created if missing) and cross-cutting "everything involving this contact"
+  works.
 - **Provenance-ready chunks**: stable chunk spans so the later `evidence` layer can
   cite exact quotes.
 
@@ -113,7 +110,7 @@ Ingesting transcript people broadens `contacts` to truly everyone, tagged with a
 | History (Meet) | Bounded backfill (default 90 days, configurable) + ongoing. |
 | Source mechanism (Meet) | **Hybrid**: Meet REST API for ongoing (rich), Drive sweep for backfill. |
 | Sensitive access | **Fully walled off** — stored for humans (ActiveAdmin only), never chunked, embedded, or returned by MCP. |
-| People | Canonical FK is the existing `contacts` table ("everyone we know", email-unique, Apollo-enriched), extended with nullable `admin_user_id`/`contributor_id` bridge links. Resolve email → `Contact` (+ cross-domain `AdminUser` bridge); display-name fuzziness + leftovers go to the `mentions` queue; guests kept, never dropped. |
+| People | Canonical FK is the existing `contacts` table ("everyone we know", email-unique, Apollo-enriched). Resolve email → `Contact` (`create_or_find_by`, make one if missing — workspace or external); **no** AdminUser/Contributor reconciliation. Display-name fuzziness + leftovers go to the `mentions` queue; nobody dropped. |
 | Job infra | Existing SystemTask-wrapped rake tasks via Heroku Scheduler; embed inline, retry next run. |
 | Tenancy | Internal single-tenant. |
 | MCP impl | Official `mcp` Ruby gem, Streamable HTTP at `/mcp`, run stateless if >1 web dyno. |
@@ -127,8 +124,8 @@ Ingesting transcript people broadens `contacts` to truly everyone, tagged with a
                 └───────────────────▲─────────────────────┘
                                     │ queries (hybrid: vector ⋈ tsvector ⋈ SQL)
                 ┌───────────────────┴─────────────────────┐
-   Generic core │ documents · document_versions · chunks ·  │
-                │ mentions · document_people · embeddings · │
+   Generic core │ documents · chunks · mentions ·          │
+                │ document_contacts · embeddings ·          │
                 │ source_syncs                              │
                 └───────────────────▲─────────────────────┘
                                     │ load (upsert/chunk/embed/resolve)
@@ -149,7 +146,7 @@ Ingesting transcript people broadens `contacts` to truly everyone, tagged with a
 
 ```
 lib/stacks/etl/
-  connector.rb        # base: extract→classify→version→chunk→embed→resolve + watermark
+  connector.rb        # base: extract→classify→chunk→embed→resolve + watermark
   chunker.rb          # source-agnostic chunking (~512 tokens, overlap, stable spans)
   embedder.rb         # Voyage AI wrapper (swappable provider/model) → embeddings table
   mention_resolver.rb # raw display-name/handle/email → Contact (+ confidence/queue)
@@ -158,12 +155,13 @@ lib/stacks/etl/
     connector.rb · auth.rb · meet_api_source.rb · drive_source.rb · classifier.rb
 
 app/models/
-  document.rb · document_version.rb · chunk.rb · mention.rb · document_person.rb
+  document.rb · chunk.rb · mention.rb · document_contact.rb
   embedding.rb · source_sync.rb
   meeting.rb · meeting_participant.rb · meeting_transcript_segment.rb
 
 app/services/mcp/     # read-only MCP server (mcp gem, Streamable HTTP)
-app/admin/            # documents.rb, meetings.rb, mentions.rb — browse/audit/resolve
+app/admin/            # MCP menu → ETL subpages: meetings, documents, chunks,
+                      #   mentions (resolve queue), source_syncs — browse/audit/debug
 lib/tasks/etl.rake    # per-source backfill + ongoing sync (SystemTask-wrapped)
 ```
 
@@ -180,16 +178,17 @@ ActiveRecord integration via the `neighbor` gem.
 `Meeting`), `title`, `url`, `occurred_at`, `excluded` enum
 (`not_excluded`/`auto_excluded`/`manually_excluded`/`manually_included`),
 `excluded_reason` enum (`none`/`one_on_one`/`performance_review`/`compensation`/`hr`/
-`offboarding`/`pip`/`title_keyword`/`manual`), `excluded_by`, `raw_metadata` jsonb.
+`offboarding`/`pip`/`title_keyword`/`manual`), `excluded_by`, `content_hash`
+(idempotent skip when an unchanged document is re-fetched), `raw_metadata` jsonb.
 
-**`document_versions`** — each fetched version (so changing docs keep history; Notion
-later relies on this; immutable Meet transcripts get one). `document_id`,
-`version` (incrementing), `content_hash` (idempotent skip if unchanged), `fetched_at`,
-`raw` payload. **Chunks belong to a version**, so re-fetches don't clobber provenance.
+(No `document_versions` table: Meet transcripts are immutable, so a document has one
+content state. A re-fetch with a changed `content_hash` simply replaces the document's
+chunks. Per-fetch version history is added when the first *mutable* source — e.g.
+Notion — lands; the chunk spans below already make that a clean addition.)
 
-**`chunks`** — the retrieval/provenance unit. `document_version_id`, `position`,
-`content`, `start_offset`/`end_offset` (stable span within the version for later
-`evidence` citation), `speaker_name` + `speaker_mention_id` (Meet), `occurred_at` and
+**`chunks`** — the retrieval/provenance unit. `document_id`, `position`,
+`content`, `start_offset`/`end_offset` (stable span within the document for later
+`evidence` citation), `speaker_name` + `speaker_contact_id` (Meet), `occurred_at` and
 `source` (denormalized for fast facet filtering), `tsvector` (GIN-indexed). **No
 embedding column** — embeddings live in the side-table. Created only for
 corpus-eligible documents.
@@ -201,19 +200,20 @@ corpus-eligible documents.
 and run two models side by side. (voyage-3 = 1024 dims, comfortably under HNSW's
 2000-dim cap; a >2000-dim model would use `halfvec` — noted, not needed now.)
 
-**`contacts`** (existing — extended) — the canonical person spine and FK target for
+**`contacts`** (existing — extended) — the canonical identity and FK target for
 everyone. Already: `email` (unique), `sources` array, `apollo_id`/`apollo_data`,
-`metadata` jsonb. **Added by this spec:** `display_name` (Meet gives names, not IDs),
-`admin_user_id` (nullable bridge → Google identity), `contributor_id` (nullable bridge
-→ internal org info). External/unknown people are a `Contact` with both bridges null.
+`metadata` jsonb. **Added by this spec:** `display_name` (Meet gives names, not IDs).
+Everyone — workspace or external — is just a `Contact`, created on first sighting; no
+links to `AdminUser`/`Contributor`.
 
-**`mentions`** — raw mention → canonical contact. `chunk_id` (or `document_id`),
-`raw_text` (display name / handle / email as it appeared), `contact_id` (nullable),
+**`mentions`** — raw mention → canonical contact (resolution record + queue).
+`chunk_id`, `raw_text` (display name / handle / email as it appeared),
+`contact_id` (nullable),
 `confidence`, `status` (`resolved`/`unresolved`/`ambiguous`). The **unresolved-mention
 queue** is how "Drew said he'd do it" stops silently dropping when a transcript only
 gives a display name. Reviewed/corrected in ActiveAdmin.
 
-**`document_people`** — clean document↔contact facet for search filters.
+**`document_contacts`** — clean document↔contact facet for search filters.
 `document_id`, `contact_id` (nullable), `email`, `name`, `role`
 (`participant`/`speaker`/…). Populated from resolved mentions + connector participants.
 
@@ -244,22 +244,22 @@ generic pipeline; a connector implements **extraction, its exclusion policy, and
 it promotes**:
 
 - `#extract(since:)` → yields normalized documents: `{ external_id, title, url,
-  occurred_at, content_hash, people:[{email,name,role}], content_segments,
+  occurred_at, content_hash, contacts:[{email,name,role}], content_segments,
   raw_metadata, build_source_record: -> { … } }`.
 - `#exclusion_for(normalized)` → `[excluded, excluded_reason]` (default `not_excluded`).
 
 Per document, inside a transaction:
 
-1. Upsert `documents` by `[source, external_id]`; create a new `document_version`
-   only if `content_hash` changed (else skip).
+1. Upsert `documents` by `[source, external_id]`; if `content_hash` is unchanged,
+   skip; if changed, replace the document's chunks.
 2. Build/refresh the rich source record (e.g. `Meeting` + segments + participants).
-3. **Resolve people** → `mentions` (+ `document_people`, segment/participant
+3. **Resolve contacts** → `mentions` (+ `document_contacts`, segment/participant
    `contact_id`) via `MentionResolver`: email → `Contact` (`create_or_find_by`,
-   tagging the `meet` source), bridging `admin_user_id`/`contributor_id` through the
-   `AdminUser` cross-domain matcher; unresolved names land in the queue, never dropped.
+   tagging the `meet` source, created if missing); display-name-only speakers resolved
+   fuzzily against the meeting's participants; unresolved names land in the queue.
 4. Run `exclusion_for` (unless human-locked: `manually_excluded`/`manually_included`
    are never overwritten).
-5. For corpus-eligible documents only: chunk the new version → `chunks`, then **embed
+5. For corpus-eligible documents only: chunk the document → `chunks`, then **embed
    inline** → `embeddings`. A failed embedding leaves the chunk unembedded and
    retryable next run.
 6. Advance the `source_syncs` watermark; record stats on the `SystemTask`.
@@ -308,7 +308,7 @@ The **Meet classifier** sets initial state on new meetings: 1:1
   instructions (prompt-injection surface in both directions).
 - Tools (over the generic core, every one restricted to corpus-eligible documents):
   - `search(query, mode: keyword|semantic|hybrid, filters)` — `filters`: `source`,
-    `person`, `date_range`. Hybrid = full-text rank ⋈ vector similarity over
+    `contact`, `date_range`. Hybrid = full-text rank ⋈ vector similarity over
     `embeddings`. Returns chunks with document context.
   - `list_documents(filters)` · `get_document(id)` (renders source-specific detail —
     for Meet, ordered speaker segments) · `list_sources()` (ingested sources +
@@ -319,24 +319,38 @@ moment it loads** — no per-source MCP work.
 
 ## Identity resolution
 
-Every person resolves to a `Contact` (the spine). Resolution:
+Everyone resolves to a `Contact` (the spine):
 
-1. `email` → `Contact` via the unique-email index (`create_or_find_by`, lowercased,
-   adding a `meet` source tag).
-2. Bridge to internal identity: `email` → `AdminUser` via the established cross-domain
-   uid matching (`AdminUser.find_or_create_by_g3d_uid!`, reconciling
-   `@sanctuary.computer` / `@xxix.co`), then `Contributor` via
-   `admin_user.forecast_person.contributor`; store both as the `contacts` bridge
-   links. This is also what regroups the two domain-variant `contacts` rows onto one
-   internal person.
-3. Meet transcripts often give **display names, not IDs/emails**, so `MentionResolver`
-   does fuzzy display-name → `Contact` matching (scoped to the meeting's known
-   participants first) with a confidence score, routing low/no confidence into the
-   unresolved-mention queue.
+1. **Has an email** (Meet API participants): `email` → `Contact` via the unique-email
+   index (`create_or_find_by`, lowercased, `meet` source tag). Created if missing —
+   workspace or external alike, with no `AdminUser`/`Contributor` reconciliation.
+2. **Display name only** (common in transcript entries): `MentionResolver` does fuzzy
+   display-name → `Contact` matching, scoped first to the meeting's known participants,
+   with a confidence score; low/no confidence routes to the unresolved-mention queue
+   for human resolution in ActiveAdmin.
 
-Unresolved external people are retained as `contacts` with null bridges, never
-dropped. (The target schema's `person_identities` — GitHub/Figma/Twist handles —
-arrives with those sources; `contacts` + bridges cover the email-shaped sources now.)
+Nobody is dropped. (The target schema's `person_identities` — GitHub/Figma/Twist
+handles — arrives with those sources; email is the only key the current sources need.)
+
+## Admin UI (ActiveAdmin)
+
+A new **top-level `MCP` menu** in ActiveAdmin, with an **`ETL` subpage**, so the whole
+pipeline is inspectable visually for debugging:
+
+- **Meetings** — every ingested meeting: title, organizer, time, participant count,
+  `meet_source`, `excluded`/`excluded_reason`, and drill-down to its transcript
+  segments (speaker-attributed) and derived chunks. The place to eyeball "did this
+  meeting come in correctly."
+- **Documents** — the generic `documents` rows with `source`, `occurred_at`,
+  `excluded` state, chunk/embedding counts; filterable by source and exclusion.
+- **Chunks** — content + span + which `embeddings` (model) exist, to verify
+  chunking/embedding.
+- **Mentions** — the **unresolved-mention queue**: raw display-names awaiting a
+  `Contact`, with a one-click resolve/assign action.
+- **Source syncs** — per-source watermark, last run, status, stats (the run log).
+
+Reclassification (exclude / `manually_included`) happens here too; it is also the only
+surface that can read **excluded** transcripts (never exposed via MCP).
 
 ## Governance & consent
 
@@ -369,18 +383,18 @@ may take or leave these):
 
 ## Testing
 
-- Core: idempotent upsert (re-ingest no-dupes; unchanged `content_hash` makes no new
-  version; new content makes a new version; excluded docs get no chunks/embeddings);
+- Core: idempotent upsert (re-ingest no-dupes; unchanged `content_hash` skips;
+  changed content replaces chunks; excluded docs get no chunks/embeddings);
   embeddings side-table uniqueness per `(owner, model)`; model swap leaves old vectors.
-- People/mentions: cross-domain `AdminUser` match; display-name fuzzy resolution;
-  low-confidence routes to the unresolved queue; guest retained.
+- Contacts/mentions: email → `Contact` create/find (made if missing); display-name
+  fuzzy resolution; low-confidence routes to the unresolved queue; nobody dropped.
 - ETL framework: watermark advance/resume; exclusion-policy precedence (auto vs human
   locks).
 - Meet connector: normalization from fixture Meet-API and Drive-Doc payloads;
   classifier rules (1:1 by count, each title family); both sources reconcile to one
   meeting.
 - Search: keyword, semantic, hybrid each exclude walled-off documents and honour
-  `source`/`person`/`date` filters.
+  `source`/`contact`/`date` filters.
 - MCP: each tool refuses excluded content; auth required; calls audit-logged;
   `list_sources` freshness.
 
@@ -389,19 +403,18 @@ may take or leave these):
 The full institutional-memory design is 16 tables in five layers; **bold = built in
 this foundation spec**, the rest belong to the later intelligence spec:
 
-- **Identity:** **`contacts`** (= existing "everyone we know" table, the spine,
-  extended with `admin_user_id`/`contributor_id` bridges), `person_identities` (later,
-  for non-email handles).
+- **Identity:** **`contacts`** (= existing "everyone we know" table, the spine, the FK
+  target for everyone), `person_identities` (later, for non-email handles).
 - Org structure: `projects`, `milestones` (synced from Notion).
-- **Raw substrate:** **`documents`**, **`document_versions`**, **`chunks`**,
-  **`mentions`** (+ **`document_people`**, **`source_syncs`** as our additions).
+- **Raw substrate:** **`documents`**, **`chunks`**,
+  **`mentions`** (+ **`document_contacts`**, **`source_syncs`** as our additions).
 - Extracted objects: `decisions`, `commitments`, `tasks`, `opportunities`.
 - Cross-cutting spine: `evidence`, `events` (append-only bitemporal), `links` (typed
   edges / knowledge graph), **`embeddings`** (built now, polymorphic so objects embed
   later). Plus views: `v_open_commitments`, `v_overdue_commitments`,
   `v_project_health`, `v_recent_decisions`, `v_live_opportunities`.
 
-The foundation's chunk spans, polymorphic embeddings, versioned documents, and mention
+The foundation's chunk spans, polymorphic embeddings, and mention
 resolution exist specifically so the intelligence layer slots on top without rework.
 
 ## Open items for the implementation plan
@@ -415,3 +428,6 @@ resolution exist specifically so the intelligence layer slots on top without rew
 - Decide chunking parameters (size/overlap) and per-segment vs across-segment chunking
   for Meet.
 - Confirm `mcp` gem Streamable-HTTP statelessness given the prod dyno count.
+- Scope `stacks:sync_contacts` (Apollo) so the flood of new `meet`-sourced contacts
+  isn't all pushed to Apollo — likely scope Apollo enrichment to its existing
+  mailing-list sources, leaving `meet`-only contacts un-enriched.
