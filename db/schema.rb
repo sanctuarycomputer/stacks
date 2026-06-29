@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_06_28_000005) do
+ActiveRecord::Schema.define(version: 2026_06_28_000006) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -244,6 +244,19 @@ ActiveRecord::Schema.define(version: 2026_06_28_000005) do
     t.string "deel_id", null: false
     t.jsonb "data", null: false
     t.index ["deel_id"], name: "index_deel_people_on_deel_id", unique: true
+  end
+
+  create_table "document_contacts", force: :cascade do |t|
+    t.bigint "document_id", null: false
+    t.bigint "contact_id"
+    t.string "email"
+    t.string "name"
+    t.string "role"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["contact_id"], name: "index_document_contacts_on_contact_id"
+    t.index ["document_id", "contact_id", "role"], name: "index_document_contacts_unique", unique: true
+    t.index ["document_id"], name: "index_document_contacts_on_document_id"
   end
 
   create_table "documents", force: :cascade do |t|
@@ -1278,6 +1291,8 @@ ActiveRecord::Schema.define(version: 2026_06_28_000005) do
   add_foreign_key "contributor_qbo_vendors", "qbo_vendors"
   add_foreign_key "deel_invoice_adjustments", "deel_contracts", primary_key: "deel_id"
   add_foreign_key "deel_invoice_adjustments", "ledgers"
+  add_foreign_key "document_contacts", "contacts"
+  add_foreign_key "document_contacts", "documents"
   add_foreign_key "enterprise_admins", "admin_users"
   add_foreign_key "enterprise_admins", "enterprises"
   add_foreign_key "enterprise_forecast_clients", "enterprises"
