@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_06_28_000007) do
+ActiveRecord::Schema.define(version: 2026_06_28_000008) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -495,6 +495,51 @@ ActiveRecord::Schema.define(version: 2026_06_28_000007) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.index ["studio_id"], name: "index_mailing_lists_on_studio_id"
+  end
+
+  create_table "meeting_participants", force: :cascade do |t|
+    t.bigint "meeting_id", null: false
+    t.string "name"
+    t.string "email"
+    t.bigint "contact_id"
+    t.datetime "join_at"
+    t.datetime "leave_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["contact_id"], name: "index_meeting_participants_on_contact_id"
+    t.index ["meeting_id"], name: "index_meeting_participants_on_meeting_id"
+  end
+
+  create_table "meeting_transcript_segments", force: :cascade do |t|
+    t.bigint "meeting_id", null: false
+    t.string "speaker_name"
+    t.string "speaker_email"
+    t.bigint "speaker_contact_id"
+    t.datetime "started_at"
+    t.datetime "ended_at"
+    t.integer "position", null: false
+    t.text "text", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["meeting_id", "position"], name: "index_meeting_transcript_segments_on_meeting_id_and_position", unique: true
+    t.index ["meeting_id"], name: "index_meeting_transcript_segments_on_meeting_id"
+    t.index ["speaker_contact_id"], name: "index_meeting_transcript_segments_on_speaker_contact_id"
+  end
+
+  create_table "meetings", force: :cascade do |t|
+    t.string "meet_conference_record_id"
+    t.string "drive_transcript_doc_id"
+    t.integer "meet_source", default: 0, null: false
+    t.string "title"
+    t.string "organizer_email"
+    t.datetime "started_at"
+    t.datetime "ended_at"
+    t.integer "participant_count"
+    t.jsonb "raw_metadata", default: {}, null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["drive_transcript_doc_id"], name: "index_meetings_on_drive_transcript_doc_id", unique: true, where: "(drive_transcript_doc_id IS NOT NULL)"
+    t.index ["meet_conference_record_id"], name: "index_meetings_on_meet_conference_record_id", unique: true, where: "(meet_conference_record_id IS NOT NULL)"
   end
 
   create_table "mentions", force: :cascade do |t|
@@ -1321,6 +1366,10 @@ ActiveRecord::Schema.define(version: 2026_06_28_000007) do
   add_foreign_key "ledgers", "enterprises"
   add_foreign_key "mailing_list_subscribers", "mailing_lists"
   add_foreign_key "mailing_lists", "studios"
+  add_foreign_key "meeting_participants", "contacts"
+  add_foreign_key "meeting_participants", "meetings"
+  add_foreign_key "meeting_transcript_segments", "contacts", column: "speaker_contact_id"
+  add_foreign_key "meeting_transcript_segments", "meetings"
   add_foreign_key "mentions", "chunks"
   add_foreign_key "mentions", "contacts"
   add_foreign_key "misc_payments", "contributors"
