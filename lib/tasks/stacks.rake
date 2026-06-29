@@ -93,6 +93,23 @@ namespace :stacks do
         Sentry.capture_exception(e) if defined?(Sentry)
       end
       Rails.logger.info("[stacks:daily_enterprise_tasks] Materialized #{materialized} recurring ledger adjustment(s)")
+
+      # Opportunistic QBO-bound migration: as the accountant pays bills, voids
+      # entries, or syncs more vendor data over time, legacy ledgers gradually
+      # become eligible. Flip them automatically on the daily pass — each row
+      # is gated by Ledgers::QboBoundMigrationCheck#ready? so this only flips
+      # ledgers whose Stacks/QBO totals already agree (or are trivially zero).
+      # Per-row errors are isolated.
+      flipped = 0
+      Ledger.legacy.find_each do |l|
+        next unless Ledgers::QboBoundMigrationCheck.call(l).ready?
+        l.update!(mode: :qbo_bound)
+        flipped += 1
+      rescue => e
+        Rails.logger.error("[stacks:daily_enterprise_tasks] Ledger ##{l.id} auto-flip failed: #{e.class}: #{e.message}")
+        Sentry.capture_exception(e) if defined?(Sentry)
+      end
+      Rails.logger.info("[stacks:daily_enterprise_tasks] Auto-flipped #{flipped} legacy ledger(s) to qbo_bound")
     rescue => e
       system_task.mark_as_error(e)
     else

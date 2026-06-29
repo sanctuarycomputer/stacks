@@ -40,9 +40,9 @@ ActiveAdmin.register Ledger do
         resource.update!(mode: :qbo_bound)
         redirect_to admin_ledger_path(resource), notice: "Migrated to QBO-bound."
       rescue ActiveRecord::RecordInvalid => e
-        # qbo_bound_requires_qbo_payment_method blocks the flip for Deel-only
-        # ledgers — trivial-empty ones still get marked `ready?`. Friendly
-        # alert beats a 500.
+        # Belt-and-suspenders: surface validation failures as a clean flash
+        # instead of a 500. No specific validation currently blocks this path,
+        # but future cross-field invariants might.
         redirect_to admin_ledger_path(resource), alert: "Cannot migrate: #{e.record.errors.full_messages.join(", ")}."
       end
     elsif result.qbo_vendor_missing?
@@ -66,137 +66,174 @@ ActiveAdmin.register Ledger do
     if resource.legacy?
       panel "Migrate to QBO-bound" do
         result = Ledgers::QboBoundMigrationCheck.call(resource)
+        tol = Ledgers::QboBoundMigrationCheck::TOLERANCE
+        open_bills_total = result.open_qbo_bills.sum { |b| b.amount.to_f }.round(2)
+        neg_ca_total = result.removed_neg_cas.sum { |ca| ca.amount.to_f.abs }.round(2)
+        unsynced_total = result.unsynced_total.to_f.round(2)
 
+        # ====================================================================
+        # ACCOUNTANT-FACING ACTION PANEL — leads with WHAT TO DO, in plain
+        # English. Engineer-facing diagnostics live below.
+        # ====================================================================
         div do
-          h4 "QBO match check"
-          if result.qbo_vendor_missing?
-            para strong("No QBO vendor mapping for this contributor on #{resource.enterprise.name}.")
-            para "Set up the vendor mapping before migrating — we can't compare against QBO without it."
+          h4 "What needs to happen"
+
+          if result.qbo_match?
+            para style: "padding: 0.75em; background: #ddf4dd; border-left: 3px solid #2a8d2a;" do
+              strong("Ready to migrate. ")
+              text_node "Stacks and QBO agree this contributor is owed #{number_to_currency(result.stacks_open_total)}. Click the button below to flip the ledger over."
+            end
+
+          elsif result.qbo_vendor_missing?
+            para style: "padding: 0.75em; background: #fde2e2; border-left: 3px solid #c00;" do
+              strong("Set up a QBO vendor for this contributor on #{resource.enterprise.name}. ")
+              text_node "Without a vendor mapping in QBO we can't compare Stacks's balance against QBO's vendor AP. Go to the contributor's admin page → 'QBO Vendor Mappings' → add the right vendor on #{resource.enterprise.name}, then return here and re-check."
+            end
+
+          elsif result.qbo_diff.nil?
+            para style: "padding: 0.75em; background: #fde2e2; border-left: 3px solid #c00;" do
+              strong("QBO vendor balance is missing or unreadable. ")
+              text_node "Stacks couldn't parse data['balance'] on the QBO vendor record. Click 'Refresh QBO vendor data' below — if the problem persists, open the vendor in QBO and confirm the record is healthy."
+            end
+
           else
-            para "Stacks (proposed qbo_bound) open total: #{number_to_currency(result.stacks_open_total)} = balance #{number_to_currency(result.proposed_balance)} + unsettled #{number_to_currency(result.proposed_unsettled)}"
-            para "QBO vendor AP balance:                 #{number_to_currency(result.qbo_vendor_balance)}"
-            if result.qbo_match?
-              para strong("Match. Safe to migrate — qbo_bound will mirror QBO one-to-one.")
-            else
-              if result.qbo_diff.nil?
-                para style: "padding: 0.5em; background: #fde2e2; border-left: 3px solid #c00;" do
-                  strong("Can't compare — QBO vendor balance is missing or unparseable. ")
-                  text_node "The QBO vendor record exists but `data['balance']` isn't a number. Run 'Refresh QBO vendor data' below, or verify the vendor in QBO."
-                end
-              else
-                para strong("Does NOT match. Diff: #{number_to_currency(result.qbo_diff)} (Stacks − QBO).")
+            # We have a numeric diff. Figure out the most actionable explanation.
+            #
+            # Pattern 1: Open QBO bills explain the diff, and Stacks-side
+            #   negative CAs roughly match those bills. This is the "contributor
+            #   was paid via Deel (or otherwise), bills still open in QBO" case.
+            # Pattern 2: Open QBO bills explain the diff, no matching CAs.
+            #   Bills are genuinely outstanding (need paying) OR vendor cache
+            #   is stale.
+            # Pattern 3: Unsynced Stacks rows explain the diff. Push them.
+            # Pattern 4: True drift — Stacks shows more owed than QBO with no
+            #   open bills to explain it. Vendor credit / Expense-to-AP / etc.
+            # Pattern 5: QBO shows more than Stacks. Unknown bill on the QBO side.
 
-                unsynced_explains_all = result.qbo_diff > 0 &&
-                                        result.unsynced_total > 0 &&
-                                        (result.qbo_diff - result.unsynced_total).abs < Ledgers::QboBoundMigrationCheck::TOLERANCE
-                unsynced_explains_some = result.qbo_diff > 0 &&
-                                         result.unsynced_total > 0 &&
-                                         !unsynced_explains_all
+            open_bills_match_diff   = result.qbo_diff > 0 && open_bills_total > 0 &&
+                                      (result.qbo_diff - open_bills_total).abs < tol
+            neg_cas_match_bills     = open_bills_total > 0 && neg_ca_total > 0 &&
+                                      (open_bills_total - neg_ca_total).abs < tol
+            unsynced_explains_all   = result.qbo_diff > 0 && unsynced_total > 0 &&
+                                      (result.qbo_diff - unsynced_total).abs < tol
+            unsynced_explains_some  = result.qbo_diff > 0 && unsynced_total > 0 &&
+                                      !unsynced_explains_all
 
-                if unsynced_explains_all
-                  para style: "padding: 0.5em; background: #fff8db; border-left: 3px solid #c69b00;" do
-                    strong("Unsynced rows fully explain the diff. ")
-                    text_node "#{result.unsynced_hosts.size} Stacks row(s) totaling #{number_to_currency(result.unsynced_total)} haven't been pushed to QBO yet. Sync them (list below), then re-check — no genuine drift."
-                  end
-                elsif unsynced_explains_some
-                  remaining = (result.qbo_diff - result.unsynced_total).round(2)
-                  para style: "padding: 0.5em; background: #fff8db; border-left: 3px solid #c69b00;" do
-                    if remaining > 0
-                      strong("Partially explained by unsynced rows. ")
-                      text_node "#{result.unsynced_hosts.size} unsynced row(s) account for #{number_to_currency(result.unsynced_total)} of the diff. Remaining #{number_to_currency(remaining)} is genuine drift (Expense-to-AP, vendor credit, or external QBO entry)."
-                    else
-                      # Unsynced rows OVER-explain the diff. Negative "drift" is
-                      # nonsense — surface the real implication: one of the
-                      # unsynced rows is a duplicate or shouldn't exist.
-                      strong("Unsynced rows over-explain the diff. ")
-                      text_node "#{result.unsynced_hosts.size} unsynced row(s) total #{number_to_currency(result.unsynced_total)}, but the QBO diff is only #{number_to_currency(result.qbo_diff)} — #{number_to_currency(remaining.abs)} more in Stacks-side rows than QBO is short. Likely one of the unsynced rows is a duplicate or shouldn't exist; review the list below before syncing."
-                    end
-                  end
-                elsif result.qbo_diff > 0
-                  para style: "padding: 0.5em; background: #fde2e2; border-left: 3px solid #c00;" do
-                    strong("Genuine drift — Stacks shows MORE owed than QBO. ")
-                    text_node "No unsynced rows on this ledger. Likely cause: an Expense-to-AP or vendor credit in QBO that reduces AP, which Stacks can't see. Reconcile in QBO first (add the missing offset in Stacks, or verify the QBO entry is correct)."
-                  end
-                else
-                  para style: "padding: 0.5em; background: #fde2e2; border-left: 3px solid #c00;" do
-                    strong("Genuine drift — QBO shows MORE owed than Stacks. ")
-                    text_node "Likely cause: an open Bill in QBO that Stacks doesn't know about (host without qbo_bill_id, or a Bill created outside Stacks). Sync the missing Bill or verify the QBO entry."
-                  end
+            who_link = link_to(resource.contributor.forecast_person&.email || "Contributor ##{resource.contributor_id}",
+                               admin_contributor_path(resource.contributor))
+
+            if open_bills_match_diff && neg_cas_match_bills
+              # Pattern 1 — Deel-reconciliation pattern
+              para style: "padding: 0.75em; background: #fff8db; border-left: 3px solid #c69b00;" do
+                strong("Action: mark #{pluralize(result.open_qbo_bills.size, 'open QBO bill')} as Paid in QuickBooks. ")
+                text_node "Stacks shows #{number_to_currency(open_bills_total)} of work that was already settled outside QuickBooks — there #{result.removed_neg_cas.size == 1 ? 'is' : 'are'} #{pluralize(result.removed_neg_cas.size, 'matching deduction')} on the Stacks side (listed below) totaling #{number_to_currency(neg_ca_total)}, which typically means the contributor was paid via Deel."
+              end
+              div style: "padding: 0.5em 0.75em; background: #fffdf3; border-left: 3px solid #c69b00; margin-top: -0.4em;" do
+                para strong("Step-by-step:")
+                ol style: "margin-top: 0;" do
+                  li "In QuickBooks, open each of the bills listed below and match it against the Deel bank withdrawal (or whatever transfer paid the contributor)."
+                  li "Once all #{result.open_qbo_bills.size} #{result.open_qbo_bills.size == 1 ? 'bill is' : 'bills are'} marked Paid, come back to this page and click 'Re-check'."
+                  li "The ledger will then be ready to migrate."
                 end
               end
 
-              div style: "margin-top: 0.5em;" do
-                button_to "Refresh QBO vendor data",
-                          refresh_qbo_vendor_admin_ledger_path(resource),
-                          method: :post,
-                          data: { confirm: "Fetch all vendors for #{resource.enterprise.name} from QBO? Takes a few seconds." }
-                para style: "font-size: 0.85em; opacity: 0.7;" do
-                  text_node "Refreshes the cached vendor balance. Use if you just synced a new bill to QBO and the diff matches a known Stacks-side amount."
+            elsif open_bills_match_diff
+              # Pattern 2 — open bills explain but no offset
+              para style: "padding: 0.75em; background: #fff8db; border-left: 3px solid #c69b00;" do
+                strong("Action: either pay #{pluralize(result.open_qbo_bills.size, 'open QBO bill')} (#{number_to_currency(open_bills_total)}), or refresh the cached vendor balance. ")
+                text_node "The diff is exactly the total of bills currently open in QuickBooks against this vendor. Either Finance hasn't paid them yet (pay them in QBO or match a bank transaction), or the cached QBO vendor balance on Stacks is stale and the bills are already paid (use 'Refresh QBO vendor data' below)."
+              end
+
+            elsif unsynced_explains_all
+              para style: "padding: 0.75em; background: #fff8db; border-left: 3px solid #c69b00;" do
+                strong("Action: sync #{pluralize(result.unsynced_hosts.size, 'Stacks row')} to QBO. ")
+                text_node "#{result.unsynced_hosts.size} payable row(s) totaling #{number_to_currency(unsynced_total)} haven't been pushed to QBO yet. Use the per-row 'Sync to QBO' actions on the Money page, or run the daily sync — then re-check here."
+              end
+
+            elsif unsynced_explains_some
+              remaining = (result.qbo_diff - unsynced_total).round(2)
+              para style: "padding: 0.75em; background: #fff8db; border-left: 3px solid #c69b00;" do
+                if remaining > 0
+                  strong("Partially explained by unsynced rows. ")
+                  text_node "#{pluralize(result.unsynced_hosts.size, 'unsynced row')} accounts for #{number_to_currency(unsynced_total)} of the #{number_to_currency(result.qbo_diff)} diff. The remaining #{number_to_currency(remaining)} is unexplained — likely a vendor credit or Expense-to-AP entry in QBO that Stacks can't see. Sync the rows first, then investigate the remainder."
+                else
+                  strong("Unsynced rows over-explain the diff. ")
+                  text_node "#{pluralize(result.unsynced_hosts.size, 'unsynced row')} totals #{number_to_currency(unsynced_total)}, but the QBO diff is only #{number_to_currency(result.qbo_diff)}. Likely one of the unsynced rows is a duplicate or shouldn't exist — review the list below before syncing."
                 end
+              end
+
+            elsif result.qbo_diff > 0
+              # Pattern 4 — true drift, Stacks > QBO, nothing explains it
+              para style: "padding: 0.75em; background: #fde2e2; border-left: 3px solid #c00;" do
+                strong("Stacks shows #{number_to_currency(result.qbo_diff)} more owed than QuickBooks. ")
+                text_node "There are no open QBO bills or unsynced Stacks rows that could account for the gap. Most likely there's a vendor credit or Expense-to-AP entry in QBO that Stacks doesn't know about (it reduces the vendor's AP). Look up "
+                text_node who_link
+                text_node " in QuickBooks → review the vendor's AP history for entries Stacks isn't tracking."
+              end
+
+            else
+              # Pattern 5 — QBO > Stacks
+              para style: "padding: 0.75em; background: #fde2e2; border-left: 3px solid #c00;" do
+                strong("QuickBooks shows #{number_to_currency(result.qbo_diff.abs)} more owed than Stacks. ")
+                text_node "Most likely there's a bill in QBO that Stacks doesn't know about — created manually in QBO, or attached to a host whose qbo_bill_id was nulled. Look up "
+                text_node who_link
+                text_node " in QuickBooks → find the extra bill(s) → either delete them in QBO if they're spurious, or create a matching Stacks record."
+              end
+            end
+
+            # Always offer the vendor-refresh button below the action.
+            div style: "margin-top: 0.75em;" do
+              button_to "Refresh QBO vendor data",
+                        refresh_qbo_vendor_admin_ledger_path(resource),
+                        method: :post,
+                        data: { confirm: "Fetch all vendors for #{resource.enterprise.name} from QBO? Takes a few seconds." }
+              para style: "font-size: 0.85em; opacity: 0.7;" do
+                text_node "Pulls the latest vendor AP balance from QBO. Use this after marking bills Paid or if you suspect Stacks's cached value is stale."
               end
             end
           end
         end
 
+        # ====================================================================
+        # NUMBERS — compact summary for the engineer/auditor
+        # ====================================================================
+        unless result.qbo_vendor_missing?
+          div style: "margin-top: 1em; padding-top: 0.5em; border-top: 1px solid #ddd; font-size: 0.9em; opacity: 0.85;" do
+            h4 "Numbers"
+            para "Stacks (proposed qbo_bound) open total: #{number_to_currency(result.stacks_open_total)} = balance #{number_to_currency(result.proposed_balance)} + unsettled #{number_to_currency(result.proposed_unsettled)}"
+            para "QBO vendor AP balance: #{number_to_currency(result.qbo_vendor_balance)}"
+            para "Diff (Stacks − QBO): #{number_to_currency(result.qbo_diff)}" unless result.qbo_match? || result.qbo_diff.nil?
+          end
+        end
+
         if result.ready?
-          div do
+          div style: "margin-top: 1em;" do
             button_to "Migrate to QBO-bound", migrate_to_qbo_bound_admin_ledger_path(resource), method: :post, data: { confirm: "Flip this ledger to qbo_bound? Stacks total and QBO balance match — this is safe." }
           end
         else
-          div do
-            h4 "Diagnostic — legacy vs qbo_bound (independent of QBO check)"
-            para "Current (legacy):    balance #{number_to_currency(result.current_balance)}   unsettled #{number_to_currency(result.current_unsettled)}"
-            para "Proposed (qbo_bound):  balance #{number_to_currency(result.proposed_balance)}   unsettled #{number_to_currency(result.proposed_unsettled)}"
-            para "Δ balance #{number_to_currency(result.balance_delta)}, Δ unsettled #{number_to_currency(result.unsettled_delta)}"
-          end
-
-          neg_ca_sum = result.removed_neg_cas.sum { |ca| ca.amount.to_f }.round(2)
-          dia_sum    = result.removed_dias.sum    { |d|  d.amount.to_f }.round(2)
-          paid_sum   = result.dropped_paid_hosts.sum { |b| b.amount.to_f }.round(2)
-
-          if result.removed_neg_cas.any? || result.removed_dias.any? || result.dropped_paid_hosts.any?
-            div do
-              h4 "Items behaving differently under qbo_bound"
-
-              if result.removed_neg_cas.any?
-                para strong("Negative CAs ignored as audit-only: #{number_to_currency(neg_ca_sum)} (+#{number_to_currency(neg_ca_sum.abs)} to Δ)")
-                ul do
-                  result.removed_neg_cas.first(15).each do |ca|
-                    li "CA ##{ca.id} — #{number_to_currency(ca.amount.to_f)}    #{ca.description.to_s.truncate(70)}"
+          # Open QBO bills FIRST — these are what the accountant acts on. Each
+          # has a deep link into QBO.
+          if result.open_qbo_bills.any?
+            div style: "margin-top: 1em;" do
+              h4 "Open QBO bills for this contributor — total #{number_to_currency(open_bills_total)}"
+              para "Each link opens the bill in QuickBooks. Mark them Paid (or match against a bank withdrawal) to clear them from the AP."
+              ul do
+                result.open_qbo_bills.first(20).each do |b|
+                  li do
+                    text_node "#{b.host.class.name} ##{b.host.id} — #{number_to_currency(b.amount.to_f)} — "
+                    link_to "Open bill in QuickBooks ↗", b.qbo_bill.qbo_url, target: "_blank", rel: "noopener"
                   end
-                  li "… and #{result.removed_neg_cas.size - 15} more" if result.removed_neg_cas.size > 15
                 end
-              end
-
-              if result.removed_dias.any?
-                para strong("DIAs ignored as audit-only: #{number_to_currency(dia_sum)} (+#{number_to_currency(dia_sum.abs)} to Δ)")
-                ul do
-                  result.removed_dias.first(15).each do |d|
-                    li "DIA ##{d.id} — #{number_to_currency(d.amount.to_f)}    #{d.description.to_s.truncate(70)}"
-                  end
-                  li "… and #{result.removed_dias.size - 15} more" if result.removed_dias.size > 15
-                end
-              end
-
-              if result.dropped_paid_hosts.any?
-                para strong("Paid QBO bills dropping out: #{number_to_currency(paid_sum)} (−#{number_to_currency(paid_sum.abs)} to Δ)")
-                ul do
-                  result.dropped_paid_hosts.first(15).each do |b|
-                    li do
-                      text_node "#{b.host.class.name} ##{b.host.id} — #{number_to_currency(b.amount.to_f)} — "
-                      link_to "View in QBO ↗", b.qbo_bill.qbo_url, target: "_blank", rel: "noopener"
-                    end
-                  end
-                  li "… and #{result.dropped_paid_hosts.size - 15} more" if result.dropped_paid_hosts.size > 15
-                end
+                li "… and #{result.open_qbo_bills.size - 20} more" if result.open_qbo_bills.size > 20
               end
             end
           end
 
+          # Stacks-side rows that haven't reached QBO yet — operator action.
           if result.unsynced_hosts.any?
-            div do
-              h4 "Unsynced rows (no QBO bill yet) — total #{number_to_currency(result.unsynced_total)}"
-              para "These Stacks rows would sync to QBO as bills but haven't been pushed yet. They inflate Stacks open total above QBO vendor balance."
+            div style: "margin-top: 1em;" do
+              h4 "Stacks rows not yet synced to QBO — total #{number_to_currency(result.unsynced_total)}"
+              para "These payable rows in Stacks haven't been pushed to QBO as bills yet. They make Stacks's total look bigger than QuickBooks's."
               ul do
                 result.unsynced_hosts.first(20).each do |u|
                   li do
@@ -211,24 +248,65 @@ ActiveAdmin.register Ledger do
             end
           end
 
-          if result.open_qbo_bills.any?
-            div do
-              h4 "Open QBO bills on this ledger"
-              para "Marking one Paid in QBO turns it into a dropped paid host and reduces Stacks open total by its amount."
-              ul do
-                result.open_qbo_bills.first(20).each do |b|
-                  li do
-                    text_node "#{b.host.class.name} ##{b.host.id} — #{number_to_currency(b.amount.to_f)} — "
-                    link_to "Pay in QBO ↗", b.qbo_bill.qbo_url, target: "_blank", rel: "noopener"
+          # Stacks bookkeeping that doesn't count under qbo_bound — usually
+          # the offset that matches the open QBO bills above.
+          if result.removed_neg_cas.any? || result.removed_dias.any?
+            div style: "margin-top: 1em;" do
+              h4 "Stacks-side payment records (don't count toward QBO-bound balance)"
+              para "These are Stacks-side bookkeeping entries that mark money as already paid. Under QBO-bound, QuickBooks's bill status is the source of truth, so these don't affect the balance — they're shown here so you can match them to the QBO bills above."
+
+              if result.removed_neg_cas.any?
+                neg_ca_sum = result.removed_neg_cas.sum { |ca| ca.amount.to_f }.round(2)
+                para strong("Negative adjustments: #{number_to_currency(neg_ca_sum)} total")
+                ul do
+                  result.removed_neg_cas.first(15).each do |ca|
+                    li "CA ##{ca.id} — #{number_to_currency(ca.amount.to_f)}    #{ca.description.to_s.truncate(70)}"
                   end
+                  li "… and #{result.removed_neg_cas.size - 15} more" if result.removed_neg_cas.size > 15
                 end
-                li "… and #{result.open_qbo_bills.size - 20} more" if result.open_qbo_bills.size > 20
+              end
+
+              if result.removed_dias.any?
+                dia_sum = result.removed_dias.sum { |d| d.amount.to_f }.round(2)
+                para strong("Deel invoice adjustments: #{number_to_currency(dia_sum)} total")
+                ul do
+                  result.removed_dias.first(15).each do |d|
+                    li "DIA ##{d.id} — #{number_to_currency(d.amount.to_f)}    #{d.description.to_s.truncate(70)}"
+                  end
+                  li "… and #{result.removed_dias.size - 15} more" if result.removed_dias.size > 15
+                end
               end
             end
           end
 
-          div do
+          # Bills marked Paid in QBO that no longer count.
+          if result.dropped_paid_hosts.any?
+            paid_sum = result.dropped_paid_hosts.sum { |b| b.amount.to_f }.round(2)
+            div style: "margin-top: 1em;" do
+              h4 "QBO bills already Paid — total #{number_to_currency(paid_sum)}"
+              para "Listed for reference. These are settled in QuickBooks and don't affect the migration."
+              ul do
+                result.dropped_paid_hosts.first(15).each do |b|
+                  li do
+                    text_node "#{b.host.class.name} ##{b.host.id} — #{number_to_currency(b.amount.to_f)} — "
+                    link_to "View in QuickBooks ↗", b.qbo_bill.qbo_url, target: "_blank", rel: "noopener"
+                  end
+                end
+                li "… and #{result.dropped_paid_hosts.size - 15} more" if result.dropped_paid_hosts.size > 15
+              end
+            end
+          end
+
+          div style: "margin-top: 1em;" do
             button_to "Re-check", admin_ledger_path(resource), method: :get
+          end
+
+          # Engineer-facing diagnostic — pushed to the bottom.
+          div style: "margin-top: 1em; padding-top: 0.5em; border-top: 1px solid #ddd; font-size: 0.85em; opacity: 0.7;" do
+            h4 "Technical details"
+            para "Current (legacy):    balance #{number_to_currency(result.current_balance)}   unsettled #{number_to_currency(result.current_unsettled)}"
+            para "Proposed (qbo_bound):  balance #{number_to_currency(result.proposed_balance)}   unsettled #{number_to_currency(result.proposed_unsettled)}"
+            para "Δ balance #{number_to_currency(result.balance_delta)}, Δ unsettled #{number_to_currency(result.unsettled_delta)}"
           end
         end
       end
