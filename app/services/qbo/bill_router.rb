@@ -283,7 +283,13 @@ module Qbo
 
     def enterprise_gl_map
       key = ENTERPRISE_KEY_BY_NAME[enterprise.name]
-      raise "Qbo::BillRouter: unknown enterprise #{enterprise.name.inspect}" if key.nil?
+      if key.nil?
+        # The per-record sync rake task and the Money admin's per-row 'Sync to
+        # QBO' both rescue this individually — one unknown enterprise won't
+        # abort the whole batch. The message must be self-documenting so the
+        # operator can add the mapping without spelunking through this file.
+        raise "Qbo::BillRouter: enterprise #{enterprise.name.inspect} is not registered. Add it to ENTERPRISE_KEY_BY_NAME and CONCEPT_GL_BY_ENTERPRISE in app/services/qbo/bill_router.rb."
+      end
       CONCEPT_GL_BY_ENTERPRISE.fetch(key)
     end
 

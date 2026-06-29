@@ -20,6 +20,15 @@ ActiveAdmin.register Reimbursement do
   end
 
   member_action :sync_qbo_bill, method: :post do
+    # Refuse to push an unaccepted Reimbursement to QBO — SyncsAsQboBill's
+    # internal guards don't check payable?/accepted?, so without this gate a
+    # pending Reimbursement would land in vendor AP and Finance could pay it
+    # before any operator approval.
+    unless resource.accepted?
+      redirect_to admin_ledger_reimbursement_path(resource.ledger, resource),
+        alert: "Cannot sync: Reimbursement isn't accepted yet. Accept it first, then sync."
+      return
+    end
     resource.sync_qbo_bill!
     resource.reload
     if resource.qbo_bill_id.present?

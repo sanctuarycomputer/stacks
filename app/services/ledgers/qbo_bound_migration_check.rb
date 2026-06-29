@@ -77,7 +77,12 @@ module Ledgers
         qbo_vendor_missing?: vendor.nil?,
         ready?: trivial || (!vendor.nil? && qbo_match),
         removed_neg_cas: legacy_visible.select { |li| li.is_a?(ContributorAdjustment) && li.amount.to_f < 0 },
-        removed_dias: legacy_visible.select { |li| li.is_a?(DeelInvoiceAdjustment) && li.payable? },
+        # ALL DIAs are dropped as audit-only under qbo_bound — not just payable
+        # ones. Collecting only payable rows under-explains the Δ unsettled
+        # contribution from rejected/cancelled Deel adjustments (signed_amount
+        # = -amount lowers legacy `unsettled` but isn't present under qbo_bound),
+        # leaving the operator unable to account for it from the diagnostic.
+        removed_dias: legacy_visible.select { |li| li.is_a?(DeelInvoiceAdjustment) },
         dropped_paid_hosts: collect_dropped_paid_hosts(legacy_visible),
         open_qbo_bills: collect_open_qbo_bills(legacy_visible),
         unsynced_hosts: unsynced,

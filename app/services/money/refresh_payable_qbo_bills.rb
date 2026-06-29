@@ -10,9 +10,14 @@ module Money
   class RefreshPayableQboBills
     def self.call(qbo_account:)
       failures = []
+      # Share a Qbo::AccountsCache across every per-row sync — without it each
+      # sync_qbo_bill! re-fetches the entire chart of accounts (paginated multi-
+      # request) and blows past QBO's ~500 req/min rate limit on any non-trivial
+      # tab. One shared cache = one fetch per account.
+      cache = Qbo::AccountsCache.new
       Money::PayableQboBills.call(qbo_account: qbo_account).each do |row|
         begin
-          row.host.sync_qbo_bill!
+          row.host.sync_qbo_bill!(accounts_cache: cache)
         rescue => e
           failures << [row.host, e]
           Rails.logger.error("[refresh_payable_qbo_bills] qbo_account=#{qbo_account.id} host=#{row.host.class.name}##{row.host.id}: #{e.class}: #{e.message}")

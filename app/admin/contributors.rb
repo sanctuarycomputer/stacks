@@ -122,38 +122,45 @@ ActiveAdmin.register Contributor do
       )
     end
 
-    if was_accepted
-      r.update!(
-        accepted_by: nil,
-        accepted_at: nil
-      )
-    else
-      r.update!(
-        accepted_by: current_admin_user,
-        accepted_at: DateTime.now
-      )
-    end
-
-    # Mirror the new Stacks-side state into QBO:
-    #   accept   → sync_qbo_bill! (idempotent: creates if missing, updates if present)
-    #   un-accept → detach_and_destroy_qbo_bill (deletes the unpaid bill so it
-    #              doesn't linger as orphan vendor AP).
+    # ON UN-ACCEPT: destroy the QBO bill FIRST, then commit the Stacks state
+    # change. If we did it in the other order, a transient QBO failure would
+    # leave Stacks "unaccepted" with an orphan bill in QBO — and the bill
+    # would no longer appear on the Payable QBO Bills page (it filters by
+    # payable?) so the operator has no way to retry.
+    # ON ACCEPT: commit Stacks state first, THEN sync. If sync fails the
+    # operator can retry from the Payable QBO Bills page (the row is now
+    # payable and shows there).
     qbo_error = nil
-    begin
-      if was_accepted
+    if was_accepted
+      begin
         r.detach_and_destroy_qbo_bill
-      else
-        r.sync_qbo_bill!
+      rescue => e
+        qbo_error = e
+        Rails.logger.error("[reimbursement_unaccept] QBO destroy failed for ##{r.id}: #{e.class}: #{e.message}")
       end
-    rescue => e
-      qbo_error = e
-      Rails.logger.error("[reimbursement_accept] QBO sync failed for ##{r.id}: #{e.class}: #{e.message}")
+
+      if qbo_error
+        return redirect_to(
+          admin_contributor_path(params[:id], format: :html),
+          alert: "Un-accept aborted — QBO bill did NOT destroy: #{qbo_error.message}. Stacks state unchanged; retry once QBO is reachable.",
+        )
+      end
+
+      r.update!(accepted_by: nil, accepted_at: nil)
+    else
+      r.update!(accepted_by: current_admin_user, accepted_at: DateTime.now)
+      begin
+        r.sync_qbo_bill!
+      rescue => e
+        qbo_error = e
+        Rails.logger.error("[reimbursement_accept] QBO sync failed for ##{r.id}: #{e.class}: #{e.message}")
+      end
     end
 
     if qbo_error
       return redirect_to(
         admin_contributor_path(params[:id], format: :html),
-        alert: "Acceptance toggled, but QBO bill did NOT sync: #{qbo_error.message}. Retry from the Payable QBO Bills page.",
+        alert: "Accepted, but QBO bill did NOT sync: #{qbo_error.message}. Retry from the Payable QBO Bills page.",
       )
     end
 

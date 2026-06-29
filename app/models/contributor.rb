@@ -262,6 +262,10 @@ class Contributor < ApplicationRecord
     contributor_payouts.each { |cp| cp.sync_qbo_bill!(accounts_cache: cache) }
     contributor_adjustments.each { |adj| adj.sync_qbo_bill!(accounts_cache: cache) }
     profit_shares.each { |ps| ps.sync_qbo_bill!(accounts_cache: cache) }
+    # Reimbursement is a SyncsAsQboBill host too — without this it would be
+    # silently skipped by any caller that expects "sync everything for this
+    # contributor" (admin button, daily cron rake task).
+    reimbursements.each { |r| r.sync_qbo_bill!(accounts_cache: cache) }
   end
 
   def display_name

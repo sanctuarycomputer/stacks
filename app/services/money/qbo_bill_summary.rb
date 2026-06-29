@@ -16,6 +16,7 @@ module Money
       ContributorPayout => { invoice_tracker: :contributor_payouts },
       ProfitShare       => { periodic_report: :profit_shares },
       PayStub           => { pay_cycle: :pay_stubs },
+      Reimbursement     => :accepted_by,
       # NOTE: do NOT preload ContributorAdjustment.qbo_invoice. The belongs_to
       # uses primary_key: "qbo_id" without scoping by qbo_account_id, and AR's
       # preloader can match a same-qbo_id QboInvoice from a DIFFERENT account

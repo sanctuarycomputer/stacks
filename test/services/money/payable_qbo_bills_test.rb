@@ -13,7 +13,10 @@ class Money::PayableQboBillsTest < ActiveSupport::TestCase
   end
 
   test "returns rows only for hosts on qbo-enabled ledgers" do
-    @ledger.update!(payment_methods: %w[deel])  # NOT qbo
+    # Switching off 'qbo' also forces mode back to legacy (the validation
+    # rejects qbo_bound + non-qbo payment_methods; otherwise DIAs would be
+    # silently filtered as audit-only and balance would over-report).
+    @ledger.update!(payment_methods: %w[deel], mode: :legacy)
     open_bill = QboBill.create!(qbo_account: @qa, qbo_id: "b1", qbo_vendor_id: @vendor.qbo_id, data: { "balance" => "100" })
     ca = ContributorAdjustment.create!(ledger: @ledger, qbo_account: @qa, amount: 100, effective_on: Date.current, qbo_bill_id: open_bill.qbo_id, description: "x")
     ContributorAdjustment.any_instance.stubs(:payable?).returns(true)

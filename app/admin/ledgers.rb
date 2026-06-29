@@ -94,8 +94,16 @@ ActiveAdmin.register Ledger do
                 elsif unsynced_explains_some
                   remaining = (result.qbo_diff - result.unsynced_total).round(2)
                   para style: "padding: 0.5em; background: #fff8db; border-left: 3px solid #c69b00;" do
-                    strong("Partially explained by unsynced rows. ")
-                    text_node "#{result.unsynced_hosts.size} unsynced row(s) account for #{number_to_currency(result.unsynced_total)} of the diff. Remaining #{number_to_currency(remaining)} is genuine drift (Expense-to-AP, vendor credit, or external QBO entry)."
+                    if remaining > 0
+                      strong("Partially explained by unsynced rows. ")
+                      text_node "#{result.unsynced_hosts.size} unsynced row(s) account for #{number_to_currency(result.unsynced_total)} of the diff. Remaining #{number_to_currency(remaining)} is genuine drift (Expense-to-AP, vendor credit, or external QBO entry)."
+                    else
+                      # Unsynced rows OVER-explain the diff. Negative "drift" is
+                      # nonsense — surface the real implication: one of the
+                      # unsynced rows is a duplicate or shouldn't exist.
+                      strong("Unsynced rows over-explain the diff. ")
+                      text_node "#{result.unsynced_hosts.size} unsynced row(s) total #{number_to_currency(result.unsynced_total)}, but the QBO diff is only #{number_to_currency(result.qbo_diff)} — #{number_to_currency(remaining.abs)} more in Stacks-side rows than QBO is short. Likely one of the unsynced rows is a duplicate or shouldn't exist; review the list below before syncing."
+                    end
                   end
                 elsif result.qbo_diff > 0
                   para style: "padding: 0.5em; background: #fde2e2; border-left: 3px solid #c00;" do

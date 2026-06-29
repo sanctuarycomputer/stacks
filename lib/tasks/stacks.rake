@@ -416,6 +416,7 @@ namespace :stacks do
         c.contributor_payouts.each(&sync_record)
         c.contributor_adjustments.each(&sync_record)
         c.profit_shares.each(&sync_record)
+        c.reimbursements.where.not(accepted_at: nil).each(&sync_record)
       end
       Trueup.find_each(&sync_record)
       PayStub.where.not(accepted_at: nil).find_each(&sync_record)
