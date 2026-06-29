@@ -17,4 +17,12 @@ class Mcp::ToolsTest < ActiveSupport::TestCase
     resp = Mcp::GetDocumentTool.call(id: @excluded.id, server_context: {})
     assert_includes resp.content.first[:text].downcase, 'not found'
   end
+
+  test 'list_documents omits excluded documents (privacy wall)' do
+    resp = Mcp::ListDocumentsTool.call(server_context: {})
+    payload = JSON.parse(resp.content.first[:text])
+    ids = payload.map { |d| d['id'] }
+    assert_includes ids, @doc.id
+    refute_includes ids, @excluded.id
+  end
 end

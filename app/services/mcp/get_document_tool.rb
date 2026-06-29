@@ -6,7 +6,7 @@ module Mcp
 
     def self.call(id:, server_context:)
       doc = Document.corpus_eligible.find_by(id: id)
-      return MCP::Tool::Response.new([{ type: 'text', text: 'Document not found' }]) unless doc
+      return MCP::Tool::Response.new([{ type: 'text', text: { error: 'Document not found' }.to_json }]) unless doc
 
       meeting = doc.source_record
       segments = meeting.is_a?(Meeting) ? meeting.segments.order(:position).map { |s| { speaker: s.speaker_name, text: s.text } } : []
