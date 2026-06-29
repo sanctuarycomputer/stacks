@@ -146,6 +146,7 @@ GEM
       websocket-driver (>= 0.6, < 0.8)
     ffi (1.17.3)
     ffi (1.17.3-arm64-darwin)
+    ffi (1.17.3-x86_64-linux-gnu)
     ffi-compiler (1.0.1)
       ffi (>= 1.0.0)
       rake
@@ -298,6 +299,8 @@ GEM
       racc (~> 1.4)
     nokogiri (1.18.8-arm64-darwin)
       racc (~> 1.4)
+    nokogiri (1.18.8-x86_64-linux-gnu)
+      racc (~> 1.4)
     noticed (1.5.9)
       http (>= 4.0.0)
       rails (>= 5.2.0)
@@ -328,6 +331,8 @@ GEM
     onnxruntime (0.9.4)
       ffi
     onnxruntime (0.9.4-arm64-darwin)
+      ffi
+    onnxruntime (0.9.4-x86_64-linux)
       ffi
     order_as_specified (1.7)
       activerecord (>= 5.0.0)
@@ -469,6 +474,7 @@ GEM
     tokenizers (0.5.5)
       rb_sys
     tokenizers (0.5.5-arm64-darwin)
+    tokenizers (0.5.5-x86_64-linux)
     trailblazer-option (0.1.2)
     turbolinks (5.2.1)
       turbolinks-source (~> 5.2)
@@ -516,6 +522,7 @@ GEM
 PLATFORMS
   arm64-darwin
   ruby
+  x86_64-linux
 
 DEPENDENCIES
   active_model_serializers (~> 0.10.2)
