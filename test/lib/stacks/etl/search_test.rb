@@ -17,12 +17,17 @@ class Stacks::Etl::SearchTest < ActiveSupport::TestCase
     refute_includes ids, @miss.id
   end
 
-  test 'semantic mode embeds the query and ranks by neighbor distance' do
+  test 'semantic mode embeds the query, ranks by neighbor distance, and walls off excluded chunks' do
     Embedding.create!(owner: @hit, model: Stacks::Etl::Embedder::MODEL, embedding: Array.new(1024) { 0.0 }.tap { |v| v[0] = 1.0 })
     Embedding.create!(owner: @miss, model: Stacks::Etl::Embedder::MODEL, embedding: Array.new(1024) { 0.0 }.tap { |v| v[1] = 1.0 })
+    # The excluded chunk's embedding is IDENTICAL to the query vector — if the corpus
+    # wall leaked in semantic mode it would rank first.
+    Embedding.create!(owner: @excluded, model: Stacks::Etl::Embedder::MODEL, embedding: Array.new(1024) { 0.0 }.tap { |v| v[0] = 1.0 })
     Stacks::Etl::Embedder.expects(:embed).with(['gateway'], input_type: 'query').returns(vectors: [Array.new(1024) { 0.0 }.tap { |v| v[0] = 1.0 }], total_tokens: 1)
 
     results = Stacks::Etl::Search.call(query: 'gateway', mode: :semantic)
+    ids = results.map { |r| r[:chunk].id }
     assert_equal @hit.id, results.first[:chunk].id
+    refute_includes ids, @excluded.id
   end
 end

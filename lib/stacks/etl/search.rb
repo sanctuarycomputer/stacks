@@ -28,9 +28,9 @@ module Stacks
       end
 
       def self.semantic_ids(scope, query, limit)
-        vector = Embedder.embed([query], input_type: 'query')[:vectors].first
         owner_ids = scope.pluck(:id)
         return [] if owner_ids.empty?
+        vector = Embedder.embed([query], input_type: 'query')[:vectors].first
         Embedding.where(model: Embedder::MODEL, owner_type: 'Chunk', owner_id: owner_ids)
                  .nearest_neighbors(:embedding, vector, distance: 'cosine')
                  .limit(limit).map(&:owner_id)
