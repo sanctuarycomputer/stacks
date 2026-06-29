@@ -27,19 +27,15 @@ ActiveAdmin.register DeelInvoiceAdjustment do
     end
 
     def verify_deel_invoice_access!
-      # :new / :create are admin-only (for legacy backfills / corrections).
-      # :index and :show stay available to the owning contributor so they
-      # can audit their existing Deel withdrawals.
-      if [:new, :create].include?(action_name.to_sym)
-        return if current_admin_user.is_admin?
-        redirect_to admin_contributor_path(parent),
-          alert: "Direct Deel withdrawals are admin-only."
-        return
-      end
-
+      # :new / :create / :index / :show all share the same predicate —
+      # `deel_invoice_actions_visible_to?` permits both staff admins AND the
+      # contributor's own linked AdminUser, so a contributor can self-submit
+      # a Deel withdrawal from their own contributor page. Earlier hard-coding
+      # to `is_admin?` here silently broke that self-submit path.
       return if manual_deel_invoice_submission_allowed?(parent)
 
-      redirect_to admin_contributor_path(parent), alert: "That action is not available."
+      redirect_to admin_contributor_path(parent),
+        alert: "That action is not available."
     end
 
     def show

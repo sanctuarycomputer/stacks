@@ -34,18 +34,28 @@ module Money
         relation.find_each do |row|
           next if Ledger.audit_only_under_qbo_bound?(row)
 
+          qb = row.try(:qbo_bill)
+          # Paid bills drop from BOTH buckets — they're settled in QBO and
+          # mustn't appear in either Total Payable or Total Unsettled.
+          # Mirrors Ledger#qbo_bound_open_items (qbo_bill&.paid? → drop).
+          next if qb&.paid?
+
+          # Use qbo_bound_balance_amount so partial-paid bills contribute their
+          # remaining_balance instead of the host's full amount — same rule as
+          # Ledger#qbo_bound_contribution, so per-contributor and per-Money
+          # totals agree on the same money.
+          contribution = row.respond_to?(:qbo_bound_balance_amount) ? row.qbo_bound_balance_amount.to_f : row.amount.to_f
+
           if row.payable?
-            qb = row.try(:qbo_bill)
-            next if qb&.paid?
             payable_rows << Money::PayableQboBills::Row.new(
               host: row,
               ledger: row.ledger,
               contributor: row.ledger.contributor,
               qbo_bill: qb,
-              amount: row.amount.to_f,
+              amount: contribution,
             )
           else
-            unsettled_total += row.amount.to_f
+            unsettled_total += contribution
             unsettled_count += 1
           end
         end

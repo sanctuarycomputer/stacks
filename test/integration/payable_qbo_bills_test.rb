@@ -22,7 +22,10 @@ class PayableQboBillsTest < ActionDispatch::IntegrationTest
   end
 
   test "POST refresh_tab kicks off bulk refresh" do
-    Money::RefreshPayableQboBills.expects(:call).with(qbo_account: instance_of(QboAccount))
+    # Service now returns an array of [host, exception] failure pairs so the
+    # controller can render a single aggregated alert instead of 500ing on
+    # one bad bill. Returning [] = "everything succeeded".
+    Money::RefreshPayableQboBills.expects(:call).with(qbo_account: instance_of(QboAccount)).returns([])
     post admin_money_refresh_tab_path(qbo_account_id: @qa.id)
     assert_response :redirect
   end

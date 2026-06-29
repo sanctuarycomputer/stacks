@@ -107,7 +107,8 @@ ActiveAdmin.register Contributor do
     r = Reimbursement.find(params[:reimbursement_id])
     return unless current_admin_user.is_admin?
 
-    if r.accepted?
+    was_accepted = r.accepted?
+    if was_accepted
       r.update!(
         accepted_by: nil,
         accepted_at: nil
@@ -119,13 +120,27 @@ ActiveAdmin.register Contributor do
       )
     end
 
-    # Keep QBO in sync after either toggle. sync_qbo_bill! is idempotent —
-    # creates if missing, updates the existing bill otherwise. Best-effort:
-    # log + continue on failure; admin can retry via the Payable QBO Bills page.
+    # Mirror the new Stacks-side state into QBO:
+    #   accept   → sync_qbo_bill! (idempotent: creates if missing, updates if present)
+    #   un-accept → detach_and_destroy_qbo_bill (deletes the bill in QBO; otherwise
+    #              the bill would linger as an orphan vendor AP entry)
+    qbo_error = nil
     begin
-      r.sync_qbo_bill!
+      if was_accepted
+        r.detach_and_destroy_qbo_bill
+      else
+        r.sync_qbo_bill!
+      end
     rescue => e
-      Rails.logger.error("[reimbursement_accept] sync_qbo_bill! failed for ##{r.id}: #{e.class}: #{e.message}")
+      qbo_error = e
+      Rails.logger.error("[reimbursement_accept] QBO sync failed for ##{r.id}: #{e.class}: #{e.message}")
+    end
+
+    if qbo_error
+      return redirect_to(
+        admin_contributor_path(params[:id], format: :html),
+        alert: "Acceptance toggled, but QBO bill did NOT sync: #{qbo_error.message}. Retry from the Payable QBO Bills page.",
+      )
     end
 
     return redirect_to(

@@ -4,6 +4,12 @@ class Reimbursement < ApplicationRecord
   include BustsTaskCache
   include SyncsAsQboBill
 
+  # Mirror the destroy chain on every other SyncsAsQboBill host (ContributorPayout,
+  # ContributorAdjustment, ProfitShare, PayStub): when a Reimbursement is
+  # destroyed, clear its qbo_bill_id and tear down the QBO bill so the
+  # upstream vendor AP doesn't keep an orphaned payable.
+  before_destroy :detach_and_destroy_qbo_bill
+
   belongs_to :accepted_by, class_name: 'AdminUser', optional: true
 
   scope :accepted, -> {

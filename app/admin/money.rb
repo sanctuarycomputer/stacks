@@ -32,21 +32,40 @@ ActiveAdmin.register_page "Money" do
   end
 
   page_action :refresh_bill, method: :post do
-    klass = params.require(:host_class).to_s.constantize
-    raise ActionController::BadRequest, "unsupported host class" unless Money::PayableQboBills::HOST_KLASSES.include?(klass)
+    # Guard the host_class lookup BEFORE constantize so an unknown string can't
+    # raise NameError (which would surface as 500 instead of BadRequest).
+    raw_class = params.require(:host_class).to_s
+    raise ActionController::BadRequest, "unsupported host class" unless Money::PayableQboBills::HOST_KLASSES.map(&:name).include?(raw_class)
+    klass = raw_class.constantize
     host = klass.find(params.require(:host_id))
-    host.sync_qbo_bill!
+    begin
+      host.sync_qbo_bill!
+      flash[:notice] = "Synced #{klass.name} ##{host.id}."
+    rescue => e
+      Rails.logger.error("[refresh_bill] qbo_account=#{params[:qbo_account_id]} host=#{klass.name}##{host.id}: #{e.class}: #{e.message}")
+      flash[:alert] = "Sync failed for #{klass.name} ##{host.id}: #{e.message}"
+    end
     redirect_back(fallback_location: admin_money_payable_qbo_bills_path(qbo_account_id: params[:qbo_account_id]))
   end
 
   # Refresh-all: when scoped to a tab, refreshes that account's bills; when on
-  # the "All" tab (no qbo_account_id), refreshes every connected account.
+  # the "All" tab (no qbo_account_id), refreshes every connected account. Per-row
+  # failures inside RefreshPayableQboBills are rescued and returned as an array
+  # so we can surface a single aggregated alert to the admin instead of a 500.
   page_action :refresh_tab, method: :post do
-    if params[:qbo_account_id].present?
-      qa = QboAccount.find(params[:qbo_account_id])
-      Money::RefreshPayableQboBills.call(qbo_account: qa)
+    failures =
+      if params[:qbo_account_id].present?
+        qa = QboAccount.find(params[:qbo_account_id])
+        Money::RefreshPayableQboBills.call(qbo_account: qa)
+      else
+        QboAccount.find_each.flat_map { |qa| Money::RefreshPayableQboBills.call(qbo_account: qa) }
+      end
+
+    if failures.any?
+      preview = failures.first(3).map { |host, e| "#{host.class.name}##{host.id} (#{e.class})" }.join(", ")
+      flash[:alert] = "#{failures.size} bill#{"s" if failures.size != 1} failed to sync — see logs. Examples: #{preview}#{"…" if failures.size > 3}"
     else
-      QboAccount.find_each { |qa| Money::RefreshPayableQboBills.call(qbo_account: qa) }
+      flash[:notice] = "Synced all bills on this view."
     end
     redirect_back(fallback_location: admin_money_payable_qbo_bills_path(qbo_account_id: params[:qbo_account_id]))
   end

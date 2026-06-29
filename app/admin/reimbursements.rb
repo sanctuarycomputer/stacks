@@ -22,6 +22,9 @@ ActiveAdmin.register Reimbursement do
   member_action :sync_qbo_bill, method: :post do
     resource.sync_qbo_bill!
     redirect_to admin_ledger_reimbursement_path(resource.ledger, resource), notice: "Success"
+  rescue => e
+    Rails.logger.error("[reimbursement_sync_qbo_bill] reimbursement=#{resource.id}: #{e.class}: #{e.message}")
+    redirect_to admin_ledger_reimbursement_path(resource.ledger, resource), alert: "Sync failed: #{e.message}"
   end
 
   index download_links: false do

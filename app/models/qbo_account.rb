@@ -254,6 +254,10 @@ class QboAccount < ApplicationRecord
         klass = ContributorAdjustment
       when "PS"
         klass = ProfitShare
+      when "SB"
+        klass = PayStub
+      when "RB"
+        klass = Reimbursement
       when "ContributorPayout", /^Contri/
         klass = ContributorPayout
       when "Trueup"
@@ -261,7 +265,10 @@ class QboAccount < ApplicationRecord
       when "ProfitShare", /^Profit/
         klass = ProfitShare
       else
-        klass = ContributorPayout
+        # Unknown code — skip rather than default to ContributorPayout. The old
+        # default would treat a Reimbursement / PayStub bill (or any future host)
+        # whose host id doesn't match a CP as orphaned and destroy a healthy bill.
+        next
       end
 
       obj = klass.find_by(id: splat[1])
