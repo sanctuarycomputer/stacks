@@ -58,6 +58,13 @@ class Stacks::Etl::MentionResolverTest < ActiveSupport::TestCase
     assert_equal anne.id, Stacks::Etl::MentionResolver.resolve_display_name('Anne-Marie Smith', participants: participants)[:contact].id
   end
 
+  test 'leading-segment match handles unicode en/em dashes, not just ASCII hyphens' do
+    am = Contact.create!(email: 'am@sanctuary.computer', display_name: 'Anne–Marie Smith') # en dash
+    participants = [{ name: 'Anne–Marie Smith', contact: am }]
+    assert_equal am.id, Stacks::Etl::MentionResolver.resolve_display_name('Anne', participants: participants)[:contact].id
+    assert_equal 'unresolved', Stacks::Etl::MentionResolver.resolve_display_name('Marie', participants: participants)[:status]
+  end
+
   test 'a leading first name shared by two participants is ambiguous, not a confident wrong pick' do
     aj = Contact.create!(email: 'aj@sanctuary.computer', display_name: 'Anne Jones')
     am = Contact.create!(email: 'am@sanctuary.computer', display_name: 'Anne-Marie Smith')

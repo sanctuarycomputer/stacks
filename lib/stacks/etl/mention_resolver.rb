@@ -32,9 +32,10 @@ module Stacks
       end
 
       # True if needle_token equals a whitespace token of name, or is that token's leading
-      # hyphen-segment ("anne" matches "anne-marie", but "marie" and "chris" do not).
+      # segment when split on any dash — hyphen or unicode en/em dash ("anne" matches
+      # "anne-marie" / "anne–marie", but "marie" and "chris" do not).
       def self.name_token_matches?(needle_token, name)
-        name.to_s.downcase.split.any? { |t| t == needle_token || t.start_with?("#{needle_token}-") }
+        name.to_s.downcase.split.any? { |t| t == needle_token || t.split(/[-–—]/).first == needle_token }
       end
 
       def self.resolved(contact, confidence)
