@@ -13,11 +13,16 @@ class ContributorAdjustment < ApplicationRecord
   validates :effective_on, presence: true
   # Only block CREATION of new negative CAs on qbo_bound ledgers. Historical
   # negative CAs that pre-date the cutover stay editable (otherwise even fixing
-  # a typo in description fails), and recurring materialization on a legacy-then-
-  # flipped ledger isn't trapped by it.
+  # a typo in description fails). `skip_qbo_bound_negative_check` is a per-
+  # instance bypass that RecurringLedgerAdjustment#materialize! sets so a
+  # legacy-era recurring deduction keeps materializing after the ledger flips —
+  # otherwise the recurring row would silently stop applying.
+  attr_accessor :skip_qbo_bound_negative_check
+
   validate :no_negative_on_qbo_bound_ledger, on: :create
 
   def no_negative_on_qbo_bound_ledger
+    return if skip_qbo_bound_negative_check
     return unless ledger&.qbo_bound? && amount&.negative?
     errors.add(
       :amount,

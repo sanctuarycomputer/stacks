@@ -231,11 +231,17 @@ class QboAccount < ApplicationRecord
     deleted_bills = QboBill.where(qbo_account_id: id).where.not(qbo_id: data.map { |t| t[:qbo_id] })
     deleted_qbo_ids = deleted_bills.pluck(:qbo_id)
     if deleted_qbo_ids.any?
+      # Every SyncsAsQboBill host has to be detached when its remote bill
+      # vanishes — otherwise the host still points at a dead qbo_id, gets
+      # surfaced as "No QBO bill" on the Money page, and a "Sync to QBO" click
+      # creates a duplicate bill in QBO vendor AP. Keep this list aligned with
+      # Money::PayableQboBills::HOST_KLASSES.
       ContributorPayout.with_deleted.where(qbo_bill_id: deleted_qbo_ids).update_all(qbo_bill_id: nil)
       Trueup.with_deleted.where(qbo_bill_id: deleted_qbo_ids).update_all(qbo_bill_id: nil)
       ContributorAdjustment.with_deleted.where(qbo_bill_id: deleted_qbo_ids).update_all(qbo_bill_id: nil)
       ProfitShare.with_deleted.where(qbo_bill_id: deleted_qbo_ids).update_all(qbo_bill_id: nil)
       PayStub.with_deleted.where(qbo_bill_id: deleted_qbo_ids).update_all(qbo_bill_id: nil)
+      Reimbursement.with_deleted.where(qbo_bill_id: deleted_qbo_ids).update_all(qbo_bill_id: nil)
     end
     deleted_bills.delete_all
   end

@@ -48,7 +48,7 @@ ActiveAdmin.register Contributor do
   # write against, so the buttons short-circuit to a JS alert instead.
   LEDGER_REQUIRED_ALERT = "Select the appropriate ledger before you can perform this action.".freeze
 
-  action_item :new_deel_withdrawal, only: :show do
+  action_item :new_deel_withdrawal, only: :show, if: proc { manual_deel_invoice_visible?(resource) } do
     selected_ledger = params[:ledger].presence && resource.ledgers.find_by(id: params[:ledger])
     if selected_ledger&.deel_enabled?
       link_to "New Deel Withdrawal", new_admin_contributor_deel_invoice_adjustment_path(resource, ledger: selected_ledger.id)
@@ -108,6 +108,18 @@ ActiveAdmin.register Contributor do
     return unless current_admin_user.is_admin?
 
     was_accepted = r.accepted?
+
+    # Un-accepting a Reimbursement whose QBO bill is already PAID is destructive:
+    # we'd delete a paid bill in QBO, orphaning the BillPayment in vendor AP.
+    # Refuse — admin has to reconcile in QBO first (void the payment, then come
+    # back here).
+    if was_accepted && r.qbo_bill.present? && r.qbo_bill.paid?
+      return redirect_to(
+        admin_contributor_path(params[:id], format: :html),
+        alert: "Cannot un-accept: this reimbursement's QBO bill is already paid. Void the payment in QBO first, then retry.",
+      )
+    end
+
     if was_accepted
       r.update!(
         accepted_by: nil,
@@ -122,8 +134,8 @@ ActiveAdmin.register Contributor do
 
     # Mirror the new Stacks-side state into QBO:
     #   accept   → sync_qbo_bill! (idempotent: creates if missing, updates if present)
-    #   un-accept → detach_and_destroy_qbo_bill (deletes the bill in QBO; otherwise
-    #              the bill would linger as an orphan vendor AP entry)
+    #   un-accept → detach_and_destroy_qbo_bill (deletes the unpaid bill so it
+    #              doesn't linger as orphan vendor AP).
     qbo_error = nil
     begin
       if was_accepted
@@ -140,6 +152,18 @@ ActiveAdmin.register Contributor do
       return redirect_to(
         admin_contributor_path(params[:id], format: :html),
         alert: "Acceptance toggled, but QBO bill did NOT sync: #{qbo_error.message}. Retry from the Payable QBO Bills page.",
+      )
+    end
+
+    # sync_qbo_bill! silently early-returns nil (no raise) when the contributor
+    # has no QBO vendor mapping for the enterprise, when there's no QBO account,
+    # or when amount is non-positive. Detect the missing-bill post-condition on
+    # accept paths so the admin gets a real warning instead of a green
+    # "Success" flash that hides QBO drift.
+    if !was_accepted && r.reload.qbo_bill_id.nil?
+      return redirect_to(
+        admin_contributor_path(params[:id], format: :html),
+        alert: "Acceptance saved, but no QBO bill was created. Check that the contributor has a QBO vendor mapping on #{r.ledger.enterprise.name}, then 'Sync to QBO' from the Payable QBO Bills tab.",
       )
     end
 

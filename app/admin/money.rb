@@ -3,12 +3,25 @@ ActiveAdmin.register_page "Money" do
 
   controller do
     before_action :authenticate_admin_user!
+    before_action :verify_admin!
 
     # The Money tab IS the payable-QBO-bills screen — there's only one page
     # under this tab. Redirect the bare /admin/money so the nav link lands on
     # the actual content instead of an empty register_page skeleton.
     def index
       redirect_to admin_money_payable_qbo_bills_path
+    end
+
+    private
+
+    # Cross-enterprise AP totals + admin-only sync_qbo_bill! triggers are
+    # staff-only. Without this gate, any logged-in AdminUser (including the
+    # contributor-linked AdminUsers our admin app supports) could load every
+    # enterprise's payable bills and POST refresh actions.
+    def verify_admin!
+      return if current_admin_user&.is_admin?
+      flash[:alert] = "Admins only."
+      redirect_to admin_root_path
     end
   end
 

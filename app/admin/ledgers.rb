@@ -9,6 +9,10 @@ ActiveAdmin.register Ledger do
   permit_params
 
   member_action :refresh_qbo_vendor, method: :post do
+    unless current_admin_user.is_admin?
+      redirect_to admin_ledger_path(resource), alert: "Admins only."
+      return
+    end
     qa = resource.enterprise&.qbo_account
     if qa.nil?
       redirect_to admin_ledger_path(resource), alert: "No QBO account connected for #{resource.enterprise&.name}."
@@ -22,6 +26,10 @@ ActiveAdmin.register Ledger do
   end
 
   member_action :migrate_to_qbo_bound, method: :post do
+    unless current_admin_user.is_admin?
+      redirect_to admin_ledger_path(resource), alert: "Admins only."
+      return
+    end
     unless resource.legacy?
       redirect_to admin_ledger_path(resource), alert: "Already QBO-bound."
       return
@@ -63,35 +71,42 @@ ActiveAdmin.register Ledger do
             if result.qbo_match?
               para strong("Match. Safe to migrate — qbo_bound will mirror QBO one-to-one.")
             else
-              para strong("Does NOT match. Diff: #{number_to_currency(result.qbo_diff)} (Stacks − QBO).")
-
-              unsynced_explains_all = result.qbo_diff > 0 &&
-                                      result.unsynced_total > 0 &&
-                                      (result.qbo_diff - result.unsynced_total).abs < Ledgers::QboBoundMigrationCheck::TOLERANCE
-              unsynced_explains_some = result.qbo_diff > 0 &&
-                                       result.unsynced_total > 0 &&
-                                       !unsynced_explains_all
-
-              if unsynced_explains_all
-                para style: "padding: 0.5em; background: #fff8db; border-left: 3px solid #c69b00;" do
-                  strong("Unsynced rows fully explain the diff. ")
-                  text_node "#{result.unsynced_hosts.size} Stacks row(s) totaling #{number_to_currency(result.unsynced_total)} haven't been pushed to QBO yet. Sync them (list below), then re-check — no genuine drift."
-                end
-              elsif unsynced_explains_some
-                remaining = (result.qbo_diff - result.unsynced_total).round(2)
-                para style: "padding: 0.5em; background: #fff8db; border-left: 3px solid #c69b00;" do
-                  strong("Partially explained by unsynced rows. ")
-                  text_node "#{result.unsynced_hosts.size} unsynced row(s) account for #{number_to_currency(result.unsynced_total)} of the diff. Remaining #{number_to_currency(remaining)} is genuine drift (Expense-to-AP, vendor credit, or external QBO entry)."
-                end
-              elsif result.qbo_diff > 0
+              if result.qbo_diff.nil?
                 para style: "padding: 0.5em; background: #fde2e2; border-left: 3px solid #c00;" do
-                  strong("Genuine drift — Stacks shows MORE owed than QBO. ")
-                  text_node "No unsynced rows on this ledger. Likely cause: an Expense-to-AP or vendor credit in QBO that reduces AP, which Stacks can't see. Reconcile in QBO first (add the missing offset in Stacks, or verify the QBO entry is correct)."
+                  strong("Can't compare — QBO vendor balance is missing or unparseable. ")
+                  text_node "The QBO vendor record exists but `data['balance']` isn't a number. Run 'Refresh QBO vendor data' below, or verify the vendor in QBO."
                 end
               else
-                para style: "padding: 0.5em; background: #fde2e2; border-left: 3px solid #c00;" do
-                  strong("Genuine drift — QBO shows MORE owed than Stacks. ")
-                  text_node "Likely cause: an open Bill in QBO that Stacks doesn't know about (host without qbo_bill_id, or a Bill created outside Stacks). Sync the missing Bill or verify the QBO entry."
+                para strong("Does NOT match. Diff: #{number_to_currency(result.qbo_diff)} (Stacks − QBO).")
+
+                unsynced_explains_all = result.qbo_diff > 0 &&
+                                        result.unsynced_total > 0 &&
+                                        (result.qbo_diff - result.unsynced_total).abs < Ledgers::QboBoundMigrationCheck::TOLERANCE
+                unsynced_explains_some = result.qbo_diff > 0 &&
+                                         result.unsynced_total > 0 &&
+                                         !unsynced_explains_all
+
+                if unsynced_explains_all
+                  para style: "padding: 0.5em; background: #fff8db; border-left: 3px solid #c69b00;" do
+                    strong("Unsynced rows fully explain the diff. ")
+                    text_node "#{result.unsynced_hosts.size} Stacks row(s) totaling #{number_to_currency(result.unsynced_total)} haven't been pushed to QBO yet. Sync them (list below), then re-check — no genuine drift."
+                  end
+                elsif unsynced_explains_some
+                  remaining = (result.qbo_diff - result.unsynced_total).round(2)
+                  para style: "padding: 0.5em; background: #fff8db; border-left: 3px solid #c69b00;" do
+                    strong("Partially explained by unsynced rows. ")
+                    text_node "#{result.unsynced_hosts.size} unsynced row(s) account for #{number_to_currency(result.unsynced_total)} of the diff. Remaining #{number_to_currency(remaining)} is genuine drift (Expense-to-AP, vendor credit, or external QBO entry)."
+                  end
+                elsif result.qbo_diff > 0
+                  para style: "padding: 0.5em; background: #fde2e2; border-left: 3px solid #c00;" do
+                    strong("Genuine drift — Stacks shows MORE owed than QBO. ")
+                    text_node "No unsynced rows on this ledger. Likely cause: an Expense-to-AP or vendor credit in QBO that reduces AP, which Stacks can't see. Reconcile in QBO first (add the missing offset in Stacks, or verify the QBO entry is correct)."
+                  end
+                else
+                  para style: "padding: 0.5em; background: #fde2e2; border-left: 3px solid #c00;" do
+                    strong("Genuine drift — QBO shows MORE owed than Stacks. ")
+                    text_node "Likely cause: an open Bill in QBO that Stacks doesn't know about (host without qbo_bill_id, or a Bill created outside Stacks). Sync the missing Bill or verify the QBO entry."
+                  end
                 end
               end
 

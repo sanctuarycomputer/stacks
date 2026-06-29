@@ -43,7 +43,13 @@ module Ledgers
       stacks_open_total = (new_b + new_u).round(2)
       qa     = ledger.enterprise&.qbo_account
       vendor = qa.present? ? ledger.contributor&.qbo_vendor_for(qa) : nil
-      qbo_vendor_balance = vendor&.data.is_a?(Hash) ? vendor.data["balance"].to_f.round(2) : nil
+      # Only treat the vendor balance as known if it actually parses to a number.
+      # `nil.to_f` and `"foo".to_f` both quietly become 0.0, which would let an
+      # empty Stacks ledger declare a false-positive "match" against a vendor
+      # whose real balance is unknown — silent under-payment when the operator
+      # auto-flips on that. Require a strict numeric string.
+      raw_balance = vendor&.data.is_a?(Hash) ? vendor.data["balance"] : nil
+      qbo_vendor_balance = raw_balance.to_s.match?(/\A-?\d+(\.\d+)?\z/) ? raw_balance.to_f.round(2) : nil
       qbo_diff = qbo_vendor_balance ? (stacks_open_total - qbo_vendor_balance).round(2) : nil
       qbo_match = qbo_diff && qbo_diff.abs < TOLERANCE
 

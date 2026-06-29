@@ -29,13 +29,20 @@ class RecurringLedgerAdjustment < ApplicationRecord
     adjustment = nil
 
     ActiveRecord::Base.transaction do
-      adjustment = ContributorAdjustment.create!(
+      adjustment = ContributorAdjustment.new(
         ledger: ledger,
         amount: amount,
         description: description,
         effective_on: effective_on,
         qbo_account_id: qa&.id,
       )
+      # The recurring row was set up deliberately — bypass the qbo_bound
+      # negative-CA guard so a legacy-era recurring deduction keeps materializing
+      # after the ledger gets flipped to qbo_bound. Without this, the create!
+      # would raise, the transaction would roll back, and next_due_on would never
+      # advance — the recurring deduction silently stops applying forever.
+      adjustment.skip_qbo_bound_negative_check = true
+      adjustment.save!
       update!(
         last_materialized_on: effective_on,
         next_due_on: advance(effective_on),
