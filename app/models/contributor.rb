@@ -264,8 +264,12 @@ class Contributor < ApplicationRecord
     profit_shares.each { |ps| ps.sync_qbo_bill!(accounts_cache: cache) }
     # Reimbursement is a SyncsAsQboBill host too — without this it would be
     # silently skipped by any caller that expects "sync everything for this
-    # contributor" (admin button, daily cron rake task).
-    reimbursements.each { |r| r.sync_qbo_bill!(accounts_cache: cache) }
+    # contributor" (admin button, daily cron rake task). Filter to accepted_at
+    # so a pending reimbursement never gets pushed to QBO vendor AP —
+    # SyncsAsQboBill#sync_qbo_bill! has no payable?/accepted? guard, and the
+    # admin per-resource sync_qbo_bill action explicitly refuses on
+    # `unless resource.accepted?` for the same reason.
+    reimbursements.where.not(accepted_at: nil).each { |r| r.sync_qbo_bill!(accounts_cache: cache) }
   end
 
   def display_name
@@ -281,108 +285,33 @@ class Contributor < ApplicationRecord
     forecast_person&.admin_user == admin_user
   end
 
-  def new_deal_balance(ledger_items = all_items_grouped_by_month(false))
-    ledger_items[:all].reduce({ balance: 0, unsettled: 0 }) do |acc, li|
-      next acc if li.respond_to?(:deleted_at) && li.deleted_at.present?
-
-      if li.is_a?(ContributorPayout)
-        if li.payable?
-          acc[:balance] += li.amount
-        else
-          acc[:unsettled] += li.amount
-        end
-      elsif li.is_a?(Reimbursement)
-        if li.accepted?
-          acc[:balance] += li.amount
-        else
-          acc[:unsettled] += li.amount
-        end
-      elsif li.is_a?(Trueup)
-        acc[:balance] += li.amount
-      elsif li.is_a?(ProfitShare)
-        if li.payable?
-          acc[:balance] += li.amount
-        else
-          acc[:unsettled] += li.amount
-        end
-      elsif li.is_a?(ContributorAdjustment)
-        if li.payable?
-          acc[:balance] += li.amount
-        else
-          acc[:unsettled] += li.amount
-        end
-      elsif li.is_a?(PayStub)
-        if li.payable?
-          acc[:balance] += li.amount
-        else
-          acc[:unsettled] += li.amount
-        end
-      elsif li.is_a?(DeelInvoiceAdjustment)
-        acc[:balance] -= li.amount if li.deducts_balance?
-      end
+  # Sums Ledger#balance / Ledger#unsettled across the contributor's ledgers.
+  # Delegating per-ledger keeps the summary card consistent with the per-ledger
+  # pills in _ledger_tabs (both apply the same legacy-vs-qbo_bound rules per
+  # ledger). Prior implementation used per-class predicates against a flat
+  # items list and ignored qbo_bound — so on a contributor with any qbo_bound
+  # ledger, paid-bills + audit-only rows inflated the summary above what each
+  # ledger pill reported.
+  # The `ledger_items` argument is now unused; kept for caller compatibility.
+  def new_deal_balance(_ledger_items = nil)
+    ledgers.reduce({ balance: 0, unsettled: 0 }) do |acc, l|
+      acc[:balance]   += l.balance.to_f
+      acc[:unsettled] += l.unsettled.to_f
       acc
     end
   end
 
+  # Dashboard widget total — same delegation pattern as new_deal_balance, but
+  # across every Ledger. Each ledger's balance/unsettled already applies its
+  # own legacy-vs-qbo_bound rules (audit-only filter, paid-bill drop,
+  # remaining_balance for partial pays), so the dashboard total stays
+  # consistent with per-contributor and per-ledger surfaces.
   def self.aggregated_new_deal_balance
-    all_contributor_payouts = ContributorPayout.includes(invoice_tracker: :invoice_pass).all
-    all_reimbursements = Reimbursement.all
-    all_trueups = Trueup.all
-    all_profit_shares = ProfitShare.includes(:periodic_report).all
-    all_contributor_adjustments = ContributorAdjustment.all
-    all_deel_invoice_adjustments = DeelInvoiceAdjustment.all
-
-    ledger = all_contributor_payouts.reduce({ balance: 0, unsettled: 0 }) do |acc, cp|
-      next acc if cp.invoice_tracker.invoice_pass.start_of_month > Date.today
-      if cp.payable?
-        acc[:balance] += cp.amount
-      else
-        acc[:unsettled] += cp.amount
-      end
+    Ledger.includes(:contributor, :enterprise).reduce({ balance: 0, unsettled: 0 }) do |acc, l|
+      acc[:balance]   += l.balance.to_f
+      acc[:unsettled] += l.unsettled.to_f
       acc
     end
-
-    ledger = all_reimbursements.reduce(ledger) do |acc, r|
-      next acc if r.created_at > Date.today
-      if r.accepted?
-        acc[:balance] += r.amount
-      else
-        acc[:unsettled] += r.amount
-      end
-      acc
-    end
-
-    ledger = all_trueups.reduce(ledger) do |acc, tu|
-      next acc if tu.payment_date > Date.today
-      acc[:balance] += tu.amount
-      acc
-    end
-
-    ledger = all_profit_shares.reduce(ledger) do |acc, ps|
-      next acc if ps.applied_at > Date.today
-      acc[:balance] += ps.amount
-      acc
-    end
-
-    ledger = all_contributor_adjustments.reduce(ledger) do |acc, adj|
-      next acc if adj.effective_on > Date.today
-      if adj.payable?
-        acc[:balance] += adj.amount
-      else
-        acc[:unsettled] += adj.amount
-      end
-      acc
-    end
-
-    ledger = all_deel_invoice_adjustments.reduce(ledger) do |acc, row|
-      next acc if row.date_submitted > Date.today
-      next acc unless row.deducts_balance?
-
-      acc[:balance] -= row.amount
-      acc
-    end
-
-    ledger
   end
 
   # Cross-enterprise aggregation. `elevated_service` is fundamentally an ALL-ENTERPRISES

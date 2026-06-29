@@ -47,6 +47,7 @@ class StacksTask
     # Ledger issues
     missing_qbo_vendor_for_contributor: "Contributor needs a QBO vendor for this enterprise's ledger",
     legacy_ledger_needs_qbo_migration: "Legacy ledger needs migration to QBO-bound",
+    auto_paused_recurring_on_qbo_bound: "Recurring deduction auto-paused on QBO-bound ledger (would never deduct)",
 
   }.freeze
 
@@ -101,6 +102,7 @@ class StacksTask
     when Stacks::Notion::Lead then subject.try(:page_title).presence || "Notion Lead"
     when PayCycle then "#{subject.enterprise.name} — #{subject.starts_at.to_s(:long)} to #{subject.ends_at.to_s(:long)}"
     when Ledger then "#{subject.contributor.forecast_person&.email || "Contributor ##{subject.contributor_id}"} on #{subject.enterprise.name}"
+    when RecurringLedgerAdjustment then "#{subject.ledger.contributor.forecast_person&.email || "Contributor ##{subject.ledger.contributor_id}"} on #{subject.ledger.enterprise.name} — #{subject.cadence} $#{format("%.2f", subject.amount)}"
     else
       subject.try(:display_name).presence || subject.try(:name).presence || subject.to_s
     end
@@ -128,6 +130,7 @@ class StacksTask
       else
         helpers.edit_admin_contributor_path(subject.contributor)
       end
+    when RecurringLedgerAdjustment then helpers.edit_admin_recurring_ledger_adjustment_path(subject)
     else subject.try(:external_link)
     end
   end

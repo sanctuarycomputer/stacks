@@ -32,10 +32,30 @@ ActiveAdmin.register DeelInvoiceAdjustment do
       # contributor's own linked AdminUser, so a contributor can self-submit
       # a Deel withdrawal from their own contributor page. Earlier hard-coding
       # to `is_admin?` here silently broke that self-submit path.
-      return if manual_deel_invoice_submission_allowed?(parent)
+      unless manual_deel_invoice_submission_allowed?(parent)
+        redirect_to admin_contributor_path(parent), alert: "That action is not available."
+        return
+      end
 
-      redirect_to admin_contributor_path(parent),
-        alert: "That action is not available."
+      # On :new / :create, also enforce that the target ledger has 'deel' in
+      # payment_methods. The UI button is already gated, but a direct POST
+      # (deep link, stale bookmark) could otherwise land a DIA on a qbo_bound
+      # ledger — audit_only_under_qbo_bound? would silently filter it from
+      # both balance and unsettled, so the contributor's recorded Deel
+      # withdrawal never deducts from their Stacks balance.
+      if [:new, :create].include?(action_name.to_sym)
+        target_ledger =
+          if params[:ledger].present?
+            parent.ledgers.find_by(id: params[:ledger])
+          elsif params.dig(:deel_invoice_adjustment, :ledger_id).present?
+            parent.ledgers.find_by(id: params[:deel_invoice_adjustment][:ledger_id])
+          end
+        if target_ledger && !target_ledger.deel_enabled?
+          redirect_to admin_contributor_path(parent),
+            alert: "Deel is not enabled for this ledger's payment methods."
+          return
+        end
+      end
     end
 
     def show

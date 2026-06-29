@@ -252,9 +252,11 @@ class Ledger < ApplicationRecord
   # 'qbo' is unsafe — the qbo_bound balance computation calls
   # audit_only_under_qbo_bound? which drops every DeelInvoiceAdjustment, so a
   # Deel-only ledger in qbo_bound mode silently loses every Deel payment from
-  # its balance.
+  # its balance. (Also catches the payment_methods=[] edge case — `present?`
+  # is false for empty arrays so we can't gate on it.)
   def qbo_bound_requires_qbo_payment_method
-    return unless qbo_bound? && payment_methods.present? && payment_methods.exclude?("qbo")
+    return unless qbo_bound?
+    return if payment_methods.is_a?(Array) && payment_methods.include?("qbo")
     errors.add(:mode, "cannot be qbo_bound on a ledger without 'qbo' in payment_methods (DIA contributions would be filtered as audit-only and never deducted from balance)")
   end
 

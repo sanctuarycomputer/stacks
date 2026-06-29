@@ -279,8 +279,14 @@ class QboAccount < ApplicationRecord
         next if obj.present?
 
         if deleted_obj = klass.with_deleted.find_by(id: splat[1])
+          # Snapshot the bill BEFORE nulling — `deleted_obj.qbo_bill` does a
+          # qbo_id lookup that returns nil after qbo_bill_id is set to nil,
+          # which is why the old `deleted_obj.qbo_bill.destroy! if present?`
+          # never actually fired (the local QboBill row and the remote bill
+          # both stuck around as orphans).
+          bill = deleted_obj.qbo_bill
           deleted_obj.update(qbo_bill_id: nil)
-          deleted_obj.qbo_bill.destroy! if deleted_obj.qbo_bill.present?
+          bill.destroy! if bill.present?
           next
         end
       end
