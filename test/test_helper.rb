@@ -30,6 +30,21 @@ ActiveRecord::Base.connection.execute(<<~SQL)
     EXECUTE FUNCTION nullify_qbo_invoice_id_on_children();
 SQL
 
+# Ensure the content_tsv generated column and GIN index on chunks are present in
+# the test DB. Rails 6.1's schema dumper cannot capture PostgreSQL GENERATED
+# columns or their indexes via raw SQL execute, so they are absent from
+# db/schema.rb and therefore missing after a fresh db:schema:load. We recreate
+# them here idempotently, mirroring the trigger block above.
+ActiveRecord::Base.connection.execute(<<~SQL)
+  ALTER TABLE chunks
+    ADD COLUMN IF NOT EXISTS content_tsv tsvector
+      GENERATED ALWAYS AS (to_tsvector('english', content)) STORED;
+SQL
+ActiveRecord::Base.connection.execute(<<~SQL)
+  CREATE INDEX IF NOT EXISTS index_chunks_on_content_tsv
+    ON chunks USING gin (content_tsv);
+SQL
+
 class ActiveSupport::TestCase
   # Run tests in parallel with specified workers
   parallelize(workers: 1)

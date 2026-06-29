@@ -108,6 +108,10 @@ ActiveRecord::Schema.define(version: 2026_06_28_000003) do
     t.datetime "occurred_at"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    # content_tsv (tsvector GENERATED ALWAYS AS) and its GIN index are intentionally
+    # omitted here: Rails 6.1 dumps generated columns as DEFAULT expressions, which
+    # PostgreSQL rejects on schema:load. They are added idempotently in test_helper.rb
+    # and exist in the development/production DBs via the CreateChunks migration.
     t.index ["document_id", "position"], name: "index_chunks_on_document_id_and_position", unique: true
     t.index ["document_id"], name: "index_chunks_on_document_id"
     t.index ["speaker_contact_id"], name: "index_chunks_on_speaker_contact_id"
