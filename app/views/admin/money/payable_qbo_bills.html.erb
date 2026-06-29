@@ -29,24 +29,35 @@ ledger_item_path = ->(li) {
 }
 %>
 
-<div style="margin-bottom: 20px">
+<%# Payable amount (green) sits top-right; unsettled (orange) sits bottom-right.
+    Same .notifier--balance / .notifier--unsettled pattern the per-contributor
+    ledger Explorer tabs use, so this page reads consistently with that one. %>
+<div style="margin-bottom: 32px;">
+  <% all_payable = @summary_by_account.values.sum { |s| s.payable_rows.sum(&:amount) } %>
+  <% all_unsettled = @summary_by_account.values.sum(&:unsettled_total) %>
   <a onclick='update("qbo_account_id", "");' style="margin-right: 6px">
     <p class="nag pill <%= 'complete' if @active_qa.nil? %>" style="margin-bottom: 0px;margin-right: 6px;position: relative;">
       All
-      <% total_pending = @rows_by_account.values.sum(&:size) %>
-      <% if total_pending > 0 %>
-        <span class="notifier"><%= total_pending %></span>
+      <% if all_payable > 0 %>
+        <span class="notifier--balance"><%= number_to_currency(all_payable, precision: 0) %></span>
+      <% end %>
+      <% if all_unsettled > 0 %>
+        <span class="notifier--unsettled" style="top: auto; bottom: -10px;"><%= number_to_currency(all_unsettled, precision: 0) %></span>
       <% end %>
     </p>
   </a>
   <% @qbo_accounts.each do |qa| %>
     <% selected = @active_qa&.id == qa.id %>
-    <% pending = @rows_by_account[qa].size %>
+    <% payable_total = @summary_by_account[qa].payable_rows.sum(&:amount) %>
+    <% unsettled = @summary_by_account[qa].unsettled_total %>
     <a onclick='update("qbo_account_id", "<%= qa.id %>");' style="margin-right: 6px">
       <p class="nag pill <%= 'complete' if selected %>" style="margin-bottom: 0px;margin-right: 6px;position: relative;">
         <%= qa.enterprise.name %>
-        <% if pending > 0 %>
-          <span class="notifier"><%= pending %></span>
+        <% if payable_total > 0 %>
+          <span class="notifier--balance"><%= number_to_currency(payable_total, precision: 0) %></span>
+        <% end %>
+        <% if unsettled > 0 %>
+          <span class="notifier--unsettled" style="top: auto; bottom: -10px;"><%= number_to_currency(unsettled, precision: 0) %></span>
         <% end %>
       </p>
     </a>
