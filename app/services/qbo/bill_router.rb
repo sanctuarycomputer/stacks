@@ -16,60 +16,63 @@ module Qbo
     FALLBACKABLE_CONCEPTS = %i[subcontractor bonuses commission].freeze
 
     # Stable enterprise key -> concept -> GL code, for every enterprise that
-    # syncs bills (Sanctuary, Index Space, garden3d, USB Club). The known real
-    # codes are Sanctuary's bonuses (5710), commission (6120), and
-    # profit_share_liability (2340). All "____" entries are placeholders pending
-    # confirmation against each enterprise's live chart of accounts. An unfilled
-    # ("____") code never matches a real acct_num, so it falls back or raises —
-    # it can never silently bill the wrong account. Per-studio subcontractor
-    # codes are nested under :subcontractor_by_studio (keyed by Studio#name; an
-    # unlisted studio falls back to that enterprise's :subcontractor_default).
+    # syncs bills (Sanctuary, Index Space, garden3d, USB Club). Values are the
+    # acct_num from each enterprise's live QuickBooks chart of accounts, confirmed
+    # 2026-06-28. An "____" entry is a concept that does not arise for that
+    # enterprise (no such ledger items) and has no matching account — it is
+    # intentionally left unmatched so it raises rather than misroutes if the
+    # situation ever changes. Per-studio subcontractor codes are nested under
+    # :subcontractor_by_studio (keyed by Studio#name; an unlisted studio falls
+    # back to that enterprise's :subcontractor_default).
     CONCEPT_GL_BY_ENTERPRISE = {
       sanctuary: {
-        subcontractor_default:  "____", # Contractors - Client Services
-        marketing:              "____", # Contractors - Marketing Services
-        salaries:               "____", # Facilities Management Salaries
-        bonuses:                "5710",
-        commission:             "6120",
-        profit_share_liability: "2340",
+        subcontractor_default:  "5540", # Contractors - Client Services
+        marketing:              "5440", # Contractors - Marketing Services
+        salaries:               "____", # n/a — no Facilities Mgmt Salaries acct; Sanctuary has no pay stubs
+        bonuses:                "5710", # Bonuses
+        commission:             "6120", # Commissions
+        profit_share_liability: "2340", # Accrued Profit Sharing
         subcontractor_by_studio: {
-          # "Biz Dev"            => "____", # Contractors - Business Development
-          # "Index"              => "____", # Contractors - Community Services
-          # "Marketing"          => "____", # Contractors - Marketing Services
-          # "Operations"         => "____", # Contractors - Admin and Operations
-          # "Reinvestment"       => "____", # Contractors - Reinvestment Services
-          # "Sanctuary Computer" => "____", # Contractors - Development Services
-          # "Seaborne"           => "____", # Contractors - Sustainability Services
-          # "XXIX"               => "____", # Contractors - Brand Design Services
+          "Biz Dev"            => "6110", # Contractors - Business Development
+          "Index"              => "5340", # Contractors - Community Services
+          "Marketing"          => "5440", # Contractors - Marketing Services
+          "Operations"         => "6390", # Contractors - Admin and Operations
+          "Sanctuary Computer" => "5140", # Contractors - Development Services
+          "XXIX"               => "5240", # Contractors - Brand Design Services
+          # "Reinvestment" / "Seaborne": no matching account -> fall back to 5540
         },
       },
       index_space: {
-        subcontractor_default:  "____",
-        marketing:              "____",
-        salaries:               "____",
-        bonuses:                "____",
-        commission:             "____",
-        profit_share_liability: "____",
+        # Index Space routes everything to its 6010 "Facilities Management
+        # Salaries" account as the catch-all (per 2026-06-28 decision).
+        subcontractor_default:  "6010",
+        marketing:              "6010",
+        salaries:               "6010",
+        bonuses:                "6010",
+        commission:             "6010",
+        profit_share_liability: "6010",
         subcontractor_by_studio: {},
       },
       garden3d: {
-        subcontractor_default:  "____",
-        marketing:              "____",
-        salaries:               "____",
-        bonuses:                "____",
-        commission:             "____",
-        profit_share_liability: "____",
-        subcontractor_by_studio: {
-          # "garden3d" => "____", # Total [SC] Subcontractors
-        },
+        # garden3d has no dedicated salaries/contractor accounts; route everything
+        # to its 6100 "Platform Infrastructure" catch-all (per 2026-06-28 decision).
+        subcontractor_default:  "6100",
+        marketing:              "6100",
+        salaries:               "6100",
+        bonuses:                "6100",
+        commission:             "6100",
+        profit_share_liability: "6100",
+        subcontractor_by_studio: {},
       },
       usb_club: {
-        subcontractor_default:  "____",
-        marketing:              "____",
-        salaries:               "____",
-        bonuses:                "____",
-        commission:             "____",
-        profit_share_liability: "____",
+        # USB Club routes everything to its 6100 "Contract labor" catch-all
+        # (per 2026-06-28 decision).
+        subcontractor_default:  "6100",
+        marketing:              "6100",
+        salaries:               "6100",
+        bonuses:                "6100",
+        commission:             "6100",
+        profit_share_liability: "6100",
         subcontractor_by_studio: {},
       },
     }.freeze
