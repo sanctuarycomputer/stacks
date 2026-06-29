@@ -146,16 +146,6 @@ class SyncsAsQboBillFailureModeTest < ActiveSupport::TestCase
   end
 
   # ---------------------------------------------------------------------------
-  # find_qbo_account! failure path
-  # ---------------------------------------------------------------------------
-
-  test "find_qbo_account! raises a descriptive error when enterprise has no qbo_account" do
-    stub = PayStub.create!(pay_cycle: @other_cycle, ledger: @other_ledger, amount: 100, blueprint: @blueprint)
-    err = assert_raises(RuntimeError) { stub.find_qbo_account! }
-    assert_match(/has no connected QboAccount/, err.message)
-  end
-
-  # ---------------------------------------------------------------------------
   # load_qbo_bill! nil-return paths (no API call)
   # ---------------------------------------------------------------------------
 

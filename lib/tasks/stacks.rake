@@ -396,9 +396,10 @@ namespace :stacks do
     system_task = SystemTask.create!(name: "stacks:sync_contributor_qbo_bills")
     failures = []
 
+    accounts_cache = Qbo::AccountsCache.new
     sync_record = ->(record) {
       begin
-        record.sync_qbo_bill!
+        record.sync_qbo_bill!(accounts_cache: accounts_cache)
       rescue => e
         failures << { record: "#{record.class.name}##{record.id}", error: "#{e.class}: #{e.message}" }
         Rails.logger.error("sync_qbo_bill! failed for #{record.class.name}##{record.id}: #{e.class}: #{e.message}")
