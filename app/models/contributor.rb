@@ -264,16 +264,13 @@ class Contributor < ApplicationRecord
     profit_shares.each { |ps| ps.sync_qbo_bill!(accounts_cache: cache) }
     # Reimbursement is a SyncsAsQboBill host too — without this it would be
     # silently skipped by any caller that expects "sync everything for this
-    # contributor" (admin button, daily cron rake task). Filter to:
-    #   - accepted_at presence (pending reimbursements must not land in vendor AP)
-    #   - ledger.payment_methods includes 'qbo' (Deel-only ledger could still
-    #     have a connected qbo_account + vendor mapping; without this gate we'd
-    #     create a Bill on top of the planned Deel payout → double-payment).
-    reimbursements
-      .where.not(accepted_at: nil)
-      .joins(:ledger)
-      .where("'qbo' = ANY(ledgers.payment_methods)")
-      .each { |r| r.sync_qbo_bill!(accounts_cache: cache) }
+    # contributor" (admin button, daily cron rake task). Filter to accepted
+    # only so pending reimbursements don't land in vendor AP before approval;
+    # sync_qbo_bill! silently no-ops when there's no QBO vendor mapping for
+    # the enterprise (Deel-only with no QBO presence) so no payment_methods
+    # gate is needed — QBO bills are the source of truth even for Deel-only
+    # contributors (the accountant matches Deel withdrawals against them).
+    reimbursements.where.not(accepted_at: nil).each { |r| r.sync_qbo_bill!(accounts_cache: cache) }
   end
 
   def display_name

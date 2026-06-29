@@ -29,12 +29,6 @@ ActiveAdmin.register Reimbursement do
         alert: "Cannot sync: Reimbursement isn't accepted yet. Accept it first, then sync."
       return
     end
-    # Also refuse if the ledger doesn't expect QBO sync (Deel-only).
-    unless resource.ledger.payment_methods.include?("qbo")
-      redirect_to admin_ledger_reimbursement_path(resource.ledger, resource),
-        alert: "Cannot sync: this ledger is not QBO-enabled (payment_methods=#{resource.ledger.payment_methods.inspect})."
-      return
-    end
     resource.sync_qbo_bill!
     resource.reload
     if resource.qbo_bill_id.present?

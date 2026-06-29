@@ -25,7 +25,6 @@ class Ledger < ApplicationRecord
 
   validates :enterprise_id, uniqueness: { scope: :contributor_id }
   validate :payment_methods_are_known
-  validate :qbo_bound_requires_qbo_payment_method
 
   before_validation :default_payment_methods, on: :create
 
@@ -60,16 +59,6 @@ class Ledger < ApplicationRecord
   #   - Contributor.after_create / Enterprise.after_create (eager fill on add)
   # Bulk-loads existing pairs to avoid N+1; only INSERTS missing rows.
   # Returns the count of rows inserted.
-  # The mode default in the DB is qbo_bound (=1) so newly added pairs land
-  # qbo_bound automatically. But a Deel-only ledger MUST stay legacy — the
-  # qbo_bound path drops DeelInvoiceAdjustments as audit-only via
-  # `audit_only_under_qbo_bound?`, which would silently mask every Deel
-  # payout. Bulk-insert paths use this helper so the row's mode tracks its
-  # payment_methods at INSERT time.
-  def self.mode_for_payment_methods(pm)
-    pm.include?("qbo") ? modes[:qbo_bound] : modes[:legacy]
-  end
-
   def self.ensure_all!
     existing = pluck(:enterprise_id, :contributor_id).to_set
     contributors = Contributor.includes(:deel_person).index_by(&:id)
@@ -80,7 +69,7 @@ class Ledger < ApplicationRecord
       pm = payment_methods_for(contributor)
       enterprise_ids.each do |e_id|
         next if existing.include?([e_id, contributor.id])
-        rows << { enterprise_id: e_id, contributor_id: contributor.id, payment_methods: "{#{pm.join(",")}}", mode: mode_for_payment_methods(pm), created_at: now, updated_at: now }
+        rows << { enterprise_id: e_id, contributor_id: contributor.id, payment_methods: "{#{pm.join(",")}}", created_at: now, updated_at: now }
       end
     end
     insert_all(rows) if rows.any?
@@ -97,7 +86,7 @@ class Ledger < ApplicationRecord
     now = Time.current
     Enterprise.pluck(:id).each do |e_id|
       next if existing_enterprise_ids.include?(e_id)
-      rows << { enterprise_id: e_id, contributor_id: contributor.id, payment_methods: "{#{pm.join(",")}}", mode: mode_for_payment_methods(pm), created_at: now, updated_at: now }
+      rows << { enterprise_id: e_id, contributor_id: contributor.id, payment_methods: "{#{pm.join(",")}}", created_at: now, updated_at: now }
     end
     insert_all(rows) if rows.any?
     rows.size
@@ -112,7 +101,7 @@ class Ledger < ApplicationRecord
     now = Time.current
     contributors.each do |contributor|
       pm = payment_methods_for(contributor)
-      rows << { enterprise_id: enterprise.id, contributor_id: contributor.id, payment_methods: "{#{pm.join(",")}}", mode: mode_for_payment_methods(pm), created_at: now, updated_at: now }
+      rows << { enterprise_id: enterprise.id, contributor_id: contributor.id, payment_methods: "{#{pm.join(",")}}", created_at: now, updated_at: now }
     end
     insert_all(rows) if rows.any?
     rows.size
@@ -224,12 +213,6 @@ class Ledger < ApplicationRecord
   def default_payment_methods
     return unless payment_methods.blank?
     self.payment_methods = self.class.payment_methods_for(contributor)
-    # If the inferred payment_methods doesn't include 'qbo', force mode back to
-    # legacy. Without this, the DB default (qbo_bound) would silently bind a
-    # Deel-only ledger to the qbo_bound code path, where audit_only_under_qbo_bound?
-    # drops every DeelInvoiceAdjustment — the contributor's balance would never
-    # decrease when they got paid via Deel.
-    self.mode = :legacy if payment_methods.exclude?("qbo")
   end
 
   def sum_for_bucket(payable:)
@@ -246,18 +229,6 @@ class Ledger < ApplicationRecord
     return if payment_methods.blank?
     bad = payment_methods - PAYMENT_METHODS
     errors.add(:payment_methods, "contains unknown value(s): #{bad.join(", ")}") if bad.any?
-  end
-
-  # Cross-field invariant: qbo_bound mode + payment_methods that don't include
-  # 'qbo' is unsafe — the qbo_bound balance computation calls
-  # audit_only_under_qbo_bound? which drops every DeelInvoiceAdjustment, so a
-  # Deel-only ledger in qbo_bound mode silently loses every Deel payment from
-  # its balance. (Also catches the payment_methods=[] edge case — `present?`
-  # is false for empty arrays so we can't gate on it.)
-  def qbo_bound_requires_qbo_payment_method
-    return unless qbo_bound?
-    return if payment_methods.is_a?(Array) && payment_methods.include?("qbo")
-    errors.add(:mode, "cannot be qbo_bound on a ledger without 'qbo' in payment_methods (DIA contributions would be filtered as audit-only and never deducted from balance)")
   end
 
   # Includes soft-deleted rows — used by items_grouped_by_month for display.

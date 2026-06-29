@@ -174,9 +174,7 @@ class LedgerModeAndPaymentMethodsTest < ActiveSupport::TestCase
   end
 
   test "deel_enabled? and qbo_enabled? reflect payment_methods" do
-    # Removing 'qbo' from payment_methods on a qbo_bound ledger requires
-    # flipping mode back to legacy first (the cross-field validation).
-    @ledger.update!(mode: :legacy, payment_methods: %w[deel])
+    @ledger.update!(payment_methods: %w[deel])
     assert @ledger.deel_enabled?
     refute @ledger.qbo_enabled?
 

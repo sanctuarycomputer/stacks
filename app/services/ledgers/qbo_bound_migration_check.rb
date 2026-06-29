@@ -57,16 +57,7 @@ module Ledgers
       # changes nothing visible, so no QBO comparison needed — auto-flip them.
       # This catches the cross-product (every Contributor × every Enterprise)
       # ledgers that have no activity and no QBO vendor mapping.
-      #
-      # Ledger#qbo_bound_requires_qbo_payment_method also blocks the flip on
-      # any ledger whose payment_methods doesn't include 'qbo' (Deel-only).
-      # Require the same gate here so the UI's "Safe to migrate — qbo_bound
-      # will mirror QBO one-to-one" claim agrees with what the validation
-      # will actually accept; otherwise the Migrate button is a footgun for
-      # operators on the 140-ish Deel-only ledgers.
-      qbo_enabled = ledger.payment_methods.is_a?(Array) && ledger.payment_methods.include?("qbo")
-      trivial = qbo_enabled &&
-                legacy_b.abs < TOLERANCE && legacy_u.abs < TOLERANCE &&
+      trivial = legacy_b.abs < TOLERANCE && legacy_u.abs < TOLERANCE &&
                 new_b.abs    < TOLERANCE && new_u.abs    < TOLERANCE
 
       unsynced = collect_unsynced_hosts(qbb_open)
