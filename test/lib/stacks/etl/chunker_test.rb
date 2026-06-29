@@ -1,0 +1,22 @@
+require 'test_helper'
+
+class Stacks::Etl::ChunkerTest < ActiveSupport::TestCase
+  test 'one chunk per speaker turn, carrying speaker + timestamp' do
+    segs = [
+      { speaker_name: 'A', speaker_email: 'a@x.co', text: 'hello there', started_at: Time.utc(2026, 1, 1, 9) },
+      { speaker_name: 'B', speaker_email: 'b@x.co', text: 'general kenobi', started_at: Time.utc(2026, 1, 1, 9, 1) }
+    ]
+    chunks = Stacks::Etl::Chunker.call(segments: segs)
+    assert_equal 2, chunks.size
+    assert_equal 'hello there', chunks[0][:content]
+    assert_equal 'A', chunks[0][:speaker_name]
+    assert_equal 'b@x.co', chunks[1][:speaker_email]
+  end
+
+  test 'splits an over-long turn into overlapping chunks' do
+    long = (1..600).map { |i| "w#{i}" }.join(' ')
+    chunks = Stacks::Etl::Chunker.call(segments: [{ speaker_name: 'A', speaker_email: 'a@x.co', text: long, started_at: Time.now }])
+    assert_operator chunks.size, :>=, 2
+    assert chunks.all? { |c| c[:content].split.size <= Stacks::Etl::Chunker::MAX_WORDS }
+  end
+end
