@@ -271,19 +271,28 @@ class QboAccount < ApplicationRecord
       when "ProfitShare", /^Profit/
         klass = ProfitShare
       else
-        # Unknown code — skip rather than default to ContributorPayout. The old
-        # default would treat a Reimbursement / PayStub bill (or any future host)
-        # whose host id doesn't match a CP as orphaned and destroy a healthy bill.
-        next
+        klass = nil
       end
 
-      obj = klass.find_by(id: splat[1])
-      next if obj.present?
+      if klass.present?
+        obj = klass.find_by(id: splat[1])
+        next if obj.present?
 
-      if deleted_obj = klass.with_deleted.find_by(id: splat[1])
-        deleted_obj.update(qbo_bill_id: nil)
-        deleted_obj.qbo_bill.destroy! if deleted_obj.qbo_bill.present?
-      elsif qbo_bill = QboBill.where(qbo_account_id: id).find_by(qbo_id: b.id)
+        if deleted_obj = klass.with_deleted.find_by(id: splat[1])
+          deleted_obj.update(qbo_bill_id: nil)
+          deleted_obj.qbo_bill.destroy! if deleted_obj.qbo_bill.present?
+          next
+        end
+      end
+
+      # Unknown code OR known-class lookups returned no live/deleted owner.
+      # If there's a local QboBill mirror, destroy it (which also deletes the
+      # remote via QboBill's before_destroy). If there isn't, the remote bill
+      # is the only thing left — delete it directly. This replaces the old
+      # behavior that defaulted unknown codes to ContributorPayout (which
+      # could wrongly destroy a healthy bill whose id happened to collide
+      # with a real CP).
+      if qbo_bill = QboBill.where(qbo_account_id: id).find_by(qbo_id: b.id)
         qbo_bill.destroy!
       else
         delete_bill(b)

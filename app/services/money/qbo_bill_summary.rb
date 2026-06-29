@@ -35,6 +35,14 @@ module Money
           .joins(ledger: { enterprise: :qbo_account })
           .where(qbo_accounts: { id: qbo_account.id })
           .where("'qbo' = ANY(ledgers.payment_methods)")
+          # Also require qbo_bound mode. Without this, a still-legacy ledger
+          # (the migration backfills payment_methods=['qbo'] on every non-Deel
+          # ledger regardless of mode) would be evaluated under qbo_bound
+          # contribution semantics — `qbo_bound_balance_amount` uses
+          # remaining_balance, while the contributor's per-ledger view under
+          # legacy uses full signed_amount. The two screens would disagree on
+          # any partial-paid bill on a legacy ledger.
+          .where(ledgers: { mode: Ledger.modes[:qbo_bound] })
           .includes(ledger: :contributor)
         relation = relation.includes(PRELOADS[klass]) if PRELOADS[klass]
         relation.find_each do |row|

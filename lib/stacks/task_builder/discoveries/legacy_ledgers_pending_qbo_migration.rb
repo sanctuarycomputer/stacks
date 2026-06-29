@@ -35,8 +35,13 @@ module Stacks
         private
 
         def any_payable_subquery
+          # Every PAYABLE_TABLES model is acts_as_paranoid, so the raw SQL has
+          # to filter deleted_at IS NULL — otherwise a ledger whose only payable
+          # rows are soft-deleted still surfaces a migration task that the
+          # readiness check then declares trivial (visible_items is empty),
+          # spamming the Tasks dashboard.
           PAYABLE_TABLES.map do |t|
-            "SELECT 1 FROM #{t} WHERE #{t}.ledger_id = ledgers.id"
+            "SELECT 1 FROM #{t} WHERE #{t}.ledger_id = ledgers.id AND #{t}.deleted_at IS NULL"
           end.join(" UNION ALL ")
         end
       end

@@ -21,7 +21,15 @@ ActiveAdmin.register Reimbursement do
 
   member_action :sync_qbo_bill, method: :post do
     resource.sync_qbo_bill!
-    redirect_to admin_ledger_reimbursement_path(resource.ledger, resource), notice: "Success"
+    resource.reload
+    if resource.qbo_bill_id.present?
+      redirect_to admin_ledger_reimbursement_path(resource.ledger, resource), notice: "Success"
+    else
+      # sync_qbo_bill! returned nil silently — usually missing vendor mapping
+      # or no qbo_account. Don't claim success.
+      redirect_to admin_ledger_reimbursement_path(resource.ledger, resource),
+        alert: "Sync was a no-op (likely missing QBO vendor mapping, or no QBO account on this ledger's enterprise)."
+    end
   rescue => e
     Rails.logger.error("[reimbursement_sync_qbo_bill] reimbursement=#{resource.id}: #{e.class}: #{e.message}")
     redirect_to admin_ledger_reimbursement_path(resource.ledger, resource), alert: "Sync failed: #{e.message}"
@@ -75,5 +83,18 @@ ActiveAdmin.register Reimbursement do
 
   show do
     render(partial: "show", locals: { resource: resource })
+  end
+
+  controller do
+    # Catch the SyncsAsQboBill paid-bill guard so 'Delete' on a Reimbursement
+    # whose QBO bill is already paid surfaces a clean flash instead of a 500.
+    # Operator has to void the BillPayment in QBO first.
+    def destroy
+      super
+    rescue SyncsAsQboBill::PaidQboBillError => e
+      Rails.logger.error("[reimbursement_destroy] reimbursement=#{params[:id]}: #{e.message}")
+      redirect_to admin_ledger_reimbursements_path(resource.ledger),
+        alert: "Cannot delete: linked QBO bill is paid. Void the BillPayment in QBO first, then retry."
+    end
   end
 end

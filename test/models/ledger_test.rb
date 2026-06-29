@@ -194,13 +194,13 @@ class LedgerModeAndPaymentMethodsTest < ActiveSupport::TestCase
   end
 
   test "payment_methods_for: non-US Deel contributor → [deel]" do
-    dp = DeelPerson.create!(deel_id: "dp#{SecureRandom.hex(2)}", data: { "country" => "CA" })
+    dp = DeelPerson.create!(deel_id: "dp#{SecureRandom.hex(2)}", data: { "addresses" => [{ "country" => "CA" }] })
     c = Contributor.create!(forecast_person: ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "fr#{SecureRandom.hex(2)}@example.com", data: {}), deel_person_id: dp.deel_id)
     assert_equal %w[deel], Ledger.payment_methods_for(c)
   end
 
   test "payment_methods_for: US Deel contributor → [qbo]" do
-    dp = DeelPerson.create!(deel_id: "dp#{SecureRandom.hex(2)}", data: { "country" => "US" })
+    dp = DeelPerson.create!(deel_id: "dp#{SecureRandom.hex(2)}", data: { "addresses" => [{ "country" => "US" }] })
     c = Contributor.create!(forecast_person: ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "us#{SecureRandom.hex(2)}@example.com", data: {}), deel_person_id: dp.deel_id)
     assert_equal %w[qbo], Ledger.payment_methods_for(c)
   end
@@ -212,7 +212,7 @@ class LedgerModeAndPaymentMethodsTest < ActiveSupport::TestCase
 
   test "ensure_for_contributor! sets payment_methods from contributor's deel country" do
     Enterprise.find_or_create_by!(name: "DefaultPMBulk-#{SecureRandom.hex(2)}")
-    dp = DeelPerson.create!(deel_id: "dp#{SecureRandom.hex(2)}", data: { "country" => "DE" })
+    dp = DeelPerson.create!(deel_id: "dp#{SecureRandom.hex(2)}", data: { "addresses" => [{ "country" => "DE" }] })
     c = Contributor.create!(forecast_person: ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "dpm#{SecureRandom.hex(2)}@example.com", data: {}), deel_person_id: dp.deel_id)
     # Contributor.after_create runs Ledger.ensure_for_contributor!; every ledger
     # for c should have payment_methods set from payment_methods_for(c).
@@ -223,7 +223,7 @@ class LedgerModeAndPaymentMethodsTest < ActiveSupport::TestCase
 
   test "default_payment_methods callback fires when a Ledger is built directly" do
     # Build (not create) so the auto-create from Contributor.after_create doesn't preempt us.
-    dp = DeelPerson.create!(deel_id: "dp#{SecureRandom.hex(2)}", data: { "country" => "DE" })
+    dp = DeelPerson.create!(deel_id: "dp#{SecureRandom.hex(2)}", data: { "addresses" => [{ "country" => "DE" }] })
     c = Contributor.create!(forecast_person: ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "cb#{SecureRandom.hex(2)}@example.com", data: {}), deel_person_id: dp.deel_id)
     l = Ledger.new(enterprise: Enterprise.find_or_create_by!(name: "CB-#{SecureRandom.hex(2)}"), contributor: c)
     assert_equal [], l.payment_methods, "blank before validation"

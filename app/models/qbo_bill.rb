@@ -31,8 +31,15 @@ class QboBill < ApplicationRecord
   # Remaining unpaid balance on the bill. Reflects partial payments — a bill
   # for $1,778.40 paid down to $0.40 returns 0.4 here. Used by qbo_bound
   # balance computation to mirror QBO's vendor AP exactly.
+  #
+  # Returns nil (not 0.0) when balance is unknown so callers can distinguish
+  # "really $0" from "unknown" — `nil.to_f` collapsing to 0.0 here would
+  # silently zero the contributor's qbo_bound balance for a host whose bill
+  # data is incomplete.
   def remaining_balance
-    data&.dig("balance").to_f
+    raw = data&.dig("balance")
+    return nil if raw.nil?
+    raw.to_f
   end
 
   def delete_qbo_bill!

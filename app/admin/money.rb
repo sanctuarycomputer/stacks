@@ -53,7 +53,15 @@ ActiveAdmin.register_page "Money" do
     host = klass.find(params.require(:host_id))
     begin
       host.sync_qbo_bill!
-      flash[:notice] = "Synced #{klass.name} ##{host.id}."
+      host.reload
+      if host.qbo_bill_id.present?
+        flash[:notice] = "Synced #{klass.name} ##{host.id}."
+      else
+        # sync_qbo_bill! silently returns nil when there's no QBO account, no
+        # vendor mapping, or amount <= 0. Don't pretend it succeeded — tell
+        # the operator what to fix so they don't loop clicking Sync.
+        flash[:alert] = "No-op: #{klass.name} ##{host.id} didn't create a QBO bill. Likely missing vendor mapping, no QBO account, or non-positive amount."
+      end
     rescue => e
       Rails.logger.error("[refresh_bill] qbo_account=#{params[:qbo_account_id]} host=#{klass.name}##{host.id}: #{e.class}: #{e.message}")
       flash[:alert] = "Sync failed for #{klass.name} ##{host.id}: #{e.message}"

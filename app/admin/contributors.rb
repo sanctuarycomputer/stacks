@@ -157,10 +157,11 @@ ActiveAdmin.register Contributor do
 
     # sync_qbo_bill! silently early-returns nil (no raise) when the contributor
     # has no QBO vendor mapping for the enterprise, when there's no QBO account,
-    # or when amount is non-positive. Detect the missing-bill post-condition on
-    # accept paths so the admin gets a real warning instead of a green
-    # "Success" flash that hides QBO drift.
-    if !was_accepted && r.reload.qbo_bill_id.nil?
+    # or when amount is non-positive. Surface that as a real warning ONLY on
+    # ledgers that actually expect QBO sync — Deel-only ledgers legitimately
+    # have no QBO bill, and a noisy "no QBO bill was created" alert there would
+    # both confuse the operator and mask real QBO drift on qbo-enabled ledgers.
+    if !was_accepted && r.ledger.payment_methods.include?("qbo") && r.reload.qbo_bill_id.nil?
       return redirect_to(
         admin_contributor_path(params[:id], format: :html),
         alert: "Acceptance saved, but no QBO bill was created. Check that the contributor has a QBO vendor mapping on #{r.ledger.enterprise.name}, then 'Sync to QBO' from the Payable QBO Bills tab.",

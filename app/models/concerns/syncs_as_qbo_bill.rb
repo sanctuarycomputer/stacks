@@ -22,9 +22,21 @@ module SyncsAsQboBill
     QboBill.find_by(qbo_account_id: qa.id, qbo_id: qbo_bill_id)
   end
 
+  # Tearing down the local QboBill triggers QboBill#delete_qbo_bill! which
+  # destroys the remote bill in QBO. Doing that on a PAID bill orphans the
+  # QBO BillPayment (payment exists with no parent bill — corrupts vendor AP).
+  # Refuse to proceed; operator must void the payment in QBO first. This guard
+  # protects every SyncsAsQboBill host's before_destroy chain (Reimbursement,
+  # ContributorPayout, etc.) AND the un-accept paths in admin actions.
+  class PaidQboBillError < StandardError; end
+
   def detach_and_destroy_qbo_bill
     bill = qbo_bill
     return unless bill.present?
+    if bill.paid?
+      raise PaidQboBillError,
+        "#{self.class.name} ##{id}: refusing to destroy QBO bill #{bill.qbo_id} — it is paid. Void the BillPayment in QBO first."
+    end
     ActiveRecord::Base.transaction do
       update_attribute(:qbo_bill_id, nil)
       bill.destroy!
@@ -71,11 +83,13 @@ module SyncsAsQboBill
   # Contribution to qbo_bound balance. Uses the QBO bill's remaining unpaid
   # balance when a bill exists so partial payments are reflected one-to-one
   # with QBO's vendor AP. Falls back to the host amount when there's no
-  # synced bill.
+  # synced bill OR when the bill's data doesn't carry a balance (otherwise
+  # an incomplete sync would silently zero the contributor's qbo_bound
+  # balance).
   def qbo_bound_balance_amount
     qb = qbo_bill
     return amount.to_f if qb.nil?
-    qb.remaining_balance
+    qb.remaining_balance || amount.to_f
   end
 
   def sync_qbo_bill!(accounts_cache: nil)

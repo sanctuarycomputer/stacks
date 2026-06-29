@@ -8,6 +8,21 @@ class RecurringLedgerAdjustment < ApplicationRecord
   validates :amount, presence: true
   validates :cadence, inclusion: { in: CADENCES }
   validates :next_due_on, presence: true
+  # materialize! uses skip_qbo_bound_negative_check to bypass the per-row
+  # validation so a LEGACY-era recurring deduction keeps materializing after
+  # its ledger is flipped. But operators must NOT be able to create a NEW
+  # negative recurring on an already-qbo_bound ledger — every materialization
+  # would land as an audit-only CA the qbo_bound balance ignores, so the
+  # "deduction" never actually deducts. Catch it here at the source.
+  validate :no_new_negative_on_qbo_bound_ledger, on: :create
+
+  def no_new_negative_on_qbo_bound_ledger
+    return unless ledger&.qbo_bound? && amount&.negative?
+    errors.add(
+      :amount,
+      "cannot create a negative recurring on a QBO-bound ledger — every materialized row would be audit-only and never deduct from the balance.",
+    )
+  end
 
   scope :active, -> { where(paused_at: nil) }
   scope :due, ->(on = Date.today) { where("next_due_on <= ?", on) }

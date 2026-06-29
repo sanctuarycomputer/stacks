@@ -23,6 +23,7 @@ module Money
           .joins(ledger: { enterprise: :qbo_account })
           .where(qbo_accounts: { id: qbo_account.id })
           .where("'qbo' = ANY(ledgers.payment_methods)")
+          .where(ledgers: { mode: Ledger.modes[:qbo_bound] })
           .includes(ledger: :contributor)
           .find_each.filter_map do |row|
             next nil unless row.payable?

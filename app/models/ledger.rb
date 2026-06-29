@@ -31,10 +31,12 @@ class Ledger < ApplicationRecord
   # Inferred default payment methods for a contributor. Non-US Deel contractor
   # → ["deel"]; everyone else → ["qbo"]. Shared between the schema backfill,
   # the ensure_* bulk paths, and the per-record before_validation hook.
+  # Uses DeelPerson#country (reads from data["addresses"].first["country"], the
+  # actual Deel API shape — top-level data["country"] is always nil in prod).
   def self.payment_methods_for(contributor)
     return %w[qbo] if contributor.nil?
     dp = contributor.deel_person
-    country = dp&.data.is_a?(Hash) ? dp.data["country"].to_s.upcase : nil
+    country = dp&.country.to_s.upcase
     return %w[deel] if dp.present? && country.present? && country != "US"
     %w[qbo]
   end
