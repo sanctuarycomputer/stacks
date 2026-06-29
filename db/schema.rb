@@ -108,12 +108,14 @@ ActiveRecord::Schema.define(version: 2026_06_28_000008) do
     t.datetime "occurred_at"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    # content_tsv (tsvector GENERATED ALWAYS AS) and its GIN index are intentionally
+    # omitted here: Rails 6.1 dumps generated columns as DEFAULT expressions, which
+    # PostgreSQL rejects on schema:load. They are added idempotently in test_helper.rb
+    # and exist in the development/production DBs via the CreateChunks migration.
     t.index ["document_id", "position"], name: "index_chunks_on_document_id_and_position", unique: true
     t.index ["document_id"], name: "index_chunks_on_document_id"
     t.index ["speaker_contact_id"], name: "index_chunks_on_speaker_contact_id"
   end
-  execute "ALTER TABLE chunks ADD COLUMN IF NOT EXISTS content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED"
-  execute "CREATE INDEX IF NOT EXISTS index_chunks_on_content_tsv ON chunks USING gin (content_tsv)"
 
   create_table "commissions", force: :cascade do |t|
     t.bigint "project_tracker_id", null: false
@@ -472,13 +474,9 @@ ActiveRecord::Schema.define(version: 2026_06_28_000008) do
     t.bigint "contributor_id", null: false
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
-    t.integer "mode", default: 1, null: false
-    t.string "payment_methods", default: [], null: false, array: true
     t.index ["contributor_id"], name: "index_ledgers_on_contributor_id"
     t.index ["enterprise_id", "contributor_id"], name: "index_ledgers_on_enterprise_id_and_contributor_id", unique: true
     t.index ["enterprise_id"], name: "index_ledgers_on_enterprise_id"
-    t.index ["mode"], name: "index_ledgers_on_mode"
-    t.index ["payment_methods"], name: "index_ledgers_on_payment_methods", using: :gin
   end
 
   create_table "mailing_list_subscribers", force: :cascade do |t|
@@ -1333,6 +1331,7 @@ ActiveRecord::Schema.define(version: 2026_06_28_000008) do
   add_foreign_key "account_lead_periods", "project_trackers"
   add_foreign_key "adhoc_invoice_trackers", "project_trackers"
   add_foreign_key "adhoc_invoice_trackers", "qbo_accounts"
+  # Composite FK fk_adhoc_invoice_trackers_qbo_invoice managed by migration (not expressible in schema.rb)
   add_foreign_key "admin_user_salary_windows", "admin_users"
   add_foreign_key "associates_award_agreements", "admin_users"
   add_foreign_key "chunks", "contacts", column: "speaker_contact_id"
@@ -1341,6 +1340,7 @@ ActiveRecord::Schema.define(version: 2026_06_28_000008) do
   add_foreign_key "commissions", "project_trackers"
   add_foreign_key "contributor_adjustments", "ledgers"
   add_foreign_key "contributor_adjustments", "qbo_accounts"
+  # Composite FK fk_contributor_adjustments_qbo_invoice managed by migration (not expressible in schema.rb)
   add_foreign_key "contributor_payouts", "admin_users", column: "created_by_id"
   add_foreign_key "contributor_payouts", "invoice_trackers"
   add_foreign_key "contributor_payouts", "ledgers"
@@ -1361,6 +1361,7 @@ ActiveRecord::Schema.define(version: 2026_06_28_000008) do
   add_foreign_key "invoice_trackers", "admin_users"
   add_foreign_key "invoice_trackers", "invoice_passes"
   add_foreign_key "invoice_trackers", "qbo_accounts"
+  # Composite FK fk_invoice_trackers_qbo_invoice managed by migration (not expressible in schema.rb)
   add_foreign_key "ledgers", "contributors"
   add_foreign_key "ledgers", "enterprises"
   add_foreign_key "mailing_list_subscribers", "mailing_lists"
