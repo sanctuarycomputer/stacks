@@ -25,7 +25,9 @@ module Stacks
       end
 
       def self.slices(words)
-        return [words] if words.size <= MAX_WORDS
+        # A single chunk up to MAX+OVERLAP avoids splitting a slightly-over-MAX segment
+        # into two windows that are ~all overlap (a near-duplicate tail chunk).
+        return [words] if words.size <= MAX_WORDS + OVERLAP_WORDS
         out = []
         i = 0
         loop do

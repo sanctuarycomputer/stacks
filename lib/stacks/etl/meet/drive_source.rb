@@ -41,9 +41,10 @@ module Stacks
           # with the SAME title near the doc's time (best-effort) for attendee emails.
           enrichment = @enricher.enrich(started_at: file.created_time, meeting_code: nil,
                                         fallback_title: title, title_hint: title)
+          attendees = enrichment[:attendees]
           contacts =
-            if enrichment[:attendees].any?
-              enrichment[:attendees].map { |a| { email: a[:email], name: a[:name], role: 'attendee' } }
+            if attendees.any?
+              attendees.map { |a| { email: a[:email], name: a[:name], role: 'attendee' } }
             else
               segments.map { |s| { email: nil, name: s[:speaker_name], role: 'speaker' } }.uniq
             end
@@ -53,7 +54,10 @@ module Stacks
             url: "https://docs.google.com/document/d/#{file.id}",
             occurred_at: file.created_time,
             content_hash: Digest::SHA256.hexdigest(text.to_s),
-            participant_count: segments.map { |s| s[:speaker_name] }.compact.uniq.size,
+            # Prefer the Calendar attendee count (accurate) for the 1:1 classifier; the
+            # distinct-speaker count is only a fallback and would mis-flag a big meeting
+            # where few people spoke as a 1:1.
+            participant_count: attendees.any? ? attendees.size : segments.map { |s| s[:speaker_name] }.compact.uniq.size,
             contacts: contacts,
             segments: segments,
             raw_metadata: { 'drive_doc_id' => file.id },
@@ -67,19 +71,23 @@ module Stacks
         end
 
         # Meet names transcript docs like "Title - Transcript" or
-        # "Title (2026/06/27 17:00 GMT-7) - Transcript". Strip those to the real title.
+        # "Title (2026/06/27 17:00 GMT-7) - Transcript". Strip the "- Transcript" suffix and
+        # ONLY a trailing parenthetical that looks like Meet's date stamp (starts with a
+        # digit / contains GMT) — so a real title like "Roadmap (Q3 2026)" or "Sync (NYC)"
+        # keeps its parenthetical.
         def clean_title(name)
           name.to_s
               .sub(/\s*-\s*Transcript\s*\z/i, '')
-              .sub(/\s*\([^)]*\)\s*\z/, '')
+              .sub(/\s*\((?:\d|[^)]*GMT)[^)]*\)\s*\z/, '')
               .strip
               .presence || name.to_s
         end
 
-        # A speaker line is "Name: text" where Name is a person's display name — letters,
-        # spaces and light name punctuation, no URLs/timestamps/labels. Requiring a
-        # name-like prefix avoids misparsing "https://...", "10:30", "Note:" etc. as speakers.
-        SPEAKER_LINE = /\A\s*(\p{L}[\p{L} .,'’-]{0,58}\p{L}):\s+(\S.*)\z/
+        # A speaker line is "Name: <text>" — the colon MUST be followed by whitespace.
+        # That single requirement excludes URLs ("https://…", colon+slash) and timestamps
+        # ("10:30 …", colon+digit) without over-constraining the name, so legitimate
+        # speakers like "J.R.:" or "John Doe (Guest):" keep their lines (and their text).
+        SPEAKER_LINE = /\A\s*([^:]{1,60}):\s+(\S.*)\z/
 
         def parse_segments(text)
           text.to_s.each_line.filter_map do |line|

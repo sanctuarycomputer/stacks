@@ -12,9 +12,10 @@ module Stacks
         def source = :meet
 
         def extract(since:)
-          docs = []
-          source_object(since || @since).each_meeting { |n| docs << n }
-          docs
+          src = source_object(since || @since)
+          # Lazy: pull + ingest one meeting at a time rather than materializing the whole
+          # org's transcripts (memory) before any are stored.
+          Enumerator.new { |y| src.each_meeting { |n| y << n } }
         end
 
         def exclusion_for(normalized)

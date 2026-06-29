@@ -40,6 +40,13 @@ class Stacks::Etl::Meet::DriveSourceTest < ActiveSupport::TestCase
     assert_equal ['Drew Smith', 'Hugh'], segs.map { |s| s[:speaker_name] }
   end
 
+  test 'keeps speakers with initials or parenthetical labels (does not drop their text)' do
+    src = Stacks::Etl::Meet::DriveSource.allocate
+    segs = src.send(:parse_segments, "J.R.: kicking off\nJohn Doe (Guest): joining late\nHugh: welcome")
+    assert_equal ['J.R.', 'John Doe (Guest)', 'Hugh'], segs.map { |s| s[:speaker_name] }
+    assert_equal ['kicking off', 'joining late', 'welcome'], segs.map { |s| s[:text] }
+  end
+
   test 'until_time bounds the Drive query to an older window (partitioned dedup)' do
     captured = nil
     svc = mock('drive')

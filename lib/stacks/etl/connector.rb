@@ -12,7 +12,9 @@ module Stacks
         sync = track ? SourceSync.for(source) : nil
         effective_since = since || sync&.cursor&.dig('since')
         count = 0
-        Array(extract(since: effective_since)).each do |normalized|
+        # `extract` may return a lazy Enumerator (it does for Meet), so we iterate it
+        # directly — one meeting's transcript is in memory at a time, not the whole org.
+        extract(since: effective_since).each do |normalized|
           ingest(normalized)
           count += 1
         end

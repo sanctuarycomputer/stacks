@@ -33,7 +33,7 @@ module Stacks
                                      time_min: (at - WINDOW).utc.iso8601,
                                      time_max: (at + WINDOW).utc.iso8601,
                                      single_events: true, max_results: 50)
-          event = pick_event(Array(resp.items), meeting_code, title_hint, at)
+          event = pick_event(Array(resp.items), meeting_code, title_hint)
           return { title: fallback_title, attendees: [] } unless event
 
           { title: event.summary.presence || fallback_title, attendees: attendees_for(event) }
@@ -47,20 +47,17 @@ module Stacks
           @service ||= Auth.calendar_service(sub: @user_email)
         end
 
-        def pick_event(events, meeting_code, title_hint, at)
+        def pick_event(events, meeting_code, title_hint)
           if meeting_code.present?
             events.find { |e| e.conference_data&.conference_id == meeting_code }
           elsif title_hint.present?
             hint = normalize_title(title_hint)
-            # Several events may share a title in the window (e.g. two "Weekly Sync"s);
-            # pick the one whose start is closest to the transcript's time.
-            events.select { |e| normalize_title(e.summary) == hint }
-                  .min_by { |e| (coerce_time(event_start(e)).to_i - at.to_i).abs }
+            matches = events.select { |e| normalize_title(e.summary) == hint }
+            # Only enrich when the title match is UNAMBIGUOUS. If two different meetings
+            # share a title in the window, attaching either one's attendees would mis-
+            # attribute the meeting — better to skip enrichment than assign the wrong people.
+            matches.size == 1 ? matches.first : nil
           end
-        end
-
-        def event_start(e)
-          e.start&.date_time || e.start&.date
         end
 
         # Compare titles on letters/digits only, so emoji and punctuation drift between a

@@ -58,6 +58,27 @@ class Stacks::Etl::Meet::MeetApiSourceTest < ActiveSupport::TestCase
     assert_nil meeting.drive_transcript_doc_id
   end
 
+  test 'skips a record whose transcript Drive doc was already ingested by the Drive backfill' do
+    # The Drive backfill already created a Document keyed on this transcript's Drive doc id.
+    Document.create!(source: :meet, external_id: 'DRIVE_DOC_DUP')
+    cr = OpenStruct.new(name: 'conferenceRecords/dup', start_time: '2026-01-01T09:00:00Z', end_time: '2026-01-01T09:30:00Z', space: 'spaces/abc')
+    transcript = OpenStruct.new(name: 'conferenceRecords/dup/transcripts/1', docs_destination: OpenStruct.new(document: 'DRIVE_DOC_DUP'))
+    entry = OpenStruct.new(participant: 'p1', text: 'hello', start_time: '2026-01-01T09:01:00Z', end_time: '2026-01-01T09:01:05Z')
+    participant = OpenStruct.new(name: 'p1', signedin_user: OpenStruct.new(display_name: 'Drew'))
+    svc = mock('svc')
+    svc.stubs(:list_conference_records).returns(OpenStruct.new(conference_records: [cr], next_page_token: nil))
+    svc.stubs(:get_space).returns(OpenStruct.new(meeting_code: 'abc', meeting_uri: 'u'))
+    svc.stubs(:list_conference_record_transcripts).returns(OpenStruct.new(transcripts: [transcript], next_page_token: nil))
+    svc.stubs(:list_conference_record_transcript_entries).returns(OpenStruct.new(transcript_entries: [entry], next_page_token: nil))
+    svc.stubs(:list_conference_record_participants).returns(OpenStruct.new(participants: [participant], next_page_token: nil))
+    Stacks::Etl::Meet::Auth.stubs(:meet_service).returns(svc)
+    Stacks::Etl::Meet::CalendarEnricher.any_instance.stubs(:enrich).returns(title: 'T', attendees: [])
+
+    yielded = []
+    Stacks::Etl::Meet::MeetApiSource.new('hugh@sanctuary.computer').each_meeting { |m| yielded << m }
+    assert_empty yielded # defers to the existing Drive Document; no duplicate
+  end
+
   test 'skips a conference record whose transcript has no entries yet' do
     cr = OpenStruct.new(name: 'conferenceRecords/empty', start_time: '2026-01-01T09:00:00Z', end_time: '2026-01-01T09:30:00Z', space: 'spaces/abc')
     svc = mock('svc')

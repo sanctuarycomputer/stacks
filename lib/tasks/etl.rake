@@ -19,7 +19,10 @@ namespace :stacks do
       begin
         days = (args[:days] || 90).to_i
         admin = Stacks::Utils.config.dig(:google_oauth2, :admin_email) || 'hugh@sanctuary.computer'
-        Stacks::Etl::Meet::Connector.new(admin_email: admin, mode: :drive, since: days.days.ago).run
+        # Pass since to run AND track:false so the explicit backfill window isn't overridden
+        # by (nor written back into) the ongoing single-user sync cursor.
+        Stacks::Etl::Meet::Connector.new(admin_email: admin, mode: :drive)
+                                    .run(since: days.days.ago, track: false)
       rescue => e
         system_task.mark_as_error(e)
       else
@@ -32,9 +35,11 @@ namespace :stacks do
     # failure never aborts the run), deduped by the global conference-record / Drive-
     # doc IDs. Meant to run on a Performance dyno (the local embedding model needs RAM).
 
-    # Drive backfill covers the OLDER window only (up to OVERLAP_GUARD ago); the ongoing
-    # Meet API sweep covers the recent window. Partitioning the two by time is how we avoid
-    # ingesting the same meeting twice — no fragile cross-source merge.
+    # Drive backfill covers the OLDER window (created up to OVERLAP_GUARD ago); the ongoing
+    # Meet API sweep covers the recent window (since 10 days). The two windows deliberately
+    # OVERLAP (7..10 days) so a meeting near the boundary can't slip through a timing gap.
+    # That overlap is safe, not duplicative: MeetApiSource#normalize skips any transcript a
+    # Drive Document already ingested (keyed on the shared Drive doc id) — no fragile merge.
     OVERLAP_GUARD_DAYS = 7
 
     desc 'Org-wide Drive backfill of Meet transcripts for ALL users (default 90 days, older window)'
