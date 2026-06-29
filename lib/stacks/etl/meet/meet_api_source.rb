@@ -8,6 +8,7 @@ module Stacks
           @admin_email = admin_email
           @since = since.is_a?(String) ? Time.parse(since) : since
           @service = Auth.meet_service(sub: admin_email)
+          @enricher = CalendarEnricher.new(admin_email)
         end
 
         def each_meeting
@@ -28,17 +29,38 @@ module Stacks
           participants = fetch_participants(cr.name)
           segments = fetch_segments(cr.name, participants)
           text = segments.map { |s| s[:text] }.join("\n")
+          code, uri = space_label(cr.space)
+          enrichment = @enricher.enrich(started_at: cr.start_time, meeting_code: code, fallback_title: code || cr.space)
+          title = enrichment[:title]
+          # Prefer Calendar attendees (real emails -> resolved Contacts); fall back to
+          # the Meet participant list (display names only) when there's no Calendar match.
+          contacts =
+            if enrichment[:attendees].any?
+              enrichment[:attendees].map { |a| { email: a[:email], name: a[:name], role: 'attendee' } }
+            else
+              participants.values.map { |p| { email: p[:email], name: p[:name], role: 'participant' } }
+            end
           {
             external_id: cr.name,
-            title: cr.space&.meeting_code,
-            url: "https://meet.google.com/#{cr.space&.meeting_code}",
+            title: title,
+            url: uri || (code ? "https://meet.google.com/#{code}" : nil),
             occurred_at: cr.start_time,
             content_hash: Digest::SHA256.hexdigest(text),
-            contacts: participants.values.map { |p| { email: p[:email], name: p[:name], role: 'participant' } },
+            contacts: contacts,
             segments: segments,
-            raw_metadata: { 'conference_record' => cr.name },
-            build_source_record: ->(doc) { build_meeting(doc, cr, participants, segments) }
+            raw_metadata: { 'conference_record' => cr.name, 'space' => cr.space },
+            build_source_record: ->(doc) { build_meeting(doc, cr, participants, segments, title) }
           }
+        end
+
+        # The Meet API returns cr.space as a resource-name STRING ("spaces/..."),
+        # not an object — fetch the space for its human join code/uri (best-effort).
+        def space_label(space_name)
+          return [nil, nil] if space_name.to_s.empty?
+          space = @service.get_space(space_name)
+          [space.meeting_code, space.meeting_uri]
+        rescue StandardError
+          [nil, nil]
         end
 
         def fetch_participants(cr_name)
@@ -79,9 +101,9 @@ module Stacks
           segments
         end
 
-        def build_meeting(doc, cr, participants, segments)
+        def build_meeting(doc, cr, participants, segments, title)
           meeting = Meeting.find_or_initialize_by(meet_conference_record_id: cr.name)
-          meeting.update!(meet_source: :meet_api, title: cr.space&.meeting_code, started_at: cr.start_time,
+          meeting.update!(meet_source: :meet_api, title: title, started_at: cr.start_time,
                           ended_at: cr.end_time, participant_count: participants.size,
                           raw_metadata: { 'document_id' => doc.id })
           meeting.participants.destroy_all

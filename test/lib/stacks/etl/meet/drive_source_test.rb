@@ -1,23 +1,37 @@
 require 'test_helper'
 
 class Stacks::Etl::Meet::DriveSourceTest < ActiveSupport::TestCase
-  test 'normalizes a Drive transcript doc into segments' do
+  setup do
+    # Keep tests offline: no real Calendar enrichment call.
+    Stacks::Etl::Meet::CalendarEnricher.any_instance.stubs(:enrich).returns(title: nil, attendees: [])
+  end
+
+  test 'normalizes a Drive transcript doc, cleaning the title from the doc name' do
     file = OpenStruct.new(id: 'doc1', name: 'Gateway sync - Transcript', created_time: '2026-01-01T09:00:00Z')
     svc = mock('drive')
     svc.stubs(:list_files).returns(OpenStruct.new(files: [file], next_page_token: nil))
     svc.stubs(:export_file).returns("Drew: we should ship\nHugh: agreed, friday")
     Stacks::Etl::Meet::Auth.stubs(:drive_service).returns(svc)
+    # No attendees from Calendar -> fall back to name-only speakers; title from doc name.
+    Stacks::Etl::Meet::CalendarEnricher.any_instance.stubs(:enrich).returns(title: 'Gateway sync', attendees: [])
 
     yielded = []
     Stacks::Etl::Meet::DriveSource.new('hugh@sanctuary.computer', since: Time.utc(2025, 1, 1)).each_meeting { |n| yielded << n }
 
     n = yielded.first
     assert_equal 'doc1', n[:external_id]
+    assert_equal 'Gateway sync', n[:title]
     assert_equal 2, n[:segments].size
     assert_equal 'Drew', n[:segments].first[:speaker_name]
     assert_equal 'we should ship', n[:segments].first[:text]
     meeting = n[:build_source_record].call(Document.create!(source: :meet, external_id: 'doc1'))
     assert_equal 'doc1', meeting.drive_transcript_doc_id
+    assert_equal 'Gateway sync', meeting.title
+  end
+
+  test 'cleans a title with a trailing timestamp parenthetical' do
+    src = Stacks::Etl::Meet::DriveSource.allocate
+    assert_equal 'Kyle, Sam & Hugh', src.send(:clean_title, 'Kyle, Sam & Hugh (2026/06/27 17:00 GMT-7) - Transcript')
   end
 
   test 'accepts a string since and does not raise' do
