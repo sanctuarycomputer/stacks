@@ -5,15 +5,7 @@ namespace :reimbursements do
     skipped = 0
     errors = 0
 
-    # Filter to ledgers with 'qbo' in payment_methods so we don't push a Bill
-    # on top of an already-planned Deel payout — see Contributor#sync_qbo_bills!
-    # for the same gate.
-    Reimbursement
-      .where.not(accepted_by_id: nil)
-      .where(qbo_bill_id: nil)
-      .joins(:ledger)
-      .where("'qbo' = ANY(ledgers.payment_methods)")
-      .find_each do |r|
+    Reimbursement.where.not(accepted_by_id: nil).where(qbo_bill_id: nil).find_each do |r|
       r.sync_qbo_bill!
       if r.reload.qbo_bill_id.present?
         synced += 1

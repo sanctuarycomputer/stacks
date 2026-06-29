@@ -149,18 +149,15 @@ ActiveAdmin.register Contributor do
       r.update!(accepted_by: nil, accepted_at: nil)
     else
       r.update!(accepted_by: current_admin_user, accepted_at: DateTime.now)
-      # Only push to QBO when the ledger is qbo-enabled. A Deel-only ledger
-      # might still have an enterprise-level qbo_account + vendor mapping
-      # (some enterprises have both); without this gate the accept would
-      # create a Bill in vendor AP that Finance could pay on top of the Deel
-      # payout — double-payment risk.
-      if r.ledger.payment_methods.include?("qbo")
-        begin
-          r.sync_qbo_bill!
-        rescue => e
-          qbo_error = e
-          Rails.logger.error("[reimbursement_accept] QBO sync failed for ##{r.id}: #{e.class}: #{e.message}")
-        end
+      # Push to QBO regardless of payment_methods — even Deel-only contributors
+      # get a QBO bill so the accountant can either pay it directly OR match a
+      # Deel bank withdrawal against it. payment_methods is a UI hint about
+      # which payment workflows to surface, not a source-of-truth flag for AP.
+      begin
+        r.sync_qbo_bill!
+      rescue => e
+        qbo_error = e
+        Rails.logger.error("[reimbursement_accept] QBO sync failed for ##{r.id}: #{e.class}: #{e.message}")
       end
     end
 
@@ -173,11 +170,10 @@ ActiveAdmin.register Contributor do
 
     # sync_qbo_bill! silently early-returns nil (no raise) when the contributor
     # has no QBO vendor mapping for the enterprise, when there's no QBO account,
-    # or when amount is non-positive. Surface that as a real warning ONLY on
-    # ledgers that actually expect QBO sync — Deel-only ledgers legitimately
-    # have no QBO bill, and a noisy "no QBO bill was created" alert there would
-    # both confuse the operator and mask real QBO drift on qbo-enabled ledgers.
-    if !was_accepted && r.ledger.payment_methods.include?("qbo") && r.reload.qbo_bill_id.nil?
+    # or when amount is non-positive. Surface that as a real warning since QBO
+    # bills are the source of truth — even Deel-only contributors should have
+    # a vendor mapping so the accountant can reconcile.
+    if !was_accepted && r.reload.qbo_bill_id.nil?
       return redirect_to(
         admin_contributor_path(params[:id], format: :html),
         alert: "Acceptance saved, but no QBO bill was created. Check that the contributor has a QBO vendor mapping on #{r.ledger.enterprise.name}, then 'Sync to QBO' from the Payable QBO Bills tab.",
