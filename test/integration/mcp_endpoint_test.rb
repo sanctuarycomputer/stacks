@@ -48,4 +48,13 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     assert_equal %w[get_document list_documents list_sources search], tool_names.sort,
       "Expected all four tools registered, got: #{tool_names.inspect}"
   end
+
+  test "POST returns 403 when MCP API key is not configured" do
+    Stacks::Utils.stub(:config, { stacks: { private_api_key: '' } }) do
+      post "/api/mcp",
+        headers: MCP_HEADERS.merge("X-Api-Key" => "any-key"),
+        params: TOOLS_LIST_REQUEST.to_json
+      assert_response :forbidden
+    end
+  end
 end

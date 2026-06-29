@@ -26,7 +26,7 @@ module Stacks
           if @mode == :drive
             DriveSource.new(@admin_email, since: since || 90.days.ago)
           else
-            MeetApiSource.new(@admin_email)
+            MeetApiSource.new(@admin_email, since: since)
           end
         end
       end

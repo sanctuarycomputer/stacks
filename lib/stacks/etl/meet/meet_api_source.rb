@@ -4,15 +4,18 @@ module Stacks
   module Etl
     module Meet
       class MeetApiSource
-        def initialize(admin_email)
+        def initialize(admin_email, since: nil)
           @admin_email = admin_email
+          @since = since.is_a?(String) ? Time.parse(since) : since
           @service = Auth.meet_service(sub: admin_email)
         end
 
         def each_meeting
           page = nil
           loop do
-            resp = @service.list_conference_records(page_token: page)
+            opts = { page_token: page }
+            opts[:filter] = "start_time >= \"#{@since.utc.iso8601}\"" if @since
+            resp = @service.list_conference_records(**opts)
             Array(resp.conference_records).each { |cr| yield normalize(cr) }
             page = resp.next_page_token
             break unless page

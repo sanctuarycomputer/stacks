@@ -39,4 +39,11 @@ class Stacks::Etl::MentionResolverTest < ActiveSupport::TestCase
     assert_nil r[:contact]
     assert_equal 'ambiguous', r[:status]
   end
+
+  test 'participant with nil contact does not produce a resolved result' do
+    participants_with_nil = [{ name: 'Ghost User', contact: nil }]
+    r = Stacks::Etl::MentionResolver.resolve_display_name('Ghost User', participants: participants_with_nil)
+    assert_equal 'unresolved', r[:status]
+    assert_nil r[:contact]
+  end
 end

@@ -8,7 +8,7 @@ module Stacks
 
         def initialize(user_email, since:)
           @user_email = user_email
-          @since = since
+          @since = since.is_a?(String) ? Time.parse(since) : since
           @service = Auth.drive_service(sub: user_email)
         end
 

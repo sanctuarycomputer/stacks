@@ -7,8 +7,8 @@ class Chunk < ApplicationRecord
   enum source: { meet: 0 }
 
   scope :keyword_search, ->(query) {
-    where('content_tsv @@ plainto_tsquery(:q)', q: query)
-      .order(Arel.sql("ts_rank(content_tsv, plainto_tsquery(#{connection.quote(query)})) DESC"))
+    where("content_tsv @@ plainto_tsquery('english', :q)", q: query)
+      .order(Arel.sql("ts_rank(content_tsv, plainto_tsquery('english', #{connection.quote(query)})) DESC"))
   }
   scope :corpus_eligible, -> { joins(:document).merge(Document.corpus_eligible) }
 end

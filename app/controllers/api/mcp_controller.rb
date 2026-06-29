@@ -1,5 +1,6 @@
 class Api::McpController < ApiController
   skip_before_action :verify_authenticity_token
+  before_action :check_mcp_key_configured!
   before_action :check_private_api_key!
 
   def handle
@@ -20,6 +21,14 @@ class Api::McpController < ApiController
       render json: body_str, status: status
     else
       head status
+    end
+  end
+
+  private
+
+  def check_mcp_key_configured!
+    if Stacks::Utils.config.dig(:stacks, :private_api_key).to_s.strip.empty?
+      raise Stacks::Errors::Unauthorized.new('MCP API key not configured')
     end
   end
 end

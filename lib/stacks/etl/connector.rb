@@ -26,7 +26,7 @@ module Stacks
             occurred_at: normalized[:occurred_at], content_hash: normalized[:content_hash],
             raw_metadata: normalized[:raw_metadata] || {}
           )
-          doc.source_record = normalized[:build_source_record]&.call(doc)
+          doc.source_record = normalized[:build_source_record]&.call(doc) if changed
           apply_exclusion(doc, normalized) unless doc.human_locked?
           doc.save!
 

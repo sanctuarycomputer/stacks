@@ -71,4 +71,15 @@ class Stacks::Etl::ConnectorTest < ActiveSupport::TestCase
     assert_equal 'success', sync.status
     assert_equal 1, sync.stats['documents']
   end
+
+  test 'unchanged content_hash does NOT re-invoke build_source_record' do
+    call_count = 0
+    doc_with_counter = normalized(external_id: 'bsr1', hash: 'hbsr').merge(
+      build_source_record: ->(_doc) { call_count += 1; nil }
+    )
+    FakeConnector.new([doc_with_counter]).run
+    assert_equal 1, call_count, 'build_source_record should be called on first ingest'
+    FakeConnector.new([doc_with_counter]).run
+    assert_equal 1, call_count, 'build_source_record should NOT be called again for unchanged doc'
+  end
 end

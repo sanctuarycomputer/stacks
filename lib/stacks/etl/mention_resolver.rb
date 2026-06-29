@@ -7,10 +7,11 @@ module Stacks
 
       def self.resolve_display_name(name, participants:)
         needle = name.to_s.downcase.strip
-        exact = participants.select { |p| p[:name].to_s.downcase.strip == needle }
+        candidates = participants.select { |p| p[:contact].present? }
+        exact = candidates.select { |p| p[:name].to_s.downcase.strip == needle }
         return resolved(exact.first[:contact], 1.0) if exact.size == 1
 
-        partial = participants.select do |p|
+        partial = candidates.select do |p|
           full = p[:name].to_s.downcase
           full.split.include?(needle) || full.include?(needle)
         end

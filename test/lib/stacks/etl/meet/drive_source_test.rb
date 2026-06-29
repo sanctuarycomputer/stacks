@@ -19,4 +19,18 @@ class Stacks::Etl::Meet::DriveSourceTest < ActiveSupport::TestCase
     meeting = n[:build_source_record].call(Document.create!(source: :meet, external_id: 'doc1'))
     assert_equal 'doc1', meeting.drive_transcript_doc_id
   end
+
+  test 'accepts a string since and does not raise' do
+    file = OpenStruct.new(id: 'doc2', name: 'Sync - Transcript', created_time: '2026-01-01T09:00:00Z')
+    svc = mock('drive')
+    svc.stubs(:list_files).returns(OpenStruct.new(files: [file], next_page_token: nil))
+    svc.stubs(:export_file).returns("Alice: hello")
+    Stacks::Etl::Meet::Auth.stubs(:drive_service).returns(svc)
+
+    yielded = []
+    assert_nothing_raised do
+      Stacks::Etl::Meet::DriveSource.new('hugh@sanctuary.computer', since: '2025-01-01T00:00:00Z').each_meeting { |n| yielded << n }
+    end
+    assert_equal 1, yielded.size
+  end
 end
