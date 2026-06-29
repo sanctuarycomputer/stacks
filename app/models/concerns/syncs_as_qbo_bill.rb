@@ -35,25 +35,6 @@ module SyncsAsQboBill
     qbo_bill.try(:qbo_url)
   end
 
-  # Returns the QBO Account+Studio tuple to bill against. Default impl picks
-  # "Contractors - Client Services" with a studio-specific subcategory if the
-  # contributor has a studio. Hosts (e.g., ContributorPayout) may override for
-  # special-case routing (internal-client → marketing account).
-  def find_qbo_account!(qbo_accounts = nil)
-    qa = qbo_account_for_bill
-    raise "Enterprise #{enterprise&.name.inspect} has no connected QboAccount" if qa.nil?
-
-    qbo_accounts ||= qa.fetch_all_accounts
-    account = qbo_accounts.find { |a| a.name == "Contractors - Client Services" }
-    studio = contributor.forecast_person.studio
-    if studio.present?
-      specific_account = qbo_accounts.find { |a| a.name == studio.qbo_subcontractors_categories.first }
-      account = specific_account if specific_account.present?
-    end
-    raise "No account found in QuickBooks" unless account.present?
-    [account, studio]
-  end
-
   def load_qbo_bill!
     return nil if qbo_bill_id.blank?
     qa = qbo_account_for_bill
@@ -97,23 +78,10 @@ module SyncsAsQboBill
     qb.remaining_balance
   end
 
-  # Returns the array of Quickbooks::Model::BillLineItem objects that will
-  # be pushed for this host's bill. Default implementation produces a single
-  # line at the host's `find_qbo_account!` result, matching the historic
-  # behavior for Trueup / ContributorAdjustment / ProfitShare / PayStub.
-  # ContributorPayout overrides this to break the bill into per-bucket lines.
-  def bill_line_items(qbo_accounts)
-    account, _studio = find_qbo_account!(qbo_accounts)
-    line = Quickbooks::Model::BillLineItem.new(description: bill_description, amount: amount)
-    line.account_based_expense_item! do |detail|
-      detail.account_ref = Quickbooks::Model::BaseReference.new(account.id)
-    end
-    [line]
-  end
-
-  def sync_qbo_bill!
+  def sync_qbo_bill!(accounts_cache: nil)
     qa = qbo_account_for_bill
     return if qa.nil?
+    accounts_cache ||= Qbo::AccountsCache.new
 
     vendor = contributor.qbo_vendor_for(qa)
     return if vendor.nil?
@@ -132,8 +100,13 @@ module SyncsAsQboBill
     bill.doc_number = "Stacks_#{id}_#{bill_doc_number_code}" # QBO has a 21-char limit
     bill.vendor_ref = Quickbooks::Model::BaseReference.new(vendor.qbo_id)
 
-    qbo_accounts = qa.fetch_all_accounts
-    bill.line_items = bill_line_items(qbo_accounts)
+    bill.line_items = Qbo::BillRouter.new(self, accounts_cache: accounts_cache).lines.map do |data|
+      line = Quickbooks::Model::BillLineItem.new(description: data[:description], amount: data[:amount])
+      line.account_based_expense_item! do |detail|
+        detail.account_ref = Quickbooks::Model::BaseReference.new(data[:account].id)
+      end
+      line
+    end
     bill_service = Quickbooks::Service::Bill.new
     bill_service.company_id = qa.realm_id
     bill_service.access_token = qa.make_and_refresh_qbo_access_token

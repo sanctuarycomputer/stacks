@@ -1,6 +1,8 @@
 class Enterprise < ApplicationRecord
   SANCTUARY_NAME = "Sanctuary Computer Inc".freeze
   GARDEN3D_NAME = "garden3d, LLC".freeze
+  INDEX_SPACE_NAME = "Index Space, LLC".freeze
+  USB_CLUB_NAME = "USB Club, LLC".freeze
 
   has_many :enterprise_forecast_clients, dependent: :destroy
   has_many :forecast_clients, through: :enterprise_forecast_clients

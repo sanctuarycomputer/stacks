@@ -836,9 +836,8 @@ class InvoiceTracker < ApplicationRecord
     created_qbo_inv
   end
 
-  # Picks the QBO invoice-line Item for a given forecast_person. Mirrors the
-  # bill-side internal-client override in ContributorPayout#find_qbo_account!:
-  # for internal clients, when the person has no studio or is on a client-services
+  # Picks the QBO invoice-line Item for a given forecast_person.
+  # For internal clients, when the person has no studio or is on a client-services
   # studio, force the line item's service to "Marketing Services" instead of the
   # studio's normal accounting_prefix-derived item.
   private def qbo_item_for_person(person, qbo_items, default_service_item)
