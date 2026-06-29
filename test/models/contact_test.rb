@@ -15,4 +15,16 @@ class ContactResolveEmailTest < ActiveSupport::TestCase
     assert_includes c.sources, 'meet'
     assert_includes c.sources, 'xxix:newsletter'
   end
+
+  test 'fills a blank display_name on an existing contact' do
+    Contact.create!(email: 'blank@gmail.com', sources: ['x'])
+    c = Contact.resolve_email('blank@gmail.com', name: 'Now Named')
+    assert_equal 'Now Named', c.display_name
+  end
+
+  test 'does not overwrite an existing display_name' do
+    Contact.create!(email: 'named@gmail.com', display_name: 'Original')
+    c = Contact.resolve_email('named@gmail.com', name: 'Different')
+    assert_equal 'Original', c.display_name
+  end
 end
