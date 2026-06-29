@@ -25,4 +25,16 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
     assert m2.reason_one_on_one?
     assert_equal 0, m2.chunks.count
   end
+
+  test 'classifies on real participant_count, not contacts.size (big meeting, few speakers != 1:1)' do
+    # 6-person meeting where Calendar enrichment missed, so contacts fell back to the 2
+    # distinct speakers. participant_count=6 must keep it OUT of the 1:1 exclusion.
+    n = normalized('m3', 'Roadmap planning', 2).merge(participant_count: 6)
+    source = mock('source')
+    source.stubs(:each_meeting).multiple_yields([n])
+    Stacks::Etl::Meet::MeetApiSource.stubs(:new).returns(source)
+
+    Stacks::Etl::Meet::Connector.new(admin_email: 'hugh@sanctuary.computer', mode: :api).run
+    assert Document.find_by!(external_id: 'm3').not_excluded?
+  end
 end

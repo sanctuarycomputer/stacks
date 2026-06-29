@@ -34,26 +34,28 @@ class Stacks::Etl::Meet::MeetApiSourceTest < ActiveSupport::TestCase
     assert_equal 1, meeting.segments.count
   end
 
-  test 'keys the document + meeting on the transcript Drive doc id for cross-source dedup' do
+  test 'keys on the conference record (Drive doc id only in metadata) and reports real participant_count' do
     cr = OpenStruct.new(name: 'conferenceRecords/9', start_time: '2026-01-01T09:00:00Z', end_time: '2026-01-01T09:30:00Z', space: 'spaces/abc')
     transcript = OpenStruct.new(name: 'conferenceRecords/9/transcripts/1', docs_destination: OpenStruct.new(document: 'DRIVE_DOC_42'))
     entry = OpenStruct.new(participant: 'p1', text: 'hello', start_time: '2026-01-01T09:01:00Z', end_time: '2026-01-01T09:01:05Z')
-    participant = OpenStruct.new(name: 'p1', signedin_user: OpenStruct.new(display_name: 'Drew'))
+    parts = %w[p1 p2 p3].map { |n| OpenStruct.new(name: n, signedin_user: OpenStruct.new(display_name: n.upcase)) }
     svc = mock('svc')
     svc.stubs(:list_conference_records).returns(OpenStruct.new(conference_records: [cr], next_page_token: nil))
     svc.stubs(:get_space).returns(OpenStruct.new(meeting_code: 'abc', meeting_uri: 'u'))
     svc.stubs(:list_conference_record_transcripts).returns(OpenStruct.new(transcripts: [transcript], next_page_token: nil))
     svc.stubs(:list_conference_record_transcript_entries).returns(OpenStruct.new(transcript_entries: [entry], next_page_token: nil))
-    svc.stubs(:list_conference_record_participants).returns(OpenStruct.new(participants: [participant], next_page_token: nil))
+    svc.stubs(:list_conference_record_participants).returns(OpenStruct.new(participants: parts, next_page_token: nil))
     Stacks::Etl::Meet::Auth.stubs(:meet_service).returns(svc)
-    Stacks::Etl::Meet::CalendarEnricher.any_instance.stubs(:enrich).returns(title: 'T', attendees: [])
+    Stacks::Etl::Meet::CalendarEnricher.any_instance.stubs(:enrich).returns(title: 'T', attendees: [{ email: 'a@x.co', name: 'A' }])
 
     n = nil
     Stacks::Etl::Meet::MeetApiSource.new('hugh@sanctuary.computer').each_meeting { |m| n = m }
-    assert_equal 'DRIVE_DOC_42', n[:external_id]
+    assert_equal 'conferenceRecords/9', n[:external_id]
+    assert_equal 'DRIVE_DOC_42', n[:raw_metadata]['drive_doc_id']
+    assert_equal 3, n[:participant_count] # actual Meet participants, not the 1 attendee
     meeting = n[:build_source_record].call(Document.create!(source: :meet, external_id: n[:external_id]))
-    assert_equal 'DRIVE_DOC_42', meeting.drive_transcript_doc_id
     assert_equal 'conferenceRecords/9', meeting.meet_conference_record_id
+    assert_nil meeting.drive_transcript_doc_id
   end
 
   test 'skips a conference record whose transcript has no entries yet' do

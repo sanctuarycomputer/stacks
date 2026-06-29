@@ -28,8 +28,11 @@ module Stacks
         return [words] if words.size <= MAX_WORDS
         out = []
         i = 0
-        while i < words.size
+        loop do
           out << words[i, MAX_WORDS]
+          # Stop once a slice reaches the end; otherwise the next window would be almost
+          # entirely overlap — a near-duplicate chunk.
+          break if i + MAX_WORDS >= words.size
           i += MAX_WORDS - OVERLAP_WORDS
         end
         out

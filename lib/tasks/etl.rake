@@ -32,21 +32,27 @@ namespace :stacks do
     # failure never aborts the run), deduped by the global conference-record / Drive-
     # doc IDs. Meant to run on a Performance dyno (the local embedding model needs RAM).
 
-    desc 'Org-wide Drive backfill of Meet transcripts for ALL users (default 90 days)'
+    # Drive backfill covers the OLDER window only (up to OVERLAP_GUARD ago); the ongoing
+    # Meet API sweep covers the recent window. Partitioning the two by time is how we avoid
+    # ingesting the same meeting twice — no fragile cross-source merge.
+    OVERLAP_GUARD_DAYS = 7
+
+    desc 'Org-wide Drive backfill of Meet transcripts for ALL users (default 90 days, older window)'
     task :backfill_meet_all, [:days] => :environment do |_t, args|
       Stacks::Etl::Meet.sweep_all_users!(
         task_name: 'stacks:etl:backfill_meet_all',
         mode: :drive,
-        since: (args[:days] || 90).to_i.days.ago
+        since: (args[:days] || 90).to_i.days.ago,
+        until_time: OVERLAP_GUARD_DAYS.days.ago
       )
     end
 
-    desc 'Org-wide ongoing Meet API sync for ALL users (default last 7 days)'
+    desc 'Org-wide ongoing Meet API sync for ALL users (recent window; default 10 days)'
     task :sync_meet_all, [:days] => :environment do |_t, args|
       Stacks::Etl::Meet.sweep_all_users!(
         task_name: 'stacks:etl:sync_meet_all',
         mode: :api,
-        since: (args[:days] || 7).to_i.days.ago
+        since: (args[:days] || 10).to_i.days.ago
       )
     end
   end

@@ -19,4 +19,13 @@ class Stacks::Etl::ChunkerTest < ActiveSupport::TestCase
     assert_operator chunks.size, :>=, 2
     assert chunks.all? { |c| c[:content].split.size <= Stacks::Etl::Chunker::MAX_WORDS }
   end
+
+  test 'does not emit a trailing near-duplicate chunk' do
+    # 720 words: the 2nd window reaches the end, so exactly 2 chunks (the old sliding
+    # loop emitted a 3rd window that was ~entirely overlap).
+    long = (1..720).map { |i| "w#{i}" }.join(' ')
+    chunks = Stacks::Etl::Chunker.call(segments: [{ speaker_name: 'A', speaker_email: 'a@x.co', text: long, started_at: Time.now }])
+    assert_equal 2, chunks.size
+    assert_equal 'w720', chunks.last[:content].split.last
+  end
 end

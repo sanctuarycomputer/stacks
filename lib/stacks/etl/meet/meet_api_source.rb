@@ -48,17 +48,20 @@ module Stacks
               participants.values.map { |p| { email: p[:email], name: p[:name], role: 'participant' } }
             end
           {
-            # Key on the transcript's Drive doc id when present so a meeting ingested via
-            # both the Meet API and the Drive backfill reconciles onto ONE document.
-            external_id: drive_doc_id || cr.name,
+            external_id: cr.name,
             title: title,
             url: uri || (code ? "https://meet.google.com/#{code}" : nil),
             occurred_at: cr.start_time,
             content_hash: Digest::SHA256.hexdigest(text),
+            # Actual Meet participant count for exclusion (NOT contacts.size, which may be
+            # the Calendar attendee list or a fallback speaker list).
+            participant_count: participants.size,
             contacts: contacts,
             segments: segments,
+            # drive_doc_id kept for reference only; Drive ingest is partitioned to an older
+            # window so the two sources never produce the same meeting (no fragile merge).
             raw_metadata: { 'conference_record' => cr.name, 'space' => cr.space, 'drive_doc_id' => drive_doc_id },
-            build_source_record: ->(doc) { build_meeting(doc, cr, participants, segments, title, drive_doc_id) }
+            build_source_record: ->(doc) { build_meeting(doc, cr, participants, segments, title) }
           }
         end
 
@@ -114,16 +117,9 @@ module Stacks
           [segments, drive_doc_id]
         end
 
-        def build_meeting(doc, cr, participants, segments, title, drive_doc_id)
-          # Key on the Drive doc id when present (so a Drive-backfilled meeting and its
-          # later Meet-API sync share one Meeting row); else on the conference record.
-          meeting = if drive_doc_id
-                      Meeting.find_or_initialize_by(drive_transcript_doc_id: drive_doc_id)
-                    else
-                      Meeting.find_or_initialize_by(meet_conference_record_id: cr.name)
-                    end
-          meeting.update!(meet_source: :meet_api, meet_conference_record_id: cr.name,
-                          drive_transcript_doc_id: drive_doc_id, title: title, started_at: cr.start_time,
+        def build_meeting(doc, cr, participants, segments, title)
+          meeting = Meeting.find_or_initialize_by(meet_conference_record_id: cr.name)
+          meeting.update!(meet_source: :meet_api, title: title, started_at: cr.start_time,
                           ended_at: cr.end_time, participant_count: participants.size,
                           raw_metadata: { 'document_id' => doc.id })
           meeting.participants.destroy_all

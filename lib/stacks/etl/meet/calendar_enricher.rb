@@ -63,8 +63,11 @@ module Stacks
           e.start&.date_time || e.start&.date
         end
 
+        # Compare titles on letters/digits only, so emoji and punctuation drift between a
+        # Drive doc name ("🤝 Business Meeting 🤝") and the Calendar summary ("Business
+        # Meeting") doesn't drop the match (and with it, all the attendee emails).
         def normalize_title(str)
-          str.to_s.downcase.gsub(/\s+/, ' ').strip
+          str.to_s.downcase.gsub(/[^\p{L}\p{N}]+/, ' ').strip
         end
 
         def attendees_for(event)

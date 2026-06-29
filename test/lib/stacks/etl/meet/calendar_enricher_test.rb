@@ -56,6 +56,13 @@ class Stacks::Etl::Meet::CalendarEnricherTest < ActiveSupport::TestCase
     assert_equal ['near@x.co'], r[:attendees].map { |x| x[:email] }
   end
 
+  test 'matches despite emoji/punctuation drift between doc name and calendar summary' do
+    enr = enricher_returning([event(summary: 'Business Meeting', conf_id: 'x', attendees: [['b@x.co', nil]])])
+    r = enr.enrich(started_at: Time.utc(2026, 1, 1, 9), meeting_code: nil,
+                   fallback_title: '🤝 Business Meeting 🤝', title_hint: '🤝 Business Meeting 🤝')
+    assert_equal ['b@x.co'], r[:attendees].map { |x| x[:email] }
+  end
+
   test 'skips room-resource attendees' do
     enr = enricher_returning([event(summary: 'S', conf_id: 'abc', attendees: [['room@resource.calendar.google.com', nil], ['c@x.co', nil]])])
     r = enr.enrich(started_at: Time.utc(2026, 1, 1, 9), meeting_code: 'abc', fallback_title: 'S')

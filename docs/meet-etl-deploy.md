@@ -62,7 +62,11 @@ local embedding model needs RAM and the run is long):
 heroku run:detached --size=performance-l "rake 'stacks:etl:backfill_meet_all[90]'" --app <app>
 ```
 
-- Impersonates every active Workspace user (~65), error-isolated per user.
+- Impersonates every active Workspace user (~65), error-isolated per user. If **every**
+  user fails (e.g. broken auth) the SystemTask is marked errored, not green.
+- Covers only the **older** window (up to ~7 days ago); the recent window is owned by the
+  nightly Meet API sync below. This time-partition is how the two sources avoid ingesting
+  the same meeting twice (no fragile cross-source merge).
 - First model use downloads the quantized mxbai ONNX model (~hundreds of MB) to the
   ephemeral dyno.
 - Watch progress: `heroku logs --tail --app <app>` and the ActiveAdmin **MCP → ETL →
@@ -76,8 +80,9 @@ Add a **Heroku Scheduler** job (Scheduler lets you pick the dyno size):
 - **Dyno size:** Performance-L (enough RAM for the embedding model; faster)
 - **Frequency:** daily (overnight)
 
-This pulls the recent window (default last 7 days; `sync_meet_all[N]` to change) via the
-richer Meet REST API for every user, embedding new transcripts locally.
+This pulls the recent window (default last 10 days; `sync_meet_all[N]` to change) via the
+richer Meet REST API for every user, embedding new transcripts locally. It owns the recent
+window; the Drive backfill owns everything older, so the two never double-ingest a meeting.
 
 ## 5. Operating notes
 
@@ -91,10 +96,9 @@ richer Meet REST API for every user, embedding new transcripts locally.
 
 ## Known follow-ups (not blocking)
 
-- Cross-source dedup: a meeting backfilled via Drive and later synced via the Meet API
-  produces two documents (different external IDs). Unify later via the transcript's
-  Drive doc id (the Meet API exposes it on the transcript).
-- Semantic search materializes candidate chunk ids into an `IN (...)` list — fine now,
-  revisit if the corpus grows very large.
+- Cross-source duplicates are avoided by **time-partitioning** (Drive = older window, API
+  = recent). A small intentional overlap at the ~7–10 day boundary may rarely produce a
+  duplicate document for a meeting whose transcript-doc time and meeting start straddle the
+  cutoff; this is preferred over a gap (which would lose a meeting). Safe to dedup later.
 - Bake the embedding model into the slug (or a cache) to avoid re-downloading it on
   each one-off dyno run.

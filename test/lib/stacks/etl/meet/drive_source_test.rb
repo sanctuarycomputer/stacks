@@ -34,6 +34,22 @@ class Stacks::Etl::Meet::DriveSourceTest < ActiveSupport::TestCase
     assert_equal 'Kyle, Sam & Hugh', src.send(:clean_title, 'Kyle, Sam & Hugh (2026/06/27 17:00 GMT-7) - Transcript')
   end
 
+  test 'does not misparse URL / timestamp / non-name lines as speakers' do
+    src = Stacks::Etl::Meet::DriveSource.allocate
+    segs = src.send(:parse_segments, "Drew Smith: we should ship\nhttps://meet.google.com/abc was shared\n10:30 short break\nHugh: agreed")
+    assert_equal ['Drew Smith', 'Hugh'], segs.map { |s| s[:speaker_name] }
+  end
+
+  test 'until_time bounds the Drive query to an older window (partitioned dedup)' do
+    captured = nil
+    svc = mock('drive')
+    svc.stubs(:list_files).with { |kw| captured = kw[:q]; true }.returns(OpenStruct.new(files: [], next_page_token: nil))
+    Stacks::Etl::Meet::Auth.stubs(:drive_service).returns(svc)
+    Stacks::Etl::Meet::DriveSource.new('h@x.co', since: Time.utc(2026, 1, 1), until_time: Time.utc(2026, 3, 1)).each_meeting { |_| }
+    assert_includes captured, "createdTime > '2026-01-01"
+    assert_includes captured, "createdTime < '2026-03-01"
+  end
+
   test 'accepts a string since and does not raise' do
     file = OpenStruct.new(id: 'doc2', name: 'Sync - Transcript', created_time: '2026-01-01T09:00:00Z')
     svc = mock('drive')
