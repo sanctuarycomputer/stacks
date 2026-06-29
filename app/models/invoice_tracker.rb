@@ -546,7 +546,19 @@ class InvoiceTracker < ApplicationRecord
         end
       end.compact
 
-      (contributor_payouts - synced).each(&:destroy)
+      # Per-row rescue around obsolete CP destroys: ContributorPayout's
+      # before_destroy chain runs SyncsAsQboBill#detach_and_destroy_qbo_bill
+      # which now raises PaidQboBillError on a paid bill. Without this rescue
+      # the exception would roll back the entire make_contributor_payouts!
+      # transaction and every cp.update! above would be lost. Skip the one
+      # paid-bill orphan with a log; the rest of the tracker still updates.
+      (contributor_payouts - synced).each do |orphan|
+        begin
+          orphan.destroy
+        rescue SyncsAsQboBill::PaidQboBillError => e
+          Rails.logger.error("[invoice_tracker_make_payouts] ##{id} cannot destroy orphan CP ##{orphan.id}: #{e.message}")
+        end
+      end
       contributor_payouts.reload
 
       # Commission-only CPs auto-accept: no contributor is reviewing their own work,

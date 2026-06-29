@@ -149,11 +149,18 @@ ActiveAdmin.register Contributor do
       r.update!(accepted_by: nil, accepted_at: nil)
     else
       r.update!(accepted_by: current_admin_user, accepted_at: DateTime.now)
-      begin
-        r.sync_qbo_bill!
-      rescue => e
-        qbo_error = e
-        Rails.logger.error("[reimbursement_accept] QBO sync failed for ##{r.id}: #{e.class}: #{e.message}")
+      # Only push to QBO when the ledger is qbo-enabled. A Deel-only ledger
+      # might still have an enterprise-level qbo_account + vendor mapping
+      # (some enterprises have both); without this gate the accept would
+      # create a Bill in vendor AP that Finance could pay on top of the Deel
+      # payout — double-payment risk.
+      if r.ledger.payment_methods.include?("qbo")
+        begin
+          r.sync_qbo_bill!
+        rescue => e
+          qbo_error = e
+          Rails.logger.error("[reimbursement_accept] QBO sync failed for ##{r.id}: #{e.class}: #{e.message}")
+        end
       end
     end
 
@@ -279,7 +286,17 @@ ActiveAdmin.register Contributor do
         current_ledger.items_grouped_by_month
       end
 
-    balance = resource.new_deal_balance(items_result)
+    # Balance/Unsettled summary card scopes to the current view:
+    #   :all     — sum across every ledger
+    #   :ledger  — just the currently selected ledger
+    # Otherwise the header would silently disagree with the per-ledger pill and
+    # the items list rendered below (which IS scoped to current_ledger).
+    balance =
+      if view_mode == :ledger && current_ledger
+        { balance: current_ledger.balance.to_f, unsettled: current_ledger.unsettled.to_f }
+      else
+        resource.new_deal_balance
+      end
     admin = resource.forecast_person&.admin_user
     pending_tasks = admin&.pending_tasks || []
 

@@ -33,13 +33,33 @@ module SyncsAsQboBill
   def detach_and_destroy_qbo_bill
     bill = qbo_bill
     return unless bill.present?
-    if bill.paid?
+
+    # Refresh the bill against QBO before checking paid? — cached
+    # data['balance'] may be stale (last sync_all_bills! could be hours ago,
+    # and Finance might have paid the bill in QBO since). If we can fetch
+    # fresh state, use it; if QBO is unreachable, fall back to cached.
+    # Either way, refuse if the bill is paid (destroying a paid bill in QBO
+    # orphans the BillPayment in vendor AP).
+    fresh_balance =
+      begin
+        remote = load_qbo_bill!
+        remote ? remote.try(:balance).to_f : nil
+      rescue
+        nil
+      end
+
+    paid = fresh_balance.present? ? fresh_balance <= 0 : bill.paid?
+    if paid
       raise PaidQboBillError,
         "#{self.class.name} ##{id}: refusing to destroy QBO bill #{bill.qbo_id} — it is paid. Void the BillPayment in QBO first."
     end
+
     ActiveRecord::Base.transaction do
       update_attribute(:qbo_bill_id, nil)
-      bill.destroy!
+      # Re-read the local QboBill in case load_qbo_bill!'s rescue path nulled
+      # qbo_bill_id (Object Not Found) — bill would then be a stale reference.
+      bill = QboBill.find_by(qbo_account_id: qbo_account_for_bill&.id, qbo_id: bill.qbo_id)
+      bill&.destroy!
     end
   end
 

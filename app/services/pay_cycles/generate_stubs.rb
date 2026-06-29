@@ -164,7 +164,15 @@ module PayCycles
         if orphan.accepted_at.present?
           raise AcceptedStubMissingHoursError, "PayStub ##{orphan.id} (#{orphan.ledger.contributor.forecast_person.email}) was already accepted but has no qualifying hours after regen."
         end
-        orphan.destroy
+        begin
+          orphan.destroy
+        rescue SyncsAsQboBill::PaidQboBillError => e
+          # PayStub's before_destroy now refuses to destroy a paid QBO bill.
+          # Skip the one orphan + log; without this rescue the entire
+          # GenerateStubs#call transaction would roll back and the pay cycle
+          # wouldn't regenerate at all.
+          Rails.logger.error("[generate_stubs] pay_cycle=#{pay_cycle.id} cannot destroy orphan stub ##{orphan.id}: #{e.message}")
+        end
       end
     end
   end

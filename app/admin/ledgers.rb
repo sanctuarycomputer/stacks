@@ -36,8 +36,15 @@ ActiveAdmin.register Ledger do
     end
     result = Ledgers::QboBoundMigrationCheck.call(resource)
     if result.ready?
-      resource.update!(mode: :qbo_bound)
-      redirect_to admin_ledger_path(resource), notice: "Migrated to QBO-bound."
+      begin
+        resource.update!(mode: :qbo_bound)
+        redirect_to admin_ledger_path(resource), notice: "Migrated to QBO-bound."
+      rescue ActiveRecord::RecordInvalid => e
+        # qbo_bound_requires_qbo_payment_method blocks the flip for Deel-only
+        # ledgers — trivial-empty ones still get marked `ready?`. Friendly
+        # alert beats a 500.
+        redirect_to admin_ledger_path(resource), alert: "Cannot migrate: #{e.record.errors.full_messages.join(", ")}."
+      end
     elsif result.qbo_vendor_missing?
       redirect_to admin_ledger_path(resource),
         alert: "Cannot migrate: no QBO vendor mapping for this contributor on #{resource.enterprise.name}."
