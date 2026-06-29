@@ -31,4 +31,12 @@ class Stacks::Etl::MentionResolverTest < ActiveSupport::TestCase
     assert_nil r[:contact]
     assert_equal 'unresolved', r[:status]
   end
+
+  test 'multiple partial first-name matches are ambiguous' do
+    drew_jones = Contact.create!(email: 'drew.jones@gmail.com', display_name: 'Drew Jones')
+    participants = @participants + [{ name: 'Drew Jones', contact: drew_jones }]
+    r = Stacks::Etl::MentionResolver.resolve_display_name('Drew', participants: participants)
+    assert_nil r[:contact]
+    assert_equal 'ambiguous', r[:status]
+  end
 end
