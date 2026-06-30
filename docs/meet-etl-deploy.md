@@ -105,9 +105,11 @@ window; the Drive backfill owns everything older, so the two never double-ingest
 
 ## Known follow-ups (not blocking)
 
-- Cross-source duplicates are avoided by **time-partitioning** (Drive = older window, API
-  = recent). A small intentional overlap at the ~7–10 day boundary may rarely produce a
-  duplicate document for a meeting whose transcript-doc time and meeting start straddle the
-  cutoff; this is preferred over a gap (which would lose a meeting). Safe to dedup later.
+- Cross-source duplicates are avoided two ways: **time-partitioning** (Drive = older window,
+  API = recent, with a deliberate ~7–10 day overlap so no meeting falls in a gap) AND an
+  explicit **existence-check dedup** — each source skips a meeting the other already ingested,
+  matched on the shared Drive doc id (`Document.for_drive_doc`), while excluding its own row so
+  re-scans still re-ingest corrected transcripts. So the boundary overlap no longer produces
+  duplicates.
 - Bake the embedding model into the slug (or a cache) to avoid re-downloading it on
   each one-off dyno run.
