@@ -2,6 +2,7 @@ require 'test_helper'
 
 class EmbeddingTest < ActiveSupport::TestCase
   setup do
+    skip_without_pgvector # every test here stores/queries the pgvector embedding column
     @doc = Document.create!(source: :meet, external_id: 'd1')
     @chunk = Chunk.create!(document: @doc, position: 0, content: 'hello', source: :meet)
   end

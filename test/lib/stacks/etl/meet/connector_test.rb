@@ -1,7 +1,10 @@
 require 'test_helper'
 
 class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
-  setup { Stacks::Etl::Embedder.stubs(:embed).returns(vectors: [[0.5] * 1024], total_tokens: 1) }
+  setup do
+    skip_without_pgvector # ingest creates Embedding records, which need the pgvector column
+    Stacks::Etl::Embedder.stubs(:embed).returns(vectors: [[0.5] * 1024], total_tokens: 1)
+  end
 
   def normalized(id, title, pcount)
     {

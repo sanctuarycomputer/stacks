@@ -16,7 +16,11 @@ ActiveRecord::Schema.define(version: 2026_06_29_000001) do
   enable_extension "btree_gist"
   enable_extension "pg_stat_statements"
   enable_extension "plpgsql"
-  enable_extension "vector"
+  # The "vector" (pgvector) extension and the embeddings.embedding vector column + HNSW
+  # index are intentionally omitted here so db:schema:load works on a Postgres without
+  # pgvector (e.g. Heroku CI's in-dyno Postgres). They are created by migrations in
+  # development/production, and re-established idempotently for tests/seeds in
+  # test/test_helper.rb and db/seeds.rb. Keep them out of this dumped schema.
 
   create_table "account_lead_periods", force: :cascade do |t|
     t.bigint "project_tracker_id", null: false
@@ -284,10 +288,10 @@ ActiveRecord::Schema.define(version: 2026_06_29_000001) do
     t.string "owner_type", null: false
     t.bigint "owner_id", null: false
     t.string "model", null: false
-    t.vector "embedding", limit: 1024
+    # embedding vector(1024) + its HNSW index are added outside this schema (see the
+    # pgvector note at the top of the file) so schema:load works without pgvector.
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
-    t.index ["embedding"], name: "index_embeddings_on_embedding", opclass: :vector_cosine_ops, using: :hnsw
     t.index ["owner_type", "owner_id", "model"], name: "index_embeddings_on_owner_and_model", unique: true
     t.index ["owner_type", "owner_id"], name: "index_embeddings_on_owner"
   end

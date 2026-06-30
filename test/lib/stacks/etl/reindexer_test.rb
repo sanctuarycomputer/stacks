@@ -21,6 +21,7 @@ class Stacks::Etl::ReindexerTest < ActiveSupport::TestCase
   end
 
   test 'indexes a re-included document from its stored segments (no re-fetch)' do
+    skip_without_pgvector # creates Embedding records (needs the pgvector column)
     doc = doc_with_stored_segments(excluded: :manually_included)
     assert_equal 0, doc.chunks.count
     assert Stacks::Etl::Reindexer.call(doc)

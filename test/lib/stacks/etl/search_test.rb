@@ -23,6 +23,7 @@ class Stacks::Etl::SearchTest < ActiveSupport::TestCase
   end
 
   test 'semantic mode embeds the query, ranks by neighbor distance, and walls off excluded chunks' do
+    skip_without_pgvector # creates Embedding records + runs a neighbor (vector) query
     Embedding.create!(owner: @hit, model: Stacks::Etl::Embedder::MODEL, embedding: Array.new(1024) { 0.0 }.tap { |v| v[0] = 1.0 })
     Embedding.create!(owner: @miss, model: Stacks::Etl::Embedder::MODEL, embedding: Array.new(1024) { 0.0 }.tap { |v| v[1] = 1.0 })
     # The excluded chunk's embedding is IDENTICAL to the query vector — if the corpus

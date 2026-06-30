@@ -2,9 +2,6 @@
   "buildpacks": [
     { "url": "heroku/ruby" }
   ],
-  "scripts": {
-    "test-setup": "bash bin/ci-install-pgvector && bundle exec rake db:schema:load"
-  },
   "environments": {
     "test": {
       "addons": ["heroku-postgresql:in-dyno"]

@@ -50,3 +50,15 @@ if ActiveRecord::Base.connection.table_exists?(:chunks)
     CREATE INDEX IF NOT EXISTS index_chunks_on_content_tsv ON chunks USING gin (content_tsv);
   SQL
 end
+
+# pgvector + the embeddings.embedding vector column + HNSW index are likewise omitted from
+# db/schema.rb (so schema:load works without pgvector). Re-establish them on a
+# db:setup/schema:load-built database when pgvector is available.
+if ActiveRecord::Base.connection.table_exists?(:embeddings) &&
+   ActiveRecord::Base.connection.select_value("SELECT 1 FROM pg_available_extensions WHERE name = 'vector'").present?
+  ActiveRecord::Base.connection.execute(<<~SQL)
+    CREATE EXTENSION IF NOT EXISTS vector;
+    ALTER TABLE embeddings ADD COLUMN IF NOT EXISTS embedding vector(1024);
+    CREATE INDEX IF NOT EXISTS index_embeddings_on_embedding ON embeddings USING hnsw (embedding vector_cosine_ops);
+  SQL
+end

@@ -21,6 +21,7 @@ class Stacks::Etl::ConnectorTest < ActiveSupport::TestCase
   end
 
   setup do
+    skip_without_pgvector # ingest creates Embedding records, which need the pgvector column
     Stacks::Etl::Embedder.stubs(:embed).returns(vectors: [[0.5] * 1024], total_tokens: 1)
   end
 

@@ -30,14 +30,16 @@ git push heroku <branch>:main          # or your normal deploy flow
 heroku run rake db:migrate --app <app> # creates the ETL tables + enables pgvector
 ```
 
-> **Must deploy via `db:migrate`, not `db:schema:load`.** The `chunks.content_tsv`
-> column is a Postgres `GENERATED ALWAYS AS … STORED` tsvector, which Rails 6.1
-> cannot represent in `db/schema.rb` (it's intentionally omitted there). Only the
-> migration `20260628000003_create_chunks` creates the column and its GIN index, so
-> a database built with `schema:load` would be missing `content_tsv` and the MCP
-> search tool's keyword/hybrid modes would raise `PG::UndefinedColumn`. `db:setup`
-> additionally re-establishes it via `db/seeds.rb` (and the test suite via
-> `test_helper.rb`), but the canonical path is always to run the migrations.
+> **Must deploy via `db:migrate`, not `db:schema:load`.** Two things are deliberately
+> kept OUT of `db/schema.rb` so that `schema:load` works on a Postgres without pgvector
+> (e.g. Heroku CI's in-dyno Postgres): (1) the `chunks.content_tsv` generated tsvector
+> column + GIN index, and (2) the `vector` extension and the `embeddings.embedding`
+> `vector(1024)` column + its HNSW index. The migrations create both in dev/prod; a
+> `schema:load`-built DB is missing them and the MCP search tool would raise
+> `PG::UndefinedColumn`/`extension not available`. `db:setup` re-establishes them via
+> `db/seeds.rb` (and the test suite via `test_helper.rb`, which also skips the
+> vector-dependent tests when pgvector is absent), but the canonical path is always to
+> run the migrations.
 
 The MCP endpoint is served by the existing web dyno (mounted at `/api/mcp`); no new
 process type is required, so the `Procfile` is unchanged. The Streamable-HTTP
