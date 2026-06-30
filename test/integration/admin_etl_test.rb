@@ -4,8 +4,10 @@ class AdminEtlTest < ActionDispatch::IntegrationTest
   include Devise::Test::IntegrationHelpers
 
   setup do
+    # The MCP/ETL admin pages are restricted to Hugh (AdminUser#can_access_etl_admin?),
+    # so the acting user must be him.
     @admin = AdminUser.create!(
-      email: "etl_admin_#{SecureRandom.hex(4)}@sanctuary.computer",
+      email: "hugh@sanctuary.computer",
       password: 'password12345',
       password_confirmation: 'password12345',
       roles: ['admin']
@@ -32,5 +34,16 @@ class AdminEtlTest < ActionDispatch::IntegrationTest
     put "/admin/mentions/#{mention.id}/resolve", params: { contact_id: contact.id }
     assert_equal contact.id, mention.reload.contact_id
     assert mention.reload.resolved?
+  end
+
+  test 'a non-Hugh admin cannot reach the MCP/ETL pages (redirected away)' do
+    sign_in AdminUser.create!(
+      email: "someone.else@sanctuary.computer",
+      password: 'password12345', password_confirmation: 'password12345', roles: ['admin']
+    )
+    get '/admin/meetings'
+    assert_redirected_to '/admin'
+    get '/admin/documents'
+    assert_redirected_to '/admin'
   end
 end
