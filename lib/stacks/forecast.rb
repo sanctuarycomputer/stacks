@@ -102,6 +102,30 @@ class Stacks::Forecast
 
   private
 
+  # Forecast re-sends every record that overlaps each sync window, and sync_all_assignments!
+  # walks month-by-month from 2020, so an unconditional `upsert_all` rewrites unchanged rows
+  # on every run — once per month an assignment spans, every sync. Over time this churned
+  # forecast_assignments to ~71M updates for ~46k live rows, bloating it to 26GB of table +
+  # index dead space (plain VACUUM reclaims for reuse but never shrinks the files).
+  #
+  # Fix: only upsert rows that are NEW or whose Forecast `updated_at` actually advanced.
+  # Returns EVERY seen forecast_id (changed or not), so callers that prune-by-absence still
+  # treat unchanged-but-present records as seen.
+  def upsert_changed!(model, data)
+    return [] if data.empty?
+
+    seen_ids = data.map { |row| row[:forecast_id] }
+    stored_updated_at = model.where(forecast_id: seen_ids).pluck(:forecast_id, :updated_at).to_h
+    changed = data.select do |row|
+      prev = stored_updated_at[row[:forecast_id]]
+      incoming = row[:updated_at]
+      # New row, or no/changed Forecast timestamp -> write it; otherwise it's a no-op, skip.
+      prev.nil? || incoming.blank? || prev.to_i != Time.parse(incoming.to_s).to_i
+    end
+    model.upsert_all(changed, unique_by: :forecast_id) if changed.any?
+    seen_ids
+  end
+
   def sync_clients!
     data = clients()["clients"].map do |c|
       {
@@ -114,7 +138,7 @@ class Stacks::Forecast
         data: c,
       }
     end
-    ForecastClient.upsert_all(data, unique_by: :forecast_id)
+    upsert_changed!(ForecastClient, data)
   end
 
   def sync_people!
@@ -131,7 +155,7 @@ class Stacks::Forecast
         data: c,
       }
     end
-    ForecastPerson.upsert_all(data, unique_by: :forecast_id)
+    upsert_changed!(ForecastPerson, data)
   end
 
   def sync_projects!
@@ -152,12 +176,12 @@ class Stacks::Forecast
         data: c,
       }
     end
-    ForecastProject.upsert_all(data, unique_by: :forecast_id)
+    upsert_changed!(ForecastProject, data)
   end
 
-  # Returns the array of forecast_ids that were upserted in this call, so
-  # sync_all! can collect them across the per-month walk and prune anything
-  # not seen.
+  # Returns the array of forecast_ids SEEN in this call (whether or not they
+  # needed rewriting), so sync_all! can collect them across the per-month walk
+  # and prune only assignments it never saw.
   def sync_assignments!(start_date = Date.today, end_date = Date.today)
     data = assignments(start_date, end_date)["assignments"].map do |c|
       {
@@ -176,9 +200,7 @@ class Stacks::Forecast
         data: c,
       }
     end
-    return [] if data.empty?
-    ForecastAssignment.upsert_all(data, unique_by: :forecast_id)
-    data.map { |row| row[:forecast_id] }
+    upsert_changed!(ForecastAssignment, data)
   end
 
   def sync_all_assignments!
