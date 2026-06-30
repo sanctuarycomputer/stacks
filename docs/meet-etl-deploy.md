@@ -85,11 +85,13 @@ heroku run:detached --size=performance-l "rake 'stacks:etl:backfill_meet_all[90]
 
 Add a **Heroku Scheduler** job (Scheduler lets you pick the dyno size):
 
-- **Command:** `bundle exec rake stacks:etl:sync_meet_all`
+- **Command:** `bundle exec rake stacks:etl:sync_all`
 - **Dyno size:** Performance-L (enough RAM for the embedding model; faster)
 - **Frequency:** daily (overnight)
 
-This pulls the recent window (default last 10 days; `sync_meet_all[N]` to change) via the
+`stacks:etl:sync_all` is the nightly entry point across ALL sources (today just Meet — it
+invokes `sync_meet_all`; future sources are added there, so the Scheduler job never changes).
+It pulls the recent window (default last 10 days; run `sync_meet_all[N]` directly to change) via the
 richer Meet REST API for every user, embedding new transcripts locally. It owns the recent
 window; the Drive backfill owns everything older, so the two never double-ingest a meeting.
 

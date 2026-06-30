@@ -3,6 +3,15 @@ ActiveAdmin.register Mention do
   menu false
   actions :index, :show
 
+  # Only Hugh can reach these pages — blocks direct URL navigation.
+  controller do
+    before_action do
+      unless current_admin_user&.can_access_etl_admin?
+        redirect_to admin_root_path, alert: "You are not authorized to view that page."
+      end
+    end
+  end
+
   scope('Unresolved') { |s| s.unresolved }
   scope :all
 

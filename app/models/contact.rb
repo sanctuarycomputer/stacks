@@ -55,7 +55,7 @@ class Contact < ApplicationRecord
     normalized = email.to_s.downcase.strip
     return nil unless normalized.match?(Devise.email_regexp)
     contact = create_or_find_by!(email: normalized)
-    contact.sources = (contact.sources + ['meet']).uniq
+    contact.sources = (contact.sources + ['etl:meet']).uniq
     contact.display_name = name if contact.display_name.blank? && name.present?
     contact.save! if contact.changed?
     contact

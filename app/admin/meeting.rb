@@ -1,6 +1,15 @@
 ActiveAdmin.register Meeting do
-  menu parent: 'MCP', label: 'ETL: Meetings'
+  menu parent: 'MCP', label: 'ETL: Meetings', if: proc { current_admin_user&.can_access_etl_admin? }
   actions :index, :show
+
+  # Only Hugh can reach these pages — blocks direct URL navigation, not just the menu.
+  controller do
+    before_action do
+      unless current_admin_user&.can_access_etl_admin?
+        redirect_to admin_root_path, alert: "You are not authorized to view that page."
+      end
+    end
+  end
 
   filter :title
   filter :meet_source

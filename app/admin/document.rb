@@ -1,6 +1,15 @@
 ActiveAdmin.register Document do
-  menu parent: 'MCP', label: 'ETL: Documents'
+  menu parent: 'MCP', label: 'ETL: Documents', if: proc { current_admin_user&.can_access_etl_admin? }
   actions :index, :show
+
+  # Only Hugh can reach these pages — blocks direct URL navigation, not just the menu.
+  controller do
+    before_action do
+      unless current_admin_user&.can_access_etl_admin?
+        redirect_to admin_root_path, alert: "You are not authorized to view that page."
+      end
+    end
+  end
 
   filter :source
   filter :excluded

@@ -60,5 +60,18 @@ namespace :stacks do
         since: (args[:days] || 10).to_i.days.ago
       )
     end
+
+    # The nightly ETL entry point. Runs the ongoing sync for EVERY source; today that's
+    # only Meet, but new sources (Notion, Gmail, …) get added here so the Scheduler job
+    # never has to change. Each source is invoked independently so one source failing
+    # doesn't stop the others.
+    desc 'Nightly ETL sync across ALL sources (currently Meet)'
+    task sync_all: :environment do
+      %w[stacks:etl:sync_meet_all].each do |task_name|
+        Rake::Task[task_name].invoke
+      rescue => e
+        Rails.logger.error("stacks:etl:sync_all — #{task_name} failed: #{e.class}: #{e.message}")
+      end
+    end
   end
 end

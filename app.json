@@ -4,7 +4,10 @@
   ],
   "environments": {
     "test": {
-      "addons": ["heroku-postgresql:in-dyno"]
+      "addons": ["heroku-postgresql:in-dyno"],
+      "scripts": {
+        "test-setup": "bash bin/ci-install-pgvector && bundle exec rake db:schema:load"
+      }
     }
   }
 }
