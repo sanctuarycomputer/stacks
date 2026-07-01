@@ -96,4 +96,12 @@ class Stacks::Etl::ConnectorTest < ActiveSupport::TestCase
     FakeConnector.new([doc_with_counter]).run
     assert_equal 1, call_count, 'build_source_record should NOT be called again for unchanged doc'
   end
+
+  test 'a normalized doc can override the source (e.g. gemini_notes)' do
+    n = normalized(external_id: 'gn1', hash: 'h').merge(source: :gemini_notes)
+    FakeConnector.new([n]).run
+    doc = Document.find_by!(external_id: 'gn1')
+    assert doc.gemini_notes?
+    assert doc.chunks.all?(&:gemini_notes?)
+  end
 end

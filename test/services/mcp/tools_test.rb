@@ -38,6 +38,16 @@ class Mcp::ToolsTest < ActiveSupport::TestCase
     assert_equal [b.id], page2, 'offset skips the first (newest) in-range doc'
   end
 
+  test "list_documents can filter to gemini_notes and hides excluded notes" do
+    m = Meeting.create!(meet_source: :meet_api, meet_conference_record_id: "cr/z")
+    note = Document.create!(source: :gemini_notes, external_id: "gn", title: "Roadmap notes", excluded: :not_excluded, source_record: m)
+    Document.create!(source: :gemini_notes, external_id: "gn2", title: "1:1 notes", excluded: :auto_excluded, source_record: m)
+
+    resp = Mcp::ListDocumentsTool.call(source: "gemini_notes", server_context: {})
+    ids = JSON.parse(resp.content.first[:text]).map { |d| d["id"] }
+    assert_equal [note.id], ids
+  end
+
   def ids_for(resp)
     JSON.parse(resp.content.first[:text]).map { |d| d['id'] }
   end
