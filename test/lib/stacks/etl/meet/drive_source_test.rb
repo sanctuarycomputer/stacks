@@ -95,6 +95,17 @@ class Stacks::Etl::Meet::DriveSourceTest < ActiveSupport::TestCase
     assert_equal 'Standup', src.send(:clean_title, 'Standup (2026/06/27 17:00 GMT-7) - Transcript')
   end
 
+  test 'clean_title strips the dash-separated date stamp Meet actually uses' do
+    src = Stacks::Etl::Meet::DriveSource.allocate
+    # The real format observed in prod: "<Title> - YYYY/MM/DD HH:MM <TZ> - Transcript".
+    # A polluted title breaks Calendar title-matching (no attendee emails / organizer).
+    assert_equal 'Index Team Pulse Check ✅', src.send(:clean_title, 'Index Team Pulse Check ✅ - 2026/06/22 17:15 EDT - Transcript')
+    assert_equal 'Faire internal sync', src.send(:clean_title, 'Faire internal sync - 2026/06/17 15:40 EDT - Transcript')
+    assert_equal 'Weekly Sync', src.send(:clean_title, 'Weekly Sync - 2026/6/1 9:05 PDT - Transcript')
+    # ...but a dash without a real date+time is a normal title and is kept.
+    assert_equal 'Planning - Q3', src.send(:clean_title, 'Planning - Q3 - Transcript')
+  end
+
   test 'skips a Drive doc the Meet API sync already ingested (reverse dedup)' do
     # The API sync created a Document keyed on the conference record, recording the Drive
     # doc id in raw_metadata. The Drive backfill must defer to it, not double-ingest.
