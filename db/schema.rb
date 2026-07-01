@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_06_29_000001) do
+ActiveRecord::Schema.define(version: 2026_07_01_000001) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -547,7 +547,9 @@ ActiveRecord::Schema.define(version: 2026_06_29_000001) do
     t.jsonb "raw_metadata", default: {}, null: false
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.string "gemini_notes_doc_id"
     t.index ["drive_transcript_doc_id"], name: "index_meetings_on_drive_transcript_doc_id", unique: true, where: "(drive_transcript_doc_id IS NOT NULL)"
+    t.index ["gemini_notes_doc_id"], name: "index_meetings_on_gemini_notes_doc_id", unique: true, where: "(gemini_notes_doc_id IS NOT NULL)"
     t.index ["meet_conference_record_id"], name: "index_meetings_on_meet_conference_record_id", unique: true, where: "(meet_conference_record_id IS NOT NULL)"
   end
 

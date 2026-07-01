@@ -4,7 +4,7 @@ class Chunk < ApplicationRecord
   has_many :mentions, dependent: :destroy
   has_one :embedding, as: :owner, dependent: :destroy
 
-  enum source: { meet: 0 }
+  enum source: { meet: 0, gemini_notes: 1 }
 
   scope :keyword_search, ->(query) {
     where("content_tsv @@ plainto_tsquery('english', :q)", q: query)
