@@ -49,9 +49,17 @@ transport runs **stateless**, so it's safe across multiple web dynos.
 
 `search` with `mode: semantic|hybrid` embeds the **query** at request time using the
 local model **on the web dyno** serving `/api/mcp`. So that dyno needs enough RAM for
-the quantized model (~340 MB) and eats a one-time model load on the first semantic
-query (slow first request, then cached for the dyno's life). Use a **Standard-2X+ /
-Performance** web dyno, or preload the model at boot. Keyword search has no such cost.
+the quantized model (~340 MB). Use a **Standard-2X+ / Performance** web dyno. Keyword
+search has no such cost.
+
+The model's multi-second cold start (load + ONNX session init) is **preloaded at boot**
+so it no longer lands on the first user query: `config/puma.rb`'s `on_worker_boot` warms
+`Stacks::Etl::Embedder` in a background thread in each worker (native ONNX sessions don't
+survive `fork`, so it's done per-worker post-fork, not once during preload). Warming is
+best-effort — a failure is logged, not fatal — and the first request still works if it
+races the warmup (it just waits on the in-flight build via a mutex rather than starting a
+second one). On a cold slug both workers download the model concurrently once; baking the
+model into the slug (see follow-ups) removes that.
 
 ## 2. Connect the agent to MCP
 
