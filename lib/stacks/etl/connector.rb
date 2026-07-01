@@ -66,7 +66,7 @@ module Stacks
 
       def ingest(normalized)
         ActiveRecord::Base.transaction do
-          doc = Document.find_or_initialize_by(source: source, external_id: normalized[:external_id])
+          doc = Document.find_or_initialize_by(source: normalized[:source] || source, external_id: normalized[:external_id])
           changed = doc.new_record? || doc.content_hash != normalized[:content_hash]
 
           doc.assign_attributes(
