@@ -62,6 +62,26 @@ class Stacks::Etl::Meet::GeminiNotesSourceTest < ActiveSupport::TestCase
     assert_equal meeting.id, built.id # linked to the SAME meeting
   end
 
+  test "joining an ELIGIBLE transcript inherits not_excluded verbatim (notes stay searchable)" do
+    # Guards the progressive-enhancement path: a group meeting's transcript is eligible, so
+    # its notes must inherit [:not_excluded, :none] and be chunked — NOT dropped. A future
+    # nil-guard on the inherit values must never break this branch.
+    meeting = Meeting.create!(meet_source: :meet_api, meet_conference_record_id: "cr/2")
+    Document.create!(source: :meet, external_id: "TRANSCRIPT_ID_123", source_record: meeting,
+                     excluded: :not_excluded, excluded_reason: :none)
+    file = OpenStruct.new(id: "notesfile3", name: "Sync Title - 2026/06/30 15:00 EDT - Notes by Gemini",
+                          created_time: "2026-06-30T15:00:00Z")
+    svc = mock("drive")
+    svc.stubs(:list_files).returns(OpenStruct.new(files: [file], next_page_token: nil))
+    svc.stubs(:export_file).returns(SAMPLE)
+    Stacks::Etl::Meet::Auth.stubs(:drive_service).returns(svc)
+
+    n = nil
+    Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1)).each_meeting { |x| n = x }
+    assert_equal [:not_excluded, :none], n[:inherit_exclusion]
+    assert_nil n[:participant_count] # joined -> inherits, does not re-classify on invited count
+  end
+
   test "a notes doc with no known transcript is standalone with its own classification" do
     file = OpenStruct.new(id: "notesfile2", name: "Team Weekly - 2026/06/30 15:00 EDT - Notes by Gemini",
                           created_time: "2026-06-30T15:00:00Z")
