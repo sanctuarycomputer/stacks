@@ -69,7 +69,7 @@ module Stacks
             # drive_doc_id kept for reference only; Drive ingest is partitioned to an older
             # window so the two sources never produce the same meeting (no fragile merge).
             raw_metadata: { 'conference_record' => cr.name, 'space' => cr.space, 'drive_doc_id' => drive_doc_id },
-            build_source_record: ->(doc) { build_meeting(doc, cr, participants, segments, title) }
+            build_source_record: ->(doc) { build_meeting(doc, cr, participants, segments, title, enrichment[:organizer_email]) }
           }
         end
 
@@ -125,10 +125,11 @@ module Stacks
           [segments, drive_doc_id]
         end
 
-        def build_meeting(doc, cr, participants, segments, title)
+        def build_meeting(doc, cr, participants, segments, title, organizer_email)
           meeting = Meeting.find_or_initialize_by(meet_conference_record_id: cr.name)
           meeting.update!(meet_source: :meet_api, title: title, started_at: cr.start_time,
                           ended_at: cr.end_time, participant_count: participants.size,
+                          organizer_email: organizer_email,
                           raw_metadata: { 'document_id' => doc.id })
           meeting.participants.destroy_all
           participants.each_value { |p| meeting.participants.create!(name: p[:name], email: p[:email]) }

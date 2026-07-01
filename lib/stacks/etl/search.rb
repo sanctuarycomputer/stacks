@@ -1,13 +1,17 @@
 module Stacks
   module Etl
     class Search
-      def self.call(query:, mode: :hybrid, source: nil, contact: nil, date_range: nil, limit: 20)
+      def self.call(query:, mode: :hybrid, source: nil, contact: nil, date_range: nil, limit: 20, offset: 0)
         base = filtered(Chunk.corpus_eligible, source: source, contact: contact, date_range: date_range)
         ids =
           case mode.to_sym
-          when :keyword  then keyword_ids(base, query, limit)
-          when :semantic then semantic_ids(base, query, limit)
-          else fuse(keyword_ids(base, query, limit), semantic_ids(base, query, limit), limit)
+          when :keyword  then keyword_ids(base, query, limit, offset)
+          when :semantic then semantic_ids(base, query, limit, offset)
+          else
+            # Hybrid: fuse the top (offset+limit) of each ranked list, then take the page.
+            # (Offset can't be pushed into the per-list queries — the fused ranking differs.)
+            depth = offset + limit
+            fuse(keyword_ids(base, query, depth), semantic_ids(base, query, depth), depth).drop(offset).first(limit)
           end
         chunks = Chunk.where(id: ids).includes(:document).index_by(&:id)
         ids.map { |id| chunks[id] }.compact.map { |c| { chunk: c, document: c.document, score: nil } }
@@ -24,18 +28,18 @@ module Stacks
         scope
       end
 
-      def self.keyword_ids(scope, query, limit)
-        scope.keyword_search(query).limit(limit).pluck(:id)
+      def self.keyword_ids(scope, query, limit, offset = 0)
+        scope.keyword_search(query).offset(offset).limit(limit).pluck(:id)
       end
 
-      def self.semantic_ids(scope, query, limit)
+      def self.semantic_ids(scope, query, limit, offset = 0)
         return [] unless scope.exists?
         vector = Embedder.embed([query], input_type: 'query')[:vectors].first
         # Constrain to corpus-eligible chunks via a SUBQUERY (scope.select(:id)), not a
         # materialized id list — keeps the wall airtight without a giant IN (...) array.
         Embedding.where(model: Embedder::MODEL, owner_type: 'Chunk', owner_id: scope.select(:id))
                  .nearest_neighbors(:embedding, vector, distance: 'cosine')
-                 .limit(limit).map(&:owner_id)
+                 .offset(offset).limit(limit).map(&:owner_id)
       end
 
       def self.fuse(a, b, limit)
