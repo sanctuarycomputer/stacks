@@ -40,4 +40,36 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
     Stacks::Etl::Meet::Connector.new(admin_email: 'hugh@sanctuary.computer', mode: :api).run
     assert Document.find_by!(external_id: 'm3').not_excluded?
   end
+
+  test "notes for an eligible meeting are ingested, chunked, and searchable; a 1:1's notes are walled off" do
+    skip_without_pgvector
+    # Eligible transcript meeting + a 1:1 transcript meeting already ingested:
+    ok_m = Meeting.create!(meet_source: :meet_api, meet_conference_record_id: "cr/ok")
+    Document.create!(source: :meet, external_id: "T_OK", source_record: ok_m, excluded: :not_excluded, excluded_reason: :none)
+    oo_m = Meeting.create!(meet_source: :meet_api, meet_conference_record_id: "cr/oo")
+    Document.create!(source: :meet, external_id: "T_OO", source_record: oo_m, excluded: :auto_excluded, excluded_reason: :one_on_one)
+
+    files = [
+      OpenStruct.new(id: "N_OK", name: "Roadmap - 2026/06/30 15:00 EDT - Notes by Gemini", created_time: "2026-06-30T15:00:00Z"),
+      OpenStruct.new(id: "N_OO", name: "1:1 - 2026/06/30 16:00 EDT - Notes by Gemini", created_time: "2026-06-30T16:00:00Z")
+    ]
+    svc = mock("drive")
+    svc.stubs(:list_files).returns(OpenStruct.new(files: files, next_page_token: nil))
+    svc.stubs(:export_file).with("N_OK", "text/plain").returns("Notes\n\nInvited [A](mailto:a@x.co)\n\nMeeting records [Transcript](https://docs.google.com/document/d/T_OK/edit)\n\n### Summary\nShip the gateway.")
+    svc.stubs(:export_file).with("N_OO", "text/plain").returns("Notes\n\nMeeting records [Transcript](https://docs.google.com/document/d/T_OO/edit)\n\n### Summary\nSensitive 1:1 content.")
+    Stacks::Etl::Meet::Auth.stubs(:drive_service).returns(svc)
+
+    Stacks::Etl::Meet::Connector.new(admin_email: "hugh@sanctuary.computer", mode: :gemini_notes).run(track: false)
+
+    ok = Document.find_by!(source: :gemini_notes, external_id: "N_OK")
+    assert ok.not_excluded?
+    assert ok.chunks.any?, "eligible notes should be chunked/searchable"
+    assert_equal ["a@x.co"], ok.document_contacts.pluck(:email)
+    assert_equal ok_m.id, ok.source_record_id
+
+    oo = Document.find_by!(source: :gemini_notes, external_id: "N_OO")
+    assert oo.auto_excluded?
+    assert oo.reason_one_on_one?
+    assert_equal 0, oo.chunks.count, "a 1:1's notes must be walled off"
+  end
 end
