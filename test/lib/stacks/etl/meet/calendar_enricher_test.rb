@@ -2,11 +2,12 @@ require 'test_helper'
 require 'ostruct'
 
 class Stacks::Etl::Meet::CalendarEnricherTest < ActiveSupport::TestCase
-  def event(summary:, conf_id: nil, attendees: [])
+  def event(summary:, conf_id: nil, attendees: [], organizer: nil)
     OpenStruct.new(
       summary: summary,
       conference_data: conf_id ? OpenStruct.new(conference_id: conf_id) : nil,
-      attendees: attendees.map { |email, name| OpenStruct.new(email: email, display_name: name) }
+      attendees: attendees.map { |email, name| OpenStruct.new(email: email, display_name: name) },
+      organizer: organizer ? OpenStruct.new(email: organizer) : nil
     )
   end
 
@@ -18,18 +19,20 @@ class Stacks::Etl::Meet::CalendarEnricherTest < ActiveSupport::TestCase
     enr
   end
 
-  test 'matches by meeting code and returns title + attendee emails' do
-    enr = enricher_returning([event(summary: 'Standup', conf_id: 'abc-defg-hjk', attendees: [['a@x.co', 'A']])])
+  test 'matches by meeting code and returns title + attendee emails + organizer' do
+    enr = enricher_returning([event(summary: 'Standup', conf_id: 'abc-defg-hjk', attendees: [['a@x.co', 'A']], organizer: 'Boss@X.co')])
     r = enr.enrich(started_at: Time.utc(2026, 1, 1, 9), meeting_code: 'abc-defg-hjk', fallback_title: 'abc-defg-hjk')
     assert_equal 'Standup', r[:title]
     assert_equal ['a@x.co'], r[:attendees].map { |x| x[:email] }
+    assert_equal 'boss@x.co', r[:organizer_email] # downcased
   end
 
-  test 'a code with no matching event returns the fallback and no attendees' do
+  test 'a code with no matching event returns the fallback, no attendees, no organizer' do
     enr = enricher_returning([event(summary: 'Other', conf_id: 'zzz')])
     r = enr.enrich(started_at: Time.utc(2026, 1, 1, 9), meeting_code: 'abc-defg-hjk', fallback_title: 'abc-defg-hjk')
     assert_equal 'abc-defg-hjk', r[:title]
     assert_empty r[:attendees]
+    assert_nil r[:organizer_email]
   end
 
   test 'matches by exact title hint when there is no code (Drive path)' do

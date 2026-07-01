@@ -10,7 +10,7 @@ module Stacks
       class CalendarEnricher
         WINDOW = 2.hours
 
-        # => { title: String|nil, attendees: [{ email:, name: }] }
+        # => { title: String|nil, attendees: [{ email:, name: }], organizer_email: String|nil }
         def self.enrich(user_email:, started_at:, meeting_code: nil, fallback_title: nil)
           new(user_email).enrich(started_at: started_at, meeting_code: meeting_code, fallback_title: fallback_title)
         end
@@ -27,21 +27,28 @@ module Stacks
         # meeting's title/attendees to an unrelated ad-hoc call.
         def enrich(started_at:, meeting_code:, fallback_title:, title_hint: nil)
           at = coerce_time(started_at)
-          return { title: fallback_title, attendees: [] } if at.nil?
+          return miss(fallback_title) if at.nil?
 
           resp = service.list_events('primary',
                                      time_min: (at - WINDOW).utc.iso8601,
                                      time_max: (at + WINDOW).utc.iso8601,
                                      single_events: true, max_results: 50)
           event = pick_event(Array(resp.items), meeting_code, title_hint)
-          return { title: fallback_title, attendees: [] } unless event
+          return miss(fallback_title) unless event
 
-          { title: event.summary.presence || fallback_title, attendees: attendees_for(event) }
+          { title: event.summary.presence || fallback_title,
+            attendees: attendees_for(event),
+            organizer_email: event.organizer&.email&.downcase }
         rescue StandardError
-          { title: fallback_title, attendees: [] }
+          miss(fallback_title)
         end
 
         private
+
+        # A no-match/error result: the doc-name fallback title, no attendees, no organizer.
+        def miss(fallback_title)
+          { title: fallback_title, attendees: [], organizer_email: nil }
+        end
 
         def service
           @service ||= Auth.calendar_service(sub: @user_email)

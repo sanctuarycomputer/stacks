@@ -73,7 +73,7 @@ module Stacks
             contacts: contacts,
             segments: segments,
             raw_metadata: { 'drive_doc_id' => file.id },
-            build_source_record: ->(doc) { build_meeting(doc, file, segments, title, speaker_count) }
+            build_source_record: ->(doc) { build_meeting(doc, file, segments, title, speaker_count, enrichment[:organizer_email]) }
           }
         end
 
@@ -131,10 +131,11 @@ module Stacks
           end
         end
 
-        def build_meeting(doc, file, segments, title, speaker_count)
+        def build_meeting(doc, file, segments, title, speaker_count, organizer_email)
           meeting = Meeting.find_or_initialize_by(drive_transcript_doc_id: file.id)
           meeting.update!(meet_source: :drive, title: title, started_at: file.created_time,
                           participant_count: speaker_count,
+                          organizer_email: organizer_email,
                           raw_metadata: { 'document_id' => doc.id })
           meeting.segments.destroy_all
           segments.each_with_index do |s, i|
