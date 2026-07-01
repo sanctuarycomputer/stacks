@@ -52,7 +52,14 @@ module Stacks
         end
 
         def normalize(file)
-          text = @service.export_file(file.id, "text/plain")
+          # Export as MARKDOWN, not text/plain: Google's plain-text export STRIPS hyperlinks,
+          # which would flatten the "Invited [Name](mailto:email)" list and the
+          # "Meeting records [Transcript](…/document/d/<id>)" link to bare display text —
+          # leaving us with no invited emails (→ participant_count 0 → wrongly auto-excluded)
+          # and no transcript-doc-id to join on (→ every note falls to the standalone path).
+          # Markdown preserves both link forms, which is what the parsers below depend on.
+          # (Transcripts stay text/plain in DriveSource — speaker lines carry no links.)
+          text = @service.export_file(file.id, "text/markdown")
           title = clean_title(file.name)
           occurred_at = coerce(file.created_time)
           transcript_id = transcript_doc_id_from(text)
