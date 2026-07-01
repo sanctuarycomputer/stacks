@@ -570,5 +570,10 @@ class AdminUserTest < ActiveSupport::TestCase
 
     assert_nil(period)
   end
+
+  test "#can_access_etl_admin? gates the MCP/ETL pages to Hugh only" do
+    assert AdminUser.new(email: "hugh@sanctuary.computer").can_access_etl_admin?
+    refute AdminUser.new(email: "someone.else@sanctuary.computer").can_access_etl_admin?
+  end
 end
 

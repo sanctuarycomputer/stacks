@@ -48,6 +48,19 @@ class Contact < ApplicationRecord
     end
   end
 
+  # Returns the Contact for an email (creating it if needed), or nil when the email is
+  # blank/malformed. Returning nil (rather than raising) keeps a single bad attendee
+  # email from aborting a whole meeting's ingest — callers treat nil as "unresolved".
+  def self.resolve_email(email, name: nil)
+    normalized = email.to_s.downcase.strip
+    return nil unless normalized.match?(Devise.email_regexp)
+    contact = create_or_find_by!(email: normalized)
+    contact.sources = (contact.sources + ['etl:meet']).uniq
+    contact.display_name = name if contact.display_name.blank? && name.present?
+    contact.save! if contact.changed?
+    contact
+  end
+
   def dedupe!
     self.update(sources: self.sources.uniq)
 

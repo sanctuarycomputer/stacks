@@ -30,7 +30,45 @@ ActiveRecord::Base.connection.execute(<<~SQL)
     EXECUTE FUNCTION nullify_qbo_invoice_id_on_children();
 SQL
 
+# Ensure the content_tsv generated column and GIN index on chunks are present in
+# the test DB. Rails 6.1's schema dumper cannot capture PostgreSQL GENERATED
+# columns or their indexes via raw SQL execute, so they are absent from
+# db/schema.rb and therefore missing after a fresh db:schema:load. We recreate
+# them here idempotently, mirroring the trigger block above.
+ActiveRecord::Base.connection.execute(<<~SQL)
+  ALTER TABLE chunks
+    ADD COLUMN IF NOT EXISTS content_tsv tsvector
+      GENERATED ALWAYS AS (to_tsvector('english', content)) STORED;
+SQL
+ActiveRecord::Base.connection.execute(<<~SQL)
+  CREATE INDEX IF NOT EXISTS index_chunks_on_content_tsv
+    ON chunks USING gin (content_tsv);
+SQL
+
+# pgvector (the extension + embeddings.embedding vector column + HNSW index) is omitted
+# from db/schema.rb so schema:load works on a Postgres without pgvector (Heroku CI's
+# in-dyno PG). Re-establish it here when the extension is available; otherwise tests that
+# need vector storage/search skip via skip_without_pgvector. Mirrors the content_tsv block.
+# DISABLE_PGVECTOR=1 forces the no-pgvector path (to reproduce Heroku CI's in-dyno PG locally).
+PGVECTOR_AVAILABLE = ENV['DISABLE_PGVECTOR'].blank? && ActiveRecord::Base.connection
+  .select_value("SELECT 1 FROM pg_available_extensions WHERE name = 'vector'").present?
+
+if PGVECTOR_AVAILABLE
+  ActiveRecord::Base.connection.execute("CREATE EXTENSION IF NOT EXISTS vector")
+  ActiveRecord::Base.connection.execute("ALTER TABLE embeddings ADD COLUMN IF NOT EXISTS embedding vector(1024)")
+  ActiveRecord::Base.connection.execute(<<~SQL)
+    CREATE INDEX IF NOT EXISTS index_embeddings_on_embedding
+      ON embeddings USING hnsw (embedding vector_cosine_ops);
+  SQL
+end
+
 class ActiveSupport::TestCase
+  # Skip a test that needs the pgvector embedding column (absent where pgvector isn't
+  # available, e.g. Heroku CI's in-dyno Postgres).
+  def skip_without_pgvector
+    skip "pgvector not available in this environment — vector storage/search test skipped" unless PGVECTOR_AVAILABLE
+  end
+
   # Run tests in parallel with specified workers
   parallelize(workers: 1)
 

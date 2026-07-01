@@ -16,5 +16,6 @@ Rails.application.routes.draw do
   namespace :api do
     resources :profit_share_passes, only: [:index]
     resources :contacts, only: [:create, :index]
+    match '/mcp', to: 'mcp#handle', via: [:post, :get, :delete]
   end
 end

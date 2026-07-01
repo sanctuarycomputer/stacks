@@ -10,12 +10,17 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_06_13_225103) do
+ActiveRecord::Schema.define(version: 2026_06_29_000001) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_stat_statements"
   enable_extension "plpgsql"
+  # The "vector" (pgvector) extension and the embeddings.embedding vector column + HNSW
+  # index are intentionally omitted here so db:schema:load works on a Postgres without
+  # pgvector (e.g. Heroku CI's in-dyno Postgres). They are created by migrations in
+  # development/production, and re-established idempotently for tests/seeds in
+  # test/test_helper.rb and db/seeds.rb. Keep them out of this dumped schema.
 
   create_table "account_lead_periods", force: :cascade do |t|
     t.bigint "project_tracker_id", null: false
@@ -95,6 +100,27 @@ ActiveRecord::Schema.define(version: 2026_06_13_225103) do
     t.index ["admin_user_id"], name: "index_associates_award_agreements_on_admin_user_id"
   end
 
+  create_table "chunks", force: :cascade do |t|
+    t.bigint "document_id", null: false
+    t.integer "position", null: false
+    t.text "content", null: false
+    t.integer "start_offset"
+    t.integer "end_offset"
+    t.string "speaker_name"
+    t.bigint "speaker_contact_id"
+    t.integer "source", default: 0, null: false
+    t.datetime "occurred_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    # content_tsv (tsvector GENERATED ALWAYS AS) and its GIN index are intentionally
+    # omitted here: Rails 6.1 dumps generated columns as DEFAULT expressions, which
+    # PostgreSQL rejects on schema:load. They are added idempotently in test_helper.rb
+    # and exist in the development/production DBs via the CreateChunks migration.
+    t.index ["document_id", "position"], name: "index_chunks_on_document_id_and_position", unique: true
+    t.index ["document_id"], name: "index_chunks_on_document_id"
+    t.index ["speaker_contact_id"], name: "index_chunks_on_speaker_contact_id"
+  end
+
   create_table "commissions", force: :cascade do |t|
     t.bigint "project_tracker_id", null: false
     t.bigint "contributor_id", null: false
@@ -118,6 +144,7 @@ ActiveRecord::Schema.define(version: 2026_06_13_225103) do
     t.string "apollo_id"
     t.jsonb "apollo_data", default: {}
     t.jsonb "metadata", default: {}, null: false
+    t.string "display_name"
     t.index ["apollo_id"], name: "index_contacts_on_apollo_id", unique: true
     t.index ["email"], name: "index_contacts_on_email", unique: true
   end
@@ -221,6 +248,52 @@ ActiveRecord::Schema.define(version: 2026_06_13_225103) do
     t.string "deel_id", null: false
     t.jsonb "data", null: false
     t.index ["deel_id"], name: "index_deel_people_on_deel_id", unique: true
+  end
+
+  create_table "document_contacts", force: :cascade do |t|
+    t.bigint "document_id", null: false
+    t.bigint "contact_id"
+    t.string "email"
+    t.string "name"
+    t.string "role"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["contact_id"], name: "index_document_contacts_on_contact_id"
+    t.index ["document_id", "contact_id", "role"], name: "index_document_contacts_unique", unique: true
+    t.index ["document_id"], name: "index_document_contacts_on_document_id"
+  end
+
+  create_table "documents", force: :cascade do |t|
+    t.integer "source", default: 0, null: false
+    t.string "external_id", null: false
+    t.string "source_record_type"
+    t.bigint "source_record_id"
+    t.string "title"
+    t.string "url"
+    t.datetime "occurred_at"
+    t.string "content_hash"
+    t.integer "excluded", default: 0, null: false
+    t.integer "excluded_reason", default: 0, null: false
+    t.string "excluded_by"
+    t.jsonb "raw_metadata", default: {}, null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index "((raw_metadata ->> 'drive_doc_id'::text))", name: "index_documents_on_drive_doc_id"
+    t.index ["occurred_at"], name: "index_documents_on_occurred_at"
+    t.index ["source", "external_id"], name: "index_documents_on_source_and_external_id", unique: true
+    t.index ["source_record_type", "source_record_id"], name: "index_documents_on_source_record"
+  end
+
+  create_table "embeddings", force: :cascade do |t|
+    t.string "owner_type", null: false
+    t.bigint "owner_id", null: false
+    t.string "model", null: false
+    # embedding vector(1024) + its HNSW index are added outside this schema (see the
+    # pgvector note at the top of the file) so schema:load works without pgvector.
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["owner_type", "owner_id", "model"], name: "index_embeddings_on_owner_and_model", unique: true
+    t.index ["owner_type", "owner_id"], name: "index_embeddings_on_owner"
   end
 
   create_table "enterprise_admins", force: :cascade do |t|
@@ -431,6 +504,63 @@ ActiveRecord::Schema.define(version: 2026_06_13_225103) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.index ["studio_id"], name: "index_mailing_lists_on_studio_id"
+  end
+
+  create_table "meeting_participants", force: :cascade do |t|
+    t.bigint "meeting_id", null: false
+    t.string "name"
+    t.string "email"
+    t.bigint "contact_id"
+    t.datetime "join_at"
+    t.datetime "leave_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["contact_id"], name: "index_meeting_participants_on_contact_id"
+    t.index ["meeting_id"], name: "index_meeting_participants_on_meeting_id"
+  end
+
+  create_table "meeting_transcript_segments", force: :cascade do |t|
+    t.bigint "meeting_id", null: false
+    t.string "speaker_name"
+    t.string "speaker_email"
+    t.bigint "speaker_contact_id"
+    t.datetime "started_at"
+    t.datetime "ended_at"
+    t.integer "position", null: false
+    t.text "text", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["meeting_id", "position"], name: "index_meeting_transcript_segments_on_meeting_id_and_position", unique: true
+    t.index ["meeting_id"], name: "index_meeting_transcript_segments_on_meeting_id"
+    t.index ["speaker_contact_id"], name: "index_meeting_transcript_segments_on_speaker_contact_id"
+  end
+
+  create_table "meetings", force: :cascade do |t|
+    t.string "meet_conference_record_id"
+    t.string "drive_transcript_doc_id"
+    t.integer "meet_source", default: 0, null: false
+    t.string "title"
+    t.string "organizer_email"
+    t.datetime "started_at"
+    t.datetime "ended_at"
+    t.integer "participant_count"
+    t.jsonb "raw_metadata", default: {}, null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["drive_transcript_doc_id"], name: "index_meetings_on_drive_transcript_doc_id", unique: true, where: "(drive_transcript_doc_id IS NOT NULL)"
+    t.index ["meet_conference_record_id"], name: "index_meetings_on_meet_conference_record_id", unique: true, where: "(meet_conference_record_id IS NOT NULL)"
+  end
+
+  create_table "mentions", force: :cascade do |t|
+    t.bigint "chunk_id", null: false
+    t.string "raw_text", null: false
+    t.bigint "contact_id"
+    t.float "confidence"
+    t.integer "status", default: 0, null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["chunk_id"], name: "index_mentions_on_chunk_id"
+    t.index ["contact_id"], name: "index_mentions_on_contact_id"
   end
 
   create_table "misc_payments", force: :cascade do |t|
@@ -1050,6 +1180,19 @@ ActiveRecord::Schema.define(version: 2026_06_13_225103) do
     t.index ["trait_id"], name: "index_scores_on_trait_id"
   end
 
+  create_table "source_syncs", force: :cascade do |t|
+    t.string "source", null: false
+    t.jsonb "cursor", default: {}, null: false
+    t.datetime "last_run_at"
+    t.string "status"
+    t.jsonb "stats", default: {}, null: false
+    t.bigint "system_task_id"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["source"], name: "index_source_syncs_on_source", unique: true
+    t.index ["system_task_id"], name: "index_source_syncs_on_system_task_id"
+  end
+
   create_table "studio_memberships", force: :cascade do |t|
     t.bigint "admin_user_id", null: false
     t.bigint "studio_id", null: false
@@ -1200,6 +1343,8 @@ ActiveRecord::Schema.define(version: 2026_06_13_225103) do
   # Composite FK fk_adhoc_invoice_trackers_qbo_invoice managed by migration (not expressible in schema.rb)
   add_foreign_key "admin_user_salary_windows", "admin_users"
   add_foreign_key "associates_award_agreements", "admin_users"
+  add_foreign_key "chunks", "contacts", column: "speaker_contact_id"
+  add_foreign_key "chunks", "documents"
   add_foreign_key "commissions", "contributors"
   add_foreign_key "commissions", "project_trackers"
   add_foreign_key "contributor_adjustments", "ledgers"
@@ -1213,6 +1358,8 @@ ActiveRecord::Schema.define(version: 2026_06_13_225103) do
   add_foreign_key "contributor_qbo_vendors", "qbo_vendors"
   add_foreign_key "deel_invoice_adjustments", "deel_contracts", primary_key: "deel_id"
   add_foreign_key "deel_invoice_adjustments", "ledgers"
+  add_foreign_key "document_contacts", "contacts"
+  add_foreign_key "document_contacts", "documents"
   add_foreign_key "enterprise_admins", "admin_users"
   add_foreign_key "enterprise_admins", "enterprises"
   add_foreign_key "enterprise_forecast_clients", "enterprises"
@@ -1228,6 +1375,12 @@ ActiveRecord::Schema.define(version: 2026_06_13_225103) do
   add_foreign_key "ledgers", "enterprises"
   add_foreign_key "mailing_list_subscribers", "mailing_lists"
   add_foreign_key "mailing_lists", "studios"
+  add_foreign_key "meeting_participants", "contacts"
+  add_foreign_key "meeting_participants", "meetings"
+  add_foreign_key "meeting_transcript_segments", "contacts", column: "speaker_contact_id"
+  add_foreign_key "meeting_transcript_segments", "meetings"
+  add_foreign_key "mentions", "chunks"
+  add_foreign_key "mentions", "contacts"
   add_foreign_key "misc_payments", "contributors"
   add_foreign_key "okr_period_studios", "okr_periods"
   add_foreign_key "okr_period_studios", "studios"
@@ -1292,6 +1445,7 @@ ActiveRecord::Schema.define(version: 2026_06_13_225103) do
   add_foreign_key "score_trees", "workspaces"
   add_foreign_key "scores", "score_trees"
   add_foreign_key "scores", "traits"
+  add_foreign_key "source_syncs", "system_tasks"
   add_foreign_key "studio_memberships", "admin_users"
   add_foreign_key "studio_memberships", "studios"
   add_foreign_key "survey_free_text_question_responses", "survey_free_text_questions"

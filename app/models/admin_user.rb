@@ -116,6 +116,12 @@ class AdminUser < ApplicationRecord
     associates_award_agreement.started_at <= Date.today
   end
 
+  # Gates the MCP (ETL) ActiveAdmin pages — menu visibility AND controller access.
+  # Restricted to Hugh for now while the corpus is being validated.
+  def can_access_etl_admin?
+    email == "hugh@sanctuary.computer"
+  end
+
   def all_but_latest_full_time_periods_are_closed?
     all_closed = full_time_periods.reject{|ftp| ftp == latest_full_time_period}.all? do |ftp|
       ftp.ended_at.present?
