@@ -19,6 +19,7 @@ module Stacks
         end
 
         def exclusion_for(normalized)
+          return normalized[:inherit_exclusion] if normalized[:inherit_exclusion]
           # 1:1 PRIVACY POLICY (deliberate — do NOT "improve" this to max() with the
           # contacts/Calendar count): the head-count must reflect who was ACTUALLY in the
           # meeting, never who was invited. Invite counts over-count (a no-show on a 1:1
@@ -35,10 +36,10 @@ module Stacks
         private
 
         def source_object(since)
-          if @mode == :drive
-            DriveSource.new(@admin_email, since: since || 90.days.ago, until_time: @until_time)
-          else
-            MeetApiSource.new(@admin_email, since: since)
+          case @mode
+          when :drive        then DriveSource.new(@admin_email, since: since || 90.days.ago, until_time: @until_time)
+          when :gemini_notes then GeminiNotesSource.new(@admin_email, since: since || 90.days.ago, until_time: @until_time)
+          else MeetApiSource.new(@admin_email, since: since)
           end
         end
       end
