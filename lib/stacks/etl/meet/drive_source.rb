@@ -88,18 +88,22 @@ module Stacks
           segments.map { |s| s[:speaker_name] }.uniq.size
         end
 
-        # Meet names transcript docs like "Title - Transcript" or
-        # "Title (2026/06/27 17:00 GMT-7) - Transcript". Strip the "- Transcript" suffix and
-        # ONLY a trailing parenthetical that is actually Meet's date stamp — which always
-        # carries a date (Y/M/D) AND/OR a "GMT" marker. We deliberately do NOT match a bare
-        # clock time, so a real title like "Retro (5:00 format)", "Roadmap (Q3 2026)" or
-        # "Planning (3 items)" survives — the cleaned title is the key the Drive Calendar
-        # enricher matches on.
-        DATE_STAMP = %r{\s*\((?:\d{2,4}[/-]\d{1,2}[/-]\d{1,2}|[^)]*\bGMT\b)[^)]*\)\s*\z}
+        # Meet names transcript docs with a trailing "- Transcript" and a date stamp in one
+        # of two forms:
+        #   dash-separated (the common one):  "Title - 2026/06/22 17:15 EDT - Transcript"
+        #   parenthetical:                    "Title (2026/06/27 17:00 GMT-7) - Transcript"
+        # Strip the "- Transcript" suffix and whichever date stamp is present, so the cleaned
+        # title is the real meeting name — which is the key the Drive Calendar enricher
+        # matches on (a date-polluted title never matches the event, losing attendee emails
+        # AND organizer_email). Both stamps require an actual DATE (Y/M/D) + clock time, so a
+        # real title like "Retro (5:00 format)", "Roadmap (Q3 2026)" or "Planning - Q3" survives.
+        PAREN_DATE_STAMP = %r{\s*\((?:\d{2,4}[/-]\d{1,2}[/-]\d{1,2}|[^)]*\bGMT\b)[^)]*\)\s*\z}
+        DASH_DATE_STAMP  = %r{\s*-\s*\d{2,4}[/-]\d{1,2}[/-]\d{1,2}\s+\d{1,2}:\d{2}(?:\s*[AP]M)?(?:\s+[A-Za-z0-9+\-]{2,6})?\s*\z}i
         def clean_title(name)
           name.to_s
               .sub(/\s*-\s*Transcript\s*\z/i, '')
-              .sub(DATE_STAMP, '')
+              .sub(PAREN_DATE_STAMP, '')
+              .sub(DASH_DATE_STAMP, '')
               .strip
               .presence || name.to_s
         end
