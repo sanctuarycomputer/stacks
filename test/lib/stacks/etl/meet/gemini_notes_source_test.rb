@@ -82,6 +82,53 @@ class Stacks::Etl::Meet::GeminiNotesSourceTest < ActiveSupport::TestCase
     assert_nil n[:participant_count] # joined -> inherits, does not re-classify on invited count
   end
 
+  test "joins to API-ingested transcript keyed by conference-record id (regression: for_drive_doc vs find_by)" do
+    # Regression guard: MeetApiSource keys the transcript Document on the conference-record id
+    # (external_id: "conferenceRecords/9") and stores the Drive doc id only in raw_metadata.
+    # The old find_by(external_id: transcript_drive_id) missed these rows entirely, causing the
+    # notes to fall to the standalone branch and be reclassified by Invited count — which can
+    # surface a private 1:1 with >2 invited (a no-show) into the corpus. for_drive_doc matches both.
+    meeting = Meeting.create!(meet_source: :meet_api, meet_conference_record_id: "conferenceRecords/9")
+    Document.create!(
+      source: :meet,
+      external_id: "conferenceRecords/9",
+      source_record: meeting,
+      excluded: :auto_excluded,
+      excluded_reason: :one_on_one,
+      raw_metadata: { "drive_doc_id" => "REAL_TRANSCRIPT_DRIVE_ID" }
+    )
+
+    # Notes text: Transcript link points to the Drive id (NOT the conference-record id),
+    # 3 invited emails + benign title so the standalone classifier would (wrongly) allow it.
+    api_notes_text = <<~TXT
+      Notes
+
+      ## Team Retrospective
+
+      Invited [Alice](mailto:alice@sanctuary.computer) [Bob](mailto:bob@sanctuary.computer) [Carol](mailto:carol@sanctuary.computer)
+
+      Meeting records [Transcript](https://docs.google.com/document/d/REAL_TRANSCRIPT_DRIVE_ID/edit?usp=drive_web)
+
+      ### Summary
+      We reviewed the sprint and planned the next one.
+    TXT
+
+    file = OpenStruct.new(id: "notesfile_api_regression", name: "Team Retrospective - 2026/06/30 15:00 EDT - Notes by Gemini",
+                          created_time: "2026-06-30T15:00:00Z")
+    svc = mock("drive")
+    svc.stubs(:list_files).returns(OpenStruct.new(files: [file], next_page_token: nil))
+    svc.stubs(:export_file).returns(api_notes_text)
+    Stacks::Etl::Meet::Auth.stubs(:drive_service).returns(svc)
+
+    n = nil
+    Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1)).each_meeting { |x| n = x }
+    # With the fix: join succeeds via raw_metadata->>'drive_doc_id', exclusion is inherited verbatim.
+    # With the bug: join fails, falls to standalone, participant_count=3 → classifier marks not_excluded.
+    assert_equal [:auto_excluded, :one_on_one], n[:inherit_exclusion],
+                 "Expected exclusion to be inherited from API-ingested transcript; standalone path would incorrectly allow this meeting"
+    assert_nil n[:participant_count], "Expected nil participant_count (took join path, not standalone)"
+  end
+
   test "a notes doc with no known transcript is standalone with its own classification" do
     file = OpenStruct.new(id: "notesfile2", name: "Team Weekly - 2026/06/30 15:00 EDT - Notes by Gemini",
                           created_time: "2026-06-30T15:00:00Z")

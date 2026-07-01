@@ -43,9 +43,9 @@ module Stacks
           # Search-only: the whole notes body IS the searchable content. Split into
           # paragraph-ish blocks so the Chunker has natural boundaries; drop the trailing
           # Gemini feedback/footer noise.
-          cleaned = text.to_s.gsub(/We've updated the Decisions section.*\z/m, "")
+          cleaned = text.to_s.gsub(/We['’]ve updated the Decisions section.*\z/m, "")
                         .gsub(/Let us know what you think.*\z/m, "")
-                        .gsub(/You should review Gemini's notes.*\z/m, "")
+                        .gsub(/You should review Gemini['’]s notes.*\z/m, "")
           cleaned.split(/\n{2,}/).map(&:strip).reject(&:empty?).map do |para|
             { speaker_name: nil, speaker_email: nil, text: para, started_at: occurred_at, ended_at: nil }
           end
@@ -60,7 +60,9 @@ module Stacks
           segments = body_segments(text, occurred_at: occurred_at)
 
           # Join to the transcript's meeting when we ingested that transcript.
-          transcript_doc = transcript_id && Document.find_by(source: :meet, external_id: transcript_id)
+          # Use for_drive_doc so we match BOTH ingest shapes: DriveSource keys on external_id,
+          # MeetApiSource keys on the conference-record id and stores the Drive id in raw_metadata.
+          transcript_doc = transcript_id && Document.for_drive_doc(transcript_id).first
           meeting = transcript_doc&.source_record
 
           base = {
