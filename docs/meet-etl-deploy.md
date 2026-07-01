@@ -81,6 +81,8 @@ local embedding model needs RAM and the run is long):
 heroku run:detached --size=performance-l "rake 'stacks:etl:backfill_meet_all[90]'" --app <app>
 ```
 
+> **Gemini notes included:** `backfill_meet_all` now sweeps "Notes by Gemini" Drive docs (Drive-only, `until_time: nil`) for the same historical window, immediately after the transcript sweep.
+
 - Impersonates every active Workspace user (~65), error-isolated per user. If **every**
   user fails (e.g. broken auth) the SystemTask is marked errored, not green.
 - Covers only the **older** window (up to ~7 days ago); the recent window is owned by the
@@ -99,11 +101,7 @@ Add a **Heroku Scheduler** job (Scheduler lets you pick the dyno size):
 - **Dyno size:** Performance-L (enough RAM for the embedding model; faster)
 - **Frequency:** daily (overnight)
 
-`stacks:etl:sync_all` is the nightly entry point across ALL sources (today just Meet — it
-invokes `sync_meet_all`; future sources are added there, so the Scheduler job never changes).
-It pulls the recent window (default last 10 days; run `sync_meet_all[N]` directly to change) via the
-richer Meet REST API for every user, embedding new transcripts locally. It owns the recent
-window; the Drive backfill owns everything older, so the two never double-ingest a meeting.
+`stacks:etl:sync_all` is the nightly entry point across ALL sources. It now invokes `sync_meet_all` (Meet REST API transcripts, recent window) and then `sync_gemini_notes_all` (Gemini notes, Drive-only, `until_time: nil`, recent window — default 10 days). Future sources are added here so the Scheduler job never changes.
 
 ## 5. Operating notes
 

@@ -50,6 +50,12 @@ namespace :stacks do
         since: (args[:days] || 90).to_i.days.ago,
         until_time: OVERLAP_GUARD_DAYS.days.ago
       )
+      Stacks::Etl::Meet.sweep_all_users!(
+        task_name: 'stacks:etl:backfill_gemini_notes_all',
+        mode: :gemini_notes,
+        since: (args[:days] || 90).to_i.days.ago,
+        until_time: nil # notes are Drive-only; no API overlap to guard against
+      )
     end
 
     desc 'Org-wide ongoing Meet API sync for ALL users (recent window; default 10 days)'
@@ -61,13 +67,23 @@ namespace :stacks do
       )
     end
 
+    desc 'Org-wide Gemini-notes sync for ALL users (recent window; default 10 days)'
+    task :sync_gemini_notes_all, [:days] => :environment do |_t, args|
+      Stacks::Etl::Meet.sweep_all_users!(
+        task_name: 'stacks:etl:sync_gemini_notes_all',
+        mode: :gemini_notes,
+        since: (args[:days] || 10).to_i.days.ago,
+        until_time: nil
+      )
+    end
+
     # The nightly ETL entry point. Runs the ongoing sync for EVERY source; today that's
-    # only Meet, but new sources (Notion, Gmail, …) get added here so the Scheduler job
-    # never has to change. Each source is invoked independently so one source failing
-    # doesn't stop the others.
-    desc 'Nightly ETL sync across ALL sources (currently Meet)'
+    # Meet transcripts + Gemini notes, but new sources (Notion, Gmail, …) get added here
+    # so the Scheduler job never has to change. Each source is invoked independently so
+    # one source failing doesn't stop the others.
+    desc 'Nightly ETL sync across ALL sources (currently Meet transcripts + Gemini notes)'
     task sync_all: :environment do
-      %w[stacks:etl:sync_meet_all].each do |task_name|
+      %w[stacks:etl:sync_meet_all stacks:etl:sync_gemini_notes_all].each do |task_name|
         Rake::Task[task_name].invoke
       rescue => e
         Rails.logger.error("stacks:etl:sync_all — #{task_name} failed: #{e.class}: #{e.message}")
