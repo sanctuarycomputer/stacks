@@ -145,4 +145,27 @@ class Stacks::Etl::Meet::GeminiNotesSourceTest < ActiveSupport::TestCase
     assert_equal "notesfile2", built.gemini_notes_doc_id
     assert built.gemini_notes?
   end
+
+  test "exports the notes doc as text/markdown so hyperlinks (mailto + transcript) survive" do
+    # Regression (prod): Google's text/plain export STRIPS links, flattening
+    # "[Name](mailto:email)" and "[Transcript](url)" to bare text — so invited emails and the
+    # transcript-doc-id both come back empty, every note falls to standalone and gets
+    # auto-excluded on a 0 count. Only text/markdown preserves the link syntax the parsers need.
+    # This mocha .with pins the export MIME: a revert to "text/plain" fails here.
+    meeting = Meeting.create!(meet_source: :meet_api, meet_conference_record_id: "cr/md")
+    Document.create!(source: :meet, external_id: "TRANSCRIPT_ID_123", source_record: meeting,
+                     excluded: :not_excluded, excluded_reason: :none)
+    file = OpenStruct.new(id: "notesfile_md", name: "Sync Title - 2026/06/30 15:00 EDT - Notes by Gemini",
+                          created_time: "2026-06-30T15:00:00Z")
+    svc = mock("drive")
+    svc.stubs(:list_files).returns(OpenStruct.new(files: [file], next_page_token: nil))
+    svc.expects(:export_file).with("notesfile_md", "text/markdown").returns(SAMPLE)
+    Stacks::Etl::Meet::Auth.stubs(:drive_service).returns(svc)
+
+    n = nil
+    Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1)).each_meeting { |x| n = x }
+    # Links survived the export -> transcript joins (inherits) and invited emails are attributed.
+    assert_equal [:not_excluded, :none], n[:inherit_exclusion]
+    assert_equal ["ayaka@index-space.org", "hugh@sanctuary.computer"], n[:contacts].map { |c| c[:email] }
+  end
 end
