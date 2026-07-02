@@ -45,8 +45,8 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     assert body.key?("result"), "Expected JSON-RPC result key, got: #{body.inspect}"
     tool_names = body["result"]["tools"].map { |t| t["name"] }
     assert_includes tool_names, "search", "Expected 'search' tool in: #{tool_names.inspect}"
-    assert_equal %w[get_document list_documents list_sources search], tool_names.sort,
-      "Expected all four tools registered, got: #{tool_names.inspect}"
+    assert_equal %w[get_ar_aging get_document list_documents list_sources search], tool_names.sort,
+      "Expected all registered tools, got: #{tool_names.inspect}"
   end
 
   test "POST returns 403 when MCP API key is not configured" do

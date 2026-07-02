@@ -16,6 +16,7 @@ module Mcp
       Mcp::ListDocumentsTool,
       Mcp::ListSourcesTool,
       Mcp::GetDocumentTool,
+      Mcp::GetArAgingTool,
     ].freeze
 
     def self.build
