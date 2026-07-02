@@ -28,6 +28,24 @@ class QboInvoice < ApplicationRecord
     scope.where("(qbo_invoices.qbo_account_id, qbo_invoices.qbo_id) NOT IN (#{values_sql})")
   }
 
+  # Synced, sent, still-owed invoices — filtered entirely in SQL. #data
+  # lazily re-fetches from the QBO API when the stored jsonb is empty, so
+  # any bulk read MUST use a scope like this one to avoid firing a live QBO
+  # request per empty row. The balance cast is wrapped in a CASE (Postgres
+  # does not guarantee AND short-circuit order) so a non-numeric balance is
+  # excluded rather than raising.
+  scope :open_receivables, -> {
+    where(<<~'SQL'.squish)
+      qbo_invoices.data IS NOT NULL
+      AND qbo_invoices.data <> '{}'::jsonb
+      AND qbo_invoices.data->>'due_date' IS NOT NULL
+      AND qbo_invoices.data->>'email_status' = 'EmailSent'
+      AND CASE WHEN qbo_invoices.data->>'balance' ~ '^-?\d+(\.\d+)?$'
+               THEN (qbo_invoices.data->>'balance')::numeric > 0
+               ELSE FALSE END
+    SQL
+  }
+
   def status
     if email_status == "EmailSent"
       overdue = (due_date - Date.today) < 0

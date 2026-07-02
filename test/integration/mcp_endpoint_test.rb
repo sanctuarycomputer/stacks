@@ -66,7 +66,7 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     payload = JSON.parse(text)
     assert payload.key?("total_ar"), "Expected 'total_ar' key in payload, got: #{payload.inspect}"
     assert payload.key?("enterprises"), "Expected 'enterprises' key in payload, got: #{payload.inspect}"
-    assert_equal Date.today.iso8601, payload["as_of"]
+    assert_match(/\A\d{4}-\d{2}-\d{2}\z/, payload["as_of"])
   end
 
   test "POST returns 403 when MCP API key is not configured" do

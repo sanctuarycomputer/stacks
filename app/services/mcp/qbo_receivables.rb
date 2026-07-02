@@ -6,26 +6,6 @@ module Mcp
   # Receivable structs; malformed rows are dropped here, so consumers never
   # need their own rescue-and-skip.
   module QboReceivables
-    # Open, sent receivables only — filtered in SQL so years of paid/unsent
-    # history never leave Postgres. The balance cast is wrapped in a CASE
-    # (Postgres does not guarantee AND short-circuit order) so a non-numeric
-    # balance is excluded rather than raising.
-    #
-    # NOTE: uses a single-quoted heredoc terminator (<<~'SQL') so the \d and
-    # \. escapes below reach Postgres literally. A plain <<~SQL heredoc
-    # follows Ruby double-quoted-string escape rules, which silently strip
-    # the backslash from unrecognized escapes like \d (i.e. "\d" becomes
-    # "d"), corrupting the regex.
-    RECEIVABLE_ROWS_SQL = <<~'SQL'.squish.freeze
-      qbo_invoices.data IS NOT NULL
-      AND qbo_invoices.data <> '{}'::jsonb
-      AND qbo_invoices.data->>'due_date' IS NOT NULL
-      AND qbo_invoices.data->>'email_status' = 'EmailSent'
-      AND CASE WHEN qbo_invoices.data->>'balance' ~ '^-?\d+(\.\d+)?$'
-               THEN (qbo_invoices.data->>'balance')::numeric > 0
-               ELSE FALSE END
-    SQL
-
     Receivable = Struct.new(
       :enterprise_id, :doc_number, :customer, :total, :balance,
       :due_date, :days_overdue, :status, :qbo_invoice_link, :display_name,
@@ -43,15 +23,17 @@ module Mcp
     end
 
     # One query for all enterprises; one parse per row; malformed rows dropped.
-    def self.receivables(enterprises, as_of: Date.today)
-      QboInvoice
+    def self.receivables(enterprises, as_of: Date.today, details: false)
+      QboInvoice.open_receivables
         .joins(:qbo_account)
         .where(qbo_accounts: { enterprise_id: enterprises.map(&:id) })
-        .where(RECEIVABLE_ROWS_SQL)
         .select('qbo_invoices.*, qbo_accounts.enterprise_id AS enterprise_id')
-        .filter_map { |inv| build_receivable(inv, as_of) }
+        .filter_map { |inv| build_receivable(inv, as_of, details) }
     end
 
+    BUCKETS = %w[current days_1_30 days_31_60 days_61_90 days_over_90].freeze
+
+    # bucket_key must only ever return a member of BUCKETS.
     def self.bucket_key(days_overdue)
       return 'current' if days_overdue <= 0
       return 'days_1_30' if days_overdue <= 30
@@ -64,18 +46,11 @@ module Mcp
       MCP::Tool::Response.new([{ type: 'text', text: { error: message }.to_json }])
     end
 
-    def self.build_receivable(inv, as_of)
+    def self.build_receivable(inv, as_of, details)
       due_date = inv.due_date
-      balance = inv.balance
-      total = inv.total
+      balance = Float(inv.data['balance'])
+      total = Float(inv.data['total'])
       days_overdue = (as_of - due_date).to_i
-      partially_paid = balance != total
-      status =
-        if days_overdue.positive?
-          partially_paid ? :partially_paid_overdue : :unpaid_overdue
-        else
-          partially_paid ? :partially_paid : :unpaid
-        end
       Receivable.new(
         enterprise_id: inv[:enterprise_id],
         doc_number: inv.data['doc_number'],
@@ -84,9 +59,9 @@ module Mcp
         balance: balance,
         due_date: due_date,
         days_overdue: days_overdue,
-        status: status,
-        qbo_invoice_link: inv.qbo_invoice_link,
-        display_name: inv.display_name
+        status: inv.status,
+        qbo_invoice_link: details ? inv.qbo_invoice_link : nil,
+        display_name: details ? inv.display_name : nil
       )
     rescue StandardError
       nil # malformed synced row — drop it here, the single enforcement point

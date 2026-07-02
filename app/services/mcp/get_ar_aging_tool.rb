@@ -12,8 +12,6 @@ module Mcp
     )
     annotations(read_only_hint: true, destructive_hint: false, idempotent_hint: true)
 
-    BUCKETS = %w[current days_1_30 days_31_60 days_61_90 days_over_90].freeze
-
     def self.call(enterprise: nil, server_context:)
       enterprises, error = QboReceivables.resolve_enterprises(enterprise)
       return QboReceivables.error_response(error) if error
@@ -22,7 +20,7 @@ module Mcp
       receivables_by_enterprise = QboReceivables.receivables(enterprises, as_of: as_of).group_by(&:enterprise_id)
 
       enterprise_payloads = enterprises.map do |ent|
-        customers = Hash.new { |h, k| h[k] = BUCKETS.index_with { 0.0 }.merge('total' => 0.0) }
+        customers = Hash.new { |h, k| h[k] = QboReceivables::BUCKETS.index_with { 0.0 }.merge('total' => 0.0) }
         (receivables_by_enterprise[ent.id] || []).each do |r|
           bucket = QboReceivables.bucket_key(r.days_overdue)
           row = customers[r.customer]
