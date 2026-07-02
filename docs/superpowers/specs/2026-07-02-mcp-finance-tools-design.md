@@ -66,9 +66,11 @@ like the four corpus tools.
   total AR and the Ops pre-read logs "AR total" as a trend. Bucket names were made truthful
   (day 0 = current; day 90 = 61-90; over_90 is strictly >90), matching QBO's own
   "91 and over" convention.
-- **Grouping:** per enterprise → per customer (`customer_ref["name"]`), bucket sums of
-  `#balance` (not `#total` — aging is about what's still owed), plus per-customer and
-  per-enterprise totals and an overall `total_ar`.
+- **Grouping:** per enterprise → per customer, grouped by QBO customer id + name (not name
+  alone) so same-named customers stay distinct; balances accumulate in integer cents so
+  buckets always cross-foot exactly with totals. Bucket sums are of `#balance` (not `#total`
+  — aging is about what's still owed), plus per-customer and per-enterprise totals and an
+  overall `total_ar`.
 - **Payload shape:**
 
 ```json
@@ -78,7 +80,7 @@ like the four corpus tools.
     {
       "enterprise": "Sanctuary Computer",
       "customers": [
-        { "customer": "Acme Co", "current": 0.0, "days_1_30": 1200.0,
+        { "customer": "Acme Co", "customer_id": null, "current": 0.0, "days_1_30": 1200.0,
           "days_31_60": 0.0, "days_61_90": 0.0, "days_over_90": 500.0, "total": 1700.0 }
       ],
       "total_ar": 1700.0

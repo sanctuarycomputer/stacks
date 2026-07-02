@@ -10,8 +10,10 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
 
   # Minimal synced-invoice factory mirroring the jsonb shape QboInvoice
   # accessors read (see app/models/qbo_invoice.rb).
-  def invoice!(doc:, due:, balance:, total: nil, customer: 'Acme Co',
+  def invoice!(doc:, due:, balance:, total: nil, customer: 'Acme Co', customer_id: nil,
                email_status: 'EmailSent', account: @account)
+    customer_ref = { 'name' => customer }
+    customer_ref['value'] = customer_id if customer_id
     QboInvoice.create!(
       qbo_account: account,
       qbo_id: "inv-#{doc}",
@@ -21,7 +23,7 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
         'due_date' => due.iso8601,
         'balance' => balance,
         'total' => total || balance,
-        'customer_ref' => { 'name' => customer },
+        'customer_ref' => customer_ref,
       }
     )
   end
@@ -52,6 +54,21 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     assert_equal 310.0, ent['total_ar']
     assert_equal 310.0, payload['total_ar']
     assert_equal @today.iso8601, payload['as_of']
+  end
+
+  test 'get_ar_aging cross-foots exactly across buckets despite fractional-cent balances' do
+    invoice!(doc: 'cf1', due: @today, balance: 10.01, customer: 'Cent Co', customer_id: 'cc')
+    invoice!(doc: 'cf2', due: @today - 30, balance: 20.02, customer: 'Cent Co', customer_id: 'cc')
+    invoice!(doc: 'cf3', due: @today - 31, balance: 0.99, customer: 'Cent Co', customer_id: 'cc')
+
+    payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    ent = payload['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
+    row = ent['customers'].find { |c| c['customer'] == 'Cent Co' }
+
+    bucket_sum = Mcp::QboReceivables::BUCKETS.sum { |b| row[b] }
+    assert_equal row['total'], bucket_sum
+    assert_in_delta 31.02, row['total'], 0.0001
+    assert_equal row['total'], ent['total_ar']
   end
 
   test 'get_ar_aging sums outstanding balance, not invoice total' do
@@ -88,6 +105,29 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
       enterprise: 'sanctuary computer inc', server_context: {}))
     assert_equal 100.0, scoped['total_ar']
     assert_equal [@sanctuary.name], scoped['enterprises'].map { |e| e['enterprise'] }
+  end
+
+  test 'get_ar_aging resolves an enterprise name padded with whitespace' do
+    invoice!(doc: 's2', due: @today - 5, balance: 100.0)
+
+    scoped = payload_for(Mcp::GetArAgingTool.call(
+      enterprise: '  sanctuary computer inc  ', server_context: {}))
+    assert_equal 100.0, scoped['total_ar']
+    assert_equal [@sanctuary.name], scoped['enterprises'].map { |e| e['enterprise'] }
+  end
+
+  test 'get_ar_aging keeps same-named customers with different customer_id as distinct rows' do
+    invoice!(doc: 'dup1', due: @today - 5, balance: 100.0, customer: 'Studio LLC', customer_id: 'c1')
+    invoice!(doc: 'dup2', due: @today - 10, balance: 200.0, customer: 'Studio LLC', customer_id: 'c2')
+
+    payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    ent = payload['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
+    studios = ent['customers'].select { |c| c['customer'] == 'Studio LLC' }
+
+    assert_equal 2, studios.length
+    assert_equal %w[c1 c2].sort, studios.map { |c| c['customer_id'] }.sort
+    totals = studios.map { |c| c['total'] }.sort
+    assert_equal [100.0, 200.0], totals
   end
 
   test 'get_ar_aging returns an error payload for an unknown enterprise' do
@@ -152,6 +192,24 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     unknown = ent['customers'].find { |c| c['customer'] == 'Unknown' }
     assert unknown, "Expected an 'Unknown' customer row, got: #{ent['customers'].inspect}"
     assert_equal 100.0, unknown['total']
+
+    overdue = payload_for(Mcp::ListOverdueInvoicesTool.call(server_context: {}))
+    assert_equal ['Unknown'], overdue['invoices'].map { |i| i['customer'] }
+  end
+
+  test 'a String customer_ref falls back to Unknown in both tools instead of substring-matching name' do
+    QboInvoice.create!(qbo_account: @account, qbo_id: 'inv-string-ref', data: {
+      'doc_number' => 'str-ref',
+      'email_status' => 'EmailSent',
+      'due_date' => (@today - 5).iso8601,
+      'balance' => 100.0,
+      'total' => 100.0,
+      'customer_ref' => 'Acme (trade name)',
+    })
+
+    aging = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    ent = aging['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
+    assert_equal ['Unknown'], ent['customers'].map { |c| c['customer'] }
 
     overdue = payload_for(Mcp::ListOverdueInvoicesTool.call(server_context: {}))
     assert_equal ['Unknown'], overdue['invoices'].map { |i| i['customer'] }

@@ -20,20 +20,24 @@ module Mcp
       receivables_by_enterprise = QboReceivables.receivables(enterprises, as_of: as_of).group_by(&:enterprise_id)
 
       enterprise_payloads = enterprises.map do |ent|
-        customers = Hash.new { |h, k| h[k] = QboReceivables::BUCKETS.index_with { 0.0 }.merge('total' => 0.0) }
+        # Accumulate integer cents so the five buckets always sum exactly to
+        # 'total' and customer totals to 'total_ar' — independent float
+        # rounding can otherwise cross-foot off by a cent.
+        customers = Hash.new { |h, k| h[k] = QboReceivables::BUCKETS.index_with { 0 }.merge('total' => 0) }
         (receivables_by_enterprise[ent.id] || []).each do |r|
-          bucket = QboReceivables.bucket_key(r.days_overdue)
-          row = customers[r.customer]
-          row[bucket] += r.balance
-          row['total'] += r.balance
+          cents = (r.balance * 100).round
+          row = customers[[r.customer_id, r.customer]]
+          row[QboReceivables.bucket_key(r.days_overdue)] += cents
+          row['total'] += cents
         end
-        rows = customers.map do |name, row|
-          { 'customer' => name }.merge(row.transform_values { |v| v.round(2) })
+        rows = customers.map do |(customer_id, customer), row|
+          { 'customer' => customer, 'customer_id' => customer_id }
+            .merge(row.transform_values { |cents| cents / 100.0 })
         end
         {
           enterprise: ent.name,
           customers: rows.sort_by { |r| [-r['total'], r['customer'].to_s] },
-          total_ar: rows.sum { |r| r['total'] }.round(2),
+          total_ar: customers.values.sum { |row| row['total'] } / 100.0,
         }
       end
 

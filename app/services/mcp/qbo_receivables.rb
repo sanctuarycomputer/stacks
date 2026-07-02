@@ -7,28 +7,33 @@ module Mcp
   # need their own rescue-and-skip.
   module QboReceivables
     Receivable = Struct.new(
-      :enterprise_id, :doc_number, :customer, :total, :balance,
+      :enterprise_id, :doc_number, :customer_id, :customer, :total, :balance,
       :due_date, :days_overdue, :status, :qbo_invoice_link, :display_name,
       keyword_init: true
     )
 
     def self.resolve_enterprises(name)
       scope = Enterprise.joins(:qbo_account).distinct.order(:name)
+      name = name.to_s.strip # LLM callers pad names with whitespace
       return [scope.to_a, nil] if name.blank?
       # Match in Ruby (Unicode-aware casecmp?), not SQL LOWER(), so non-ASCII
       # names resolve regardless of the database collation. Tiny table.
-      matches = scope.to_a.select { |e| e.name.casecmp?(name.to_s) }
+      matches = scope.to_a.select { |e| e.name.casecmp?(name) }
       return [matches, nil] if matches.any?
       [nil, "Unknown enterprise '#{name}'. Valid enterprises: #{scope.pluck(:name).join(', ')}"]
     end
 
-    # One query for all enterprises; one parse per row; malformed rows dropped.
-    def self.receivables(enterprises, as_of: Date.today, details: false)
-      QboInvoice.open_receivables
+    # One query for all enterprises; one parse per row; malformed rows dropped
+    # (with a warn — a silent mass-drop must not read as "nothing outstanding").
+    # min_days_overdue filters BEFORE detail fields are computed so discarded
+    # rows never pay for currency formatting.
+    def self.receivables(enterprises, as_of: Date.today, details: false, min_days_overdue: nil)
+      QboInvoice
+        .open_receivables
         .joins(:qbo_account)
         .where(qbo_accounts: { enterprise_id: enterprises.map(&:id) })
         .select('qbo_invoices.*, qbo_accounts.enterprise_id AS enterprise_id')
-        .filter_map { |inv| build_receivable(inv, as_of, details) }
+        .filter_map { |inv| build_receivable(inv, as_of, details: details, min_days_overdue: min_days_overdue) }
     end
 
     BUCKETS = %w[current days_1_30 days_31_60 days_61_90 days_over_90].freeze
@@ -46,25 +51,33 @@ module Mcp
       MCP::Tool::Response.new([{ type: 'text', text: { error: message }.to_json }])
     end
 
-    def self.build_receivable(inv, as_of, details)
+    def self.build_receivable(inv, as_of, details:, min_days_overdue:)
       due_date = inv.due_date
       balance = Float(inv.data['balance'])
       total = Float(inv.data['total'])
       days_overdue = (as_of - due_date).to_i
+      return nil if min_days_overdue && days_overdue < min_days_overdue
+      ref = inv.customer_ref
+      ref = {} unless ref.is_a?(Hash) # a String customer_ref would substring-match ['name']
       Receivable.new(
         enterprise_id: inv[:enterprise_id],
         doc_number: inv.data['doc_number'],
-        customer: begin inv.customer_ref['name'].presence || 'Unknown' rescue 'Unknown' end,
+        customer_id: ref['value'],
+        customer: ref['name'].presence || 'Unknown',
         total: total,
         balance: balance,
         due_date: due_date,
         days_overdue: days_overdue,
-        status: inv.status,
+        # Detail fields only for consumers that emit them (the list tool).
+        # status stays delegated to the model (single source of truth);
+        # display_name recomputing it internally is the accepted cost of that.
+        status: details ? inv.status : nil,
         qbo_invoice_link: details ? inv.qbo_invoice_link : nil,
         display_name: details ? inv.display_name : nil
       )
-    rescue StandardError
-      nil # malformed synced row — drop it here, the single enforcement point
+    rescue StandardError => e
+      Rails.logger.warn("[Mcp::QboReceivables] skipping malformed invoice id=#{inv.id} qbo_id=#{inv.qbo_id}: #{e.class}: #{e.message}")
+      nil
     end
     private_class_method :build_receivable
   end

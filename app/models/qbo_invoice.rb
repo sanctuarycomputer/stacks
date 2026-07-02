@@ -72,7 +72,9 @@ class QboInvoice < ApplicationRecord
   end
 
   def display_name
-    "##{data.dig("doc_number")} (#{ActionController::Base.helpers.number_to_currency(data.dig("total"))}) - #{data.dig("customer_ref", "name")} (#{status.to_s.humanize})"
+    # customer_ref can be malformed (e.g. a String) in synced jsonb — never raise here
+    customer_name = customer_ref.is_a?(Hash) ? customer_ref["name"] : nil
+    "##{data.dig("doc_number")} (#{ActionController::Base.helpers.number_to_currency(data.dig("total"))}) - #{customer_name} (#{status.to_s.humanize})"
   end
 
   def qbo_invoice_link

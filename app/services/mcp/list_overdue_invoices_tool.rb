@@ -21,12 +21,14 @@ module Mcp
       min_days = [min_days_overdue.to_i, 1].max
       enterprise_names = enterprises.index_by(&:id)
 
-      invoices = QboReceivables.receivables(enterprises, as_of: as_of, details: true)
-        .select { |r| r.days_overdue >= min_days }
+      rows = QboReceivables.receivables(enterprises, as_of: as_of, details: true, min_days_overdue: min_days)
+
+      invoices = rows
         .map do |r|
           {
             doc_number: r.doc_number,
             customer: r.customer,
+            customer_id: r.customer_id,
             enterprise: enterprise_names[r.enterprise_id].name,
             total: r.total,
             balance: r.balance,
