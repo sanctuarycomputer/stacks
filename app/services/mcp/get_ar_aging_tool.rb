@@ -26,8 +26,13 @@ module Mcp
         # rounding can otherwise cross-foot off by a cent.
         # Group by customer_id (name-keyed only for id-less rows) so a QBO
         # customer renamed between syncs (same customer_id, drifted display
-        # name) doesn't split into multiple rows.
-        grouped = (receivables_by_enterprise[ent.id] || []).group_by { |r| r.customer_id || "name:#{r.customer}" }
+        # name) doesn't split into multiple rows. Rows with neither an id nor
+        # a name (both defaulted to 'Unknown') aren't the same debtor just
+        # because they share a placeholder name, so key those individually by
+        # doc_number rather than pooling unrelated debtors into one row.
+        grouped = (receivables_by_enterprise[ent.id] || []).group_by do |r|
+          r.customer_id.presence || (r.customer == 'Unknown' ? "doc:#{r.doc_number}" : "name:#{r.customer}")
+        end
         total_cents = 0
         rows = grouped.map do |_key, rs|
           representative = rs.max_by(&:due_date)

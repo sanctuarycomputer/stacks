@@ -11,21 +11,20 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
   # Minimal synced-invoice factory mirroring the jsonb shape QboInvoice
   # accessors read (see app/models/qbo_invoice.rb).
   def invoice!(doc:, due:, balance:, total: nil, customer: 'Acme Co', customer_id: nil,
-               email_status: 'EmailSent', account: @account)
-    customer_ref = { 'name' => customer }
-    customer_ref['value'] = customer_id if customer_id
-    QboInvoice.create!(
-      qbo_account: account,
-      qbo_id: "inv-#{doc}",
-      data: {
-        'doc_number' => doc,
-        'email_status' => email_status,
-        'due_date' => due.iso8601,
-        'balance' => balance,
-        'total' => total || balance,
-        'customer_ref' => customer_ref,
-      }
-    )
+               email_status: 'EmailSent', account: @account, omit_customer_ref: false)
+    data = {
+      'doc_number' => doc,
+      'email_status' => email_status,
+      'due_date' => due.iso8601,
+      'balance' => balance,
+      'total' => total || balance,
+    }
+    unless omit_customer_ref
+      customer_ref = { 'name' => customer }
+      customer_ref['value'] = customer_id if customer_id
+      data['customer_ref'] = customer_ref
+    end
+    QboInvoice.create!(qbo_account: account, qbo_id: "inv-#{doc}", data: data)
   end
 
   def payload_for(resp)
@@ -200,6 +199,37 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     assert_nil comma_total_row['total']
     assert_equal 50.0, no_total_row['balance']
     assert_equal 50.0, comma_total_row['balance']
+  end
+
+  test 'get_ar_aging excludes and warns about a sent invoice with no balance key at all' do
+    invoice!(doc: 'good', due: @today - 5, balance: 100.0)
+    QboInvoice.create!(qbo_account: @account, qbo_id: 'inv-no-balance', data: {
+      'doc_number' => 'no-balance',
+      'email_status' => 'EmailSent',
+      'due_date' => (@today - 5).iso8601,
+      'total' => 50.0,
+      'customer_ref' => { 'name' => 'No Balance Inc' },
+    })
+
+    Rails.logger.expects(:warn).with { |msg| msg.include?('excluded as malformed') }
+
+    payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    assert_equal 100.0, payload['total_ar']
+    ent = payload['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
+    assert_equal ['Acme Co'], ent['customers'].map { |c| c['customer'] }
+  end
+
+  test 'get_ar_aging keeps identity-less debtors (no customer_id, no customer name) as separate rows' do
+    invoice!(doc: 'anon1', due: @today - 5, balance: 100.0, omit_customer_ref: true)
+    invoice!(doc: 'anon2', due: @today - 10, balance: 200.0, omit_customer_ref: true)
+
+    payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    ent = payload['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
+    unknown_rows = ent['customers'].select { |c| c['customer'] == 'Unknown' }
+
+    assert_equal 2, unknown_rows.length
+    assert unknown_rows.all? { |r| r['customer_id'].nil? }
+    assert_equal [100.0, 200.0], unknown_rows.map { |r| r['total'] }.sort
   end
 
   test 'get_ar_aging returns an empty report when there are no receivables' do

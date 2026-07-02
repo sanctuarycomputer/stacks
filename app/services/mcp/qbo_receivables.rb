@@ -28,23 +28,27 @@ module Mcp
     # min_days_overdue filters BEFORE detail fields are computed so discarded
     # rows never pay for currency formatting.
     def self.receivables(enterprises, as_of: Date.today, details: false, min_days_overdue: nil)
-      # The scope's balance regex silently excludes rows whose balance is
-      # present but non-plain-numeric (e.g. "1,200.00"). Rows dropped in
-      # Ruby (in build_receivable) warn; this SQL-side exclusion wouldn't
-      # otherwise — a cheap count-only query so a silent mass-drop can't
-      # read as "nothing outstanding".
+      # The scope's balance regex (and its due_date/balance NULL checks)
+      # silently exclude rows via SQL three-valued logic: NOT (NULL ~ regex)
+      # is NULL, not true, so a sent row missing due_date or balance (or with
+      # a non-numeric balance, e.g. "1,200.00") never reaches build_receivable
+      # to warn there. This SQL-side check catches all of those — a cheap
+      # count-only query so a silent mass-drop can't read as "nothing
+      # outstanding".
       malformed = QboInvoice
         .joins(:qbo_account)
         .where(qbo_accounts: { enterprise_id: enterprises.map(&:id) })
         .where(<<~'SQL'.squish)
-          qbo_invoices.data->>'due_date' IS NOT NULL
-          AND qbo_invoices.data->>'email_status' = 'EmailSent'
-          AND qbo_invoices.data->>'balance' IS NOT NULL
-          AND NOT (qbo_invoices.data->>'balance' ~ '^-?\d+(\.\d+)?$')
+          qbo_invoices.data->>'email_status' = 'EmailSent'
+          AND (
+            qbo_invoices.data->>'due_date' IS NULL
+            OR qbo_invoices.data->>'balance' IS NULL
+            OR NOT (qbo_invoices.data->>'balance' ~ '^-?\d+(\.\d+)?$')
+          )
         SQL
         .pluck(:id, :qbo_id)
       if malformed.any?
-        Rails.logger.warn("[Mcp::QboReceivables] #{malformed.size} invoice(s) excluded for non-numeric balance: #{malformed.map { |id, qbo_id| "id=#{id} qbo_id=#{qbo_id}" }.join(', ')}")
+        Rails.logger.warn("[Mcp::QboReceivables] #{malformed.size} invoice(s) excluded as malformed (missing due_date/balance or non-numeric balance): #{malformed.map { |id, qbo_id| "id=#{id} qbo_id=#{qbo_id}" }.join(', ')}")
       end
 
       QboInvoice
