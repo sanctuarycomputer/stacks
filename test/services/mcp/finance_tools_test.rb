@@ -115,4 +115,61 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
     assert_equal 0, payload['total_ar']
   end
+
+  # --- list_overdue_invoices ---
+
+  test 'list_overdue_invoices returns overdue rows sorted most-overdue first' do
+    invoice!(doc: '10', due: Date.today - 5, balance: 100.0)
+    invoice!(doc: '11', due: Date.today - 45, balance: 200.0, customer: 'Beta LLC')
+    invoice!(doc: '12', due: Date.today + 5, balance: 300.0)   # not overdue
+    invoice!(doc: '13', due: Date.today - 20, balance: 150.0, total: 400.0) # partially paid overdue
+
+    payload = payload_for(Mcp::ListOverdueInvoicesTool.call(server_context: {}))
+    assert_equal 3, payload['count']
+    assert_equal %w[11 13 10], payload['invoices'].map { |i| i['doc_number'] }
+
+    top = payload['invoices'].first
+    assert_equal 'Beta LLC', top['customer']
+    assert_equal @sanctuary.name, top['enterprise']
+    assert_equal 45, top['days_overdue']
+    assert_equal 'unpaid_overdue', top['status']
+    assert_equal (Date.today - 45).iso8601, top['due_date']
+    assert_match %r{https://app\.qbo\.intuit\.com/app/invoice\?txnId=}, top['qbo_invoice_link']
+    assert top['display_name'].present?
+
+    partial = payload['invoices'].find { |i| i['doc_number'] == '13' }
+    assert_equal 'partially_paid_overdue', partial['status']
+    assert_equal 150.0, partial['balance']
+    assert_equal 400.0, partial['total']
+  end
+
+  test 'list_overdue_invoices honors min_days_overdue' do
+    invoice!(doc: '20', due: Date.today - 5, balance: 100.0)
+    invoice!(doc: '21', due: Date.today - 40, balance: 200.0)
+
+    payload = payload_for(Mcp::ListOverdueInvoicesTool.call(min_days_overdue: 30, server_context: {}))
+    assert_equal %w[21], payload['invoices'].map { |i| i['doc_number'] }
+  end
+
+  test 'list_overdue_invoices scopes by enterprise and rejects unknown names' do
+    other = QboAccount.create!(enterprise: enterprises(:one), client_id: 'x',
+                               client_secret: 'x', realm_id: 'realm-other2')
+    invoice!(doc: '30', due: Date.today - 5, balance: 100.0)
+    invoice!(doc: '31', due: Date.today - 5, balance: 200.0, account: other)
+
+    scoped = payload_for(Mcp::ListOverdueInvoicesTool.call(
+      enterprise: @sanctuary.name, server_context: {}))
+    assert_equal %w[30], scoped['invoices'].map { |i| i['doc_number'] }
+
+    err = payload_for(Mcp::ListOverdueInvoicesTool.call(enterprise: 'Nope Inc', server_context: {}))
+    assert_includes err['error'], "Unknown enterprise 'Nope Inc'"
+  end
+
+  test 'list_overdue_invoices skips unsynced rows without syncing' do
+    QboInvoice.create!(qbo_account: @account, qbo_id: 'inv-unsynced-2', data: nil)
+    QboInvoice.any_instance.expects(:sync!).never
+    payload = payload_for(Mcp::ListOverdueInvoicesTool.call(server_context: {}))
+    assert_equal 0, payload['count']
+    assert_equal [], payload['invoices']
+  end
 end
