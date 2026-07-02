@@ -33,7 +33,7 @@ module Mcp
         end
         {
           enterprise: ent.name,
-          customers: rows.sort_by { |r| -r['total'] },
+          customers: rows.sort_by { |r| [-r['total'], r['customer'].to_s] },
           total_ar: rows.sum { |r| r['total'] }.round(2),
         }
       end

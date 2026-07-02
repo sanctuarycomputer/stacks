@@ -27,7 +27,7 @@ module Mcp
           next if days < min_days_overdue.to_i
           {
             doc_number: inv.data['doc_number'],
-            customer: inv.customer_ref['name'],
+            customer: inv.customer_ref['name'] || 'Unknown',
             enterprise: ent.name,
             total: inv.total,
             balance: inv.balance,
@@ -40,7 +40,7 @@ module Mcp
         rescue StandardError
           nil # malformed synced row — skip it, never fail the whole report
         end
-      end.sort_by { |row| -row[:days_overdue] }
+      end.sort_by { |row| [-row[:days_overdue], row[:doc_number].to_s] }
 
       payload = { as_of: as_of.iso8601, count: invoices.length, invoices: invoices }
       MCP::Tool::Response.new([{ type: 'text', text: payload.to_json }])

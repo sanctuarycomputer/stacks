@@ -9,7 +9,7 @@ module Mcp
       "AND qbo_invoices.data->>'due_date' IS NOT NULL".freeze
 
     def self.resolve_enterprises(name)
-      scope = Enterprise.joins(:qbo_account).distinct
+      scope = Enterprise.joins(:qbo_account).distinct.order(:name)
       return [scope.to_a, nil] if name.blank?
       matches = scope.where('LOWER(enterprises.name) = ?', name.to_s.downcase).to_a
       return [matches, nil] if matches.any?
