@@ -61,25 +61,86 @@ class Contact < ApplicationRecord
     contact
   end
 
+  # Tables that reference contacts.id and must be repointed at the surviving
+  # record before any duplicate is destroyed. Without this, delete_all trips the
+  # foreign key constraints (e.g. document_contacts.fk_rails_edc7f9ba3b).
+  # Format: [table, foreign key column, [columns forming a uniqueness scope]].
+  # The uniqueness scope prevents violating a unique index when repointing
+  # (e.g. document_contacts is unique on [document_id, contact_id, role]).
+  CONTACT_REFERENCES = [
+    ["document_contacts",             "contact_id",         %w[document_id role]],
+    ["meeting_participants",          "contact_id",         nil],
+    ["mentions",                      "contact_id",         nil],
+    ["chunks",                        "speaker_contact_id", nil],
+    ["meeting_transcript_segments",   "speaker_contact_id", nil],
+  ].freeze
+
   def dedupe!
     self.update(sources: self.sources.uniq)
 
-    dupes = Contact.where("LOWER(email) LIKE ?", "%#{email.downcase}%")
+    dupes = Contact
+      .where("LOWER(email) = ?", email.downcase)
+      .order(:id)
+      .to_a
     return self unless dupes.length > 1
 
-    new_record =
-      dupes.reduce(Contact.new) do |new_record, dupe|
-        new_record.email = dupe.email.downcase
-        new_record.sources = [*new_record.sources, *dupe.sources].uniq
-        new_record.apollo_id = dupe.apollo_id if dupe.apollo_id.present?
-        new_record
-      end
+    survivor = dupes.first
+    losers = dupes[1..]
+
+    merged_sources = dupes.flat_map(&:sources).compact.uniq
+    merged_apollo_id = dupes.map(&:apollo_id).compact.first
+    merged_display_name = dupes.map(&:display_name).compact.first
 
     ActiveRecord::Base.transaction do
-      dupes.delete_all
-      new_record.save!
+      losers.each do |loser|
+        CONTACT_REFERENCES.each do |table, fk, scope_cols|
+          repoint_references!(table, fk, scope_cols, from: loser.id, to: survivor.id)
+        end
+      end
+
+      # Delete the losers BEFORE reassigning their attributes onto the survivor.
+      # contacts.apollo_id has a unique index, so assigning a loser's apollo_id to
+      # the survivor while that loser still exists would violate the constraint.
+      Contact.where(id: losers.map(&:id)).delete_all
+
+      survivor.update!(
+        sources: merged_sources,
+        apollo_id: merged_apollo_id,
+        display_name: survivor.display_name.presence || merged_display_name,
+      )
     end
 
-    new_record
+    survivor.reload
+  end
+
+  private
+
+  # Repoint every referencing row from `from` to `to`. When a uniqueness scope is
+  # given, rows whose (scope + to) already exist on the survivor are deleted
+  # instead of updated, so we never collide with a unique index.
+  def repoint_references!(table, fk, scope_cols, from:, to:)
+    conn = self.class.connection
+    quoted_table = conn.quote_table_name(table)
+    quoted_fk = conn.quote_column_name(fk)
+
+    if scope_cols.present?
+      quoted_scope = scope_cols.map { |c| conn.quote_column_name(c) }
+      join_on = quoted_scope.map { |c| "dst.#{c} = src.#{c}" }.join(" AND ")
+
+      # Drop losers' rows that would duplicate an existing survivor row.
+      conn.execute(<<~SQL)
+        DELETE FROM #{quoted_table} src
+        USING #{quoted_table} dst
+        WHERE src.#{quoted_fk} = #{conn.quote(from)}
+          AND dst.#{quoted_fk} = #{conn.quote(to)}
+          AND #{join_on}
+      SQL
+    end
+
+    conn.execute(<<~SQL)
+      UPDATE #{quoted_table}
+      SET #{quoted_fk} = #{conn.quote(to)}
+      WHERE #{quoted_fk} = #{conn.quote(from)}
+    SQL
   end
 end
