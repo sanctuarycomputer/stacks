@@ -33,20 +33,20 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
   test 'get_ar_aging buckets balances by days overdue with correct boundaries' do
     today = Date.today
     invoice!(doc: 'a', due: today, balance: 10.0)           # 0 days  -> current
-    invoice!(doc: 'b', due: today - 30, balance: 20.0)      # 30 days -> days_0_30
+    invoice!(doc: 'b', due: today - 30, balance: 20.0)      # 30 days -> days_1_30
     invoice!(doc: 'c', due: today - 31, balance: 40.0)      # 31 days -> days_31_60
     invoice!(doc: 'd', due: today - 90, balance: 80.0)      # 90 days -> days_61_90
-    invoice!(doc: 'e', due: today - 91, balance: 160.0)     # 91 days -> days_90_plus
+    invoice!(doc: 'e', due: today - 91, balance: 160.0)     # 91 days -> days_over_90
 
     payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
     ent = payload['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
     acme = ent['customers'].find { |c| c['customer'] == 'Acme Co' }
 
     assert_equal 10.0, acme['current']
-    assert_equal 20.0, acme['days_0_30']
+    assert_equal 20.0, acme['days_1_30']
     assert_equal 40.0, acme['days_31_60']
     assert_equal 80.0, acme['days_61_90']
-    assert_equal 160.0, acme['days_90_plus']
+    assert_equal 160.0, acme['days_over_90']
     assert_equal 310.0, acme['total']
     assert_equal 310.0, ent['total_ar']
     assert_equal 310.0, payload['total_ar']
@@ -57,7 +57,7 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     invoice!(doc: 'p', due: Date.today - 10, balance: 500.0, total: 1000.0)
     payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
     acme = payload['enterprises'].first['customers'].first
-    assert_equal 500.0, acme['days_0_30']
+    assert_equal 500.0, acme['days_1_30']
     assert_equal 500.0, acme['total']
   end
 
@@ -116,6 +116,39 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     assert_equal 0, payload['total_ar']
   end
 
+  test 'an empty-string customer name falls back to Unknown in both tools' do
+    invoice!(doc: 'nc1', due: Date.today - 5, balance: 100.0, customer: '')
+
+    aging = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    ent = aging['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
+    unknown = ent['customers'].find { |c| c['customer'] == 'Unknown' }
+    assert unknown, "Expected an 'Unknown' customer row, got: #{ent['customers'].inspect}"
+    assert_equal 100.0, unknown['total']
+
+    overdue = payload_for(Mcp::ListOverdueInvoicesTool.call(server_context: {}))
+    assert_equal ['Unknown'], overdue['invoices'].map { |i| i['customer'] }
+  end
+
+  test 'both tools drop a row whose due_date passes the SQL filter but fails to parse' do
+    invoice!(doc: 'ok', due: Date.today - 5, balance: 100.0)
+    QboInvoice.create!(qbo_account: @account, qbo_id: 'inv-bad-date', data: {
+      'doc_number' => 'bad-date',
+      'email_status' => 'EmailSent',
+      'due_date' => 'not-a-date',
+      'balance' => 50.0,
+      'total' => 50.0,
+      'customer_ref' => { 'name' => 'Broken Dates Inc' },
+    })
+
+    aging = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    assert_equal 100.0, aging['total_ar']
+    ent = aging['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
+    assert_equal ['Acme Co'], ent['customers'].map { |c| c['customer'] }
+
+    overdue = payload_for(Mcp::ListOverdueInvoicesTool.call(server_context: {}))
+    assert_equal %w[ok], overdue['invoices'].map { |i| i['doc_number'] }
+  end
+
   # --- list_overdue_invoices ---
 
   test 'list_overdue_invoices returns overdue rows sorted most-overdue first' do
@@ -149,6 +182,14 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
 
     payload = payload_for(Mcp::ListOverdueInvoicesTool.call(min_days_overdue: 30, server_context: {}))
     assert_equal %w[21], payload['invoices'].map { |i| i['doc_number'] }
+  end
+
+  test 'list_overdue_invoices clamps min_days_overdue below 1 to 1' do
+    invoice!(doc: '25', due: Date.today, balance: 100.0)      # due today, 0 days overdue
+    invoice!(doc: '26', due: Date.today - 3, balance: 200.0)  # 3 days overdue
+
+    payload = payload_for(Mcp::ListOverdueInvoicesTool.call(min_days_overdue: 0, server_context: {}))
+    assert_equal %w[26], payload['invoices'].map { |i| i['doc_number'] }
   end
 
   test 'list_overdue_invoices scopes by enterprise and rejects unknown names' do

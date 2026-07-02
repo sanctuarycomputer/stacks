@@ -60,10 +60,12 @@ like the four corpus tools.
 
 - **File:** `app/services/mcp/get_ar_aging_tool.rb`
 - **Params:** `enterprise` (optional string)
-- **Buckets:** `current` (not yet due) + `0_30` / `31_60` / `61_90` / `90_plus` days overdue,
+- **Buckets:** `current` (not yet due) + `1-30` / `31-60` / `61-90` / `over-90` days overdue,
   computed from `Date.today - due_date`. The spec names the four overdue buckets; `current`
   is added because an AR aging report without outstanding-but-not-due balances understates
-  total AR and the Ops pre-read logs "AR total" as a trend.
+  total AR and the Ops pre-read logs "AR total" as a trend. Bucket names were made truthful
+  (day 0 = current; day 90 = 61-90; over_90 is strictly >90), matching QBO's own
+  "91 and over" convention.
 - **Grouping:** per enterprise → per customer (`customer_ref["name"]`), bucket sums of
   `#balance` (not `#total` — aging is about what's still owed), plus per-customer and
   per-enterprise totals and an overall `total_ar`.
@@ -76,8 +78,8 @@ like the four corpus tools.
     {
       "enterprise": "Sanctuary Computer",
       "customers": [
-        { "customer": "Acme Co", "current": 0.0, "days_0_30": 1200.0,
-          "days_31_60": 0.0, "days_61_90": 0.0, "days_90_plus": 500.0, "total": 1700.0 }
+        { "customer": "Acme Co", "current": 0.0, "days_1_30": 1200.0,
+          "days_31_60": 0.0, "days_61_90": 0.0, "days_over_90": 500.0, "total": 1700.0 }
       ],
       "total_ar": 1700.0
     }

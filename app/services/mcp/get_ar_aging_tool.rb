@@ -1,8 +1,9 @@
 module Mcp
   class GetArAgingTool < MCP::Tool
     tool_name 'get_ar_aging'
-    description 'AR aging buckets (current/0-30/31-60/61-90/90+ days overdue) per customer ' \
-                'per enterprise, computed from already-synced QBO invoices. Never calls QBO live.'
+    description 'AR aging buckets (current = not yet due, then 1-30/31-60/61-90/over-90 days ' \
+                'overdue) per customer per enterprise, computed from already-synced QBO ' \
+                'invoices. Never calls QBO live.'
     input_schema(
       properties: {
         enterprise: { type: 'string', description: 'Optional enterprise name filter, e.g. "Sanctuary Computer Inc"' },
@@ -11,22 +12,22 @@ module Mcp
     )
     annotations(read_only_hint: true, destructive_hint: false, idempotent_hint: true)
 
-    BUCKETS = %w[current days_0_30 days_31_60 days_61_90 days_90_plus].freeze
+    BUCKETS = %w[current days_1_30 days_31_60 days_61_90 days_over_90].freeze
 
     def self.call(enterprise: nil, server_context:)
       enterprises, error = QboReceivables.resolve_enterprises(enterprise)
       return QboReceivables.error_response(error) if error
 
       as_of = Date.today
+      receivables_by_enterprise = QboReceivables.receivables(enterprises, as_of: as_of).group_by(&:enterprise_id)
+
       enterprise_payloads = enterprises.map do |ent|
         customers = Hash.new { |h, k| h[k] = BUCKETS.index_with { 0.0 }.merge('total' => 0.0) }
-        QboReceivables.receivables(ent).each do |inv|
-          bucket = QboReceivables.bucket_key(QboReceivables.days_overdue(inv, as_of))
-          row = customers[inv.customer_ref['name'] || 'Unknown']
-          row[bucket] += inv.balance
-          row['total'] += inv.balance
-        rescue StandardError
-          next # malformed synced row — skip it, never fail the whole report
+        (receivables_by_enterprise[ent.id] || []).each do |r|
+          bucket = QboReceivables.bucket_key(r.days_overdue)
+          row = customers[r.customer]
+          row[bucket] += r.balance
+          row['total'] += r.balance
         end
         rows = customers.map do |name, row|
           { 'customer' => name }.merge(row.transform_values { |v| v.round(2) })

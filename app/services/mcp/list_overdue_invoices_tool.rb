@@ -7,40 +7,37 @@ module Mcp
     input_schema(
       properties: {
         enterprise: { type: 'string', description: 'Optional enterprise name filter, e.g. "Sanctuary Computer Inc"' },
-        min_days_overdue: { type: 'integer', description: 'Only invoices at least this many days overdue (default 1)' },
+        min_days_overdue: { type: 'integer', description: 'Only invoices at least this many days overdue (default 1; minimum 1 — values below 1 are treated as 1)' },
       },
       required: []
     )
     annotations(read_only_hint: true, destructive_hint: false, idempotent_hint: true)
-
-    OVERDUE_STATUSES = %i[unpaid_overdue partially_paid_overdue].freeze
 
     def self.call(enterprise: nil, min_days_overdue: 1, server_context:)
       enterprises, error = QboReceivables.resolve_enterprises(enterprise)
       return QboReceivables.error_response(error) if error
 
       as_of = Date.today
-      invoices = enterprises.flat_map do |ent|
-        QboReceivables.receivables(ent).filter_map do |inv|
-          next unless OVERDUE_STATUSES.include?(inv.status)
-          days = QboReceivables.days_overdue(inv, as_of)
-          next if days < min_days_overdue.to_i
+      min_days = [min_days_overdue.to_i, 1].max
+      enterprise_names = enterprises.index_by(&:id)
+
+      invoices = QboReceivables.receivables(enterprises, as_of: as_of)
+        .select { |r| r.days_overdue >= min_days }
+        .map do |r|
           {
-            doc_number: inv.data['doc_number'],
-            customer: inv.customer_ref['name'] || 'Unknown',
-            enterprise: ent.name,
-            total: inv.total,
-            balance: inv.balance,
-            due_date: inv.due_date.iso8601,
-            days_overdue: days,
-            status: inv.status,
-            qbo_invoice_link: inv.qbo_invoice_link,
-            display_name: inv.display_name,
+            doc_number: r.doc_number,
+            customer: r.customer,
+            enterprise: enterprise_names[r.enterprise_id].name,
+            total: r.total,
+            balance: r.balance,
+            due_date: r.due_date.iso8601,
+            days_overdue: r.days_overdue,
+            status: r.status,
+            qbo_invoice_link: r.qbo_invoice_link,
+            display_name: r.display_name,
           }
-        rescue StandardError
-          nil # malformed synced row — skip it, never fail the whole report
         end
-      end.sort_by { |row| [-row[:days_overdue], row[:doc_number].to_s] }
+        .sort_by { |row| [-row[:days_overdue], row[:doc_number].to_s] }
 
       payload = { as_of: as_of.iso8601, count: invoices.length, invoices: invoices }
       MCP::Tool::Response.new([{ type: 'text', text: payload.to_json }])
