@@ -95,6 +95,22 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     assert_includes payload['error'], @sanctuary.name
   end
 
+  test 'get_ar_aging skips malformed synced rows instead of raising' do
+    invoice!(doc: 'good', due: Date.today - 5, balance: 100.0)
+    QboInvoice.create!(qbo_account: @account, qbo_id: 'inv-malformed', data: {
+      'due_date' => (Date.today - 5).iso8601,
+      'balance' => { 'weird' => 'shape' },
+      'email_status' => 'EmailSent',
+      'customer_ref' => { 'name' => 'Broken' },
+      'doc_number' => 'bad1',
+    })
+
+    payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    assert_equal 100.0, payload['total_ar']
+    ent = payload['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
+    assert_equal ['Acme Co'], ent['customers'].map { |c| c['customer'] }
+  end
+
   test 'get_ar_aging returns an empty report when there are no receivables' do
     payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
     assert_equal 0, payload['total_ar']

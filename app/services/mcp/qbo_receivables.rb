@@ -22,7 +22,15 @@ module Mcp
         .joins(:qbo_account)
         .where(qbo_accounts: { enterprise_id: enterprise.id })
         .where(SYNCED_ROWS_SQL)
-        .select { |inv| inv.email_status == 'EmailSent' && inv.balance.positive? }
+        .select do |inv|
+          # A malformed synced row (e.g. non-scalar balance) must be skipped,
+          # never raise mid-report.
+          begin
+            inv.email_status == 'EmailSent' && inv.balance.positive?
+          rescue StandardError
+            false
+          end
+        end
     end
 
     def self.days_overdue(invoice, as_of = Date.today)
