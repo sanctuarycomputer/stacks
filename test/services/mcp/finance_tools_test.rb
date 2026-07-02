@@ -130,6 +130,19 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     assert_equal [100.0, 200.0], totals
   end
 
+  test 'get_ar_aging groups same customer_id into one row even if the display name drifted between syncs' do
+    invoice!(doc: 'rn1', due: @today - 20, balance: 100.0, customer: 'Acme', customer_id: 'c1')
+    invoice!(doc: 'rn2', due: @today - 5, balance: 200.0, customer: 'Acme Co', customer_id: 'c1')
+
+    payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    ent = payload['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
+    rows = ent['customers'].select { |c| c['customer_id'] == 'c1' }
+
+    assert_equal 1, rows.length
+    assert_equal 'Acme Co', rows.first['customer']
+    assert_equal 300.0, rows.first['total']
+  end
+
   test 'get_ar_aging returns an error payload for an unknown enterprise' do
     payload = payload_for(Mcp::GetArAgingTool.call(enterprise: 'Nope Inc', server_context: {}))
     assert_includes payload['error'], "Unknown enterprise 'Nope Inc'"
@@ -152,7 +165,7 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     assert_equal ['Acme Co'], ent['customers'].map { |c| c['customer'] }
   end
 
-  test 'both tools drop a row that passes the SQL filter but has an invalid total' do
+  test 'both tools keep a row with a missing or unparseable total, emitting total: nil' do
     invoice!(doc: 'good', due: @today - 5, balance: 100.0)
     QboInvoice.create!(qbo_account: @account, qbo_id: 'inv-no-total', data: {
       'doc_number' => 'no-total',
@@ -170,13 +183,23 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
       'customer_ref' => { 'name' => 'Comma Total Inc' },
     })
 
+    # A missing/unparseable total is display-only — the row still owes its
+    # balance, so it must not be dropped from AR: both the missing-total and
+    # comma-total balances still show up in the aging buckets/total.
     aging = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
-    assert_equal 100.0, aging['total_ar']
+    assert_equal 200.0, aging['total_ar']
     ent = aging['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
-    assert_equal ['Acme Co'], ent['customers'].map { |c| c['customer'] }
+    assert_equal ['Acme Co', 'Comma Total Inc', 'Missing Total Inc'].sort,
+                 ent['customers'].map { |c| c['customer'] }.sort
 
     overdue = payload_for(Mcp::ListOverdueInvoicesTool.call(server_context: {}))
-    assert_equal %w[good], overdue['invoices'].map { |i| i['doc_number'] }
+    assert_equal %w[comma-total good no-total].sort, overdue['invoices'].map { |i| i['doc_number'] }.sort
+    no_total_row = overdue['invoices'].find { |i| i['doc_number'] == 'no-total' }
+    comma_total_row = overdue['invoices'].find { |i| i['doc_number'] == 'comma-total' }
+    assert_nil no_total_row['total']
+    assert_nil comma_total_row['total']
+    assert_equal 50.0, no_total_row['balance']
+    assert_equal 50.0, comma_total_row['balance']
   end
 
   test 'get_ar_aging returns an empty report when there are no receivables' do

@@ -28,6 +28,25 @@ module Mcp
     # min_days_overdue filters BEFORE detail fields are computed so discarded
     # rows never pay for currency formatting.
     def self.receivables(enterprises, as_of: Date.today, details: false, min_days_overdue: nil)
+      # The scope's balance regex silently excludes rows whose balance is
+      # present but non-plain-numeric (e.g. "1,200.00"). Rows dropped in
+      # Ruby (in build_receivable) warn; this SQL-side exclusion wouldn't
+      # otherwise — a cheap count-only query so a silent mass-drop can't
+      # read as "nothing outstanding".
+      malformed = QboInvoice
+        .joins(:qbo_account)
+        .where(qbo_accounts: { enterprise_id: enterprises.map(&:id) })
+        .where(<<~'SQL'.squish)
+          qbo_invoices.data->>'due_date' IS NOT NULL
+          AND qbo_invoices.data->>'email_status' = 'EmailSent'
+          AND qbo_invoices.data->>'balance' IS NOT NULL
+          AND NOT (qbo_invoices.data->>'balance' ~ '^-?\d+(\.\d+)?$')
+        SQL
+        .pluck(:id, :qbo_id)
+      if malformed.any?
+        Rails.logger.warn("[Mcp::QboReceivables] #{malformed.size} invoice(s) excluded for non-numeric balance: #{malformed.map { |id, qbo_id| "id=#{id} qbo_id=#{qbo_id}" }.join(', ')}")
+      end
+
       QboInvoice
         .open_receivables
         .joins(:qbo_account)
@@ -54,11 +73,14 @@ module Mcp
     def self.build_receivable(inv, as_of, details:, min_days_overdue:)
       due_date = inv.due_date
       balance = Float(inv.data['balance'])
-      total = Float(inv.data['total'])
+      total = begin
+        Float(inv.data['total'])
+      rescue StandardError
+        nil # total is display-only; a receivable with unknown total still owes its balance
+      end
       days_overdue = (as_of - due_date).to_i
       return nil if min_days_overdue && days_overdue < min_days_overdue
       ref = inv.customer_ref
-      ref = {} unless ref.is_a?(Hash) # a String customer_ref would substring-match ['name']
       Receivable.new(
         enterprise_id: inv[:enterprise_id],
         doc_number: inv.data['doc_number'],

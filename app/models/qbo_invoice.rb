@@ -31,14 +31,15 @@ class QboInvoice < ApplicationRecord
   # Synced, sent, still-owed invoices — filtered entirely in SQL. #data
   # lazily re-fetches from the QBO API when the stored jsonb is empty, so
   # any bulk read MUST use a scope like this one to avoid firing a live QBO
-  # request per empty row. The balance cast is wrapped in a CASE (Postgres
-  # does not guarantee AND short-circuit order) so a non-numeric balance is
-  # excluded rather than raising.
+  # request per empty row. The ->> predicates below inherently exclude
+  # NULL/empty jsonb (->> on NULL/missing yields NULL, never a match), which
+  # is what guarantees #data's lazy live-QBO fetch can never fire from this
+  # scope. The balance cast is wrapped in a CASE (Postgres does not
+  # guarantee AND short-circuit order) so a non-numeric balance is excluded
+  # rather than raising.
   scope :open_receivables, -> {
     where(<<~'SQL'.squish)
-      qbo_invoices.data IS NOT NULL
-      AND qbo_invoices.data <> '{}'::jsonb
-      AND qbo_invoices.data->>'due_date' IS NOT NULL
+      qbo_invoices.data->>'due_date' IS NOT NULL
       AND qbo_invoices.data->>'email_status' = 'EmailSent'
       AND CASE WHEN qbo_invoices.data->>'balance' ~ '^-?\d+(\.\d+)?$'
                THEN (qbo_invoices.data->>'balance')::numeric > 0
@@ -72,8 +73,7 @@ class QboInvoice < ApplicationRecord
   end
 
   def display_name
-    # customer_ref can be malformed (e.g. a String) in synced jsonb — never raise here
-    customer_name = customer_ref.is_a?(Hash) ? customer_ref["name"] : nil
+    customer_name = customer_ref["name"]
     "##{data.dig("doc_number")} (#{ActionController::Base.helpers.number_to_currency(data.dig("total"))}) - #{customer_name} (#{status.to_s.humanize})"
   end
 
@@ -102,7 +102,10 @@ class QboInvoice < ApplicationRecord
   end
 
   def customer_ref
-    data.dig("customer_ref") || {}
+    ref = data.dig("customer_ref")
+    # customer_ref can be malformed (e.g. a String) in synced jsonb; always
+    # hand callers a Hash so none of them re-inherit the String#[] trap.
+    ref.is_a?(Hash) ? ref : {}
   end
 
   # Destroying a QboInvoice cascades through the composite FK
