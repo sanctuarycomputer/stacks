@@ -87,6 +87,10 @@ class Contact < ApplicationRecord
     survivor = dupes.first
     losers = dupes[1..]
 
+    merged_sources = dupes.flat_map(&:sources).compact.uniq
+    merged_apollo_id = dupes.map(&:apollo_id).compact.first
+    merged_display_name = dupes.map(&:display_name).compact.first
+
     ActiveRecord::Base.transaction do
       losers.each do |loser|
         CONTACT_REFERENCES.each do |table, fk, scope_cols|
@@ -94,17 +98,16 @@ class Contact < ApplicationRecord
         end
       end
 
-      merged_sources = dupes.flat_map(&:sources).compact.uniq
-      merged_apollo_id = dupes.map(&:apollo_id).compact.first
-      merged_display_name = dupes.map(&:display_name).compact.first
+      # Delete the losers BEFORE reassigning their attributes onto the survivor.
+      # contacts.apollo_id has a unique index, so assigning a loser's apollo_id to
+      # the survivor while that loser still exists would violate the constraint.
+      Contact.where(id: losers.map(&:id)).delete_all
 
       survivor.update!(
         sources: merged_sources,
         apollo_id: merged_apollo_id,
         display_name: survivor.display_name.presence || merged_display_name,
       )
-
-      Contact.where(id: losers.map(&:id)).delete_all
     end
 
     survivor.reload
