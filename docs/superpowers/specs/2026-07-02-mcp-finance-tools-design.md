@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-02
 **Source:** [Stacksbot ROADMAP](https://www.notion.so/garden3d/ROADMAP-md-391131fea2c7801485e0d767177e0da3) Phase 1a + [SPEC — Stacks MCP upgrades](https://www.notion.so/garden3d/SPEC-Stacks-MCP-upgrades-391131fea2c78147a3aff77c7a6a5493)
-**Status:** Draft — awaiting Hugh's review. Open decisions flagged inline as ⚖️.
+**Status:** Approved by Hugh 2026-07-02. Late fees confirmed per-client/human-judged — tools expose data, not policy.
 
 ## Why this slice
 
@@ -11,10 +11,9 @@ depends on exactly two P1a tools: `get_ar_aging` and `list_overdue_invoices`. Bo
 already-synced `QboInvoice` rows — no schema changes, no new syncs, no new auth. Smallest
 slice that unblocks the top-ranked automation.
 
-⚖️ **Open decision — slice choice.** Chosen over (a) shipping all eight P1a tools at once
+**Slice choice (confirmed).** Chosen over (a) shipping all eight P1a tools at once
 (bigger review surface, no automation needs the rest yet) and (b) privacy hardening G1–G4
-first (prerequisite only to *widening the corpus*, which this slice doesn't do). Say the word
-and we re-scope.
+first (prerequisite only to *widening the corpus*, which this slice doesn't do).
 
 ## Approaches considered
 
@@ -96,11 +95,10 @@ like the four corpus tools.
   first.
 - **Fields per invoice:** `doc_number`, `customer`, `enterprise`, `total`, `balance`,
   `due_date`, `days_overdue`, `status`, `qbo_invoice_link`, `display_name`.
-- ⚖️ **Open decision — late-fee flags.** The roadmap asks for "late-fee flags", but no
-  late-fee policy exists anywhere in the Stacks codebase (grep confirms). This design
-  **exposes data, not policy**: `days_overdue` + `status` are the flags, and the Ops
-  pre-read applies whatever late-fee SOP humans use. If a real rule exists (e.g. "late fee
-  after 30 days"), we add a `late_fee_eligible` boolean — tell me the rule and it's one line.
+- **Late-fee flags (resolved).** Late fees are decided per-client by humans — there is no
+  automated rule (confirmed by Hugh, 2026-07-02). The tools therefore **expose data, not
+  policy**: `days_overdue` + `status` are the flags, and the Ops pre-read surfaces them for
+  the per-client human call. No `late_fee_eligible` field.
 
 ## Error handling
 
