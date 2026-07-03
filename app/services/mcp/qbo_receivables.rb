@@ -7,7 +7,7 @@ module Mcp
   # need their own rescue-and-skip.
   module QboReceivables
     Receivable = Struct.new(
-      :enterprise_id, :doc_number, :customer_id, :customer, :total, :balance,
+      :invoice_id, :enterprise_id, :doc_number, :customer_id, :customer, :total, :balance,
       :due_date, :days_overdue, :status, :qbo_invoice_link, :display_name,
       keyword_init: true
     )
@@ -36,16 +36,9 @@ module Mcp
       # count-only query so a silent mass-drop can't read as "nothing
       # outstanding".
       malformed = QboInvoice
+        .malformed_sent_receivables
         .joins(:qbo_account)
         .where(qbo_accounts: { enterprise_id: enterprises.map(&:id) })
-        .where(<<~'SQL'.squish)
-          qbo_invoices.data->>'email_status' = 'EmailSent'
-          AND (
-            qbo_invoices.data->>'due_date' IS NULL
-            OR qbo_invoices.data->>'balance' IS NULL
-            OR NOT (qbo_invoices.data->>'balance' ~ '^-?\d+(\.\d+)?$')
-          )
-        SQL
         .pluck(:id, :qbo_id)
       if malformed.any?
         Rails.logger.warn("[Mcp::QboReceivables] #{malformed.size} invoice(s) excluded as malformed (missing due_date/balance or non-numeric balance): #{malformed.map { |id, qbo_id| "id=#{id} qbo_id=#{qbo_id}" }.join(', ')}")
@@ -70,26 +63,19 @@ module Mcp
       'days_over_90'
     end
 
-    def self.error_response(message)
-      MCP::Tool::Response.new([{ type: 'text', text: { error: message }.to_json }])
-    end
-
     def self.build_receivable(inv, as_of, details:, min_days_overdue:)
       due_date = inv.due_date
       balance = Float(inv.data['balance'])
-      total = begin
-        Float(inv.data['total'])
-      rescue StandardError
-        nil # total is display-only; a receivable with unknown total still owes its balance
-      end
       days_overdue = (as_of - due_date).to_i
       return nil if min_days_overdue && days_overdue < min_days_overdue
+      total = details ? (Float(inv.data['total']) rescue nil) : nil # total is display-only; a receivable with unknown total still owes its balance
       ref = inv.customer_ref
       Receivable.new(
+        invoice_id: inv.id,
         enterprise_id: inv[:enterprise_id],
         doc_number: inv.data['doc_number'],
         customer_id: ref['value'],
-        customer: ref['name'].presence || 'Unknown',
+        customer: ref['name'].presence,
         total: total,
         balance: balance,
         due_date: due_date,

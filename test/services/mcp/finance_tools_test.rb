@@ -232,6 +232,40 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     assert_equal [100.0, 200.0], unknown_rows.map { |r| r['total'] }.sort
   end
 
+  test 'get_ar_aging keeps identity-less, doc-number-less debtors as separate rows via invoice-id fallback' do
+    QboInvoice.create!(qbo_account: @account, qbo_id: 'inv-nodoc1', data: {
+      'email_status' => 'EmailSent',
+      'due_date' => (@today - 5).iso8601,
+      'balance' => 100.0,
+      'total' => 100.0,
+    })
+    QboInvoice.create!(qbo_account: @account, qbo_id: 'inv-nodoc2', data: {
+      'email_status' => 'EmailSent',
+      'due_date' => (@today - 10).iso8601,
+      'balance' => 200.0,
+      'total' => 200.0,
+    })
+
+    payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    ent = payload['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
+    unknown_rows = ent['customers'].select { |c| c['customer'] == 'Unknown' }
+
+    assert_equal 2, unknown_rows.length, "nil doc_numbers must not collide on a shared 'doc:' key"
+    assert_equal [100.0, 200.0], unknown_rows.map { |r| r['total'] }.sort
+  end
+
+  test 'get_ar_aging aggregates two invoices for a customer literally named Unknown into one row' do
+    invoice!(doc: 'lit1', due: @today - 5, balance: 100.0, customer: 'Unknown')
+    invoice!(doc: 'lit2', due: @today - 10, balance: 200.0, customer: 'Unknown')
+
+    payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    ent = payload['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
+    rows = ent['customers'].select { |c| c['customer'] == 'Unknown' }
+
+    assert_equal 1, rows.length, 'a customer literally named Unknown must aggregate by name, not fragment per invoice'
+    assert_equal 300.0, rows.first['total']
+  end
+
   test 'get_ar_aging returns an empty report when there are no receivables' do
     payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
     assert_equal 0, payload['total_ar']
@@ -259,6 +293,12 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
       'total' => 100.0,
       'customer_ref' => 'Acme (trade name)',
     })
+
+    # The accessor now warns whenever it hands back a malformed customer_ref;
+    # not asserted strictly (both tools re-fetch, so it fires more than
+    # once) — the behavior that matters is 'Unknown', not dropped, below.
+    Rails.logger.stubs(:warn)
+    Rails.logger.expects(:warn).with { |msg| msg.include?('malformed customer_ref') }.at_least_once
 
     aging = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
     ent = aging['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }

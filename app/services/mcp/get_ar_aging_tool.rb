@@ -14,7 +14,7 @@ module Mcp
 
     def self.call(enterprise: nil, server_context:)
       enterprises, error = QboReceivables.resolve_enterprises(enterprise)
-      return QboReceivables.error_response(error) if error
+      return Responses.error(error) if error
 
       as_of = Date.today
       receivables_by_enterprise = QboReceivables.receivables(enterprises, as_of: as_of).group_by(&:enterprise_id)
@@ -27,11 +27,13 @@ module Mcp
         # Group by customer_id (name-keyed only for id-less rows) so a QBO
         # customer renamed between syncs (same customer_id, drifted display
         # name) doesn't split into multiple rows. Rows with neither an id nor
-        # a name (both defaulted to 'Unknown') aren't the same debtor just
-        # because they share a placeholder name, so key those individually by
-        # doc_number rather than pooling unrelated debtors into one row.
+        # a raw name aren't the same debtor just because they'd share the
+        # 'Unknown' emission placeholder, so key those individually — by
+        # doc_number, falling back to the invoice id (airtight: no two
+        # invoices share an id) so nil doc_numbers don't collide on "doc:".
         grouped = (receivables_by_enterprise[ent.id] || []).group_by do |r|
-          r.customer_id.presence || (r.customer == 'Unknown' ? "doc:#{r.doc_number}" : "name:#{r.customer}")
+          r.customer_id.presence ||
+            (r.customer ? "name:#{r.customer}" : "doc:#{r.doc_number.presence || r.invoice_id}")
         end
         total_cents = 0
         rows = grouped.map do |_key, rs|
@@ -43,7 +45,7 @@ module Mcp
             bucket_row['total'] += cents
           end
           total_cents += bucket_row['total']
-          { 'customer' => representative.customer, 'customer_id' => representative.customer_id }
+          { 'customer' => representative.customer || 'Unknown', 'customer_id' => representative.customer_id }
             .merge(bucket_row.transform_values { |cents| cents / 100.0 })
         end
         grand_total_cents += total_cents
@@ -59,7 +61,7 @@ module Mcp
         enterprises: enterprise_payloads,
         total_ar: grand_total_cents / 100.0,
       }
-      MCP::Tool::Response.new([{ type: 'text', text: payload.to_json }])
+      Responses.ok(payload)
     end
   end
 end

@@ -15,7 +15,7 @@ module Mcp
 
     def self.call(enterprise: nil, min_days_overdue: 1, server_context:)
       enterprises, error = QboReceivables.resolve_enterprises(enterprise)
-      return QboReceivables.error_response(error) if error
+      return Responses.error(error) if error
 
       as_of = Date.today
       min_days = [min_days_overdue.to_i, 1].max
@@ -27,7 +27,7 @@ module Mcp
         .map do |r|
           {
             doc_number: r.doc_number,
-            customer: r.customer,
+            customer: r.customer || 'Unknown',
             customer_id: r.customer_id,
             enterprise: enterprise_names[r.enterprise_id].name,
             total: r.total,
@@ -42,7 +42,7 @@ module Mcp
         .sort_by { |row| [-row[:days_overdue], row[:doc_number].to_s] }
 
       payload = { as_of: as_of.iso8601, count: invoices.length, invoices: invoices }
-      MCP::Tool::Response.new([{ type: 'text', text: payload.to_json }])
+      Responses.ok(payload)
     end
   end
 end
