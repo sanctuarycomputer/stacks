@@ -21,22 +21,12 @@ module Mcp
 
       grand_total_cents = 0
       enterprise_payloads = enterprises.map do |ent|
-        # Accumulate integer cents so the five buckets always sum exactly to
-        # 'total' and customer totals to 'total_ar' — independent float
-        # rounding can otherwise cross-foot off by a cent.
-        # Group by customer_id (name-keyed only for id-less rows) so a QBO
-        # customer renamed between syncs (same customer_id, drifted display
-        # name) doesn't split into multiple rows. Rows with neither an id nor
-        # a raw name aren't the same debtor just because they'd share the
-        # 'Unknown' emission placeholder, so key those individually — by
-        # doc_number, falling back to the invoice id (airtight: no two
-        # invoices share an id). Prefixes are split (not shared "doc:") so a
-        # doc_number that happens to match another row's invoice id can't
-        # collide on the same key.
-        grouped = (receivables_by_enterprise[ent.id] || []).group_by do |r|
-          r.customer_id.presence ||
-            (r.customer ? "name:#{r.customer}" : (r.doc_number.present? ? "doc:#{r.doc_number}" : "inv:#{r.invoice_id}"))
-        end
+        # Accumulate integer cents so every emitted value is a decimal-exact
+        # cent amount and buckets sum to 'total' exactly in decimal. (A
+        # consumer re-summing the parsed IEEE doubles can still see epsilon
+        # artifacts like 0.1 + 0.2 — inherent to JSON numbers, not to this
+        # report.) Grouping semantics live on Receivable#customer_key.
+        grouped = (receivables_by_enterprise[ent.id] || []).group_by(&:customer_key)
         total_cents = 0
         rows = grouped.map do |_key, rs|
           representative = rs.max_by(&:due_date)

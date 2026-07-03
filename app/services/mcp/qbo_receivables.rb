@@ -10,7 +10,18 @@ module Mcp
       :invoice_id, :enterprise_id, :doc_number, :customer_id, :customer, :total, :balance,
       :due_date, :days_overdue, :status, :qbo_invoice_link, :display_name,
       keyword_init: true
-    )
+    ) do
+      # Debtor-identity key for grouping: customer_id when present; raw name
+      # when id-less. Rows with neither aren't the same debtor just because
+      # they'd share the 'Unknown' emission placeholder, so key those
+      # per-invoice — by doc_number, falling back to the invoice id. The
+      # doc:/inv: prefixes are distinct so a doc_number that happens to match
+      # another row's invoice id can't collide on the same key.
+      def customer_key
+        customer_id.presence ||
+          (customer ? "name:#{customer}" : (doc_number.present? ? "doc:#{doc_number}" : "inv:#{invoice_id}"))
+      end
+    end
 
     def self.resolve_enterprises(name)
       scope = Enterprise.joins(:qbo_account).distinct.order(:name)
@@ -35,14 +46,13 @@ module Mcp
       # to warn there. This SQL-side check catches all of those — a cheap
       # count-only query so a silent mass-drop can't read as "nothing
       # outstanding".
-      malformed = QboInvoice
-        .malformed_sent_receivables
-        .joins(:qbo_account)
-        .where(qbo_accounts: { enterprise_id: enterprises.map(&:id) })
-        .pluck(:id, :qbo_id)
-      if malformed.any?
-        warn_pairs("#{malformed.size} invoice(s) excluded as malformed (missing due_date/balance or non-numeric balance)", malformed)
-      end
+      warn_excluded(
+        QboInvoice
+          .malformed_sent_receivables
+          .joins(:qbo_account)
+          .where(qbo_accounts: { enterprise_id: enterprises.map(&:id) }),
+        'invoice(s) excluded as malformed (missing due_date/balance or non-numeric balance)'
+      )
 
       # Rows with NULL/empty jsonb data are excluded by open_receivables by
       # design (the no-live-QBO rule above) but the malformed check above
@@ -50,14 +60,13 @@ module Mcp
       # missing jsonb, so it's NULL, not true, and the row never counts as
       # malformed. Surface them separately so a mass-unsynced state (e.g. a
       # broken sync job) doesn't silently read as "nothing outstanding".
-      unsynced = QboInvoice
-        .joins(:qbo_account)
-        .where(qbo_accounts: { enterprise_id: enterprises.map(&:id) })
-        .where("qbo_invoices.data IS NULL OR qbo_invoices.data = '{}'::jsonb")
-        .pluck(:id, :qbo_id)
-      if unsynced.any?
-        warn_pairs("#{unsynced.size} invoice row(s) have no synced data and are excluded (cannot evaluate)", unsynced)
-      end
+      warn_excluded(
+        QboInvoice
+          .joins(:qbo_account)
+          .where(qbo_accounts: { enterprise_id: enterprises.map(&:id) })
+          .where("qbo_invoices.data IS NULL OR qbo_invoices.data = '{}'::jsonb"),
+        'invoice row(s) have no synced data and are excluded (cannot evaluate)'
+      )
 
       QboInvoice
         .open_receivables
@@ -67,15 +76,18 @@ module Mcp
         .filter_map { |inv| build_receivable(inv, as_of, details: details, min_days_overdue: min_days_overdue) }
     end
 
-    # Logs prefix plus a colon-separated sample of at most the first 20
-    # id/qbo_id pairs — a bad sync can otherwise blow this up into an
-    # unbounded log line.
-    def self.warn_pairs(prefix, pairs)
-      sample = pairs.first(20).map { |id, qbo_id| "id=#{id} qbo_id=#{qbo_id}" }.join(', ')
-      suffix = pairs.size > 20 ? ' (showing first 20)' : ''
-      Rails.logger.warn("[Mcp::QboReceivables] #{prefix}: #{sample}#{suffix}")
+    # Warns with a count plus at most the first 20 id/qbo_id pairs. Both the
+    # fetch and the log line are bounded — a bad sync leaving thousands of
+    # broken rows must not make every tool call transfer them all just to
+    # log 20.
+    def self.warn_excluded(relation, reason)
+      count = relation.count
+      return if count.zero?
+      sample = relation.limit(20).pluck(:id, :qbo_id).map { |id, qbo_id| "id=#{id} qbo_id=#{qbo_id}" }.join(', ')
+      suffix = count > 20 ? ' (showing first 20)' : ''
+      Rails.logger.warn("[Mcp::QboReceivables] #{count} #{reason}: #{sample}#{suffix}")
     end
-    private_class_method :warn_pairs
+    private_class_method :warn_excluded
 
     BUCKETS = %w[current days_1_30 days_31_60 days_61_90 days_over_90].freeze
 

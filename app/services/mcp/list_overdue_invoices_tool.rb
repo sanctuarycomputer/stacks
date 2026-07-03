@@ -28,7 +28,7 @@ module Mcp
           {
             doc_number: r.doc_number,
             customer: r.customer || 'Unknown',
-            customer_id: r.customer_id,
+            customer_id: r.customer_id.presence, # blank ids emit as null, matching get_ar_aging
             enterprise: enterprise_names[r.enterprise_id].name,
             total: r.total,
             balance: r.balance,
