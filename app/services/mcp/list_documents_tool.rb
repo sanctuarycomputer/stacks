@@ -18,7 +18,7 @@ module Mcp
       scope = scope.where(occurred_at: range) if range
       scope = scope.order(occurred_at: :desc).offset(offset).limit(limit)
       payload = scope.map { |d| { id: d.id, title: d.title, source: d.source, occurred_at: d.occurred_at } }
-      MCP::Tool::Response.new([{ type: 'text', text: payload.to_json }])
+      Responses.ok(payload)
     end
   end
 end

@@ -30,10 +30,12 @@ module Mcp
         # a raw name aren't the same debtor just because they'd share the
         # 'Unknown' emission placeholder, so key those individually — by
         # doc_number, falling back to the invoice id (airtight: no two
-        # invoices share an id) so nil doc_numbers don't collide on "doc:".
+        # invoices share an id). Prefixes are split (not shared "doc:") so a
+        # doc_number that happens to match another row's invoice id can't
+        # collide on the same key.
         grouped = (receivables_by_enterprise[ent.id] || []).group_by do |r|
           r.customer_id.presence ||
-            (r.customer ? "name:#{r.customer}" : "doc:#{r.doc_number.presence || r.invoice_id}")
+            (r.customer ? "name:#{r.customer}" : (r.doc_number.present? ? "doc:#{r.doc_number}" : "inv:#{r.invoice_id}"))
         end
         total_cents = 0
         rows = grouped.map do |_key, rs|
@@ -45,7 +47,7 @@ module Mcp
             bucket_row['total'] += cents
           end
           total_cents += bucket_row['total']
-          { 'customer' => representative.customer || 'Unknown', 'customer_id' => representative.customer_id }
+          { 'customer' => representative.customer || 'Unknown', 'customer_id' => representative.customer_id.presence }
             .merge(bucket_row.transform_values { |cents| cents / 100.0 })
         end
         grand_total_cents += total_cents

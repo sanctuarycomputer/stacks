@@ -41,7 +41,22 @@ module Mcp
         .where(qbo_accounts: { enterprise_id: enterprises.map(&:id) })
         .pluck(:id, :qbo_id)
       if malformed.any?
-        Rails.logger.warn("[Mcp::QboReceivables] #{malformed.size} invoice(s) excluded as malformed (missing due_date/balance or non-numeric balance): #{malformed.map { |id, qbo_id| "id=#{id} qbo_id=#{qbo_id}" }.join(', ')}")
+        warn_pairs("#{malformed.size} invoice(s) excluded as malformed (missing due_date/balance or non-numeric balance)", malformed)
+      end
+
+      # Rows with NULL/empty jsonb data are excluded by open_receivables by
+      # design (the no-live-QBO rule above) but the malformed check above
+      # can't see them either — its email_status predicate reads the same
+      # missing jsonb, so it's NULL, not true, and the row never counts as
+      # malformed. Surface them separately so a mass-unsynced state (e.g. a
+      # broken sync job) doesn't silently read as "nothing outstanding".
+      unsynced = QboInvoice
+        .joins(:qbo_account)
+        .where(qbo_accounts: { enterprise_id: enterprises.map(&:id) })
+        .where("qbo_invoices.data IS NULL OR qbo_invoices.data = '{}'::jsonb")
+        .pluck(:id, :qbo_id)
+      if unsynced.any?
+        warn_pairs("#{unsynced.size} invoice row(s) have no synced data and are excluded (cannot evaluate)", unsynced)
       end
 
       QboInvoice
@@ -51,6 +66,16 @@ module Mcp
         .select('qbo_invoices.*, qbo_accounts.enterprise_id AS enterprise_id')
         .filter_map { |inv| build_receivable(inv, as_of, details: details, min_days_overdue: min_days_overdue) }
     end
+
+    # Logs prefix plus a colon-separated sample of at most the first 20
+    # id/qbo_id pairs — a bad sync can otherwise blow this up into an
+    # unbounded log line.
+    def self.warn_pairs(prefix, pairs)
+      sample = pairs.first(20).map { |id, qbo_id| "id=#{id} qbo_id=#{qbo_id}" }.join(', ')
+      suffix = pairs.size > 20 ? ' (showing first 20)' : ''
+      Rails.logger.warn("[Mcp::QboReceivables] #{prefix}: #{sample}#{suffix}")
+    end
+    private_class_method :warn_pairs
 
     BUCKETS = %w[current days_1_30 days_31_60 days_61_90 days_over_90].freeze
 
@@ -68,7 +93,7 @@ module Mcp
       balance = Float(inv.data['balance'])
       days_overdue = (as_of - due_date).to_i
       return nil if min_days_overdue && days_overdue < min_days_overdue
-      total = details ? (Float(inv.data['total']) rescue nil) : nil # total is display-only; a receivable with unknown total still owes its balance
+      total = details ? Float(inv.data['total'], exception: false) : nil # total is display-only; a receivable with unknown total still owes its balance
       ref = inv.customer_ref
       Receivable.new(
         invoice_id: inv.id,

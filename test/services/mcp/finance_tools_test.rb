@@ -219,6 +219,18 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     assert_equal ['Acme Co'], ent['customers'].map { |c| c['customer'] }
   end
 
+  test 'get_ar_aging excludes and warns about a row with no synced data at all' do
+    invoice!(doc: 'good', due: @today - 5, balance: 100.0)
+    QboInvoice.create!(qbo_account: @account, qbo_id: 'inv-unsynced-warn', data: nil)
+
+    Rails.logger.expects(:warn).with { |msg| msg.include?('no synced data and are excluded') }
+
+    payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    assert_equal 100.0, payload['total_ar']
+    ent = payload['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
+    assert_equal ['Acme Co'], ent['customers'].map { |c| c['customer'] }
+  end
+
   test 'get_ar_aging keeps identity-less debtors (no customer_id, no customer name) as separate rows' do
     invoice!(doc: 'anon1', due: @today - 5, balance: 100.0, omit_customer_ref: true)
     invoice!(doc: 'anon2', due: @today - 10, balance: 200.0, omit_customer_ref: true)
@@ -232,8 +244,12 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     assert_equal [100.0, 200.0], unknown_rows.map { |r| r['total'] }.sort
   end
 
-  test 'get_ar_aging keeps identity-less, doc-number-less debtors as separate rows via invoice-id fallback' do
+  test 'get_ar_aging keeps identity-less debtors separate whether or not they have a doc_number' do
+    # One row falls back to a "doc:<doc_number>" key, the other to an
+    # "inv:<invoice_id>" key — distinct prefixes, so they never collide even
+    # if a doc_number happened to match another row's invoice id.
     QboInvoice.create!(qbo_account: @account, qbo_id: 'inv-nodoc1', data: {
+      'doc_number' => '999999',
       'email_status' => 'EmailSent',
       'due_date' => (@today - 5).iso8601,
       'balance' => 100.0,
@@ -250,7 +266,8 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     ent = payload['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
     unknown_rows = ent['customers'].select { |c| c['customer'] == 'Unknown' }
 
-    assert_equal 2, unknown_rows.length, "nil doc_numbers must not collide on a shared 'doc:' key"
+    assert_equal 2, unknown_rows.length,
+                 "a doc_number and an invoice id must not collide on a shared 'doc:' key"
     assert_equal [100.0, 200.0], unknown_rows.map { |r| r['total'] }.sort
   end
 
