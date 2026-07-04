@@ -2,7 +2,7 @@ module Mcp
   class ListOpenAdminTasksTool < MCP::Tool
     tool_name 'list_open_admin_tasks'
     description 'Stacks system-administration tasks needing attention (data hygiene, approvals, ' \
-                'sync debt) from the owner-routed TaskBuilder queue (24h cache). Distinct from ' \
+                "sync debt) from the owner-routed TaskBuilder queue (#{Stacks::TaskBuilder::CACHE_TTL.inspect} cache). Distinct from " \
                 'Notion Tasks, which are day-to-day work tasks. Relative urls are paths on the ' \
                 'Stacks admin host; url_external true means an absolute Forecast/Notion link. ' \
                 'Compensation-adjacent amounts (reimbursements, contributor ledger adjustments) ' \
@@ -20,7 +20,7 @@ module Mcp
       builder = Stacks::TaskBuilder.new
       tasks =
         if owner.present?
-          candidates = AdminUser.active.order(:email).to_a
+          candidates = AdminUser.active.distinct.order(:email).to_a
           admin = candidates.find { |a| a.email.casecmp?(owner.to_s.strip) }
           unless admin
             return Responses.error("Unknown owner '#{owner}'. Valid owners: #{candidates.map(&:email).join(', ')}")
@@ -42,6 +42,7 @@ module Mcp
         }
       rescue StandardError => e
         Rails.logger.warn("[Mcp::ListOpenAdminTasksTool] skipping task #{t.type}: #{e.class}: #{e.message}")
+        Sentry.capture_exception(e) if defined?(Sentry)
         nil
       end
       rows = rows.sort_by { |r| [r[:subject_class], r[:type].to_s, r[:subject].to_s] }

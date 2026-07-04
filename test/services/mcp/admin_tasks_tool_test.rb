@@ -2,17 +2,21 @@ require 'test_helper'
 
 class Mcp::AdminTasksToolTest < ActiveSupport::TestCase
   setup do
-    @admin = AdminUser.create!(email: "at#{SecureRandom.hex(2)}@example.com",
-                               password: 'password123', password_confirmation: 'password123',
-                               roles: ['admin'])
-    @other = AdminUser.create!(email: "ot#{SecureRandom.hex(2)}@example.com",
-                               password: 'password123', password_confirmation: 'password123',
-                               roles: ['admin'])
-    [@admin, @other].each do |admin|
-      FullTimePeriod.create!(admin_user: admin, started_at: Date.today - 30, ended_at: nil,
-                             contributor_type: Enum::ContributorType::FIVE_DAY,
-                             expected_utilization: 0.8)
-    end
+    @admin = active_admin!(email_prefix: 'at')
+    @other = active_admin!(email_prefix: 'ot')
+  end
+
+  # Creates an AdminUser with a FullTimePeriod. Pass ended_at: a past date to
+  # simulate an archived (no-longer-active) admin.
+  def active_admin!(email_prefix:, ended_at: nil)
+    admin = AdminUser.create!(email: "#{email_prefix}#{SecureRandom.hex(2)}@example.com",
+                              password: 'password123', password_confirmation: 'password123',
+                              roles: ['admin'])
+    started_at = ended_at ? ended_at - 30 : Date.today - 30
+    FullTimePeriod.create!(admin_user: admin, started_at: started_at, ended_at: ended_at,
+                           contributor_type: Enum::ContributorType::FIVE_DAY,
+                           expected_utilization: 0.8)
+    admin
   end
 
   def task_for(admin, type: :missing_skill_tree)
@@ -64,19 +68,28 @@ class Mcp::AdminTasksToolTest < ActiveSupport::TestCase
   end
 
   test 'an archived admin is neither a resolvable owner nor listed in the error roster' do
-    archived = AdminUser.create!(email: "archived#{SecureRandom.hex(2)}@example.com",
-                                 password: 'password123', password_confirmation: 'password123',
-                                 roles: ['admin'])
-    FullTimePeriod.create!(admin_user: archived, started_at: Date.today - 60,
-                           ended_at: Date.today - 30,
-                           contributor_type: Enum::ContributorType::FIVE_DAY,
-                           expected_utilization: 0.8)
+    archived = active_admin!(email_prefix: 'archived', ended_at: Date.today - 30)
 
     Stacks::TaskBuilder.any_instance.expects(:tasks_for).never
     payload = payload_for(Mcp::ListOpenAdminTasksTool.call(owner: archived.email, server_context: {}))
     assert_includes payload['error'], "Unknown owner '#{archived.email}'"
     roster = payload['error'].sub("Unknown owner '#{archived.email}'.", '')
     refute_includes roster, archived.email
+  end
+
+  test 'an active admin with two overlapping open full-time periods appears exactly once in the unknown-owner roster' do
+    doubly_covered = active_admin!(email_prefix: 'dbl')
+    # A second, overlapping open period for the same admin — AdminUser.active
+    # joins full_time_periods, so without .distinct this admin would surface
+    # twice in the roster.
+    FullTimePeriod.create!(admin_user: doubly_covered, started_at: Date.today - 10, ended_at: nil,
+                           contributor_type: Enum::ContributorType::FIVE_DAY,
+                           expected_utilization: 0.8)
+
+    payload = payload_for(Mcp::ListOpenAdminTasksTool.call(owner: 'nobody@nowhere.dev', server_context: {}))
+    roster = payload['error']
+    occurrences = roster.scan(doubly_covered.email).length
+    assert_equal 1, occurrences, "expected #{doubly_covered.email} to appear exactly once in: #{roster}"
   end
 
   test 'a task whose mapping raises is skipped with a warning, not fatal' do
