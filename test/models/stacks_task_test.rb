@@ -2,7 +2,7 @@ require 'test_helper'
 
 class StacksTaskTest < ActiveSupport::TestCase
   setup do
-    @admin = active_admin!(email_prefix: 'st', with_period: false)
+    @admin = build_admin!(email_prefix: 'st', with_period: false)
     @enterprise = Enterprise.create!(name: "Enterprise #{SecureRandom.hex(4)}")
   end
 

@@ -26,11 +26,13 @@ module Mcp
           admin = AdminUser.all.to_a.find { |a| a.email.casecmp?(owner.to_s.strip) }
           unless admin
             # Suggest emails of CURRENT queue owners, derived from the same
-            # hydrated tasks the unfiltered call emits — so suggestions are
-            # always followable and nothing beyond already-emitted emails is
-            # disclosed (raw cached owner_ids could name owners of tasks
-            # hydration skips, e.g. a deleted subject). Error path only, so
-            # the hydration cost doesn't touch the happy path.
+            # hydrated tasks the unfiltered call renders (raw cached owner_ids
+            # could also name owners of tasks hydration skips, e.g. a deleted
+            # subject). One narrow caveat: if an owner's only task is being
+            # dropped by the mapping rescue below, their email can appear here
+            # without appearing in payloads — acceptable, these are internal
+            # admin emails behind the same API key. Error path only, so the
+            # hydration cost doesn't touch the happy path.
             valid = builder.tasks.flat_map(&:owners).map(&:email).uniq.sort
             roster = valid.any? ? " Current task owners: #{valid.join(', ')}" : ' The task queue is currently empty.'
             return Responses.error("Unknown owner '#{owner}'.#{roster}")

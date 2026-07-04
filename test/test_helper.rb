@@ -100,7 +100,7 @@ class ActiveSupport::TestCase
   # StudioMembership wiring that make_admin_user! (below) sets up. Use this
   # when a test only cares about AdminUser.active / AdminUser.admin
   # resolution, not studio membership.
-  def active_admin!(email_prefix: 'admin', roles: ['admin'], ended_at: nil, with_period: true)
+  def build_admin!(email_prefix: 'admin', roles: ['admin'], ended_at: nil, with_period: true)
     admin = AdminUser.create!(email: "#{email_prefix}#{SecureRandom.hex(4)}@example.com",
                               password: 'password123', password_confirmation: 'password123',
                               roles: roles)

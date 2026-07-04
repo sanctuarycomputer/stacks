@@ -2,8 +2,8 @@ require 'test_helper'
 
 class Mcp::AdminTasksToolTest < ActiveSupport::TestCase
   setup do
-    @admin = active_admin!(email_prefix: 'at')
-    @other = active_admin!(email_prefix: 'ot')
+    @admin = build_admin!(email_prefix: 'at')
+    @other = build_admin!(email_prefix: 'ot')
   end
 
   def task_for(admin, type: :missing_skill_tree)
@@ -72,7 +72,7 @@ class Mcp::AdminTasksToolTest < ActiveSupport::TestCase
     # roles: [] and ended_at in the past — neither active nor a role-admin —
     # yet the email still resolves because resolution is now "any real
     # AdminUser", not an attribute-based allowlist.
-    archived = active_admin!(email_prefix: 'archived', roles: [], ended_at: Date.today - 30)
+    archived = build_admin!(email_prefix: 'archived', roles: [], ended_at: Date.today - 30)
 
     Stacks::TaskBuilder.any_instance.expects(:tasks_for).with(archived).returns([task_for(archived)])
     payload = payload_for(Mcp::ListOpenAdminTasksTool.call(owner: archived.email, server_context: {}))
