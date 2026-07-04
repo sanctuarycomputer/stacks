@@ -9,6 +9,8 @@ require_relative "task_builder/discoveries/notion_leads"
 require_relative "task_builder/discoveries/surveys"
 require_relative "task_builder/discoveries/pay_cycles"
 require_relative "task_builder/discoveries/missing_qbo_vendors"
+require_relative "task_builder/discoveries/legacy_ledgers_pending_qbo_migration"
+require_relative "task_builder/discoveries/auto_paused_recurring_ledger_adjustments"
 
 module Stacks
   # Single source of truth for "what needs attention right now" across the system.
