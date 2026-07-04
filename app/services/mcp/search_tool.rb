@@ -26,7 +26,7 @@ module Mcp
         { document_id: r[:document].id, title: r[:document].title, occurred_at: r[:document].occurred_at,
           speaker: r[:chunk].speaker_name, text: r[:chunk].content }
       end
-      MCP::Tool::Response.new([{ type: 'text', text: payload.to_json }])
+      Responses.ok(payload)
     end
   end
 end

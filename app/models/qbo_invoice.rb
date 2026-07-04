@@ -28,6 +28,46 @@ class QboInvoice < ApplicationRecord
     scope.where("(qbo_invoices.qbo_account_id, qbo_invoices.qbo_id) NOT IN (#{values_sql})")
   }
 
+  # Keep in sync by construction: open_receivables and
+  # malformed_sent_receivables share this regex, so they can never drift
+  # apart into overlapping or gapped predicates. Built via single-quoted
+  # heredoc + #sub (not #{}-interpolation) so the backslashes in the regex
+  # reach Postgres literally instead of being consumed by Ruby escaping.
+  BALANCE_NUMERIC_SQL_REGEX = '^-?\d+(\.\d+)?$'.freeze
+
+  # Synced, sent, still-owed invoices — filtered entirely in SQL. #data
+  # lazily re-fetches from the QBO API when the stored jsonb is empty, so
+  # any bulk read MUST use a scope like this one to avoid firing a live QBO
+  # request per empty row. The ->> predicates below inherently exclude
+  # NULL/empty jsonb (->> on NULL/missing yields NULL, never a match), which
+  # is what guarantees #data's lazy live-QBO fetch can never fire from this
+  # scope. The balance cast is wrapped in a CASE (Postgres does not
+  # guarantee AND short-circuit order) so a non-numeric balance is excluded
+  # rather than raising.
+  scope :open_receivables, -> {
+    where(<<~'SQL'.squish.sub('BALANCE_REGEX', BALANCE_NUMERIC_SQL_REGEX))
+      qbo_invoices.data->>'due_date' IS NOT NULL
+      AND qbo_invoices.data->>'email_status' = 'EmailSent'
+      AND CASE WHEN qbo_invoices.data->>'balance' ~ 'BALANCE_REGEX'
+               THEN (qbo_invoices.data->>'balance')::numeric > 0
+               ELSE FALSE END
+    SQL
+  }
+
+  # Complement of open_receivables for observability: SENT invoices excluded
+  # for any reason other than being paid (numeric balance <= 0) are
+  # malformed — missing due_date, missing balance, or a non-numeric balance.
+  scope :malformed_sent_receivables, -> {
+    where(<<~'SQL'.squish.sub('BALANCE_REGEX', BALANCE_NUMERIC_SQL_REGEX))
+      qbo_invoices.data->>'email_status' = 'EmailSent'
+      AND (
+        qbo_invoices.data->>'due_date' IS NULL
+        OR qbo_invoices.data->>'balance' IS NULL
+        OR NOT (qbo_invoices.data->>'balance' ~ 'BALANCE_REGEX')
+      )
+    SQL
+  }
+
   def status
     if email_status == "EmailSent"
       overdue = (due_date - Date.today) < 0
@@ -54,7 +94,8 @@ class QboInvoice < ApplicationRecord
   end
 
   def display_name
-    "##{data.dig("doc_number")} (#{ActionController::Base.helpers.number_to_currency(data.dig("total"))}) - #{data.dig("customer_ref", "name")} (#{status.to_s.humanize})"
+    customer_name = customer_ref["name"]
+    "##{data.dig("doc_number")} (#{ActionController::Base.helpers.number_to_currency(data.dig("total"))}) - #{customer_name} (#{status.to_s.humanize})"
   end
 
   def qbo_invoice_link
@@ -82,7 +123,14 @@ class QboInvoice < ApplicationRecord
   end
 
   def customer_ref
-    data.dig("customer_ref") || {}
+    ref = data.dig("customer_ref")
+    # customer_ref can be malformed (e.g. a String) in synced jsonb; always
+    # hand callers a Hash so none of them re-inherit the String#[] trap.
+    return ref if ref.is_a?(Hash)
+    unless ref.nil?
+      Rails.logger.warn("[QboInvoice] id=#{id} qbo_id=#{qbo_id} has malformed customer_ref (#{ref.class}); treating as empty")
+    end
+    {}
   end
 
   # Destroying a QboInvoice cascades through the composite FK

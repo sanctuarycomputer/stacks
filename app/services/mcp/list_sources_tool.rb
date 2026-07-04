@@ -7,7 +7,7 @@ module Mcp
 
     def self.call(server_context:)
       payload = SourceSync.all.map { |s| { source: s.source, last_run_at: s.last_run_at, status: s.status, stats: s.stats } }
-      MCP::Tool::Response.new([{ type: 'text', text: payload.to_json }])
+      Responses.ok(payload)
     end
   end
 end
