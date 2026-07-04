@@ -119,7 +119,14 @@ class StacksTask
         "#{base} — #{subject.cadence} $#{format("%.2f", subject.amount)}"
       end
     else
-      subject.try(:display_name).presence || subject.try(:name).presence || subject.to_s
+      if redact_amounts
+        # New monetary subject types must add an explicit redacting branch
+        # above. Until they do, this conservative fallback keeps free-text
+        # display names (which can embed amounts) out of redacted surfaces.
+        "#{subject.class.name.demodulize.titleize} ##{subject.try(:id) || '?'}"
+      else
+        subject.try(:display_name).presence || subject.try(:name).presence || subject.to_s
+      end
     end
   end
 

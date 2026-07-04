@@ -19,11 +19,13 @@ class Mcp::AdminTasksToolTest < ActiveSupport::TestCase
   end
 
   test 'returns mapped, sorted tasks with owner emails' do
+    enterprise_task = StacksTask.new(type: :needs_archiving, subject: enterprises(:sanctuary),
+                                     owners: [@admin])
     Stacks::TaskBuilder.any_instance.stubs(:tasks).returns(
-      [task_for(@other, type: :no_full_time_periods_set), task_for(@admin)]
+      [enterprise_task, task_for(@other, type: :no_full_time_periods_set), task_for(@admin)]
     )
     payload = payload_for(Mcp::ListOpenAdminTasksTool.call(server_context: {}))
-    assert_equal 2, payload['count']
+    assert_equal 3, payload['count']
     row = payload['tasks'].find { |t| t['type'] == 'missing_skill_tree' }
     assert_equal 'Admin user needs skill tree set', row['task']
     assert_equal 'admin_users', row['subject_class']
@@ -31,8 +33,17 @@ class Mcp::AdminTasksToolTest < ActiveSupport::TestCase
     assert_equal false, row['url_external']
     assert_match %r{/admin/admin_users/#{@admin.id}}, row['url']
     assert_equal [@admin.email], row['owners']
-    types = payload['tasks'].map { |t| t['type'] }
-    assert_equal types.sort, types, 'tasks sorted within subject_class by type'
+    classes = payload['tasks'].map { |t| t['subject_class'] }
+    assert_equal classes.sort, classes, 'tasks sorted by subject_class first'
+    admin_types = payload['tasks'].select { |t| t['subject_class'] == 'admin_users' }.map { |t| t['type'] }
+    assert_equal admin_types.sort, admin_types, 'tasks sorted within subject_class by type'
+  end
+
+  test 'subjects without an explicit display branch get a conservative redacted name' do
+    task = StacksTask.new(type: :needs_archiving, subject: enterprises(:sanctuary), owners: [@admin])
+    Stacks::TaskBuilder.any_instance.stubs(:tasks).returns([task])
+    payload = payload_for(Mcp::ListOpenAdminTasksTool.call(server_context: {}))
+    assert_equal "Enterprise ##{enterprises(:sanctuary).id}", payload['tasks'].first['subject']
   end
 
   test 'owner param filters via tasks_for with case-insensitive email' do

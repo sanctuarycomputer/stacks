@@ -8,7 +8,7 @@ module Mcp
                 'Dollar amounts are redacted from display strings.'
     input_schema(
       properties: {
-        owner: { type: 'string', description: 'Optional AdminUser email filter (case-insensitive)' },
+        owner: { type: 'string', description: 'Optional AdminUser email filter (case-insensitive; blank/whitespace means no filter)' },
       },
       required: []
     )
