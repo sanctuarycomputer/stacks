@@ -25,11 +25,15 @@ module Mcp
           # Unicode-safe regardless of DB collation; the admin table is small.
           admin = AdminUser.all.to_a.find { |a| a.email.casecmp?(owner.to_s.strip) }
           unless admin
-            # Suggest emails of CURRENT queue owners — exactly the set this
-            # tool emits in owners[], so suggestions are always followable
-            # and nothing beyond already-exposed emails is disclosed.
-            valid = AdminUser.where(id: builder.owner_ids).pluck(:email).sort
-            return Responses.error("Unknown owner '#{owner}'. Current task owners: #{valid.join(', ')}")
+            # Suggest emails of CURRENT queue owners, derived from the same
+            # hydrated tasks the unfiltered call emits — so suggestions are
+            # always followable and nothing beyond already-emitted emails is
+            # disclosed (raw cached owner_ids could name owners of tasks
+            # hydration skips, e.g. a deleted subject). Error path only, so
+            # the hydration cost doesn't touch the happy path.
+            valid = builder.tasks.flat_map(&:owners).map(&:email).uniq.sort
+            roster = valid.any? ? " Current task owners: #{valid.join(', ')}" : ' The task queue is currently empty.'
+            return Responses.error("Unknown owner '#{owner}'.#{roster}")
           end
           builder.tasks_for(admin)
         else

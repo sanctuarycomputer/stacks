@@ -49,14 +49,23 @@ class Mcp::AdminTasksToolTest < ActiveSupport::TestCase
   end
 
   test 'unknown owner returns an error payload listing current queue owners emails' do
-    # @other owns nothing — only @admin's id is in owner_ids — so the roster
-    # must include @admin and exclude @other, proving it lists current queue
-    # owners rather than some attribute-based admin roster.
-    Stacks::TaskBuilder.any_instance.stubs(:owner_ids).returns([@admin.id])
+    # @other owns nothing — only @admin owns a hydrated task — so the roster
+    # must include @admin and exclude @other, proving it lists exactly the
+    # owners the unfiltered call would emit (not raw cached ids, not an
+    # attribute-based admin roster).
+    Stacks::TaskBuilder.any_instance.stubs(:tasks).returns([task_for(@admin)])
     payload = payload_for(Mcp::ListOpenAdminTasksTool.call(owner: 'nobody@nowhere.dev', server_context: {}))
     assert_includes payload['error'], "Unknown owner 'nobody@nowhere.dev'"
     assert_includes payload['error'], @admin.email
     refute_includes payload['error'], @other.email
+  end
+
+  test 'unknown owner with an empty queue says so instead of dangling an empty roster' do
+    Stacks::TaskBuilder.any_instance.stubs(:tasks).returns([])
+    payload = payload_for(Mcp::ListOpenAdminTasksTool.call(owner: 'nobody@nowhere.dev', server_context: {}))
+    assert_includes payload['error'], "Unknown owner 'nobody@nowhere.dev'"
+    assert_includes payload['error'], 'task queue is currently empty'
+    refute_includes payload['error'], 'Current task owners:'
   end
 
   test 'any real admin email resolves, even archived (taskless admins get an empty list, not an error)' do
