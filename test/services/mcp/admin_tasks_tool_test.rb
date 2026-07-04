@@ -48,49 +48,34 @@ class Mcp::AdminTasksToolTest < ActiveSupport::TestCase
     assert_equal 1, payload['count']
   end
 
-  test 'unknown owner returns an error payload listing valid emails' do
+  test 'unknown owner returns an error payload listing current queue owners emails' do
+    # @other owns nothing — only @admin's id is in owner_ids — so the roster
+    # must include @admin and exclude @other, proving it lists current queue
+    # owners rather than some attribute-based admin roster.
+    Stacks::TaskBuilder.any_instance.stubs(:owner_ids).returns([@admin.id])
     payload = payload_for(Mcp::ListOpenAdminTasksTool.call(owner: 'nobody@nowhere.dev', server_context: {}))
     assert_includes payload['error'], "Unknown owner 'nobody@nowhere.dev'"
     assert_includes payload['error'], @admin.email
+    refute_includes payload['error'], @other.email
   end
 
-  test 'an archived admin is neither a resolvable owner nor listed in the error roster' do
-    # roles: [] — otherwise this admin would also match AdminUser.admin (the
-    # role-admin fallback covered by the test above) and resolve regardless
-    # of being archived, which isn't what this test is checking.
+  test 'any real admin email resolves, even archived (taskless admins get an empty list, not an error)' do
+    # roles: [] and ended_at in the past — neither active nor a role-admin —
+    # yet the email still resolves because resolution is now "any real
+    # AdminUser", not an attribute-based allowlist.
     archived = active_admin!(email_prefix: 'archived', roles: [], ended_at: Date.today - 30)
 
-    Stacks::TaskBuilder.any_instance.expects(:tasks_for).never
+    Stacks::TaskBuilder.any_instance.expects(:tasks_for).with(archived).returns([task_for(archived)])
     payload = payload_for(Mcp::ListOpenAdminTasksTool.call(owner: archived.email, server_context: {}))
-    assert_includes payload['error'], "Unknown owner '#{archived.email}'"
-    roster = payload['error'].sub("Unknown owner '#{archived.email}'.", '')
-    refute_includes roster, archived.email
-  end
-
-  test 'an active admin with two overlapping open full-time periods appears exactly once in the unknown-owner roster' do
-    doubly_covered = active_admin!(email_prefix: 'dbl')
-    # A second, overlapping open period for the same admin — AdminUser.active
-    # joins full_time_periods, so without .distinct this admin would surface
-    # twice in the roster.
-    FullTimePeriod.create!(admin_user: doubly_covered, started_at: Date.today - 10, ended_at: nil,
-                           contributor_type: Enum::ContributorType::FIVE_DAY,
-                           expected_utilization: 0.8)
-
-    payload = payload_for(Mcp::ListOpenAdminTasksTool.call(owner: 'nobody@nowhere.dev', server_context: {}))
-    roster = payload['error']
-    occurrences = roster.scan(doubly_covered.email).length
-    assert_equal 1, occurrences, "expected #{doubly_covered.email} to appear exactly once in: #{roster}"
-  end
-
-  test 'a role-admin with no FullTimePeriod resolves as an owner and appears in the unknown-owner roster' do
-    role_admin = active_admin!(email_prefix: 'role', with_period: false)
-
-    Stacks::TaskBuilder.any_instance.expects(:tasks_for).with(role_admin).returns([task_for(role_admin)])
-    payload = payload_for(Mcp::ListOpenAdminTasksTool.call(owner: role_admin.email, server_context: {}))
     assert_equal 1, payload['count']
+  end
 
-    unknown_payload = payload_for(Mcp::ListOpenAdminTasksTool.call(owner: 'nobody@nowhere.dev', server_context: {}))
-    assert_includes unknown_payload['error'], role_admin.email
+  test 'a real admin who owns no tasks resolves to an empty payload, not an error' do
+    Stacks::TaskBuilder.any_instance.expects(:tasks_for).with(@other).returns([])
+    payload = payload_for(Mcp::ListOpenAdminTasksTool.call(owner: @other.email, server_context: {}))
+    assert_equal 0, payload['count']
+    assert_equal [], payload['tasks']
+    assert_not payload.key?('error')
   end
 
   test 'a task whose mapping raises is skipped with a warning, not fatal' do

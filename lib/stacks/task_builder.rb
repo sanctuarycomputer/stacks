@@ -74,6 +74,15 @@ module Stacks
       cached_descriptors.length
     end
 
+    # Every AdminUser id that currently owns at least one task — from the
+    # cached descriptors, no hydration. The MCP owner filter uses this to
+    # suggest valid owners without an attribute-based allowlist (discoveries
+    # route ownership to arbitrary AdminUsers, so no active/role scope can
+    # enumerate them).
+    def owner_ids
+      cached_descriptors.flat_map { |d| d[:owner_ids] }.uniq
+    end
+
     def refresh!
       Rails.cache.delete(CACHE_KEY)
       cached_descriptors

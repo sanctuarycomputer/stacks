@@ -37,10 +37,14 @@ display names, fix-it URLs, and humanized labels already computed by `StacksTask
 - **File:** `app/services/mcp/list_open_admin_tasks_tool.rb`, registered in
   `Mcp::Server::TOOLS` (7th tool).
 - **Params:**
-  - `owner` (optional string) — AdminUser email, case-insensitive. Uses
-    `TaskBuilder#tasks_for`. Unknown email → `Mcp::Responses.error` listing valid owner
-    emails (mirrors the enterprise-param pattern; roster is internal-only data behind the
-    same key).
+  - `owner` (optional string) — AdminUser email, case-insensitive. Any real AdminUser's
+    email resolves (no active/role allowlist — discoveries route ownership to arbitrary
+    AdminUsers, so no attribute scope can enumerate them); a resolved admin with no open
+    tasks gets an honest empty payload, not an error. Uses `TaskBuilder#tasks_for`. Unknown
+    email → `Mcp::Responses.error` listing the emails of admins who currently own at least
+    one task (`TaskBuilder#owner_ids`) — exactly the set already exposed via `owners[]`, so
+    suggestions are always followable and nothing beyond already-exposed emails is
+    disclosed.
 - **Payload:**
 
 ```json
@@ -114,7 +118,8 @@ file's own convention).
 
 ## Error handling
 
-- Unknown `owner` email → error payload listing valid admin emails.
+- Unknown `owner` email → error payload listing current queue owners' emails
+  (`TaskBuilder#owner_ids`), not a general admin roster.
 - A `StacksTask` whose payload mapping raises (exotic subject state) → skipped with a
   `Rails.logger.warn`, never fails the whole list (same doctrine as `QboReceivables`).
 - Empty queue → `{ count: 0, tasks: [] }`.

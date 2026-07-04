@@ -20,13 +20,16 @@ module Mcp
       builder = Stacks::TaskBuilder.new
       tasks =
         if owner.present?
-          # Owner-eligible = currently-active admins plus role-admins — the same set
-          # TaskBuilder routes ownership to (its fallback is AdminUser.admin), so every
-          # owners[] email the tool emits is resolvable as a filter.
-          candidates = (AdminUser.active.distinct.to_a | AdminUser.admin.to_a)
-          admin = candidates.find { |a| a.email.casecmp?(owner.to_s.strip) }
+          # Any real admin's email resolves — a taskless admin gets an honest
+          # empty list, not an error. Ruby-side casecmp? keeps matching
+          # Unicode-safe regardless of DB collation; the admin table is small.
+          admin = AdminUser.all.to_a.find { |a| a.email.casecmp?(owner.to_s.strip) }
           unless admin
-            return Responses.error("Unknown owner '#{owner}'. Valid owners: #{candidates.map(&:email).sort.join(', ')}")
+            # Suggest emails of CURRENT queue owners — exactly the set this
+            # tool emits in owners[], so suggestions are always followable
+            # and nothing beyond already-exposed emails is disclosed.
+            valid = AdminUser.where(id: builder.owner_ids).pluck(:email).sort
+            return Responses.error("Unknown owner '#{owner}'. Current task owners: #{valid.join(', ')}")
           end
           builder.tasks_for(admin)
         else
