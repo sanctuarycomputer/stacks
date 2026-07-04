@@ -88,9 +88,11 @@ class StacksTask
   # reads as something a person can recognize (project name, lead title, contributor
   # email, etc.) rather than a generic Object#to_s.
   #
-  # redact_amounts: true omits dollar amounts (and free-text that can embed
-  # them) for surfaces outside the admin dashboard — the MCP read layer must
-  # expose task existence, not comp-adjacent figures.
+  # redact_amounts: true omits compensation-adjacent figures (reimbursement
+  # details, contributor ledger adjustment amounts) and gives unknown subject
+  # types a conservative generic name. Operational free-text (project names,
+  # survey titles, lead titles) passes through — those are business data the
+  # MCP layer exposes elsewhere by design.
   def subject_display_name(redact_amounts: false)
     case subject
     when ProjectTracker then subject.name.presence || "Project Tracker ##{subject.id}"

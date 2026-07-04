@@ -8,6 +8,11 @@ class Mcp::AdminTasksToolTest < ActiveSupport::TestCase
     @other = AdminUser.create!(email: "ot#{SecureRandom.hex(2)}@example.com",
                                password: 'password123', password_confirmation: 'password123',
                                roles: ['admin'])
+    [@admin, @other].each do |admin|
+      FullTimePeriod.create!(admin_user: admin, started_at: Date.today - 30, ended_at: nil,
+                             contributor_type: Enum::ContributorType::FIVE_DAY,
+                             expected_utilization: 0.8)
+    end
   end
 
   def task_for(admin, type: :missing_skill_tree)
@@ -56,6 +61,22 @@ class Mcp::AdminTasksToolTest < ActiveSupport::TestCase
     payload = payload_for(Mcp::ListOpenAdminTasksTool.call(owner: 'nobody@nowhere.dev', server_context: {}))
     assert_includes payload['error'], "Unknown owner 'nobody@nowhere.dev'"
     assert_includes payload['error'], @admin.email
+  end
+
+  test 'an archived admin is neither a resolvable owner nor listed in the error roster' do
+    archived = AdminUser.create!(email: "archived#{SecureRandom.hex(2)}@example.com",
+                                 password: 'password123', password_confirmation: 'password123',
+                                 roles: ['admin'])
+    FullTimePeriod.create!(admin_user: archived, started_at: Date.today - 60,
+                           ended_at: Date.today - 30,
+                           contributor_type: Enum::ContributorType::FIVE_DAY,
+                           expected_utilization: 0.8)
+
+    Stacks::TaskBuilder.any_instance.expects(:tasks_for).never
+    payload = payload_for(Mcp::ListOpenAdminTasksTool.call(owner: archived.email, server_context: {}))
+    assert_includes payload['error'], "Unknown owner '#{archived.email}'"
+    roster = payload['error'].sub("Unknown owner '#{archived.email}'.", '')
+    refute_includes roster, archived.email
   end
 
   test 'a task whose mapping raises is skipped with a warning, not fatal' do

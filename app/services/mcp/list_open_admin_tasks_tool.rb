@@ -5,7 +5,9 @@ module Mcp
                 'sync debt) from the owner-routed TaskBuilder queue (24h cache). Distinct from ' \
                 'Notion Tasks, which are day-to-day work tasks. Relative urls are paths on the ' \
                 'Stacks admin host; url_external true means an absolute Forecast/Notion link. ' \
-                'Dollar amounts are redacted from display strings.'
+                'Compensation-adjacent amounts (reimbursements, contributor ledger adjustments) ' \
+                'are redacted from display strings; operational names (projects, leads, surveys) ' \
+                'pass through as-is.'
     input_schema(
       properties: {
         owner: { type: 'string', description: 'Optional AdminUser email filter (case-insensitive; blank/whitespace means no filter)' },
@@ -18,10 +20,10 @@ module Mcp
       builder = Stacks::TaskBuilder.new
       tasks =
         if owner.present?
-          admin = AdminUser.find_by('LOWER(email) = ?', owner.to_s.strip.downcase)
+          candidates = AdminUser.active.order(:email).to_a
+          admin = candidates.find { |a| a.email.casecmp?(owner.to_s.strip) }
           unless admin
-            valid = AdminUser.order(:email).pluck(:email)
-            return Responses.error("Unknown owner '#{owner}'. Valid owners: #{valid.join(', ')}")
+            return Responses.error("Unknown owner '#{owner}'. Valid owners: #{candidates.map(&:email).join(', ')}")
           end
           builder.tasks_for(admin)
         else

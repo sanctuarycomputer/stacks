@@ -90,6 +90,11 @@ of truth:
     verified).
 - The MCP tool always passes `redact_amounts: true`.
 
+Scope note (review round 1): redaction targets compensation-adjacent figures only;
+operational free-text names (projects, leads, survey titles) pass through unredacted —
+they are business data already exposed via list_pipeline/get_pnl/the corpus, and generic
+labels would gut the tool's usefulness.
+
 Alternatives Hugh can pick instead: expose verbatim (drop the keyword), or exclude the
 comp-adjacent types entirely (filter by type list in the tool).
 

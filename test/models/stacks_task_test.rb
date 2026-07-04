@@ -8,12 +8,14 @@ class StacksTaskTest < ActiveSupport::TestCase
     @enterprise = Enterprise.create!(name: "Enterprise #{SecureRandom.hex(4)}")
   end
 
-  def recurring_adjustment!
-    fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000),
-                                email: "rla#{SecureRandom.hex(4)}@example.com", data: {})
+  def ledger!(email: "rla#{SecureRandom.hex(4)}@example.com")
+    fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: email, data: {})
     contributor = Contributor.create!(forecast_person: fp)
-    ledger = Ledger.find_or_create_for(enterprise: @enterprise, contributor: contributor)
-    RecurringLedgerAdjustment.create!(ledger: ledger, amount: 250.0, cadence: 'monthly',
+    Ledger.find_or_create_for(enterprise: @enterprise, contributor: contributor)
+  end
+
+  def recurring_adjustment!
+    RecurringLedgerAdjustment.create!(ledger: ledger!, amount: 250.0, cadence: 'monthly',
                                       next_due_on: Date.today + 7)
   end
 
@@ -35,11 +37,8 @@ class StacksTaskTest < ActiveSupport::TestCase
   end
 
   test 'subject_display_name for Reimbursement is generic when redacted' do
-    fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000),
-                                email: "rb@ex.co", data: {})
-    contributor = Contributor.create!(forecast_person: fp)
-    ledger = Ledger.find_or_create_for(enterprise: @enterprise, contributor: contributor)
-    reimbursement = Reimbursement.create!(ledger: ledger, description: 'Team dinner $840',
+    reimbursement = Reimbursement.create!(ledger: ledger!(email: "rb@ex.co"),
+                                          description: 'Team dinner $840',
                                           amount: 840.0, receipts: 'receipt.pdf')
     task = StacksTask.new(type: :pending_acceptance, subject: reimbursement, owners: [@admin])
     assert_equal "Reimbursement ##{reimbursement.id}", task.subject_display_name(redact_amounts: true)
