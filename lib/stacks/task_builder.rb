@@ -140,7 +140,7 @@ module Stacks
       "RecurringLedgerAdjustment" => { ledger: [:enterprise, { contributor: :forecast_person }] },
       "PayCycle" => [:enterprise],
       "ProjectSatisfactionSurvey" => { project_capsule: :project_tracker },
-      "Reimbursement" => [:ledger],
+      "Reimbursement" => { ledger: { contributor: :forecast_person } },
     }.freeze
 
     def batch_load_subjects(descriptors)

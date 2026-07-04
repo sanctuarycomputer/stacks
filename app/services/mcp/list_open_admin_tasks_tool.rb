@@ -20,10 +20,13 @@ module Mcp
       builder = Stacks::TaskBuilder.new
       tasks =
         if owner.present?
-          candidates = AdminUser.active.distinct.order(:email).to_a
+          # Owner-eligible = currently-active admins plus role-admins — the same set
+          # TaskBuilder routes ownership to (its fallback is AdminUser.admin), so every
+          # owners[] email the tool emits is resolvable as a filter.
+          candidates = (AdminUser.active.distinct.to_a | AdminUser.admin.to_a)
           admin = candidates.find { |a| a.email.casecmp?(owner.to_s.strip) }
           unless admin
-            return Responses.error("Unknown owner '#{owner}'. Valid owners: #{candidates.map(&:email).join(', ')}")
+            return Responses.error("Unknown owner '#{owner}'. Valid owners: #{candidates.map(&:email).sort.join(', ')}")
           end
           builder.tasks_for(admin)
         else

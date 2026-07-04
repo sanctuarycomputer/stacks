@@ -6,19 +6,6 @@ class Mcp::AdminTasksToolTest < ActiveSupport::TestCase
     @other = active_admin!(email_prefix: 'ot')
   end
 
-  # Creates an AdminUser with a FullTimePeriod. Pass ended_at: a past date to
-  # simulate an archived (no-longer-active) admin.
-  def active_admin!(email_prefix:, ended_at: nil)
-    admin = AdminUser.create!(email: "#{email_prefix}#{SecureRandom.hex(2)}@example.com",
-                              password: 'password123', password_confirmation: 'password123',
-                              roles: ['admin'])
-    started_at = ended_at ? ended_at - 30 : Date.today - 30
-    FullTimePeriod.create!(admin_user: admin, started_at: started_at, ended_at: ended_at,
-                           contributor_type: Enum::ContributorType::FIVE_DAY,
-                           expected_utilization: 0.8)
-    admin
-  end
-
   def task_for(admin, type: :missing_skill_tree)
     StacksTask.new(type: type, subject: admin, owners: [admin])
   end
@@ -68,7 +55,10 @@ class Mcp::AdminTasksToolTest < ActiveSupport::TestCase
   end
 
   test 'an archived admin is neither a resolvable owner nor listed in the error roster' do
-    archived = active_admin!(email_prefix: 'archived', ended_at: Date.today - 30)
+    # roles: [] — otherwise this admin would also match AdminUser.admin (the
+    # role-admin fallback covered by the test above) and resolve regardless
+    # of being archived, which isn't what this test is checking.
+    archived = active_admin!(email_prefix: 'archived', roles: [], ended_at: Date.today - 30)
 
     Stacks::TaskBuilder.any_instance.expects(:tasks_for).never
     payload = payload_for(Mcp::ListOpenAdminTasksTool.call(owner: archived.email, server_context: {}))
@@ -90,6 +80,17 @@ class Mcp::AdminTasksToolTest < ActiveSupport::TestCase
     roster = payload['error']
     occurrences = roster.scan(doubly_covered.email).length
     assert_equal 1, occurrences, "expected #{doubly_covered.email} to appear exactly once in: #{roster}"
+  end
+
+  test 'a role-admin with no FullTimePeriod resolves as an owner and appears in the unknown-owner roster' do
+    role_admin = active_admin!(email_prefix: 'role', with_period: false)
+
+    Stacks::TaskBuilder.any_instance.expects(:tasks_for).with(role_admin).returns([task_for(role_admin)])
+    payload = payload_for(Mcp::ListOpenAdminTasksTool.call(owner: role_admin.email, server_context: {}))
+    assert_equal 1, payload['count']
+
+    unknown_payload = payload_for(Mcp::ListOpenAdminTasksTool.call(owner: 'nobody@nowhere.dev', server_context: {}))
+    assert_includes unknown_payload['error'], role_admin.email
   end
 
   test 'a task whose mapping raises is skipped with a warning, not fatal' do
