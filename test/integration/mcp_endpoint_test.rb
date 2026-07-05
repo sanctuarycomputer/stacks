@@ -45,7 +45,7 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     assert body.key?("result"), "Expected JSON-RPC result key, got: #{body.inspect}"
     tool_names = body["result"]["tools"].map { |t| t["name"] }
     assert_includes tool_names, "search", "Expected 'search' tool in: #{tool_names.inspect}"
-    assert_equal %w[get_ar_aging get_document list_documents list_overdue_invoices list_sources search], tool_names.sort,
+    assert_equal %w[get_ar_aging get_document list_documents list_open_admin_tasks list_overdue_invoices list_sources search], tool_names.sort,
       "Expected all registered tools, got: #{tool_names.inspect}"
   end
 
@@ -67,6 +67,21 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     assert payload.key?("total_ar"), "Expected 'total_ar' key in payload, got: #{payload.inspect}"
     assert payload.key?("enterprises"), "Expected 'enterprises' key in payload, got: #{payload.inspect}"
     assert_match(/\A\d{4}-\d{2}-\d{2}\z/, payload["as_of"])
+  end
+
+  test "tools/call round-trip for list_open_admin_tasks returns a valid payload" do
+    Stacks::TaskBuilder.any_instance.stubs(:tasks).returns([])
+    post "/api/mcp",
+      headers: api_key_headers,
+      params: {
+        jsonrpc: "2.0", id: 9, method: "tools/call",
+        params: { name: "list_open_admin_tasks", arguments: {} },
+      }.to_json
+    assert_response :success
+    text = JSON.parse(response.body).dig("result", "content", 0, "text")
+    payload = JSON.parse(text)
+    assert_equal 0, payload["count"]
+    assert_equal [], payload["tasks"]
   end
 
   test "POST returns 403 when MCP API key is not configured" do

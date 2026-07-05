@@ -95,6 +95,27 @@ class ActiveSupport::TestCase
     [tb, g3d]
   end
 
+  # Lightweight admin builder for tool/model tests — creates a bare AdminUser
+  # (optionally with a FullTimePeriod) without the studio/ForecastPerson/
+  # StudioMembership wiring that make_admin_user! (below) sets up. Use this
+  # when a test only cares about AdminUser.active / AdminUser.admin
+  # resolution, not studio membership.
+  def build_admin!(email_prefix: 'admin', roles: ['admin'], ended_at: nil, with_period: true)
+    admin = AdminUser.create!(email: "#{email_prefix}#{SecureRandom.hex(4)}@example.com",
+                              password: 'password123', password_confirmation: 'password123',
+                              roles: roles)
+    if with_period
+      started_at = ended_at ? ended_at - 30 : Date.today - 30
+      FullTimePeriod.create!(admin_user: admin, started_at: started_at, ended_at: ended_at,
+                             contributor_type: Enum::ContributorType::FIVE_DAY,
+                             expected_utilization: 0.8)
+    end
+    admin
+  end
+
+  # Studio-wired admin builder: creates AdminUser + ForecastPerson +
+  # FullTimePeriod + StudioMembership. Use this for tests that exercise
+  # studio membership / payroll flows, not just AdminUser resolution.
   def make_admin_user!(studio, started_at, ended_at = nil, email = "chad@thoughtbot.com")
     admin_user = AdminUser.create!({
       email: email,

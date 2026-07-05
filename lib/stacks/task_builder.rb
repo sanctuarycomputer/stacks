@@ -9,6 +9,8 @@ require_relative "task_builder/discoveries/notion_leads"
 require_relative "task_builder/discoveries/surveys"
 require_relative "task_builder/discoveries/pay_cycles"
 require_relative "task_builder/discoveries/missing_qbo_vendors"
+require_relative "task_builder/discoveries/legacy_ledgers_pending_qbo_migration"
+require_relative "task_builder/discoveries/auto_paused_recurring_ledger_adjustments"
 
 module Stacks
   # Single source of truth for "what needs attention right now" across the system.
@@ -131,6 +133,16 @@ module Stacks
       end.compact
     end
 
+    # Associations each subject class needs for StacksTask display/url rendering —
+    # preloaded at hydrate time so rendering N tasks stays O(classes), not O(tasks).
+    SUBJECT_PRELOADS = {
+      "Ledger" => [:enterprise, { contributor: :forecast_person }],
+      "RecurringLedgerAdjustment" => { ledger: [:enterprise, { contributor: :forecast_person }] },
+      "PayCycle" => [:enterprise],
+      "ProjectSatisfactionSurvey" => { project_capsule: :project_tracker },
+      "Reimbursement" => { ledger: { contributor: :forecast_person } },
+    }.freeze
+
     def batch_load_subjects(descriptors)
       descriptors.group_by { |d| d[:subject_type] }.each_with_object({}) do |(type_name, ds), acc|
         ids = ds.map { |d| d[:subject_id] }.uniq
@@ -145,7 +157,9 @@ module Stacks
           else
             # Use the model's declared primary_key so this works for models
             # with non-default PKs (ForecastProject uses forecast_id, etc.).
-            klass.where(klass.primary_key => ids).index_by(&:id)
+            records = klass.where(klass.primary_key => ids)
+            records = records.preload(SUBJECT_PRELOADS[type_name]) if SUBJECT_PRELOADS[type_name]
+            records.index_by(&:id)
           end
         acc[type_name] = records
       end

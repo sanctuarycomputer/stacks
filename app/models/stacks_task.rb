@@ -87,14 +87,25 @@ class StacksTask
   # Display name shown in the Subject column — chosen per-class so each subject
   # reads as something a person can recognize (project name, lead title, contributor
   # email, etc.) rather than a generic Object#to_s.
-  def subject_display_name
+  #
+  # redact_amounts: true omits compensation-adjacent figures (reimbursement
+  # details, contributor ledger adjustment amounts) and gives unknown subject
+  # types a conservative generic name. Operational free-text (project names,
+  # survey titles, lead titles) passes through — those are business data the
+  # MCP layer exposes elsewhere by design.
+  def subject_display_name(redact_amounts: false)
     case subject
     when ProjectTracker then subject.name.presence || "Project Tracker ##{subject.id}"
     when ForecastProject then subject.try(:display_name).presence || subject.name.presence || "Forecast Project ##{subject.forecast_id}"
     when ForecastPerson then subject.try(:display_name).presence || subject.try(:name).presence || subject.try(:email).presence || "Forecast Person ##{subject.forecast_id}"
     when ForecastAssignment then subject.try(:name).presence || "Forecast Assignment ##{subject.forecast_id}"
     when AdminUser then subject.email
-    when Reimbursement then (subject.try(:display_name).presence || "Reimbursement ##{subject.id}").truncate(50)
+    when Reimbursement
+      if redact_amounts
+        "Reimbursement ##{subject.id}"
+      else
+        (subject.try(:display_name).presence || "Reimbursement ##{subject.id}").truncate(50)
+      end
     when Survey then subject.try(:title).presence || "Survey ##{subject.id}"
     when ProjectSatisfactionSurvey
       pt_name = subject.try(:project_capsule).try(:project_tracker).try(:name)
@@ -102,9 +113,22 @@ class StacksTask
     when Stacks::Notion::Lead then subject.try(:page_title).presence || "Notion Lead"
     when PayCycle then "#{subject.enterprise.name} — #{subject.starts_at.to_s(:long)} to #{subject.ends_at.to_s(:long)}"
     when Ledger then "#{subject.contributor.forecast_person&.email || "Contributor ##{subject.contributor_id}"} on #{subject.enterprise.name}"
-    when RecurringLedgerAdjustment then "#{subject.ledger.contributor.forecast_person&.email || "Contributor ##{subject.ledger.contributor_id}"} on #{subject.ledger.enterprise.name} — #{subject.cadence} $#{format("%.2f", subject.amount)}"
+    when RecurringLedgerAdjustment
+      base = "#{subject.ledger.contributor.forecast_person&.email || "Contributor ##{subject.ledger.contributor_id}"} on #{subject.ledger.enterprise.name}"
+      if redact_amounts
+        "#{base} — #{subject.cadence} recurring adjustment"
+      else
+        "#{base} — #{subject.cadence} $#{format("%.2f", subject.amount)}"
+      end
     else
-      subject.try(:display_name).presence || subject.try(:name).presence || subject.to_s
+      if redact_amounts
+        # New monetary subject types must add an explicit redacting branch
+        # above. Until they do, this conservative fallback keeps free-text
+        # display names (which can embed amounts) out of redacted surfaces.
+        "#{subject.class.name.demodulize.titleize} ##{subject.try(:id) || '?'}"
+      else
+        subject.try(:display_name).presence || subject.try(:name).presence || subject.to_s
+      end
     end
   end
 
