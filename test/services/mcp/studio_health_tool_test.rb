@@ -53,6 +53,15 @@ class Mcp::StudioHealthToolTest < ActiveSupport::TestCase
     assert_equal 'Orbit', payload['studios'].first['studio'], 'real name must not be shadowed by an alias'
   end
 
+  test 'falls back to an alias match with data when the exact-name studio has no snapshot' do
+    # 'Orbit' matches by name but has no snapshot; 'Northstar' carries 'orbit'
+    # as an alias and does have data — the reachable data must win over erroring.
+    Studio.create!(name: 'Orbit', mini_name: 'orb') # no snapshot
+    studio!(name: 'Northstar', mini_name: 'ns, orbit')
+    payload = mcp_payload(Mcp::GetStudioHealthTool.call(studio: 'orbit', server_context: {}))
+    assert_equal 'Northstar', payload['studios'].first['studio']
+  end
+
   test 'accrual accounting_method selects the accrual subtree' do
     studio!(name: 'Accrual Studio', mini_name: 'accr')
     payload = mcp_payload(Mcp::GetStudioHealthTool.call(studio: 'accr', accounting_method: 'accrual', server_context: {}))

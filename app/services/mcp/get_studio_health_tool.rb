@@ -34,20 +34,25 @@ module Mcp
       requested =
         if studio.present?
           key = studio.to_s.strip
-          # Prefer an exact name match over a mini_name-alias match, so a real
-          # studio name can never be shadowed by another studio that happens
-          # to carry that string as one element of its comma-separated
-          # mini_name. mini_name can hold a list (see Studio's own split(",")).
-          match = all_studios.find { |s| s.name.to_s.casecmp?(key) } ||
-                  all_studios.find do |s|
-                    s.mini_name.to_s.split(',').map(&:strip).any? { |m| m.casecmp?(key) }
-                  end
-          unless match
+          # All studios the query could mean: exact name matches first (they
+          # take priority when several have data), then mini_name-alias matches
+          # (mini_name can hold a comma-separated list — see Studio's own
+          # split(",")). Dedup preserves that priority order.
+          candidates = (
+            all_studios.select { |s| s.name.to_s.casecmp?(key) } +
+            all_studios.select { |s| s.mini_name.to_s.split(',').map(&:strip).any? { |m| m.casecmp?(key) } }
+          ).uniq
+          if candidates.empty?
             valid = all_studios.map { |s| "#{s.name} (#{s.mini_name})" }.sort.join(', ')
             return Responses.error("Unknown studio '#{studio}'. Valid studios: #{valid}")
           end
-          if match.snapshot.blank? || match.snapshot[gradation].blank?
-            return Responses.error("Studio '#{match.name}' has no generated snapshot for gradation '#{gradation}' yet.")
+          # Resolve to the highest-priority candidate that actually has data for
+          # this gradation, so a data-carrying match is never shadowed by a
+          # higher-priority but not-yet-snapshotted one. Only error when NONE
+          # of the matches has a snapshot.
+          match = candidates.find { |s| s.snapshot.present? && s.snapshot[gradation].present? }
+          unless match
+            return Responses.error("Studio '#{candidates.first.name}' has no generated snapshot for gradation '#{gradation}' yet.")
           end
           [match]
         else
