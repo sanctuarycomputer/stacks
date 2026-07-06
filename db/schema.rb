@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_07_05_000002) do
+ActiveRecord::Schema.define(version: 2026_07_05_000003) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -587,6 +587,26 @@ ActiveRecord::Schema.define(version: 2026_07_05_000002) do
     t.datetime "updated_at", precision: 6, null: false
     t.index ["read_at"], name: "index_notifications_on_read_at"
     t.index ["recipient_type", "recipient_id"], name: "index_notifications_on_recipient_type_and_recipient_id"
+  end
+
+  create_table "notion_lead_studios", force: :cascade do |t|
+    t.bigint "notion_lead_id", null: false
+    t.bigint "studio_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["notion_lead_id", "studio_id"], name: "index_notion_lead_studios_on_notion_lead_id_and_studio_id", unique: true
+    t.index ["studio_id"], name: "index_notion_lead_studios_on_studio_id"
+  end
+
+  create_table "notion_leads", force: :cascade do |t|
+    t.bigint "notion_page_id", null: false
+    t.date "received_at"
+    t.date "settled_at"
+    t.date "proposal_sent_at"
+    t.date "won_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["notion_page_id"], name: "index_notion_leads_on_notion_page_id", unique: true
   end
 
   create_table "notion_pages", force: :cascade do |t|
@@ -1407,6 +1427,9 @@ ActiveRecord::Schema.define(version: 2026_07_05_000002) do
   add_foreign_key "mentions", "chunks"
   add_foreign_key "mentions", "contacts"
   add_foreign_key "misc_payments", "contributors"
+  add_foreign_key "notion_lead_studios", "notion_leads"
+  add_foreign_key "notion_lead_studios", "studios"
+  add_foreign_key "notion_leads", "notion_pages"
   add_foreign_key "okr_period_studios", "okr_periods"
   add_foreign_key "okr_period_studios", "studios"
   add_foreign_key "okr_periods", "okrs"

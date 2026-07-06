@@ -357,6 +357,7 @@ namespace :stacks do
       Parallel.map(Stacks::Notion::DATABASE_IDS.values, in_threads: 3) do |db_id|
         notion.sync_database(db_id)
       end
+      Leads::SyncFromNotionPages.call
     rescue => e
       system_task.mark_as_error(e)
     else
@@ -514,6 +515,7 @@ namespace :stacks do
 
       puts "~~~> SYNCING SNAPSHOT SOURCE TABLES"
       Studios::SyncForecastPeople.call
+      Leads::SyncFromNotionPages.call
 
       puts "~~~> DOING SNAPSHOTS"
       Parallel.map(ProjectTracker.all, in_threads: 10) { |pt| pt.generate_snapshot! }
