@@ -110,6 +110,14 @@ module Mcp
           available = reports.order(:ends_at).pluck(:starts_at, :ends_at).map { |s, e| "#{s} to #{e}" }.join(', ')
           return Responses.error("No P&L report synced for that range. Available: #{available}")
         else
+          span = PERIOD_SPAN_DAYS[ptype]
+          only_in_progress = reports
+            .where('(qbo_profit_and_loss_reports.ends_at - qbo_profit_and_loss_reports.starts_at) BETWEEN ? AND ?', span.min, span.max)
+            .where('qbo_profit_and_loss_reports.ends_at > ?', Date.today)
+            .exists?
+          if only_in_progress
+            return Responses.error("Enterprise '#{ent.name}' has only an in-progress #{ptype} period synced (not yet complete). Pass explicit start_date + end_date for the current period-to-date.")
+          end
           return Responses.error("Enterprise '#{ent.name}' has no synced #{ptype} P&L reports yet. Try period_type: #{(PERIOD_SPAN_DAYS.keys - [ptype]).join(' or ')}.")
         end
       end
@@ -144,7 +152,7 @@ module Mcp
         # The report's classified span — echoes the requested period_type on the
         # default path, and tells an explicit-range caller which granularity
         # they actually hit.
-        period_type: PERIOD_SPAN_DAYS.find { |_t, span| span.cover?((report.ends_at - report.starts_at).to_i) }&.first,
+        period_type: PERIOD_SPAN_DAYS.find { |_t, span| span.cover?((report.ends_at - report.starts_at).to_i) }&.first || 'custom',
         period: { starts_at: report.starts_at.iso8601, ends_at: report.ends_at.iso8601 },
         revenue: revenue.round(2),
         cogs: d[:cogs].to_f.round(2),

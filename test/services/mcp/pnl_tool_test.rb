@@ -108,6 +108,24 @@ class Mcp::PnlToolTest < ActiveSupport::TestCase
     assert_includes payload['error'], 'no synced year P&L reports yet'
   end
 
+  test 'only an in-progress period synced points the caller to explicit dates, not "no reports"' do
+    month = Date.today.next_month # in-progress/future month is the ONLY synced report
+    pnl_report!(enterprise: @sanctuary, starts_at: month.beginning_of_month, ends_at: month.end_of_month,
+                income: 3.0, cogs: 0.0, expenses: 0.0)
+    payload = mcp_payload(Mcp::GetPnlTool.call(server_context: {}))
+    assert_includes payload['error'], 'in-progress month period'
+    assert_includes payload['error'], 'start_date'
+  end
+
+  test 'an explicit-range report with an off-bucket span is labelled custom, not null' do
+    # ~60 days — between month (<=45) and quarter (>=80): no standard bucket.
+    pnl_report!(enterprise: @sanctuary, starts_at: Date.new(2026, 4, 1), ends_at: Date.new(2026, 5, 31),
+                income: 4.0, cogs: 0.0, expenses: 0.0)
+    payload = mcp_payload(Mcp::GetPnlTool.call(start_date: '2026-04-01', end_date: '2026-05-31', server_context: {}))
+    assert_equal 'custom', payload['period_type']
+    assert_equal 4.0, payload['revenue']
+  end
+
   test 'accrual accounting_method is selectable' do
     pnl_report!(enterprise: @sanctuary, starts_at: Date.new(2026, 6, 1), ends_at: Date.new(2026, 6, 30),
                 income: 5.0, cogs: 0.0, expenses: 0.0)
