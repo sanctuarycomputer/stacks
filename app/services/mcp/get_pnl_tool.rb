@@ -25,7 +25,7 @@ module Mcp
       end
 
       # Resolve enterprise (must have a qbo_account — P&L is per QBO realm).
-      accounts_by_enterprise = Enterprise.joins(:qbo_account).to_a
+      accounts_by_enterprise = Enterprise.joins(:qbo_account).distinct.to_a
       ent =
         if enterprise.present?
           match = accounts_by_enterprise.find { |e| e.name.to_s.casecmp?(enterprise.to_s.strip) }

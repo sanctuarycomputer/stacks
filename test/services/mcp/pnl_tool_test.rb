@@ -72,9 +72,14 @@ class Mcp::PnlToolTest < ActiveSupport::TestCase
 
   test 'unknown enterprise errors listing qbo-account enterprises' do
     qbo_account_for(@sanctuary)
+    # A second qbo_account on the same enterprise — the schema has no unique
+    # index, so the enterprise must still be listed once (join must .distinct).
+    QboAccount.create!(enterprise: @sanctuary, client_id: 'x', client_secret: 'x',
+                       realm_id: "realm-#{SecureRandom.hex(3)}")
     payload = mcp_payload(Mcp::GetPnlTool.call(enterprise: 'Nope Inc', server_context: {}))
     assert_includes payload['error'], "Unknown enterprise 'Nope Inc'"
     assert_includes payload['error'], 'Sanctuary Computer Inc'
+    assert_equal 1, payload['error'].scan('Sanctuary Computer Inc').length, 'enterprise listed once, not duplicated'
   end
 
   test 'invalid accounting_method errors' do
