@@ -66,13 +66,7 @@ module Stacks
           emails = invited_emails_from(text)
           segments = body_segments(text, occurred_at: occurred_at)
 
-          # Join to the transcript's meeting when we ingested that transcript.
-          # Use for_drive_doc so we match BOTH ingest shapes: DriveSource keys on external_id,
-          # MeetApiSource keys on the conference-record id and stores the Drive id in raw_metadata.
-          transcript_doc = transcript_id && Document.for_drive_doc(transcript_id).first
-          meeting = transcript_doc&.source_record
-
-          base = {
+          {
             source: :gemini_notes,
             external_id: file.id,
             title: title,
@@ -81,20 +75,22 @@ module Stacks
             content_hash: Digest::SHA256.hexdigest(text.to_s),
             contacts: emails.map { |e| { email: e, name: nil, role: "attendee" } },
             segments: segments,
+            # transcript_doc_id drives BOTH inheritance (Connector#exclusion_for) and the
+            # meeting-join (build_meeting), resolved at ingest via Document.for_drive_doc.
+            transcript_doc_id: transcript_id,
+            participant_count: emails.size, # standalone fallback when no transcript resolves
             raw_metadata: { "gemini_notes_doc_id" => file.id, "transcript_doc_id" => transcript_id },
-            build_source_record: ->(doc) { build_meeting(doc, file, title, occurred_at, meeting) }
+            build_source_record: ->(doc) { build_meeting(doc, file, title, occurred_at, transcript_id) }
           }
-          if meeting && transcript_doc
-            # Inherit the transcript's decision verbatim (identical privacy wall).
-            base.merge(inherit_exclusion: [transcript_doc.excluded.to_sym, transcript_doc.excluded_reason.to_sym])
-          else
-            base.merge(participant_count: emails.size) # standalone -> classify on invited count
-          end
         end
 
-        def build_meeting(doc, file, title, occurred_at, joined_meeting)
-          meeting = joined_meeting || Meeting.find_or_initialize_by(gemini_notes_doc_id: file.id)
-          meeting.update!(meet_source: (joined_meeting ? meeting.meet_source : :gemini_notes),
+        def build_meeting(doc, file, title, occurred_at, transcript_id)
+          # Resolve the joined meeting at INGEST time so a same-sweep combined transcript
+          # (yielded just before us) is found. for_drive_doc matches DriveSource (external_id)
+          # and MeetApiSource (raw_metadata.drive_doc_id) keying.
+          joined = transcript_id && Document.for_drive_doc(transcript_id).first&.source_record
+          meeting = joined || Meeting.find_or_initialize_by(gemini_notes_doc_id: file.id)
+          meeting.update!(meet_source: (joined ? meeting.meet_source : :gemini_notes),
                           title: title, started_at: occurred_at,
                           gemini_notes_doc_id: file.id,
                           raw_metadata: (meeting.raw_metadata || {}).merge("gemini_notes_document_id" => doc.id))

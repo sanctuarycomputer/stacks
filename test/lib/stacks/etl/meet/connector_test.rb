@@ -41,6 +41,21 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
     assert Document.find_by!(external_id: 'm3').not_excluded?
   end
 
+  test "exclusion_for inherits a joined transcript's decision at ingest, else classifies on count" do
+    m = Meeting.create!(meet_source: :meet_api, meet_conference_record_id: "cr/inh")
+    Document.create!(source: :meet, external_id: "TX1", source_record: m,
+                     excluded: :auto_excluded, excluded_reason: :one_on_one)
+    conn = Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :gemini_notes)
+
+    # joined: resolves TX1 via for_drive_doc and inherits verbatim
+    joined = conn.exclusion_for(transcript_doc_id: "TX1", title: "Anything", participant_count: 9, contacts: [])
+    assert_equal [:auto_excluded, :one_on_one], joined
+
+    # standalone: no resolvable transcript -> classify on the count
+    standalone = conn.exclusion_for(transcript_doc_id: "NOPE", title: "Team Weekly", participant_count: 5, contacts: [])
+    assert_equal [:not_excluded, :none], standalone
+  end
+
   test "notes for an eligible meeting are ingested, chunked, and searchable; a 1:1's notes are walled off" do
     skip_without_pgvector
     # Eligible transcript meeting + a 1:1 transcript meeting already ingested:
@@ -55,8 +70,8 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
     ]
     svc = mock("drive")
     svc.stubs(:list_files).returns(OpenStruct.new(files: files, next_page_token: nil))
-    svc.stubs(:export_file).with("N_OK", "text/plain").returns("Notes\n\nInvited [A](mailto:a@x.co)\n\nMeeting records [Transcript](https://docs.google.com/document/d/T_OK/edit)\n\n### Summary\nShip the gateway.")
-    svc.stubs(:export_file).with("N_OO", "text/plain").returns("Notes\n\nMeeting records [Transcript](https://docs.google.com/document/d/T_OO/edit)\n\n### Summary\nSensitive 1:1 content.")
+    svc.stubs(:export_file).with("N_OK", "text/markdown").returns("Notes\n\nInvited [A](mailto:a@x.co)\n\nMeeting records [Transcript](https://docs.google.com/document/d/T_OK/edit)\n\n### Summary\nShip the gateway.")
+    svc.stubs(:export_file).with("N_OO", "text/markdown").returns("Notes\n\nMeeting records [Transcript](https://docs.google.com/document/d/T_OO/edit)\n\n### Summary\nSensitive 1:1 content.")
     Stacks::Etl::Meet::Auth.stubs(:drive_service).returns(svc)
 
     Stacks::Etl::Meet::Connector.new(admin_email: "hugh@sanctuary.computer", mode: :gemini_notes).run(track: false)

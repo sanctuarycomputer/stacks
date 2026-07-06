@@ -55,7 +55,7 @@ class Stacks::Etl::Meet::GeminiNotesSourceTest < ActiveSupport::TestCase
     assert_equal :gemini_notes, n[:source]
     assert_equal "notesfile1", n[:external_id]
     assert_equal "Sync Title", n[:title]
-    assert_equal [:auto_excluded, :one_on_one], n[:inherit_exclusion]
+    assert_equal "TRANSCRIPT_ID_123", n[:transcript_doc_id]   # inheritance resolved at ingest via for_drive_doc
     assert_equal ["ayaka@index-space.org", "hugh@sanctuary.computer"], n[:contacts].map { |c| c[:email] }
     doc = Document.create!(source: :gemini_notes, external_id: "notesfile1")
     built = n[:build_source_record].call(doc)
@@ -78,8 +78,7 @@ class Stacks::Etl::Meet::GeminiNotesSourceTest < ActiveSupport::TestCase
 
     n = nil
     Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1)).each_meeting { |x| n = x }
-    assert_equal [:not_excluded, :none], n[:inherit_exclusion]
-    assert_nil n[:participant_count] # joined -> inherits, does not re-classify on invited count
+    assert_equal "TRANSCRIPT_ID_123", n[:transcript_doc_id]
   end
 
   test "joins to API-ingested transcript keyed by conference-record id (regression: for_drive_doc vs find_by)" do
@@ -124,9 +123,8 @@ class Stacks::Etl::Meet::GeminiNotesSourceTest < ActiveSupport::TestCase
     Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1)).each_meeting { |x| n = x }
     # With the fix: join succeeds via raw_metadata->>'drive_doc_id', exclusion is inherited verbatim.
     # With the bug: join fails, falls to standalone, participant_count=3 → classifier marks not_excluded.
-    assert_equal [:auto_excluded, :one_on_one], n[:inherit_exclusion],
-                 "Expected exclusion to be inherited from API-ingested transcript; standalone path would incorrectly allow this meeting"
-    assert_nil n[:participant_count], "Expected nil participant_count (took join path, not standalone)"
+    assert_equal "REAL_TRANSCRIPT_DRIVE_ID", n[:transcript_doc_id],
+                 "Notes carry the parsed transcript id; the connector inherits from the API-ingested transcript at ingest"
   end
 
   test "a notes doc with no known transcript is standalone with its own classification" do
@@ -138,8 +136,8 @@ class Stacks::Etl::Meet::GeminiNotesSourceTest < ActiveSupport::TestCase
     Stacks::Etl::Meet::Auth.stubs(:drive_service).returns(svc)
     n = nil
     Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1)).each_meeting { |x| n = x }
-    assert_nil n[:inherit_exclusion]
-    assert_equal 3, n[:participant_count] # invited count -> classifier sees a group
+    assert_nil n[:transcript_doc_id]
+    assert_equal 3, n[:participant_count]  # invited count -> classifier sees a group
     doc = Document.create!(source: :gemini_notes, external_id: "notesfile2")
     built = n[:build_source_record].call(doc)
     assert_equal "notesfile2", built.gemini_notes_doc_id
@@ -165,7 +163,7 @@ class Stacks::Etl::Meet::GeminiNotesSourceTest < ActiveSupport::TestCase
     n = nil
     Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1)).each_meeting { |x| n = x }
     # Links survived the export -> transcript joins (inherits) and invited emails are attributed.
-    assert_equal [:not_excluded, :none], n[:inherit_exclusion]
+    assert_equal "TRANSCRIPT_ID_123", n[:transcript_doc_id]
     assert_equal ["ayaka@index-space.org", "hugh@sanctuary.computer"], n[:contacts].map { |c| c[:email] }
   end
 end
