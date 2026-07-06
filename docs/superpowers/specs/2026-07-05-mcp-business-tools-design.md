@@ -1,23 +1,28 @@
-# Design: MCP tools — `list_pipeline` + `list_projects_at_risk`
+# Design: MCP tools — `list_projects_at_risk` + `get_studio_health`
 
 **Date:** 2026-07-05
 **Source:** [Stacksbot ROADMAP](https://www.notion.so/garden3d/ROADMAP-md-391131fea2c7801485e0d767177e0da3) Phase 1a + [SPEC — Stacks MCP upgrades](https://www.notion.so/garden3d/SPEC-Stacks-MCP-upgrades-391131fea2c78147a3aff77c7a6a5493)
-**Status:** Draft — awaiting Hugh's review. One decision defaulted while he was away, flagged ⚖️ below.
+**Status:** Approved direction (Hugh, 2026-07-05): `list_pipeline` dropped in favor of Notion MCP for lead rows; OKR/win-rate rollups via `get_studio_health` blessed. Remaining defaulted decision flagged ⚖️ below (risk semantics).
 
 ## Why this slice
 
-The roadmap's ranked delivery order puts **Business pre-read v1 (automation #2)** next, and it
-depends on exactly these two P1a tools: new/aging Leads (`list_pipeline`) + at-risk projects
-(`list_projects_at_risk`). Both read data Stacks already computes — ProjectTracker nightly
-snapshots and the Notion Leads mirror — no schema changes, no new syncs. Third slice in the
-established pattern (finance pair → admin tasks → business pair).
+The roadmap's ranked delivery order puts **Business pre-read v1 (automation #2)** next. Its
+named dependencies were `list_pipeline` + `list_projects_at_risk` — but **`list_pipeline` is
+dropped by decision (Hugh, 2026-07-05)**: lead rows live canonically in the Notion Leads DB,
+which Stacksbot reads directly via the Notion MCP (fresher than the Stacks mirror, with all
+properties; 🎯 Leads becomes its own Datazone Sources row). Duplicating those rows on Stacks
+MCP would create two sources for one dataset. What Stacks uniquely owns is the *rollup* —
+`Studio#snapshot`'s per-period lead counts, win rates, financials, utilization, and OKR
+health — which is `get_studio_health` (also P1a). This slice therefore ships
+`list_projects_at_risk` + `get_studio_health`: the pre-read gets at-risk projects and
+pipeline/OKR aggregates from Stacks, and lead rows from Notion.
 
 ## Approaches considered
 
 1. **Two thin presenter tools over existing model methods (chosen).** Mirrors the finance/admin
    slices: one file per tool, `Mcp::Responses` envelope, read-only annotations, params with
    sane defaults. `list_projects_at_risk` uses `ProjectTracker.preload_for_render` for batch
-   loading; `list_pipeline` uses `Stacks::Notion::Lead.all` + `Studio` period helpers.
+   loading; `get_studio_health` is a pure read of the persisted `Studio#snapshot` rollup.
 2. **One combined `get_business_preread` tool.** Couples two different consumers (pipeline
    review vs delivery oversight) and diverges from the spec's named tool contract. Rejected.
 3. **Server-side pre-read composition (render the whole meeting doc).** That's the Stacksbot
@@ -54,59 +59,61 @@ established pattern (finance pair → admin tasks → business pair).
   empty/missing snapshot are skipped with a logged warning (same never-raise doctrine as the
   prior tools; a Rails.logger.warn + Sentry, matching the admin-tasks skip path).
 
-## Tool 2: `list_pipeline`
+## Tool 2: `get_studio_health`
 
-- **File:** `app/services/mcp/list_pipeline_tool.rb`
+- **File:** `app/services/mcp/get_studio_health_tool.rb`
 - **Params:**
-  - `period_start` / `period_end` (optional ISO dates; default: trailing 30 days ending today).
-    Invalid dates → error payload naming the expected format.
   - `studio` (optional string; matched against Studio name or mini_name, case-insensitive,
-    Ruby-side like the enterprise/owner resolvers; unknown → error listing valid studios).
-- **Reads:** `Stacks::Notion::Lead.all` once (the synced Notion mirror — never live Notion),
-  partitioned per studio. **N+1 hazard:** `Lead#studios` calls `Studio.all_studios` internally
-  per lead — the tool must hoist: load studios once and resolve each lead's studio names
-  against that in-memory list (extend `Lead#studios` with an optional preloaded-studios
-  argument, mirroring the existing `account_lead_admin_users_cache` pattern in that class,
-  rather than re-implementing the matching in the tool). Period semantics follow
-  `Studio#leads_recieved_in_period` / `#sent_proposals_settled_in_period` (received / settled
-  date within period).
-- **Params (additional):** `aging_min_days` (optional integer, default 30, clamped ≥ 1).
-- **Payload:** per studio: `leads_received` (count + rows), `proposals_settled` (count + rows),
-  `won` (count of leads with `won_at` within the period), plus `aging_unsettled` — unsettled
-  leads (`settled_at` absent) with `age_days >= aging_min_days`, **excluding leads whose
-  `reactivate_at` is in the future** (deliberately parked, not aging — the roadmap treats
-  Reactivate Date as scheduled re-engagement), sorted oldest first. Independent of the period
-  params: aging is a now-state, not a period bucket.
-- **Lead row fields:** `title` (Notion page title), `studios`, `received_at`, `age_days`,
-  `proposal_sent_at`, `settled_at`, `won_at`, `reactivate_at`, `account_leads` (emails),
-  `notion_url`. Lead titles/emails are operational business data — in-bounds per the
-  established comp-boundary scope (same rationale as the admin-tasks slice).
-- **Leads with malformed/missing dates:** skipped from period buckets they can't be evaluated
-  for, never raise; a lead with no `received_at` appears only in a `undated` count so the
-  data-hygiene signal isn't silently lost.
+    Ruby-side like the enterprise/owner resolvers; unknown → error listing valid studios;
+    default: all studios with a snapshot).
+  - `gradation` (optional enum: `month` / `quarter` / `year` / `trailing_3_months` /
+    `trailing_4_months` / `trailing_6_months` / `trailing_12_months`; default `month`;
+    invalid → error listing valid gradations).
+  - `accounting_method` (optional: `cash` | `accrual`, default `cash`; invalid → error).
+  - `periods` (optional integer, default 6, clamped 1..24) — most recent N periods, bounding
+    payload size.
+- **Reads:** `Studio#snapshot` jsonb (built nightly by `Studio#generate_snapshot!`) — the tool
+  NEVER regenerates; it is a pure read of the persisted rollup, so figures always match what
+  Stacks reports elsewhere. Structure per period: the chosen accounting method's subtree
+  (`datapoints` — income, cogs, expenses, net operating income, profit margin, utilization
+  hours (sellable/billable/free), lead_count, satisfaction scores, etc. — plus `okrs` with
+  targets/actuals/health). **Pass the subtree through verbatim** (period label/dates +
+  `datapoints` + `okrs`): re-mapping invites drift from the canonical computed shape; the
+  `periods` clamp keeps payloads bounded.
+- **Pipeline aggregates + OKR/win-rate surface** (per Hugh: "cool to surface OKR/win rate
+  stuff") come through these snapshot datapoints/okrs — this is the blessed replacement for
+  the dropped `list_pipeline` rollups.
+- **Studios with a blank/missing snapshot:** skipped with a logged warning when listing all;
+  an explicitly requested studio with no snapshot → error saying the snapshot hasn't been
+  generated yet.
 
 ## Shared conventions (as the prior two slices)
 
 `Mcp::Responses.ok/.error`; `annotations(read_only_hint: true, destructive_hint: false,
 idempotent_hint: true)`; registered in `Mcp::Server::TOOLS` (8 tools after this); integration
 test tool-name array updated; a `tools/call` round-trip per tool; never a live external API
-call (snapshots + synced NotionPage rows only).
+call (persisted tracker + studio snapshots only).
 
 ## Error handling
 
-Unknown `studio` → error listing valid studios. Invalid `period_start`/`period_end` → error
-naming expected ISO format. Per-row mapping failures → skip + warn + Sentry, never fail the
-report. Empty results → valid empty payloads with zero counts.
+Unknown `studio` → error listing valid studios. Invalid `gradation` / `accounting_method` →
+error listing valid values; `periods` clamped, never errors. Per-row mapping failures →
+skip + warn + Sentry, never fail the report. Empty results → valid empty payloads with zero
+counts.
 
 ## Testing
 
-Unit tests per tool (fixtures/created records for trackers with snapshot jsonb covering:
-at-risk on each criterion separately, not-at-risk, no-budget trackers, missing snapshot skip;
-leads via NotionPage rows covering: received-in-period, settled-in-period, won, aging
-unsettled, undated, studio partitioning, period-param validation). Integration: registry
-array + one round-trip per tool. Full suite green.
+Unit tests per tool. Trackers: created records with snapshot jsonb covering at-risk on each
+criterion separately, not-at-risk, no-budget trackers, missing-snapshot skip, only_at_risk
+and include_complete params. Studio health: created Studio records with a representative
+snapshot jsonb covering gradation/accounting_method/periods params, param validation errors,
+all-studios vs single-studio, blank-snapshot skip vs explicit-request error, and verbatim
+subtree pass-through. Integration: registry array + one round-trip per tool. Full suite
+green.
 
 ## Out of scope
 
-The Business pre-read automation itself (Stacksbot config), `get_studio_health`,
-`get_capacity`, `get_pnl`, privacy hardening G1–G4, any write path.
+The Business pre-read automation itself (Stacksbot config), the 🎯 Leads Notion Sources row
+(follows with automation #2 wiring), `get_capacity`, `get_pnl`, privacy hardening G1–G4, any
+write path. `list_pipeline` is not deferred — it is dropped (decision above); the roadmap's
+P1a tool list should be amended accordingly.
