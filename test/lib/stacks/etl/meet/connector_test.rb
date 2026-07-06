@@ -54,6 +54,15 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
     # standalone: no resolvable transcript -> classify on the count
     standalone = conn.exclusion_for(transcript_doc_id: "NOPE", title: "Team Weekly", participant_count: 5, contacts: [])
     assert_equal [:not_excluded, :none], standalone
+
+    # API-keyed transcript: for_drive_doc must resolve via raw_metadata->>'drive_doc_id'
+    # (MeetApiSource keys external_id on the conference-record id, not the Drive doc id).
+    Document.create!(source: :meet, external_id: "confRec/1",
+                     raw_metadata: { "drive_doc_id" => "DRV1" },
+                     excluded: :auto_excluded, excluded_reason: :one_on_one)
+    api = conn.exclusion_for(transcript_doc_id: "DRV1", title: "Benign Title", participant_count: 9, contacts: [])
+    assert_equal [:auto_excluded, :one_on_one], api,
+                 "API-ingested transcript (drive_doc_id in raw_metadata) must still inherit its exclusion"
   end
 
   test "notes for an eligible meeting are ingested, chunked, and searchable; a 1:1's notes are walled off" do
