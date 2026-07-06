@@ -1,0 +1,121 @@
+ActiveAdmin.register ContributorAdjustment do
+  config.filters = false
+  config.paginate = false
+  actions :index, :new, :show, :edit, :create, :update, :destroy
+  permit_params :amount, :effective_on, :description, :qbo_invoice_id, :qbo_account_id, :ledger_id
+  menu false
+
+  belongs_to :ledger
+
+  action_item :sync_qbo_bill, only: :show, if: proc { current_admin_user.is_admin? } do
+    link_to "Sync QBO Bill",
+      sync_qbo_bill_admin_ledger_contributor_adjustment_path(resource.ledger, resource),
+      method: :post
+  end
+
+  member_action :sync_qbo_bill, method: :post do
+    adj = ContributorAdjustment.find(params[:id])
+    adj.sync_qbo_bill!
+    redirect_to(
+      admin_ledger_contributor_adjustment_path(adj.ledger, adj),
+      notice: "Success"
+    )
+  end
+
+  controller do
+    # Same as InvoiceTracker#show: refresh QBO data when opening the page (paid status, balance, etc.).
+    def show
+      unless resource.qbo_invoice.try(:sync!)
+        resource.reload
+      end
+      super
+    end
+
+    # Form packs "qa_id:qbo_id" into the qbo_invoice_id field. Split it
+    # back into two columns before AA mass-assignment. When the user picks
+    # blank (None), default qbo_account_id to the ledger's enterprise qa
+    # so the NOT NULL constraint is satisfied.
+    def update
+      split_packed_qbo_invoice_value!(params[:contributor_adjustment])
+      super
+    end
+
+    def create
+      split_packed_qbo_invoice_value!(params[:contributor_adjustment])
+      super
+    end
+
+    # Catch the SyncsAsQboBill paid-bill guard so 'Delete' on a CA whose QBO
+    # bill is already paid surfaces a clean flash instead of a 500.
+    def destroy
+      super
+    rescue SyncsAsQboBill::PaidQboBillError => e
+      Rails.logger.error("[contributor_adjustment_destroy] ca=#{params[:id]}: #{e.message}")
+      redirect_to admin_ledger_contributor_adjustments_path(parent),
+        alert: "Cannot delete: linked QBO bill is paid. Void the BillPayment in QBO first, then retry."
+    end
+
+    private
+
+    def split_packed_qbo_invoice_value!(p)
+      return if p.blank?
+      val = p[:qbo_invoice_id]
+      if val.present? && val.to_s.include?(":")
+        qa_id, qbo_id = val.to_s.split(":", 2)
+        p[:qbo_account_id] = qa_id
+        p[:qbo_invoice_id] = qbo_id
+      elsif val.blank?
+        p[:qbo_invoice_id] = nil
+        if p[:ledger_id].present?
+          ledger = Ledger.find_by(id: p[:ledger_id])
+          p[:qbo_account_id] = ledger&.enterprise&.qbo_account&.id
+        end
+      end
+    end
+  end
+
+  index download_links: false do
+    column :contributor
+    column :amount
+    column :effective_on
+    column :qbo_invoice_id
+    actions
+  end
+
+  form do |f|
+    f.inputs do
+      f.semantic_errors
+      ledger_collection = Ledger.includes(:enterprise, contributor: :forecast_person).map do |l|
+        ["#{l.enterprise.name} — #{l.contributor.forecast_person&.email}", l.id]
+      end
+      # Canonical URL is ledger-nested, so the ledger is always known from
+      # the URL — render it as a disabled select for context and pin the id
+      # via a hidden field.
+      f.input :ledger,
+        as: :select,
+        collection: ledger_collection,
+        selected: f.object.ledger_id,
+        input_html: { disabled: true }
+      f.input :ledger_id, as: :hidden
+      f.input :amount, as: :number, input_html: { step: 0.01 }, label: "Amount (positive increases amount owed to contributor)"
+      f.input :effective_on, as: :date_picker
+      f.input :qbo_invoice,
+        as: :select,
+        collection: QboInvoice.includes(qbo_account: :enterprise).order(Arel.sql("(data->>'doc_number')::int DESC")).map { |inv|
+          ent_name = inv.qbo_account&.enterprise&.name || "?"
+          ["[#{ent_name}] #{inv.display_name}", "#{inv.qbo_account_id}:#{inv.qbo_id}"]
+        },
+        selected: (f.object.qbo_invoice_id.present? && f.object.qbo_account_id.present? ?
+          "#{f.object.qbo_account_id}:#{f.object.qbo_invoice_id}" : nil),
+        include_blank: "None (available immediately)",
+        hint: "Optional. If unset, counts toward balance immediately; if set, the adjustment stays unsettled until that invoice is fully paid in QBO."
+      f.input :description, as: :text, input_html: { rows: 4 }
+    end
+
+    f.actions
+  end
+
+  show do
+    render partial: "show", locals: { resource: resource }
+  end
+end

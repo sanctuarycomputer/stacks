@@ -1,0 +1,190 @@
+ENV['RAILS_ENV'] ||= 'test'
+require_relative '../config/environment'
+require 'rails/test_help'
+require 'mocha/minitest'
+require 'minitest/autorun'
+
+# Ensure DB triggers that schema.rb cannot capture are present in the test DB.
+# The ScopeQboRecordsByQboAccount migration installs a BEFORE DELETE trigger on
+# qbo_invoices that nullifies qbo_invoice_id on child tables (invoice_trackers,
+# contributor_adjustments, adhoc_invoice_trackers). schema.rb format cannot dump
+# triggers, so we recreate it here idempotently.
+ActiveRecord::Base.connection.execute(<<~SQL)
+  CREATE OR REPLACE FUNCTION nullify_qbo_invoice_id_on_children()
+  RETURNS trigger AS $body$
+  BEGIN
+    UPDATE invoice_trackers SET qbo_invoice_id = NULL
+      WHERE qbo_account_id = OLD.qbo_account_id AND qbo_invoice_id = OLD.qbo_id;
+    UPDATE contributor_adjustments SET qbo_invoice_id = NULL
+      WHERE qbo_account_id = OLD.qbo_account_id AND qbo_invoice_id = OLD.qbo_id;
+    UPDATE adhoc_invoice_trackers SET qbo_invoice_id = NULL
+      WHERE qbo_account_id = OLD.qbo_account_id AND qbo_invoice_id = OLD.qbo_id;
+    RETURN OLD;
+  END;
+  $body$ LANGUAGE plpgsql;
+
+  DROP TRIGGER IF EXISTS trg_qbo_invoices_nullify_children ON qbo_invoices;
+  CREATE TRIGGER trg_qbo_invoices_nullify_children
+    BEFORE DELETE ON qbo_invoices
+    FOR EACH ROW
+    EXECUTE FUNCTION nullify_qbo_invoice_id_on_children();
+SQL
+
+# Ensure the content_tsv generated column and GIN index on chunks are present in
+# the test DB. Rails 6.1's schema dumper cannot capture PostgreSQL GENERATED
+# columns or their indexes via raw SQL execute, so they are absent from
+# db/schema.rb and therefore missing after a fresh db:schema:load. We recreate
+# them here idempotently, mirroring the trigger block above.
+ActiveRecord::Base.connection.execute(<<~SQL)
+  ALTER TABLE chunks
+    ADD COLUMN IF NOT EXISTS content_tsv tsvector
+      GENERATED ALWAYS AS (to_tsvector('english', content)) STORED;
+SQL
+ActiveRecord::Base.connection.execute(<<~SQL)
+  CREATE INDEX IF NOT EXISTS index_chunks_on_content_tsv
+    ON chunks USING gin (content_tsv);
+SQL
+
+# pgvector (the extension + embeddings.embedding vector column + HNSW index) is omitted
+# from db/schema.rb so schema:load works on a Postgres without pgvector (Heroku CI's
+# in-dyno PG). Re-establish it here when the extension is available; otherwise tests that
+# need vector storage/search skip via skip_without_pgvector. Mirrors the content_tsv block.
+# DISABLE_PGVECTOR=1 forces the no-pgvector path (to reproduce Heroku CI's in-dyno PG locally).
+PGVECTOR_AVAILABLE = ENV['DISABLE_PGVECTOR'].blank? && ActiveRecord::Base.connection
+  .select_value("SELECT 1 FROM pg_available_extensions WHERE name = 'vector'").present?
+
+if PGVECTOR_AVAILABLE
+  ActiveRecord::Base.connection.execute("CREATE EXTENSION IF NOT EXISTS vector")
+  ActiveRecord::Base.connection.execute("ALTER TABLE embeddings ADD COLUMN IF NOT EXISTS embedding vector(1024)")
+  ActiveRecord::Base.connection.execute(<<~SQL)
+    CREATE INDEX IF NOT EXISTS index_embeddings_on_embedding
+      ON embeddings USING hnsw (embedding vector_cosine_ops);
+  SQL
+end
+
+class ActiveSupport::TestCase
+  # Skip a test that needs the pgvector embedding column (absent where pgvector isn't
+  # available, e.g. Heroku CI's in-dyno Postgres).
+  def skip_without_pgvector
+    skip "pgvector not available in this environment — vector storage/search test skipped" unless PGVECTOR_AVAILABLE
+  end
+
+  # Run tests in parallel with specified workers
+  parallelize(workers: 1)
+
+  # Setup all fixtures in test/fixtures/*.yml for all tests in alphabetical order.
+  fixtures :all
+
+  # Add more helper methods to be used by all tests here...
+
+  def make_studio!
+    tb = Studio.create!({
+      name: "Thoughtbot",
+      accounting_prefix: "Development",
+      mini_name: "tb",
+      snapshot: {}
+    })
+
+    g3d = Studio.create!({
+      name: "garden3d",
+      accounting_prefix: "",
+      mini_name: "g3d",
+      snapshot: {}
+    })
+
+    [tb, g3d]
+  end
+
+  # Parses an MCP tool Response (Mcp::Responses envelope) into the payload hash.
+  def mcp_payload(resp)
+    JSON.parse(resp.content.first[:text])
+  end
+
+  # Lightweight admin builder for tool/model tests — creates a bare AdminUser
+  # (optionally with a FullTimePeriod) without the studio/ForecastPerson/
+  # StudioMembership wiring that make_admin_user! (below) sets up. Use this
+  # when a test only cares about AdminUser.active / AdminUser.admin
+  # resolution, not studio membership.
+  def build_admin!(email_prefix: 'admin', roles: ['admin'], ended_at: nil, with_period: true)
+    admin = AdminUser.create!(email: "#{email_prefix}#{SecureRandom.hex(4)}@example.com",
+                              password: 'password123', password_confirmation: 'password123',
+                              roles: roles)
+    if with_period
+      started_at = ended_at ? ended_at - 30 : Date.today - 30
+      FullTimePeriod.create!(admin_user: admin, started_at: started_at, ended_at: ended_at,
+                             contributor_type: Enum::ContributorType::FIVE_DAY,
+                             expected_utilization: 0.8)
+    end
+    admin
+  end
+
+  # Studio-wired admin builder: creates AdminUser + ForecastPerson +
+  # FullTimePeriod + StudioMembership. Use this for tests that exercise
+  # studio membership / payroll flows, not just AdminUser resolution.
+  def make_admin_user!(studio, started_at, ended_at = nil, email = "chad@thoughtbot.com")
+    admin_user = AdminUser.create!({
+      email: email,
+      password: "password",
+      old_skill_tree_level: :lead_2
+    })
+
+    person_one = ForecastPerson.create!({
+      forecast_id: AdminUser.count + 1,
+      roles: [studio.name],
+      email: admin_user.email
+    })
+
+    FullTimePeriod.create!({
+      admin_user: admin_user,
+      started_at: started_at,
+      ended_at: ended_at,
+      contributor_type: Enum::ContributorType::FIVE_DAY,
+      expected_utilization: 0.8
+    })
+
+    StudioMembership.create!({
+      studio: studio,
+      admin_user: admin_user,
+      started_at: started_at
+    })
+
+    admin_user.reload
+  end
+
+  def make_forecast_project!(client_name = "US Government", project_name = "Healthcare.gov")
+    forecast_client = ForecastClient.create!({
+      forecast_id: ForecastClient.count + 1,
+      name: client_name
+    })
+
+    forecast_project = ForecastProject.create!({
+      forecast_id: ForecastProject.count + 1,
+      name: project_name,
+      forecast_client: forecast_client,
+      code: "#{project_name} #{ForecastProject.count + 1}",
+    })
+
+    [forecast_project, forecast_client]
+  end
+
+  def make_project_tracker!(forecast_projects)
+    project_tracker_links = [
+      ProjectTrackerLink.new({
+        name: "SOW link",
+        url: "https://example.com",
+        link_type: "sow"
+      }),
+      ProjectTrackerLink.new({
+        name: "MSA link",
+        url: "https://example.com",
+        link_type: "msa"
+      })
+    ]
+
+    tracker = ProjectTracker.create!({
+      name: "Healthcare.gov Project Tracker",
+      forecast_projects: forecast_projects,
+      project_tracker_links: project_tracker_links
+    })
+  end
+end

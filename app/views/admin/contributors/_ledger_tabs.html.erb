@@ -1,0 +1,40 @@
+<%# Ledger tab bar — "All" + one tab per Enterprise. Every ledger is rendered
+    (even empty ones) so a contributor can navigate to any enterprise's
+    ledger to file a reimbursement, accept a pay stub, etc.
+    Uses the existing pill toggle pattern from periodic_reports/_show.html.erb
+    (and the studio period filter). The `update(name, value)` JS rewrites the
+    query string; an empty value clears the param. %>
+<script>
+function update(a, b) {
+  var searchParams = new URLSearchParams(window.location.search);
+  if (b !== '')
+    searchParams.set(a, b);
+  else
+    searchParams.delete(a);
+  window.location.search = searchParams.toString();
+}
+</script>
+
+<div style="margin-bottom: 20px">
+  <a onclick='update("ledger", "");' style="margin-right: 6px">
+    <p class="nag pill <%= 'complete' if view_mode == :all %>" style="margin-bottom: 0px;margin-right: 6px;">
+      All
+    </p>
+  </a>
+  <% ledgers.each do |ledger| %>
+    <% selected = view_mode == :ledger && current_ledger&.id == ledger.id %>
+    <% balance_owed = ledger.balance.to_f %>
+    <% unsettled = ledger.unsettled.to_f %>
+    <a onclick='update("ledger", "<%= ledger.id %>");' style="margin-right: 6px">
+      <p class="nag pill <%= 'complete' if selected %>" style="margin-bottom: 0px;margin-right: 6px;position: relative;">
+        <%= ledger.enterprise.name %>
+        <% if balance_owed > 0 %>
+          <span class="notifier--balance"><%= number_to_currency(balance_owed, precision: 0) %></span>
+        <% end %>
+        <% if unsettled > 0 %>
+          <span class="notifier--unsettled" style="top: auto; bottom: -10px;"><%= number_to_currency(unsettled, precision: 0) %></span>
+        <% end %>
+      </p>
+    </a>
+  <% end %>
+</div>

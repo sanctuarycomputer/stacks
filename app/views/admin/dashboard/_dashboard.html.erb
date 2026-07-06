@@ -1,0 +1,179 @@
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">📈 YTD Collective Performance</h2>
+  </div>
+  <div id="titlebar_right">
+    <div class="action_items">
+      <%= link_to "See all garden3d OKRs ↗", admin_studio_path(g3d) %>
+    </div>
+  </div>
+</div>
+
+
+<% collective_okrs.each_slice(2).to_a.each do |set| %>
+  <div class="dashboard-modules table index_table index">
+    <% set.each do |cokr| %>
+
+      <div class="dashboard-module">
+        <div class="module-header">
+          <p><%= cokr["datapoint"].to_s.humanize %></p>
+        </div>
+
+        <% okr_results = cokr["okr"] %>
+        <% if okr_results.present? %>
+          <% value = okr_results.dig("value").to_f  %>
+          <% target = (okr_results.dig("target").try(:to_f) || 0).round(2) %>
+          <% health = okr_results.dig("health")  %>
+          <% tolerance = (okr_results.dig("tolerance").try(:to_f) || 0).round(2)  %>
+          <% unit = okr_results.dig("unit") %>
+          <% surplus = (okr_results.dig("surplus") || 0).to_f.round(2) %>
+          <% hint = (okr_results.dig("hint") || "No hint given") %>
+
+          <div class="module-body">
+            <div class="flex" style="align-items: baseline;">
+              <% if unit == "usd" %>
+                <h2 style="margin: 0;" class="<%= health %>"><%= number_to_currency(value.round(2)) %></h2> <p>(target: <%= number_to_currency(target) %>±<%= tolerance %>)</p>
+              <% elsif unit == "percentage" %>
+                <% if cokr["growth_progress"].present? %>
+                  <div class="okr_growth_progress">
+                    <div class="bar">
+                      <div class="inner_progress_bar <%= cokr["growth_progress"]["health"] %>" style="width:<%= (cokr["growth_progress"]["today"]["actual"] / cokr["growth_progress"]["abs"])*100 %>%;"></div>
+                    </div>
+                    <div class="target_indicator low" style="left:<%= (cokr["growth_progress"]["today"]["low"] / cokr["growth_progress"]["abs"])*100 %>%;"></div>
+                    <div class="target_indicator mid" style="left:<%= (cokr["growth_progress"]["today"]["mid"] / cokr["growth_progress"]["abs"])*100 %>%;"></div>
+                    <div class="target_indicator high" style="left:<%= (cokr["growth_progress"]["today"]["high"] / cokr["growth_progress"]["abs"])*100 %>%;"></div>
+                  </div>
+                <% else %>
+                  <h2 style="margin: 0;" class="<%= health %>"><%= value.round(2) %>%</h2> <p>(<%= target.round(2) %>%±<%= tolerance %>)</p>
+                <% end %>
+              <% elsif unit == "display" %>
+                <h2 style="margin: 0;" class="<%= health %>"><%= okr_results.dig("value") %></h2>
+              <% else %>
+                <h2 style="margin: 0;" class="<%= health %>"><%= value.round(2) %></h2> <p>(<%= target.round(2) %>±<%= tolerance %>)</p>
+              <% end %>
+            </div>
+
+            <% if cokr["growth_progress"].present? %>
+              <p class="okr_hint" style="padding-top: 0px !important; padding-bottom: 6px;">
+                This year, in order to achieve a <%= cokr["datapoint"].to_s.humanize %> of <%= target.round(2) %>%±<%= tolerance %>, we’re targeting a total of between <%= cokr["growth_progress"]["unit"] == :usd ? number_to_currency(cokr["growth_progress"]["eoy"]["low"]) : cokr["growth_progress"]["eoy"]["low"].round(2) %> and <%= cokr["growth_progress"]["unit"] == :usd ? number_to_currency(cokr["growth_progress"]["eoy"]["high"]) : cokr["growth_progress"]["eoy"]["high"].round(2) %>. Today is day <%= cokr["growth_progress"]["elapsed_days_this_year"] %> of <%= cokr["growth_progress"]["total_days_this_year"] %>, so operating linearly, we should be between <%= cokr["growth_progress"]["unit"] == :usd ? number_to_currency(cokr["growth_progress"]["today"]["low"]) : cokr["growth_progress"]["today"]["low"].round(2) %> to <%= cokr["growth_progress"]["unit"] == :usd ? number_to_currency(cokr["growth_progress"]["today"]["high"]) : cokr["growth_progress"]["today"]["high"].round(2) %>
+              </p>
+              <p class="okr_hint" style="padding-top: 0px !important">
+                In actuality we're at <%= cokr["growth_progress"]["unit"] == :usd ? number_to_currency(cokr["growth_progress"]["today"]["actual"]) : cokr["growth_progress"]["today"]["actual"].round(2) %>, so this OKR is considered <span class="pill <%= cokr["growth_progress"]["health"] %>"><%= cokr["growth_progress"]["health"] %></span>
+              </p>
+            <% else %>
+              <p class="okr_hint" style="padding-top: 0px !important"><%= sanitize hint, attributes: ["href", "target"] %></p>
+            <% end %>
+          </div>
+        <% else %>
+          <div class="module-body">
+            <div class="flex" style="align-items: baseline;">
+              <h2 style="margin: 0;">TBD</h2>
+            </div>
+
+            <p class="okr_hint" style="padding-top: 0px !important">This metric is still being incorporated</p>
+          </div>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+<% end %>
+
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">💸 Money at a Glance</h2>
+  </div>
+</div>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module" style="min-height: 371px">
+    <div class="module-body factoid-parent">
+      <div class="factoid">
+        <h2><%= number_to_currency(runway_data[:average_burn_rate]) %></h2>
+        <p>Average monthly spend for the last three months</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-module">
+    <div class="module-body factoid-parent">
+      <div class="factoid">
+        <h2><%= number_to_currency(runway_data[:net_cash]) %></h2>
+        <p>Net cash in our bank account (excluding credit card balances)</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-body">
+      <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+        <thead>
+          <tr>
+            <th class="col">Contributor Payouts</th>
+            <th class="col text-right">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="even">
+            <td class="col">
+              Balance
+            </td>
+            <td class="col text-right">
+              <%= number_to_currency(aggregated_new_deal_balance[:balance]) %>
+            </td>
+          </tr>
+          <tr class="odd">
+            <td class="col">
+              Unsettled
+            </td>
+            <td class="col text-right">
+              <%= number_to_currency(aggregated_new_deal_balance[:unsettled]) %>
+            </td>
+          </tr>
+          <tr class="even">
+            <td class="col">
+              <strong>TOTAL</strong>
+            </td>
+            <td class="col text-right">
+              <%= number_to_currency(aggregated_new_deal_balance[:balance] + aggregated_new_deal_balance[:unsettled]) %>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="dashboard-module">
+    <div class="module-body">
+      <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom: 0px;">
+        <thead>
+          <tr>
+            <th class="col">Account</th>
+            <th class="col text-center">Classification</th>
+            <th class="col text-right">Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% accounts.sort_by(&:classification).each_with_index do |account, idx| %>
+            <tr class="<%= idx.even? ? "even" : "odd" %>">
+              <td class="col text-left">
+                <%= account.name %>
+              </td>
+              <td class="co text-center">
+                <%= account.classification %>
+              </td>
+              <td class="col text-right">
+                <% if account.classification == "Liability" %>
+                  <%= number_to_currency(-1 * account.current_balance.abs) %>
+                <% else %>
+                  <%= number_to_currency(account.current_balance) %>
+                <% end %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

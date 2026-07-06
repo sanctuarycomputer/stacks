@@ -1,0 +1,71 @@
+<class class="dashboard-modules table index_table index">
+  <div class="dashboard-module factoid-parent">
+    <div class="module-body factoid-parent">
+      <p style="margin: 20px, 0px;">Associate Award Agreements are derived from this contributor's <span class="pill misc">Elevated Service</span> ledger, which can be found <%= link_to "here ↗", admin_contributor_path(resource.admin_user.forecast_person.contributor) %>.</p>
+    </div>
+  </div>
+</div>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Vesting Schedule</p>
+    </div>
+    <div class="module-body">
+      <canvas id="vesting-schedule"></canvas>
+    </div>
+  </div>
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Contract Details</p>
+    </div>
+    <div class="module-body">
+      <table class="index_table index">
+        <tbody>
+          <tr class="odd">
+            <td><strong>Signed Contract</strong></td>
+            <td class="text-right"><%= link_to "View ↗", resource.contract_url, target: "_blank" %></td>
+          </tr>
+          <tr class="even">
+            <td><strong>Total Awardable Units</strong></td>
+          <td class="text-right"><%= number_with_delimiter(vesting_schedule[:total_awardable_units]) %></td>
+          </tr>
+          <tr class="odd">
+            <td><strong>Installment Amount</strong></td>
+            <td class="text-right"><%= number_with_delimiter(vesting_schedule[:installment_amount]) %></td>
+          </tr>
+          <tr class="even">
+            <td><strong>Total Vested (Today)</strong></td>
+            <td class="text-right"><%= number_with_delimiter(vested_today) %></td>
+          </tr>
+          <tr class="odd">
+            <td><strong>Percentage of Pool (Today)</strong></td>
+            <td class="text-right"><%= number_to_percentage(percentage_of_pool_today * 100, precision: 2) %></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  new Chart(document.getElementById('vesting-schedule'), {
+    type: 'bar',
+    data: <%= vesting_schedule_data.to_json.html_safe %>,
+    options: {
+      interaction: {
+        intersect: false,
+        mode: 'index',
+      },
+      scales: {
+        y: {
+          type: 'linear',
+          display: true,
+          position: 'left',
+          beginAtZero: true,
+          max: <%= vesting_schedule[:total_awardable_units] + 500_000 %>,
+        },
+      }
+    }
+  });
+</script>

@@ -1,0 +1,287 @@
+<script>
+function update(a, b) {
+  var searchParams = new URLSearchParams(window.location.search);
+  if (b !== '')
+    searchParams.set(a, b);
+  else
+    searchParams.delete(a);
+  window.location.search = searchParams.toString();
+}
+</script>
+
+<% current_gradation = params["gradation"] || default_gradation %>
+<% current_gradation = default_gradation unless all_gradations.include?(current_gradation) %>
+<div style="margin-bottom: 20px">
+  <% all_gradations.each do |gradation| %>
+    <a onclick='update("gradation", "<%= gradation %>");' style="margin-right: 6px">
+      <p class="nag pill <%= current_gradation == gradation ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
+        By <%= gradation.humanize %>
+      </p>
+    </a>
+  <% end %>
+</div>
+
+<% current_okr = params["okr"] || default_okr %>
+<% current_okr = current_okr unless all_okrs.include?(current_okr) %>
+<div style="margin-bottom: 80px">
+  <% all_okrs.each do |okr| %>
+    <a onclick='update("okr", "<%= okr %>");' style="margin-right: 6px">
+      <p class="nag pill <%= current_okr == okr ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
+        <%= okr.humanize %>
+      </p>
+    </a>
+  <% end %>
+</div>
+
+<% unless all_okrs.include?(current_okr) %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <p style="margin-bottom: 6px;">🚧 This OKR does not yet have an explorer page.</p>
+      <a href="https://www.notion.so/garden3d/How-to-optimize-our-OKRs-82d1d26d9c0947fd962fd5f8b22be5c6" target="_blank">
+        Learn how to optimize our OKRs here ↗
+      </a>
+      </div>
+    </div>
+  </div>
+<% end %>
+
+<% if current_okr == "time_to_merge_pr" %>
+<% end %>
+
+<% if current_okr == "successful_projects" %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <p>🏆 <strong>Note:</strong> To calculate the % of successful projects for a given period, we include any project that recorded at least one hour for the given studio.</p>
+        <p style="margin-bottom: 6px;">Projects with a completed project capsule also take into account client satisfaction.</p>
+        <a href="https://www.notion.so/garden3d/Introducing-Bottom-Up-Leadership-at-garden3d-93cfbd78330245d1a14cb1ad312b0290?pvs=4#0f40265bddd740fc8a9837e69222580e" target="_blank">
+          Learn about our definition of Project Success here ↗
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <% all_projects_by_period.reverse_each do |period, project_trackers| %>
+
+    <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+      <div id="titlebar_left">
+        <h2 id="page_title">
+          <%= period.label %>
+        </h2>
+      </div>
+      <div id="titlebar_right">
+        <h2 id="page_title">
+          <%= ((project_trackers.map(&:considered_successful?).count{|v| !!v} / project_trackers.count.to_f) * 100).round(1) %>%
+        </h2>
+      </div>
+    </div>
+
+    <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+      <thead>
+        <tr>
+          <th class="col">Project Tracker</th>
+          <th class="col">Profit Margin</th>
+          <th class="col">Free Hours Given</th>
+          <th class="col">Client Happy?</th>
+          <th class="col text-right">Considered Successful?</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        <% project_trackers.each_with_index do |project_tracker, idx| %>
+          <tr class="<%= idx.even? ? "even" : "odd" %>">
+            <td class="col">
+              <%= link_to "#{project_tracker.name} ↗", admin_project_tracker_path(project_tracker) %>
+            </td>
+
+            <td class="col">
+
+              <div>
+                <span><%= project_tracker.profit_margin.round(1) %>%</span>
+                <p class="okr_hint" style="margin-bottom:0px;padding-top:0px !important"><%= number_to_currency(project_tracker.spend) %> earnt, <%= number_to_currency(project_tracker.estimated_cost) %> Cost</p>
+              </div>
+
+            </td>
+
+            <td class="col">
+              <% free_hours_percentage = project_tracker.free_hours_ratio * 100 %>
+
+              <% pill_class =
+                if free_hours_percentage == 0
+                  "exceptional"
+                elsif free_hours_percentage < 1
+                  "healthy"
+                elsif free_hours_percentage < 5
+                  "at_risk"
+                else
+                  "failing"
+                end %>
+              <div>
+                <span class="pill <%= pill_class %>">
+                  <span class="split"><strong><%= project_tracker.total_hours.round(2) %> hrs,</strong> <span><%= project_tracker.total_free_hours %> free</span></span>
+                </span>
+                <p class="okr_hint"><%= free_hours_percentage.round(1) %>% hrs billed at $0p/h</p>
+              </div>
+            </td>
+
+            <td class="col">
+              <% if project_tracker.client_satisfied?.present? %>
+                <% if project_tracker.client_satisfied? %>
+                  <span class="status_tag yes">Yes</span>
+                <% else %>
+                  <span class="status_tag no">No</span>
+                <% end %>
+              <% else %>
+                <span class="pill <%= project_tracker.work_status %>"><%= project_tracker.work_status.to_s.humanize.capitalize %></span>
+              <% end %>
+            </td>
+
+            <td class="col text-right">
+              <% if project_tracker.considered_successful? %>
+                <span class="status_tag yes">Yes</span>
+              <% else %>
+                <span class="status_tag no">No</span>
+              <% end %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  <% end %>
+<% end %>
+
+
+<% if current_okr == "successful_proposals" %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <p>🏆 <strong>Note:</strong> To calculate the % of successful proposals we include any lead where the <code>Settled Date</code> is in a given period, and a <code>✨ Proposal Sent</code> timestamp is present. Leads with  <code>✨ Status: Won</code> timestamp are considered successful.</p>
+        <a href="https://www.notion.so/garden3d/Introducing-Bottom-Up-Leadership-at-garden3d-93cfbd78330245d1a14cb1ad312b0290?pvs=4#0f40265bddd740fc8a9837e69222580e" target="_blank">
+          Learn about our definition of Proposal Success here ↗
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <% all_proposals_by_period.reverse_each do |period, proposals| %>
+
+    <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+      <div id="titlebar_left">
+        <h2 id="page_title">
+          <%= period.label %>
+        </h2>
+      </div>
+      <div id="titlebar_right">
+        <h2 id="page_title">
+          <%= ((proposals.map(&:considered_successful?).count{|v| !!v} / proposals.count.to_f) * 100).round(1) %>%
+        </h2>
+      </div>
+    </div>
+
+    <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+      <thead>
+        <tr>
+          <th class="col">Lead</th>
+          <th class="col">Proposal Sent At</th>
+          <th class="col">Settled At</th>
+          <th class="col">Won At</th>
+          <th class="col text-right">Considered Successful?</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        <% proposals.each_with_index do |proposal, idx| %>
+          <tr class="<%= idx.even? ? "even" : "odd" %>">
+            <td class="col">
+              <a href="<%= proposal.notion_link %>" target="_blank"><%= proposal.name %> ↗</a>
+            </td>
+
+            <td class="col">
+              <%= DateTime.parse(proposal.proposal_sent_at).to_date %>
+            </td>
+            <td class="col">
+              <%= DateTime.parse(proposal.settled_at).to_date %>
+            </td>
+            <td class="col">
+              <%= proposal.won_at ? DateTime.parse(proposal.won_at).to_date : "—" %>
+            </td>
+
+            <td class="col text-right">
+              <% if proposal.considered_successful? %>
+                <span class="status_tag yes">Yes</span>
+              <% else %>
+                <span class="status_tag no">No</span>
+              <% end %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  <% end %>
+<% end %>
+
+<% if current_okr == "average_hourly_rate" %>
+  <a href="https://forecastapp.com/864444/export" target="_blank">
+    <p class="nag" style="margin-bottom: 20px;">
+      🤔 Something funny? You can audit this data with a Forecast export ↗
+    </p>
+  </a>
+
+  <% snapshot[current_gradation].reverse.each do |period| %>
+    <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+      <div id="titlebar_left">
+        <h2 id="page_title">
+          <%= period["label"] %>
+        </h2>
+      </div>
+    </div>
+
+    <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+      <thead>
+        <tr>
+          <th class="col">Person</th>
+          <th class="col">Rate</th>
+          <th class="col text-right">Hours Sold</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        <% period["utilization"].each do |tuple| %>
+          <% email, d = tuple %>
+
+          <% d["billable"].each_with_index do |tuple, index| %>
+            <% rate, count = tuple %>
+            <tr class="<%= index == 0 ? 'border-top' : '' %>">
+              <td class="col">
+                <%= index == 0 ? email : "" %>
+              </td>
+              <td class="col">
+                <%= number_to_currency rate %>
+              </td>
+              <td class="col text-right">
+                <%= count %>
+              </td>
+            </tr>
+          <% end %>
+
+
+        <% end %>
+
+
+        <tr class="even">
+          <td class="col">
+            <strong>Weighted Average & Total Hours Billed</strong>
+          </td>
+          <td class="col">
+            <%= number_to_currency period["cash"]["datapoints"]["average_hourly_rate"]["value"] %>
+          </td>
+          <td class="col text-right">
+            <%= period["cash"]["datapoints"]["billable_hours"]["value"] %>
+          </td>
+        </tr>
+
+      </tbody>
+    </table>
+  <% end %>
+<% end %>

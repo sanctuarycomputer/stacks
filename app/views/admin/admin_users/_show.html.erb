@@ -1,0 +1,89 @@
+<figure class="text-center">
+  <div>
+    <img class="rounded-full" src="<%= (resource.info || {}).dig("image") %>" />
+    <% if resource.is_admin? %>
+      <span class="pill ready absolute">Stacks Admin</span>
+    <% end %>
+  </div>
+  <h1>
+    <%= (resource.info || {}).dig("name") %>
+  </h1>
+</figure>
+
+<% has_contributor = resource.forecast_person.present? && resource.forecast_person.ensure_contributor_exists! %>
+
+<% if resource.is_associate? && resource.associates_award_agreement.present? %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <p style="margin: 20px, 0px;">This user is an Associate. Their Associate Award Agreement can be found <%= link_to "here ↗", admin_associates_award_agreement_path(resource.associates_award_agreement) %>.</p>
+      </div>
+    </div>
+  </div>
+<% end %>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Balance</p>
+      <% if has_contributor %>
+        <%= link_to "Ledger ↗", admin_contributor_path(resource.forecast_person.contributor) %>
+      <% end %>
+    </div>
+    <div class="module-body text-center">
+      <% if has_contributor %>
+        <% new_deal_balance = resource.forecast_person.contributor.new_deal_balance %>
+        <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+          <thead>
+            <tr>
+              <th class="col"></th>
+              <th class="col text-right">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="even">
+              <td class="col text-left">
+                Balance
+              </td>
+              <td class="col text-right">
+                <%= number_to_currency(new_deal_balance[:balance]) %>
+              </td>
+            </tr>
+            <tr class="odd">
+              <td class="col text-left">
+                Unsettled
+              </td>
+              <td class="col text-right">
+                <%= number_to_currency(new_deal_balance[:unsettled]) %>
+              </td>
+            </tr>
+            <tr class="even">
+              <td class="col text-left">
+                <strong>TOTAL</strong>
+              </td>
+              <td class="col text-right">
+                <%= number_to_currency(new_deal_balance[:balance] + new_deal_balance[:unsettled]) %>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      <% else %>
+        <p>🚧 <strong>Important!</strong> This user has no Harvest Forecast user associated. Please add them in Harvest Forecast (with the same email address) and then their payment ledger will show here.</p>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Pending Tasks</p>
+    </div>
+    <div class="module-body">
+      <% pending_tasks = resource.pending_tasks %>
+      <% if pending_tasks.any? %>
+        <%= render partial: "admin/tasks/task_list", locals: { tasks: pending_tasks, show_owners: false } %>
+      <% else %>
+        <p class="text-center">🎉 This user has no pending tasks!</p>
+      <% end %>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,65 @@
+.dashboard-modules {
+  display: flex;
+  margin-bottom: 20px;
+}
+.dashboard-module {
+  width: 100%;
+  box-shadow: 0 1px 20px #b7b7b7;
+  border-radius: 8px;
+}
+.dashboard-module:only-child {
+  margin-left: 0px !important;
+  margin-right: 0px !important;
+}
+.dashboard-module:nth-child(even) {
+  margin-left: 10px;
+}
+.dashboard-module:nth-child(odd) {
+  margin-right: 10px;
+}
+.dashboard-module .module-header {
+  padding: 20px;
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px dashed #e8e8e8;
+}
+.dashboard-module .module-header p {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 0;
+  color: #5E6469;
+}
+.dashboard-module .module-body {
+  padding: 20px;
+}
+.dashboard-module .module-body ul li {
+  list-style-type: circle;
+  padding: 0px;
+  border: none;
+}
+.dashboard-module .module-body.factoid-parent {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  flex-direction: column;
+  text-align: center;
+}
+.dashboard-module .module-body.factoid-parent .factoid {
+    text-align: center;
+    //max-width: 320px;
+}
+.dashboard-module .module-body.factoid-parent .factoid h1 {
+  font-size: 60px;
+  margin-top: 0px;
+  margin-bottom: 10px;
+}
+.dashboard-module .module-body.factoid-parent .factoid h2 {
+  font-size: 40px;
+  margin-top: 0px;
+  margin-bottom: 0px;
+}
+.dashboard-module .module-body:not(.markdown-body) p {
+  font-size: 18px;
+  margin-bottom: 0;
+}

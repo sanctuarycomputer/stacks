@@ -1,0 +1,358 @@
+<%= render 'ledger_tabs',
+      contributor: contributor,
+      ledgers: ledgers,
+      current_ledger: current_ledger,
+      view_mode: view_mode %>
+
+<% if pending_tasks.any? %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <p style="margin-bottom: 6px;">🚧 <strong>Note!</strong> This contributor has pending tasks. Please complete them as soon as possible to avoid delays in payouts.</p>
+        <%= link_to "View #{pending_tasks.count} #{(pending_tasks.count == 1 ? "Task" : "Tasks")} ↗", admin_admin_user_path(contributor.forecast_person.admin_user) %>
+      </div>
+    </div>
+  </div>
+<% end %>
+
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+  <tbody>
+    <tr class="even">
+      <td class="col">
+        <strong>Balance</strong>
+      </td>
+      <td class="col text-right">
+        <%= number_to_currency(balance[:balance]) %>
+      </td>
+    </tr>
+    <tr class="odd">
+      <td class="col">
+        <strong>Unsettled</strong>
+      </td>
+      <td class="col text-right">
+        <%= number_to_currency(balance[:unsettled]) %>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<% new_deal_ledger_items[:by_month].each do |period, metadata| %>
+  <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+    <div id="titlebar_left">
+      <h2 id="page_title"><%= period.starts_at.strftime("%B %Y") %></h2>
+    </div>
+    <% if view_mode == :all %>
+      <div id="titlebar_right">
+        <span class="pill <%= metadata[:elevated_service] ? 'misc' : '' %>">
+          <%= metadata[:elevated_service] ? 'Elevated' : 'Standard' %> Service
+          <span class="split">
+            <% if metadata[:fulltime] %>
+              Fulltime
+            <% else %>
+              <strong><%= metadata[:total_hours] %>hrs, </strong><span><%= number_to_currency(metadata[:total_income]) %><%= metadata[:partial_salary] > 0 ? " + #{number_to_currency(metadata[:partial_salary])} partial salary" : "" %></span>
+            <% end %>
+          </span>
+        </span>
+      </div>
+    <% end %>
+  </div>
+
+  <% if view_mode == :all && metadata[:fulltime] %>
+    <div class="dashboard-modules table index_table index">
+      <div class="dashboard-module">
+        <div class="module-body factoid-parent">
+          <p style="margin: 20px, 0px;">🤔 <strong>FYI!</strong> This contributor was entirely fulltime for the month.</p>
+        </div>
+      </div>
+    </div>
+  <% else %>
+    <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+      <thead>
+        <tr>
+          <th class="col">Date</th>
+          <th class="col">Type</th>
+          <th class="col">Status</th>
+          <th class="col">Amount</th>
+          <th class="col text-right">Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% metadata[:items].each_with_index do |li, index| %>
+          <tr class="<%= index.even? ? "even" : "odd" %>">
+            <td class="col">
+              <% if li.is_a?(ContributorPayout) %>
+                <%= li.invoice_tracker.invoice_pass.start_of_month.strftime("%B %d, %Y") %>
+              <% elsif li.is_a?(Reimbursement) %>
+                <%= li.created_at.strftime("%B %d, %Y") %>
+              <% elsif li.is_a?(Trueup) %>
+                <%= li.payment_date.strftime("%B %d, %Y") %>
+              <% elsif li.is_a?(ProfitShare) %>
+                <%= li.applied_at.strftime("%B %d, %Y") %>
+              <% elsif li.is_a?(ContributorAdjustment) %>
+                <%= li.effective_on.strftime("%B %d, %Y") %>
+              <% elsif li.is_a?(DeelInvoiceAdjustment) %>
+                <%= li.date_submitted.strftime("%B %d, %Y") %>
+              <% elsif li.is_a?(PayStub) %>
+                <%= li.pay_cycle.ends_at.strftime("%B %d, %Y") %>
+              <% end %>
+            </td>
+            <td class="col">
+              <% if li.is_a?(PayStub) %>
+                <span class="pill pay_stub">Pay Stub</span>
+              <% else %>
+                <span class="pill <%= li.model_name.human.downcase %>">
+                  <%= li.model_name.human %>
+                </span>
+              <% end %>
+            </td>
+            <td class="col">
+              <% if li.is_a?(ContributorPayout) %>
+
+                <span class="pill <%= li.invoice_tracker.contributor_payouts_status.to_s.humanize %>" style="margin-right: 6px;">
+                  Payout Acceptance
+                  <span class="split">
+                    <%= li.invoice_tracker.contributor_payouts_status.to_s.humanize %>
+                  </span>
+                </span>
+
+                <% status = li.invoice_tracker.status == :paid ? :paid : li.invoice_tracker.allow_early_contributor_payouts_on.present? && li.invoice_tracker.allow_early_contributor_payouts_on <= Date.today ? :early_payouts_approved : li.invoice_tracker.status %>
+                <span class="pill <%= status %>" style="margin-right: 6px;">
+                  Invoice
+                  <span class="split">
+                    <%= status.to_s.humanize %>
+                  </span>
+                </span>
+              <% elsif li.is_a?(ProfitShare) %>
+                <span class="pill <%= li.periodic_report.all_profit_shares_accepted? ? "accepted" : "pending" %>">
+                  Profit Share Acceptance
+                  <span class="split">
+                    <%= li.accepted? ? "All Accepted" : "Some Pending" %>
+                  </span>
+                </span>
+              <% elsif li.is_a?(Reimbursement) %>
+                <% if li.deleted_at.present? %>
+                  <span class="pill deleted">
+                    Deleted
+                  </span>
+                <% else %>
+                  <span class="pill <%= li.accepted? ? "accepted" : "pending" %>">
+                    <%= li.accepted? ? "accepted" : "pending admin acceptance" %>
+                  </span>
+                <% end %>
+
+              <% elsif li.is_a?(Trueup) %>
+                <span class="pill <%= li.deleted_at.present? ? "deleted" : "paid" %>">
+                  <%= li.deleted_at.present? ? "deleted" : "scheduled" %>
+                </span>
+              <% elsif li.is_a?(ContributorAdjustment) %>
+                <% if li.qbo_invoice_id.blank? %>
+                  <span class="pill accepted">Available</span>
+                <% elsif li.qbo_invoice.present? %>
+                  <span class="pill <%= li.qbo_invoice.status == :paid ? "paid" : "pending" %>">
+                    Invoice
+                    <span class="split">
+                      <%= li.qbo_invoice.status.to_s.humanize %>
+                    </span>
+                  </span>
+                <% else %>
+                  <span class="pill pending">Invoice not found</span>
+                <% end %>
+              <% elsif li.is_a?(DeelInvoiceAdjustment) %>
+                <span class="pill <%= li.ledger_status_pill_class %>">
+                  Deel
+                  <span class="split">
+                    <%= li.deleted_at.present? ? "Deleted" : li.deel_status.to_s.humanize %>
+                  </span>
+                </span>
+              <% elsif li.is_a?(PayStub) %>
+                <% if li.deleted_at.present? %>
+                  <span class="pill deleted">Deleted</span>
+                <% else %>
+                  <span class="pill <%= li.accepted? ? "accepted" : "pending" %>" style="margin-right: 6px;">
+                    Stub Acceptance
+                    <span class="split">
+                      <%= li.accepted? ? "Accepted" : "Pending" %>
+                    </span>
+                  </span>
+                  <span class="pill <%= li.pay_cycle.approved? ? "paid" : "pending" %>" style="margin-right: 6px;">
+                    Cycle Approval
+                    <span class="split">
+                      <%= li.pay_cycle.approved? ? "Approved" : "Pending" %>
+                    </span>
+                  </span>
+                <% end %>
+              <% end %>
+            </td>
+            <td class="col">
+              <% if li.is_a?(ContributorPayout) %>
+                <% if li.deleted_at.present? %>
+                  <del><%= number_to_currency(li.amount) %></del>
+                <% else %>
+                  + <%= number_to_currency(li.amount) %>
+                <% end %>
+
+                <span class="pill <%= li.accepted? ? "accepted" : "pending" %>" style="margin-right: 6px;">
+                  <%= li.accepted? ? "Accepted" : "Pending" %>
+                  <% if current_admin_user.forecast_person == li.contributor.forecast_person || current_admin_user.is_admin? %>
+                  <span class="split">
+                      <%= link_to li.accepted? ? "Unaccept ↗" : "Accept ↗", toggle_contributor_payout_acceptance_admin_contributor_path(li.contributor, {contributor_payout_id: li.id}), method: :post, style: "font-size: unset;" %>
+                    </span>
+                  <% end %>
+                </span>
+
+              <% elsif li.is_a?(ProfitShare) %>
+                <% if li.deleted_at.present? %>
+                  <del><%= number_to_currency(li.amount) %></del>
+                <% else %>
+                  + <%= number_to_currency(li.amount) %>
+                <% end %>
+
+                <span class="pill <%= li.accepted? ? "accepted" : "pending" %>" style="margin-right: 6px;">
+                  <%= li.accepted? ? "Accepted" : "Pending" %>
+                  <% if current_admin_user.forecast_person == li.contributor.forecast_person || current_admin_user.is_admin? %>
+                  <span class="split">
+                      <%= link_to li.accepted? ? "Unaccept ↗" : "Accept ↗", toggle_profit_share_acceptance_admin_contributor_path(li.contributor, {profit_share_id: li.id}), method: :post, style: "font-size: unset;" %>
+                    </span>
+                  <% end %>
+                </span>
+
+              <% elsif li.is_a?(Reimbursement) %>
+                <% if li.deleted_at.present? %>
+                  <del><%= number_to_currency(li.amount) %></del>
+                <% else %>
+                  + <%= number_to_currency(li.amount) %>
+                <% end %>
+
+                <span class="pill <%= li.accepted? ? "accepted" : "pending" %>" style="margin-right: 6px;">
+                  <%= li.accepted? ? "Accepted" : "Pending" %>
+                  <% if current_admin_user.is_admin? %>
+                    <span class="split">
+                      <%= link_to li.accepted? ? "Deny ↗" : "Accept ↗", toggle_reimbursement_acceptance_admin_contributor_path(li.contributor, {reimbursement_id: li.id}), method: :post, style: "font-size: unset;" %>
+                    </span>
+                  <% end %>
+                </span>
+
+              <% elsif li.is_a?(Trueup) %>
+                <% if li.deleted_at.present? %>
+                  <del><%= number_to_currency(li.amount) %></del>
+                <% else %>
+                  + <%= number_to_currency(li.amount) %>
+                <% end %>
+              <% elsif li.is_a?(ContributorAdjustment) %>
+                <% if li.deleted_at.present? %>
+                  <del><%= number_to_currency(li.amount) %></del>
+                <% else %>
+                  + <%= number_to_currency(li.amount) %>
+                <% end %>
+              <% elsif li.is_a?(DeelInvoiceAdjustment) %>
+                <% if li.ledger_amount_strikethrough? %>
+                  <del>- <%= number_to_currency(li.amount) %></del>
+                <% elsif li.deducts_balance? %>
+                  - <%= number_to_currency(li.amount) %>
+                <% else %>
+                  <%= number_to_currency(li.amount) %>
+                  <span class="pill voided" style="margin-left: 6px;">Not reserved</span>
+                <% end %>
+              <% elsif li.is_a?(PayStub) %>
+                <% if li.deleted_at.present? %>
+                  <del><%= number_to_currency(li.amount) %></del>
+                <% else %>
+                  + <%= number_to_currency(li.amount) %>
+                <% end %>
+
+                <span class="pill <%= li.accepted? ? "accepted" : "pending" %>" style="margin-right: 6px;">
+                  <%= li.accepted? ? "Accepted" : "Pending" %>
+                  <% if current_admin_user.forecast_person == li.contributor.forecast_person || current_admin_user.is_admin? %>
+                    <span class="split">
+                      <%= link_to li.accepted? ? "Unaccept ↗" : "Accept ↗", toggle_acceptance_admin_pay_cycle_pay_stub_path(li.pay_cycle, li), method: :post, style: "font-size: unset;" %>
+                    </span>
+                  <% end %>
+                </span>
+              <% end %>
+            </td>
+            <td class="col text-right">
+              <% unless li.try(:deleted_at).present? %>
+                <% if li.is_a?(ContributorPayout) %>
+                  <%= link_to "#{li.display_name} ↗", admin_invoice_tracker_contributor_payout_path(li.invoice_tracker, li) %>
+                <% elsif li.is_a?(ProfitShare) %>
+                  <%= link_to "#{li.periodic_report.display_name} ↗", admin_periodic_report_path(li.periodic_report) %>
+                <% elsif li.is_a?(Reimbursement) %>
+                  <%= link_to "Info ↗", admin_ledger_reimbursement_path(li.ledger, li) %>
+                <% elsif li.is_a?(Trueup) %>
+                  <%= link_to "Info ↗", admin_ledger_trueup_path(li.ledger, li) %>
+                <% elsif li.is_a?(ContributorAdjustment) %>
+                  <%= link_to "Info ↗", admin_ledger_contributor_adjustment_path(li.ledger, li) %>
+                <% elsif li.is_a?(DeelInvoiceAdjustment) %>
+                  <%= link_to "Info ↗", admin_contributor_deel_invoice_adjustment_path(contributor, li) %>
+                <% elsif li.is_a?(PayStub) %>
+                  <%= link_to "Info ↗", admin_pay_cycle_pay_stub_path(li.pay_cycle, li) %>
+                <% end %>
+              <% end %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  <% end %>
+<% end %>
+
+
+<%# Per-contributor recurring ledger adjustments. Filters by the active
+    ledger when one is selected; shows all ledgers' rows on the All view.
+    Renders a compact table with links to the top-level admin for editing. %>
+<%
+  rec_adjustments =
+    if view_mode == :ledger && current_ledger
+      current_ledger.recurring_ledger_adjustments.includes(ledger: :enterprise).order(:next_due_on).to_a
+    else
+      contributor.recurring_ledger_adjustments.includes(ledger: :enterprise).order(:next_due_on).to_a
+    end
+%>
+<div class="dashboard-modules table index_table index" style="margin-top: 24px;">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Recurring Ledger Adjustments</p>
+      <%= link_to "New ↗", new_admin_recurring_ledger_adjustment_path %>
+    </div>
+    <div class="module-body">
+      <% if rec_adjustments.any? %>
+        <table class="index_table index" style="width: 100%;">
+          <thead>
+            <tr>
+              <th>Enterprise</th>
+              <th>Amount</th>
+              <th>Description</th>
+              <th>Cadence</th>
+              <th>Next due</th>
+              <th>Status</th>
+              <th class="text-right">Edit</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% rec_adjustments.each_with_index do |rla, idx| %>
+              <tr class="<%= idx.even? ? "even" : "odd" %>">
+                <td><%= rla.ledger.enterprise.name %></td>
+                <td><%= number_to_currency(rla.amount) %></td>
+                <td><%= rla.description %></td>
+                <td><%= rla.cadence.humanize %></td>
+                <td><%= rla.next_due_on %></td>
+                <td>
+                  <% if rla.paused? %>
+                    <span class="pill pending">Paused</span>
+                  <% else %>
+                    <span class="pill accepted">Active</span>
+                  <% end %>
+                </td>
+                <td class="text-right">
+                  <%= link_to "Edit ↗", edit_admin_recurring_ledger_adjustment_path(rla) %>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      <% else %>
+        <p style="padding: 12px;"><em>No recurring adjustments configured.</em></p>
+      <% end %>
+    </div>
+  </div>
+</div>

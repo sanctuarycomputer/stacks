@@ -1,0 +1,395 @@
+<% qbo_invoice = invoice_tracker.qbo_invoice %>
+<% status = invoice_tracker.status %>
+<% changes_in_forecast = invoice_tracker.changes_in_forecast %>
+<% stale = changes_in_forecast.any? %>
+
+<p class="pill nag" style="margin-right: 6px">
+  <%= invoice_tracker.invoice_pass.invoice_month %>
+</p>
+<p class="pill nag <%= status %>" style="margin-right: 6px">
+  <%= status.to_s.humanize %>
+</p>
+<p class="pill nag <%= stale ? "changed" : "unchanged" %>" style="margin-right: 6px">
+  <%= stale ? "Stale" : "In sync" %>
+</p>
+<% if qbo_invoice.present? %>
+  <a href="https://app.qbo.intuit.com/app/invoice?txnId=<%= qbo_invoice.qbo_id %>" target="_blank">
+    <p class="nag" style="margin-bottom: 0px;margin-right: 6px;">
+      QBO Invoice ↗
+    </p>
+  </a>
+  <a href="https://app.qbo.intuit.com/app/customerdetail?nameId=<%= qbo_invoice.customer_ref["value"] %>" target="_blank">
+    <p class="nag" style="margin-bottom: 0px;margin-right: 6px;">
+      QBO Customer ↗
+    </p>
+  </a>
+<% end %>
+
+<% if changes_in_forecast.any? %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-header">
+        <p>⚠️ This invoice is out of sync with the Forecast</p>
+      </div>
+      <div class="module-body">
+        <p>This means that someone has changed their hours in Forecast <strong>after</strong> the invoice was generated. If the invoice is not yet sent, please delete it in Quickbooks and press the <code>Regenerate</code> button.</p>
+        <hr />
+
+        <% changes_in_forecast.each do |change| %>
+          <% case change[0] %>
+          <% when "~" %>
+            <p><code><%= change[1] %></code> changed from <code><%= change[2] %></code> to <code><%= change[3] %></code></p>
+          <% when "-" %>
+            <p><code><%= change[1] %></code> was removed</p>
+          <% when "+" %>
+            <p><code><%= change[1] %></code> was added</p>
+          <% end %>
+        <% end %>
+
+      </div>
+    </div>
+  </div>
+<% end %>
+
+<% if invoice_tracker.notes.present? %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-header">
+        <p>❗ Important Notes</p>
+      </div>
+      <div class="module-body markdown-body">
+        <%= sanitize RDiscount.new(invoice_tracker.notes).to_html %>
+      </div>
+    </div>
+  </div>
+<% end %>
+
+<% qbo_line_items_by_id = (invoice_tracker.qbo_invoice&.line_items || []).index_by { |li| li["id"].to_s } %>
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom:20px;">
+  <thead>
+    <tr>
+      <th class="col"></th>
+      <th class="col">QBO Line Item ID</th>
+      <th class="col">QBO Service</th>
+      <th class="col">Item</th>
+      <th class="col">Hours</th>
+      <th class="col">Rate</th>
+      <th class="col text-right">Total</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% blueprint_diff = invoice_tracker.blueprint_diff %>
+    <% blueprint_diff["lines"].keys.each_with_index do |line, index| %>
+      <% diff_state = blueprint_diff.dig("lines", line, "diff_state") %>
+      <% line_id = blueprint_diff.dig("lines", line, "id") %>
+      <% current_qbo_line = qbo_line_items_by_id[line_id.to_s] %>
+      <% current_service = current_qbo_line&.dig("sales_line_item_detail", "item_ref", "name") %>
+
+      <tr class="<%= index.even? ? "even" : "odd" %>">
+        <td class="col">
+          <span class="pill <%= diff_state %>">
+            <%= diff_state.humanize %>
+          </span>
+        </td>
+        <td class="col">
+          <% if diff_state == "removed" %>
+            <del><%= line_id %></del>
+          <% else %>
+            <%= line_id %>
+          <% end %>
+        </td>
+        <td class="col">
+          <% if current_service.present? %>
+            <%= current_service %>
+          <% else %>
+            <span style="color:#999;">—</span>
+          <% end %>
+        </td>
+        <td class="col">
+          <% if diff_state == "removed" %>
+            <del><%= line %></del>
+          <% else %>
+            <%= line %>
+          <% end %>
+        </td>
+        <td class="col">
+          <% quantity = blueprint_diff.dig("lines", line, "quantity") %>
+          <% if quantity.kind_of?(Array) %>
+            <del><%= quantity[0] %></del>
+            <%= quantity[1] %>
+          <% else %>
+            <% if diff_state == "removed" %>
+              <del><%= quantity %></del>
+            <% else %>
+              <%= quantity %>
+            <% end %>
+          <% end %>
+        </td>
+        <td class="col">
+          <% unit_price = blueprint_diff.dig("lines", line, "unit_price") %>
+          <% if unit_price.kind_of?(Array) %>
+            <del><%= number_to_currency(unit_price[0]) %></del>
+            <%= number_to_currency(unit_price[1]) %>
+          <% else %>
+            <% if diff_state == "removed" %>
+              <del><%= number_to_currency(unit_price) %></del>
+            <% else %>
+              <%= number_to_currency(unit_price) %>
+            <% end %>
+          <% end %>
+        </td>
+        <td class="col text-right">
+          <% quantity = blueprint_diff.dig("lines", line, "quantity") %>
+          <% unit_price = blueprint_diff.dig("lines", line, "unit_price") %>
+          <%= number_to_currency(
+            (quantity.kind_of?(Array) ? quantity[1] : quantity) *
+            (unit_price.kind_of?(Array) ? unit_price[1] : unit_price)
+          ) %>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
+
+<% if invoice_tracker.project_trackers.any? %>
+  <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+    <thead>
+      <tr>
+        <th class="col">
+          <div class="icon-and-text">
+            Project Trackers
+          </div>
+        </th>
+        <th class="col">Account Lead</th>
+        <th class="col">Project Lead</th>
+        <th class="col text-right">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% invoice_tracker.project_trackers.each_with_index do |pt, index| %>
+        <tr class="<%= index.even? ? "even" : "odd" %>">
+          <td class="col">
+            <%= link_to pt.name, admin_project_tracker_path(pt) %>
+          </td>
+
+          <td class="col">
+            <% account_lead = pt.account_lead_for_month(invoice_tracker.invoice_pass.start_of_month) %>
+            <% if account_lead.present? %>
+              <%= link_to account_lead.email, admin_admin_user_path(account_lead) %>
+            <% else %>
+              <span class="pill error" style="pointer-events: auto;">No Account Lead</span>
+            <% end %>
+          </td>
+
+          <td class="col">
+            <% project_lead = pt.project_lead_for_month(invoice_tracker.invoice_pass.start_of_month) %>
+            <% if project_lead.present? %>
+              <%= link_to project_lead.email, admin_admin_user_path(project_lead) %>
+            <% else %>
+              <span class="pill error" style="pointer-events: auto;">No Project Lead</span>
+            <% end %>
+          </td>
+
+          <td class="col text-right">
+            <span class="pill <%= pt.status %>">
+              <%= pt.status.to_s.humanize %>
+            </span>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+<% else %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <p>🤔 <strong>Hmmm...</strong> This invoice doesn't have any Project Trackers.</p>
+      </div>
+    </div>
+  </div>
+<% end %>
+
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">🏓 Payouts</h2>
+  </div>
+  <% if invoice_tracker.invoice_pass.allows_payment_splits? && current_admin_user.is_admin? %>
+    <div id="titlebar_right">
+      <div class="action_items">
+        <%= link_to "All Payouts ↗", admin_invoice_tracker_contributor_payouts_path(invoice_tracker) %>
+      </div>
+    </div>
+  <% end %>
+</div>
+
+<% if invoice_tracker.contributor_payouts.any? %>
+  <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+    <thead>
+      <tr>
+        <th class="col"></th>
+        <th class="col">Payee</th>
+        <th class="col">Status</th>
+        <th class="col">Amount</th>
+        <th class="col">Reconciliation</th>
+        <th class="col">Integrity</th>
+        <th class="col text-right">Details</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% invoice_tracker.contributor_payouts.with_deleted.each_with_index do |cp, index| %>
+        <tr class="<%= index.even? ? "even" : "odd" %>">
+          <td class="col">
+            <span class="pill <%= cp.status %>">
+              <%= cp.status.humanize %>
+            </span>
+          </td>
+          <td class="col">
+            <% if cp.deleted_at.present? %>
+              <del><%= link_to cp.contributor.forecast_person.email, admin_contributor_path(cp.contributor) %></del>
+            <% else %>
+              <%= link_to cp.contributor.forecast_person.email, admin_contributor_path(cp.contributor) %>
+            <% end %>
+          </td>
+          <td class="col">
+            <span class="pill <%= invoice_tracker.contributor_payouts_status.to_s.humanize %>" style="margin-right: 6px;">
+              Payout Acceptance
+              <span class="split">
+                <%= invoice_tracker.contributor_payouts_status.to_s.humanize %>
+              </span>
+            </span>
+
+            <% status = invoice_tracker.status == :paid ? :paid : invoice_tracker.allow_early_contributor_payouts_on.present? && invoice_tracker.allow_early_contributor_payouts_on <= Date.today ? :early_payouts_approved : invoice_tracker.status %>
+            <span class="pill <%= status %>" style="margin-right: 6px;">
+              Invoice
+              <span class="split">
+                <%= status.to_s.humanize %>
+              </span>
+            </span>
+          </td>
+          <td class="col">
+            <% if cp.deleted_at.present? %>
+              <del>+ <%= number_to_currency(cp.amount) %></del>
+            <% else %>
+              + <%= number_to_currency(cp.amount) %>
+            <% end %>
+
+            <span class="pill <%= cp.accepted? ? "accepted" : "pending" %>" style="margin-right: 6px;">
+              <%= cp.accepted? ? "Accepted" : "Pending" %>
+              <% if current_admin_user.forecast_person == cp.contributor.forecast_person || current_admin_user.is_admin? %>
+              <span class="split">
+                  <%= link_to cp.accepted? ? "Unaccept ↗" : "Accept ↗", toggle_contributor_payout_acceptance_admin_invoice_pass_invoice_tracker_path(cp.invoice_tracker.invoice_pass, cp.invoice_tracker, {contributor_payout_id: cp.id}), method: :post, style: "font-size: unset;" %>
+                </span>
+              <% end %>
+            </span>
+
+          </td>
+          <td class="col">
+            <span class="pill <%= cp.in_sync? ? "in_sync" : "out_of_sync" %>" title="Sum of blueprint entry amounts <%= cp.in_sync? ? "equals" : "does not equal" %> the payout's total amount">
+              <%= cp.in_sync? ? "Reconciled" : "Unreconciled" %>
+            </span>
+          </td>
+          <td class="col">
+            <% integrity_errors = cp.blueprint_integrity_errors %>
+            <% if integrity_errors.any? %>
+              <span class="pill error" title="<%= integrity_errors.join(" | ") %>">
+                ⚠️ <%= integrity_errors.length %> <%= "error".pluralize(integrity_errors.length) %>
+              </span>
+            <% else %>
+              <span class="pill in_sync">✓ Clean</span>
+            <% end %>
+          </td>
+          <td class="col text-right">
+            <%= link_to "Breakdown ↗", admin_invoice_tracker_contributor_payout_path(invoice_tracker, cp) %>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+<% else %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <p> <%= invoice_tracker.invoice_pass.allows_payment_splits? ? "This invoice doesn't have any payouts yets." : "This invoice pass was prior to the New Deal, and thus does not support payment splits." %></p>
+      </div>
+    </div>
+  </div>
+<% end %>
+
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">💸 Profit Sharing</h2>
+  </div>
+</div>
+
+<% surplus_chunks = invoice_tracker.surplus_chunks.select{|c| c[:surplus] > 0 } %>
+<% surplus = invoice_tracker.surplus(surplus_chunks) %>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-body factoid-parent">
+      <div class="factoid">
+        <p style="margin-bottom: 6px;">💁 <strong>Note!</strong> When we work with Individual Contributors cheaper than <code>57%</code> of our client's billable rate, the surplus revenue is split between the Account Lead, Project Lead, and our company-wide quarterly profit share program.</p>
+        <a href="https://github.com/sanctuarycomputer/stacks" target="_blank">
+          Read more here ↗
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-module">
+    <div class="module-body factoid-parent">
+      <div class="factoid">
+        <p style="margin-bottom: 6px;">This invoice generated a surpus of:</p>
+        <h2>
+          <%= number_to_currency surplus %>
+        </h2>
+      </div>
+    </div>
+  </div>
+</div>
+
+<% if surplus > 0 %>
+  <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+    <thead>
+      <tr>
+        <th class="col">Invoice Item</th>
+        <th class="col">Payee</th>
+        <th class="col">Maximum Payout (57%)</th>
+        <th class="col">Actual Payout</th>
+        <th class="col text-right">Surplus</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% surplus_chunks.each_with_index do |c, index| %>
+        <tr class="<%= index.even? ? "even" : "odd" %>">
+          <td class="col">
+            <%= c.dig(:qbo_line_item, "description") %>
+          </td>
+          <td class="col">
+            <%= link_to c.dig(:contributor)&.forecast_person&.email, admin_contributor_path(c.dig(:contributor)) %>
+          </td>
+          <td class="col">
+            <%= number_to_currency c[:maximum] %>
+          </td>
+          <td class="col">
+            <%= number_to_currency c[:actual] %>
+          </td>
+          <td class="col text-right">
+            <%= number_to_currency c[:surplus] %>
+          </td>
+        </tr>
+      <% end %>
+      <tr>
+        <td class="col">
+          <strong>TOTAL</strong>
+        </td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td class="col text-right">
+          <%= number_to_currency surplus %>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+<% end %>

@@ -1,0 +1,72 @@
+@import "colors";
+
+.absolute {
+  position: absolute;
+}
+
+.underline {
+  text-decoration: underline !important;
+}
+
+.block {
+  display: block;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.flex {
+  display: flex;
+}
+
+.text-left {
+  text-align: left;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.text-right {
+  text-align: right;
+}
+
+.border-right {
+  border-right: 1px solid $color-light-grey;
+}
+
+.mb0 {
+  margin-bottom: 0;
+}
+
+.m0 {
+  margin-bottom: 0;
+  margin-top: 0;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.rounded-full {
+  border-radius: 999px;
+}
+
+.mb2 {
+  margin-bottom: 20px;
+}
+
+.p1 {
+  padding: 10px;
+}
+
+.p2 {
+  padding: 20px;
+}
+
+.pb2 {
+  padding-bottom: 20px;
+}
+
+.justify-center {
+  justify-content: center;
+}

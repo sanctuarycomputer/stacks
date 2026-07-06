@@ -1,0 +1,73 @@
+require 'test_helper'
+require 'ostruct'
+
+class Stacks::Etl::Meet::CalendarEnricherTest < ActiveSupport::TestCase
+  def event(summary:, conf_id: nil, attendees: [], organizer: nil)
+    OpenStruct.new(
+      summary: summary,
+      conference_data: conf_id ? OpenStruct.new(conference_id: conf_id) : nil,
+      attendees: attendees.map { |email, name| OpenStruct.new(email: email, display_name: name) },
+      organizer: organizer ? OpenStruct.new(email: organizer) : nil
+    )
+  end
+
+  def enricher_returning(events)
+    enr = Stacks::Etl::Meet::CalendarEnricher.new('hugh@sanctuary.computer')
+    svc = mock('cal')
+    svc.stubs(:list_events).returns(OpenStruct.new(items: events))
+    enr.stubs(:service).returns(svc) # private; avoids a real Calendar call
+    enr
+  end
+
+  test 'matches by meeting code and returns title + attendee emails + organizer' do
+    enr = enricher_returning([event(summary: 'Standup', conf_id: 'abc-defg-hjk', attendees: [['a@x.co', 'A']], organizer: 'Boss@X.co')])
+    r = enr.enrich(started_at: Time.utc(2026, 1, 1, 9), meeting_code: 'abc-defg-hjk', fallback_title: 'abc-defg-hjk')
+    assert_equal 'Standup', r[:title]
+    assert_equal ['a@x.co'], r[:attendees].map { |x| x[:email] }
+    assert_equal 'boss@x.co', r[:organizer_email] # downcased
+  end
+
+  test 'a code with no matching event returns the fallback, no attendees, no organizer' do
+    enr = enricher_returning([event(summary: 'Other', conf_id: 'zzz')])
+    r = enr.enrich(started_at: Time.utc(2026, 1, 1, 9), meeting_code: 'abc-defg-hjk', fallback_title: 'abc-defg-hjk')
+    assert_equal 'abc-defg-hjk', r[:title]
+    assert_empty r[:attendees]
+    assert_nil r[:organizer_email]
+  end
+
+  test 'matches by exact title hint when there is no code (Drive path)' do
+    enr = enricher_returning([event(summary: 'Weekly Sync', conf_id: 'x', attendees: [['b@x.co', nil]])])
+    r = enr.enrich(started_at: Time.utc(2026, 1, 1, 9), meeting_code: nil, fallback_title: 'Weekly Sync', title_hint: 'weekly sync')
+    assert_equal 'Weekly Sync', r[:title]
+    assert_equal ['b@x.co'], r[:attendees].map { |x| x[:email] }
+  end
+
+  test 'does not match by time alone (avoids mis-assigning a nearby event)' do
+    enr = enricher_returning([event(summary: 'Unrelated', conf_id: 'other', attendees: [['z@x.co', nil]])])
+    r = enr.enrich(started_at: Time.utc(2026, 1, 1, 9), meeting_code: 'abc-defg-hjk', fallback_title: 'abc-defg-hjk')
+    assert_equal 'abc-defg-hjk', r[:title]
+    assert_empty r[:attendees]
+  end
+
+  test 'ambiguous same-title events (Drive path) attach NO attendees rather than the wrong ones' do
+    a = event(summary: 'Weekly Sync', conf_id: 'a', attendees: [['a@x.co', nil]])
+    b = event(summary: 'Weekly Sync', conf_id: 'b', attendees: [['b@x.co', nil]])
+    enr = enricher_returning([a, b])
+    r = enr.enrich(started_at: Time.utc(2026, 1, 1, 9), meeting_code: nil, fallback_title: 'Weekly Sync', title_hint: 'weekly sync')
+    assert_equal 'Weekly Sync', r[:title] # falls back to the doc-name title
+    assert_empty r[:attendees]
+  end
+
+  test 'matches despite emoji/punctuation drift between doc name and calendar summary' do
+    enr = enricher_returning([event(summary: 'Business Meeting', conf_id: 'x', attendees: [['b@x.co', nil]])])
+    r = enr.enrich(started_at: Time.utc(2026, 1, 1, 9), meeting_code: nil,
+                   fallback_title: '🤝 Business Meeting 🤝', title_hint: '🤝 Business Meeting 🤝')
+    assert_equal ['b@x.co'], r[:attendees].map { |x| x[:email] }
+  end
+
+  test 'skips room-resource attendees' do
+    enr = enricher_returning([event(summary: 'S', conf_id: 'abc', attendees: [['room@resource.calendar.google.com', nil], ['c@x.co', nil]])])
+    r = enr.enrich(started_at: Time.utc(2026, 1, 1, 9), meeting_code: 'abc', fallback_title: 'S')
+    assert_equal ['c@x.co'], r[:attendees].map { |x| x[:email] }
+  end
+end

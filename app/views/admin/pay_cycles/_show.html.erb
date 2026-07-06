@@ -1,0 +1,135 @@
+<%# Pay cycle show — mirrors the periodic_report → profit_shares treatment.
+    Top banner names the enterprise admin(s) who can approve and surfaces what
+    state the cycle is in. Pay stubs render as an .index_table row per stub,
+    with the same accept/unaccept inline-toggle pill pattern used elsewhere. %>
+
+<h2><%= resource.enterprise.name %> — <%= resource.starts_at %> to <%= resource.ends_at %></h2>
+
+<% admins = resource.enterprise.admin_users.to_a %>
+<% pending_count = resource.pay_stubs.where(accepted_at: nil).count %>
+<% total_count = resource.pay_stubs.count %>
+<% changes_in_forecast = resource.changes_in_forecast %>
+
+<% if changes_in_forecast.any? %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-header">
+        <p>⚠️ This pay cycle is out of sync with Forecast</p>
+      </div>
+      <div class="module-body">
+        <p>Someone has changed their hours in Forecast <strong>after</strong> the stubs were generated. If no stub in this cycle has been paid yet, press <code>Regenerate from Forecast</code> at the top to rebuild stubs from the current Forecast state. Already-accepted stubs whose amount doesn't change keep their acceptance.</p>
+        <hr />
+
+        <% changes_in_forecast.each do |change| %>
+          <% case change[0] %>
+          <% when "~" %>
+            <p><code><%= change[1] %></code>'s total would change from <code><%= number_to_currency(change[2]) %></code> to <code><%= number_to_currency(change[3]) %></code></p>
+          <% when "-" %>
+            <p><code><%= change[1] %></code> — <%= change[2] %></p>
+          <% when "+" %>
+            <p><code><%= change[1] %></code> — <%= change[2] %></p>
+          <% end %>
+        <% end %>
+      </div>
+    </div>
+  </div>
+<% end %>
+
+<div class="dashboard-modules table index_table index" style="margin-top: 12px;">
+  <div class="dashboard-module">
+    <div class="module-body factoid-parent" style="padding: 16px;">
+      <% if resource.approved? %>
+        <p>
+          <span class="pill accepted">Approved</span>
+          on <strong><%= resource.approved_at.to_date %></strong>
+          by <strong><%= resource.approved_by&.email %></strong>.
+          All <%= total_count %> stub<%= "s" if total_count != 1 %> are payable.
+        </p>
+      <% elsif resource.stubs_status == :all_accepted %>
+        <p>
+          <span class="pill pending">Awaiting cycle approval</span>
+          All <strong><%= total_count %></strong> stub<%= "s" if total_count != 1 %> have been accepted by the team.
+          <% if admins.any? %>
+            Approval needed from
+            <strong>
+              <%= safe_join(admins.map { |a| link_to(a.email, admin_admin_user_path(a)) }, " or ".html_safe) %>
+            </strong>
+            before the stubs become payable.
+          <% else %>
+            <strong>No enterprise admin is configured for <%= resource.enterprise.name %>.</strong>
+            Add one on the Enterprise admin form so this cycle can be approved.
+          <% end %>
+        </p>
+      <% else %>
+        <p>
+          <span class="pill pending">Awaiting team acceptance</span>
+          <strong><%= pending_count %></strong> of <strong><%= total_count %></strong>
+          stub<%= "s" if total_count != 1 %> still need to be accepted by their contributors.
+          <% if admins.any? %>
+            Once accepted,
+            <strong>
+              <%= safe_join(admins.map { |a| link_to(a.email, admin_admin_user_path(a)) }, " or ".html_safe) %>
+            </strong>
+            must approve the cycle on behalf of the team to release payment.
+          <% end %>
+        </p>
+      <% end %>
+    </div>
+  </div>
+</div>
+
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-top: 16px;">
+  <thead>
+    <tr>
+      <th class="col">Contributor</th>
+      <th class="col">Hours</th>
+      <th class="col">Amount</th>
+      <th class="col">Status</th>
+      <th class="col">Accepted by</th>
+      <th class="col text-right">Details</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% resource.pay_stubs.includes(ledger: { contributor: :forecast_person }, accepted_by: []).each_with_index do |stub, index| %>
+      <tr class="<%= index.even? ? "even" : "odd" %>">
+        <td class="col">
+          <%= link_to stub.contributor.forecast_person.email, admin_contributor_path(stub.contributor) %>
+        </td>
+        <td class="col">
+          <% stub_hours = (stub.blueprint["lines"] || []).sum { |l| l["hours"].to_f }.round(2) %>
+          <% if stub.deleted_at.present? %>
+            <del><%= stub_hours %></del>
+          <% else %>
+            <%= stub_hours %>
+          <% end %>
+        </td>
+        <td class="col">
+          <% if stub.deleted_at.present? %>
+            <del><%= number_to_currency(stub.amount) %></del>
+          <% else %>
+            <%= number_to_currency(stub.amount) %>
+          <% end %>
+        </td>
+        <td class="col">
+          <span class="pill <%= stub.accepted? ? "accepted" : "pending" %>">
+            <%= stub.accepted? ? "Accepted" : "Pending" %>
+            <% if current_admin_user.forecast_person == stub.contributor.forecast_person || current_admin_user.is_admin? %>
+              <span class="split">
+                <%= link_to stub.accepted? ? "Unaccept ↗" : "Accept ↗",
+                  toggle_acceptance_admin_pay_cycle_pay_stub_path(resource, stub),
+                  method: :post,
+                  style: "font-size: unset;" %>
+              </span>
+            <% end %>
+          </span>
+        </td>
+        <td class="col">
+          <%= stub.accepted_by&.email || "—" %>
+        </td>
+        <td class="col text-right">
+          <%= link_to "View stub ↗", admin_pay_cycle_pay_stub_path(resource, stub) %>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>

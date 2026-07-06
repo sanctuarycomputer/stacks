@@ -1,0 +1,111 @@
+<%
+  lines = (resource.blueprint["lines"] || [])
+
+  fp_ids = lines.map { |l| l["forecast_project"] }.compact.uniq
+  forecast_projects_by_id = ForecastProject.where(forecast_id: fp_ids).index_by(&:forecast_id)
+  trackers_by_fp_id =
+    if fp_ids.any?
+      ProjectTrackerForecastProject
+        .where(forecast_project_id: fp_ids)
+        .includes(:project_tracker)
+        .each_with_object({}) { |ptfp, h| h[ptfp.forecast_project_id] = ptfp.project_tracker }
+    else
+      {}
+    end
+
+  qbo_bill = resource.qbo_bill
+%>
+
+<p class="pill nag <%= resource.accepted? ? "accepted" : "pending" %>" style="margin-right: 6px">
+  <%= resource.accepted? ? "Accepted" : "Pending" %>
+</p>
+
+<p class="pill nag <%= resource.pay_cycle.approved? ? "accepted" : "pending" %>" style="margin-right: 6px">
+  <%= resource.pay_cycle.approved? ? "Cycle Approved" : "Cycle Pending" %>
+</p>
+
+<%= link_to "Pay Cycle", admin_enterprise_pay_cycle_path(resource.pay_cycle.enterprise, resource.pay_cycle), class: "nag", style: "margin-right: 6px;" %>
+
+<%= link_to resource.contributor.forecast_person.email, admin_contributor_path(resource.contributor), class: "nag", style: "margin-right: 6px;" %>
+
+<% if qbo_bill.present? %>
+  <a href="https://qbo.intuit.com/app/bill?&txnId=<%= qbo_bill.qbo_id %>" target="_blank">
+    <p class="nag" style="margin-bottom: 0px;margin-right: 6px;">
+      QBO Bill ↗
+    </p>
+  </a>
+  <% if qbo_bill.qbo_vendor.present? %>
+    <a href="https://qbo.intuit.com/app/vendordetail?nameId=<%= qbo_bill.qbo_vendor.qbo_id %>" target="_blank">
+      <p class="nag" style="margin-bottom: 0px;margin-right: 6px;">
+        QBO Vendor ↗
+      </p>
+    </a>
+  <% end %>
+<% end %>
+
+<div class="dashboard-modules table index_table index" style="margin-top:20px;">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Recorded Hours</p>
+    </div>
+    <div class="module-body">
+      <%
+        grouped = lines.group_by { |l| l["forecast_project"] }.map do |fp_id, group|
+          { "forecast_project" => fp_id,
+            "hours" => group.sum { |l| l["hours"].to_f }.round(2),
+            "rate" => group.first["rate"],
+            "amount" => group.sum { |l| l["amount"].to_f }.round(2) }
+        end
+      %>
+      <% if grouped.any? %>
+        <table class="index_table index" style="width: 100%;">
+          <thead>
+            <tr>
+              <th>Forecast Project</th>
+              <th>Project Tracker</th>
+              <th>Hours</th>
+              <th>Rate</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% grouped.each_with_index do |line, index| %>
+              <% fp_id = line["forecast_project"] %>
+              <% fp = forecast_projects_by_id[fp_id] %>
+              <% pt = trackers_by_fp_id[fp_id] %>
+              <tr class="<%= index.even? ? "even" : "odd" %>">
+                <td>
+                  <% if fp.present? %>
+                    <%= link_to "#{fp.display_name} ↗", fp.link, target: "_blank", rel: "noopener" %>
+                  <% else %>
+                    <span class="pill error">Unknown #<%= fp_id %></span>
+                  <% end %>
+                </td>
+                <td>
+                  <% if pt.present? %>
+                    <%= link_to pt.name, admin_project_tracker_path(pt) %>
+                  <% else %>
+                    <span style="color:#999;">—</span>
+                  <% end %>
+                </td>
+                <td><%= line["hours"] %></td>
+                <td><%= number_to_currency(line["rate"]) %></td>
+                <td><%= number_to_currency(line["amount"]) %></td>
+              </tr>
+            <% end %>
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="2"></td>
+              <td><strong><%= grouped.sum { |l| l["hours"] } %></strong></td>
+              <td></td>
+              <td><strong><%= number_to_currency(resource.amount) %></strong></td>
+            </tr>
+          </tfoot>
+        </table>
+      <% else %>
+        <p style="padding: 12px;"><em>No recorded hours on this stub.</em></p>
+      <% end %>
+    </div>
+  </div>
+</div>
