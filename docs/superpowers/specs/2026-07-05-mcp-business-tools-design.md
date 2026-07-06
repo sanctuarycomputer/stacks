@@ -41,6 +41,9 @@ established pattern (finance pair → admin tasks → business pair).
     predicate — this one comparison lives in the tool)
   Each row carries `at_risk: true/false` and `risk_reasons: [...]` naming the tripped criteria.
   Alternatives Hugh can pick: fixed global thresholds as params, or no server-side judgment.
+- **Base scope:** all `ProjectTracker`s whose `work_status` is `:in_progress` or
+  `:likely_complete`; `include_complete: true` widens to every tracker. Historical completed
+  work stays out of the pre-read by default.
 - **Row fields:** `name`, `work_status`, `spend`, `budget_low_end`, `budget_high_end`,
   `profit_margin` (rounded 1dp), `target_profit_margin`, `free_hours_percent` (ratio × 100,
   rounded 1dp), `target_free_hours_percent`, `likely_complete`, `considered_successful`,
@@ -60,12 +63,20 @@ established pattern (finance pair → admin tasks → business pair).
   - `studio` (optional string; matched against Studio name or mini_name, case-insensitive,
     Ruby-side like the enterprise/owner resolvers; unknown → error listing valid studios).
 - **Reads:** `Stacks::Notion::Lead.all` once (the synced Notion mirror — never live Notion),
-  partitioned per studio via each lead's `#studios`; period logic via
-  `Studio#leads_recieved_in_period` / `#sent_proposals_settled_in_period` semantics (received /
-  settled date within period).
+  partitioned per studio. **N+1 hazard:** `Lead#studios` calls `Studio.all_studios` internally
+  per lead — the tool must hoist: load studios once and resolve each lead's studio names
+  against that in-memory list (extend `Lead#studios` with an optional preloaded-studios
+  argument, mirroring the existing `account_lead_admin_users_cache` pattern in that class,
+  rather than re-implementing the matching in the tool). Period semantics follow
+  `Studio#leads_recieved_in_period` / `#sent_proposals_settled_in_period` (received / settled
+  date within period).
+- **Params (additional):** `aging_min_days` (optional integer, default 30, clamped ≥ 1).
 - **Payload:** per studio: `leads_received` (count + rows), `proposals_settled` (count + rows),
-  `won` (count), plus a cross-period `aging_unsettled` list (leads received before the period
-  that remain unsettled — the "aging Leads" half of the pre-read), sorted oldest first.
+  `won` (count of leads with `won_at` within the period), plus `aging_unsettled` — unsettled
+  leads (`settled_at` absent) with `age_days >= aging_min_days`, **excluding leads whose
+  `reactivate_at` is in the future** (deliberately parked, not aging — the roadmap treats
+  Reactivate Date as scheduled re-engagement), sorted oldest first. Independent of the period
+  params: aging is a now-state, not a period bucket.
 - **Lead row fields:** `title` (Notion page title), `studios`, `received_at`, `age_days`,
   `proposal_sent_at`, `settled_at`, `won_at`, `reactivate_at`, `account_leads` (emails),
   `notion_url`. Lead titles/emails are operational business data — in-bounds per the
