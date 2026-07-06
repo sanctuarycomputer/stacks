@@ -26,26 +26,28 @@ module Mcp
       # ForecastPerson overrides its primary_key to forecast_id (the column
       # ForecastPersonUtilizationReport#forecast_person_id actually stores),
       # while the table also has an unrelated surrogate "id" column. #ids
-      # (unlike a literal pluck(:id)) respects that primary_key override, so
-      # it plucks the same values `.map(&:id)` would.
-      active_ids = ForecastPerson.active.ids
+      # (unlike a literal pluck(:id)) respects that primary_key override, and
+      # #archived? drives active/archived membership.
       studio_label = 'all'
-      if studio.present?
-        all_studios = Studio.all.to_a
-        key = studio.to_s.strip
-        match = all_studios.find { |s| s.name.to_s.casecmp?(key) } ||
-                all_studios.find { |s| s.mini_name.to_s.split(',').map(&:strip).any? { |m| m.casecmp?(key) } }
-        unless match
-          valid = all_studios.map { |s| "#{s.name} (#{s.mini_name})" }.sort.join(', ')
-          return Responses.error("Unknown studio '#{studio}'. Valid studios: #{valid}")
+      active_ids =
+        if studio.present?
+          all_studios = Studio.all.to_a
+          key = studio.to_s.strip
+          match = all_studios.find { |s| s.name.to_s.casecmp?(key) } ||
+                  all_studios.find { |s| s.mini_name.to_s.split(',').map(&:strip).any? { |m| m.casecmp?(key) } }
+          unless match
+            valid = all_studios.map { |s| "#{s.name} (#{s.mini_name})" }.sort.join(', ')
+            return Responses.error("Unknown studio '#{studio}'. Valid studios: #{valid}")
+          end
+          studio_label = match.name
+          # forecast_people already loads the studio's people (active AND
+          # archived); reject archived here rather than also running the
+          # separate ForecastPerson.active.ids query. (It's a plain Ruby Array,
+          # so map(&:id) — pluck isn't available.)
+          match.forecast_people(all_studios).reject(&:archived).map(&:id)
+        else
+          ForecastPerson.active.ids
         end
-        studio_label = match.name
-        # match.forecast_people is a plain Ruby Array (built in Ruby, not an
-        # AR::Relation), so pluck isn't available/safe here — map(&:id) is
-        # the correct id extraction (see note above on the primary_key override).
-        studio_person_ids = match.forecast_people(all_studios).map(&:id).to_set
-        active_ids = active_ids.select { |id| studio_person_ids.include?(id) }
-      end
 
       reports = ForecastPersonUtilizationReport
         .where(forecast_person_id: active_ids, period_gradation: grad)

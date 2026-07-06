@@ -50,16 +50,13 @@ module Mcp
         return Responses.error("Enterprise '#{ent.name}' has no QBO account, so no P&L is available.")
       end
 
-      reports = QboProfitAndLossReport.where(qbo_account_id: account_ids)
-      if reports.none?
-        return Responses.error("Enterprise '#{ent.name}' has no synced P&L reports yet.")
-      end
       # v1 limitation: Enterprise has_one :qbo_account (one QBO realm is the
-      # domain intent). Scoping across account_ids above ensures we FIND the
-      # report even if it's under a non-primary account, but if an enterprise
-      # genuinely spans two realms with same-period reports, the single-report
-      # selection below reports one realm — cross-realm P&L aggregation is out
-      # of scope for v1 (would need summing two data blobs; deferred).
+      # domain intent). Scoping across account_ids ensures we FIND the report
+      # even if it's under a non-primary account, but if an enterprise genuinely
+      # spans two realms with same-period reports, the single-report selection
+      # below reports one realm — cross-realm P&L aggregation is out of scope
+      # for v1 (would need summing two data blobs; deferred).
+      reports = QboProfitAndLossReport.where(qbo_account_id: account_ids)
 
       if start_date.present? ^ end_date.present?
         return Responses.error('Provide both start_date and end_date to select a specific period, or neither for the most recent.')
@@ -78,8 +75,15 @@ module Mcp
           reports.order(:ends_at).last
         end
 
+      # One nil check covers both paths (no upfront reports.none? query): an
+      # empty available-ranges list means no reports at all; a non-empty one
+      # means the requested range missed.
       if report.nil?
-        available = reports.order(:ends_at).pluck(:starts_at, :ends_at).map { |s, e| "#{s} to #{e}" }.join(', ')
+        ranges = reports.order(:ends_at).pluck(:starts_at, :ends_at)
+        if ranges.empty?
+          return Responses.error("Enterprise '#{ent.name}' has no synced P&L reports yet.")
+        end
+        available = ranges.map { |s, e| "#{s} to #{e}" }.join(', ')
         return Responses.error("No P&L report synced for that range. Available: #{available}")
       end
 
