@@ -42,8 +42,9 @@ pipeline/OKR aggregates from Stacks, and lead rows from Notion.
   never re-derive the comparisons in the tool:
   - `margin_below_target`: `!target_profit_margin_satisfied?`
   - `free_hours_above_target`: `!target_free_hours_ratio_satisfied?`
-  - `over_budget`: `budget_high_end` present and `spend > budget_high_end` (no existing
-    predicate — this one comparison lives in the tool)
+  - `over_budget`: `ProjectTracker#status == :over_budget` (review round 1 found the model
+    predicate the earlier draft claimed didn't exist — the admin UI's budget pill uses it,
+    so the tool now shares it)
   Each row carries `at_risk: true/false` and `risk_reasons: [...]` naming the tripped criteria.
   Alternatives Hugh can pick: fixed global thresholds as params, or no server-side judgment.
 - **Base scope:** all `ProjectTracker`s whose `work_status` is `:in_progress` or
