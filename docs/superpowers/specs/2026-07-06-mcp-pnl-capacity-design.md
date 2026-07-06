@@ -122,5 +122,13 @@ The Financial Reports auto-writer + capacity-watch automations (Stacksbot config
 placeholder assignments** for get_capacity (`forecast_assignments.placeholder_id` exists, but
 resolving a placeholder → role/studio needs Forecast placeholder metadata that isn't cleanly
 persisted — deliberate follow-up, not shipped in v1); the G1–G4 privacy hardening (recommended
-next, but wants Hugh's approach-level review); fixing `data_for_enterprise`'s discarded-margin
-bug in the model (drive-by-noted, separate PR); any write path.
+next, but wants Hugh's approach-level review); any write path.
+
+**Deferred model-fix follow-up PR** (three related `QboProfitAndLossReport` defects the tool
+inherits and works around, all fixed together at the model so the admin dashboard and the tool
+stay consistent): (1) `data_for_enterprise` computes `profit_margin` but discards it (returns
+0) — get_pnl recomputes in-tool; (2) per-vertical bucketing ignores below-the-line rows — get_pnl
+cut the vertical param; (3) `find_rows` matches labels by String `include?` (substring) rather
+than equality, so a row whose label is a substring of a target total (e.g. `Income` ⊂ `Total
+Income`) with a nonzero value would inflate revenue — get_pnl reuses it as-is for single-source
+consistency with the dashboard (fixing only the tool would make the two disagree).
