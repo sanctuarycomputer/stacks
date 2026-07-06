@@ -19,6 +19,8 @@ module Mcp
       Mcp::GetArAgingTool,
       Mcp::ListOverdueInvoicesTool,
       Mcp::ListOpenAdminTasksTool,
+      Mcp::ListProjectsAtRiskTool,
+      Mcp::GetStudioHealthTool,
     ].freeze
 
     def self.build

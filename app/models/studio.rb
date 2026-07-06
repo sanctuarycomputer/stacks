@@ -20,6 +20,11 @@ class Studio < ApplicationRecord
     collective: 3,
   }
 
+  # Canonical gradation list for Studio#snapshot — generate_snapshot! writes
+  # one array of period entries per gradation; readers (MCP get_studio_health)
+  # validate against this same list so the two can't drift.
+  SNAPSHOT_GRADATIONS = %i[year month quarter trailing_3_months trailing_4_months trailing_6_months trailing_12_months].freeze
+
   def ytd_snapshot
     (snapshot["year"].find{|p| p["label"] == "YTD"} || {})
   end
@@ -149,7 +154,7 @@ class Studio < ApplicationRecord
     g3d = preloaded_studios.find(&:is_garden3d?)
 
     snapshot =
-      [:year, :month, :quarter, :trailing_3_months, :trailing_4_months, :trailing_6_months, :trailing_12_months].reduce({
+      SNAPSHOT_GRADATIONS.reduce({
         started_at: DateTime.now.iso8601,
       }) do |acc, gradation|
         periods = Stacks::Period.for_gradation(gradation)

@@ -10,17 +10,13 @@ class Mcp::AdminTasksToolTest < ActiveSupport::TestCase
     StacksTask.new(type: type, subject: admin, owners: [admin])
   end
 
-  def payload_for(resp)
-    JSON.parse(resp.content.first[:text])
-  end
-
   test 'returns mapped, sorted tasks with owner emails' do
     enterprise_task = StacksTask.new(type: :needs_archiving, subject: enterprises(:sanctuary),
                                      owners: [@admin])
     Stacks::TaskBuilder.any_instance.stubs(:tasks).returns(
       [enterprise_task, task_for(@other, type: :no_full_time_periods_set), task_for(@admin)]
     )
-    payload = payload_for(Mcp::ListOpenAdminTasksTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::ListOpenAdminTasksTool.call(server_context: {}))
     assert_equal 3, payload['count']
     row = payload['tasks'].find { |t| t['type'] == 'missing_skill_tree' }
     assert_equal 'Admin user needs skill tree set', row['task']
@@ -38,13 +34,13 @@ class Mcp::AdminTasksToolTest < ActiveSupport::TestCase
   test 'subjects without an explicit display branch get a conservative redacted name' do
     task = StacksTask.new(type: :needs_archiving, subject: enterprises(:sanctuary), owners: [@admin])
     Stacks::TaskBuilder.any_instance.stubs(:tasks).returns([task])
-    payload = payload_for(Mcp::ListOpenAdminTasksTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::ListOpenAdminTasksTool.call(server_context: {}))
     assert_equal "Enterprise ##{enterprises(:sanctuary).id}", payload['tasks'].first['subject']
   end
 
   test 'owner param filters via tasks_for with case-insensitive email' do
     Stacks::TaskBuilder.any_instance.expects(:tasks_for).with(@admin).returns([task_for(@admin)])
-    payload = payload_for(Mcp::ListOpenAdminTasksTool.call(owner: @admin.email.upcase, server_context: {}))
+    payload = mcp_payload(Mcp::ListOpenAdminTasksTool.call(owner: @admin.email.upcase, server_context: {}))
     assert_equal 1, payload['count']
   end
 
@@ -54,7 +50,7 @@ class Mcp::AdminTasksToolTest < ActiveSupport::TestCase
     # owners the unfiltered call would emit (not raw cached ids, not an
     # attribute-based admin roster).
     Stacks::TaskBuilder.any_instance.stubs(:tasks).returns([task_for(@admin)])
-    payload = payload_for(Mcp::ListOpenAdminTasksTool.call(owner: 'nobody@nowhere.dev', server_context: {}))
+    payload = mcp_payload(Mcp::ListOpenAdminTasksTool.call(owner: 'nobody@nowhere.dev', server_context: {}))
     assert_includes payload['error'], "Unknown owner 'nobody@nowhere.dev'"
     assert_includes payload['error'], @admin.email
     refute_includes payload['error'], @other.email
@@ -62,7 +58,7 @@ class Mcp::AdminTasksToolTest < ActiveSupport::TestCase
 
   test 'unknown owner with an empty queue says so instead of dangling an empty roster' do
     Stacks::TaskBuilder.any_instance.stubs(:tasks).returns([])
-    payload = payload_for(Mcp::ListOpenAdminTasksTool.call(owner: 'nobody@nowhere.dev', server_context: {}))
+    payload = mcp_payload(Mcp::ListOpenAdminTasksTool.call(owner: 'nobody@nowhere.dev', server_context: {}))
     assert_includes payload['error'], "Unknown owner 'nobody@nowhere.dev'"
     assert_includes payload['error'], 'task queue is currently empty'
     refute_includes payload['error'], 'Current task owners:'
@@ -75,13 +71,13 @@ class Mcp::AdminTasksToolTest < ActiveSupport::TestCase
     archived = build_admin!(email_prefix: 'archived', roles: [], ended_at: Date.today - 30)
 
     Stacks::TaskBuilder.any_instance.expects(:tasks_for).with(archived).returns([task_for(archived)])
-    payload = payload_for(Mcp::ListOpenAdminTasksTool.call(owner: archived.email, server_context: {}))
+    payload = mcp_payload(Mcp::ListOpenAdminTasksTool.call(owner: archived.email, server_context: {}))
     assert_equal 1, payload['count']
   end
 
   test 'a real admin who owns no tasks resolves to an empty payload, not an error' do
     Stacks::TaskBuilder.any_instance.expects(:tasks_for).with(@other).returns([])
-    payload = payload_for(Mcp::ListOpenAdminTasksTool.call(owner: @other.email, server_context: {}))
+    payload = mcp_payload(Mcp::ListOpenAdminTasksTool.call(owner: @other.email, server_context: {}))
     assert_equal 0, payload['count']
     assert_equal [], payload['tasks']
     assert_not payload.key?('error')
@@ -91,14 +87,14 @@ class Mcp::AdminTasksToolTest < ActiveSupport::TestCase
     Stacks::TaskBuilder.any_instance.stubs(:tasks).returns([task_for(@admin)])
     StacksTask.any_instance.stubs(:subject_url).raises(RuntimeError, 'boom')
     Rails.logger.expects(:warn).with { |msg| msg.include?('skipping task') }
-    payload = payload_for(Mcp::ListOpenAdminTasksTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::ListOpenAdminTasksTool.call(server_context: {}))
     assert_equal 0, payload['count']
     assert_equal [], payload['tasks']
   end
 
   test 'empty queue returns a valid empty payload' do
     Stacks::TaskBuilder.any_instance.stubs(:tasks).returns([])
-    payload = payload_for(Mcp::ListOpenAdminTasksTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::ListOpenAdminTasksTool.call(server_context: {}))
     assert_equal 0, payload['count']
     assert_equal [], payload['tasks']
   end
