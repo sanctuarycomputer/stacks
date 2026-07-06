@@ -16,6 +16,11 @@ ActiveRecord::Schema.define(version: 2026_07_05_000001) do
   enable_extension "btree_gist"
   enable_extension "pg_stat_statements"
   enable_extension "plpgsql"
+  # The "vector" (pgvector) extension and the embeddings.embedding vector column + HNSW
+  # index are intentionally omitted here so db:schema:load works on a Postgres without
+  # pgvector (e.g. Heroku CI's in-dyno Postgres). They are created by migrations in
+  # development/production, and re-established idempotently for tests/seeds in
+  # test/test_helper.rb and db/seeds.rb. Keep them out of this dumped schema.
 
   create_table "account_lead_periods", force: :cascade do |t|
     t.bigint "project_tracker_id", null: false
@@ -107,8 +112,10 @@ ActiveRecord::Schema.define(version: 2026_07_05_000001) do
     t.datetime "occurred_at"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
-    t.tsvector "content_tsv"
-    t.index ["content_tsv"], name: "index_chunks_on_content_tsv", using: :gin
+    # content_tsv (tsvector GENERATED ALWAYS AS) and its GIN index are intentionally
+    # omitted here: Rails 6.1 dumps generated columns as DEFAULT expressions, which
+    # PostgreSQL rejects on schema:load. They are added idempotently in test_helper.rb
+    # and exist in the development/production DBs via the CreateChunks migration.
     t.index ["document_id", "position"], name: "index_chunks_on_document_id_and_position", unique: true
     t.index ["document_id"], name: "index_chunks_on_document_id"
     t.index ["speaker_contact_id"], name: "index_chunks_on_speaker_contact_id"
@@ -281,6 +288,8 @@ ActiveRecord::Schema.define(version: 2026_07_05_000001) do
     t.string "owner_type", null: false
     t.bigint "owner_id", null: false
     t.string "model", null: false
+    # embedding vector(1024) + its HNSW index are added outside this schema (see the
+    # pgvector note at the top of the file) so schema:load works without pgvector.
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.index ["owner_type", "owner_id", "model"], name: "index_embeddings_on_owner_and_model", unique: true
@@ -1347,6 +1356,7 @@ ActiveRecord::Schema.define(version: 2026_07_05_000001) do
   add_foreign_key "account_lead_periods", "project_trackers"
   add_foreign_key "adhoc_invoice_trackers", "project_trackers"
   add_foreign_key "adhoc_invoice_trackers", "qbo_accounts"
+  # Composite FK fk_adhoc_invoice_trackers_qbo_invoice managed by migration (not expressible in schema.rb)
   add_foreign_key "admin_user_salary_windows", "admin_users"
   add_foreign_key "associates_award_agreements", "admin_users"
   add_foreign_key "chunks", "contacts", column: "speaker_contact_id"
@@ -1355,6 +1365,7 @@ ActiveRecord::Schema.define(version: 2026_07_05_000001) do
   add_foreign_key "commissions", "project_trackers"
   add_foreign_key "contributor_adjustments", "ledgers"
   add_foreign_key "contributor_adjustments", "qbo_accounts"
+  # Composite FK fk_contributor_adjustments_qbo_invoice managed by migration (not expressible in schema.rb)
   add_foreign_key "contributor_payouts", "admin_users", column: "created_by_id"
   add_foreign_key "contributor_payouts", "invoice_trackers"
   add_foreign_key "contributor_payouts", "ledgers"
@@ -1375,6 +1386,7 @@ ActiveRecord::Schema.define(version: 2026_07_05_000001) do
   add_foreign_key "invoice_trackers", "admin_users"
   add_foreign_key "invoice_trackers", "invoice_passes"
   add_foreign_key "invoice_trackers", "qbo_accounts"
+  # Composite FK fk_invoice_trackers_qbo_invoice managed by migration (not expressible in schema.rb)
   add_foreign_key "ledgers", "contributors"
   add_foreign_key "ledgers", "enterprises"
   add_foreign_key "mailing_list_subscribers", "mailing_lists"
