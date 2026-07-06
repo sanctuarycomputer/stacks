@@ -52,9 +52,16 @@ crash and NOT related to PR #122 (whose `Contact#dedupe!` fix lives only in
 A combined doc is a "Notes by Gemini" file whose exported markdown's transcript link points
 to its own id: `transcript_doc_id_from(markdown) == file.id`.
 
-When detected, split the markdown on the `# 📖 Transcript` heading:
-- **notes body** = everything before the heading (Summary / Decisions / Next steps / Details),
-- **transcript** = everything from the heading onward.
+When detected, split the markdown at the **transcript heading** — the first markdown heading
+(`#`/`##`) whose text contains "Transcript" (e.g. `# 📖 Transcript`, tolerant of the emoji so
+a future Google change doesn't break it; the inline "Meeting records [Transcript](…)" link is
+not a heading and is not matched):
+- **notes body** = everything before the transcript heading (Summary / Decisions / Next steps
+  / Details),
+- **transcript** = everything from the transcript heading onward.
+
+If detection says combined but **no transcript heading is found** (unexpected markup), do not
+split — fall back to notes-only rather than emitting a broken transcript.
 
 Parse the transcript with the shared speaker parser (`SPEAKER_LINE` / `parse_segments`).
 - If the transcript section yields **≥1 speaker segment**, it is a real transcript → emit it.
@@ -115,9 +122,12 @@ The 263 combined docs already ingested are single `gemini_notes` Documents on st
 
 1. **Wipe** the combined-format rows: delete `Document`s where `source: gemini_notes` AND the
    doc is combined-format (its stored `raw_metadata->>'transcript_doc_id'` equals its own
-   `external_id`), plus the standalone `Meeting`s (`meet_source: :gemini_notes`) they own that
-   no transcript Document references. This mirrors the self-heal cleanup used twice before and
-   avoids orphaned Meetings / the re-link gap.
+   `external_id`). Then delete `Meeting`s with `meet_source: :gemini_notes` that are **left
+   with no Documents** after that delete — this precisely targets the orphaned combined-format
+   meetings while **preserving legitimate notes-only meetings** (transcription genuinely off;
+   their notes doc has a `NULL` transcript_doc_id, so it is not deleted and its meeting keeps a
+   Document). Mirrors the self-heal cleanup used twice before, avoiding orphans / the re-link
+   gap.
 2. **Re-run** `backfill_meet_all[365]` (+ the nightly `sync_all` keeps recent current). The
    combined docs re-ingest split: a `meet` transcript Document (real-speaker classification) +
    a `gemini_notes` notes Document inheriting it, both on one Meeting.
