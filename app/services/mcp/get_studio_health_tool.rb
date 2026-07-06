@@ -80,6 +80,10 @@ module Mcp
         nil
       end
 
+      if studio.present? && studios_payload.empty?
+        return Responses.error("Studio '#{requested.first.name}' snapshot could not be read for gradation '#{gradation}' — it may be malformed. The failure was logged.")
+      end
+
       Responses.ok({ studios: studios_payload })
     end
   end

@@ -26,13 +26,9 @@ class Mcp::StudioHealthToolTest < ActiveSupport::TestCase
     )
   end
 
-  def payload_for(resp)
-    JSON.parse(resp.content.first[:text])
-  end
-
   test 'passes the chosen accounting subtree through verbatim, excluding per-person utilization' do
     studio!(name: 'Sanctuary Test', mini_name: 'sanc')
-    payload = payload_for(Mcp::GetStudioHealthTool.call(studio: 'sanc', server_context: {}))
+    payload = mcp_payload(Mcp::GetStudioHealthTool.call(studio: 'sanc', server_context: {}))
     s = payload['studios'].first
     assert_equal 'Sanctuary Test', s['studio']
     assert_equal 'month', s['gradation']
@@ -46,25 +42,25 @@ class Mcp::StudioHealthToolTest < ActiveSupport::TestCase
 
   test 'accrual accounting_method selects the accrual subtree' do
     studio!(name: 'Accrual Studio', mini_name: 'accr')
-    payload = payload_for(Mcp::GetStudioHealthTool.call(studio: 'accr', accounting_method: 'accrual', server_context: {}))
+    payload = mcp_payload(Mcp::GetStudioHealthTool.call(studio: 'accr', accounting_method: 'accrual', server_context: {}))
     assert_equal 2001, payload['studios'].first['periods'].last['datapoints']['income']['value']
   end
 
   test 'periods param takes the most recent N' do
     studio!(name: 'Many Periods', mini_name: 'many', periods: 10)
-    payload = payload_for(Mcp::GetStudioHealthTool.call(studio: 'many', periods: 3, server_context: {}))
+    payload = mcp_payload(Mcp::GetStudioHealthTool.call(studio: 'many', periods: 3, server_context: {}))
     labels = payload['studios'].first['periods'].map { |p| p['label'] }
     assert_equal %w[2026-08 2026-09 2026-10], labels
   end
 
   test 'unknown studio errors listing valid studios; invalid gradation and accounting_method error' do
     studio!(name: 'Only Studio', mini_name: 'only')
-    err = payload_for(Mcp::GetStudioHealthTool.call(studio: 'nope', server_context: {}))
+    err = mcp_payload(Mcp::GetStudioHealthTool.call(studio: 'nope', server_context: {}))
     assert_includes err['error'], "Unknown studio 'nope'"
     assert_includes err['error'], 'Only Studio'
-    err = payload_for(Mcp::GetStudioHealthTool.call(gradation: 'weekly', server_context: {}))
+    err = mcp_payload(Mcp::GetStudioHealthTool.call(gradation: 'weekly', server_context: {}))
     assert_includes err['error'], "Invalid gradation 'weekly'"
-    err = payload_for(Mcp::GetStudioHealthTool.call(accounting_method: 'both', server_context: {}))
+    err = mcp_payload(Mcp::GetStudioHealthTool.call(accounting_method: 'both', server_context: {}))
     assert_includes err['error'], "Invalid accounting_method 'both'"
   end
 
@@ -72,9 +68,9 @@ class Mcp::StudioHealthToolTest < ActiveSupport::TestCase
     studio!(name: 'Has Snapshot', mini_name: 'has')
     Studio.create!(name: 'No Snapshot', mini_name: 'none')
     Rails.logger.expects(:warn).with { |msg| msg.include?('No Snapshot') }.at_least_once
-    payload = payload_for(Mcp::GetStudioHealthTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::GetStudioHealthTool.call(server_context: {}))
     assert_equal ['Has Snapshot'], payload['studios'].map { |s| s['studio'] }
-    err = payload_for(Mcp::GetStudioHealthTool.call(studio: 'none', server_context: {}))
+    err = mcp_payload(Mcp::GetStudioHealthTool.call(studio: 'none', server_context: {}))
     assert_includes err['error'], 'no generated snapshot'
   end
 
@@ -83,7 +79,20 @@ class Mcp::StudioHealthToolTest < ActiveSupport::TestCase
     Studio.any_instance.stubs(:mini_name).raises(RuntimeError, 'boom')
     Rails.logger.expects(:warn).with { |msg| msg.include?('skipping studio') }.at_least_once
     Sentry.expects(:capture_exception).at_least_once
-    payload = payload_for(Mcp::GetStudioHealthTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::GetStudioHealthTool.call(server_context: {}))
     assert_equal [], payload['studios']
+  end
+
+  test 'an explicitly requested studio whose snapshot entry is malformed errors instead of returning empty success' do
+    s = studio!(name: 'Malformed Studio', mini_name: 'mal')
+    # A String entry (instead of a Hash) has no #dig, so `entry.dig(method, ...)` raises
+    # NoMethodError while mapping this studio's periods.
+    s.update!(snapshot: { 'month' => ['not-a-hash'] })
+    Rails.logger.expects(:warn).with { |msg| msg.include?('skipping studio') }.at_least_once
+    Sentry.expects(:capture_exception).at_least_once
+    err = mcp_payload(Mcp::GetStudioHealthTool.call(studio: 'mal', server_context: {}))
+    assert_includes err['error'], "Studio 'Malformed Studio'"
+    assert_includes err['error'], "gradation 'month'"
+    assert_includes err['error'], 'malformed'
   end
 end

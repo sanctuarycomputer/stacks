@@ -47,7 +47,6 @@ module Mcp
           target_profit_margin: pt.target_profit_margin.to_f,
           free_hours_percent: (pt.free_hours_ratio * 100).round(1),
           target_free_hours_percent: pt.target_free_hours_percent.to_f,
-          likely_complete: pt.likely_complete?,
           considered_successful: pt.considered_successful?,
           at_risk: reasons.any?,
           risk_reasons: reasons,

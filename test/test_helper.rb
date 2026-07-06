@@ -95,6 +95,11 @@ class ActiveSupport::TestCase
     [tb, g3d]
   end
 
+  # Parses an MCP tool Response (Mcp::Responses envelope) into the payload hash.
+  def mcp_payload(resp)
+    JSON.parse(resp.content.first[:text])
+  end
+
   # Lightweight admin builder for tool/model tests — creates a bare AdminUser
   # (optionally with a FullTimePeriod) without the studio/ForecastPerson/
   # StudioMembership wiring that make_admin_user! (below) sets up. Use this

@@ -51,8 +51,10 @@ pipeline/OKR aggregates from Stacks, and lead rows from Notion.
   work stays out of the pre-read by default.
 - **Row fields:** `name`, `work_status`, `spend`, `budget_low_end`, `budget_high_end`,
   `profit_margin` (rounded 1dp), `target_profit_margin`, `free_hours_percent` (ratio × 100,
-  rounded 1dp), `target_free_hours_percent`, `likely_complete`, `considered_successful`,
+  rounded 1dp), `target_free_hours_percent`, `considered_successful`,
   `at_risk`, `risk_reasons`, `url` (`#external_link` — absolute Stacks admin URL).
+  (`likely_complete` was dropped in review round 2: redundant with work_status for active rows,
+  contradictory for completed ones — work_status carries the same signal coherently.)
 - **Batch loading:** `ProjectTracker.preload_for_render(scope)` before mapping; rows sorted
   most-at-risk first (by number of tripped criteria, then name) so the pre-read reads top-down.
 - **Snapshot dependence:** metrics come from the nightly snapshot jsonb. Trackers with an

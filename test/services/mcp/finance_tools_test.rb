@@ -27,10 +27,6 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     QboInvoice.create!(qbo_account: account, qbo_id: "inv-#{doc}", data: data)
   end
 
-  def payload_for(resp)
-    JSON.parse(resp.content.first[:text])
-  end
-
   # --- get_ar_aging ---
 
   test 'get_ar_aging buckets balances by days overdue with correct boundaries' do
@@ -40,7 +36,7 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     invoice!(doc: 'd', due: @today - 90, balance: 80.0)      # 90 days -> days_61_90
     invoice!(doc: 'e', due: @today - 91, balance: 160.0)     # 91 days -> days_over_90
 
-    payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::GetArAgingTool.call(server_context: {}))
     ent = payload['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
     acme = ent['customers'].find { |c| c['customer'] == 'Acme Co' }
 
@@ -60,7 +56,7 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     invoice!(doc: 'cf2', due: @today - 30, balance: 20.02, customer: 'Cent Co', customer_id: 'cc')
     invoice!(doc: 'cf3', due: @today - 31, balance: 0.99, customer: 'Cent Co', customer_id: 'cc')
 
-    payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::GetArAgingTool.call(server_context: {}))
     ent = payload['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
     row = ent['customers'].find { |c| c['customer'] == 'Cent Co' }
 
@@ -72,7 +68,7 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
 
   test 'get_ar_aging sums outstanding balance, not invoice total' do
     invoice!(doc: 'p', due: @today - 10, balance: 500.0, total: 1000.0)
-    payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::GetArAgingTool.call(server_context: {}))
     acme = payload['enterprises'].first['customers'].first
     assert_equal 500.0, acme['days_1_30']
     assert_equal 500.0, acme['total']
@@ -85,7 +81,7 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     QboInvoice.create!(qbo_account: @account, qbo_id: 'inv-unsynced', data: nil)
 
     QboInvoice.any_instance.expects(:sync!).never
-    payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::GetArAgingTool.call(server_context: {}))
     assert_equal 100.0, payload['total_ar']
   end
 
@@ -96,11 +92,11 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     invoice!(doc: 'o1', due: @today - 5, balance: 999.0, account: other,
              customer: 'Other Client')
 
-    all = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    all = mcp_payload(Mcp::GetArAgingTool.call(server_context: {}))
     assert_equal 1099.0, all['total_ar']
     assert_equal 2, all['enterprises'].length
 
-    scoped = payload_for(Mcp::GetArAgingTool.call(
+    scoped = mcp_payload(Mcp::GetArAgingTool.call(
       enterprise: 'sanctuary computer inc', server_context: {}))
     assert_equal 100.0, scoped['total_ar']
     assert_equal [@sanctuary.name], scoped['enterprises'].map { |e| e['enterprise'] }
@@ -109,7 +105,7 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
   test 'get_ar_aging resolves an enterprise name padded with whitespace' do
     invoice!(doc: 's2', due: @today - 5, balance: 100.0)
 
-    scoped = payload_for(Mcp::GetArAgingTool.call(
+    scoped = mcp_payload(Mcp::GetArAgingTool.call(
       enterprise: '  sanctuary computer inc  ', server_context: {}))
     assert_equal 100.0, scoped['total_ar']
     assert_equal [@sanctuary.name], scoped['enterprises'].map { |e| e['enterprise'] }
@@ -119,7 +115,7 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     invoice!(doc: 'dup1', due: @today - 5, balance: 100.0, customer: 'Studio LLC', customer_id: 'c1')
     invoice!(doc: 'dup2', due: @today - 10, balance: 200.0, customer: 'Studio LLC', customer_id: 'c2')
 
-    payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::GetArAgingTool.call(server_context: {}))
     ent = payload['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
     studios = ent['customers'].select { |c| c['customer'] == 'Studio LLC' }
 
@@ -133,7 +129,7 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     invoice!(doc: 'rn1', due: @today - 20, balance: 100.0, customer: 'Acme', customer_id: 'c1')
     invoice!(doc: 'rn2', due: @today - 5, balance: 200.0, customer: 'Acme Co', customer_id: 'c1')
 
-    payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::GetArAgingTool.call(server_context: {}))
     ent = payload['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
     rows = ent['customers'].select { |c| c['customer_id'] == 'c1' }
 
@@ -143,7 +139,7 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
   end
 
   test 'get_ar_aging returns an error payload for an unknown enterprise' do
-    payload = payload_for(Mcp::GetArAgingTool.call(enterprise: 'Nope Inc', server_context: {}))
+    payload = mcp_payload(Mcp::GetArAgingTool.call(enterprise: 'Nope Inc', server_context: {}))
     assert_includes payload['error'], "Unknown enterprise 'Nope Inc'"
     assert_includes payload['error'], @sanctuary.name
   end
@@ -158,7 +154,7 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
       'doc_number' => 'bad1',
     })
 
-    payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::GetArAgingTool.call(server_context: {}))
     assert_equal 100.0, payload['total_ar']
     ent = payload['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
     assert_equal ['Acme Co'], ent['customers'].map { |c| c['customer'] }
@@ -185,13 +181,13 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     # A missing/unparseable total is display-only — the row still owes its
     # balance, so it must not be dropped from AR: both the missing-total and
     # comma-total balances still show up in the aging buckets/total.
-    aging = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    aging = mcp_payload(Mcp::GetArAgingTool.call(server_context: {}))
     assert_equal 200.0, aging['total_ar']
     ent = aging['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
     assert_equal ['Acme Co', 'Comma Total Inc', 'Missing Total Inc'].sort,
                  ent['customers'].map { |c| c['customer'] }.sort
 
-    overdue = payload_for(Mcp::ListOverdueInvoicesTool.call(server_context: {}))
+    overdue = mcp_payload(Mcp::ListOverdueInvoicesTool.call(server_context: {}))
     assert_equal %w[comma-total good no-total].sort, overdue['invoices'].map { |i| i['doc_number'] }.sort
     no_total_row = overdue['invoices'].find { |i| i['doc_number'] == 'no-total' }
     comma_total_row = overdue['invoices'].find { |i| i['doc_number'] == 'comma-total' }
@@ -213,7 +209,7 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
 
     Rails.logger.expects(:warn).with { |msg| msg.include?('excluded as malformed') }
 
-    payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::GetArAgingTool.call(server_context: {}))
     assert_equal 100.0, payload['total_ar']
     ent = payload['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
     assert_equal ['Acme Co'], ent['customers'].map { |c| c['customer'] }
@@ -225,7 +221,7 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
 
     Rails.logger.expects(:warn).with { |msg| msg.include?('no synced data and are excluded') }
 
-    payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::GetArAgingTool.call(server_context: {}))
     assert_equal 100.0, payload['total_ar']
     ent = payload['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
     assert_equal ['Acme Co'], ent['customers'].map { |c| c['customer'] }
@@ -235,7 +231,7 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     invoice!(doc: 'anon1', due: @today - 5, balance: 100.0, omit_customer_ref: true)
     invoice!(doc: 'anon2', due: @today - 10, balance: 200.0, omit_customer_ref: true)
 
-    payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::GetArAgingTool.call(server_context: {}))
     ent = payload['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
     unknown_rows = ent['customers'].select { |c| c['customer'] == 'Unknown' }
 
@@ -262,7 +258,7 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
       'total' => 200.0,
     })
 
-    payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::GetArAgingTool.call(server_context: {}))
     ent = payload['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
     unknown_rows = ent['customers'].select { |c| c['customer'] == 'Unknown' }
 
@@ -275,7 +271,7 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     invoice!(doc: 'lit1', due: @today - 5, balance: 100.0, customer: 'Unknown')
     invoice!(doc: 'lit2', due: @today - 10, balance: 200.0, customer: 'Unknown')
 
-    payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::GetArAgingTool.call(server_context: {}))
     ent = payload['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
     rows = ent['customers'].select { |c| c['customer'] == 'Unknown' }
 
@@ -284,20 +280,20 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
   end
 
   test 'get_ar_aging returns an empty report when there are no receivables' do
-    payload = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::GetArAgingTool.call(server_context: {}))
     assert_equal 0, payload['total_ar']
   end
 
   test 'an empty-string customer name falls back to Unknown in both tools' do
     invoice!(doc: 'nc1', due: @today - 5, balance: 100.0, customer: '')
 
-    aging = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    aging = mcp_payload(Mcp::GetArAgingTool.call(server_context: {}))
     ent = aging['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
     unknown = ent['customers'].find { |c| c['customer'] == 'Unknown' }
     assert unknown, "Expected an 'Unknown' customer row, got: #{ent['customers'].inspect}"
     assert_equal 100.0, unknown['total']
 
-    overdue = payload_for(Mcp::ListOverdueInvoicesTool.call(server_context: {}))
+    overdue = mcp_payload(Mcp::ListOverdueInvoicesTool.call(server_context: {}))
     assert_equal ['Unknown'], overdue['invoices'].map { |i| i['customer'] }
   end
 
@@ -317,11 +313,11 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     Rails.logger.stubs(:warn)
     Rails.logger.expects(:warn).with { |msg| msg.include?('malformed customer_ref') }.at_least_once
 
-    aging = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    aging = mcp_payload(Mcp::GetArAgingTool.call(server_context: {}))
     ent = aging['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
     assert_equal ['Unknown'], ent['customers'].map { |c| c['customer'] }
 
-    overdue = payload_for(Mcp::ListOverdueInvoicesTool.call(server_context: {}))
+    overdue = mcp_payload(Mcp::ListOverdueInvoicesTool.call(server_context: {}))
     assert_equal ['Unknown'], overdue['invoices'].map { |i| i['customer'] }
   end
 
@@ -336,12 +332,12 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
       'customer_ref' => { 'name' => 'Broken Dates Inc' },
     })
 
-    aging = payload_for(Mcp::GetArAgingTool.call(server_context: {}))
+    aging = mcp_payload(Mcp::GetArAgingTool.call(server_context: {}))
     assert_equal 100.0, aging['total_ar']
     ent = aging['enterprises'].find { |e| e['enterprise'] == @sanctuary.name }
     assert_equal ['Acme Co'], ent['customers'].map { |c| c['customer'] }
 
-    overdue = payload_for(Mcp::ListOverdueInvoicesTool.call(server_context: {}))
+    overdue = mcp_payload(Mcp::ListOverdueInvoicesTool.call(server_context: {}))
     assert_equal %w[ok], overdue['invoices'].map { |i| i['doc_number'] }
   end
 
@@ -353,7 +349,7 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     invoice!(doc: '12', due: @today + 5, balance: 300.0)   # not overdue
     invoice!(doc: '13', due: @today - 20, balance: 150.0, total: 400.0) # partially paid overdue
 
-    payload = payload_for(Mcp::ListOverdueInvoicesTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::ListOverdueInvoicesTool.call(server_context: {}))
     assert_equal 3, payload['count']
     assert_equal %w[11 13 10], payload['invoices'].map { |i| i['doc_number'] }
 
@@ -376,7 +372,7 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     invoice!(doc: '20', due: @today - 5, balance: 100.0)
     invoice!(doc: '21', due: @today - 40, balance: 200.0)
 
-    payload = payload_for(Mcp::ListOverdueInvoicesTool.call(min_days_overdue: 30, server_context: {}))
+    payload = mcp_payload(Mcp::ListOverdueInvoicesTool.call(min_days_overdue: 30, server_context: {}))
     assert_equal %w[21], payload['invoices'].map { |i| i['doc_number'] }
   end
 
@@ -384,7 +380,7 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     invoice!(doc: '25', due: @today, balance: 100.0)      # due today, 0 days overdue
     invoice!(doc: '26', due: @today - 3, balance: 200.0)  # 3 days overdue
 
-    payload = payload_for(Mcp::ListOverdueInvoicesTool.call(min_days_overdue: 0, server_context: {}))
+    payload = mcp_payload(Mcp::ListOverdueInvoicesTool.call(min_days_overdue: 0, server_context: {}))
     assert_equal %w[26], payload['invoices'].map { |i| i['doc_number'] }
   end
 
@@ -394,18 +390,18 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     invoice!(doc: '30', due: @today - 5, balance: 100.0)
     invoice!(doc: '31', due: @today - 5, balance: 200.0, account: other)
 
-    scoped = payload_for(Mcp::ListOverdueInvoicesTool.call(
+    scoped = mcp_payload(Mcp::ListOverdueInvoicesTool.call(
       enterprise: @sanctuary.name, server_context: {}))
     assert_equal %w[30], scoped['invoices'].map { |i| i['doc_number'] }
 
-    err = payload_for(Mcp::ListOverdueInvoicesTool.call(enterprise: 'Nope Inc', server_context: {}))
+    err = mcp_payload(Mcp::ListOverdueInvoicesTool.call(enterprise: 'Nope Inc', server_context: {}))
     assert_includes err['error'], "Unknown enterprise 'Nope Inc'"
   end
 
   test 'list_overdue_invoices skips unsynced rows without syncing' do
     QboInvoice.create!(qbo_account: @account, qbo_id: 'inv-unsynced-2', data: nil)
     QboInvoice.any_instance.expects(:sync!).never
-    payload = payload_for(Mcp::ListOverdueInvoicesTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::ListOverdueInvoicesTool.call(server_context: {}))
     assert_equal 0, payload['count']
     assert_equal [], payload['invoices']
   end

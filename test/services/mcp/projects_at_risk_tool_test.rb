@@ -26,13 +26,9 @@ class Mcp::ProjectsAtRiskToolTest < ActiveSupport::TestCase
     )
   end
 
-  def payload_for(resp)
-    JSON.parse(resp.content.first[:text])
-  end
-
   test 'flags margin below the tracker target with a named reason' do
     tracker!(name: 'Thin Margin', spend: 1000.0, cost: 900.0) # margin 10% < target 30
-    payload = payload_for(Mcp::ListProjectsAtRiskTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::ListProjectsAtRiskTool.call(server_context: {}))
     row = payload['projects'].find { |p| p['name'] == 'Thin Margin' }
     assert row['at_risk']
     assert_includes row['risk_reasons'], 'margin_below_target'
@@ -42,7 +38,7 @@ class Mcp::ProjectsAtRiskToolTest < ActiveSupport::TestCase
 
   test 'flags free hours above the tracker target' do
     tracker!(name: 'Free Heavy', hours: 100.0, free_hours: 20.0, free_target: 10)
-    payload = payload_for(Mcp::ListProjectsAtRiskTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::ListProjectsAtRiskTool.call(server_context: {}))
     row = payload['projects'].find { |p| p['name'] == 'Free Heavy' }
     assert_includes row['risk_reasons'], 'free_hours_above_target'
     assert_equal 20.0, row['free_hours_percent']
@@ -51,7 +47,7 @@ class Mcp::ProjectsAtRiskToolTest < ActiveSupport::TestCase
   test 'flags spend beyond budget_high_end only when a budget is set' do
     tracker!(name: 'Over Budget', spend: 5000.0, cost: 1000.0, budget_low: 1000.0, budget_high: 4000.0)
     tracker!(name: 'No Budget', spend: 5000.0, cost: 1000.0)
-    payload = payload_for(Mcp::ListProjectsAtRiskTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::ListProjectsAtRiskTool.call(server_context: {}))
     over = payload['projects'].find { |p| p['name'] == 'Over Budget' }
     assert_includes over['risk_reasons'], 'over_budget'
     assert_nil payload['projects'].find { |p| p['name'] == 'No Budget' }, 'healthy-but-unbudgeted project must not be flagged'
@@ -60,7 +56,7 @@ class Mcp::ProjectsAtRiskToolTest < ActiveSupport::TestCase
   test 'only_at_risk: false returns healthy projects too, sorted most-at-risk first' do
     tracker!(name: 'Healthy One')
     tracker!(name: 'Doubly Risky', spend: 5000.0, cost: 4800.0, budget_high: 4000.0, budget_low: 1000.0)
-    payload = payload_for(Mcp::ListProjectsAtRiskTool.call(only_at_risk: false, server_context: {}))
+    payload = mcp_payload(Mcp::ListProjectsAtRiskTool.call(only_at_risk: false, server_context: {}))
     names = payload['projects'].map { |p| p['name'] }
     assert_includes names, 'Healthy One'
     assert_equal 'Doubly Risky', names.first, 'most tripped criteria sorts first'
@@ -72,9 +68,9 @@ class Mcp::ProjectsAtRiskToolTest < ActiveSupport::TestCase
   test 'completed trackers are excluded by default and included with include_complete' do
     done = tracker!(name: 'Done Project', spend: 1000.0, cost: 900.0)
     done.update!(work_completed_at: Time.current)
-    payload = payload_for(Mcp::ListProjectsAtRiskTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::ListProjectsAtRiskTool.call(server_context: {}))
     assert_nil payload['projects'].find { |p| p['name'] == 'Done Project' }
-    payload = payload_for(Mcp::ListProjectsAtRiskTool.call(include_complete: true, server_context: {}))
+    payload = mcp_payload(Mcp::ListProjectsAtRiskTool.call(include_complete: true, server_context: {}))
     assert payload['projects'].find { |p| p['name'] == 'Done Project' }
   end
 
@@ -83,13 +79,13 @@ class Mcp::ProjectsAtRiskToolTest < ActiveSupport::TestCase
     tracker!(name: 'Thin Margin', spend: 1000.0, cost: 900.0)
     Rails.logger.expects(:warn).with { |msg| msg.include?('Unsnapshotted') }.at_least_once
     Sentry.expects(:capture_exception).never
-    payload = payload_for(Mcp::ListProjectsAtRiskTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::ListProjectsAtRiskTool.call(server_context: {}))
     assert_nil payload['projects'].find { |p| p['name'] == 'Unsnapshotted' }
     assert_equal 1, payload['count']
   end
 
   test 'empty result is a valid payload' do
-    payload = payload_for(Mcp::ListProjectsAtRiskTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::ListProjectsAtRiskTool.call(server_context: {}))
     assert_equal 0, payload['count']
     assert_equal [], payload['projects']
   end
@@ -99,7 +95,7 @@ class Mcp::ProjectsAtRiskToolTest < ActiveSupport::TestCase
     ProjectTracker.any_instance.stubs(:external_link).raises(RuntimeError, 'boom')
     Rails.logger.expects(:warn).with { |msg| msg.include?('skipping tracker') }.at_least_once
     Sentry.expects(:capture_exception).at_least_once
-    payload = payload_for(Mcp::ListProjectsAtRiskTool.call(server_context: {}))
+    payload = mcp_payload(Mcp::ListProjectsAtRiskTool.call(server_context: {}))
     assert_equal 0, payload['count']
     assert_equal [], payload['projects']
   end
