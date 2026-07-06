@@ -57,7 +57,10 @@ module Mcp
       end
       period_reports = reports.where(ends_at: latest).includes(:forecast_person)
       records = period_reports.to_a
-      starts_at = records.first.starts_at
+      # All reports for this gradation+ends_at should share starts_at, but
+      # period_reports is unordered — read it deterministically rather than
+      # relying on incidental record order.
+      starts_at = records.map(&:starts_at).min
 
       rows = records.filter_map do |r|
         {

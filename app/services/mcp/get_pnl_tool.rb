@@ -31,17 +31,23 @@ module Mcp
           return Responses.error(err) if err
           matches.first
         else
-          Enterprise.sanctuary
+          begin
+            Enterprise.sanctuary
+          rescue ActiveRecord::RecordNotFound
+            return Responses.error('Default enterprise (Sanctuary Computer Inc) is not configured; pass an explicit enterprise.')
+          end
         end
 
-      # The default (Sanctuary) resolves without the joins(:qbo_account) filter
-      # the named path uses, so guard against a missing account rather than
-      # NoMethodError on ent.qbo_account.id.
-      if ent.qbo_account.nil?
+      # An enterprise can have more than one qbo_account (ent.qbo_account is a
+      # has_one — arbitrary LIMIT 1 — so scoping by it alone can silently miss
+      # reports synced under a second account). Scope by every qbo_account_id
+      # belonging to this enterprise instead, matching how QboReceivables scopes.
+      account_ids = QboAccount.where(enterprise_id: ent.id).ids
+      if account_ids.empty?
         return Responses.error("Enterprise '#{ent.name}' has no QBO account, so no P&L is available.")
       end
 
-      reports = QboProfitAndLossReport.where(qbo_account_id: ent.qbo_account.id)
+      reports = QboProfitAndLossReport.where(qbo_account_id: account_ids)
       if reports.none?
         return Responses.error("Enterprise '#{ent.name}' has no synced P&L reports yet.")
       end
@@ -64,7 +70,7 @@ module Mcp
         end
 
       if report.nil?
-        available = reports.order(:ends_at).map { |r| "#{r.starts_at} to #{r.ends_at}" }.join(', ')
+        available = reports.order(:ends_at).pluck(:starts_at, :ends_at).map { |s, e| "#{s} to #{e}" }.join(', ')
         return Responses.error("No P&L report synced for that range. Available: #{available}")
       end
 
@@ -78,7 +84,13 @@ module Mcp
         return Responses.error("The synced P&L report for '#{ent.name}' (#{report.starts_at} to #{report.ends_at}) has no #{method} data.")
       end
 
-      d = report.data_for_enterprise(ent, method, "", :All)
+      begin
+        d = report.data_for_enterprise(ent, method, "", :All)
+      rescue StandardError => e
+        Rails.logger.warn("[Mcp::GetPnlTool] malformed P&L data for '#{ent.name}' (#{report.starts_at}..#{report.ends_at}): #{e.class}: #{e.message}")
+        Sentry.capture_exception(e) if defined?(Sentry)
+        return Responses.error("The synced P&L report for '#{ent.name}' (#{report.starts_at} to #{report.ends_at}) could not be read — its data appears malformed. The failure was logged.")
+      end
       revenue = d[:revenue].to_f
       # data_for_enterprise discards its own margin computation (returns 0) —
       # compute it here from the (sound) bucketed net_revenue/revenue.

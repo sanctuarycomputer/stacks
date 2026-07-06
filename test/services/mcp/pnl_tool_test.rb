@@ -140,4 +140,51 @@ class Mcp::PnlToolTest < ActiveSupport::TestCase
     payload = mcp_payload(Mcp::GetPnlTool.call(server_context: {}))
     assert_includes payload['error'], 'has no QBO account'
   end
+
+  test 'a missing default enterprise (Sanctuary not seeded) errors cleanly instead of raising' do
+    Enterprise.stubs(:sanctuary).raises(ActiveRecord::RecordNotFound)
+    payload = mcp_payload(Mcp::GetPnlTool.call(server_context: {}))
+    assert_includes payload['error'], 'not configured'
+  end
+
+  test 'scopes P&L reports across all of the enterprise qbo_accounts, not just qbo_account.first' do
+    first_account = qbo_account_for(@sanctuary)
+    second_account = QboAccount.create!(enterprise: @sanctuary, client_id: 'x', client_secret: 'x',
+                                        realm_id: "realm-#{SecureRandom.hex(3)}")
+    # Report synced under whichever account isn't `ent.qbo_account`'s
+    # (has_one, so arbitrary LIMIT 1) — the tool must still find it.
+    other_account = @sanctuary.qbo_account == first_account ? second_account : first_account
+    rows = [
+      ['Total Income', 9.0], ['Total Cost of Goods Sold', 0.0],
+      ['Total Expenses', 0.0], ['Net Income', 9.0],
+    ]
+    QboProfitAndLossReport.create!(
+      qbo_account: other_account,
+      starts_at: Date.new(2026, 6, 1), ends_at: Date.new(2026, 6, 30),
+      data: { 'cash' => { 'rows' => rows }, 'accrual' => { 'rows' => rows } }
+    )
+    payload = mcp_payload(Mcp::GetPnlTool.call(server_context: {}))
+    assert_equal 9.0, payload['revenue']
+  end
+
+  test 'a malformed report row errors cleanly instead of raising' do
+    # A bare `nil` entry in a rows array makes find_rows's String#include?
+    # check raise TypeError (no implicit conversion of nil into String) —
+    # simulating sync drift/corruption rather than a hand-crafted fixture bug.
+    rows = [
+      ['Total Income', 100.0],
+      [nil, 5.0],
+      ['Total Cost of Goods Sold', 10.0],
+      ['Total Expenses', 5.0],
+      ['Net Income', 85.0],
+    ]
+    QboProfitAndLossReport.create!(
+      qbo_account: qbo_account_for(@sanctuary),
+      starts_at: Date.new(2026, 6, 1), ends_at: Date.new(2026, 6, 30),
+      data: { 'cash' => { 'rows' => rows }, 'accrual' => { 'rows' => rows } }
+    )
+    payload = mcp_payload(Mcp::GetPnlTool.call(server_context: {}))
+    assert_includes payload['error'], 'malformed'
+    refute payload.key?('revenue')
+  end
 end
