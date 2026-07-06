@@ -96,4 +96,38 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
     assert oo.reason_one_on_one?
     assert_equal 0, oo.chunks.count, "a 1:1's notes must be walled off"
   end
+
+  test "combined doc ingests as a meet transcript + gemini_notes doc on one meeting; 1:1 walled by speakers" do
+    skip_without_pgvector
+    group = OpenStruct.new(id: "N_GROUP", name: "Roadmap - 2026/06/30 15:00 EDT - Notes by Gemini", created_time: "2026-06-30T15:00:00Z")
+    group_md = "# 📝 Notes\n\n## Roadmap\n\nInvited [A](mailto:a@x.co) [B](mailto:b@x.co) [C](mailto:c@x.co)\n\nMeeting records [Transcript](https://docs.google.com/document/d/N_GROUP/edit)\n\n### Summary\nShip the gateway.\n\n# 📖 Transcript\n\nAlice: kickoff\nBob: agreed\nCarol: shipping\n"
+    oneone = OpenStruct.new(id: "N_11", name: "Kyle & Hugh - 2026/06/30 16:00 EDT - Notes by Gemini", created_time: "2026-06-30T16:00:00Z")
+    # Two people INVITED plus a 3rd invitee, but only TWO actually speak -> 1:1 by real attendance.
+    oneone_md = "# 📝 Notes\n\n## Kyle & Hugh\n\nInvited [K](mailto:k@x.co) [H](mailto:h@x.co) [X](mailto:x@x.co)\n\nMeeting records [Transcript](https://docs.google.com/document/d/N_11/edit)\n\n### Summary\nSensitive.\n\n# 📖 Transcript\n\nKyle: hey\nHugh: hi\n"
+
+    svc = mock("drive")
+    svc.stubs(:list_files).returns(OpenStruct.new(files: [group, oneone], next_page_token: nil))
+    svc.stubs(:export_file).with("N_GROUP", "text/markdown").returns(group_md)
+    svc.stubs(:export_file).with("N_11", "text/markdown").returns(oneone_md)
+    Stacks::Etl::Meet::Auth.stubs(:drive_service).returns(svc)
+
+    Stacks::Etl::Meet::Connector.new(admin_email: "hugh@sanctuary.computer", mode: :gemini_notes).run(track: false)
+
+    tx = Document.find_by!(source: :meet, external_id: "N_GROUP")
+    notes = Document.find_by!(source: :gemini_notes, external_id: "N_GROUP")
+    assert tx.not_excluded?
+    assert notes.not_excluded?
+    assert tx.chunks.any?, "transcript chunked/searchable"
+    assert notes.chunks.any?, "notes chunked/searchable"
+    assert_equal tx.source_record_id, notes.source_record_id, "same Meeting"
+    assert_equal ["a@x.co", "b@x.co", "c@x.co"], tx.document_contacts.pluck(:email).sort
+
+    tx11 = Document.find_by!(source: :meet, external_id: "N_11")
+    notes11 = Document.find_by!(source: :gemini_notes, external_id: "N_11")
+    assert tx11.auto_excluded?, "2 real speakers -> 1:1 excluded despite 3 invited"
+    assert tx11.reason_one_on_one?
+    assert notes11.auto_excluded?, "notes inherit the 1:1 exclusion"
+    assert_equal 0, tx11.chunks.count
+    assert_equal 0, notes11.chunks.count
+  end
 end
