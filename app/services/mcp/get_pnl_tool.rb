@@ -29,6 +29,9 @@ module Mcp
         if enterprise.present?
           matches, err = QboReceivables.resolve_enterprises(enterprise)
           return Responses.error(err) if err
+          if matches.size > 1
+            return Responses.error("'#{enterprise}' matches #{matches.size} enterprises (#{matches.map(&:name).join(', ')}). This is ambiguous — the names collide; resolve the duplicate before querying P&L.")
+          end
           matches.first
         else
           begin
@@ -51,6 +54,12 @@ module Mcp
       if reports.none?
         return Responses.error("Enterprise '#{ent.name}' has no synced P&L reports yet.")
       end
+      # v1 limitation: Enterprise has_one :qbo_account (one QBO realm is the
+      # domain intent). Scoping across account_ids above ensures we FIND the
+      # report even if it's under a non-primary account, but if an enterprise
+      # genuinely spans two realms with same-period reports, the single-report
+      # selection below reports one realm — cross-realm P&L aggregation is out
+      # of scope for v1 (would need summing two data blobs; deferred).
 
       if start_date.present? ^ end_date.present?
         return Responses.error('Provide both start_date and end_date to select a specific period, or neither for the most recent.')
@@ -75,12 +84,14 @@ module Mcp
       end
 
       # A persisted report can have a NULL `data` column (jsonb, nullable), an
-      # empty `data` (the schema default), or only one accounting method's key
-      # populated (e.g. a legacy row synced before both methods were
-      # captured). data_for_enterprise indexes data[method]["rows"]
-      # unconditionally, so guard here — otherwise a NoMethodError on nil
-      # escapes as an opaque 500 instead of a tool error.
-      if report.data.blank? || report.data[method].blank? || report.data[method]['rows'].blank?
+      # empty `data` (the schema default), only one accounting method's key
+      # populated (legacy row), OR a non-Hash jsonb value (array/number from
+      # sync drift). Type-check every level with is_a?(Hash) so the GUARD
+      # itself can't raise on malformed data — data_for_enterprise indexes
+      # data[method]["rows"] unconditionally, and the guard's own string
+      # indexing would TypeError on a non-Hash, escaping as an opaque 500.
+      method_data = report.data.is_a?(Hash) ? report.data[method] : nil
+      unless method_data.is_a?(Hash) && method_data['rows'].present?
         return Responses.error("The synced P&L report for '#{ent.name}' (#{report.starts_at} to #{report.ends_at}) has no #{method} data.")
       end
 

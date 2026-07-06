@@ -114,6 +114,36 @@ class Mcp::PnlToolTest < ActiveSupport::TestCase
     assert_includes payload['error'], 'no cash data'
   end
 
+  test 'a report whose data or method value is a non-Hash errors in the guard, not a 500' do
+    # sync drift: data is a JSON array; data[method] String-indexing would
+    # TypeError in the guard itself if it were not type-checked.
+    QboProfitAndLossReport.create!(
+      qbo_account: qbo_account_for(@sanctuary),
+      starts_at: Date.new(2026, 6, 1), ends_at: Date.new(2026, 6, 30),
+      data: ['not', 'a', 'hash']
+    )
+    payload = mcp_payload(Mcp::GetPnlTool.call(server_context: {}))
+    assert_includes payload['error'], 'no cash data'
+
+    # data[method] itself a non-Hash (number)
+    QboProfitAndLossReport.create!(
+      qbo_account: qbo_account_for(@sanctuary),
+      starts_at: Date.new(2026, 7, 1), ends_at: Date.new(2026, 7, 31),
+      data: { 'cash' => 5 }
+    )
+    payload = mcp_payload(Mcp::GetPnlTool.call(server_context: {}))
+    assert_includes payload['error'], 'no cash data'
+  end
+
+  test 'an ambiguous enterprise name (two enterprises share it) errors instead of picking one' do
+    dupe = Enterprise.create!(name: @sanctuary.name) # same name, distinct row
+    QboAccount.create!(enterprise: dupe, client_id: 'x', client_secret: 'x',
+                       realm_id: "realm-#{SecureRandom.hex(3)}")
+    qbo_account_for(@sanctuary)
+    payload = mcp_payload(Mcp::GetPnlTool.call(enterprise: @sanctuary.name, server_context: {}))
+    assert_includes payload['error'], 'matches 2 enterprises'
+  end
+
   test 'a report with a NULL data column errors instead of raising' do
     QboProfitAndLossReport.create!(
       qbo_account: qbo_account_for(@sanctuary),
