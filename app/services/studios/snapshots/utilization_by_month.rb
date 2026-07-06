@@ -47,7 +47,17 @@ module Studios
 
         rows.each_with_object({}) do |(fp_id, starts_at, time_off, by_rate, internal, unsold, sellable), acc|
           person = people_by_id[fp_id]
-          next unless person
+          unless person
+            # Unreachable today (people are upserted, never deleted; no FK
+            # cleanup orphans a row), but if that invariant ever breaks, warn
+            # rather than skip silently — a dropped person would otherwise
+            # surface only as an unexplained oracle diff.
+            Rails.logger.warn(
+              "[Studios::Snapshots::UtilizationByMonth] skipping utilization row " \
+              "for unknown forecast_person_id=#{fp_id}"
+            )
+            next
+          end
           (acc[starts_at] ||= {})[person] = {
             time_off: time_off,
             billable: by_rate,

@@ -241,7 +241,7 @@ class Studios::Snapshots::GradationRowsTest < ActiveSupport::TestCase
     assert_equal 2, d[:successful_proposals][:extras][:notion_page_ids].length
   end
 
-  test "P&L gap warning ignores future months but fires on a genuinely missing month" do
+  test "P&L gap warning ignores future months (they cannot be synced yet)" do
     cur = Date.today.beginning_of_month
     prev = (Date.today - 1.month).beginning_of_month
     nxt = (Date.today + 1.month).beginning_of_month
