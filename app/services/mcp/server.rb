@@ -22,6 +22,7 @@ module Mcp
       Mcp::ListProjectsAtRiskTool,
       Mcp::GetStudioHealthTool,
       Mcp::GetPnlTool,
+      Mcp::GetCapacityTool,
     ].freeze
 
     def self.build
