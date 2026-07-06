@@ -68,11 +68,16 @@ established pattern (finance → admin tasks → business → this).
     `month`; invalid → error listing the enum keys).
   - `period` — a capacity read is a **now-state**, so default to the single **most recent**
     persisted period for the gradation. (No multi-period param in v1 — YAGNI; add if asked.)
-- **Payload:** `{ gradation, period: { starts_at, ends_at }, studios: [{ studio, benched_count,
+- **Payload (flat — the `studio` param scopes the set, so no nesting):**
+  `{ gradation, period: { starts_at, ends_at }, studio: <name or "all">, benched_count,
   people: [{ person, sellable_hours, billable_hours, internal_hours, time_off_hours,
-  unsold_hours, utilization_rate, benched }] }] }`. `benched` = `expected_hours_unsold > 0`.
-  Studios with no utilization reports for the period → skipped with a warn (routine before the
-  first nightly run), like the snapshot tools.
+  unsold_hours, utilization_rate, benched }] }`, sorted by `person`. Column mapping:
+  `sellable_hours`←`expected_hours_sold`, `billable_hours`←`actual_hours_sold`,
+  `internal_hours`←`actual_hours_internal`, `time_off_hours`←`actual_hours_time_off`,
+  `unsold_hours`←`expected_hours_unsold`, `utilization_rate`←`utilization_rate`,
+  `benched` = `expected_hours_unsold > 0`. (Flat avoids `Studio#forecast_people`'s expensive
+  memoized reverse-map for the all-studios case; the `studio` param uses it only when set.)
+  No reports for the period → valid empty payload (`benched_count: 0, people: []`).
 - **Framing note in the tool description:** explicitly "resourcing / who is free to staff,"
   and that the wall on comp/HR/1:1 content is unaffected.
 
@@ -101,9 +106,10 @@ Per tool, created records only (no live calls):
   — critically — that a call **never invokes `find_or_fetch_for_range`** (mocha
   `.expects(:find_or_fetch_for_range).never`) so no live fetch can fire.
 - **get_capacity:** persisted `ForecastPersonUtilizationReport` rows over created
-  `ForecastPerson`s (active + archived) in a studio; assert per-person mapping, `benched` flag,
-  archived-excluded, studio scoping, gradation/period selection, benched_count, unknown-studio
-  error, and empty-period warn-skip.
+  `ForecastPerson`s (active + archived); assert column→field mapping, `benched` flag,
+  archived-excluded, gradation/period selection (most-recent), benched_count, unknown-studio
+  error, and empty-period → empty payload. (Studio-scoping via `Studio#forecast_people` is
+  exercised with a created studio + person; keep it minimal.)
 - Integration: registry array (11 names) + one round-trip per tool.
 
 ## Out of scope
