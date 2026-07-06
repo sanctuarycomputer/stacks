@@ -60,4 +60,38 @@ class Qbo::BackfillMonthlyProfitAndLossReportsTest < ActiveSupport::TestCase
     assert_equal [Date.new(2024, 1, 1), Date.new(2024, 2, 1)], summary[:failed]
     assert_equal 0, summary[:line_item_reports]
   end
+
+  test "a failed line-item sync is recorded and does not abort the run" do
+    QboProfitAndLossReport.create!(
+      qbo_account: @account,
+      starts_at: Date.new(2024, 1, 1),
+      ends_at: Date.new(2024, 1, 31),
+      data: { cash: { rows: [["Total Income", 5]] }, accrual: { rows: [] } }
+    )
+    feb = QboProfitAndLossReport.create!(
+      qbo_account: @account,
+      starts_at: Date.new(2024, 2, 1),
+      ends_at: Date.new(2024, 2, 29),
+      data: { cash: { rows: [["Total Income", 7]] }, accrual: { rows: [] } }
+    )
+
+    # Jan's sync raises (e.g. a DB error from insert_all!); Feb's succeeds,
+    # proving the run continued past the failure.
+    Qbo::SyncProfitAndLossLineItems.stubs(:call).raises(StandardError.new("insert_all! blew up"))
+    Qbo::SyncProfitAndLossLineItems.stubs(:call).with(feb).returns(:synced)
+
+    summary = nil
+    assert_nothing_raised do
+      summary = Qbo::BackfillMonthlyProfitAndLossReports.call(
+        qbo_account: @account,
+        from: Date.new(2024, 1, 1),
+        through: Date.new(2024, 2, 29),
+        sleep_between_fetches: 0
+      )
+    end
+
+    assert_equal [Date.new(2024, 1, 1)], summary[:failed]
+    assert_equal 2, summary[:existing]
+    assert_equal 1, summary[:line_item_reports]
+  end
 end

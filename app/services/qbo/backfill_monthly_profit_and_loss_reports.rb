@@ -35,8 +35,17 @@ module Qbo
           end
         end
 
-        if report && SyncProfitAndLossLineItems.call(report) == :synced
-          summary[:line_item_reports] += 1
+        if report
+          begin
+            if SyncProfitAndLossLineItems.call(report) == :synced
+              summary[:line_item_reports] += 1
+            end
+          rescue StandardError => e
+            Rails.logger.warn(
+              "[Qbo::BackfillMonthlyProfitAndLossReports] #{month} line-item sync failed: #{e.class} #{e.message}"
+            )
+            summary[:failed] << month
+          end
         end
 
         month = month.advance(months: 1)
