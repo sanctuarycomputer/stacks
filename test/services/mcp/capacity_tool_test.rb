@@ -47,6 +47,25 @@ class Mcp::CapacityToolTest < ActiveSupport::TestCase
     refute_includes persons, 'gone@sanctuary.computer'
   end
 
+  test 'a NULL-archived person is treated identically on the all-studios and studio paths' do
+    # ForecastPerson.active (where.not(archived: true)) excludes a NULL-archived
+    # row; both code paths must agree (a Ruby reject(&:archived) would keep it).
+    nully = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000),
+                                   email: 'nully@sanctuary.computer', archived: nil, data: {})
+    util!(person: nully, starts_at: Date.new(2026, 6, 1), ends_at: Date.new(2026, 6, 30))
+    studio = Studio.create!(name: 'Nully Studio', mini_name: 'nul')
+    studio.stubs(:forecast_people).returns([nully]) # force studio membership
+
+    all_path = mcp_payload(Mcp::GetCapacityTool.call(server_context: {}))
+    Studio.stubs(:all).returns([studio])
+    studio_path = mcp_payload(Mcp::GetCapacityTool.call(studio: 'nul', server_context: {}))
+
+    in_all = all_path['people'].any? { |p| p['person'] == 'nully@sanctuary.computer' }
+    in_studio = studio_path['people'].any? { |p| p['person'] == 'nully@sanctuary.computer' }
+    assert_equal in_all, in_studio, 'NULL-archived person must appear (or not) consistently across both paths'
+    refute in_all, 'ForecastPerson.active excludes NULL-archived, so neither path includes them'
+  end
+
   test 'uses the most recent period for the gradation' do
     p = person!(email: 'p@sanctuary.computer')
     util!(person: p, starts_at: Date.new(2026, 5, 1), ends_at: Date.new(2026, 5, 31), sold: 1.0)

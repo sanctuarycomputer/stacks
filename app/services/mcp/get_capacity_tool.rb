@@ -23,31 +23,30 @@ module Mcp
         return Responses.error("Invalid gradation '#{grad}'. Valid: #{GRADATIONS.join(', ')}")
       end
 
-      # ForecastPerson overrides its primary_key to forecast_id (the column
-      # ForecastPersonUtilizationReport#forecast_person_id actually stores),
-      # while the table also has an unrelated surrogate "id" column. #ids
-      # (unlike a literal pluck(:id)) respects that primary_key override, and
-      # #archived? drives active/archived membership.
+      # Both the all-studios and studio-filtered paths derive the person set
+      # from the SAME ForecastPerson.active scope, so "active" means exactly one
+      # thing (its SQL where.not(archived: true) — a NULL-archived row is
+      # excluded, unlike a Ruby reject(&:archived) which would keep it). The
+      # studio path then intersects with the studio's member ids. #ids (not a
+      # literal pluck(:id)) respects ForecastPerson's forecast_id primary-key
+      # override — the value ForecastPersonUtilizationReport#forecast_person_id
+      # stores. The extra active.ids query on the studio path is deliberate:
+      # correctness/consistency over saving one cheap single-column pluck.
+      active_ids = ForecastPerson.active.ids
       studio_label = 'all'
-      active_ids =
-        if studio.present?
-          all_studios = Studio.all.to_a
-          key = studio.to_s.strip
-          match = all_studios.find { |s| s.name.to_s.casecmp?(key) } ||
-                  all_studios.find { |s| s.mini_name.to_s.split(',').map(&:strip).any? { |m| m.casecmp?(key) } }
-          unless match
-            valid = all_studios.map { |s| "#{s.name} (#{s.mini_name})" }.sort.join(', ')
-            return Responses.error("Unknown studio '#{studio}'. Valid studios: #{valid}")
-          end
-          studio_label = match.name
-          # forecast_people already loads the studio's people (active AND
-          # archived); reject archived here rather than also running the
-          # separate ForecastPerson.active.ids query. (It's a plain Ruby Array,
-          # so map(&:id) — pluck isn't available.)
-          match.forecast_people(all_studios).reject(&:archived).map(&:id)
-        else
-          ForecastPerson.active.ids
+      if studio.present?
+        all_studios = Studio.all.to_a
+        key = studio.to_s.strip
+        match = all_studios.find { |s| s.name.to_s.casecmp?(key) } ||
+                all_studios.find { |s| s.mini_name.to_s.split(',').map(&:strip).any? { |m| m.casecmp?(key) } }
+        unless match
+          valid = all_studios.map { |s| "#{s.name} (#{s.mini_name})" }.sort.join(', ')
+          return Responses.error("Unknown studio '#{studio}'. Valid studios: #{valid}")
         end
+        studio_label = match.name
+        studio_person_ids = match.forecast_people(all_studios).map(&:id).to_set
+        active_ids = active_ids.select { |id| studio_person_ids.include?(id) }
+      end
 
       reports = ForecastPersonUtilizationReport
         .where(forecast_person_id: active_ids, period_gradation: grad)
