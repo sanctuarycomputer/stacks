@@ -56,8 +56,9 @@ pipeline/OKR aggregates from Stacks, and lead rows from Notion.
 - **Batch loading:** `ProjectTracker.preload_for_render(scope)` before mapping; rows sorted
   most-at-risk first (by number of tripped criteria, then name) so the pre-read reads top-down.
 - **Snapshot dependence:** metrics come from the nightly snapshot jsonb. Trackers with an
-  empty/missing snapshot are skipped with a logged warning (same never-raise doctrine as the
-  prior tools; a Rails.logger.warn + Sentry, matching the admin-tasks skip path).
+  empty/missing snapshot are skipped with a logged warning only (a routine state — new
+  trackers before their first nightly run — not an alert). Mapping *raises* get
+  warn + Sentry, matching the admin-tasks skip path.
 
 ## Tool 2: `get_studio_health`
 
