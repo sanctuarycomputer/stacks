@@ -171,4 +171,97 @@ class Studios::Snapshots::GradationRowsTest < ActiveSupport::TestCase
     assert d[:successful_projects][:value].nan?
     assert d[:successful_proposals][:value].nan?
   end
+
+  test "garden3d reads P&L from exact total-row labels (cogs/noi direct, not derived)" do
+    g3d = Studio.create!(name: "garden3d", mini_name: "g3d")
+    Studio.instance_variable_set(:@all_studios, nil)
+    report = QboProfitAndLossReport.find_or_create_by!(
+      qbo_account: @account, starts_at: Date.new(2024, 1, 1), ends_at: Date.new(2024, 1, 31)
+    ) { |r| r.data = {} }
+    # A section-header "Income" precedes "Total Income" — the exact-label
+    # match must pick "Total Income" (200), not the header.
+    [["Income", 999], ["Total Income", 200], ["Total Cost of Goods Sold", 70],
+     ["Total Expenses", 25], ["Net Operating Income", 130]].each_with_index do |(label, amount), position|
+      QboProfitAndLossLineItem.create!(
+        qbo_account: @account, qbo_profit_and_loss_report: report,
+        starts_at: Date.new(2024, 1, 1), accounting_method: "cash",
+        position: position, label: label, amount: amount
+      )
+    end
+
+    rows = Studios::Snapshots::GradationRows.call(studio: g3d, gradation: :month, periods: [@jan])
+    d = rows.first[:cash][:datapoints]
+    assert_equal 200.0, d[:income][:value]
+    assert_equal 70.0, d[:cost_of_goods_sold][:value]        # read directly, NOT cos - expenses
+    assert_equal 25.0, d[:expenses][:value]
+    assert_equal 130.0, d[:net_operating_income][:value]     # read directly, NOT income - cos
+    assert_in_delta 65.0, d[:profit_margin][:value], 0.001   # 130 / 200 * 100
+  end
+
+  test "blank-email person is keyed by first-and-last name in the breakdown" do
+    nameless = ForecastPerson.create!(forecast_id: 9301, email: "", first_name: "Nomail", last_name: "Person")
+    StudioForecastPerson.create!(studio: @studio, forecast_person: nameless)
+    ForecastPersonUtilizationReport.create!(
+      forecast_person_id: nameless.id,
+      starts_at: Date.new(2024, 1, 1), ends_at: Date.new(2024, 1, 31),
+      period_gradation: :month,
+      expected_hours_sold: 50, expected_hours_unsold: 0,
+      actual_hours_sold: 10, actual_hours_internal: 0, actual_hours_time_off: 3,
+      actual_hours_sold_by_rate: { "100.0" => 10.0 }, utilization_rate: 0
+    )
+
+    rows = Studios::Snapshots::GradationRows.call(studio: @studio, gradation: :month, periods: [@jan])
+    breakdown = rows.first[:utilization]
+    assert_equal ["Nomail Person"], breakdown.keys
+    assert_equal 3, breakdown["Nomail Person"][:time_off]
+  end
+
+  test "successful_proposals is the won-rate over proposals settled in the period" do
+    # Two proposals settled in Jan (one won, one not) → 50%; a third settled
+    # outside the period is excluded; a settled lead with no proposal_sent is
+    # not a proposal at all.
+    [
+      { received_at: Date.new(2023, 12, 1), proposal_sent_at: Date.new(2023, 12, 15), settled_at: Date.new(2024, 1, 10), won_at: Date.new(2024, 1, 10) },
+      { received_at: Date.new(2023, 12, 1), proposal_sent_at: Date.new(2023, 12, 20), settled_at: Date.new(2024, 1, 20), won_at: nil },
+      { received_at: Date.new(2023, 12, 1), proposal_sent_at: Date.new(2023, 12, 20), settled_at: Date.new(2024, 2, 20), won_at: Date.new(2024, 2, 20) }, # settled outside Jan
+      { received_at: Date.new(2023, 12, 1), proposal_sent_at: nil, settled_at: Date.new(2024, 1, 25), won_at: Date.new(2024, 1, 25) }, # no proposal_sent
+    ].each_with_index do |attrs, i|
+      page = NotionPage.create!(
+        notion_id: SecureRandom.uuid, notion_parent_type: "database_id",
+        notion_parent_id: Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:LEADS]),
+        data: { "properties" => {} }
+      )
+      lead = NotionLead.create!(notion_page_id: page.id, **attrs)
+      NotionLeadStudio.create!(notion_lead: lead, studio: @studio)
+    end
+
+    rows = Studios::Snapshots::GradationRows.call(studio: @studio, gradation: :month, periods: [@jan])
+    d = rows.first[:cash][:datapoints]
+    assert_in_delta 50.0, d[:successful_proposals][:value], 0.001  # 1 won of 2 settled-in-Jan proposals
+    assert_equal 2, d[:successful_proposals][:extras][:notion_page_ids].length
+  end
+
+  test "P&L gap warning ignores future months but fires on a genuinely missing month" do
+    cur = Date.today.beginning_of_month
+    prev = (Date.today - 1.month).beginning_of_month
+    nxt = (Date.today + 1.month).beginning_of_month
+    # Span runs into next month (future @through); seed prev + current only.
+    span = Stacks::Period.new("span", prev, nxt.end_of_month, :month)
+    seed_pnl!(prev, income: 10, cos: 1, tools: 1)
+    seed_pnl!(cur, income: 10, cos: 1, tools: 1)
+
+    # Future month (nxt) is absent but must NOT be reported — it can't be synced yet.
+    Rails.logger.expects(:warn).with(regexp_matches(/missing P&L months/)).never
+    Studios::Snapshots::GradationRows.call(studio: @studio, gradation: :month, periods: [span])
+  end
+
+  test "P&L gap warning fires when a syncable past month is missing" do
+    cur = Date.today.beginning_of_month
+    prev = (Date.today - 1.month).beginning_of_month
+    span = Stacks::Period.new("span", prev, cur.end_of_month, :month)
+    seed_pnl!(cur, income: 10, cos: 1, tools: 1) # prev deliberately missing
+
+    Rails.logger.expects(:warn).with(regexp_matches(/missing P&L months.*#{Regexp.escape(prev.iso8601)}/)).at_least_once
+    Studios::Snapshots::GradationRows.call(studio: @studio, gradation: :month, periods: [span])
+  end
 end

@@ -54,8 +54,15 @@ module Studios
       # accrual (or vice-versa) is still a gap, so each method is checked
       # against the full expected month set independently. One warn per
       # gradation, naming the short method(s) and the months each lacks.
+      #
+      # Only months that could already have been synced count as gaps. P&L
+      # line items exist for months up to and including the current one, so a
+      # :year / current-quarter / trailing span whose @through runs past today
+      # would otherwise report every future month as "missing" on every call —
+      # a warn that always fires is noise, not signal. Clamp to this month.
       def warn_on_pnl_gaps!
-        expected = months_in_range(@from, @through)
+        gap_through = [@through, Date.today.beginning_of_month].min
+        expected = months_in_range(@from, gap_through)
         gaps = %w[cash accrual].filter_map do |method|
           missing = expected - @pnl_by_month[method].keys
           next if missing.empty?
