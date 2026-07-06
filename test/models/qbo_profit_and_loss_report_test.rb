@@ -67,4 +67,16 @@ class QboProfitAndLossReportTest < ActiveSupport::TestCase
     assert_equal 100.0,  result[:expenses]
     assert_equal 700.0,  result[:net_revenue]
   end
+
+  test "find_or_fetch_for_range creates line items for monthly ranges" do
+    cash = mock; cash.stubs(:all_rows).returns([["Total Income", 10]])
+    accrual = mock; accrual.stubs(:all_rows).returns([["Total Income", 12]])
+    @qa.stubs(:fetch_profit_and_loss_report_for_range)
+      .returns(cash).then.returns(accrual)
+
+    report = QboProfitAndLossReport.find_or_fetch_for_range(
+      Date.new(2024, 5, 1), Date.new(2024, 5, 31), false, @qa
+    )
+    assert_equal 2, QboProfitAndLossLineItem.where(qbo_profit_and_loss_report: report).count
+  end
 end

@@ -94,7 +94,7 @@ class QboProfitAndLossReport < ApplicationRecord
         "Accrual"
       )
 
-      create!(
+      report = create!(
         qbo_account: resolved_qbo_account,
         starts_at: start_of_range,
         ends_at: end_of_range,
@@ -103,6 +103,11 @@ class QboProfitAndLossReport < ApplicationRecord
           accrual: { rows: accrual_report.all_rows }
         }
       )
+      # Keep the monthly line-item projection in lockstep with the source
+      # report. QboAccount#sync_all! force-refreshes every monthly report
+      # nightly, so this hook is the steady-state maintenance path.
+      Qbo::SyncProfitAndLossLineItems.call(report)
+      report
     end
   end
 end
