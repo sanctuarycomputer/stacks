@@ -50,14 +50,21 @@ module Studios
         @all_okrs = Okr.includes({ okr_periods: { okr_period_studios: :studio } }).all.to_a
       end
 
+      # Warn per accounting method: a month present in cash but absent from
+      # accrual (or vice-versa) is still a gap, so each method is checked
+      # against the full expected month set independently. One warn per
+      # gradation, naming the short method(s) and the months each lacks.
       def warn_on_pnl_gaps!
         expected = months_in_range(@from, @through)
-        present = (@pnl_by_month["cash"].keys | @pnl_by_month["accrual"].keys)
-        missing = expected - present
-        return if missing.empty?
+        gaps = %w[cash accrual].filter_map do |method|
+          missing = expected - @pnl_by_month[method].keys
+          next if missing.empty?
+          "#{method}: #{missing.map(&:iso8601).join(', ')}"
+        end
+        return if gaps.empty?
         Rails.logger.warn(
           "[Studios::Snapshots::GradationRows] studio=#{@studio.mini_name} " \
-          "gradation=#{@gradation} missing P&L months: #{missing.map(&:iso8601).join(', ')}"
+          "gradation=#{@gradation} missing P&L months by method — #{gaps.join('; ')}"
         )
       end
 
@@ -92,22 +99,24 @@ module Studios
 
       # ------------------------------------------------------- utilization
 
-      # Per-person period totals folded from monthly rows. Mirrors legacy
-      # utilization_for_period: {} for periods predating utilization data.
+      # Per-person period totals folded from monthly rows. Mirrors the BLOB
+      # path (Studio#utilization_by_period_gradation, studio.rb:51-76), which
+      # has NO date gate — utilization is purely a function of which monthly
+      # FPUR rows exist. sync_utilization_reports! generates rows back to
+      # 2020-01-01, so pre-2021-06 periods DO carry numeric utilization in the
+      # stored blob; gating on has_utilization_data? here would nil them and
+      # guarantee an oracle mismatch. UtilizationByMonth returns only months
+      # that have rows, so a period with no rows still folds to {} → nil v →
+      # nil datapoints, matching the blob's empty-report behavior.
       def person_utilization_for(period)
         @person_utilization ||= {}
-        @person_utilization[period] ||= begin
-          if period.has_utilization_data?
-            months_in_range(period.starts_at, period.ends_at).reduce({}) do |acc, month|
-              (@utilization_by_month[month] || {}).each do |fp, data|
-                acc[fp] = acc[fp].nil? ? data : merge_utilization(acc[fp], data)
-              end
-              acc
+        @person_utilization[period] ||=
+          months_in_range(period.starts_at, period.ends_at).reduce({}) do |acc, month|
+            (@utilization_by_month[month] || {}).each do |fp, data|
+              acc[fp] = acc[fp].nil? ? data : merge_utilization(acc[fp], data)
             end
-          else
-            {}
+            acc
           end
-        end
       end
 
       # Mirrors the merge inside legacy merged_utilization_data.

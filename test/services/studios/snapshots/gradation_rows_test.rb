@@ -113,9 +113,32 @@ class Studios::Snapshots::GradationRowsTest < ActiveSupport::TestCase
     assert jan[:accrual].key?(:datapoints)
   end
 
-  test "periods predating utilization data get nil utilization datapoints" do
+  test "pre-2021-06 periods still fold utilization from monthly rows (blob parity)" do
+    # The stored blob (Studio#utilization_by_period_gradation) has NO date
+    # gate: sync_utilization_reports! generates monthly FPUR rows back to
+    # 2020-01-01, so a Jan 2021 period carries numeric utilization in the blob
+    # even though it predates UTILIZATION_START_AT (2021-06-01). GradationRows
+    # must match — a monthly row's mere existence drives utilization.
+    seed_utilization!(Date.new(2021, 1, 1), sellable: 80, billable_map: { "150.0" => 40.0 }, time_off: 4, internal: 3, unsold: 12)
     old_period = Stacks::Period.new("January, 2021", Date.new(2021, 1, 1), Date.new(2021, 1, 31), :month)
+    refute old_period.has_utilization_data?, "period must predate UTILIZATION_START_AT for this test to be meaningful"
+
     rows = Studios::Snapshots::GradationRows.call(studio: @studio, gradation: :month, periods: [old_period])
+    d = rows.first[:cash][:datapoints]
+    assert_equal 80, d[:sellable_hours][:value]
+    assert_equal 40.0, d[:billable_hours][:value]
+    assert_equal 4, d[:time_off][:value]
+    assert_in_delta 150.0, d[:average_hourly_rate][:value].to_f, 0.001
+    # Per-person breakdown is populated even for the pre-2021-06 period.
+    assert_equal ["a@x.com"], rows.first[:utilization].keys
+    assert_equal 4, rows.first[:utilization]["a@x.com"][:time_off]
+  end
+
+  test "periods with no monthly utilization rows get nil utilization datapoints" do
+    # No FPUR rows seeded at all → empty fold → nil v → nil datapoints and {}
+    # breakdown, matching the blob's behavior when no report rows exist.
+    barren_period = Stacks::Period.new("January, 2019", Date.new(2019, 1, 1), Date.new(2019, 1, 31), :month)
+    rows = Studios::Snapshots::GradationRows.call(studio: @studio, gradation: :month, periods: [barren_period])
     d = rows.first[:cash][:datapoints]
     assert_nil d[:sellable_hours][:value]
     assert_nil d[:billable_hours][:value]
