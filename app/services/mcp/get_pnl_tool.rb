@@ -25,15 +25,11 @@ module Mcp
       end
 
       # Resolve enterprise (must have a qbo_account — P&L is per QBO realm).
-      accounts_by_enterprise = Enterprise.joins(:qbo_account).distinct.to_a
       ent =
         if enterprise.present?
-          match = accounts_by_enterprise.find { |e| e.name.to_s.casecmp?(enterprise.to_s.strip) }
-          unless match
-            valid = accounts_by_enterprise.map(&:name).sort.join(', ')
-            return Responses.error("Unknown enterprise '#{enterprise}'. Valid enterprises: #{valid}")
-          end
-          match
+          matches, err = QboReceivables.resolve_enterprises(enterprise)
+          return Responses.error(err) if err
+          matches.first
         else
           Enterprise.sanctuary
         end
@@ -54,7 +50,11 @@ module Mcp
       # or the most recent. NEVER find_or_fetch_for_range (it fires live QBO).
       report =
         if start_date.present? || end_date.present?
-          reports.find_by(starts_at: Date.parse(start_date.to_s), ends_at: Date.parse(end_date.to_s))
+          begin
+            reports.find_by(starts_at: Date.parse(start_date.to_s), ends_at: Date.parse(end_date.to_s))
+          rescue Date::Error, ArgumentError => e
+            return Responses.error("Invalid date: #{e.message}. Use ISO format, e.g. 2026-06-01.")
+          end
         else
           reports.order(:ends_at).last
         end
@@ -64,7 +64,23 @@ module Mcp
         return Responses.error("No P&L report synced for that range. Available: #{available}")
       end
 
+      # A persisted report can have an empty `data` (the schema default) or
+      # only one accounting method's key populated (e.g. a legacy row synced
+      # before both methods were captured). data_for_enterprise indexes
+      # data[method]["rows"] unconditionally, so guard here — otherwise a
+      # NoMethodError on nil escapes as an opaque 500 instead of a tool error.
+      if report.data[method].blank? || report.data[method]['rows'].blank?
+        return Responses.error("The synced P&L report for '#{ent.name}' (#{report.starts_at} to #{report.ends_at}) has no #{method} data.")
+      end
+
       vertical_sym = vertical.to_s.presence&.to_sym || :All
+      if vertical_sym != :All
+        available_verticals = report.data[method]['rows'].filter_map { |r| Enterprise::VERTICAL_MATCHER.match(r[0])&.captures&.first&.to_sym }.uniq
+        unless available_verticals.include?(vertical_sym)
+          return Responses.error("Vertical '#{vertical}' not found in this report. Available verticals: #{available_verticals.map(&:to_s).sort.join(', ')} (or omit for the whole entity).")
+        end
+      end
+
       d = report.data_for_enterprise(ent, method, "", vertical_sym)
       revenue = d[:revenue].to_f
       # data_for_enterprise discards its own margin computation (returns 0) —
@@ -82,8 +98,6 @@ module Mcp
         net_revenue: d[:net_revenue].to_f.round(2),
         profit_margin: margin
       )
-    rescue Date::Error, ArgumentError => e
-      Responses.error("Invalid date: #{e.message}. Use ISO format, e.g. 2026-06-01.")
     end
   end
 end

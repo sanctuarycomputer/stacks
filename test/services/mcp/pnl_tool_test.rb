@@ -94,6 +94,46 @@ class Mcp::PnlToolTest < ActiveSupport::TestCase
     assert_includes payload['error'], 'no synced P&L reports'
   end
 
+  test 'a report missing the requested accounting method errors instead of raising' do
+    QboProfitAndLossReport.create!(
+      qbo_account: qbo_account_for(@sanctuary),
+      starts_at: Date.new(2026, 6, 1), ends_at: Date.new(2026, 6, 30),
+      data: { 'cash' => { 'rows' => [['Total Income', 1.0]] } }
+    )
+    payload = mcp_payload(Mcp::GetPnlTool.call(accounting_method: 'accrual', server_context: {}))
+    assert_includes payload['error'], 'no accrual data'
+  end
+
+  test 'a report with entirely empty data errors instead of raising' do
+    QboProfitAndLossReport.create!(
+      qbo_account: qbo_account_for(@sanctuary),
+      starts_at: Date.new(2026, 6, 1), ends_at: Date.new(2026, 6, 30),
+      data: {}
+    )
+    payload = mcp_payload(Mcp::GetPnlTool.call(server_context: {}))
+    assert_includes payload['error'], 'no cash data'
+  end
+
+  test 'an unknown vertical errors listing the verticals actually present in the report' do
+    rows = [
+      ['[SC] Total Income', 10.0], ['Total Income', 10.0],
+      ['[SC] Total Cost of Goods Sold', 1.0], ['Total Cost of Goods Sold', 1.0],
+      ['[SC] Total Expenses', 2.0], ['Total Expenses', 2.0],
+      ['Net Income', 7.0],
+    ]
+    QboProfitAndLossReport.create!(
+      qbo_account: qbo_account_for(@sanctuary),
+      starts_at: Date.new(2026, 6, 1), ends_at: Date.new(2026, 6, 30),
+      data: { 'cash' => { 'rows' => rows }, 'accrual' => { 'rows' => rows } }
+    )
+    payload = mcp_payload(Mcp::GetPnlTool.call(vertical: 'nope', server_context: {}))
+    assert_includes payload['error'], "Vertical 'nope' not found"
+    assert_includes payload['error'], 'SC'
+
+    ok_payload = mcp_payload(Mcp::GetPnlTool.call(vertical: 'SC', server_context: {}))
+    assert_equal 10.0, ok_payload['revenue']
+  end
+
   test 'an enterprise with no qbo account errors cleanly instead of raising' do
     # The default path resolves Enterprise.sanctuary WITHOUT the
     # joins(:qbo_account) filter the named path uses, so an account-less

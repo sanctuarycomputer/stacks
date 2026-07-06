@@ -23,7 +23,12 @@ module Mcp
         return Responses.error("Invalid gradation '#{grad}'. Valid: #{GRADATIONS.join(', ')}")
       end
 
-      people = ForecastPerson.active.to_a
+      # ForecastPerson overrides its primary_key to forecast_id (the column
+      # ForecastPersonUtilizationReport#forecast_person_id actually stores),
+      # while the table also has an unrelated surrogate "id" column. #ids
+      # (unlike a literal pluck(:id)) respects that primary_key override, so
+      # it plucks the same values `.map(&:id)` would.
+      active_ids = ForecastPerson.active.ids
       studio_label = 'all'
       if studio.present?
         all_studios = Studio.all.to_a
@@ -35,12 +40,15 @@ module Mcp
           return Responses.error("Unknown studio '#{studio}'. Valid studios: #{valid}")
         end
         studio_label = match.name
+        # match.forecast_people is a plain Ruby Array (built in Ruby, not an
+        # AR::Relation), so pluck isn't available/safe here — map(&:id) is
+        # the correct id extraction (see note above on the primary_key override).
         studio_person_ids = match.forecast_people.map(&:id).to_set
-        people = people.select { |p| studio_person_ids.include?(p.id) }
+        active_ids = active_ids.select { |id| studio_person_ids.include?(id) }
       end
 
       reports = ForecastPersonUtilizationReport
-        .where(forecast_person_id: people.map(&:id), period_gradation: grad)
+        .where(forecast_person_id: active_ids, period_gradation: grad)
       # Now-state: the most recent persisted period for this gradation.
       latest = reports.maximum(:ends_at)
       if latest.nil?
