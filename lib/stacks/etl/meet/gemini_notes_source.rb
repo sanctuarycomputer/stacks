@@ -128,7 +128,7 @@ module Stacks
           meeting = Meeting.find_or_initialize_by(drive_transcript_doc_id: file.id)
           meeting.update!(meet_source: :drive, title: title, started_at: occurred_at,
                           participant_count: speaker_count,
-                          raw_metadata: { "document_id" => doc.id })
+                          raw_metadata: (meeting.raw_metadata || {}).merge("document_id" => doc.id))
           meeting.segments.destroy_all
           segments.each_with_index do |s, i|
             meeting.segments.create!(position: i, speaker_name: s[:speaker_name], text: s[:text], started_at: s[:started_at])

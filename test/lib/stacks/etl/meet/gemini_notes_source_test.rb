@@ -253,4 +253,14 @@ class Stacks::Etl::Meet::GeminiNotesSourceTest < ActiveSupport::TestCase
     assert_includes notes_md, "Just notes."
     assert_equal "", transcript_md
   end
+
+  test "combined transcript head-count uses ACTUAL speakers, not the invited count (privacy)" do
+    # 3 invited, but only 2 people actually speak -> a 1:1 by real attendance despite 3 invites.
+    md = "# 📝 Notes\n\n## Kyle & Hugh\n\nInvited [K](mailto:k@x.co) [H](mailto:h@x.co) [X](mailto:x@x.co)\n\nMeeting records [Transcript](https://docs.google.com/document/d/SELF_ID/edit)\n\n### Summary\nSensitive.\n\n# 📖 Transcript\n\nKyle: hey\nHugh: hi\n"
+    stub_drive_returning(md)
+    out = []
+    Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1)).each_meeting { |r| out << r }
+    tx = out.find { |r| r[:source] == :meet }
+    assert_equal 2, tx[:participant_count], "head-count must be distinct speakers (2), not invited (3)"
+  end
 end
