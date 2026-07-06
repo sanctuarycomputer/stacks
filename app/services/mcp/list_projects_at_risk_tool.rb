@@ -20,20 +20,22 @@ module Mcp
       ProjectTracker.preload_for_render(trackers)
 
       rows = trackers.filter_map do |pt|
-        status = pt.work_status
-        next nil unless include_complete || ACTIVE_STATUSES.include?(status)
         if pt.snapshot.blank?
           Rails.logger.warn("[Mcp::ListProjectsAtRiskTool] skipping '#{pt.name}' (id=#{pt.id}): no snapshot")
           next nil
         end
 
+        status = pt.work_status
+        next nil unless include_complete || ACTIVE_STATUSES.include?(status)
+
         # Risk = the tracker's own targets, via the model's own predicates
-        # (single source of truth with considered_successful?). Only the
-        # budget comparison lives here — no model predicate exists for it.
+        # (single source of truth with considered_successful?). The budget
+        # comparison reuses ProjectTracker#status (the same source the admin
+        # UI uses) rather than re-deriving it here.
         reasons = []
         reasons << 'margin_below_target' unless pt.target_profit_margin_satisfied?
         reasons << 'free_hours_above_target' unless pt.target_free_hours_ratio_satisfied?
-        reasons << 'over_budget' if pt.budget_high_end.present? && pt.spend > pt.budget_high_end.to_f
+        reasons << 'over_budget' if pt.status == :over_budget
 
         {
           name: pt.name,

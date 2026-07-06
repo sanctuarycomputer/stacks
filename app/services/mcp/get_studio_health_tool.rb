@@ -5,19 +5,19 @@ module Mcp
                 '(income, cogs, net operating income, profit margin), utilization hours, lead counts, ' \
                 'satisfaction scores, and OKR health per period. Pure read of the persisted rollup — ' \
                 'figures always match Stacks\' own reporting. Never regenerates, never calls live APIs.'
+    GRADATIONS = Studio::SNAPSHOT_GRADATIONS.map(&:to_s).freeze
+    ACCOUNTING_METHODS = %w[cash accrual].freeze
+
     input_schema(
       properties: {
         studio: { type: 'string', description: 'Optional studio name or mini_name (case-insensitive). Default: all studios with a snapshot.' },
-        gradation: { type: 'string', description: 'month (default), quarter, year, trailing_3_months, trailing_4_months, trailing_6_months, trailing_12_months' },
+        gradation: { type: 'string', description: "#{GRADATIONS.join(', ')} (default month)" },
         accounting_method: { type: 'string', description: 'cash (default) or accrual' },
         periods: { type: 'integer', description: 'Most recent N periods (default 6, clamped 1..24)' },
       },
       required: []
     )
     annotations(read_only_hint: true, destructive_hint: false, idempotent_hint: true)
-
-    GRADATIONS = %w[month quarter year trailing_3_months trailing_4_months trailing_6_months trailing_12_months].freeze
-    ACCOUNTING_METHODS = %w[cash accrual].freeze
 
     def self.call(studio: nil, gradation: 'month', accounting_method: 'cash', periods: 6, server_context:)
       gradation = gradation.to_s
@@ -75,7 +75,7 @@ module Mcp
           end,
         }
       rescue StandardError => e
-        Rails.logger.warn("[Mcp::GetStudioHealthTool] skipping studio '#{s.name}': #{e.class}: #{e.message}")
+        Rails.logger.warn("[Mcp::GetStudioHealthTool] skipping studio id=#{s.id}: #{e.class}: #{e.message}")
         Sentry.capture_exception(e) if defined?(Sentry)
         nil
       end

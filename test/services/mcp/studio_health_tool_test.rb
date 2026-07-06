@@ -81,7 +81,7 @@ class Mcp::StudioHealthToolTest < ActiveSupport::TestCase
   test 'a studio whose mapping raises is skipped with warn + Sentry, not fatal' do
     studio!(name: 'Raises Mid-Map', mini_name: 'boom')
     Studio.any_instance.stubs(:mini_name).raises(RuntimeError, 'boom')
-    Rails.logger.expects(:warn).with { |msg| msg.include?('Raises Mid-Map') }.at_least_once
+    Rails.logger.expects(:warn).with { |msg| msg.include?('skipping studio') }.at_least_once
     Sentry.expects(:capture_exception).at_least_once
     payload = payload_for(Mcp::GetStudioHealthTool.call(server_context: {}))
     assert_equal [], payload['studios']

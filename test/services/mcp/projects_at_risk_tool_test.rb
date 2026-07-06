@@ -4,7 +4,14 @@ class Mcp::ProjectsAtRiskToolTest < ActiveSupport::TestCase
   # Snapshot-backed tracker factory. Defaults produce a HEALTHY project:
   # margin 50% (>= target 30), free hours 0% (<= target 10), no budget.
   def tracker!(name:, spend: 1000.0, cost: 500.0, hours: 100.0, free_hours: 0.0,
-               budget_high: nil, budget_low: nil, margin_target: 30, free_target: 10)
+               budget_high: nil, budget_low: nil, margin_target: 30, free_target: 10, snapshot: :default)
+    snapshot = {
+      'invoiced_with_running_spend_total' => spend,
+      'cost_total' => cost,
+      'hours_total' => hours,
+      'hours_free' => free_hours,
+    } if snapshot == :default
+
     ProjectTracker.create!(
       name: name,
       budget_low_end: budget_low,
@@ -15,12 +22,7 @@ class Mcp::ProjectsAtRiskToolTest < ActiveSupport::TestCase
         ProjectTrackerLink.new(name: 'SOW', url: 'https://example.com/sow', link_type: 'sow'),
         ProjectTrackerLink.new(name: 'MSA', url: 'https://example.com/msa', link_type: 'msa'),
       ],
-      snapshot: {
-        'invoiced_with_running_spend_total' => spend,
-        'cost_total' => cost,
-        'hours_total' => hours,
-        'hours_free' => free_hours,
-      }
+      snapshot: snapshot
     )
   end
 
@@ -77,13 +79,10 @@ class Mcp::ProjectsAtRiskToolTest < ActiveSupport::TestCase
   end
 
   test 'trackers with a blank snapshot are skipped with a warning, never raise' do
-    ProjectTracker.create!(name: 'Unsnapshotted', target_profit_margin: 30, target_free_hours_percent: 10,
-                           project_tracker_links: [
-                             ProjectTrackerLink.new(name: 'SOW', url: 'https://example.com/sow', link_type: 'sow'),
-                             ProjectTrackerLink.new(name: 'MSA', url: 'https://example.com/msa', link_type: 'msa'),
-                           ])
+    tracker!(name: 'Unsnapshotted', snapshot: nil)
     tracker!(name: 'Thin Margin', spend: 1000.0, cost: 900.0)
     Rails.logger.expects(:warn).with { |msg| msg.include?('Unsnapshotted') }.at_least_once
+    Sentry.expects(:capture_exception).never
     payload = payload_for(Mcp::ListProjectsAtRiskTool.call(server_context: {}))
     assert_nil payload['projects'].find { |p| p['name'] == 'Unsnapshotted' }
     assert_equal 1, payload['count']
