@@ -2,15 +2,15 @@ module Mcp
   class GetPnlTool < MCP::Tool
     tool_name 'get_pnl'
     description 'Profit & Loss (revenue, COGS, expenses, net revenue, profit margin) for an ' \
-                'enterprise from the nightly-synced QBO P&L reports. Reads persisted reports ' \
-                'only — never calls QBO live. Defaults to the most recent synced period.'
+                'enterprise (whole entity) from the nightly-synced QBO P&L reports. Reads ' \
+                'persisted reports only — never calls QBO live. Defaults to the most recent ' \
+                'synced period.'
     input_schema(
       properties: {
         enterprise: { type: 'string', description: 'Enterprise name (default: Sanctuary Computer Inc)' },
         accounting_method: { type: 'string', description: 'cash (default) or accrual' },
         start_date: { type: 'string', description: 'ISO period start; with end_date, selects an exact synced report' },
         end_date: { type: 'string', description: 'ISO period end' },
-        vertical: { type: 'string', description: 'Vertical tag within a combined P&L (e.g. SC, XXIX); default All (whole entity)' },
       },
       required: []
     )
@@ -18,7 +18,7 @@ module Mcp
 
     ACCOUNTING_METHODS = %w[cash accrual].freeze
 
-    def self.call(enterprise: nil, accounting_method: 'cash', start_date: nil, end_date: nil, vertical: 'All', server_context:)
+    def self.call(enterprise: nil, accounting_method: 'cash', start_date: nil, end_date: nil, server_context:)
       method = accounting_method.to_s
       unless ACCOUNTING_METHODS.include?(method)
         return Responses.error("Invalid accounting_method '#{method}'. Valid: #{ACCOUNTING_METHODS.join(', ')}")
@@ -46,6 +46,10 @@ module Mcp
         return Responses.error("Enterprise '#{ent.name}' has no synced P&L reports yet.")
       end
 
+      if start_date.present? ^ end_date.present?
+        return Responses.error('Provide both start_date and end_date to select a specific period, or neither for the most recent.')
+      end
+
       # Select the persisted report — explicit range (exact match, never fetch)
       # or the most recent. NEVER find_or_fetch_for_range (it fires live QBO).
       report =
@@ -64,24 +68,17 @@ module Mcp
         return Responses.error("No P&L report synced for that range. Available: #{available}")
       end
 
-      # A persisted report can have an empty `data` (the schema default) or
-      # only one accounting method's key populated (e.g. a legacy row synced
-      # before both methods were captured). data_for_enterprise indexes
-      # data[method]["rows"] unconditionally, so guard here — otherwise a
-      # NoMethodError on nil escapes as an opaque 500 instead of a tool error.
-      if report.data[method].blank? || report.data[method]['rows'].blank?
+      # A persisted report can have a NULL `data` column (jsonb, nullable), an
+      # empty `data` (the schema default), or only one accounting method's key
+      # populated (e.g. a legacy row synced before both methods were
+      # captured). data_for_enterprise indexes data[method]["rows"]
+      # unconditionally, so guard here — otherwise a NoMethodError on nil
+      # escapes as an opaque 500 instead of a tool error.
+      if report.data.blank? || report.data[method].blank? || report.data[method]['rows'].blank?
         return Responses.error("The synced P&L report for '#{ent.name}' (#{report.starts_at} to #{report.ends_at}) has no #{method} data.")
       end
 
-      vertical_sym = vertical.to_s.presence&.to_sym || :All
-      if vertical_sym != :All
-        available_verticals = report.data[method]['rows'].filter_map { |r| Enterprise::VERTICAL_MATCHER.match(r[0])&.captures&.first&.to_sym }.uniq
-        unless available_verticals.include?(vertical_sym)
-          return Responses.error("Vertical '#{vertical}' not found in this report. Available verticals: #{available_verticals.map(&:to_s).sort.join(', ')} (or omit for the whole entity).")
-        end
-      end
-
-      d = report.data_for_enterprise(ent, method, "", vertical_sym)
+      d = report.data_for_enterprise(ent, method, "", :All)
       revenue = d[:revenue].to_f
       # data_for_enterprise discards its own margin computation (returns 0) —
       # compute it here from the (sound) bucketed net_revenue/revenue.
@@ -90,7 +87,6 @@ module Mcp
       Responses.ok(
         enterprise: ent.name,
         accounting_method: method,
-        vertical: vertical.to_s,
         period: { starts_at: report.starts_at.iso8601, ends_at: report.ends_at.iso8601 },
         revenue: revenue.round(2),
         cogs: d[:cogs].to_f.round(2),

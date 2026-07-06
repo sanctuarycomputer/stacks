@@ -114,24 +114,21 @@ class Mcp::PnlToolTest < ActiveSupport::TestCase
     assert_includes payload['error'], 'no cash data'
   end
 
-  test 'an unknown vertical errors listing the verticals actually present in the report' do
-    rows = [
-      ['[SC] Total Income', 10.0], ['Total Income', 10.0],
-      ['[SC] Total Cost of Goods Sold', 1.0], ['Total Cost of Goods Sold', 1.0],
-      ['[SC] Total Expenses', 2.0], ['Total Expenses', 2.0],
-      ['Net Income', 7.0],
-    ]
+  test 'a report with a NULL data column errors instead of raising' do
     QboProfitAndLossReport.create!(
       qbo_account: qbo_account_for(@sanctuary),
       starts_at: Date.new(2026, 6, 1), ends_at: Date.new(2026, 6, 30),
-      data: { 'cash' => { 'rows' => rows }, 'accrual' => { 'rows' => rows } }
+      data: nil
     )
-    payload = mcp_payload(Mcp::GetPnlTool.call(vertical: 'nope', server_context: {}))
-    assert_includes payload['error'], "Vertical 'nope' not found"
-    assert_includes payload['error'], 'SC'
+    payload = mcp_payload(Mcp::GetPnlTool.call(server_context: {}))
+    assert_includes payload['error'], 'no cash data'
+  end
 
-    ok_payload = mcp_payload(Mcp::GetPnlTool.call(vertical: 'SC', server_context: {}))
-    assert_equal 10.0, ok_payload['revenue']
+  test 'only one of start_date/end_date errors asking for both' do
+    pnl_report!(enterprise: @sanctuary, starts_at: Date.new(2026, 6, 1), ends_at: Date.new(2026, 6, 30),
+                income: 1.0, cogs: 0.0, expenses: 0.0)
+    payload = mcp_payload(Mcp::GetPnlTool.call(start_date: '2026-06-01', server_context: {}))
+    assert_includes payload['error'], 'both start_date and end_date'
   end
 
   test 'an enterprise with no qbo account errors cleanly instead of raising' do

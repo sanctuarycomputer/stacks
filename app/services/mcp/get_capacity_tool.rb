@@ -43,7 +43,7 @@ module Mcp
         # match.forecast_people is a plain Ruby Array (built in Ruby, not an
         # AR::Relation), so pluck isn't available/safe here — map(&:id) is
         # the correct id extraction (see note above on the primary_key override).
-        studio_person_ids = match.forecast_people.map(&:id).to_set
+        studio_person_ids = match.forecast_people(all_studios).map(&:id).to_set
         active_ids = active_ids.select { |id| studio_person_ids.include?(id) }
       end
 
@@ -56,9 +56,10 @@ module Mcp
                             studio: studio_label, benched_count: 0, people: [])
       end
       period_reports = reports.where(ends_at: latest).includes(:forecast_person)
-      starts_at = period_reports.first.starts_at
+      records = period_reports.to_a
+      starts_at = records.first.starts_at
 
-      rows = period_reports.filter_map do |r|
+      rows = records.filter_map do |r|
         {
           person: r.forecast_person.email,
           sellable_hours: r.expected_hours_sold.to_f,
@@ -74,6 +75,10 @@ module Mcp
         Sentry.capture_exception(e) if defined?(Sentry)
         nil
       end.sort_by { |x| x[:person].to_s }
+
+      if rows.empty? && records.any?
+        Rails.logger.warn("[Mcp::GetCapacityTool] all #{records.size} utilization reports for #{latest} failed to map — returning an empty roster; investigate a read/serialization regression.")
+      end
 
       Responses.ok(
         gradation: grad,
