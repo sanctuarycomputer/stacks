@@ -20,7 +20,7 @@ module Stacks
             q = "#{QUERY} and createdTime > '#{@since.utc.iso8601}'"
             q += " and createdTime < '#{@until_time.utc.iso8601}'" if @until_time
             resp = @service.list_files(q: q, fields: "nextPageToken, files(id,name,createdTime)", page_token: page)
-            Array(resp.files).each { |f| yield normalize(f) }
+            Array(resp.files).each { |f| records_for(f).each { |r| yield r } }
             page = resp.next_page_token
             break unless page
           end
@@ -76,37 +76,96 @@ module Stacks
           end
         end
 
-        def normalize(file)
-          # Export as MARKDOWN, not text/plain: Google's plain-text export STRIPS hyperlinks,
-          # which would flatten the "Invited [Name](mailto:email)" list and the
-          # "Meeting records [Transcript](…/document/d/<id>)" link to bare display text —
-          # leaving us with no invited emails (→ participant_count 0 → wrongly auto-excluded)
-          # and no transcript-doc-id to join on (→ every note falls to the standalone path).
-          # Markdown preserves both link forms, which is what the parsers below depend on.
-          # (Transcripts stay text/plain in DriveSource — speaker lines carry no links.)
+        # A combined "Notes by Gemini" file yields TWO records (transcript first so the notes'
+        # for_drive_doc(file.id) join resolves it at ingest); a plain/old-format notes doc yields
+        # one. When combined, the notes body excludes the embedded transcript.
+        def records_for(file)
           text = @service.export_file(file.id, "text/markdown")
+          if combined_format?(text, file.id)
+            notes_md, transcript_md = split_transcript(text)
+            segments = parse_segments(transcript_md).each { |s| s[:started_at] = coerce(file.created_time) }
+            if segments.any?
+              tx = transcript_record(file, text, transcript_md, segments)
+              # Reverse-dedup: if an API/Drive transcript Document already covers this file, don't
+              # emit a duplicate transcript — the notes still inherit from it at ingest.
+              [tx, note_record(file, notes_md, text)].compact
+            else
+              [note_record(file, notes_md, text)] # empty transcript -> notes-only
+            end
+          else
+            [normalize(file, exported: text)] # old-format / notes-only
+          end
+        end
+
+        # The embedded transcript as its own source:meet record, keyed/deduped exactly like a
+        # DriveSource transcript (external_id + drive_doc_id = file.id; classified by real
+        # speakers). Returns nil when an existing transcript Document already covers file.id.
+        def transcript_record(file, full_text, transcript_md, segments)
+          return nil if Document.for_drive_doc(file.id).where.not(external_id: file.id).exists?
           title = clean_title(file.name)
           occurred_at = coerce(file.created_time)
-          transcript_id = transcript_doc_id_from(text)
-          emails = invited_emails_from(text)
-          segments = body_segments(text, occurred_at: occurred_at)
+          emails = invited_emails_from(full_text)
+          speaker_count = distinct_speaker_count(segments)
+          {
+            source: :meet,
+            external_id: file.id,
+            title: title,
+            url: "https://docs.google.com/document/d/#{file.id}",
+            occurred_at: occurred_at,
+            content_hash: Digest::SHA256.hexdigest(transcript_md.to_s),
+            participant_count: speaker_count, # ACTUAL speakers drive the 1:1 head-count
+            # Reuse the doc's Invited emails for attribution (no separate Calendar call needed);
+            # attribution is separate from the speaker-based head-count above.
+            contacts: emails.map { |e| { email: e, name: nil, role: "attendee" } },
+            segments: segments,
+            raw_metadata: { "drive_doc_id" => file.id, "combined_notes_doc_id" => file.id },
+            build_source_record: ->(doc) { build_transcript_meeting(doc, file, title, occurred_at, speaker_count, segments) }
+          }
+        end
 
+        # Meeting for the embedded transcript — keyed like DriveSource so notes join it.
+        def build_transcript_meeting(doc, file, title, occurred_at, speaker_count, segments)
+          meeting = Meeting.find_or_initialize_by(drive_transcript_doc_id: file.id)
+          meeting.update!(meet_source: :drive, title: title, started_at: occurred_at,
+                          participant_count: speaker_count,
+                          raw_metadata: { "document_id" => doc.id })
+          meeting.segments.destroy_all
+          segments.each_with_index do |s, i|
+            meeting.segments.create!(position: i, speaker_name: s[:speaker_name], text: s[:text], started_at: s[:started_at])
+          end
+          meeting
+        end
+
+        # The gemini_notes (notes-body) record. `notes_md` is the notes portion only (for a
+        # combined doc that's everything before the transcript heading; for a plain doc it's the
+        # whole export). `full_text` is the full export, used for the invited emails and the
+        # transcript link.
+        def note_record(file, notes_md, full_text)
+          title = clean_title(file.name)
+          occurred_at = coerce(file.created_time)
+          transcript_id = transcript_doc_id_from(full_text)
+          emails = invited_emails_from(full_text)
+          segments = body_segments(notes_md, occurred_at: occurred_at)
           {
             source: :gemini_notes,
             external_id: file.id,
             title: title,
             url: "https://docs.google.com/document/d/#{file.id}",
             occurred_at: occurred_at,
-            content_hash: Digest::SHA256.hexdigest(text.to_s),
+            content_hash: Digest::SHA256.hexdigest(notes_md.to_s),
             contacts: emails.map { |e| { email: e, name: nil, role: "attendee" } },
             segments: segments,
-            # transcript_doc_id drives BOTH inheritance (Connector#exclusion_for) and the
-            # meeting-join (build_meeting), resolved at ingest via Document.for_drive_doc.
             transcript_doc_id: transcript_id,
-            participant_count: emails.size, # standalone fallback when no transcript resolves
+            participant_count: emails.size,
             raw_metadata: { "gemini_notes_doc_id" => file.id, "transcript_doc_id" => transcript_id },
             build_source_record: ->(doc) { build_meeting(doc, file, title, occurred_at, transcript_id) }
           }
+        end
+
+        # Old-format / notes-only: the notes body is the whole export.
+        def normalize(file, exported: nil)
+          text = exported || @service.export_file(file.id, "text/markdown")
+          note_record(file, text, text)
         end
 
         def build_meeting(doc, file, title, occurred_at, transcript_id)

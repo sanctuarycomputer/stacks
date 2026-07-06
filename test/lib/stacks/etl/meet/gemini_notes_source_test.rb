@@ -188,6 +188,52 @@ class Stacks::Etl::Meet::GeminiNotesSourceTest < ActiveSupport::TestCase
     Carol: agreed
   TXT
 
+  def combined_file = OpenStruct.new(id: "SELF_ID", name: "Business Meeting - 2026/06/30 15:00 EDT - Notes by Gemini",
+                                   created_time: "2026-06-30T15:00:00Z")
+
+  def stub_drive_returning(text, file: combined_file)
+    svc = mock("drive")
+    svc.stubs(:list_files).returns(OpenStruct.new(files: [file], next_page_token: nil))
+    svc.stubs(:export_file).returns(text)
+    Stacks::Etl::Meet::Auth.stubs(:drive_service).returns(svc)
+    svc
+  end
+
+  test "a combined doc yields a meet transcript record then a gemini_notes record, both for the same file" do
+    stub_drive_returning(COMBINED)
+    out = []
+    Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1)).each_meeting { |r| out << r }
+
+    assert_equal [:meet, :gemini_notes], out.map { |r| r[:source] }
+    tx, notes = out
+    assert_equal "SELF_ID", tx[:external_id]
+    assert_equal ["Alice", "Bob", "Carol"], tx[:segments].map { |s| s[:speaker_name] }
+    assert_equal 3, tx[:participant_count]                 # actual speakers, not invited
+    assert_equal "SELF_ID", tx[:raw_metadata]["drive_doc_id"]
+    assert_equal "SELF_ID", notes[:transcript_doc_id]      # self-link -> inherits tx at ingest
+    refute notes[:segments].any? { |s| s[:text].include?("kicking off the sprint") } # transcript not in notes
+  end
+
+  test "a combined doc whose transcript section has no speaker lines yields notes-only" do
+    empty_tx = "# **📝 Notes**\n\n## **Quick Sync**\n\nInvited [A](mailto:a@x.co)\n\nMeeting records [Transcript](https://docs.google.com/document/d/SELF_ID/edit)\n\n### Summary\nShort.\n\n# **📖 Transcript**\n\n### Transcription ended after 00:01:30\n"
+    stub_drive_returning(empty_tx)
+    out = []
+    Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1)).each_meeting { |r| out << r }
+    assert_equal [:gemini_notes], out.map { |r| r[:source] }   # no meet transcript emitted
+    assert_equal 1, out.first[:participant_count]              # standalone -> invited count
+  end
+
+  test "the split transcript defers to an already-ingested transcript Document (reverse dedup)" do
+    m = Meeting.create!(meet_source: :meet_api, meet_conference_record_id: "cr/dup")
+    Document.create!(source: :meet, external_id: "conferenceRecords/dup", source_record: m,
+                     excluded: :not_excluded, excluded_reason: :none, raw_metadata: { "drive_doc_id" => "SELF_ID" })
+    stub_drive_returning(COMBINED)
+    out = []
+    Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1)).each_meeting { |r| out << r }
+    assert_equal [:gemini_notes], out.map { |r| r[:source] } # transcript deferred; only notes yielded
+    assert_equal "SELF_ID", out.first[:transcript_doc_id]     # notes still inherit from the API doc at ingest
+  end
+
   test "detects the combined format when the transcript link points to the doc's own id" do
     assert src.send(:combined_format?, COMBINED, "SELF_ID")
     refute src.send(:combined_format?, COMBINED, "OTHER_ID")  # external transcript -> old format
