@@ -28,17 +28,21 @@ established pattern (finance → admin tasks → business → this).
   - `start_date` / `end_date` (optional ISO dates). Default: the **most recent persisted
     report** for the resolved qbo_account. If a range is given with no matching persisted
     report → error listing the available `(starts_at, ends_at)` ranges (never fetch to fill it).
-  - `vertical` (optional string, default `All`) — Sanctuary's combined P&L tags rows by
-    vertical (`[SC]`, `[XXIX]`, …) via `Enterprise::VERTICAL_MATCHER`; `All` = whole entity.
-    Unknown vertical → returns zeros (documented), since verticals are data-defined not enumerable.
+  - **(vertical param CUT in review round 2 — whole entity only.)** Per-vertical P&L
+    (`[SC]`/`[XXIX]` splits of Sanctuary's combined realm) depends on `data_for_enterprise`'s
+    vertical bucketing, which only counts vertical rows followed by a `Total` line — so a
+    vertical present only in QBO below-the-line sections silently returns an all-zero P&L.
+    Shipping that would be silently-incomplete, so v1 reports the **whole entity** (`:All`)
+    only; per-vertical is a follow-up that fixes the model bucketing first (same PR as the
+    discarded-margin fix below).
 - **Reads + computes:** reuse `QboProfitAndLossReport#data_for_enterprise(enterprise, method,
-  label, vertical)` for the revenue/cogs/expenses/net_revenue bucketing (that logic is sound).
+  "", :All)` for the revenue/cogs/expenses/net_revenue bucketing (whole-entity logic is sound).
   **Drive-by:** `data_for_enterprise` computes `profit_margin` but discards the result (the
   `((net/revenue)*100) if revenue > 0` line is never assigned — it returns `profit_margin: 0`
   always, at `qbo_profit_and_loss_report.rb:31,43`). The tool therefore computes margin itself
   (`net_revenue / revenue * 100`, guarded on revenue > 0) rather than emit the model's bogus 0.
   Noted for a separate model fix; not fixed here (it would change admin-dashboard behavior).
-- **Payload:** `{ enterprise, accounting_method, vertical, period: { starts_at, ends_at },
+- **Payload:** `{ enterprise, accounting_method, period: { starts_at, ends_at },
   revenue, cogs, expenses, net_revenue, profit_margin }` (money rounded 2dp, margin 1dp).
 - **No matching report / no reports at all:** error naming the resolved account and listing
   available ranges (or saying none are synced yet) — never a live fetch.
