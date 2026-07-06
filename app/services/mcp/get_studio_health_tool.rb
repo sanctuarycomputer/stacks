@@ -34,7 +34,7 @@ module Mcp
       requested =
         if studio.present?
           key = studio.to_s.strip
-          match = all_studios.find { |s| s.name.casecmp?(key) || s.mini_name.to_s.casecmp?(key) }
+          match = all_studios.find { |s| s.name.to_s.casecmp?(key) || s.mini_name.to_s.casecmp?(key) }
           unless match
             valid = all_studios.map { |s| "#{s.name} (#{s.mini_name})" }.sort.join(', ')
             return Responses.error("Unknown studio '#{studio}'. Valid studios: #{valid}")
@@ -76,7 +76,7 @@ module Mcp
         }
       rescue StandardError => e
         Rails.logger.warn("[Mcp::GetStudioHealthTool] skipping studio '#{s.name}': #{e.class}: #{e.message}")
-        Sentry.capture_exception(e)
+        Sentry.capture_exception(e) if defined?(Sentry)
         nil
       end
 

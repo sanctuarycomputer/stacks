@@ -94,4 +94,14 @@ class Mcp::ProjectsAtRiskToolTest < ActiveSupport::TestCase
     assert_equal 0, payload['count']
     assert_equal [], payload['projects']
   end
+
+  test 'a tracker whose mapping raises is skipped with warn + Sentry, not fatal' do
+    tracker!(name: 'Raises Mid-Map', spend: 1000.0, cost: 900.0)
+    ProjectTracker.any_instance.stubs(:external_link).raises(RuntimeError, 'boom')
+    Rails.logger.expects(:warn).with { |msg| msg.include?('skipping tracker') }.at_least_once
+    Sentry.expects(:capture_exception).at_least_once
+    payload = payload_for(Mcp::ListProjectsAtRiskTool.call(server_context: {}))
+    assert_equal 0, payload['count']
+    assert_equal [], payload['projects']
+  end
 end

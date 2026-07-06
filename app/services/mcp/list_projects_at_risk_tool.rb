@@ -41,7 +41,7 @@ module Mcp
           spend: pt.spend.round(2),
           budget_low_end: pt.budget_low_end&.to_f,
           budget_high_end: pt.budget_high_end&.to_f,
-          profit_margin: pt.profit_margin.round(1),
+          profit_margin: pt.profit_margin.to_f.round(1),
           target_profit_margin: pt.target_profit_margin.to_f,
           free_hours_percent: (pt.free_hours_ratio * 100).round(1),
           target_free_hours_percent: pt.target_free_hours_percent.to_f,
@@ -53,7 +53,7 @@ module Mcp
         }
       rescue StandardError => e
         Rails.logger.warn("[Mcp::ListProjectsAtRiskTool] skipping tracker id=#{pt.id}: #{e.class}: #{e.message}")
-        Sentry.capture_exception(e)
+        Sentry.capture_exception(e) if defined?(Sentry)
         nil
       end
 
