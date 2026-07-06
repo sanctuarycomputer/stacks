@@ -90,8 +90,15 @@ module Mcp
           end
         else
           span = PERIOD_SPAN_DAYS[ptype]
+          # Completed periods only: the sync also persists the CURRENT in-progress
+          # period (e.g. a July report labeled ends_at Jul 31 that holds only a few
+          # days of data), which would otherwise win order(:ends_at).last and report
+          # a partial month's distorted revenue/margin. ends_at <= today keeps the
+          # default to the most recent FULLY-ELAPSED period. (Use an explicit
+          # start_date/end_date for the current period-to-date.)
           reports
             .where('(qbo_profit_and_loss_reports.ends_at - qbo_profit_and_loss_reports.starts_at) BETWEEN ? AND ?', span.min, span.max)
+            .where('qbo_profit_and_loss_reports.ends_at <= ?', Date.today)
             .order(:ends_at)
             .last
         end

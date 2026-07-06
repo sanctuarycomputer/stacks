@@ -86,7 +86,10 @@ module Mcp
         nil
       end.sort_by { |x| x[:person].to_s }
 
-      if rows.empty? && records.any?
+      # records is guaranteed non-empty here (the empty case returned early
+      # above), so rows.empty? means every row failed to map — a systemic
+      # read/serialization regression, not a normal "no data" state.
+      if rows.empty?
         Rails.logger.warn("[Mcp::GetCapacityTool] all #{records.size} utilization reports for #{latest} failed to map — returning an empty roster; investigate a read/serialization regression.")
       end
 

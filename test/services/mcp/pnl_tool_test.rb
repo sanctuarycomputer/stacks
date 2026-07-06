@@ -59,11 +59,14 @@ class Mcp::PnlToolTest < ActiveSupport::TestCase
     # QBO syncs monthly + quarterly + yearly into one table; the current year's
     # yearly report is future-dated (Dec 31), giving it the max ends_at. The
     # default must return the latest MONTH, not that year-spanning report.
-    pnl_report!(enterprise: @sanctuary, starts_at: Date.new(2026, 6, 1), ends_at: Date.new(2026, 6, 30),
+    # Use 2025 (fully in the past relative to a 2026 test clock) so all three
+    # are COMPLETED periods — this test isolates gradation selection, not the
+    # completed-vs-in-progress concern (covered by its own test below).
+    pnl_report!(enterprise: @sanctuary, starts_at: Date.new(2025, 6, 1), ends_at: Date.new(2025, 6, 30),
                 income: 2.0, cogs: 0.0, expenses: 0.0) # monthly (29d)
-    pnl_report!(enterprise: @sanctuary, starts_at: Date.new(2026, 4, 1), ends_at: Date.new(2026, 6, 30),
+    pnl_report!(enterprise: @sanctuary, starts_at: Date.new(2025, 4, 1), ends_at: Date.new(2025, 6, 30),
                 income: 6.0, cogs: 0.0, expenses: 0.0) # quarterly (90d)
-    pnl_report!(enterprise: @sanctuary, starts_at: Date.new(2026, 1, 1), ends_at: Date.new(2026, 12, 31),
+    pnl_report!(enterprise: @sanctuary, starts_at: Date.new(2025, 1, 1), ends_at: Date.new(2025, 12, 31),
                 income: 99.0, cogs: 0.0, expenses: 0.0) # yearly (364d), max ends_at
 
     default_payload = mcp_payload(Mcp::GetPnlTool.call(server_context: {}))
@@ -77,6 +80,20 @@ class Mcp::PnlToolTest < ActiveSupport::TestCase
     year_payload = mcp_payload(Mcp::GetPnlTool.call(period_type: 'year', server_context: {}))
     assert_equal 'year', year_payload['period_type']
     assert_equal 99.0, year_payload['revenue']
+  end
+
+  test 'default returns the most recent COMPLETED period, not the in-progress future-dated one' do
+    completed = Date.today.prev_month
+    inprogress = Date.today.next_month
+    # a fully-elapsed month (ends_at in the past)
+    pnl_report!(enterprise: @sanctuary, starts_at: completed.beginning_of_month, ends_at: completed.end_of_month,
+                income: 50.0, cogs: 0.0, expenses: 0.0)
+    # an in-progress/future month (ends_at after today) — must NOT be the default
+    pnl_report!(enterprise: @sanctuary, starts_at: inprogress.beginning_of_month, ends_at: inprogress.end_of_month,
+                income: 3.0, cogs: 0.0, expenses: 0.0)
+    payload = mcp_payload(Mcp::GetPnlTool.call(server_context: {}))
+    assert_equal completed.end_of_month.iso8601, payload['period']['ends_at']
+    assert_equal 50.0, payload['revenue'], 'default must skip the future-dated in-progress month'
   end
 
   test 'invalid period_type errors listing valid values' do
