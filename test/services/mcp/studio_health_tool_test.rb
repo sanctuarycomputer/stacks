@@ -40,6 +40,12 @@ class Mcp::StudioHealthToolTest < ActiveSupport::TestCase
     refute s['periods'].first.key?('utilization')
   end
 
+  test 'resolves a studio by one element of a comma-separated mini_name' do
+    studio!(name: 'Comma Studio', mini_name: 'cs, sanctu')
+    payload = mcp_payload(Mcp::GetStudioHealthTool.call(studio: 'sanctu', server_context: {}))
+    assert_equal 'Comma Studio', payload['studios'].first['studio']
+  end
+
   test 'accrual accounting_method selects the accrual subtree' do
     studio!(name: 'Accrual Studio', mini_name: 'accr')
     payload = mcp_payload(Mcp::GetStudioHealthTool.call(studio: 'accr', accounting_method: 'accrual', server_context: {}))

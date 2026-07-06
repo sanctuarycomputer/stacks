@@ -35,7 +35,13 @@ module Mcp
         reasons = []
         reasons << 'margin_below_target' unless pt.target_profit_margin_satisfied?
         reasons << 'free_hours_above_target' unless pt.target_free_hours_ratio_satisfied?
-        reasons << 'over_budget' if pt.status == :over_budget
+        # #status raises on a half-configured budget (exactly one bound set —
+        # invalid per model validation, but possible in legacy rows). Guard on
+        # both bounds so a bad budget can't mask a tracker's margin/free-hours
+        # risk by dropping the whole row through the rescue below.
+        if pt.budget_low_end.present? && pt.budget_high_end.present?
+          reasons << 'over_budget' if pt.status == :over_budget
+        end
 
         {
           name: pt.name,

@@ -84,6 +84,20 @@ class Mcp::ProjectsAtRiskToolTest < ActiveSupport::TestCase
     assert_equal 1, payload['count']
   end
 
+  test 'a half-configured budget does not crash or drop the tracker; other criteria still judged' do
+    # Only budget_high_end set — invalid per validation but possible in legacy
+    # rows; ProjectTracker#status raises on this. The tool must still evaluate
+    # margin (thin here) and not drop the row via the rescue.
+    t = tracker!(name: 'Half Budget', spend: 1000.0, cost: 900.0)
+    t.update_column(:budget_high_end, 4000) # bypasses the both-or-neither validation
+    Sentry.expects(:capture_exception).never
+    payload = mcp_payload(Mcp::ListProjectsAtRiskTool.call(server_context: {}))
+    row = payload['projects'].find { |p| p['name'] == 'Half Budget' }
+    refute_nil row, 'half-budget tracker must not be silently dropped'
+    assert_includes row['risk_reasons'], 'margin_below_target'
+    refute_includes row['risk_reasons'], 'over_budget'
+  end
+
   test 'empty result is a valid payload' do
     payload = mcp_payload(Mcp::ListProjectsAtRiskTool.call(server_context: {}))
     assert_equal 0, payload['count']
