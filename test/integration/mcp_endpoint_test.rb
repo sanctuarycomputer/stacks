@@ -55,7 +55,7 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     assert body.key?("result"), "Expected JSON-RPC result key, got: #{body.inspect}"
     tool_names = body["result"]["tools"].map { |t| t["name"] }
     assert_includes tool_names, "search", "Expected 'search' tool in: #{tool_names.inspect}"
-    assert_equal %w[get_ar_aging get_document get_studio_health list_documents list_open_admin_tasks list_overdue_invoices list_projects_at_risk list_sources search], tool_names.sort,
+    assert_equal %w[get_ar_aging get_document get_pnl get_studio_health list_documents list_open_admin_tasks list_overdue_invoices list_projects_at_risk list_sources search], tool_names.sort,
       "Expected all registered tools, got: #{tool_names.inspect}"
   end
 
@@ -82,6 +82,13 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
   test "tools/call round-trip for get_studio_health returns a valid payload" do
     payload = call_tool("get_studio_health", { gradation: "month" })
     assert payload.key?("studios")
+  end
+
+  test "tools/call round-trip for get_pnl returns a payload or a clear error" do
+    payload = call_tool("get_pnl")
+    # Empty test DB may have no synced reports — either a P&L payload or the
+    # descriptive no-reports error is valid; both prove dispatch + envelope.
+    assert(payload.key?("revenue") || payload.key?("error"))
   end
 
   test "POST returns 403 when MCP API key is not configured" do
