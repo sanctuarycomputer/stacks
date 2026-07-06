@@ -263,4 +263,40 @@ class Stacks::Etl::Meet::GeminiNotesSourceTest < ActiveSupport::TestCase
     tx = out.find { |r| r[:source] == :meet }
     assert_equal 2, tx[:participant_count], "head-count must be distinct speakers (2), not invited (3)"
   end
+
+  test "combined transcript with BOLD markdown speaker turns parses speakers (real Gemini format)" do
+    # Real Gemini transcripts render each turn as "**Name:** text" (bold), with "### **00:01:15**"
+    # timestamp headings between turns. The plain-text speaker parser matches ZERO of these unless
+    # the ** emphasis is stripped first. Without the fix, tx would be nil (notes-only).
+    md = <<~MD
+      # **📝 Notes**
+
+      ## **Business Meeting**
+
+      Invited [A](mailto:a@x.co) [B](mailto:b@x.co) [C](mailto:c@x.co)
+
+      Meeting records [Transcript](https://docs.google.com/document/d/SELF_ID/edit?usp=drive_web&tab=t.abc)
+
+      ### Summary
+      Stuff happened.
+
+      # **📖 Transcript**
+
+      ### **00:01:15** {#00:01:15}
+
+      **Evie Kling:** Hi, Christian.
+
+      **Christian Perez:** Hey, how are you?
+
+      **Andy Brewer:** Let's begin the sync.
+    MD
+    stub_drive_returning(md)
+    out = []
+    Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1)).each_meeting { |r| out << r }
+    tx = out.find { |r| r[:source] == :meet }
+    assert tx, "a transcript record must be emitted — bold speaker turns must parse (not degrade to notes-only)"
+    assert_equal ["Evie Kling", "Christian Perez", "Andy Brewer"], tx[:segments].map { |s| s[:speaker_name] }
+    assert_equal 3, tx[:participant_count]
+    assert_includes tx[:segments].first[:text], "Hi, Christian." # ** stripped from the utterance too
+  end
 end

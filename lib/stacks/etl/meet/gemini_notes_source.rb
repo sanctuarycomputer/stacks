@@ -58,6 +58,15 @@ module Stacks
           end
         end
 
+        # Real Gemini transcripts render each turn as BOLD markdown: "**Name:** utterance".
+        # The shared speaker parser (from DriveSource's plain-text transcripts) expects a
+        # letter-led "Name: utterance" line, so it matches ZERO bold turns. Strip the "**"
+        # emphasis before parsing (validated on prod: 0 -> hundreds of turns, no false speakers).
+        # DriveSource transcripts are plain text and never reach this path.
+        def transcript_speaker_text(md)
+          md.to_s.gsub("**", "")
+        end
+
         def invited_emails_from(text)
           # Emails only appear as mailto: links, primarily in the "Invited" block.
           text.to_s.scan(/mailto:([^)\s]+)/).flatten.map { |e| e.downcase }
@@ -83,7 +92,7 @@ module Stacks
           text = @service.export_file(file.id, "text/markdown")
           if combined_format?(text, file.id)
             notes_md, transcript_md = split_transcript(text)
-            segments = parse_segments(transcript_md).each { |s| s[:started_at] = coerce(file.created_time) }
+            segments = parse_segments(transcript_speaker_text(transcript_md)).each { |s| s[:started_at] = coerce(file.created_time) }
             if segments.any?
               tx = transcript_record(file, text, transcript_md, segments)
               # Reverse-dedup: if an API/Drive transcript Document already covers this file, don't
