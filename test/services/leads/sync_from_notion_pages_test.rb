@@ -61,6 +61,24 @@ class Leads::SyncFromNotionPagesTest < ActiveSupport::TestCase
     assert_equal 0, NotionLead.count
   end
 
+  test "a DB-level failure on one page does not sink the rest of the rebuild" do
+    page_one = lead_page!({})
+    page_two = lead_page!(
+      "✨ Lead Received" => { "type" => "date", "date" => { "start" => "2024-05-05" } }
+    )
+    # Feed page_one twice: its second projection hits the real unique index
+    # on notion_page_id — a Postgres-level error which, without a per-page
+    # savepoint, marks the outer transaction aborted so every later page
+    # fails with PG::InFailedSqlTransaction (silently wiping the rebuild).
+    NotionPage.stubs(:lead).returns([page_one, page_one, page_two])
+
+    assert_nothing_raised { Leads::SyncFromNotionPages.call }
+
+    assert NotionLead.exists?(notion_page_id: page_one.id)
+    assert_equal Date.new(2024, 5, 5),
+      NotionLead.find_by!(notion_page_id: page_two.id).received_at
+  end
+
   test "for_studio scopes by join, garden3d sees all" do
     g3d = Studio.create!(name: "garden3d", mini_name: "g3d")
     Studio.instance_variable_set(:@all_studios, nil)

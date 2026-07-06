@@ -14,16 +14,24 @@ module Leads
         NotionLead.delete_all
 
         pages.each do |page|
-          lead = page.as_lead
-          row = NotionLead.create!(
-            notion_page_id: page.id,
-            received_at: parse_date(page, :received_at, lead.received_at),
-            settled_at: parse_date(page, :settled_at, lead.settled_at),
-            proposal_sent_at: parse_date(page, :proposal_sent_at, lead.proposal_sent_at),
-            won_at: parse_date(page, :won_at, lead.won_at),
-          )
-          lead.studios.each do |studio|
-            NotionLeadStudio.create!(notion_lead: row, studio: studio)
+          # Savepoint per page: a Postgres-level error (unique/FK/not-null
+          # violation) would otherwise mark the outer transaction aborted,
+          # making every later page fail with "current transaction is
+          # aborted" — silently sinking the rebuild. Rolling back just the
+          # savepoint keeps the outer transaction healthy, and also drops any
+          # partial rows (a lead missing some studio links) atomically.
+          ActiveRecord::Base.transaction(requires_new: true) do
+            lead = page.as_lead
+            row = NotionLead.create!(
+              notion_page_id: page.id,
+              received_at: parse_date(page, :received_at, lead.received_at),
+              settled_at: parse_date(page, :settled_at, lead.settled_at),
+              proposal_sent_at: parse_date(page, :proposal_sent_at, lead.proposal_sent_at),
+              won_at: parse_date(page, :won_at, lead.won_at),
+            )
+            lead.studios.each do |studio|
+              NotionLeadStudio.create!(notion_lead: row, studio: studio)
+            end
           end
         rescue StandardError => e
           Rails.logger.warn(
