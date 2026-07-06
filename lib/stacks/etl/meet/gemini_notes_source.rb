@@ -4,6 +4,7 @@ module Stacks
     module Meet
       class GeminiNotesSource
         include DriveDoc
+        include TranscriptSegments
         QUERY = "mimeType='application/vnd.google-apps.document' and name contains 'Notes by Gemini'".freeze
 
         def initialize(user_email, since:, until_time: nil)
@@ -31,6 +32,30 @@ module Stacks
           # The "Meeting records [Transcript](…/document/d/<id>/…)" line.
           m = text.to_s.match(%r{\[Transcript\]\(https://docs\.google\.com/document/d/([A-Za-z0-9_-]+)})
           m && m[1]
+        end
+
+        # The transcript is EMBEDDED in this notes doc (newer Meet format) when its
+        # "Meeting records [Transcript](…/document/d/<id>)" link points to the doc's OWN id.
+        def combined_format?(text, file_id)
+          transcript_doc_id_from(text) == file_id
+        end
+
+        # First markdown heading whose text contains "Transcript" — tolerant of the 📖 emoji so
+        # a future Google change doesn't break it. The inline "Meeting records [Transcript](…)"
+        # link is NOT a heading and is not matched.
+        TRANSCRIPT_HEADING = /^\#{1,2}\s+.*Transcript.*$/i
+
+        # Split a combined doc into [notes_body_markdown, transcript_markdown]. Everything from
+        # the transcript heading onward is the transcript; everything before is the notes body.
+        # Returns transcript_md = "" when no transcript heading is present (caller falls back to
+        # notes-only).
+        def split_transcript(text)
+          s = text.to_s
+          if (m = s.match(TRANSCRIPT_HEADING))
+            [s[0...m.begin(0)], s[m.begin(0)..]]
+          else
+            [s, ""]
+          end
         end
 
         def invited_emails_from(text)

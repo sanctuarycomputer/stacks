@@ -166,4 +166,45 @@ class Stacks::Etl::Meet::GeminiNotesSourceTest < ActiveSupport::TestCase
     assert_equal "TRANSCRIPT_ID_123", n[:transcript_doc_id]
     assert_equal ["ayaka@index-space.org", "hugh@sanctuary.computer"], n[:contacts].map { |c| c[:email] }
   end
+
+  COMBINED = <<~TXT
+    # **📝 Notes**
+
+    ## **Business Meeting**
+
+    Invited [Alice](mailto:alice@x.co) [Bob](mailto:bob@x.co) [Carol](mailto:carol@x.co)
+
+    Meeting records [Transcript](https://docs.google.com/document/d/SELF_ID/edit?usp=drive_web&tab=t.wqjj)
+
+    ### Summary
+    We planned the sprint.
+
+    # **📖 Transcript**
+
+    ## **Business Meeting \\- Transcript**
+
+    Alice: kicking off the sprint
+    Bob: sounds good to me
+    Carol: agreed
+  TXT
+
+  test "detects the combined format when the transcript link points to the doc's own id" do
+    assert src.send(:combined_format?, COMBINED, "SELF_ID")
+    refute src.send(:combined_format?, COMBINED, "OTHER_ID")  # external transcript -> old format
+    refute src.send(:combined_format?, "no transcript link here", "SELF_ID")
+  end
+
+  test "splits combined markdown into notes-body and transcript at the transcript heading" do
+    notes_md, transcript_md = src.send(:split_transcript, COMBINED)
+    assert_includes notes_md, "We planned the sprint"
+    refute_includes notes_md, "kicking off the sprint"      # transcript dialogue not in notes
+    assert_includes transcript_md, "Alice: kicking off the sprint"
+    assert_includes transcript_md, "Carol: agreed"
+  end
+
+  test "split returns empty transcript when there is no transcript heading" do
+    notes_md, transcript_md = src.send(:split_transcript, "# Notes\n\n### Summary\nJust notes.")
+    assert_includes notes_md, "Just notes."
+    assert_equal "", transcript_md
+  end
 end
