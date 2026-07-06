@@ -1,0 +1,1168 @@
+// Sass variable overrides must be declared before loading up Active Admin's styles.
+//
+// To view the variables that Active Admin provides, take a look at
+// `app/assets/stylesheets/active_admin/mixins/_variables.scss` in the
+// Active Admin source.
+//
+// For example, to change the sidebar width:
+// $sidebar-width: 242px;
+
+// Active Admin's got SASS!
+@import "active_admin/mixins";
+@import "active_admin/base";
+
+@import "colors";
+@import "generic_dashboard_modules";
+@import "budget_progress";
+@import "toggle_switch";
+@import "markdown";
+
+@import "utils";
+@import "admin/admin_users/show";
+
+.clearfix::after {
+  content: "";
+  clear: both;
+  display: table;
+}
+
+.okr_growth_progress {
+  width: 100%;
+  position: relative;
+  margin-bottom: 20px;
+  .bar {
+    width: 100%;
+    height: 10px;
+    background-color: $color-light-grey;
+    border-radius: 999px;
+    .inner_progress_bar {
+      height: 100%;
+      background-color: $color-red;
+      border-radius: 999px;
+      &.failing {
+        background-color: $color-red;
+      }
+      &.at_risk {
+        background-color: $color-orange;
+      }
+      &.healthy {
+        background-color: $color-blue;
+      }
+      &.exceptional {
+        background-color: $color-green;
+      }
+    }
+  }
+  .target_indicator {
+    width: 6px;
+    height: 6px;
+    background-color: $color-light-grey;
+    border-radius: 999px;
+    position: absolute;
+    left: 0;
+    margin-left: -3px;
+    top: 14px;
+    &.low {
+      background-color: $color-orange;
+    }
+    &.mid {
+      background-color: $color-blue;
+    }
+    &.high {
+      background-color: $color-green;
+    }
+  }
+}
+
+.comment {
+  display: flex;
+  max-width: 60%;
+  align-items: flex-start;
+  width: fit-content;
+  background-color: $color-light-grey;
+  border-radius: 8px;
+  margin: 20px 20px 0px 20px;
+  padding: 20px;
+  &.own {
+    flex-direction: row-reverse;
+    float: right;
+  }
+
+  img.comment-avatar {
+    width: 50px;
+    background-color: white;
+    border-radius: 999999px;
+  }
+  .comment-body {
+    margin: 0px 20px;
+    p {
+      font-size: 14px;
+      margin-bottom: 0px;
+      white-space: pre-wrap;
+    }
+    p.comment-delete {
+      font-size: 11px;
+      cursor: pointer;
+      &:hover {
+        color: $color-red;
+      }
+    }
+  }
+}
+
+.full-screen-modal {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(255,255,255,0.5);
+  z-index: 999999;
+  backdrop-filter: blur(10px);
+
+  &.hidden {
+    display: none;
+    pointer-events: none;
+  }
+
+  .full-screen-modal__contents {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+
+    box-shadow: 0 1px 20px #b7b7b7;
+    border-radius: 8px;
+    background-color: white;
+    transform: translate(-50%, -50%);
+    top: 50%;
+    left: 50%;
+    width: 80%;
+    height: 80%;
+    position: absolute;
+
+    .full-screen-modal__contents__title {
+      padding: 20px 20px 0px 20px;
+    }
+
+    .full-screen-modal__contents__body {
+      overflow-y: scroll;
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .full-screen-modal__contents__body.reverse {
+      flex-direction: column-reverse;
+    }
+
+    form.full-screen-modal__comment-box {
+      padding: 20px;
+      bottom: 0;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      textarea {
+        margin-bottom: 0px;
+      }
+    }
+  }
+}
+
+hr {
+  border: 1px solid $color-light-grey;
+  box-shadow: none;
+}
+
+input {
+  border: 1px solid $color-light-grey;
+  font-family: 'Inter var', sans-serif;
+  border-radius: 4px;
+}
+
+code {
+  background-color: #f4f5f5;
+  border-radius: 999px;
+  padding: 1px 4px;
+  color: rgb(205, 68, 68);
+}
+
+.status-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background-color: $color-black;
+  &.urgent {
+    background-color: $color-red;
+  }
+  &.important {
+    background-color: $color-orange;
+  }
+  &.chill {
+    background-color: $color-purple;
+  }
+}
+
+.icon-and-text {
+  display: flex;
+  align-items: center;
+  img {
+    width: 14px;
+    height: 14px;
+    margin-right: 6px;
+  }
+}
+
+@import url('https://rsms.me/inter/inter.css');
+body { font-family: 'Inter', sans-serif; }
+@supports (font-variation-settings: normal) {
+  body { font-family: 'Inter var', sans-serif; }
+}
+
+.empty_state {
+  text-align: center;
+  img {
+    max-width: 400px;
+  }
+}
+
+.admin_inputs {
+  ol.fragments-group {
+    padding: 0;
+  }
+  li {
+    border-bottom: 1px dashed $color-lighter-grey;
+    padding: 20px 0px;
+  }
+  li label {
+    font-size: 14px;
+  }
+  li p.inline-hints {
+    font-size: 0.95em;
+    color: $color-grey;
+    margin: 0.5em 0 0 0;
+  }
+  li.input.stringish, li.input.text, li.input.boolean {
+    display: flex;
+    flex-direction: column;
+
+    label {
+      padding-left: 0;
+      font-size: 14px;
+      margin-bottom: 6px;
+      text-transform: capitalize;
+    }
+
+    &.boolean {
+      input {
+        display: inline-block;
+        width: auto !important;
+      }
+      label {
+        font-weight: bold;
+        margin-bottom: 0;
+      }
+    }
+
+    input, textarea {
+      font-family: 'Inter var', sans-serif;
+      width: 100% !important;
+      font-size: 18px;
+      padding: 20px;
+      box-shadow: 0 1px 20px #b7b7b7;
+      border-radius: 8px;
+      border: none;
+    }
+  }
+}
+
+select {
+  font-family: 'Inter var', sans-serif;
+  width: 100% !important;
+  padding: 8px 20px !important;
+  border-radius: 9999px;
+  border: none;
+  font-size: 18px;
+  background-color: #e8e8e8;
+}
+
+::selection {
+  background: $color-blue; /* WebKit/Blink Browsers */
+  color: white;
+}
+::-moz-selection {
+  background: $color-blue; /* Gecko Browsers */
+  color: white;
+}
+
+.nag {
+  background-color: $color-white;
+  padding: 14px 30px !important;
+  font-size: 18px !important;
+  border-radius: 999px;
+  display: inline-block;
+  color: $color-grey;
+  box-shadow: 0 1px 20px #b7b7b7;
+  &.warning {
+    background-color: orange;
+    color: white;
+  }
+  &.sticky {
+    position: sticky;
+    top: 20px;
+    width: 100%;
+    text-align: center;
+  }
+}
+
+form fieldset.inputs {
+  box-shadow: 0 1px 20px #b7b7b7;
+  border-radius: 8px;
+  background: white;
+  padding: 20px;
+}
+
+form fieldset > ol > li.radio fieldset ol {
+  display: flex;
+  justify-content: space-between;
+  padding-left: 0px;
+}
+
+select.display_only {
+  white-space: unset;
+  height: 120px;
+  opacity: 1;
+  color: #414141;
+  border-radius: 8px;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  pointer-events: none;
+}
+
+#dei_admin_inputs {
+  ol {
+    display: flex;
+    flex-direction: row;
+    li {
+      legend.label {
+        padding-bottom: 20px;
+        label {
+          width: 100%;
+          padding-left: 0;
+          font-size: 18px;
+          font-weight: 700;
+          margin-bottom: 0;
+          color: #5E6469;
+        }
+      }
+      flex-basis: 0;
+      flex-grow: 1;
+      ol {
+        padding: 0px;
+        flex-direction: column;
+      }
+    }
+  }
+}
+
+body.new.admin_reviews,
+body.create.admin_reviews,
+body.edit.admin_reviews,
+body.update.admin_reviews {
+  li.cancel {
+    display: none;
+  }
+  .admin_inputs {
+    .has_many_container {
+      &.peer_reviews {
+        fieldset.inputs.has_many_fields:nth-child(-n+2) {
+          .has_many_remove { visibility: hidden; }
+        }
+        fieldset.inputs.has_many_fields:nth-child(-n+3) {
+          .has_many_delete { visibility: hidden; }
+        }
+      }
+      &.review_trees {
+        .has_many_remove { visibility: hidden; }
+      }
+      padding: 0;
+      box-shadow: 0 1px 20px #b7b7b7;
+      border-radius: 8px;
+
+      .inputs.has_many_fields {
+        margin: 0;
+        padding: 0px 10px;
+        box-shadow: none;
+        border-radius: 0px;
+        background-color: transparent;
+        border-bottom: 1px dashed $color-light-grey;
+        ol {
+          display: flex;
+          align-items: center;
+          li.select.input.required {
+            flex: 1;
+            display: inline-block;
+            align-items: center;
+            display: flex;
+
+            label {
+              font-size: 18px;
+              color: $color-black;
+              width: auto;
+              margin-right: 20px;
+              white-space: nowrap;
+            }
+            select {
+              width: auto !important;
+            }
+          }
+          li {
+          }
+        }
+      }
+    }
+  }
+}
+
+body.edit.admin_workspaces, body.update.admin_workspaces {
+  fieldset.actions {
+    display: none;
+  }
+  #workspace_status_input {
+    display: none;
+  }
+}
+
+  .has_many_container.scores fieldset.inputs.inline_fieldset {
+    height: 74px;
+    li.agree {
+      select {
+        background-color: $color-black;
+        color: white;
+        pointer-events: none;
+        opacity: 0.5;
+      }
+    }
+  }
+
+body.edit.admin_finalizations, body.update.admin_finalizations {
+  .finalization_notes {
+    padding: 0;
+    margin-top: 25px;
+    textarea {
+      width: 100%;
+    }
+  }
+  fieldset.actions {
+    display: none;
+  }
+  #finalization_workspace_attributes_status_input {
+    display: none;
+  }
+  #active_admin_content {
+    padding: 30px 0px;
+  }
+  .skill_tree_hint {
+    padding-left: 30px;
+  }
+  .action_buttons {
+    padding-left: 30px;
+  }
+}
+
+
+.comparitor_table_parent {
+  display: flex;
+  overflow-x: scroll;
+  padding: 0px 30px;
+
+  #comparitor_labels {
+    min-width: 300px;
+  }
+  #comparitor_table {
+    min-width: 500px;
+  }
+  #comparitor_table, #comparitor_labels {
+    margin-right: 20px;
+  }
+
+  fieldset.inputs.workspace {
+    min-width: 500px;
+    padding: 0;
+    background-color: transparent;
+    box-shadow: none;
+    border-radius: 0;
+    .has_many_container.score_trees {
+      padding: 0;
+      fieldset.inputs.has_many_fields {
+        margin: 0;
+      }
+    }
+  }
+}
+
+li {
+  list-style: none;
+}
+
+form textarea {
+  margin-bottom: 40px;
+  font-size: 18px;
+  padding: 20px;
+  box-shadow: 0 1px 20px #b7b7b7;
+  border-radius: 8px;
+  border: none;
+  &:focus {
+    box-shadow: 0 1px 20px #b7b7b7;
+    border-radius: 8px;
+    border: none;
+  }
+}
+
+form fieldset > ol > li p.inline-errors {
+  color: $color-orange;
+  font-weight: bold;
+  margin: 0;
+}
+
+.peer_reviewer_pill {
+  white-space: nowrap;
+  display: block;
+}
+
+form fieldset.actions li.cancel a {
+  margin: 10px;
+  color: white;
+  font-size: 18px;
+  padding: 14px 30px;
+  border: none;
+  background-color: $color-orange;
+  box-shadow: none;
+  &:not(.disabled):hover {
+    background-color: $color-orange;
+  }
+}
+
+
+
+form.filter_form {
+  input[type=submit] {
+    padding: 6px 12px;
+    margin: 0 6px 0 0;
+    font-size: 13px;
+  }
+
+  a.clear_filters_btn {
+    padding: 6px 12px;
+    font-size: 13px;
+    font-family: 'Inter var', sans-serif;
+    background-color: transparent;
+    color: $color-black;
+    border: none;
+    box-shadow: none;
+  }
+}
+
+form {
+  ul.errors {
+    color: $color-orange;
+    font-weight: bold;
+    margin: 0;
+    font-size: 20px;
+    text-shadow: none;
+    background-image: none;
+    background: none;
+    li {
+      margin-left: 0px;
+    }
+  }
+
+  a.button,
+  a.button:link,
+  a.button:visited,
+  input[type=submit],
+  input[type=button],
+  button {
+    background-color: $color-black;
+    margin: 10px;
+    color: white;
+    font-size: 18px;
+    padding: 14px 30px;
+    border: none;
+    &.cancel {
+      border: 2px solid $color-orange;
+      background-color: $color-orange;
+      &:hover {
+        background-color: $color-orange;
+      }
+    }
+    &.draft {
+      border: 2px solid $color-blue;
+      color: $color-blue;
+      background-color: transparent;
+      &:hover {
+        background-color: $color-blue;
+        color: white;
+      }
+    }
+    &.complete {
+      border: 2px solid $color-green;
+      background-color: $color-green;
+      &:hover {
+        background-color: $color-green;
+      }
+    }
+  }
+}
+
+.action_buttons {
+  margin-bottom: 40px;
+}
+
+h1 {
+  font-family: 'Inter var', sans-serif;
+  font-size: 42px;
+  font-weight: 900;
+  color: #414141;
+}
+
+table.index_table, .sidebar_section.panel {
+  h3 {
+    display: none;
+  }
+  .panel_contents {
+    margin-top: 38px;
+    padding: 15px;
+  }
+  background: transparent;
+  box-shadow: 0 1px 20px #b7b7b7;
+  border-radius: 8px;
+}
+
+.has_many_container.score_trees {
+  box-shadow: none;
+
+  fieldset.inputs.has_many_fields {
+    .string.input.optional.stringish {
+      padding: 0;
+    }
+    background-color: transparent;
+    box-shadow: none;
+    padding: 0;
+  }
+}
+
+.skill_tree_hint {
+  font-size: 18px;
+  max-width: 600px;
+  margin-bottom: 50px;
+}
+
+li.input.display {
+  padding: 0;
+  label {
+    display: none;
+  }
+  p, input[readonly] {
+    display: inline;
+    font-family: 'Inter var', sans-serif;
+    font-size: 42px;
+    font-weight: 900;
+    color: #414141;
+    padding: 0;
+    width: 100% !important;
+    border: none;
+    background: transparent;
+    &:focus {
+      border: none;
+      box-shadow: none;
+    }
+  }
+  &.mini {
+    p, input[readonly] {
+      height: 27px;
+      font-size: 18px;
+      font-weight: 500;
+    }
+  }
+}
+
+.disagree {
+  input {
+    font-weight: 700 !important;
+    color: $color-purple;
+  }
+}
+.agree {
+  input {
+    font-weight: 400 !important;
+    //color: $color-green;
+  }
+}
+
+.has_many_container.scores {
+  width: 100%;
+  margin-top: 26px;
+  margin-bottom: 40px;
+  box-shadow: 0 1px 20px #b7b7b7;
+  border-radius: 8px;
+  padding: 0px;
+  display: inline-block;
+
+  fieldset.inputs.has_many_fields .string.input.optional.stringish {
+    padding: 18px 18px;
+  }
+
+  fieldset.inputs.inline_fieldset {
+    margin: 0;
+    padding: 0px 10px;
+    box-shadow: none;
+    border-radius: 0px;
+    background-color: transparent;
+    border-bottom: 1px dashed #e8e8e8;
+    &:last-of-type {
+      border-bottom: none;
+    }
+    label {
+      display: none;
+    }
+    ol {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      li {
+        padding: 18px 18px;
+        flex: 1;
+      }
+    }
+    select {
+      font-family: 'Inter var', sans-serif;
+      width: 100% !important;
+      padding: 8px 20px;
+      border-radius: 9999px;
+      border: none;
+      font-size: 18px;
+      background-color: #e8e8e8;
+    }
+    input[readonly] {
+      height: 39px;
+      font-family: 'Inter var', sans-serif;
+      width: 100% !important;
+      border: none;
+      background: transparent;
+      font-size: 18px;
+      font-weight: 700;
+      &:focus {
+        border: none;
+        box-shadow: none;
+      }
+    }
+  }
+}
+
+
+.subtitle_bar {
+  margin-bottom: 20px;
+  display: flex;
+  .subtitlebar_left {
+    align-self: flex-end;
+    flex: 1;
+    h2 {
+      margin: 0;
+    }
+  }
+  .subtitlebar_right {
+    text-align: right;
+    align-self: flex-end;
+    flex: 1;
+  }
+}
+
+a {
+  font-size: 18px;
+  color: $color-blue;
+  font-weight: 700;
+}
+
+h2 {
+  font-size: 42px;
+  font-weight: 900;
+  color: #414141;
+}
+
+#title_bar .action_items span.action_item > a {
+  border-radius: 999px;
+  background: $color-blue;
+  border: none;
+  text-shadow: none;
+  color: white;
+  box-shadow: none;
+  font-size: 18px;
+  padding: 14px 30px;
+}
+#title_bar .action_items span.action_item > a:not(.disabled):hover {
+  background: $color-blue;
+}
+a.member_link {
+  margin-right: 18px;
+}
+
+#header h1 {
+  font-size: 40px;
+  padding-right: 14px;
+}
+
+.notifier {
+  box-shadow: 1px 1px 3px 1px #0000001f;
+  position: absolute;
+  background-color: #FF160A;
+  z-index: 999999;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  right: -12px;
+  top: -14px;
+  color: white;
+  font-size: 14px;
+  justify-content: center;
+  border-radius: 999px;
+  border: 2.5px solid white;
+}
+
+// Same shape/position as .notifier, but tinted to read as "balance owed"
+// (green — money the contributor is due) and width auto so dollar amounts
+// of any length stay legible.
+.notifier--balance {
+  @extend .notifier;
+  background-color: #26bd50;
+  width: auto;
+  min-width: 28px;
+  padding: 0 8px;
+}
+
+.notifier--unsettled {
+  @extend .notifier;
+  background-color: #e69e3a;
+  width: auto;
+  min-width: 28px;
+  padding: 0 8px;
+}
+
+#header ul.tabs > li:hover > a {
+  background-color: $color-black;
+  border-radius: 9999px;
+}
+
+#header ul.tabs > li#ledger_balance > a {
+  background-color: transparent !important;
+  padding: 0 4px;
+  position: relative;
+  top: -2px;
+}
+
+table.index_table th {
+  background-image: none;
+  background-color: transparent;
+  text-shadow: none;
+  font-weight: 600;
+  font-size: 18px;
+  padding: 20px !important;
+  box-shadow: none;
+  border: none;
+  border-bottom: 1px solid #e8e8e8;
+  &.sortable {
+    background-image: none;
+    background-color: transparent;
+  }
+}
+table.index_table th:last-child {
+  border-right: none;
+}
+table.index_table td {
+  font-size: 18px;
+  padding: 20px !important;
+}
+
+#header {
+  padding: 14px 0;
+  background-image: none;
+  background-color: white;
+  border-bottom: none;
+  text-shadow: none;
+  font-weight: 600;
+  font-size: 18px;
+  box-shadow: 0 1px 20px #b7b7b7;
+}
+#header a, #header a:link {
+  color: $color-black;
+}
+#header ul.tabs > li ul {
+  box-shadow: none;
+  width: auto;
+  min-width: unset;
+  max-width: unset;
+  padding: 0px 0px 0px 0px;
+  border-top-right-radius: 16px;
+  border-bottom-right-radius: 16px;
+  border-bottom-left-radius: 16px;
+  margin-top: unset;
+  background: $color-grey;
+}
+#header ul.tabs > li ul li a {
+  white-space: nowrap;
+  color: $color-white;
+  padding: 4px 10px 4px 10px;
+  border-radius: 16px;
+}
+#header ul.tabs > li ul li a:hover {
+  background-color: $color-black;
+  border-radius: 16px;
+}
+#header ul.tabs > li ul li.current a {
+  background-color: $color-blue;
+  border-radius: 16px;
+}
+#header ul.tabs > li.has_nested > a {
+  padding-right: 10px !important;
+}
+#header ul.tabs > li.has_nested.current > a {
+  background: $color-blue;
+}
+#header ul.tabs > li.has_nested:hover > a {
+  border-radius: 0;
+  border-top-right-radius: 16px;
+  border-top-left-radius: 16px;
+  background: $color-black;
+  border-bottom: none;
+  z-index: 1020;
+}
+#header ul.tabs > li.current > a {
+  background-color: $color-blue;
+  border-radius: 999px;
+}
+body.logged_in .flash {
+  &.flash_alert, &.flash_error {
+    background-color: $color-orange;
+    font-size: 18px;
+    padding: 30px;
+    text-shadow: none;
+    background-image: none;
+    color: white;
+    border: none;
+  }
+  &.flash_notice {
+    background-color: $color-green;
+    font-size: 18px;
+    padding: 30px;
+    text-shadow: none;
+    background-image: none;
+    color: white;
+    border: none;
+  }
+}
+
+p.okr_hint {
+  //white-space: nowrap;
+  font-size: 13px !important;
+  color: $color-grey;
+  padding-top: 8px !important;
+  a {
+    font-size: 13px !important;
+  }
+}
+
+h2 {
+  &.failing {
+    color: $color-red;
+  }
+  &.at_risk {
+    color: $color-orange;
+  }
+  &.healthy {
+    color: $color-blue;
+  }
+  &.exceptional {
+    color: $color-green;
+  }
+}
+
+.pill, .status_tag {
+  .split {
+    background-color: white;
+    color: $color-grey;
+    padding: 1px 4px;
+    border-radius: 999px;
+    font-weight: 400;
+  }
+  white-space: nowrap;
+  padding: 6px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 13px;
+  color: $color-black;
+  &.draft,
+  &.pending,
+  &.some_pending,
+  &.waiting,
+  &.no,
+  &.at_budget,
+  &.likely_complete,
+  &.not_made,
+  &.unpaid,
+  &.partially_paid,
+  &.changed,
+  &.capsule_pending,
+  &.at_risk,
+  &.proposal_needed,
+  &.proposal_sent,
+  &.on_hold_needs_follow_up,
+  &.paused,
+  &.upcoming_legal_review,
+  &.project_capsule_incomplete,
+  &.project_lead,
+  &.no_attendance_record,
+  &.some_pending,
+  &.out_of_sync,
+  {
+    background-color: $color-orange;
+    color: white;
+  }
+  &.complete,
+  &.yes,
+  &.under_budget,
+  &.paid,
+  &.accepted,
+  &.early_payouts_approved,
+  &.added,
+  &.exceptional,
+  &.active,
+  &.creative_lead,
+  &.technical_lead,
+  &.all_accepted,
+  &.manual,
+  &.attended
+  {
+    background-color: $color-green;
+    color: white;
+  }
+  &.pay_stub
+  {
+    background-color: $color-blue;
+    color: white;
+  }
+  &.over_budget,
+  &.error,
+  &.impossible,
+  &.unpaid_overdue,
+  &.partially_paid_overdue,
+  &.removed,
+  &.failing,
+  &.lost_stale,
+  &.deleted,
+  &.not_sent,
+  {
+    background-color: $color-red;
+    color: white;
+  }
+  &.ready,
+  &.no_budget,
+  &.hydro,
+  &.deleted,
+  &.missing_hours,
+  &.voided,
+  &.passed,
+  &.contractor,
+  &.no_payouts,
+  &.project_safety_representative,
+  &.complete,
+  &.in_sync,
+  &.survey,
+  &.project_satisfaction_survey,
+  {
+    background-color: $color-purple;
+    color: white;
+  }
+  &.finalized,
+  &.sanctu,
+  &.unchanged,
+  &.calculated,
+  &.in_progress,
+  &.complete,
+  &.completed,
+  &.healthy,
+  &.contributor,
+  &.reimbursement,
+  &.misc,
+  &.withdrawal,
+  &.trueup,
+  &.profit,
+  {
+    background-color: $color-blue;
+    color: white;
+  }
+  &.archived,
+  &.xxix,
+  &.no_data,
+  &.no_status,
+  &.introduction,
+  &.not_generated,
+  &.no_period
+  {
+    background-color: $color-black;
+    color: white;
+  }
+}
+
+#title_bar {
+  padding-top: 30px;
+  background: none;
+  border: none;
+  text-shadow: none;
+  box-shadow: none;
+  h2 {
+    font-weight: 900;
+    color: $color-black;
+  }
+}
+
+.table_actions {
+  font-weight: 700;
+}
+
+#footer {
+  display: none;
+}
+
+p {
+  font-size: 20px;
+  color: $color-black;
+}
+
+body.logged_out #content_wrapper #active_admin_content {
+  border-radius: 8px;
+  box-shadow: 0 0 20px #cacaca;
+  img {
+    display: block;
+  }
+}
+
+a, a:link, a:visited {
+  text-decoration: none;
+  color: #1F78FF;
+}
+
+body.logged_out #login a {
+  float: initial;
+  font-weight: 900;
+  font-size: 22px;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-shadow: none !important;
+  background-image: none !important;
+}
+

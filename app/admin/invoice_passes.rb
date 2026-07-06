@@ -1,0 +1,113 @@
+ActiveAdmin.register InvoicePass do
+  menu label: "Invoicing", parent: "Money"
+  config.filters = false
+  config.sort_order = 'start_of_month_desc'
+  config.paginate = true
+  config.per_page = 12
+  actions :index, :show
+
+  controller do
+    def scoped_collection
+      # surplus_chunks → calculate_surplus walks every contributor_payout's
+      # ledger → contributor → forecast_person chain. Without these eager
+      # loads each row's surplus column re-fired N queries per tracker per
+      # payout. Production showed /admin/invoice_passes index at 4s for
+      # 12 rows.
+      super.includes(
+        invoice_trackers: [
+          :qbo_invoice,
+          { contributor_payouts: { ledger: { contributor: :forecast_person } } },
+        ],
+      )
+    end
+
+    # calculate_surplus calls invoice_tracker.project_trackers per payout,
+    # which fires 2 queries per tracker without batching. Page had ~120
+    # trackers → 240 queries. Batch-resolve everything in two queries
+    # total before the view renders by hooking find_collection.
+    def find_collection(*args)
+      collection = super
+      if action_name == "index"
+        InvoiceTracker.batch_preload_project_trackers!(
+          collection.to_a.flat_map(&:invoice_trackers),
+        )
+      end
+      collection
+    end
+  end
+
+  action_item :rerun_invoice_pass, only: :show do
+    link_to 'Send Reminders',
+      rerun_invoice_pass_admin_invoice_pass_path(resource), method: :post
+  end
+
+  action_item :rerun_invoice_pass_without_reminders, only: :show do
+    link_to 'Generate Invoices',
+      rerun_invoice_pass_without_reminders_admin_invoice_pass_path(resource), method: :post
+  end
+
+  member_action :rerun_invoice_pass_without_reminders, method: :post do
+    Stacks::Automator.attempt_invoicing_for_invoice_pass(resource, false)
+    redirect_to admin_invoice_pass_path(resource), notice: "Done!"
+  end
+
+  member_action :rerun_invoice_pass, method: :post do
+    Stacks::Automator.attempt_invoicing_for_invoice_pass(resource)
+    redirect_to admin_invoice_pass_path(resource), notice: "Done!"
+  end
+
+  index download_links: false, title: "Monthly Invoicing" do
+    column :start_of_month
+    column :value do |resource|
+      number_to_currency(resource.value)
+    end
+    column :outstanding do |resource|
+      number_to_currency(resource.balance)
+    end
+    column :surplus do |resource|
+      number_to_currency(resource.surplus)
+    end
+    column :invoicing_statuses do |resource|
+      div do
+        if resource.statuses == :missing_hours
+          span("Missing hours", class: "pill missing_hours")
+        else
+          resource.statuses.each do |status, count|
+            span("#{count}x #{status.to_s.humanize}", class: "pill #{status}")
+          end
+        end
+      end
+    end
+
+    column :payout_statuses do |resource|
+      div do
+        if resource.payout_statuses == :missing_hours
+          span("Missing hours", class: "pill missing_hours")
+        else
+          resource.payout_statuses.each do |status, count|
+            span("#{count}x #{status.to_s.humanize}", class: "pill #{status}")
+          end
+        end
+      end
+    end
+
+    actions do |resource|
+      link_to "Invoice Trackers →", admin_invoice_pass_invoice_trackers_path(resource)
+    end
+  end
+
+  show title: :invoice_month do
+
+    hours_report = Stacks::Automator.discover_people_missing_hours_for_month(
+      [],
+      resource.start_of_month,
+    ).map do |d|
+      {
+        forecast_person: d[:forecast_data],
+        missing_allocation: d[:missing_allocation]
+      }
+    end
+
+    render 'invoice_pass', { invoice_pass: invoice_pass, hours_report: hours_report }
+  end
+end

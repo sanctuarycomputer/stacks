@@ -1,0 +1,205 @@
+<script>
+function update(a, b) {
+  var searchParams = new URLSearchParams(window.location.search);
+  if (b !== '')
+    searchParams.set(a, b);
+  else
+    searchParams.delete(a);
+  window.location.search = searchParams.toString();
+}
+</script>
+
+<% current_gradation = params["gradation"] || default_gradation %>
+<% current_gradation = default_gradation unless all_gradations.include?(current_gradation) %>
+<% accounting_method = session[:accounting_method] || "cash" %>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module" style="min-height: 235px">
+    <div class="module-body factoid-parent">
+      <div class="factoid">
+        <h2><%= number_to_currency(runway_data[:average_burn_rate]) %></h2>
+        <p>Average monthly spend for the last three months</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-module">
+    <div class="module-body factoid-parent">
+      <div class="factoid">
+        <h2><%= number_to_currency(runway_data[:net_cash]) %></h2>
+        <p>Net cash in our bank account (subtracting credit card balances)</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-body factoid-parent">
+      <div class="factoid">
+        <h2><%= (runway_data[:net_cash] / runway_data[:average_burn_rate]).round(2) %> months</h2>
+        <p>Estimated business runway (3 - 6 months is healthy)</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-module">
+    <div class="module-body factoid-parent">
+      <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-bottom: 0px;">
+        <thead>
+          <tr>
+            <th class="col">Account</th>
+            <th class="col text-center">Classification</th>
+            <th class="col text-right">Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% accounts.sort_by(&:classification).each_with_index do |account, idx| %>
+            <tr class="<%= idx.even? ? "even" : "odd" %>">
+              <td class="col text-left">
+                <%= account.name %>
+              </td>
+              <td class="co text-center">
+                <%= account.classification %>
+              </td>
+              <td class="col text-right">
+                <% if account.classification == "Liability" %>
+                  <%= number_to_currency(-1 * account.current_balance.abs) %>
+                <% else %>
+                  <%= number_to_currency(account.current_balance) %>
+                <% end %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">🕒 Time Gradation</h2>
+  </div>
+</div>
+
+<% all_gradations.each do |gradation| %>
+  <a onclick='update("gradation", "<%= gradation %>");' style="margin-right: 6px">
+    <p class="nag pill <%= current_gradation == gradation ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
+      By <%= gradation.humanize %>
+    </p>
+  </a>
+<% end %>
+
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">🚦 Business Vertical</h2>
+  </div>
+</div>
+
+<% current_vertical = params["vertical"] %>
+<% current_vertical = nil unless all_verticals.include?(current_vertical) %>
+<a onclick='update("vertical", "");' style="margin-right: 6px">
+  <p class="nag pill <%= current_vertical == nil ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
+    All
+  </p>
+</a>
+<% all_verticals.each do |vertical| %>
+  <a onclick='update("vertical", "<%= vertical %>");' style="margin-right: 6px">
+    <p class="nag pill <%= current_vertical == vertical ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
+      <%= vertical %>
+    </p>
+  </a>
+<% end %>
+
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">💸 Profitability</h2>
+  </div>
+</div>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Profitability</p>
+    </div>
+    <div class="module-body">
+      <canvas id="profitability"></canvas>
+    </div>
+  </div>
+</div>
+
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+  <div id="titlebar_left">
+    <h2 id="page_title">📈 Growth</h2>
+  </div>
+</div>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Enterprise Growth</p>
+    </div>
+    <div class="module-body">
+      <canvas id="growth"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+  new Chart(document.getElementById('profitability'), {
+    type: 'bar',
+    data: <%= profitability_data.to_json.html_safe %>,
+    options: {
+      interaction: {
+        intersect: false,
+        mode: 'index',
+      },
+      tension: 0.3,
+      scales: {
+        y: {
+          type: 'linear',
+          display: true,
+          position: 'left',
+          beginAtZero: true,
+          min: 0,
+        },
+        y1: {
+          type: 'linear',
+          display: true,
+          position: 'right',
+          beginAtZero: true,
+          stacked: true,
+          max: 100,
+          min: 0,
+          grid: {
+            drawOnChartArea: false, // only want the grid lines for one axis to show up
+          },
+        }
+      }
+    }
+  });
+
+  new Chart(document.getElementById('growth'), {
+    type: 'bar',
+    data: <%= growth_data.to_json.html_safe %>,
+    options: {
+      interaction: {
+        intersect: false,
+        mode: 'index',
+      },
+      tension: 0.3,
+      scales: {
+        y: {
+          type: 'linear',
+          display: true,
+          position: 'left',
+          beginAtZero: true,
+          min: 0,
+          max: 100,
+        },
+      }
+    }
+  });
+</script>
+<%= render partial: "admin/enterprises/pay_cycles_section", locals: { enterprise: resource } %>

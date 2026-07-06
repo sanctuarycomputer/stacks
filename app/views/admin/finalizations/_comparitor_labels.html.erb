@@ -1,0 +1,20 @@
+<div id="comparitor_labels">
+  <ol>
+    <li class="display string input optional stringish mini" >
+      <input readonly="readonly" type="text" value="" >
+    </li>
+    <% labelsets.each do |labelset| %>
+      <li class="has_many_container scores">
+        <% labelset.each do |label| %>
+          <fieldset class="inline_fieldset inputs has_many_fields">
+            <ol>
+              <li class="string input optional stringish <%= label[:needs_discussion?] ? "disagree" : "agree" %>">
+                <input readonly="readonly" type="text" value="<%= label[:name] %>">
+              </li>
+            </ol>
+          </fieldset>
+        <% end %>
+      </li>
+    <% end %>
+  </ol>
+</div>

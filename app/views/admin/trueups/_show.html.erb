@@ -1,0 +1,25 @@
+<%= link_to resource.contributor.forecast_person.email, admin_contributor_path(resource.contributor), class: "nag", style: "margin-right: 6px;" %>
+
+<% if resource.qbo_bill.present? %>
+  <a href="https://qbo.intuit.com/app/bill?&txnId=<%= resource.qbo_bill.qbo_id %>" target="_blank">
+    <p class="nag" style="margin-bottom: 0px;margin-right: 6px;">
+      QBO Bill ↗
+    </p>
+  </a>
+  <a href="https://qbo.intuit.com/app/vendordetail?nameId=<%= resource.qbo_bill.qbo_vendor.qbo_id %>" target="_blank">
+    <p class="nag" style="margin-bottom: 0px;margin-right: 6px;">
+      QBO Vendor ↗
+    </p>
+  </a>
+<% end %>
+
+<div class="dashboard-modules table index_table index" style="margin-top:20px;">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Trueup Details</p>
+    </div>
+    <div class="module-body markdown-body">
+      <%= sanitize RDiscount.new(resource.description || "").to_html %>
+    </div>
+  </div>
+</div>

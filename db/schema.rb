@@ -1,0 +1,1518 @@
+# This file is auto-generated from the current state of the database. Instead
+# of editing this file, please use the migrations feature of Active Record to
+# incrementally modify your database, and then regenerate this schema definition.
+#
+# This file is the source Rails uses to define your schema when running `bin/rails
+# db:schema:load`. When creating a new database, `bin/rails db:schema:load` tends to
+# be faster and is potentially less error prone than running all of your
+# migrations from scratch. Old migrations may fail to apply correctly if those
+# migrations use external dependencies or application code.
+#
+# It's strongly recommended that you check this file into your version control system.
+
+ActiveRecord::Schema.define(version: 2026_07_05_000003) do
+
+  # These are extensions that must be enabled in order to support this database
+  enable_extension "btree_gist"
+  enable_extension "pg_stat_statements"
+  enable_extension "plpgsql"
+  # The "vector" (pgvector) extension and the embeddings.embedding vector column + HNSW
+  # index are intentionally omitted here so db:schema:load works on a Postgres without
+  # pgvector (e.g. Heroku CI's in-dyno Postgres). They are created by migrations in
+  # development/production, and re-established idempotently for tests/seeds in
+  # test/test_helper.rb and db/seeds.rb. Keep them out of this dumped schema.
+
+  create_table "account_lead_periods", force: :cascade do |t|
+    t.bigint "project_tracker_id", null: false
+    t.bigint "admin_user_id", null: false
+    t.date "started_at"
+    t.date "ended_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_account_lead_periods_on_admin_user_id"
+    t.index ["project_tracker_id"], name: "index_account_lead_periods_on_project_tracker_id"
+  end
+
+  create_table "active_admin_comments", force: :cascade do |t|
+    t.string "namespace"
+    t.text "body"
+    t.string "resource_type"
+    t.bigint "resource_id"
+    t.string "author_type"
+    t.bigint "author_id"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["author_type", "author_id"], name: "index_active_admin_comments_on_author_type_and_author_id"
+    t.index ["namespace"], name: "index_active_admin_comments_on_namespace"
+    t.index ["resource_type", "resource_id"], name: "index_active_admin_comments_on_resource_type_and_resource_id"
+  end
+
+  create_table "adhoc_invoice_trackers", force: :cascade do |t|
+    t.string "qbo_invoice_id", null: false
+    t.bigint "project_tracker_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.bigint "qbo_account_id", null: false
+    t.index ["project_tracker_id"], name: "index_adhoc_invoice_trackers_on_project_tracker_id"
+    t.index ["qbo_account_id", "qbo_invoice_id"], name: "index_adhoc_invoice_trackers_on_qa_and_qbo_invoice"
+    t.index ["qbo_account_id"], name: "index_adhoc_invoice_trackers_on_qbo_account_id"
+    t.index ["qbo_invoice_id", "project_tracker_id"], name: "index_adhoc_invoice_trackers_on_qbo_invoice_and_project_tracker", unique: true
+  end
+
+  create_table "admin_user_salary_windows", force: :cascade do |t|
+    t.bigint "admin_user_id", null: false
+    t.decimal "salary", null: false
+    t.date "start_date", null: false
+    t.date "end_date"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_admin_user_salary_windows_on_admin_user_id"
+  end
+
+  create_table "admin_users", force: :cascade do |t|
+    t.string "email", default: "", null: false
+    t.string "encrypted_password", default: "", null: false
+    t.string "reset_password_token"
+    t.datetime "reset_password_sent_at"
+    t.datetime "remember_created_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.string "provider"
+    t.string "uid"
+    t.string "roles", default: [], array: true
+    t.boolean "show_skill_tree_data", default: true
+    t.integer "old_skill_tree_level"
+    t.text "profit_share_notes"
+    t.jsonb "info", default: {}
+    t.boolean "ignore", default: false
+    t.index ["email"], name: "index_admin_users_on_email", unique: true
+    t.index ["reset_password_token"], name: "index_admin_users_on_reset_password_token", unique: true
+  end
+
+  create_table "associates_award_agreements", force: :cascade do |t|
+    t.bigint "admin_user_id", null: false
+    t.date "started_at", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.integer "total_awardable_units", default: 5000000
+    t.integer "installment_amount", default: 104167
+    t.string "contract_url"
+    t.index ["admin_user_id"], name: "index_associates_award_agreements_on_admin_user_id"
+  end
+
+  create_table "chunks", force: :cascade do |t|
+    t.bigint "document_id", null: false
+    t.integer "position", null: false
+    t.text "content", null: false
+    t.integer "start_offset"
+    t.integer "end_offset"
+    t.string "speaker_name"
+    t.bigint "speaker_contact_id"
+    t.integer "source", default: 0, null: false
+    t.datetime "occurred_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    # content_tsv (tsvector GENERATED ALWAYS AS) and its GIN index are intentionally
+    # omitted here: Rails 6.1 dumps generated columns as DEFAULT expressions, which
+    # PostgreSQL rejects on schema:load. They are added idempotently in test_helper.rb
+    # and exist in the development/production DBs via the CreateChunks migration.
+    t.index ["document_id", "position"], name: "index_chunks_on_document_id_and_position", unique: true
+    t.index ["document_id"], name: "index_chunks_on_document_id"
+    t.index ["speaker_contact_id"], name: "index_chunks_on_speaker_contact_id"
+  end
+
+  create_table "commissions", force: :cascade do |t|
+    t.bigint "project_tracker_id", null: false
+    t.bigint "contributor_id", null: false
+    t.string "type", null: false
+    t.decimal "rate", precision: 10, scale: 4, null: false
+    t.text "notes"
+    t.datetime "deleted_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["contributor_id"], name: "index_commissions_on_contributor_id"
+    t.index ["deleted_at"], name: "index_commissions_on_deleted_at"
+    t.index ["project_tracker_id"], name: "index_commissions_on_project_tracker_id"
+    t.index ["type"], name: "index_commissions_on_type"
+  end
+
+  create_table "contacts", force: :cascade do |t|
+    t.string "email", null: false
+    t.string "sources", default: [], array: true
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.string "apollo_id"
+    t.jsonb "apollo_data", default: {}
+    t.jsonb "metadata", default: {}, null: false
+    t.string "display_name"
+    t.index ["apollo_id"], name: "index_contacts_on_apollo_id", unique: true
+    t.index ["email"], name: "index_contacts_on_email", unique: true
+  end
+
+  create_table "contributor_adjustments", force: :cascade do |t|
+    t.decimal "amount", precision: 12, scale: 2, null: false
+    t.date "effective_on", null: false
+    t.string "qbo_invoice_id"
+    t.text "description"
+    t.datetime "deleted_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.string "qbo_bill_id"
+    t.bigint "ledger_id", null: false
+    t.bigint "qbo_account_id", null: false
+    t.index ["deleted_at"], name: "index_contributor_adjustments_on_deleted_at"
+    t.index ["ledger_id"], name: "index_contributor_adjustments_on_ledger_id"
+    t.index ["qbo_account_id", "qbo_invoice_id"], name: "index_contributor_adjustments_on_qa_and_qbo_invoice"
+    t.index ["qbo_account_id"], name: "index_contributor_adjustments_on_qbo_account_id"
+    t.index ["qbo_bill_id"], name: "index_contributor_adjustments_on_qbo_bill_id"
+    t.index ["qbo_invoice_id"], name: "index_contributor_adjustments_on_qbo_invoice_id"
+  end
+
+  create_table "contributor_payouts", force: :cascade do |t|
+    t.bigint "invoice_tracker_id", null: false
+    t.bigint "created_by_id", null: false
+    t.decimal "amount", precision: 10, scale: 2, default: "0.0", null: false
+    t.jsonb "blueprint", default: {}, null: false
+    t.text "description"
+    t.datetime "accepted_at"
+    t.datetime "deleted_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.string "qbo_bill_id"
+    t.bigint "ledger_id", null: false
+    t.index ["created_by_id"], name: "index_contributor_payouts_on_created_by_id"
+    t.index ["deleted_at"], name: "index_contributor_payouts_on_deleted_at"
+    t.index ["invoice_tracker_id"], name: "index_contributor_payouts_on_invoice_tracker_id"
+    t.index ["ledger_id"], name: "index_contributor_payouts_on_ledger_id"
+    t.index ["qbo_bill_id"], name: "index_contributor_payouts_on_qbo_bill_id"
+  end
+
+  create_table "contributor_qbo_vendors", force: :cascade do |t|
+    t.bigint "contributor_id", null: false
+    t.bigint "qbo_account_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.bigint "qbo_vendor_id", null: false
+    t.index ["contributor_id", "qbo_account_id"], name: "index_cqv_unique_per_contributor_account", unique: true
+    t.index ["contributor_id"], name: "index_contributor_qbo_vendors_on_contributor_id"
+    t.index ["qbo_account_id"], name: "index_contributor_qbo_vendors_on_qbo_account_id"
+    t.index ["qbo_vendor_id"], name: "index_contributor_qbo_vendors_on_qbo_vendor_id"
+  end
+
+  create_table "contributors", force: :cascade do |t|
+    t.bigint "forecast_person_id", null: false
+    t.string "deel_person_id"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["forecast_person_id"], name: "index_contributors_on_forecast_person_id"
+  end
+
+  create_table "deel_contracts", force: :cascade do |t|
+    t.string "deel_id", null: false
+    t.jsonb "data", null: false
+    t.string "deel_person_id", null: false
+    t.string "deel_legal_entity_id"
+    t.index ["deel_id"], name: "index_deel_contracts_on_deel_id", unique: true
+    t.index ["deel_legal_entity_id"], name: "index_deel_contracts_on_deel_legal_entity_id"
+  end
+
+  create_table "deel_invoice_adjustments", force: :cascade do |t|
+    t.string "deel_contract_id", null: false
+    t.string "deel_adjustment_id", null: false
+    t.decimal "amount", precision: 10, scale: 2, null: false
+    t.text "description", null: false
+    t.date "date_submitted", null: false
+    t.string "deel_status", default: "pending", null: false
+    t.datetime "synced_at"
+    t.datetime "deleted_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.bigint "ledger_id", null: false
+    t.index ["deel_adjustment_id"], name: "index_deel_invoice_adjustments_on_deel_adjustment_id", unique: true
+    t.index ["deel_contract_id"], name: "index_deel_invoice_adjustments_on_deel_contract_id"
+    t.index ["deleted_at"], name: "index_deel_invoice_adjustments_on_deleted_at"
+    t.index ["ledger_id"], name: "index_deel_invoice_adjustments_on_ledger_id"
+  end
+
+  create_table "deel_off_cycle_payments", force: :cascade do |t|
+    t.string "deel_id"
+    t.string "deel_contract_id"
+    t.jsonb "data"
+    t.datetime "created_at", null: false
+    t.datetime "submitted_at"
+    t.index ["deel_contract_id"], name: "index_deel_off_cycle_payments_on_deel_contract_id"
+    t.index ["deel_id"], name: "index_deel_off_cycle_payments_on_deel_id", unique: true
+  end
+
+  create_table "deel_people", force: :cascade do |t|
+    t.string "deel_id", null: false
+    t.jsonb "data", null: false
+    t.index ["deel_id"], name: "index_deel_people_on_deel_id", unique: true
+  end
+
+  create_table "document_contacts", force: :cascade do |t|
+    t.bigint "document_id", null: false
+    t.bigint "contact_id"
+    t.string "email"
+    t.string "name"
+    t.string "role"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["contact_id"], name: "index_document_contacts_on_contact_id"
+    t.index ["document_id", "contact_id", "role"], name: "index_document_contacts_unique", unique: true
+    t.index ["document_id"], name: "index_document_contacts_on_document_id"
+  end
+
+  create_table "documents", force: :cascade do |t|
+    t.integer "source", default: 0, null: false
+    t.string "external_id", null: false
+    t.string "source_record_type"
+    t.bigint "source_record_id"
+    t.string "title"
+    t.string "url"
+    t.datetime "occurred_at"
+    t.string "content_hash"
+    t.integer "excluded", default: 0, null: false
+    t.integer "excluded_reason", default: 0, null: false
+    t.string "excluded_by"
+    t.jsonb "raw_metadata", default: {}, null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index "((raw_metadata ->> 'drive_doc_id'::text))", name: "index_documents_on_drive_doc_id"
+    t.index ["occurred_at"], name: "index_documents_on_occurred_at"
+    t.index ["source", "external_id"], name: "index_documents_on_source_and_external_id", unique: true
+    t.index ["source_record_type", "source_record_id"], name: "index_documents_on_source_record"
+  end
+
+  create_table "embeddings", force: :cascade do |t|
+    t.string "owner_type", null: false
+    t.bigint "owner_id", null: false
+    t.string "model", null: false
+    # embedding vector(1024) + its HNSW index are added outside this schema (see the
+    # pgvector note at the top of the file) so schema:load works without pgvector.
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["owner_type", "owner_id", "model"], name: "index_embeddings_on_owner_and_model", unique: true
+    t.index ["owner_type", "owner_id"], name: "index_embeddings_on_owner"
+  end
+
+  create_table "enterprise_admins", force: :cascade do |t|
+    t.bigint "enterprise_id", null: false
+    t.bigint "admin_user_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_enterprise_admins_on_admin_user_id"
+    t.index ["enterprise_id", "admin_user_id"], name: "index_enterprise_admins_unique", unique: true
+    t.index ["enterprise_id"], name: "index_enterprise_admins_on_enterprise_id"
+  end
+
+  create_table "enterprise_forecast_clients", force: :cascade do |t|
+    t.bigint "enterprise_id", null: false
+    t.integer "forecast_client_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["enterprise_id"], name: "index_enterprise_forecast_clients_on_enterprise_id"
+    t.index ["forecast_client_id"], name: "index_enterprise_forecast_clients_on_forecast_client_id", unique: true
+  end
+
+  create_table "enterprises", force: :cascade do |t|
+    t.string "name", null: false
+    t.jsonb "snapshot", default: {}
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.string "deel_legal_entity_id"
+    t.string "pay_cycle_cadence"
+    t.index ["deel_legal_entity_id"], name: "index_enterprises_on_deel_legal_entity_id", unique: true, where: "(deel_legal_entity_id IS NOT NULL)"
+  end
+
+  create_table "finalizations", force: :cascade do |t|
+    t.bigint "review_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.datetime "deleted_at"
+    t.index ["deleted_at"], name: "index_finalizations_on_deleted_at"
+    t.index ["review_id"], name: "index_finalizations_on_review_id"
+  end
+
+  create_table "forecast_assignments", force: :cascade do |t|
+    t.integer "forecast_id"
+    t.datetime "updated_at"
+    t.integer "updated_by_id"
+    t.integer "allocation"
+    t.date "start_date"
+    t.date "end_date"
+    t.text "notes"
+    t.integer "project_id"
+    t.integer "person_id"
+    t.integer "placeholder_id"
+    t.integer "repeated_assignment_set_id"
+    t.boolean "active_on_days_off"
+    t.jsonb "data"
+    t.index ["allocation"], name: "index_forecast_assignments_on_allocation"
+    t.index ["end_date"], name: "index_forecast_assignments_on_end_date"
+    t.index ["forecast_id"], name: "index_forecast_assignments_on_forecast_id", unique: true
+    t.index ["person_id", "project_id", "start_date", "end_date"], name: "idx_assignments_on_person_project_and_daterange", using: :gist
+    t.index ["person_id", "start_date", "end_date"], name: "idx_assignments_on_person_and_daterange", using: :gist
+    t.index ["person_id"], name: "index_forecast_assignments_on_person_id"
+    t.index ["project_id", "end_date"], name: "index_forecast_assignments_on_project_id_and_end_date"
+    t.index ["project_id", "start_date", "end_date"], name: "idx_assignments_on_project_and_daterange", using: :gist
+    t.index ["project_id", "start_date"], name: "index_forecast_assignments_on_project_id_and_start_date"
+    t.index ["project_id"], name: "index_forecast_assignments_on_project_id"
+    t.index ["start_date", "end_date"], name: "idx_assignments_on_daterange", using: :gist
+    t.index ["start_date"], name: "index_forecast_assignments_on_start_date"
+  end
+
+  create_table "forecast_clients", force: :cascade do |t|
+    t.integer "forecast_id"
+    t.string "name"
+    t.integer "harvest_id"
+    t.boolean "archived"
+    t.datetime "updated_at"
+    t.integer "updated_by_id"
+    t.jsonb "data"
+    t.index ["forecast_id"], name: "index_forecast_clients_on_forecast_id", unique: true
+  end
+
+  create_table "forecast_people", force: :cascade do |t|
+    t.integer "forecast_id"
+    t.string "first_name"
+    t.string "last_name"
+    t.string "email"
+    t.text "roles", default: [], array: true
+    t.boolean "archived"
+    t.datetime "updated_at"
+    t.integer "updated_by_id"
+    t.jsonb "data"
+    t.index ["forecast_id"], name: "index_forecast_people_on_forecast_id", unique: true
+  end
+
+  create_table "forecast_person_utilization_reports", force: :cascade do |t|
+    t.integer "forecast_person_id", null: false
+    t.date "starts_at", null: false
+    t.date "ends_at", null: false
+    t.decimal "expected_hours_sold", precision: 10, scale: 2, null: false
+    t.decimal "expected_hours_unsold", precision: 10, scale: 2, null: false
+    t.decimal "actual_hours_sold", precision: 10, scale: 2, null: false
+    t.decimal "actual_hours_internal", precision: 10, scale: 2, null: false
+    t.decimal "actual_hours_time_off", precision: 10, scale: 2, null: false
+    t.jsonb "actual_hours_sold_by_rate", null: false
+    t.decimal "utilization_rate", precision: 10, scale: 2, null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.integer "period_gradation", default: 0, null: false
+    t.index ["forecast_person_id", "starts_at", "ends_at", "period_gradation"], name: "idx_forecast_person_utilization", unique: true
+    t.index ["forecast_person_id"], name: "index_forecast_person_utilization_reports_on_forecast_person_id"
+  end
+
+  create_table "forecast_projects", force: :cascade do |t|
+    t.integer "forecast_id"
+    t.jsonb "data"
+    t.string "name"
+    t.string "code"
+    t.text "notes"
+    t.date "start_date"
+    t.date "end_date"
+    t.integer "harvest_id"
+    t.boolean "archived"
+    t.integer "client_id"
+    t.text "tags", default: [], array: true
+    t.datetime "updated_at"
+    t.integer "updated_by_id"
+    t.index ["client_id"], name: "index_forecast_projects_on_client_id"
+    t.index ["forecast_id"], name: "index_forecast_projects_on_forecast_id", unique: true
+  end
+
+  create_table "full_time_periods", force: :cascade do |t|
+    t.bigint "admin_user_id", null: false
+    t.date "started_at"
+    t.date "ended_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.decimal "expected_utilization", default: "0.8"
+    t.integer "contributor_type", default: 0
+    t.boolean "considered_temporary", default: false
+    t.index ["admin_user_id"], name: "index_full_time_periods_on_admin_user_id"
+  end
+
+  create_table "gifted_profit_shares", force: :cascade do |t|
+    t.bigint "admin_user_id", null: false
+    t.decimal "amount"
+    t.string "reason"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_gifted_profit_shares_on_admin_user_id"
+  end
+
+  create_table "invoice_passes", force: :cascade do |t|
+    t.date "start_of_month"
+    t.datetime "completed_at"
+    t.jsonb "data"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["start_of_month"], name: "index_invoice_passes_on_start_of_month", unique: true
+  end
+
+  create_table "invoice_trackers", force: :cascade do |t|
+    t.bigint "forecast_client_id", null: false
+    t.bigint "invoice_pass_id", null: false
+    t.string "qbo_invoice_id"
+    t.jsonb "blueprint"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.bigint "admin_user_id"
+    t.text "notes"
+    t.date "allow_early_contributor_payouts_on"
+    t.decimal "company_treasury_split", default: "0.3"
+    t.datetime "reviewers_last_notified_at"
+    t.bigint "qbo_account_id", null: false
+    t.index ["admin_user_id"], name: "index_invoice_trackers_on_admin_user_id"
+    t.index ["forecast_client_id", "invoice_pass_id"], name: "idx_invoice_trackers_on_forecast_client_id_and_invoice_pass_id", unique: true
+    t.index ["forecast_client_id"], name: "index_invoice_trackers_on_forecast_client_id"
+    t.index ["invoice_pass_id"], name: "index_invoice_trackers_on_invoice_pass_id"
+    t.index ["qbo_account_id", "qbo_invoice_id"], name: "index_invoice_trackers_on_qa_and_qbo_invoice"
+    t.index ["qbo_account_id"], name: "index_invoice_trackers_on_qbo_account_id"
+    t.check_constraint "(company_treasury_split >= (0)::numeric) AND (company_treasury_split <= (1)::numeric)", name: "check_company_treasury_split_range"
+  end
+
+  create_table "ledgers", force: :cascade do |t|
+    t.bigint "enterprise_id", null: false
+    t.bigint "contributor_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.integer "mode", default: 1, null: false
+    t.string "payment_methods", default: [], null: false, array: true
+    t.index ["contributor_id"], name: "index_ledgers_on_contributor_id"
+    t.index ["enterprise_id", "contributor_id"], name: "index_ledgers_on_enterprise_id_and_contributor_id", unique: true
+    t.index ["enterprise_id"], name: "index_ledgers_on_enterprise_id"
+    t.index ["mode"], name: "index_ledgers_on_mode"
+    t.index ["payment_methods"], name: "index_ledgers_on_payment_methods", using: :gin
+  end
+
+  create_table "mailing_list_subscribers", force: :cascade do |t|
+    t.bigint "mailing_list_id", null: false
+    t.string "email", null: false
+    t.jsonb "info", default: "{}", null: false
+    t.index ["mailing_list_id", "email"], name: "index_mailing_list_subscribers_on_mailing_list_id_and_email", unique: true
+    t.index ["mailing_list_id"], name: "index_mailing_list_subscribers_on_mailing_list_id"
+  end
+
+  create_table "mailing_lists", force: :cascade do |t|
+    t.string "name", null: false
+    t.bigint "studio_id", null: false
+    t.jsonb "snapshot", default: {}, null: false
+    t.integer "provider", default: 0, null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["studio_id"], name: "index_mailing_lists_on_studio_id"
+  end
+
+  create_table "meeting_participants", force: :cascade do |t|
+    t.bigint "meeting_id", null: false
+    t.string "name"
+    t.string "email"
+    t.bigint "contact_id"
+    t.datetime "join_at"
+    t.datetime "leave_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["contact_id"], name: "index_meeting_participants_on_contact_id"
+    t.index ["meeting_id"], name: "index_meeting_participants_on_meeting_id"
+  end
+
+  create_table "meeting_transcript_segments", force: :cascade do |t|
+    t.bigint "meeting_id", null: false
+    t.string "speaker_name"
+    t.string "speaker_email"
+    t.bigint "speaker_contact_id"
+    t.datetime "started_at"
+    t.datetime "ended_at"
+    t.integer "position", null: false
+    t.text "text", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["meeting_id", "position"], name: "index_meeting_transcript_segments_on_meeting_id_and_position", unique: true
+    t.index ["meeting_id"], name: "index_meeting_transcript_segments_on_meeting_id"
+    t.index ["speaker_contact_id"], name: "index_meeting_transcript_segments_on_speaker_contact_id"
+  end
+
+  create_table "meetings", force: :cascade do |t|
+    t.string "meet_conference_record_id"
+    t.string "drive_transcript_doc_id"
+    t.integer "meet_source", default: 0, null: false
+    t.string "title"
+    t.string "organizer_email"
+    t.datetime "started_at"
+    t.datetime "ended_at"
+    t.integer "participant_count"
+    t.jsonb "raw_metadata", default: {}, null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.string "gemini_notes_doc_id"
+    t.index ["drive_transcript_doc_id"], name: "index_meetings_on_drive_transcript_doc_id", unique: true, where: "(drive_transcript_doc_id IS NOT NULL)"
+    t.index ["gemini_notes_doc_id"], name: "index_meetings_on_gemini_notes_doc_id", unique: true, where: "(gemini_notes_doc_id IS NOT NULL)"
+    t.index ["meet_conference_record_id"], name: "index_meetings_on_meet_conference_record_id", unique: true, where: "(meet_conference_record_id IS NOT NULL)"
+  end
+
+  create_table "mentions", force: :cascade do |t|
+    t.bigint "chunk_id", null: false
+    t.string "raw_text", null: false
+    t.bigint "contact_id"
+    t.float "confidence"
+    t.integer "status", default: 0, null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["chunk_id"], name: "index_mentions_on_chunk_id"
+    t.index ["contact_id"], name: "index_mentions_on_contact_id"
+  end
+
+  create_table "misc_payments", force: :cascade do |t|
+    t.decimal "amount", precision: 10, scale: 2, null: false
+    t.text "remittance"
+    t.datetime "deleted_at"
+    t.date "paid_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.bigint "contributor_id", null: false
+    t.index ["contributor_id"], name: "index_misc_payments_on_contributor_id"
+    t.index ["deleted_at"], name: "index_misc_payments_on_deleted_at"
+  end
+
+  create_table "notifications", force: :cascade do |t|
+    t.string "recipient_type", null: false
+    t.bigint "recipient_id", null: false
+    t.string "type", null: false
+    t.jsonb "params"
+    t.datetime "read_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["read_at"], name: "index_notifications_on_read_at"
+    t.index ["recipient_type", "recipient_id"], name: "index_notifications_on_recipient_type_and_recipient_id"
+  end
+
+  create_table "notion_lead_studios", force: :cascade do |t|
+    t.bigint "notion_lead_id", null: false
+    t.bigint "studio_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["notion_lead_id", "studio_id"], name: "index_notion_lead_studios_on_notion_lead_id_and_studio_id", unique: true
+    t.index ["studio_id"], name: "index_notion_lead_studios_on_studio_id"
+  end
+
+  create_table "notion_leads", force: :cascade do |t|
+    t.bigint "notion_page_id", null: false
+    t.date "received_at"
+    t.date "settled_at"
+    t.date "proposal_sent_at"
+    t.date "won_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["notion_page_id"], name: "index_notion_leads_on_notion_page_id", unique: true
+  end
+
+  create_table "notion_pages", force: :cascade do |t|
+    t.string "notion_id", null: false
+    t.string "notion_parent_type"
+    t.string "notion_parent_id"
+    t.jsonb "data", default: {}, null: false
+    t.string "page_title", default: "", null: false
+    t.datetime "deleted_at"
+    t.index ["deleted_at"], name: "index_notion_pages_on_deleted_at"
+    t.index ["notion_id"], name: "index_notion_pages_on_notion_id", unique: true
+  end
+
+  create_table "okr_period_studios", force: :cascade do |t|
+    t.bigint "studio_id", null: false
+    t.bigint "okr_period_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["okr_period_id"], name: "index_okr_period_studios_on_okr_period_id"
+    t.index ["studio_id"], name: "index_okr_period_studios_on_studio_id"
+  end
+
+  create_table "okr_periods", force: :cascade do |t|
+    t.bigint "okr_id", null: false
+    t.date "starts_at"
+    t.date "ends_at"
+    t.decimal "target", null: false
+    t.decimal "tolerance", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["okr_id"], name: "index_okr_periods_on_okr_id"
+  end
+
+  create_table "okrs", force: :cascade do |t|
+    t.string "name", null: false
+    t.text "description"
+    t.integer "operator", default: 0
+    t.integer "datapoint", default: 0
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+  end
+
+  create_table "old_deal_creative_lead_periods", force: :cascade do |t|
+    t.bigint "project_tracker_id", null: false
+    t.bigint "admin_user_id", null: false
+    t.bigint "studio_id", null: false
+    t.date "started_at"
+    t.date "ended_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_old_deal_creative_lead_periods_on_admin_user_id"
+    t.index ["project_tracker_id"], name: "index_old_deal_creative_lead_periods_on_project_tracker_id"
+    t.index ["studio_id"], name: "index_old_deal_creative_lead_periods_on_studio_id"
+  end
+
+  create_table "old_deal_project_lead_periods", force: :cascade do |t|
+    t.bigint "project_tracker_id", null: false
+    t.bigint "admin_user_id", null: false
+    t.bigint "studio_id", null: false
+    t.date "started_at"
+    t.date "ended_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_old_deal_project_lead_periods_on_admin_user_id"
+    t.index ["project_tracker_id"], name: "index_old_deal_project_lead_periods_on_project_tracker_id"
+    t.index ["studio_id"], name: "index_old_deal_project_lead_periods_on_studio_id"
+  end
+
+  create_table "old_deal_project_safety_representative_periods", force: :cascade do |t|
+    t.bigint "project_tracker_id", null: false
+    t.bigint "admin_user_id", null: false
+    t.bigint "studio_id", null: false
+    t.date "started_at"
+    t.date "ended_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "idx_project_safety_rep_periods_on_admin_user_id"
+    t.index ["project_tracker_id"], name: "idx_project_safety_rep_periods_on_project_tracker_id"
+    t.index ["studio_id"], name: "idx_project_safety_rep_periods_on_studio_id"
+  end
+
+  create_table "old_deal_technical_lead_periods", force: :cascade do |t|
+    t.bigint "project_tracker_id", null: false
+    t.bigint "admin_user_id", null: false
+    t.bigint "studio_id", null: false
+    t.date "started_at"
+    t.date "ended_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_old_deal_technical_lead_periods_on_admin_user_id"
+    t.index ["project_tracker_id"], name: "index_old_deal_technical_lead_periods_on_project_tracker_id"
+    t.index ["studio_id"], name: "index_old_deal_technical_lead_periods_on_studio_id"
+  end
+
+  create_table "optix_account_plans", primary_key: "optix_id", id: :string, force: :cascade do |t|
+    t.bigint "optix_organization_id", null: false
+    t.string "optix_plan_template_id"
+    t.string "name"
+    t.string "status", null: false
+    t.float "price"
+    t.string "price_frequency"
+    t.bigint "start_timestamp"
+    t.bigint "end_timestamp"
+    t.bigint "canceled_timestamp"
+    t.bigint "created_timestamp"
+    t.string "access_usage_user_optix_id"
+    t.jsonb "data", default: {}
+    t.datetime "synced_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["access_usage_user_optix_id"], name: "index_optix_account_plans_on_access_usage_user_optix_id"
+    t.index ["end_timestamp"], name: "index_optix_account_plans_on_end_timestamp"
+    t.index ["optix_organization_id"], name: "index_optix_account_plans_on_optix_organization_id"
+    t.index ["optix_plan_template_id"], name: "index_optix_account_plans_on_optix_plan_template_id"
+    t.index ["start_timestamp"], name: "index_optix_account_plans_on_start_timestamp"
+    t.index ["status"], name: "index_optix_account_plans_on_status"
+  end
+
+  create_table "optix_locations", primary_key: "optix_id", id: :string, force: :cascade do |t|
+    t.bigint "optix_organization_id", null: false
+    t.string "name"
+    t.string "city"
+    t.string "region"
+    t.string "country"
+    t.string "timezone"
+    t.boolean "is_visible", default: true, null: false
+    t.boolean "is_hidden", default: false, null: false
+    t.boolean "is_deleted", default: false, null: false
+    t.jsonb "data", default: {}
+    t.datetime "synced_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["optix_organization_id"], name: "index_optix_locations_on_optix_organization_id"
+  end
+
+  create_table "optix_organizations", force: :cascade do |t|
+    t.string "name", null: false
+    t.datetime "synced_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+  end
+
+  create_table "optix_plan_template_locations", force: :cascade do |t|
+    t.string "optix_plan_template_id", null: false
+    t.string "optix_location_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["optix_location_id"], name: "idx_optix_ptl_on_location"
+    t.index ["optix_plan_template_id", "optix_location_id"], name: "idx_optix_plan_template_locations_unique", unique: true
+    t.index ["optix_plan_template_id"], name: "idx_optix_ptl_on_plan_template"
+  end
+
+  create_table "optix_plan_templates", primary_key: "optix_id", id: :string, force: :cascade do |t|
+    t.bigint "optix_organization_id", null: false
+    t.string "name", null: false
+    t.float "price"
+    t.string "price_frequency"
+    t.boolean "in_all_locations", default: false, null: false
+    t.boolean "onboarding_enabled", default: true, null: false
+    t.boolean "non_onboarding_enabled", default: true, null: false
+    t.jsonb "data", default: {}
+    t.datetime "synced_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["optix_organization_id"], name: "index_optix_plan_templates_on_optix_organization_id"
+  end
+
+  create_table "optix_users", primary_key: "optix_id", id: :string, force: :cascade do |t|
+    t.bigint "optix_organization_id", null: false
+    t.string "email"
+    t.string "name"
+    t.string "last_name"
+    t.boolean "is_active", default: true, null: false
+    t.jsonb "data", default: {}
+    t.datetime "synced_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index "lower((email)::text)", name: "idx_optix_users_on_lower_email"
+    t.index ["optix_organization_id"], name: "index_optix_users_on_optix_organization_id"
+  end
+
+  create_table "pay_cycles", force: :cascade do |t|
+    t.bigint "enterprise_id", null: false
+    t.date "starts_at", null: false
+    t.date "ends_at", null: false
+    t.bigint "created_by_id"
+    t.datetime "deleted_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.datetime "approved_at"
+    t.bigint "approved_by_id"
+    t.index ["approved_by_id"], name: "index_pay_cycles_on_approved_by_id"
+    t.index ["created_by_id"], name: "index_pay_cycles_on_created_by_id"
+    t.index ["deleted_at"], name: "index_pay_cycles_on_deleted_at"
+    t.index ["enterprise_id", "starts_at", "ends_at"], name: "index_pay_cycles_unique_window", unique: true
+    t.index ["enterprise_id"], name: "index_pay_cycles_on_enterprise_id"
+  end
+
+  create_table "pay_stubs", force: :cascade do |t|
+    t.bigint "pay_cycle_id", null: false
+    t.bigint "ledger_id", null: false
+    t.decimal "amount", precision: 12, scale: 2, null: false
+    t.jsonb "blueprint", default: {}, null: false
+    t.datetime "accepted_at"
+    t.bigint "accepted_by_id"
+    t.string "qbo_bill_id"
+    t.datetime "deleted_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["accepted_by_id"], name: "index_pay_stubs_on_accepted_by_id"
+    t.index ["deleted_at"], name: "index_pay_stubs_on_deleted_at"
+    t.index ["ledger_id"], name: "index_pay_stubs_on_ledger_id"
+    t.index ["pay_cycle_id", "ledger_id"], name: "index_pay_stubs_unique_per_cycle_ledger", unique: true
+    t.index ["pay_cycle_id"], name: "index_pay_stubs_on_pay_cycle_id"
+    t.index ["qbo_bill_id"], name: "index_pay_stubs_on_qbo_bill_id", unique: true, where: "(qbo_bill_id IS NOT NULL)"
+  end
+
+  create_table "peer_reviews", force: :cascade do |t|
+    t.bigint "admin_user_id", null: false
+    t.bigint "review_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.datetime "deleted_at"
+    t.index ["admin_user_id"], name: "index_peer_reviews_on_admin_user_id"
+    t.index ["deleted_at"], name: "index_peer_reviews_on_deleted_at"
+    t.index ["review_id"], name: "index_peer_reviews_on_review_id"
+  end
+
+  create_table "periodic_reports", force: :cascade do |t|
+    t.integer "period_gradation", default: 0, null: false
+    t.date "period_starts_at", null: false
+    t.string "period_label", null: false
+    t.jsonb "blueprint", default: {}, null: false
+    t.bigint "notification_id"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.string "report_url"
+    t.index ["notification_id"], name: "index_periodic_reports_on_notification_id"
+    t.index ["period_gradation", "period_starts_at"], name: "index_periodic_reports_on_period_gradation_and_period_starts_at", unique: true
+  end
+
+  create_table "pre_profit_share_purchases", force: :cascade do |t|
+    t.bigint "admin_user_id", null: false
+    t.decimal "amount"
+    t.string "note"
+    t.date "purchased_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_pre_profit_share_purchases_on_admin_user_id"
+  end
+
+  create_table "profit_share_passes", force: :cascade do |t|
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.decimal "payroll_buffer_months", default: "1.5"
+    t.decimal "efficiency_cap", default: "1.6"
+    t.jsonb "snapshot"
+    t.decimal "internals_budget_multiplier", default: "0.5"
+    t.text "description"
+    t.integer "leadership_psu_pool_cap", default: 0
+    t.decimal "leadership_psu_pool_project_role_holders_percentage", default: "0.0"
+  end
+
+  create_table "profit_share_payments", force: :cascade do |t|
+    t.bigint "admin_user_id", null: false
+    t.bigint "profit_share_pass_id", null: false
+    t.float "tenured_psu_earnt", default: 0.0
+    t.float "project_leadership_psu_earnt", default: 0.0
+    t.float "collective_leadership_psu_earnt", default: 0.0
+    t.float "pre_spent_profit_share", default: 0.0
+    t.float "total_payout", default: 0.0
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_profit_share_payments_on_admin_user_id"
+    t.index ["profit_share_pass_id"], name: "index_profit_share_payments_on_profit_share_pass_id"
+  end
+
+  create_table "profit_shares", force: :cascade do |t|
+    t.bigint "periodic_report_id", null: false
+    t.decimal "amount", null: false
+    t.jsonb "blueprint", default: {}, null: false
+    t.string "qbo_bill_id"
+    t.datetime "accepted_at"
+    t.datetime "deleted_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.bigint "ledger_id", null: false
+    t.index ["deleted_at"], name: "index_profit_shares_on_deleted_at"
+    t.index ["ledger_id"], name: "index_profit_shares_on_ledger_id"
+    t.index ["periodic_report_id", "ledger_id"], name: "index_profit_shares_on_periodic_report_id_and_ledger_id", unique: true
+    t.index ["periodic_report_id"], name: "index_profit_shares_on_periodic_report_id"
+  end
+
+  create_table "project_capsules", force: :cascade do |t|
+    t.bigint "project_tracker_id", null: false
+    t.text "postpartum_notes"
+    t.integer "client_feedback_survey_status"
+    t.string "client_feedback_survey_url"
+    t.integer "internal_marketing_status"
+    t.integer "capsule_status"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.integer "client_satisfaction_status"
+    t.text "client_satisfaction_detail"
+    t.integer "project_satisfaction_survey_status"
+    t.index ["project_tracker_id"], name: "index_project_capsules_on_project_tracker_id"
+  end
+
+  create_table "project_lead_periods", force: :cascade do |t|
+    t.bigint "project_tracker_id", null: false
+    t.bigint "admin_user_id", null: false
+    t.date "started_at"
+    t.date "ended_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_project_lead_periods_on_admin_user_id"
+    t.index ["project_tracker_id"], name: "index_project_lead_periods_on_project_tracker_id"
+  end
+
+  create_table "project_satisfaction_survey_free_text_question_responses", force: :cascade do |t|
+    t.bigint "project_satisfaction_survey_response_id", null: false
+    t.bigint "project_satisfaction_survey_free_text_question_id", null: false
+    t.string "response"
+    t.index ["project_satisfaction_survey_free_text_question_id"], name: "idx_pssftqr_on_pssftq_id"
+    t.index ["project_satisfaction_survey_response_id"], name: "idx_pssftqr_on_pssr_id"
+  end
+
+  create_table "project_satisfaction_survey_free_text_questions", force: :cascade do |t|
+    t.bigint "project_satisfaction_survey_id", null: false
+    t.string "prompt", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["project_satisfaction_survey_id"], name: "idx_pssftq_on_pss_id"
+  end
+
+  create_table "project_satisfaction_survey_question_responses", force: :cascade do |t|
+    t.bigint "project_satisfaction_survey_response_id", null: false
+    t.bigint "project_satisfaction_survey_question_id", null: false
+    t.integer "sentiment", default: 0
+    t.string "context"
+    t.index ["project_satisfaction_survey_question_id"], name: "idx_pssqr_on_pssq_id"
+    t.index ["project_satisfaction_survey_response_id"], name: "idx_pssqr_on_pssr_id"
+  end
+
+  create_table "project_satisfaction_survey_questions", comment: "Table for project satisfaction survey questions", force: :cascade do |t|
+    t.bigint "project_satisfaction_survey_id", null: false
+    t.string "prompt", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["project_satisfaction_survey_id"], name: "idx_pssq_on_pss_id"
+  end
+
+  create_table "project_satisfaction_survey_responders", force: :cascade do |t|
+    t.bigint "project_satisfaction_survey_id", null: false
+    t.bigint "admin_user_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_project_satisfaction_survey_responders_on_admin_user_id"
+    t.index ["project_satisfaction_survey_id", "admin_user_id"], name: "idx_ps_survey_responders_on_survey_id_and_admin_user_id", unique: true
+    t.index ["project_satisfaction_survey_id"], name: "idx_pssr_on_ps_survey_id"
+  end
+
+  create_table "project_satisfaction_survey_responses", force: :cascade do |t|
+    t.bigint "project_satisfaction_survey_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["project_satisfaction_survey_id"], name: "idx_pssr_on_pss_id"
+  end
+
+  create_table "project_satisfaction_surveys", force: :cascade do |t|
+    t.bigint "project_capsule_id", null: false
+    t.string "title", null: false
+    t.text "description", null: false
+    t.datetime "closed_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.decimal "score", precision: 5, scale: 2
+    t.index ["project_capsule_id"], name: "index_project_satisfaction_surveys_on_project_capsule_id"
+  end
+
+  create_table "project_tracker_forecast_projects", force: :cascade do |t|
+    t.bigint "project_tracker_id", null: false
+    t.bigint "forecast_project_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["forecast_project_id"], name: "index_project_tracker_forecast_projects_on_forecast_project_id"
+    t.index ["project_tracker_id"], name: "index_project_tracker_forecast_projects_on_project_tracker_id"
+  end
+
+  create_table "project_tracker_forecast_to_runn_sync_tasks", force: :cascade do |t|
+    t.bigint "project_tracker_id"
+    t.datetime "settled_at"
+    t.bigint "notification_id"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["notification_id"], name: "idx_pt_forecast_to_runn_sync_tasks_on_notification_id"
+    t.index ["project_tracker_id"], name: "idx_pt_forecast_to_runn_sync_tasks_on_pt_id"
+  end
+
+  create_table "project_tracker_links", force: :cascade do |t|
+    t.string "name", null: false
+    t.string "url", null: false
+    t.integer "link_type", default: 0
+    t.bigint "project_tracker_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["project_tracker_id"], name: "index_project_tracker_links_on_project_tracker_id"
+  end
+
+  create_table "project_trackers", force: :cascade do |t|
+    t.string "name"
+    t.decimal "budget_low_end"
+    t.decimal "budget_high_end"
+    t.text "notes"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.datetime "work_completed_at"
+    t.jsonb "snapshot", default: {}
+    t.decimal "target_free_hours_percent", default: "0.0"
+    t.decimal "target_profit_margin", default: "0.0"
+    t.bigint "runn_project_id"
+    t.decimal "company_treasury_split", default: "0.3"
+    t.index ["runn_project_id"], name: "index_project_trackers_on_runn_project_id", unique: true
+    t.check_constraint "(company_treasury_split >= (0)::numeric) AND (company_treasury_split <= (1)::numeric)", name: "check_company_treasury_split_range"
+  end
+
+  create_table "qbo_accounts", force: :cascade do |t|
+    t.string "client_id", null: false
+    t.string "client_secret", null: false
+    t.string "realm_id", null: false
+    t.bigint "enterprise_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["enterprise_id"], name: "index_qbo_accounts_on_enterprise_id"
+  end
+
+  create_table "qbo_bills", force: :cascade do |t|
+    t.string "qbo_id", null: false
+    t.jsonb "data"
+    t.string "qbo_vendor_id", null: false
+    t.bigint "qbo_account_id", null: false
+    t.index ["qbo_account_id", "qbo_id"], name: "index_qbo_bills_on_qbo_account_and_qbo_id", unique: true
+    t.index ["qbo_account_id"], name: "index_qbo_bills_on_qbo_account_id"
+    t.index ["qbo_id"], name: "index_qbo_bills_on_qbo_id"
+    t.index ["qbo_vendor_id"], name: "index_qbo_bills_on_qbo_vendor_id"
+  end
+
+  create_table "qbo_invoices", force: :cascade do |t|
+    t.string "qbo_id", null: false
+    t.jsonb "data"
+    t.bigint "qbo_account_id", null: false
+    t.index ["qbo_account_id", "qbo_id"], name: "index_qbo_invoices_on_qbo_account_and_qbo_id", unique: true, where: "(qbo_id IS NOT NULL)"
+    t.index ["qbo_account_id", "qbo_id"], name: "qbo_invoices_qbo_account_id_qbo_id_key", unique: true
+    t.index ["qbo_account_id"], name: "index_qbo_invoices_on_qbo_account_id"
+  end
+
+  create_table "qbo_profit_and_loss_line_items", force: :cascade do |t|
+    t.bigint "qbo_account_id", null: false
+    t.bigint "qbo_profit_and_loss_report_id", null: false
+    t.date "starts_at", null: false
+    t.string "accounting_method", null: false
+    t.integer "position", null: false
+    t.text "label", null: false
+    t.decimal "amount", precision: 15, scale: 2, null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["qbo_account_id", "accounting_method", "starts_at"], name: "idx_pnl_line_items_account_method_month"
+    t.index ["qbo_profit_and_loss_report_id", "accounting_method", "position"], name: "idx_pnl_line_items_report_method_position", unique: true
+  end
+
+  create_table "qbo_profit_and_loss_reports", force: :cascade do |t|
+    t.date "starts_at", null: false
+    t.date "ends_at", null: false
+    t.jsonb "data", default: "{}"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.bigint "qbo_account_id", null: false
+    t.index ["qbo_account_id"], name: "index_qbo_profit_and_loss_reports_on_qbo_account_id"
+  end
+
+  create_table "qbo_tokens", force: :cascade do |t|
+    t.string "token", null: false
+    t.string "refresh_token", null: false
+    t.bigint "qbo_account_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["qbo_account_id"], name: "index_qbo_tokens_on_qbo_account_id"
+  end
+
+  create_table "qbo_vendors", force: :cascade do |t|
+    t.string "qbo_id", null: false
+    t.jsonb "data"
+    t.bigint "qbo_account_id", null: false
+    t.index ["qbo_account_id", "qbo_id"], name: "index_qbo_vendors_on_qbo_account_and_qbo_id", unique: true
+    t.index ["qbo_account_id"], name: "index_qbo_vendors_on_qbo_account_id"
+  end
+
+  create_table "quickbooks_tokens", force: :cascade do |t|
+    t.string "token"
+    t.string "refresh_token"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+  end
+
+  create_table "recurring_charges", force: :cascade do |t|
+    t.bigint "forecast_client_id", null: false
+    t.decimal "quantity", default: "0.0", null: false
+    t.decimal "unit_price", default: "0.0", null: false
+    t.string "qbo_account_name", default: "", null: false
+    t.string "description", default: "", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["forecast_client_id", "description"], name: "index_recurring_charges_on_forecast_client_id_and_description", unique: true
+    t.index ["forecast_client_id"], name: "index_recurring_charges_on_forecast_client_id"
+  end
+
+  create_table "recurring_ledger_adjustments", force: :cascade do |t|
+    t.bigint "ledger_id", null: false
+    t.decimal "amount", precision: 12, scale: 2, null: false
+    t.text "description", default: "", null: false
+    t.string "cadence", null: false
+    t.date "next_due_on", null: false
+    t.date "last_materialized_on"
+    t.datetime "paused_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["ledger_id"], name: "index_recurring_ledger_adjustments_on_ledger_id"
+    t.index ["next_due_on"], name: "index_recurring_ledger_adjustments_on_next_due_on"
+    t.index ["paused_at"], name: "index_recurring_ledger_adjustments_on_paused_at"
+  end
+
+  create_table "reimbursements", force: :cascade do |t|
+    t.decimal "amount", precision: 10, scale: 2, null: false
+    t.string "description", null: false
+    t.text "receipts", null: false
+    t.bigint "accepted_by_id"
+    t.datetime "accepted_at"
+    t.datetime "deleted_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.bigint "ledger_id", null: false
+    t.string "qbo_bill_id"
+    t.index ["accepted_by_id"], name: "index_reimbursements_on_accepted_by_id"
+    t.index ["deleted_at"], name: "index_reimbursements_on_deleted_at"
+    t.index ["ledger_id"], name: "index_reimbursements_on_ledger_id"
+    t.index ["qbo_bill_id"], name: "index_reimbursements_on_qbo_bill_id"
+  end
+
+  create_table "review_trees", force: :cascade do |t|
+    t.bigint "review_id", null: false
+    t.bigint "tree_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.datetime "deleted_at"
+    t.index ["deleted_at"], name: "index_review_trees_on_deleted_at"
+    t.index ["review_id"], name: "index_review_trees_on_review_id"
+    t.index ["tree_id"], name: "index_review_trees_on_tree_id"
+  end
+
+  create_table "reviews", force: :cascade do |t|
+    t.bigint "admin_user_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.datetime "archived_at"
+    t.datetime "deleted_at"
+    t.index ["admin_user_id"], name: "index_reviews_on_admin_user_id"
+    t.index ["deleted_at"], name: "index_reviews_on_deleted_at"
+  end
+
+  create_table "runn_projects", force: :cascade do |t|
+    t.bigint "runn_id", null: false
+    t.string "name"
+    t.boolean "is_template"
+    t.boolean "is_archived"
+    t.boolean "is_confirmed"
+    t.string "pricing_model"
+    t.string "rate_type"
+    t.integer "budget"
+    t.integer "expenses_budget"
+    t.datetime "created_at"
+    t.datetime "updated_at"
+    t.jsonb "data"
+    t.index ["runn_id"], name: "index_runn_projects_on_runn_id", unique: true
+  end
+
+  create_table "score_trees", force: :cascade do |t|
+    t.bigint "tree_id", null: false
+    t.bigint "workspace_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.datetime "deleted_at"
+    t.index ["deleted_at"], name: "index_score_trees_on_deleted_at"
+    t.index ["tree_id"], name: "index_score_trees_on_tree_id"
+    t.index ["workspace_id"], name: "index_score_trees_on_workspace_id"
+  end
+
+  create_table "scores", force: :cascade do |t|
+    t.bigint "trait_id", null: false
+    t.bigint "score_tree_id", null: false
+    t.integer "band"
+    t.integer "consistency"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.datetime "deleted_at"
+    t.index ["deleted_at"], name: "index_scores_on_deleted_at"
+    t.index ["score_tree_id"], name: "index_scores_on_score_tree_id"
+    t.index ["trait_id"], name: "index_scores_on_trait_id"
+  end
+
+  create_table "source_syncs", force: :cascade do |t|
+    t.string "source", null: false
+    t.jsonb "cursor", default: {}, null: false
+    t.datetime "last_run_at"
+    t.string "status"
+    t.jsonb "stats", default: {}, null: false
+    t.bigint "system_task_id"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["source"], name: "index_source_syncs_on_source", unique: true
+    t.index ["system_task_id"], name: "index_source_syncs_on_system_task_id"
+  end
+
+  create_table "studio_forecast_people", force: :cascade do |t|
+    t.bigint "studio_id", null: false
+    t.bigint "forecast_person_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["forecast_person_id"], name: "index_studio_forecast_people_on_forecast_person_id"
+    t.index ["studio_id", "forecast_person_id"], name: "index_studio_forecast_people_on_studio_and_forecast_person", unique: true
+  end
+
+  create_table "studio_memberships", force: :cascade do |t|
+    t.bigint "admin_user_id", null: false
+    t.bigint "studio_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.date "started_at", null: false
+    t.date "ended_at"
+    t.index ["admin_user_id", "studio_id"], name: "index_studio_memberships_on_admin_user_id_and_studio_id", unique: true
+    t.index ["admin_user_id"], name: "index_studio_memberships_on_admin_user_id"
+    t.index ["studio_id"], name: "index_studio_memberships_on_studio_id"
+  end
+
+  create_table "studios", force: :cascade do |t|
+    t.string "accounting_prefix"
+    t.string "name"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.string "mini_name"
+    t.jsonb "snapshot", default: {}
+    t.integer "studio_type", default: 0
+  end
+
+  create_table "survey_free_text_question_responses", force: :cascade do |t|
+    t.bigint "survey_response_id", null: false
+    t.bigint "survey_free_text_question_id", null: false
+    t.string "response"
+    t.index ["survey_free_text_question_id"], name: "idx_sftqr_on_sftq_id"
+    t.index ["survey_response_id"], name: "index_survey_free_text_question_responses_on_survey_response_id"
+  end
+
+  create_table "survey_free_text_questions", force: :cascade do |t|
+    t.bigint "survey_id", null: false
+    t.string "prompt", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["survey_id"], name: "index_survey_free_text_questions_on_survey_id"
+  end
+
+  create_table "survey_question_responses", force: :cascade do |t|
+    t.bigint "survey_response_id", null: false
+    t.bigint "survey_question_id", null: false
+    t.integer "sentiment", default: 0
+    t.string "context"
+    t.index ["survey_question_id"], name: "index_survey_question_responses_on_survey_question_id"
+    t.index ["survey_response_id"], name: "index_survey_question_responses_on_survey_response_id"
+  end
+
+  create_table "survey_questions", force: :cascade do |t|
+    t.bigint "survey_id", null: false
+    t.string "prompt", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["survey_id"], name: "index_survey_questions_on_survey_id"
+  end
+
+  create_table "survey_responders", force: :cascade do |t|
+    t.bigint "survey_id", null: false
+    t.bigint "admin_user_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_survey_responders_on_admin_user_id"
+    t.index ["survey_id", "admin_user_id"], name: "idx_survey_responders_on_survey_id_and_admin_user_id", unique: true
+    t.index ["survey_id"], name: "index_survey_responders_on_survey_id"
+  end
+
+  create_table "survey_responses", force: :cascade do |t|
+    t.bigint "survey_id", null: false
+    t.index ["survey_id"], name: "index_survey_responses_on_survey_id"
+  end
+
+  create_table "survey_studios", force: :cascade do |t|
+    t.bigint "survey_id", null: false
+    t.bigint "studio_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["studio_id"], name: "index_survey_studios_on_studio_id"
+    t.index ["survey_id"], name: "index_survey_studios_on_survey_id"
+  end
+
+  create_table "surveys", force: :cascade do |t|
+    t.string "title", null: false
+    t.text "description", null: false
+    t.date "opens_at"
+    t.datetime "closed_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+  end
+
+  create_table "system_tasks", force: :cascade do |t|
+    t.string "name", null: false
+    t.datetime "settled_at"
+    t.bigint "notification_id"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["notification_id"], name: "index_system_tasks_on_notification_id"
+  end
+
+  create_table "systems", force: :cascade do |t|
+    t.jsonb "settings"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+  end
+
+  create_table "traits", force: :cascade do |t|
+    t.bigint "tree_id", null: false
+    t.string "name"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["tree_id"], name: "index_traits_on_tree_id"
+  end
+
+  create_table "trees", force: :cascade do |t|
+    t.string "name"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+  end
+
+  create_table "trueups", force: :cascade do |t|
+    t.bigint "invoice_pass_id", null: false
+    t.decimal "amount", default: "0.0", null: false
+    t.text "description"
+    t.datetime "deleted_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.string "qbo_bill_id"
+    t.bigint "ledger_id", null: false
+    t.index ["invoice_pass_id"], name: "index_trueups_on_invoice_pass_id"
+    t.index ["ledger_id"], name: "index_trueups_on_ledger_id"
+    t.index ["qbo_bill_id"], name: "index_trueups_on_qbo_bill_id"
+  end
+
+  create_table "workspaces", force: :cascade do |t|
+    t.string "reviewable_type", null: false
+    t.bigint "reviewable_id", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.integer "status", default: 0
+    t.text "notes"
+    t.datetime "deleted_at"
+    t.index ["deleted_at"], name: "index_workspaces_on_deleted_at"
+    t.index ["reviewable_type", "reviewable_id"], name: "index_workspaces_on_reviewable_type_and_reviewable_id"
+  end
+
+  add_foreign_key "account_lead_periods", "admin_users"
+  add_foreign_key "account_lead_periods", "project_trackers"
+  add_foreign_key "adhoc_invoice_trackers", "project_trackers"
+  add_foreign_key "adhoc_invoice_trackers", "qbo_accounts"
+  # Composite FK fk_adhoc_invoice_trackers_qbo_invoice managed by migration (not expressible in schema.rb)
+  add_foreign_key "admin_user_salary_windows", "admin_users"
+  add_foreign_key "associates_award_agreements", "admin_users"
+  add_foreign_key "chunks", "contacts", column: "speaker_contact_id"
+  add_foreign_key "chunks", "documents"
+  add_foreign_key "commissions", "contributors"
+  add_foreign_key "commissions", "project_trackers"
+  add_foreign_key "contributor_adjustments", "ledgers"
+  add_foreign_key "contributor_adjustments", "qbo_accounts"
+  # Composite FK fk_contributor_adjustments_qbo_invoice managed by migration (not expressible in schema.rb)
+  add_foreign_key "contributor_payouts", "admin_users", column: "created_by_id"
+  add_foreign_key "contributor_payouts", "invoice_trackers"
+  add_foreign_key "contributor_payouts", "ledgers"
+  add_foreign_key "contributor_qbo_vendors", "contributors"
+  add_foreign_key "contributor_qbo_vendors", "qbo_accounts"
+  add_foreign_key "contributor_qbo_vendors", "qbo_vendors"
+  add_foreign_key "deel_invoice_adjustments", "deel_contracts", primary_key: "deel_id"
+  add_foreign_key "deel_invoice_adjustments", "ledgers"
+  add_foreign_key "document_contacts", "contacts"
+  add_foreign_key "document_contacts", "documents"
+  add_foreign_key "enterprise_admins", "admin_users"
+  add_foreign_key "enterprise_admins", "enterprises"
+  add_foreign_key "enterprise_forecast_clients", "enterprises"
+  add_foreign_key "enterprise_forecast_clients", "forecast_clients", primary_key: "forecast_id"
+  add_foreign_key "finalizations", "reviews"
+  add_foreign_key "full_time_periods", "admin_users"
+  add_foreign_key "gifted_profit_shares", "admin_users"
+  add_foreign_key "invoice_trackers", "admin_users"
+  add_foreign_key "invoice_trackers", "invoice_passes"
+  add_foreign_key "invoice_trackers", "qbo_accounts"
+  # Composite FK fk_invoice_trackers_qbo_invoice managed by migration (not expressible in schema.rb)
+  add_foreign_key "ledgers", "contributors"
+  add_foreign_key "ledgers", "enterprises"
+  add_foreign_key "mailing_list_subscribers", "mailing_lists"
+  add_foreign_key "mailing_lists", "studios"
+  add_foreign_key "meeting_participants", "contacts"
+  add_foreign_key "meeting_participants", "meetings"
+  add_foreign_key "meeting_transcript_segments", "contacts", column: "speaker_contact_id"
+  add_foreign_key "meeting_transcript_segments", "meetings"
+  add_foreign_key "mentions", "chunks"
+  add_foreign_key "mentions", "contacts"
+  add_foreign_key "misc_payments", "contributors"
+  add_foreign_key "notion_lead_studios", "notion_leads"
+  add_foreign_key "notion_lead_studios", "studios"
+  add_foreign_key "notion_leads", "notion_pages"
+  add_foreign_key "okr_period_studios", "okr_periods"
+  add_foreign_key "okr_period_studios", "studios"
+  add_foreign_key "okr_periods", "okrs"
+  add_foreign_key "old_deal_creative_lead_periods", "admin_users"
+  add_foreign_key "old_deal_creative_lead_periods", "project_trackers"
+  add_foreign_key "old_deal_creative_lead_periods", "studios"
+  add_foreign_key "old_deal_project_lead_periods", "admin_users"
+  add_foreign_key "old_deal_project_lead_periods", "project_trackers"
+  add_foreign_key "old_deal_project_lead_periods", "studios"
+  add_foreign_key "old_deal_project_safety_representative_periods", "admin_users"
+  add_foreign_key "old_deal_project_safety_representative_periods", "project_trackers"
+  add_foreign_key "old_deal_project_safety_representative_periods", "studios"
+  add_foreign_key "old_deal_technical_lead_periods", "admin_users"
+  add_foreign_key "old_deal_technical_lead_periods", "project_trackers"
+  add_foreign_key "old_deal_technical_lead_periods", "studios"
+  add_foreign_key "pay_cycles", "admin_users", column: "approved_by_id"
+  add_foreign_key "pay_cycles", "admin_users", column: "created_by_id"
+  add_foreign_key "pay_cycles", "enterprises"
+  add_foreign_key "pay_stubs", "admin_users", column: "accepted_by_id"
+  add_foreign_key "pay_stubs", "ledgers"
+  add_foreign_key "pay_stubs", "pay_cycles"
+  add_foreign_key "peer_reviews", "admin_users"
+  add_foreign_key "peer_reviews", "reviews"
+  add_foreign_key "periodic_reports", "notifications"
+  add_foreign_key "pre_profit_share_purchases", "admin_users"
+  add_foreign_key "profit_share_payments", "admin_users"
+  add_foreign_key "profit_share_payments", "profit_share_passes"
+  add_foreign_key "profit_shares", "ledgers"
+  add_foreign_key "profit_shares", "periodic_reports"
+  add_foreign_key "project_capsules", "project_trackers"
+  add_foreign_key "project_lead_periods", "admin_users"
+  add_foreign_key "project_lead_periods", "project_trackers"
+  add_foreign_key "project_satisfaction_survey_free_text_question_responses", "project_satisfaction_survey_free_text_questions"
+  add_foreign_key "project_satisfaction_survey_free_text_question_responses", "project_satisfaction_survey_responses"
+  add_foreign_key "project_satisfaction_survey_free_text_questions", "project_satisfaction_surveys"
+  add_foreign_key "project_satisfaction_survey_question_responses", "project_satisfaction_survey_questions"
+  add_foreign_key "project_satisfaction_survey_question_responses", "project_satisfaction_survey_responses"
+  add_foreign_key "project_satisfaction_survey_questions", "project_satisfaction_surveys"
+  add_foreign_key "project_satisfaction_survey_responders", "admin_users"
+  add_foreign_key "project_satisfaction_survey_responders", "project_satisfaction_surveys"
+  add_foreign_key "project_satisfaction_survey_responses", "project_satisfaction_surveys"
+  add_foreign_key "project_satisfaction_surveys", "project_capsules"
+  add_foreign_key "project_tracker_forecast_projects", "project_trackers"
+  add_foreign_key "project_tracker_forecast_to_runn_sync_tasks", "notifications"
+  add_foreign_key "project_tracker_forecast_to_runn_sync_tasks", "project_trackers"
+  add_foreign_key "project_tracker_links", "project_trackers"
+  add_foreign_key "project_trackers", "runn_projects", primary_key: "runn_id"
+  add_foreign_key "qbo_accounts", "enterprises"
+  add_foreign_key "qbo_bills", "qbo_accounts"
+  add_foreign_key "qbo_invoices", "qbo_accounts"
+  add_foreign_key "qbo_profit_and_loss_line_items", "qbo_accounts"
+  add_foreign_key "qbo_profit_and_loss_line_items", "qbo_profit_and_loss_reports", on_delete: :cascade
+  add_foreign_key "qbo_profit_and_loss_reports", "qbo_accounts"
+  add_foreign_key "qbo_tokens", "qbo_accounts"
+  add_foreign_key "qbo_vendors", "qbo_accounts"
+  add_foreign_key "recurring_ledger_adjustments", "ledgers"
+  add_foreign_key "reimbursements", "admin_users", column: "accepted_by_id"
+  add_foreign_key "reimbursements", "ledgers"
+  add_foreign_key "review_trees", "reviews"
+  add_foreign_key "review_trees", "trees"
+  add_foreign_key "reviews", "admin_users"
+  add_foreign_key "score_trees", "trees"
+  add_foreign_key "score_trees", "workspaces"
+  add_foreign_key "scores", "score_trees"
+  add_foreign_key "scores", "traits"
+  add_foreign_key "source_syncs", "system_tasks"
+  add_foreign_key "studio_forecast_people", "forecast_people", primary_key: "forecast_id"
+  add_foreign_key "studio_forecast_people", "studios"
+  add_foreign_key "studio_memberships", "admin_users"
+  add_foreign_key "studio_memberships", "studios"
+  add_foreign_key "survey_free_text_question_responses", "survey_free_text_questions"
+  add_foreign_key "survey_free_text_question_responses", "survey_responses"
+  add_foreign_key "survey_free_text_questions", "surveys"
+  add_foreign_key "survey_question_responses", "survey_questions"
+  add_foreign_key "survey_question_responses", "survey_responses"
+  add_foreign_key "survey_questions", "surveys"
+  add_foreign_key "survey_responders", "admin_users"
+  add_foreign_key "survey_responders", "surveys"
+  add_foreign_key "survey_responses", "surveys"
+  add_foreign_key "survey_studios", "studios"
+  add_foreign_key "survey_studios", "surveys"
+  add_foreign_key "system_tasks", "notifications"
+  add_foreign_key "traits", "trees"
+  add_foreign_key "trueups", "invoice_passes"
+  add_foreign_key "trueups", "ledgers"
+end

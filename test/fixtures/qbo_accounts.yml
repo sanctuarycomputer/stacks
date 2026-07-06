@@ -1,0 +1,11 @@
+one:
+  client_id: MyString
+  client_secret: MyString
+  realm_id: MyString
+  enterprise: sanctuary
+
+two:
+  client_id: MyString
+  client_secret: MyString
+  realm_id: MyString2
+  enterprise: sanctuary

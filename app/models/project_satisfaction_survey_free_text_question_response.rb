@@ -1,0 +1,4 @@
+class ProjectSatisfactionSurveyFreeTextQuestionResponse < ApplicationRecord
+  belongs_to :project_satisfaction_survey_free_text_question
+  belongs_to :project_satisfaction_survey_response
+end

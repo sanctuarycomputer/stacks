@@ -1,0 +1,15 @@
+<div class="dashboard-module" style="margin-bottom: 20px;">
+  <div class="module-body factoid-parent">
+    <p>💡 <strong>Note!</strong> <strong><%= tasks.length %></strong> open task<%= "s" if tasks.length != 1 %> across the system. Each task lists the AdminUser(s) responsible for resolving it; tasks fall back to the Stacks admin team when no natural owner can be inferred. After fixing something, <a href="https://stacks.garden3d.net/admin/system_tasks?q%5Bname_contains%5D=stacks%3Adaily_tasks&commit=Filter&scope=success&order=id_desc" target="_blank">wait for the next <code>stacks:daily_tasks</code> run</a> for the cache to refresh.</p>
+  </div>
+</div>
+
+<% if tasks.any? %>
+  <%= render partial: "admin/tasks/task_list", locals: { tasks: tasks, show_owners: true } %>
+<% else %>
+  <div class="dashboard-module">
+    <div class="module-body factoid-parent">
+      <p style="text-align:center;">🎉 No open tasks across the team!</p>
+    </div>
+  </div>
+<% end %>

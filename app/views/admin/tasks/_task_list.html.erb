@@ -1,0 +1,49 @@
+<%#
+  Shared task list table.
+
+  Locals:
+    tasks       — Array<StacksTask>. The full set to render, in any order;
+                  this partial sorts by subject_class then humanized_type for
+                  visual grouping.
+    show_owners — Boolean (default true). Hides the Owners column when false,
+                  for views where every task is implicitly assigned to the
+                  same user (e.g. AdminUser show page).
+%>
+<% show_owners = true if local_assigns[:show_owners].nil? %>
+
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+  <thead>
+    <tr>
+      <th class="col">Issue</th>
+      <th class="col">Subject</th>
+      <% if show_owners %>
+        <th class="col text-right">Owner(s)</th>
+      <% end %>
+    </tr>
+  </thead>
+  <tbody>
+    <% tasks.sort_by { |t| [t.subject_class_key, t.humanized_type] }.each_with_index do |t, idx| %>
+      <tr class="<%= idx.even? ? "even" : "odd" %>">
+        <td class="col">
+          <span class="pill at_risk"><%= t.humanized_type %></span>
+        </td>
+        <td class="col">
+          <% if t.subject_url.present? %>
+            <% target = t.subject_url_external? ? "_blank" : nil %>
+            <% suffix = t.subject_url_external? ? " ↗" : " →" %>
+            <%= link_to "#{t.subject_display_name}#{suffix}", t.subject_url, target: target, style: "text-wrap: nowrap;" %>
+          <% else %>
+            <%= t.subject_display_name %>
+          <% end %>
+        </td>
+        <% if show_owners %>
+          <td class="col text-right">
+            <% t.owners.each do |o| %>
+              <span class="pill" style="margin-left: 4px;"><%= o.email %></span>
+            <% end %>
+          </td>
+        <% end %>
+      </tr>
+    <% end %>
+  </tbody>
+</table>

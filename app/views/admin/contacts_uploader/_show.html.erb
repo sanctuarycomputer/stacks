@@ -1,0 +1,50 @@
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module" style="min-height: 371px">
+    <div class="module-body factoid-parent">
+      <div class="factoid">
+        <%= form_tag import_contacts_admin_contacts_path, multipart: true do %>
+          <%= file_field_tag 'file', accept: 'text/csv' %>
+          <%= submit_tag 'Import CSV' %>
+        <% end %>
+
+        <hr />
+        <p style="padding:20px 0px;">Your contacts CSV should be have two columns titled <code>Email</code> & <code>Sources</code>. Multiple sources should be seperated by a space. (<a href="https://docs.google.com/spreadsheets/d/1SJ6Rp9pPKhBm7arZ_lF2AUy8KPUHa7FbSRtHG5NP9WI/edit?usp=sharing" target="_blank">example</a>)</p>
+        <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+          <thead>
+            <tr>
+              <th class="col">Email</th>
+              <th class="col text-right">Sources</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="col text-left">
+                hugh@sanctuary.computer
+              </td>
+              <td class="col text-right">
+                g3d:substack sanctu:pricing_info_request
+              </td>
+            </tr>
+            <tr>
+              <td class="col text-left">
+                nicole@garden3d.net
+              </td>
+              <td class="col text-right">
+                xxix:mailchimp index:event_rsvp:pockets
+              </td>
+            </tr>
+            <tr>
+              <td class="col text-left">
+                elie@index-space.org
+              </td>
+              <td class="col text-right">
+                index:optix
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+      </div>
+    </div>
+  </div>
+</div>

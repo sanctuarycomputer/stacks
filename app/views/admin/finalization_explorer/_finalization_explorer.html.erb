@@ -1,0 +1,23 @@
+<table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+  <thead>
+    <tr>
+      <th class="col">Subdomain</th>
+      <th class="col">Score</th>
+      <th class="col text-right">Points</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% finalization.workspace.all_scores.each_with_index do |score, index| %>
+      <tr class="<%= index.even? ? "even" : "odd" %>">
+        <td><%= score.score_tree.display_name %>: <%= score.trait.name %></td>
+        <td><%= score.band.try(:humanize) %> (<%= score.consistency.try(:humanize) %>)</td>
+        <td class="text-right"><%= score.score_to_points %></td>
+      </tr>
+    <% end %>
+    <tr>
+      <td><strong>Total</strong></td>
+      <td></td>
+      <td class="text-right">865</td>
+    </tr>
+  </tbody>
+</table>

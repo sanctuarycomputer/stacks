@@ -1,0 +1,310 @@
+ActiveAdmin.register Contributor do
+  menu parent: "Team"
+
+  config.filters = true
+  config.paginate = true
+  config.per_page = 20
+  config.sort_order = "forecast_people.email_asc"
+
+  actions :index, :show, :edit, :update
+  scope "Recent Contributors", :recent_contributors, default: true
+  scope :all
+
+  filter :forecast_email_cont, as: :string, label: "Email contains"
+
+  controller do
+    helper_method :manual_deel_invoice_visible?
+
+    def scoped_collection
+      # Preload the per-enterprise vendor mappings so the index column can
+      # render one badge per (enterprise, vendor) without an N+1.
+      super.joins(:forecast_person)
+        .select("contributors.*, forecast_people.email")
+        .preload(contributor_qbo_vendors: [:qbo_vendor, { qbo_account: :enterprise }])
+    end
+
+    def find_resource
+      # Only preload what's a real ActiveRecord association on Contributor.
+      # The *_with_deleted methods route through :ledgers and can't be
+      # preloaded by `includes(...)` — they're warmed up via
+      # `Contributor#preload_for_ledger_view!` inside the show block instead.
+      scoped_collection.includes(
+        forecast_person: {
+          admin_user: [:full_time_periods, :admin_user_salary_windows],
+        },
+      ).find(params[:id])
+    end
+
+    def manual_deel_invoice_visible?(contributor)
+      contributor.deel_invoice_actions_visible_to?(current_admin_user)
+    end
+  end
+
+  permit_params :deel_person_id,
+    contributor_qbo_vendors_attributes: [:id, :qbo_vendor_id, :_destroy]
+
+  # Action items below are scoped to the ledger tab the user is viewing.
+  # On the "All" tab (no `ledger` query param), there's no single ledger to
+  # write against, so the buttons short-circuit to a JS alert instead.
+  LEDGER_REQUIRED_ALERT = "Select the appropriate ledger before you can perform this action.".freeze
+
+  action_item :new_deel_withdrawal, only: :show, if: proc { manual_deel_invoice_visible?(resource) } do
+    selected_ledger = params[:ledger].presence && resource.ledgers.find_by(id: params[:ledger])
+    if selected_ledger&.deel_enabled?
+      link_to "New Deel Withdrawal", new_admin_contributor_deel_invoice_adjustment_path(resource, ledger: selected_ledger.id)
+    elsif selected_ledger
+      # Ledger selected but Deel not in payment_methods — keep the button visible but inert,
+      # mirroring the other action_items' UX.
+      link_to "New Deel Withdrawal", "#",
+        onclick: "alert(#{"Deel is not enabled for this ledger's payment methods.".to_json}); return false;"
+    else
+      link_to "New Deel Withdrawal", "#",
+        onclick: "alert(#{LEDGER_REQUIRED_ALERT.to_json}); return false;"
+    end
+  end
+
+  action_item :new_contributor_adjustment, only: :show, if: proc { current_admin_user.is_admin? } do
+    selected_ledger = params[:ledger].presence && resource.ledgers.find_by(id: params[:ledger])
+    if selected_ledger
+      link_to "New Adjustment", new_admin_ledger_contributor_adjustment_path(selected_ledger)
+    else
+      link_to "New Adjustment", "#",
+        onclick: "alert(#{LEDGER_REQUIRED_ALERT.to_json}); return false;"
+    end
+  end
+
+  action_item :submit_reimbursement, only: :show do
+    selected_ledger = params[:ledger].presence && resource.ledgers.find_by(id: params[:ledger])
+    if selected_ledger
+      link_to "Submit Reimbursement", new_admin_ledger_reimbursement_path(selected_ledger)
+    else
+      link_to "Submit Reimbursement", "#",
+        onclick: "alert(#{LEDGER_REQUIRED_ALERT.to_json}); return false;"
+    end
+  end
+
+  member_action :toggle_contributor_payout_acceptance, method: :post do
+    cp = ContributorPayout.find(params[:contributor_payout_id])
+    return unless cp.contributor.forecast_person.try(:admin_user) == current_admin_user || current_admin_user.is_admin?
+    cp.toggle_acceptance!
+    return redirect_to(
+      admin_contributor_path(params[:id], format: :html),
+      notice: "Success",
+    )
+  end
+
+  member_action :toggle_profit_share_acceptance, method: :post do
+    ps = ProfitShare.find(params[:profit_share_id])
+    return unless ps.contributor.forecast_person.try(:admin_user) == current_admin_user || current_admin_user.is_admin?
+    ps.toggle_acceptance!
+    return redirect_to(
+      admin_contributor_path(params[:id], format: :html),
+      notice: "Success",
+    )
+  end
+
+  member_action :toggle_reimbursement_acceptance, method: :post do
+    r = Reimbursement.find(params[:reimbursement_id])
+    return unless current_admin_user.is_admin?
+
+    was_accepted = r.accepted?
+
+    # Un-accepting a Reimbursement whose QBO bill is already PAID is destructive:
+    # we'd delete a paid bill in QBO, orphaning the BillPayment in vendor AP.
+    # Refuse — admin has to reconcile in QBO first (void the payment, then come
+    # back here). Snapshot the bill into a local so we don't double-fetch (and
+    # so .paid? can't NPE on a row that disappears between the two calls).
+    qb = was_accepted ? r.qbo_bill : nil
+    if qb&.paid?
+      return redirect_to(
+        admin_contributor_path(params[:id], format: :html),
+        alert: "Cannot un-accept: this reimbursement's QBO bill is already paid. Void the payment in QBO first, then retry.",
+      )
+    end
+
+    # ON UN-ACCEPT: destroy the QBO bill FIRST, then commit the Stacks state
+    # change. If we did it in the other order, a transient QBO failure would
+    # leave Stacks "unaccepted" with an orphan bill in QBO — and the bill
+    # would no longer appear on the Payable QBO Bills page (it filters by
+    # payable?) so the operator has no way to retry.
+    # ON ACCEPT: commit Stacks state first, THEN sync. If sync fails the
+    # operator can retry from the Payable QBO Bills page (the row is now
+    # payable and shows there).
+    qbo_error = nil
+    if was_accepted
+      begin
+        r.detach_and_destroy_qbo_bill
+      rescue => e
+        qbo_error = e
+        Rails.logger.error("[reimbursement_unaccept] QBO destroy failed for ##{r.id}: #{e.class}: #{e.message}")
+      end
+
+      if qbo_error
+        return redirect_to(
+          admin_contributor_path(params[:id], format: :html),
+          alert: "Un-accept aborted — QBO bill did NOT destroy: #{qbo_error.message}. Stacks state unchanged; retry once QBO is reachable.",
+        )
+      end
+
+      r.update!(accepted_by: nil, accepted_at: nil)
+    else
+      r.update!(accepted_by: current_admin_user, accepted_at: DateTime.now)
+      # Push to QBO regardless of payment_methods — even Deel-only contributors
+      # get a QBO bill so the accountant can either pay it directly OR match a
+      # Deel bank withdrawal against it. payment_methods is a UI hint about
+      # which payment workflows to surface, not a source-of-truth flag for AP.
+      begin
+        r.sync_qbo_bill!
+      rescue => e
+        qbo_error = e
+        Rails.logger.error("[reimbursement_accept] QBO sync failed for ##{r.id}: #{e.class}: #{e.message}")
+      end
+    end
+
+    if qbo_error
+      return redirect_to(
+        admin_contributor_path(params[:id], format: :html),
+        alert: "Accepted, but QBO bill did NOT sync: #{qbo_error.message}. Retry from the Payable QBO Bills page.",
+      )
+    end
+
+    # sync_qbo_bill! silently early-returns nil (no raise) when the contributor
+    # has no QBO vendor mapping for the enterprise, when there's no QBO account,
+    # or when amount is non-positive. Surface that as a real warning since QBO
+    # bills are the source of truth — even Deel-only contributors should have
+    # a vendor mapping so the accountant can reconcile.
+    if !was_accepted && r.reload.qbo_bill_id.nil?
+      return redirect_to(
+        admin_contributor_path(params[:id], format: :html),
+        alert: "Acceptance saved, but no QBO bill was created. Check that the contributor has a QBO vendor mapping on #{r.ledger.enterprise.name}, then 'Sync to QBO' from the Payable QBO Bills tab.",
+      )
+    end
+
+    return redirect_to(
+      admin_contributor_path(params[:id], format: :html),
+      notice: "Success",
+    )
+  end
+
+  form do |f|
+    f.inputs do
+      f.input :forecast_person, input_html: { disabled: true }
+      f.input :deel_person
+    end
+
+    # One row per (enterprise, qbo_vendor) mapping. Per-enterprise scoping is
+    # enforced server-side: the join row's qbo_account_id is derived from the
+    # chosen vendor's qbo_account_id in a ContributorQboVendor before_validation
+    # callback, so the admin only needs to pick a vendor.
+    f.has_many :contributor_qbo_vendors,
+               heading: "Per-enterprise QBO vendor mappings",
+               allow_destroy: true,
+               new_record: "Add QBO vendor mapping" do |cqv|
+      vendor_options = QboVendor.includes(qbo_account: :enterprise).all.sort_by do |qv|
+        [qv.qbo_account&.enterprise&.name.to_s, qv.display_name.to_s]
+      end.map do |qv|
+        enterprise_label = qv.qbo_account&.enterprise&.name || "(no enterprise)"
+        ["#{enterprise_label}: #{qv.display_name}", qv.id]
+      end
+      cqv.input :qbo_vendor,
+        as: :select,
+        collection: vendor_options,
+        include_blank: "Choose a QBO vendor…",
+        label: "QBO vendor"
+    end
+
+    f.actions
+  end
+
+  index download_links: false do
+    column :forecast_person
+    column "QBO Vendors" do |c|
+      cqvs = c.contributor_qbo_vendors.to_a
+      if cqvs.empty?
+        "—"
+      else
+        # `status_tag` is an Arbre element that side-effects into the current
+        # cell, so returning a `safe_join(status_tags)` from the column block
+        # ends up rendering each badge twice (once from the side effect, once
+        # from the explicit return — see ActiveAdmin table_for.rb#build_table_cell).
+        # `content_tag(:span, ..., class: "status_tag")` is a pure string
+        # builder and doesn't double up.
+        safe_join(cqvs.sort_by { |cqv| cqv.qbo_account&.enterprise&.name.to_s }.map { |cqv|
+          enterprise_label = cqv.qbo_account&.enterprise&.name || "(no enterprise)"
+          vendor_label = cqv.qbo_vendor&.display_name || "(no vendor)"
+          content_tag(:span, "#{enterprise_label}: #{vendor_label}", class: "status_tag")
+        }, " ")
+      end
+    end
+    column :deel_person
+    # column :balance do |c|
+    #   balance = c.new_deal_balance
+    #   if balance[:unsettled] > 0
+    #     "#{number_to_currency(balance[:balance])} (#{number_to_currency(balance[:unsettled])} unsettled)"
+    #   else
+    #     number_to_currency(balance[:balance])
+    #   end
+    # end
+    # if current_admin_user.is_hugh?
+    #   column :total_amount_paid do |resource|
+    #     number_to_currency(resource.total_amount_paid[:total])
+    #   end
+    # end
+    actions
+  end
+
+  show do
+    # Warm the six *_with_deleted collections so the type-switching loop in
+    # the partial doesn't fire N+1 queries. Each method below is memoized
+    # per-instance and `preload_for_ledger_view!` populates the caches with
+    # eager-loads tailored to the partial's needs.
+    resource.preload_for_ledger_view!
+
+    # Resolve which ledger view to render. Default = "all" (aggregated, with elevated_service).
+    ledger_param = params[:ledger]
+
+    # Show every enterprise tab regardless of activity — a contributor needs to
+    # be able to navigate to an empty ledger to file a reimbursement, accept a
+    # pay stub, etc. Sorted by enterprise name for stable display.
+    ledgers = resource.ledgers.includes(:enterprise).sort_by { |l| l.enterprise.name.to_s }
+
+    view_mode = :all
+    current_ledger = nil
+    if ledger_param.present? && ledger_param != "all"
+      current_ledger = ledgers.find { |l| l.id.to_s == ledger_param.to_s }
+      view_mode = :ledger if current_ledger
+    end
+
+    items_result =
+      if view_mode == :all
+        resource.all_items_grouped_by_month
+      else
+        current_ledger.items_grouped_by_month
+      end
+
+    # Balance/Unsettled summary card scopes to the current view:
+    #   :all     — sum across every ledger
+    #   :ledger  — just the currently selected ledger
+    # Otherwise the header would silently disagree with the per-ledger pill and
+    # the items list rendered below (which IS scoped to current_ledger).
+    balance =
+      if view_mode == :ledger && current_ledger
+        { balance: current_ledger.balance.to_f, unsettled: current_ledger.unsettled.to_f }
+      else
+        resource.new_deal_balance
+      end
+    admin = resource.forecast_person&.admin_user
+    pending_tasks = admin&.pending_tasks || []
+
+    render(partial: "show", locals: {
+      contributor: resource,
+      items_result: items_result,
+      new_deal_ledger_items: items_result,
+      balance: balance,
+      pending_tasks: pending_tasks,
+      view_mode: view_mode,
+      ledgers: ledgers,
+      current_ledger: current_ledger,
+    })
+  end
+end
