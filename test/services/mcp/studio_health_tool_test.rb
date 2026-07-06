@@ -46,6 +46,13 @@ class Mcp::StudioHealthToolTest < ActiveSupport::TestCase
     assert_equal 'Comma Studio', payload['studios'].first['studio']
   end
 
+  test 'an exact name match wins over another studio carrying that string as a mini_name alias' do
+    studio!(name: 'Alias Holder', mini_name: 'ah, orbit')
+    studio!(name: 'Orbit', mini_name: 'orb')
+    payload = mcp_payload(Mcp::GetStudioHealthTool.call(studio: 'Orbit', server_context: {}))
+    assert_equal 'Orbit', payload['studios'].first['studio'], 'real name must not be shadowed by an alias'
+  end
+
   test 'accrual accounting_method selects the accrual subtree' do
     studio!(name: 'Accrual Studio', mini_name: 'accr')
     payload = mcp_payload(Mcp::GetStudioHealthTool.call(studio: 'accr', accounting_method: 'accrual', server_context: {}))

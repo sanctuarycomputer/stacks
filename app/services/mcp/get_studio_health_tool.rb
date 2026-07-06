@@ -34,12 +34,14 @@ module Mcp
       requested =
         if studio.present?
           key = studio.to_s.strip
-          # mini_name can hold a comma-separated list (see Studio's own
-          # split(",") usages), so match any element, not the whole field.
-          match = all_studios.find do |s|
-            s.name.to_s.casecmp?(key) ||
-              s.mini_name.to_s.split(',').map(&:strip).any? { |m| m.casecmp?(key) }
-          end
+          # Prefer an exact name match over a mini_name-alias match, so a real
+          # studio name can never be shadowed by another studio that happens
+          # to carry that string as one element of its comma-separated
+          # mini_name. mini_name can hold a list (see Studio's own split(",")).
+          match = all_studios.find { |s| s.name.to_s.casecmp?(key) } ||
+                  all_studios.find do |s|
+                    s.mini_name.to_s.split(',').map(&:strip).any? { |m| m.casecmp?(key) }
+                  end
           unless match
             valid = all_studios.map { |s| "#{s.name} (#{s.mini_name})" }.sort.join(', ')
             return Responses.error("Unknown studio '#{studio}'. Valid studios: #{valid}")
