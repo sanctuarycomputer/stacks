@@ -98,6 +98,20 @@ class Mcp::ProjectsAtRiskToolTest < ActiveSupport::TestCase
     refute_includes row['risk_reasons'], 'over_budget'
   end
 
+  test 'a NULL target column does not crash or drop the tracker; other axes still judged' do
+    # target_profit_margin NULL (legacy row; set_targets backfills 0.0 not nil).
+    # target_profit_margin_satisfied? would raise on `nil <= 0`. The tracker
+    # must still surface its free-hours risk, not vanish through the rescue.
+    t = tracker!(name: 'Null Margin Target', hours: 100.0, free_hours: 20.0, free_target: 10)
+    t.update_column(:target_profit_margin, nil)
+    Sentry.expects(:capture_exception).never
+    payload = mcp_payload(Mcp::ListProjectsAtRiskTool.call(server_context: {}))
+    row = payload['projects'].find { |p| p['name'] == 'Null Margin Target' }
+    refute_nil row, 'NULL-target tracker must not be silently dropped'
+    assert_includes row['risk_reasons'], 'free_hours_above_target'
+    refute_includes row['risk_reasons'], 'margin_below_target'
+  end
+
   test 'empty result is a valid payload' do
     payload = mcp_payload(Mcp::ListProjectsAtRiskTool.call(server_context: {}))
     assert_equal 0, payload['count']
