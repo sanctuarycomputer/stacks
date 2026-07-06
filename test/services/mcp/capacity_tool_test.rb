@@ -69,9 +69,14 @@ class Mcp::CapacityToolTest < ActiveSupport::TestCase
     assert_includes payload['error'], 'Only Studio'
   end
 
-  test 'no reports for the period is a valid empty payload' do
+  test 'no reports for the period is a valid empty payload with a consistent period shape' do
     payload = mcp_payload(Mcp::GetCapacityTool.call(server_context: {}))
     assert_equal 0, payload['benched_count']
     assert_equal [], payload['people']
+    # period keeps the { starts_at, ends_at } shape (both nil) so consumers
+    # never hit a nil period on the empty path.
+    assert payload.key?('period')
+    assert_nil payload['period']['ends_at']
+    assert_nil payload['period']['starts_at']
   end
 end

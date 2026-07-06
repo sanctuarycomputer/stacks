@@ -38,6 +38,13 @@ module Mcp
           Enterprise.sanctuary
         end
 
+      # The default (Sanctuary) resolves without the joins(:qbo_account) filter
+      # the named path uses, so guard against a missing account rather than
+      # NoMethodError on ent.qbo_account.id.
+      if ent.qbo_account.nil?
+        return Responses.error("Enterprise '#{ent.name}' has no QBO account, so no P&L is available.")
+      end
+
       reports = QboProfitAndLossReport.where(qbo_account_id: ent.qbo_account.id)
       if reports.none?
         return Responses.error("Enterprise '#{ent.name}' has no synced P&L reports yet.")

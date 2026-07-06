@@ -93,4 +93,14 @@ class Mcp::PnlToolTest < ActiveSupport::TestCase
     payload = mcp_payload(Mcp::GetPnlTool.call(server_context: {}))
     assert_includes payload['error'], 'no synced P&L reports'
   end
+
+  test 'an enterprise with no qbo account errors cleanly instead of raising' do
+    # The default path resolves Enterprise.sanctuary WITHOUT the
+    # joins(:qbo_account) filter the named path uses, so an account-less
+    # default must guard rather than NoMethodError on ent.qbo_account.id.
+    no_qbo = Enterprise.create!(name: "No QBO Ent #{SecureRandom.hex(2)}")
+    Enterprise.stubs(:sanctuary).returns(no_qbo)
+    payload = mcp_payload(Mcp::GetPnlTool.call(server_context: {}))
+    assert_includes payload['error'], 'has no QBO account'
+  end
 end

@@ -44,7 +44,8 @@ module Mcp
       # Now-state: the most recent persisted period for this gradation.
       latest = reports.maximum(:ends_at)
       if latest.nil?
-        return Responses.ok(gradation: grad, period: nil, studio: studio_label, benched_count: 0, people: [])
+        return Responses.ok(gradation: grad, period: { starts_at: nil, ends_at: nil },
+                            studio: studio_label, benched_count: 0, people: [])
       end
       period_reports = reports.where(ends_at: latest).includes(:forecast_person)
       starts_at = period_reports.first.starts_at
