@@ -512,6 +512,9 @@ namespace :stacks do
       # This one takes about ~5 - 10 minutes to run
       Parallel.map(ForecastPerson.all, in_threads: 10) { |fp| fp.sync_utilization_reports! }
 
+      puts "~~~> SYNCING SNAPSHOT SOURCE TABLES"
+      Studios::SyncForecastPeople.call
+
       puts "~~~> DOING SNAPSHOTS"
       Parallel.map(ProjectTracker.all, in_threads: 10) { |pt| pt.generate_snapshot! }
 
