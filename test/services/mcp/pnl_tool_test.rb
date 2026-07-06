@@ -52,6 +52,43 @@ class Mcp::PnlToolTest < ActiveSupport::TestCase
     payload = mcp_payload(Mcp::GetPnlTool.call(server_context: {}))
     assert_equal '2026-06-30', payload['period']['ends_at']
     assert_equal 2.0, payload['revenue']
+    assert_equal 'month', payload['period_type']
+  end
+
+  test 'default (month) ignores a later future-dated yearly report; period_type selects granularity' do
+    # QBO syncs monthly + quarterly + yearly into one table; the current year's
+    # yearly report is future-dated (Dec 31), giving it the max ends_at. The
+    # default must return the latest MONTH, not that year-spanning report.
+    pnl_report!(enterprise: @sanctuary, starts_at: Date.new(2026, 6, 1), ends_at: Date.new(2026, 6, 30),
+                income: 2.0, cogs: 0.0, expenses: 0.0) # monthly (29d)
+    pnl_report!(enterprise: @sanctuary, starts_at: Date.new(2026, 4, 1), ends_at: Date.new(2026, 6, 30),
+                income: 6.0, cogs: 0.0, expenses: 0.0) # quarterly (90d)
+    pnl_report!(enterprise: @sanctuary, starts_at: Date.new(2026, 1, 1), ends_at: Date.new(2026, 12, 31),
+                income: 99.0, cogs: 0.0, expenses: 0.0) # yearly (364d), max ends_at
+
+    default_payload = mcp_payload(Mcp::GetPnlTool.call(server_context: {}))
+    assert_equal 'month', default_payload['period_type']
+    assert_equal 2.0, default_payload['revenue'], 'default returns the latest month, not the year'
+
+    quarter_payload = mcp_payload(Mcp::GetPnlTool.call(period_type: 'quarter', server_context: {}))
+    assert_equal 'quarter', quarter_payload['period_type']
+    assert_equal 6.0, quarter_payload['revenue']
+
+    year_payload = mcp_payload(Mcp::GetPnlTool.call(period_type: 'year', server_context: {}))
+    assert_equal 'year', year_payload['period_type']
+    assert_equal 99.0, year_payload['revenue']
+  end
+
+  test 'invalid period_type errors listing valid values' do
+    payload = mcp_payload(Mcp::GetPnlTool.call(period_type: 'weekly', server_context: {}))
+    assert_includes payload['error'], "Invalid period_type 'weekly'"
+  end
+
+  test 'a period_type with no synced report of that granularity errors clearly' do
+    pnl_report!(enterprise: @sanctuary, starts_at: Date.new(2026, 6, 1), ends_at: Date.new(2026, 6, 30),
+                income: 2.0, cogs: 0.0, expenses: 0.0) # only a month exists
+    payload = mcp_payload(Mcp::GetPnlTool.call(period_type: 'year', server_context: {}))
+    assert_includes payload['error'], 'no synced year P&L reports yet'
   end
 
   test 'accrual accounting_method is selectable' do

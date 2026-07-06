@@ -25,6 +25,12 @@ established pattern (finance → admin tasks → business → this).
     resolvers; default Sanctuary Computer; unknown → error listing enterprises **that have a
     qbo_account**).
   - `accounting_method` (optional `cash` | `accrual`, default `cash`; invalid → error).
+  - `period_type` (optional `month` (default) / `quarter` / `year`; review round 7). QBO
+    syncs monthly + quarterly + yearly reports into ONE table with no period-type column, and
+    the current year's report is future-dated (Dec 31) — so the default "most recent" MUST be
+    scoped by the report's span in days (month ≈27-30d / quarter ≈89-91d / year =364d), else it
+    silently returns a whole-year P&L. Ignored when an explicit `start_date`/`end_date` is given.
+    The payload echoes the resolved `period_type`.
   - `start_date` / `end_date` (optional ISO dates). Default: the **most recent persisted
     report** for the resolved qbo_account. If a range is given with no matching persisted
     report → error listing the available `(starts_at, ends_at)` ranges (never fetch to fill it).

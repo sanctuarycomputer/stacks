@@ -56,11 +56,17 @@ module Mcp
         return Responses.ok(gradation: grad, period: { starts_at: nil, ends_at: nil },
                             studio: studio_label, benched_count: 0, people: [])
       end
-      period_reports = reports.where(ends_at: latest).includes(:forecast_person)
-      records = period_reports.to_a
-      # All reports for this gradation+ends_at should share starts_at, but
-      # period_reports is unordered — read it deterministically rather than
-      # relying on incidental record order.
+      records = reports.where(ends_at: latest).includes(:forecast_person).to_a
+      # TOCTOU: the rows behind `latest` could be deleted between the maximum()
+      # query and this one (e.g. the nightly regen job runs mid-request). Treat
+      # a now-empty set like "no reports" rather than letting nil.starts_at raise.
+      if records.empty?
+        return Responses.ok(gradation: grad, period: { starts_at: nil, ends_at: nil },
+                            studio: studio_label, benched_count: 0, people: [])
+      end
+      # All reports for this gradation+ends_at should share starts_at, but the
+      # set is unordered — read it deterministically rather than relying on
+      # incidental record order.
       starts_at = records.map(&:starts_at).min
 
       rows = records.filter_map do |r|

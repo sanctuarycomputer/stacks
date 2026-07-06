@@ -4,11 +4,13 @@ module Mcp
     description 'Profit & Loss (revenue, COGS, expenses, net revenue, profit margin) for an ' \
                 'enterprise (whole entity) from the nightly-synced QBO P&L reports. Reads ' \
                 'persisted reports only — never calls QBO live. Defaults to the most recent ' \
-                'synced period.'
+                'synced MONTHLY period; pass period_type for quarter/year, or an explicit ' \
+                'start_date+end_date for a specific report.'
     input_schema(
       properties: {
         enterprise: { type: 'string', description: 'Enterprise name (default: Sanctuary Computer Inc)' },
         accounting_method: { type: 'string', description: 'cash (default) or accrual' },
+        period_type: { type: 'string', description: 'month (default), quarter, or year — which granularity of the most-recent synced report to return (ignored when start_date/end_date are given)' },
         start_date: { type: 'string', description: 'ISO period start; with end_date, selects an exact synced report' },
         end_date: { type: 'string', description: 'ISO period end' },
       },
@@ -17,11 +19,20 @@ module Mcp
     annotations(read_only_hint: true, destructive_hint: false, idempotent_hint: true)
 
     ACCOUNTING_METHODS = %w[cash accrual].freeze
+    # QBO reports are synced monthly + quarterly + yearly into ONE table with
+    # no period-type column, so "most recent" must be scoped by the report's
+    # span in days (the only discriminator). Ranges are well-separated:
+    # month ≈ 27-30d, quarter ≈ 89-91d, year = 364d.
+    PERIOD_SPAN_DAYS = { 'month' => (20..45), 'quarter' => (80..135), 'year' => (300..400) }.freeze
 
-    def self.call(enterprise: nil, accounting_method: 'cash', start_date: nil, end_date: nil, server_context:)
+    def self.call(enterprise: nil, accounting_method: 'cash', period_type: 'month', start_date: nil, end_date: nil, server_context:)
       method = accounting_method.to_s
       unless ACCOUNTING_METHODS.include?(method)
         return Responses.error("Invalid accounting_method '#{method}'. Valid: #{ACCOUNTING_METHODS.join(', ')}")
+      end
+      ptype = period_type.to_s
+      unless PERIOD_SPAN_DAYS.key?(ptype)
+        return Responses.error("Invalid period_type '#{ptype}'. Valid: #{PERIOD_SPAN_DAYS.keys.join(', ')}")
       end
 
       # Resolve enterprise (must have a qbo_account — P&L is per QBO realm).
@@ -62,29 +73,38 @@ module Mcp
         return Responses.error('Provide both start_date and end_date to select a specific period, or neither for the most recent.')
       end
 
+      explicit_range = start_date.present? || end_date.present?
+
       # Select the persisted report — explicit range (exact match, never fetch)
-      # or the most recent. NEVER find_or_fetch_for_range (it fires live QBO).
+      # or the most recent of the requested period_type. The default path MUST
+      # scope by span: the table mixes monthly/quarterly/yearly rows, and the
+      # current year's report is future-dated (Dec 31), so an unscoped
+      # order(:ends_at).last would return a whole-year P&L, not the latest month.
+      # NEVER find_or_fetch_for_range (it fires live QBO).
       report =
-        if start_date.present? || end_date.present?
+        if explicit_range
           begin
             reports.find_by(starts_at: Date.parse(start_date.to_s), ends_at: Date.parse(end_date.to_s))
           rescue Date::Error, ArgumentError => e
             return Responses.error("Invalid date: #{e.message}. Use ISO format, e.g. 2026-06-01.")
           end
         else
-          reports.order(:ends_at).last
+          span = PERIOD_SPAN_DAYS[ptype]
+          reports
+            .where('(qbo_profit_and_loss_reports.ends_at - qbo_profit_and_loss_reports.starts_at) BETWEEN ? AND ?', span.min, span.max)
+            .order(:ends_at)
+            .last
         end
 
-      # One nil check covers both paths (no upfront reports.none? query): an
-      # empty available-ranges list means no reports at all; a non-empty one
-      # means the requested range missed.
       if report.nil?
-        ranges = reports.order(:ends_at).pluck(:starts_at, :ends_at)
-        if ranges.empty?
+        if reports.none?
           return Responses.error("Enterprise '#{ent.name}' has no synced P&L reports yet.")
+        elsif explicit_range
+          available = reports.order(:ends_at).pluck(:starts_at, :ends_at).map { |s, e| "#{s} to #{e}" }.join(', ')
+          return Responses.error("No P&L report synced for that range. Available: #{available}")
+        else
+          return Responses.error("Enterprise '#{ent.name}' has no synced #{ptype} P&L reports yet. Try period_type: #{(PERIOD_SPAN_DAYS.keys - [ptype]).join(' or ')}.")
         end
-        available = ranges.map { |s, e| "#{s} to #{e}" }.join(', ')
-        return Responses.error("No P&L report synced for that range. Available: #{available}")
       end
 
       # A persisted report can have a NULL `data` column (jsonb, nullable), an
@@ -114,6 +134,10 @@ module Mcp
       Responses.ok(
         enterprise: ent.name,
         accounting_method: method,
+        # The report's classified span — echoes the requested period_type on the
+        # default path, and tells an explicit-range caller which granularity
+        # they actually hit.
+        period_type: PERIOD_SPAN_DAYS.find { |_t, span| span.cover?((report.ends_at - report.starts_at).to_i) }&.first,
         period: { starts_at: report.starts_at.iso8601, ends_at: report.ends_at.iso8601 },
         revenue: revenue.round(2),
         cogs: d[:cogs].to_f.round(2),
