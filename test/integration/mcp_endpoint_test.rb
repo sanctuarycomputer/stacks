@@ -45,7 +45,7 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     assert body.key?("result"), "Expected JSON-RPC result key, got: #{body.inspect}"
     tool_names = body["result"]["tools"].map { |t| t["name"] }
     assert_includes tool_names, "search", "Expected 'search' tool in: #{tool_names.inspect}"
-    assert_equal %w[get_ar_aging get_document list_documents list_open_admin_tasks list_overdue_invoices list_projects_at_risk list_sources search], tool_names.sort,
+    assert_equal %w[get_ar_aging get_document get_studio_health list_documents list_open_admin_tasks list_overdue_invoices list_projects_at_risk list_sources search], tool_names.sort,
       "Expected all registered tools, got: #{tool_names.inspect}"
   end
 
@@ -96,6 +96,19 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     payload = JSON.parse(text)
     assert payload.key?("count")
     assert payload.key?("projects")
+  end
+
+  test "tools/call round-trip for get_studio_health returns a valid payload" do
+    post "/api/mcp",
+      headers: api_key_headers,
+      params: {
+        jsonrpc: "2.0", id: 12, method: "tools/call",
+        params: { name: "get_studio_health", arguments: { gradation: "month" } },
+      }.to_json
+    assert_response :success
+    text = JSON.parse(response.body).dig("result", "content", 0, "text")
+    payload = JSON.parse(text)
+    assert payload.key?("studios")
   end
 
   test "POST returns 403 when MCP API key is not configured" do
