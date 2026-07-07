@@ -8,10 +8,11 @@ module Stacks
         include NotesDoc
         QUERY = "mimeType='application/vnd.google-apps.document' and name contains 'Notes by Gemini'".freeze
 
-        def initialize(user_email, since:, until_time: nil)
+        def initialize(user_email, since:, until_time: nil, parse_transcript: false)
           @user_email = user_email
           @since = coerce(since)
-          @until_time = coerce(until_time) # notes have no overlap guard; callers pass nil
+          @until_time = coerce(until_time)
+          @parse_transcript = parse_transcript
           @service = Auth.drive_service(sub: user_email)
         end
 
@@ -21,7 +22,13 @@ module Stacks
             q = "#{QUERY} and createdTime > '#{@since.utc.iso8601}'"
             q += " and createdTime < '#{@until_time.utc.iso8601}'" if @until_time
             resp = @service.list_files(q: q, fields: "nextPageToken, files(id,name,createdTime)", page_token: page)
-            Array(resp.files).each { |f| records_for(f).each { |r| yield r } }
+            Array(resp.files).each do |f|
+              # Daily mode: skip without exporting if a transcript Document already covers this file.
+              # MeetApiSource (which runs first in sync_all) stores drive_doc_id in raw_metadata,
+              # so for_drive_doc matches it. The export is expensive — skip before it.
+              next if !@parse_transcript && Document.for_drive_doc(f.id).exists?
+              records_for(f).each { |r| yield r }
+            end
             page = resp.next_page_token
             break unless page
           end
@@ -56,19 +63,25 @@ module Stacks
         # one. When combined, the notes body excludes the embedded transcript.
         def records_for(file)
           text = @service.export_file(file.id, "text/markdown")
+          unless @parse_transcript
+            # Daily mode: emit notes-only from the notes portion. Use split_transcript so
+            # a combined-format doc that slipped past the skip check doesn't pollute the
+            # notes body with transcript text. Never call parse_segments / transcript_record.
+            notes_md = split_transcript(text).first
+            return [note_record(file, notes_md, text)]
+          end
+          # Backfill mode: full combined-doc handling (transcript-from-markdown + notes).
           if combined_format?(text, file.id)
             notes_md, transcript_md = split_transcript(text)
             segments = parse_segments(transcript_speaker_text(transcript_md)).each { |s| s[:started_at] = coerce(file.created_time) }
             if segments.any?
               tx = transcript_record(file, text, transcript_md, segments)
-              # Reverse-dedup: if an API/Drive transcript Document already covers this file, don't
-              # emit a duplicate transcript — the notes still inherit from it at ingest.
               [tx, note_record(file, notes_md, text)].compact
             else
-              [note_record(file, notes_md, text)] # empty transcript -> notes-only
+              [note_record(file, notes_md, text)]
             end
           else
-            [normalize(file, exported: text)] # old-format / notes-only
+            [normalize(file, exported: text)]
           end
         end
 
