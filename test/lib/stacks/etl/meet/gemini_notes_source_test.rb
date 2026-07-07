@@ -333,4 +333,27 @@ class Stacks::Etl::Meet::GeminiNotesSourceTest < ActiveSupport::TestCase
     Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1)).each_meeting { |r| out << r }
     assert out.none? { |r| r[:source] == :meet }, "daily mode must NEVER yield a :meet record"
   end
+
+  test "canary: substantial transcript section with 0 speakers logs an error (possible format change)" do
+    # Build a combined doc whose transcript section is >200 chars but has NO speaker lines.
+    no_speaker_tx = "# **📝 Notes**\n\n## **Business Meeting**\n\nInvited [A](mailto:a@x.co) [B](mailto:b@x.co) [C](mailto:c@x.co)\n\nMeeting records [Transcript](https://docs.google.com/document/d/SELF_ID/edit)\n\n### Summary\nWe planned the sprint.\n\n# **📖 Transcript**\n\n" \
+                    "This is some transcript content that does not follow the speaker format at all. " \
+                    "It has multiple lines but none of them match the Name: text speaker pattern. " \
+                    "This is intentionally malformed to test the canary detection path in backfill mode.\n"
+    stub_drive_returning(no_speaker_tx)
+    Rails.logger.expects(:error).with { |msg| msg.include?("[gemini_notes]") && msg.include?("SELF_ID") }.once
+    out = []
+    Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1), parse_transcript: true).each_meeting { |r| out << r }
+    # Still emits notes (does not abort)
+    assert_equal [:gemini_notes], out.map { |r| r[:source] }
+  end
+
+  test "canary: tiny/empty transcript section does NOT log (Transcription ended message)" do
+    empty_tx = "# **📝 Notes**\n\n## **Quick Sync**\n\nInvited [A](mailto:a@x.co)\n\nMeeting records [Transcript](https://docs.google.com/document/d/SELF_ID/edit)\n\n### Summary\nShort.\n\n# **📖 Transcript**\n\n### Transcription ended after 00:01:30\n"
+    stub_drive_returning(empty_tx)
+    Rails.logger.expects(:error).never
+    out = []
+    Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1), parse_transcript: true).each_meeting { |r| out << r }
+    assert_equal [:gemini_notes], out.map { |r| r[:source] }
+  end
 end

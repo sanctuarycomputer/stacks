@@ -74,6 +74,12 @@ module Stacks
           if combined_format?(text, file.id)
             notes_md, transcript_md = split_transcript(text)
             segments = parse_segments(transcript_speaker_text(transcript_md)).each { |s| s[:started_at] = coerce(file.created_time) }
+            # Canary: a substantial transcript section (> 200 chars) that yields 0 speakers
+            # means Google likely changed the markdown format. Log loudly — Sentry captures
+            # error logs — but do NOT raise or abort; still emit notes.
+            if transcript_md.length > 200 && segments.empty?
+              Rails.logger.error("[gemini_notes] transcript present but 0 speakers parsed — possible Meet format change: #{file.id}")
+            end
             if segments.any?
               tx = transcript_record(file, text, transcript_md, segments)
               [tx, note_record(file, notes_md, text)].compact
