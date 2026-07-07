@@ -111,7 +111,10 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
     svc.stubs(:export_file).with("N_11", "text/markdown").returns(oneone_md)
     Stacks::Etl::Meet::Auth.stubs(:drive_service).returns(svc)
 
-    Stacks::Etl::Meet::Connector.new(admin_email: "hugh@sanctuary.computer", mode: :gemini_notes).run(track: false)
+    # This exercises the BACKFILL path (transcript parsed from the combined doc's markdown),
+    # which is now gated behind parse_transcript: true. In daily mode (the default) recent
+    # transcripts come structured from the Meet API instead.
+    Stacks::Etl::Meet::Connector.new(admin_email: "hugh@sanctuary.computer", mode: :gemini_notes, parse_transcript: true).run(track: false)
 
     tx = Document.find_by!(source: :meet, external_id: "N_GROUP")
     notes = Document.find_by!(source: :gemini_notes, external_id: "N_GROUP")
