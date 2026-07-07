@@ -172,13 +172,27 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
     assert_equal 0, nt_oo.chunks.count
   end
 
-  test "exclusion_for conservatively excludes a referenced-but-unresolved transcript (not invited count)" do
+  test "exclusion_for 1:1 policy: a meeting invited to >2 is never a 1:1, regardless of attendance" do
     conn = Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :gemini_notes)
-    pending = conn.exclusion_for(transcript_doc_id: "NOT_INGESTED_YET", title: "Benign Title", participant_count: 5, contacts: [])
-    assert_equal [:auto_excluded, :pending_transcript], pending,
-                 "a transcript-bearing meeting whose transcript isn't ingested yet must NOT be classified on the invited count"
-    none = conn.exclusion_for(transcript_doc_id: nil, title: "Team Weekly", participant_count: 5, contacts: [])
-    assert_equal [:not_excluded, :none], none, "genuine notes-only (no transcript reference) still classifies on the count"
+    mk = ->(n) { n.times.map { |i| { email: "p#{i}@x.co", name: "P#{i}", role: "attendee" } } }
+
+    # >2 INVITED but only 2 actually attended -> NOT a 1:1 (the invited count governs).
+    big = conn.exclusion_for(transcript_doc_id: nil, title: "Roadmap", participant_count: 2, contacts: mk.(5))
+    assert_equal [:not_excluded, :none], big, "invited>2 must not be a 1:1 even if only 2 attended"
+
+    # <=2 invited AND <=2 attended -> 1:1.
+    oo = conn.exclusion_for(transcript_doc_id: nil, title: "Sync", participant_count: 2, contacts: mk.(2))
+    assert_equal [:auto_excluded, :one_on_one], oo
+
+    # Unknown invited (empty contacts) -> falls back to actual attendance.
+    unk_group = conn.exclusion_for(transcript_doc_id: nil, title: "Sync", participant_count: 5, contacts: [])
+    assert_equal [:not_excluded, :none], unk_group
+    unk_oo = conn.exclusion_for(transcript_doc_id: nil, title: "Sync", participant_count: 2, contacts: [])
+    assert_equal [:auto_excluded, :one_on_one], unk_oo, "unknown invited falls back to actual attendance"
+
+    # A referenced-but-not-yet-ingested transcript classifies on the count now (no conservative hold).
+    ref = conn.exclusion_for(transcript_doc_id: "NOT_INGESTED_YET", title: "Roadmap", participant_count: 2, contacts: mk.(5))
+    assert_equal [:not_excluded, :none], ref, "a referenced-but-unresolved transcript classifies on the invited/attendance count"
   end
 
   test "API transcript absorbs a pre-existing standalone notes Meeting (heals the split)" do
@@ -216,13 +230,14 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
     assert_equal 1, Meeting.where(meet_conference_record_id: 'conferenceRecords/x1').count, "exactly one Meeting for the meeting"
   end
 
-  test "combined doc ingests as a meet transcript + gemini_notes doc on one meeting; 1:1 walled by speakers" do
+  test "combined doc ingests as a meet transcript + gemini_notes doc on one meeting; 1:1 walled by invited count" do
     skip_without_pgvector
     group = OpenStruct.new(id: "N_GROUP", name: "Roadmap - 2026/06/30 15:00 EDT - Notes by Gemini", created_time: "2026-06-30T15:00:00Z")
     group_md = "# 📝 Notes\n\n## Roadmap\n\nInvited [A](mailto:a@x.co) [B](mailto:b@x.co) [C](mailto:c@x.co)\n\nMeeting records [Transcript](https://docs.google.com/document/d/N_GROUP/edit)\n\n### Summary\nShip the gateway.\n\n# 📖 Transcript\n\nAlice: kickoff\nBob: agreed\nCarol: shipping\n"
     oneone = OpenStruct.new(id: "N_11", name: "Kyle & Hugh - 2026/06/30 16:00 EDT - Notes by Gemini", created_time: "2026-06-30T16:00:00Z")
-    # Two people INVITED plus a 3rd invitee, but only TWO actually speak -> 1:1 by real attendance.
-    oneone_md = "# 📝 Notes\n\n## Kyle & Hugh\n\nInvited [K](mailto:k@x.co) [H](mailto:h@x.co) [X](mailto:x@x.co)\n\nMeeting records [Transcript](https://docs.google.com/document/d/N_11/edit)\n\n### Summary\nSensitive.\n\n# 📖 Transcript\n\nKyle: hey\nHugh: hi\n"
+    # A genuine 1:1: exactly two people invited -> walled (invited count <= 2). Per the 1:1
+    # policy, a meeting invited to >2 people would NOT be a 1:1 regardless of who spoke.
+    oneone_md = "# 📝 Notes\n\n## Kyle & Hugh\n\nInvited [K](mailto:k@x.co) [H](mailto:h@x.co)\n\nMeeting records [Transcript](https://docs.google.com/document/d/N_11/edit)\n\n### Summary\nSensitive.\n\n# 📖 Transcript\n\nKyle: hey\nHugh: hi\n"
 
     svc = mock("drive")
     svc.stubs(:list_files).returns(OpenStruct.new(files: [group, oneone], next_page_token: nil))
@@ -246,7 +261,7 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
 
     tx11 = Document.find_by!(source: :meet, external_id: "N_11")
     notes11 = Document.find_by!(source: :gemini_notes, external_id: "N_11")
-    assert tx11.auto_excluded?, "2 real speakers -> 1:1 excluded despite 3 invited"
+    assert tx11.auto_excluded?, "2 invited -> 1:1 excluded"
     assert tx11.reason_one_on_one?
     assert notes11.auto_excluded?, "notes inherit the 1:1 exclusion"
     assert_equal 0, tx11.chunks.count
