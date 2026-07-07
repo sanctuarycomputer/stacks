@@ -66,7 +66,7 @@ module Stacks
             contacts: contacts,
             segments: segments,
             raw_metadata: { 'conference_record' => cr.name, 'space' => cr.space, 'drive_doc_id' => drive_doc_id },
-            build_source_record: ->(doc) { build_meeting(doc, cr, participants, segments, title, enrichment[:organizer_email]) }
+            build_source_record: ->(doc) { build_meeting(doc, cr, participants, segments, title, enrichment[:organizer_email], drive_doc_id) }
           }
 
           notes = build_api_notes_record(cr, drive_doc_id, title, participants)
@@ -165,7 +165,7 @@ module Stacks
           [segments, drive_doc_id]
         end
 
-        def build_meeting(doc, cr, participants, segments, title, organizer_email)
+        def build_meeting(doc, cr, participants, segments, title, organizer_email, drive_doc_id = nil)
           meeting = Meeting.find_or_initialize_by(meet_conference_record_id: cr.name)
           meeting.update!(meet_source: :meet_api, title: title, started_at: cr.start_time,
                           ended_at: cr.end_time, participant_count: participants.size,
@@ -178,7 +178,21 @@ module Stacks
             meeting.segments.create!(position: i, speaker_name: s[:speaker_name], speaker_email: s[:speaker_email],
                                      started_at: s[:started_at], ended_at: s[:ended_at], text: s[:text])
           end
+          absorb_standalone_notes_meeting!(meeting, drive_doc_id)
           meeting
+        end
+
+        # If a notes-only Meeting was created for this meeting's Gemini-notes doc BEFORE the
+        # API transcript was available (async finalization), the meeting can split across two
+        # Meeting rows. When the transcript lands here, re-home that standalone Meeting's notes
+        # Documents onto this (conference-record) Meeting and delete the now-empty orphan.
+        def absorb_standalone_notes_meeting!(meeting, drive_doc_id)
+          return unless drive_doc_id
+          standalone = Meeting.where(meet_source: :gemini_notes, gemini_notes_doc_id: drive_doc_id)
+                              .where.not(id: meeting.id).first
+          return unless standalone
+          standalone.documents.update_all(source_record_type: "Meeting", source_record_id: meeting.id)
+          standalone.destroy
         end
       end
     end

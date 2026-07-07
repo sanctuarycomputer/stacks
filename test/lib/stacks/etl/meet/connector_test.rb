@@ -1,4 +1,5 @@
 require 'test_helper'
+require 'digest'
 
 class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
   setup do
@@ -51,8 +52,8 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
     joined = conn.exclusion_for(transcript_doc_id: "TX1", title: "Anything", participant_count: 9, contacts: [])
     assert_equal [:auto_excluded, :one_on_one], joined
 
-    # standalone: no resolvable transcript -> classify on the count
-    standalone = conn.exclusion_for(transcript_doc_id: "NOPE", title: "Team Weekly", participant_count: 5, contacts: [])
+    # standalone: genuine notes-only (no transcript link, nil) -> classify on the count
+    standalone = conn.exclusion_for(transcript_doc_id: nil, title: "Team Weekly", participant_count: 5, contacts: [])
     assert_equal [:not_excluded, :none], standalone
 
     # API-keyed transcript: for_drive_doc must resolve via raw_metadata->>'drive_doc_id'
@@ -169,6 +170,50 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
     assert nt_oo.reason_one_on_one?, "notes must inherit the transcript's exclusion REASON verbatim"
     assert_equal 0, tx_oo.chunks.count
     assert_equal 0, nt_oo.chunks.count
+  end
+
+  test "exclusion_for conservatively excludes a referenced-but-unresolved transcript (not invited count)" do
+    conn = Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :gemini_notes)
+    pending = conn.exclusion_for(transcript_doc_id: "NOT_INGESTED_YET", title: "Benign Title", participant_count: 5, contacts: [])
+    assert_equal [:auto_excluded, :pending_transcript], pending,
+                 "a transcript-bearing meeting whose transcript isn't ingested yet must NOT be classified on the invited count"
+    none = conn.exclusion_for(transcript_doc_id: nil, title: "Team Weekly", participant_count: 5, contacts: [])
+    assert_equal [:not_excluded, :none], none, "genuine notes-only (no transcript reference) still classifies on the count"
+  end
+
+  test "API transcript absorbs a pre-existing standalone notes Meeting (heals the split)" do
+    skip_without_pgvector
+    export = "# Notes\n\n## Sync\n\nInvited [A](mailto:a@x.co)\n\n### Summary\nStuff happened.\n"
+    # Night 1: notes ingested standalone (before the transcript existed), same content the API
+    # will recompute -> content_hash matches -> changed:false -> only the ABSORB can re-home it.
+    standalone = Meeting.create!(meet_source: :gemini_notes, gemini_notes_doc_id: "NOTES_DOC_X")
+    notes_doc = Document.create!(source: :gemini_notes, external_id: "NOTES_DOC_X", source_record: standalone,
+                                 excluded: :not_excluded, excluded_reason: :none,
+                                 content_hash: Digest::SHA256.hexdigest(export))
+    # Night 2: the API transcript for the SAME meeting arrives (docsDestination = NOTES_DOC_X).
+    cr = OpenStruct.new(name: 'conferenceRecords/x1', start_time: '2026-01-01T09:00:00Z', end_time: '2026-01-01T09:30:00Z', space: 'spaces/x')
+    tx = OpenStruct.new(name: 'conferenceRecords/x1/transcripts/1', docs_destination: OpenStruct.new(document: 'NOTES_DOC_X'))
+    entry = OpenStruct.new(participant: 'p1', text: 'hello', start_time: '2026-01-01T09:01:00Z', end_time: '2026-01-01T09:01:05Z')
+    parts = [OpenStruct.new(name: 'p1', signedin_user: OpenStruct.new(display_name: 'Alice'))]
+    meet_svc = mock('meet')
+    meet_svc.stubs(:list_conference_records).returns(OpenStruct.new(conference_records: [cr], next_page_token: nil))
+    meet_svc.stubs(:get_space).returns(OpenStruct.new(meeting_code: 'abc', meeting_uri: 'https://meet.google.com/abc'))
+    meet_svc.stubs(:list_conference_record_transcripts).returns(OpenStruct.new(transcripts: [tx], next_page_token: nil))
+    meet_svc.stubs(:list_conference_record_transcript_entries).returns(OpenStruct.new(transcript_entries: [entry], next_page_token: nil))
+    meet_svc.stubs(:list_conference_record_participants).returns(OpenStruct.new(participants: parts, next_page_token: nil))
+    Stacks::Etl::Meet::Auth.stubs(:meet_service).returns(meet_svc)
+    Stacks::Etl::Meet::CalendarEnricher.any_instance.stubs(:enrich).returns(title: 'Sync', attendees: [])
+    drive_svc = mock('drive')
+    drive_svc.stubs(:export_file).with("NOTES_DOC_X", "text/markdown").returns(export)
+    Stacks::Etl::Meet::Auth.stubs(:drive_service).returns(drive_svc)
+
+    Stacks::Etl::Meet::Connector.new(admin_email: "hugh@sanctuary.computer", mode: :api).run(track: false)
+
+    tx_doc = Document.find_by!(source: :meet, external_id: "conferenceRecords/x1")
+    notes_doc.reload
+    assert_equal tx_doc.source_record_id, notes_doc.source_record_id, "notes must be re-homed onto the transcript's Meeting"
+    assert_equal 0, Meeting.where(id: standalone.id).count, "the standalone notes Meeting must be absorbed (deleted)"
+    assert_equal 1, Meeting.where(meet_conference_record_id: 'conferenceRecords/x1').count, "exactly one Meeting for the meeting"
   end
 
   test "combined doc ingests as a meet transcript + gemini_notes doc on one meeting; 1:1 walled by speakers" do

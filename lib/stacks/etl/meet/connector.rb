@@ -20,13 +20,16 @@ module Stacks
         end
 
         def exclusion_for(normalized)
-          # Resolve a notes doc's transcript at INGEST time (not in the source): the transcript
-          # Document is guaranteed present by now — whether ingested in an earlier sweep, or as
-          # the transcript half of the SAME combined "Notes by Gemini" file yielded just before
-          # this notes record. Inherit its decision verbatim (identical privacy wall).
           if (tid = normalized[:transcript_doc_id])
             tdoc = Document.for_drive_doc(tid).first
             return [tdoc.excluded.to_sym, tdoc.excluded_reason.to_sym] if tdoc
+            # A transcript is REFERENCED (this meeting had transcription) but its Document
+            # isn't ingested yet (async finalization / not swept). Conservatively EXCLUDE
+            # until it arrives — NEVER classify a transcript-bearing meeting on the invited
+            # count (over-counts a private 1:1 with a no-show and would transiently surface
+            # its notes). Self-heals: when the transcript lands, apply_exclusion re-inherits
+            # its real decision and the chunks.empty? self-heal indexes it if eligible.
+            return [:auto_excluded, :pending_transcript]
           end
           # 1:1 PRIVACY POLICY (deliberate — do NOT max() with the contacts/Calendar count): the
           # head-count must reflect who was ACTUALLY in the meeting, never who was invited.
