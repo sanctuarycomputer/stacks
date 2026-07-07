@@ -50,17 +50,6 @@ module Stacks
           md.to_s.gsub("**", "")
         end
 
-        def notes_segments(text, occurred_at:)
-          # Search-only: the whole notes body IS the searchable content. Split into
-          # paragraph-ish blocks so the Chunker has natural boundaries; drop the trailing
-          # Gemini feedback/footer noise.
-          cleaned = text.to_s.gsub(/We['’]ve updated the Decisions section.*\z/m, "")
-                        .gsub(/Let us know what you think.*\z/m, "")
-                        .gsub(/You should review Gemini['’]s notes.*\z/m, "")
-          cleaned.split(/\n{2,}/).map(&:strip).reject(&:empty?).map do |para|
-            { speaker_name: nil, speaker_email: nil, text: para, started_at: occurred_at, ended_at: nil }
-          end
-        end
 
         # A combined "Notes by Gemini" file yields TWO records (transcript first so the notes'
         # for_drive_doc(file.id) join resolves it at ingest); a plain/old-format notes doc yields
