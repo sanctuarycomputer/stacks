@@ -5,6 +5,7 @@ module Stacks
       class GeminiNotesSource
         include DriveDoc
         include TranscriptSegments
+        include NotesDoc
         QUERY = "mimeType='application/vnd.google-apps.document' and name contains 'Notes by Gemini'".freeze
 
         def initialize(user_email, since:, until_time: nil)
@@ -40,24 +41,6 @@ module Stacks
           transcript_doc_id_from(text) == file_id
         end
 
-        # First markdown heading whose text contains "Transcript" — tolerant of the 📖 emoji so
-        # a future Google change doesn't break it. The inline "Meeting records [Transcript](…)"
-        # link is NOT a heading and is not matched.
-        TRANSCRIPT_HEADING = /^\#{1,2}\s+.*Transcript.*$/i
-
-        # Split a combined doc into [notes_body_markdown, transcript_markdown]. Everything from
-        # the transcript heading onward is the transcript; everything before is the notes body.
-        # Returns transcript_md = "" when no transcript heading is present (caller falls back to
-        # notes-only).
-        def split_transcript(text)
-          s = text.to_s
-          if (m = s.match(TRANSCRIPT_HEADING))
-            [s[0...m.begin(0)], s[m.begin(0)..]]
-          else
-            [s, ""]
-          end
-        end
-
         # Real Gemini transcripts render each turn as BOLD markdown: "**Name:** utterance".
         # The shared speaker parser (from DriveSource's plain-text transcripts) expects a
         # letter-led "Name: utterance" line, so it matches ZERO bold turns. Strip the "**"
@@ -67,13 +50,7 @@ module Stacks
           md.to_s.gsub("**", "")
         end
 
-        def invited_emails_from(text)
-          # Emails only appear as mailto: links, primarily in the "Invited" block.
-          text.to_s.scan(/mailto:([^)\s]+)/).flatten.map { |e| e.downcase }
-              .reject { |e| e.end_with?("resource.calendar.google.com") }.uniq
-        end
-
-        def body_segments(text, occurred_at:)
+        def notes_segments(text, occurred_at:)
           # Search-only: the whole notes body IS the searchable content. Split into
           # paragraph-ish blocks so the Chunker has natural boundaries; drop the trailing
           # Gemini feedback/footer noise.
@@ -154,7 +131,7 @@ module Stacks
           occurred_at = coerce(file.created_time)
           transcript_id = transcript_doc_id_from(full_text)
           emails = invited_emails_from(full_text)
-          segments = body_segments(notes_md, occurred_at: occurred_at)
+          segments = notes_segments(notes_md, occurred_at: occurred_at)
           {
             source: :gemini_notes,
             external_id: file.id,

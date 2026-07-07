@@ -30,7 +30,7 @@ class Stacks::Etl::Meet::GeminiNotesSourceTest < ActiveSupport::TestCase
 
   test "body segments carry the notes text with the meeting time and no speaker" do
     at = Time.utc(2026, 6, 30, 15)
-    segs = src.send(:body_segments, SAMPLE, occurred_at: at)
+    segs = src.send(:notes_segments, SAMPLE, occurred_at: at)
     assert segs.any?
     joined = segs.map { |s| s[:text] }.join(" ")
     assert_includes joined, "ship the gateway redesign"
