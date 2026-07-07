@@ -48,6 +48,32 @@ class Mcp::ToolsTest < ActiveSupport::TestCase
     assert_equal [note.id], ids
   end
 
+  test 'get_document returns body joined from the doc chunks in position order' do
+    # @doc already has a position-0 chunk from setup; add a later one out of insertion order.
+    Chunk.create!(document: @doc, position: 2, content: 'and we set the launch date', source: :meet)
+    Chunk.create!(document: @doc, position: 1, content: 'then we picked the rollout plan', source: :meet)
+
+    payload = JSON.parse(Mcp::GetDocumentTool.call(id: @doc.id, server_context: {}).content.first[:text])
+    assert_equal(
+      "we decided to ship the gateway\nthen we picked the rollout plan\nand we set the launch date",
+      payload['body']
+    )
+  end
+
+  test 'get_document returns meeting_key for a meeting-backed doc and nil for a standalone doc' do
+    m = Meeting.create!(meet_source: :meet_api, meet_conference_record_id: 'cr/gd-1')
+    note = Document.create!(source: :gemini_notes, external_id: 'gd-note', title: 'Roadmap notes',
+                            excluded: :not_excluded, source_record: m)
+    Chunk.create!(document: note, position: 0, content: 'summary: shipped the gateway', source: :meet)
+
+    linked = JSON.parse(Mcp::GetDocumentTool.call(id: note.id, server_context: {}).content.first[:text])
+    assert_equal m.id, linked['meeting_key']
+    assert_equal 'summary: shipped the gateway', linked['body']
+
+    standalone = JSON.parse(Mcp::GetDocumentTool.call(id: @doc.id, server_context: {}).content.first[:text])
+    assert_nil standalone['meeting_key']
+  end
+
   def ids_for(resp)
     JSON.parse(resp.content.first[:text]).map { |d| d['id'] }
   end
