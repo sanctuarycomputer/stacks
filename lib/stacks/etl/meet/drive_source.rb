@@ -5,6 +5,7 @@ module Stacks
     module Meet
       class DriveSource
         include DriveDoc
+        include TranscriptSegments
 
         QUERY = "mimeType='application/vnd.google-apps.document' and name contains 'Transcript'".freeze
 
@@ -77,39 +78,6 @@ module Stacks
             raw_metadata: { 'drive_doc_id' => file.id },
             build_source_record: ->(doc) { build_meeting(doc, file, segments, title, speaker_count, enrichment[:organizer_email]) }
           }
-        end
-
-        # Distinct speakers heard in the transcript — the actual-attendance head-count for
-        # the 1:1 privacy classifier. parse_segments never yields a nil speaker_name.
-        def distinct_speaker_count(segments)
-          segments.map { |s| s[:speaker_name] }.uniq.size
-        end
-
-        # A speaker line is "Name: <text>". The name must LOOK like a name. The FIRST token
-        # (NAME_HEAD) must start with an uppercase letter (\p{Lu}) or a caseless-script
-        # letter (\p{Lo}, e.g. CJK) — that rejects timestamps ("10:30 …", leading digit),
-        # spoken sentences ("i think the answer is: yes", leading lowercase) AND a leading
-        # parenthetical ("(Recording note): …", which must not be a phantom speaker).
-        # Trailing tokens (NAME_TAIL) may add more letter-words or a "(Guest)" parenthetical,
-        # but NOT bare numbers, so body lines like "Action 1:" / "Phase 2:" don't parse as
-        # speakers (a phantom speaker would inflate the distinct-speaker 1:1 count and leak a
-        # private 1:1). Meet's anonymous labels are matched explicitly as "Speaker N" etc.
-        NAME_HEAD = /[\p{Lu}\p{Lo}][\p{L}.'’-]*/
-        NAME_TAIL = /(?:[\p{Lu}\p{Lo}][\p{L}.'’-]*|\([^)]*\))/
-        ANON_LABEL = /(?:Speaker|Guest|Participant) \d{1,4}/
-        SPEAKER_LINE = /\A\s*(#{ANON_LABEL}|#{NAME_HEAD}(?:[ ,&]+#{NAME_TAIL}){0,6}):\s+(\S.*)\z/
-
-        def parse_segments(text)
-          text.to_s.each_line.filter_map do |raw|
-            if (m = raw.chomp.match(SPEAKER_LINE))
-              { speaker_name: m[1].strip, speaker_email: nil, text: m[2].strip, started_at: nil, ended_at: nil }
-            end
-            # Lines without a name-shaped "Name:" prefix — system/footer notes like
-            # "Recording stopped" or "X left the call" — are dropped. Google Docs exports
-            # each speaker turn as one paragraph/line, so these are not wrapped continuations;
-            # appending them to the previous speaker would MISATTRIBUTE that text to a real
-            # person in search, which is worse for the corpus than omitting it.
-          end
         end
 
         def build_meeting(doc, file, segments, title, speaker_count, organizer_email)

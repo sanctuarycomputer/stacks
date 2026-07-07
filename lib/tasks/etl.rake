@@ -54,7 +54,8 @@ namespace :stacks do
         task_name: 'stacks:etl:backfill_gemini_notes_all',
         mode: :gemini_notes,
         since: (args[:days] || 90).to_i.days.ago,
-        until_time: nil # notes are Drive-only; no API overlap to guard against
+        until_time: nil, # notes are Drive-only; no API sweep to overlap-guard against
+        parse_transcript: true
       )
     end
 
@@ -73,7 +74,8 @@ namespace :stacks do
         task_name: 'stacks:etl:sync_gemini_notes_all',
         mode: :gemini_notes,
         since: (args[:days] || 10).to_i.days.ago,
-        until_time: nil
+        until_time: nil, # notes are Drive-only; no API sweep to overlap-guard against
+        parse_transcript: false # daily: notes-only; recent transcripts come structured from the Meet API
       )
     end
 

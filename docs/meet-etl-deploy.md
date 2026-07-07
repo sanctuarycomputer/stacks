@@ -123,3 +123,26 @@ Add a **Heroku Scheduler** job (Scheduler lets you pick the dyno size):
   duplicates.
 - Bake the embedding model into the slug (or a cache) to avoid re-downloading it on
   each one-off dyno run.
+
+## Retroactive: split already-ingested combined Notes+Transcript docs
+
+> After this change is deployed, the combined "Notes by Gemini" docs ingested before it are single `gemini_notes` Documents on standalone `gemini_notes` Meetings, classified on invited count. One-time cleanup, then a re-run splits them correctly (idempotent):
+>
+> 1. Delete the combined-format notes Documents (self-referencing transcript link) and their now-orphaned meetings, via a one-off dyno:
+>    ```
+>    heroku run --size standard-1x --app g3d-stacks --no-tty "rails runner -" <<'RUBY'
+>    combined = Document.where(source: :gemini_notes)
+>                       .where("raw_metadata->>'transcript_doc_id' = external_id")
+>    puts "combined notes docs to delete: #{combined.count}"
+>    combined.find_each(&:destroy!)                       # cascades chunks/embeddings/document_contacts
+>    orphans = Meeting.where(meet_source: :gemini_notes).left_joins(:documents).where(documents: { id: nil })
+>    puts "orphaned gemini_notes meetings to delete: #{orphans.count}"
+>    orphans.find_each(&:destroy!)                        # ONLY meetings left with zero Documents
+>    RUBY
+>    ```
+>    This preserves legitimate notes-only meetings (transcription genuinely off): their notes doc has a `NULL` transcript_doc_id, so it is not deleted and its meeting keeps a Document.
+> 2. Re-run the org-wide backfill (transcripts first, then notes; combined docs now split):
+>    ```
+>    heroku run:detached --size performance-l --app g3d-stacks "rake stacks:etl:backfill_meet_all[365]"
+>    ```
+> 3. Verify: `Document.where(source: :meet).count` rises (embedded transcripts now land as `meet`), combined `gemini_notes` docs now have a sibling `meet` doc on the same Meeting, and `chunks` on excluded docs stays 0.

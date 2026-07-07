@@ -8,7 +8,7 @@ module Stacks
       #
       #   mode:  :drive (Drive transcript backfill) or :api (Meet REST API, recent)
       #   since: lower time bound passed to each user's connector run
-      def self.sweep_all_users!(task_name:, mode:, since:, until_time: nil)
+      def self.sweep_all_users!(task_name:, mode:, since:, until_time: nil, parse_transcript: false)
         system_task = SystemTask.create!(name: task_name)
         emails = Workspace.all_active_user_emails
         ok = 0
@@ -16,7 +16,7 @@ module Stacks
 
         emails.each do |email|
           # track:false so per-user runs don't clobber the shared :meet cursor.
-          Connector.new(admin_email: email, mode: mode, until_time: until_time).run(since: since, track: false)
+          Connector.new(admin_email: email, mode: mode, until_time: until_time, parse_transcript: parse_transcript).run(since: since, track: false)
           ok += 1
         rescue StandardError => e
           failed << "#{email}: #{e.class}: #{e.message.to_s[0, 140]}"

@@ -30,7 +30,7 @@ class Stacks::Etl::Meet::GeminiNotesSourceTest < ActiveSupport::TestCase
 
   test "body segments carry the notes text with the meeting time and no speaker" do
     at = Time.utc(2026, 6, 30, 15)
-    segs = src.send(:body_segments, SAMPLE, occurred_at: at)
+    segs = src.send(:notes_segments, SAMPLE, occurred_at: at)
     assert segs.any?
     joined = segs.map { |s| s[:text] }.join(" ")
     assert_includes joined, "ship the gateway redesign"
@@ -55,7 +55,7 @@ class Stacks::Etl::Meet::GeminiNotesSourceTest < ActiveSupport::TestCase
     assert_equal :gemini_notes, n[:source]
     assert_equal "notesfile1", n[:external_id]
     assert_equal "Sync Title", n[:title]
-    assert_equal [:auto_excluded, :one_on_one], n[:inherit_exclusion]
+    assert_equal "TRANSCRIPT_ID_123", n[:transcript_doc_id]   # inheritance resolved at ingest via for_drive_doc
     assert_equal ["ayaka@index-space.org", "hugh@sanctuary.computer"], n[:contacts].map { |c| c[:email] }
     doc = Document.create!(source: :gemini_notes, external_id: "notesfile1")
     built = n[:build_source_record].call(doc)
@@ -78,8 +78,7 @@ class Stacks::Etl::Meet::GeminiNotesSourceTest < ActiveSupport::TestCase
 
     n = nil
     Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1)).each_meeting { |x| n = x }
-    assert_equal [:not_excluded, :none], n[:inherit_exclusion]
-    assert_nil n[:participant_count] # joined -> inherits, does not re-classify on invited count
+    assert_equal "TRANSCRIPT_ID_123", n[:transcript_doc_id]
   end
 
   test "joins to API-ingested transcript keyed by conference-record id (regression: for_drive_doc vs find_by)" do
@@ -124,9 +123,8 @@ class Stacks::Etl::Meet::GeminiNotesSourceTest < ActiveSupport::TestCase
     Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1)).each_meeting { |x| n = x }
     # With the fix: join succeeds via raw_metadata->>'drive_doc_id', exclusion is inherited verbatim.
     # With the bug: join fails, falls to standalone, participant_count=3 → classifier marks not_excluded.
-    assert_equal [:auto_excluded, :one_on_one], n[:inherit_exclusion],
-                 "Expected exclusion to be inherited from API-ingested transcript; standalone path would incorrectly allow this meeting"
-    assert_nil n[:participant_count], "Expected nil participant_count (took join path, not standalone)"
+    assert_equal "REAL_TRANSCRIPT_DRIVE_ID", n[:transcript_doc_id],
+                 "Notes carry the parsed transcript id; the connector inherits from the API-ingested transcript at ingest"
   end
 
   test "a notes doc with no known transcript is standalone with its own classification" do
@@ -138,8 +136,8 @@ class Stacks::Etl::Meet::GeminiNotesSourceTest < ActiveSupport::TestCase
     Stacks::Etl::Meet::Auth.stubs(:drive_service).returns(svc)
     n = nil
     Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1)).each_meeting { |x| n = x }
-    assert_nil n[:inherit_exclusion]
-    assert_equal 3, n[:participant_count] # invited count -> classifier sees a group
+    assert_nil n[:transcript_doc_id]
+    assert_equal 3, n[:participant_count]  # invited count -> classifier sees a group
     doc = Document.create!(source: :gemini_notes, external_id: "notesfile2")
     built = n[:build_source_record].call(doc)
     assert_equal "notesfile2", built.gemini_notes_doc_id
@@ -165,7 +163,197 @@ class Stacks::Etl::Meet::GeminiNotesSourceTest < ActiveSupport::TestCase
     n = nil
     Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1)).each_meeting { |x| n = x }
     # Links survived the export -> transcript joins (inherits) and invited emails are attributed.
-    assert_equal [:not_excluded, :none], n[:inherit_exclusion]
+    assert_equal "TRANSCRIPT_ID_123", n[:transcript_doc_id]
     assert_equal ["ayaka@index-space.org", "hugh@sanctuary.computer"], n[:contacts].map { |c| c[:email] }
+  end
+
+  COMBINED = <<~TXT
+    # **📝 Notes**
+
+    ## **Business Meeting**
+
+    Invited [Alice](mailto:alice@x.co) [Bob](mailto:bob@x.co) [Carol](mailto:carol@x.co)
+
+    Meeting records [Transcript](https://docs.google.com/document/d/SELF_ID/edit?usp=drive_web&tab=t.wqjj)
+
+    ### Summary
+    We planned the sprint.
+
+    # **📖 Transcript**
+
+    ## **Business Meeting \\- Transcript**
+
+    Alice: kicking off the sprint
+    Bob: sounds good to me
+    Carol: agreed
+  TXT
+
+  def combined_file = OpenStruct.new(id: "SELF_ID", name: "Business Meeting - 2026/06/30 15:00 EDT - Notes by Gemini",
+                                   created_time: "2026-06-30T15:00:00Z")
+
+  def stub_drive_returning(text, file: combined_file)
+    svc = mock("drive")
+    svc.stubs(:list_files).returns(OpenStruct.new(files: [file], next_page_token: nil))
+    svc.stubs(:export_file).returns(text)
+    Stacks::Etl::Meet::Auth.stubs(:drive_service).returns(svc)
+    svc
+  end
+
+  test "a combined doc yields a meet transcript record then a gemini_notes record, both for the same file" do
+    stub_drive_returning(COMBINED)
+    out = []
+    Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1), parse_transcript: true).each_meeting { |r| out << r }
+
+    assert_equal [:meet, :gemini_notes], out.map { |r| r[:source] }
+    tx, notes = out
+    assert_equal "SELF_ID", tx[:external_id]
+    assert_equal ["Alice", "Bob", "Carol"], tx[:segments].map { |s| s[:speaker_name] }
+    assert_equal 3, tx[:participant_count]                 # actual speakers, not invited
+    assert_equal "SELF_ID", tx[:raw_metadata]["drive_doc_id"]
+    assert_equal "SELF_ID", notes[:transcript_doc_id]      # self-link -> inherits tx at ingest
+    refute notes[:segments].any? { |s| s[:text].include?("kicking off the sprint") } # transcript not in notes
+  end
+
+  test "a combined doc whose transcript section has no speaker lines yields notes-only" do
+    empty_tx = "# **📝 Notes**\n\n## **Quick Sync**\n\nInvited [A](mailto:a@x.co)\n\nMeeting records [Transcript](https://docs.google.com/document/d/SELF_ID/edit)\n\n### Summary\nShort.\n\n# **📖 Transcript**\n\n### Transcription ended after 00:01:30\n"
+    stub_drive_returning(empty_tx)
+    out = []
+    Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1), parse_transcript: true).each_meeting { |r| out << r }
+    assert_equal [:gemini_notes], out.map { |r| r[:source] }   # no meet transcript emitted
+    assert_equal 1, out.first[:participant_count]              # standalone -> invited count
+  end
+
+  test "the split transcript defers to an already-ingested transcript Document (reverse dedup)" do
+    m = Meeting.create!(meet_source: :meet_api, meet_conference_record_id: "cr/dup")
+    Document.create!(source: :meet, external_id: "conferenceRecords/dup", source_record: m,
+                     excluded: :not_excluded, excluded_reason: :none, raw_metadata: { "drive_doc_id" => "SELF_ID" })
+    stub_drive_returning(COMBINED)
+    out = []
+    Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1), parse_transcript: true).each_meeting { |r| out << r }
+    assert_equal [:gemini_notes], out.map { |r| r[:source] } # transcript deferred; only notes yielded
+    assert_equal "SELF_ID", out.first[:transcript_doc_id]     # notes still inherit from the API doc at ingest
+  end
+
+  test "detects the combined format when the transcript link points to the doc's own id" do
+    assert src.send(:combined_format?, COMBINED, "SELF_ID")
+    refute src.send(:combined_format?, COMBINED, "OTHER_ID")  # external transcript -> old format
+    refute src.send(:combined_format?, "no transcript link here", "SELF_ID")
+  end
+
+  test "splits combined markdown into notes-body and transcript at the transcript heading" do
+    notes_md, transcript_md = src.send(:split_transcript, COMBINED)
+    assert_includes notes_md, "We planned the sprint"
+    refute_includes notes_md, "kicking off the sprint"      # transcript dialogue not in notes
+    assert_includes transcript_md, "Alice: kicking off the sprint"
+    assert_includes transcript_md, "Carol: agreed"
+  end
+
+  test "split returns empty transcript when there is no transcript heading" do
+    notes_md, transcript_md = src.send(:split_transcript, "# Notes\n\n### Summary\nJust notes.")
+    assert_includes notes_md, "Just notes."
+    assert_equal "", transcript_md
+  end
+
+  test "combined transcript head-count uses ACTUAL speakers, not the invited count (privacy)" do
+    # 3 invited, but only 2 people actually speak -> a 1:1 by real attendance despite 3 invites.
+    md = "# 📝 Notes\n\n## Kyle & Hugh\n\nInvited [K](mailto:k@x.co) [H](mailto:h@x.co) [X](mailto:x@x.co)\n\nMeeting records [Transcript](https://docs.google.com/document/d/SELF_ID/edit)\n\n### Summary\nSensitive.\n\n# 📖 Transcript\n\nKyle: hey\nHugh: hi\n"
+    stub_drive_returning(md)
+    out = []
+    Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1), parse_transcript: true).each_meeting { |r| out << r }
+    tx = out.find { |r| r[:source] == :meet }
+    assert_equal 2, tx[:participant_count], "head-count must be distinct speakers (2), not invited (3)"
+  end
+
+  test "combined transcript with BOLD markdown speaker turns parses speakers (real Gemini format)" do
+    # Real Gemini transcripts render each turn as "**Name:** text" (bold), with "### **00:01:15**"
+    # timestamp headings between turns. The plain-text speaker parser matches ZERO of these unless
+    # the ** emphasis is stripped first. Without the fix, tx would be nil (notes-only).
+    md = <<~MD
+      # **📝 Notes**
+
+      ## **Business Meeting**
+
+      Invited [A](mailto:a@x.co) [B](mailto:b@x.co) [C](mailto:c@x.co)
+
+      Meeting records [Transcript](https://docs.google.com/document/d/SELF_ID/edit?usp=drive_web&tab=t.abc)
+
+      ### Summary
+      Stuff happened.
+
+      # **📖 Transcript**
+
+      ### **00:01:15** {#00:01:15}
+
+      **Evie Kling:** Hi, Christian.
+
+      **Christian Perez:** Hey, how are you?
+
+      **Andy Brewer:** Let's begin the sync.
+    MD
+    stub_drive_returning(md)
+    out = []
+    Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1), parse_transcript: true).each_meeting { |r| out << r }
+    tx = out.find { |r| r[:source] == :meet }
+    assert tx, "a transcript record must be emitted — bold speaker turns must parse (not degrade to notes-only)"
+    assert_equal ["Evie Kling", "Christian Perez", "Andy Brewer"], tx[:segments].map { |s| s[:speaker_name] }
+    assert_equal 3, tx[:participant_count]
+    assert_includes tx[:segments].first[:text], "Hi, Christian." # ** stripped from the utterance too
+  end
+
+  test "daily mode (parse_transcript: false) emits notes-only for a doc with no transcript Document" do
+    stub_drive_returning(COMBINED)
+    out = []
+    Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1)).each_meeting { |r| out << r }
+    assert_equal [:gemini_notes], out.map { |r| r[:source] }, "daily mode must never emit a :meet record"
+    assert_equal 1, out.size
+    # Notes body must NOT include transcript dialogue
+    joined = out.first[:segments].map { |s| s[:text] }.join(" ")
+    refute_includes joined, "kicking off the sprint"
+  end
+
+  test "daily mode skips a file whose drive id already has a transcript Document (pre-export skip)" do
+    # A transcript Document already exists for SELF_ID (e.g. from MeetApiSource raw_metadata).
+    m = Meeting.create!(meet_source: :meet_api, meet_conference_record_id: "cr/skip")
+    Document.create!(source: :meet, external_id: "conferenceRecords/skip", source_record: m,
+                     raw_metadata: { "drive_doc_id" => "SELF_ID" })
+
+    svc = mock("drive")
+    svc.stubs(:list_files).returns(OpenStruct.new(files: [combined_file], next_page_token: nil))
+    svc.expects(:export_file).never  # must NOT export — the skip fires before the export
+    Stacks::Etl::Meet::Auth.stubs(:drive_service).returns(svc)
+
+    out = []
+    Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1)).each_meeting { |r| out << r }
+    assert_empty out, "daily mode must skip a file that already has a transcript Document"
+  end
+
+  test "daily mode never yields a :meet record even for a combined-format doc" do
+    stub_drive_returning(COMBINED)
+    out = []
+    Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1)).each_meeting { |r| out << r }
+    assert out.none? { |r| r[:source] == :meet }, "daily mode must NEVER yield a :meet record"
+  end
+
+  test "canary: substantial transcript section with 0 speakers logs an error (possible format change)" do
+    # Build a combined doc whose transcript section is >200 chars but has NO speaker lines.
+    no_speaker_tx = "# **📝 Notes**\n\n## **Business Meeting**\n\nInvited [A](mailto:a@x.co) [B](mailto:b@x.co) [C](mailto:c@x.co)\n\nMeeting records [Transcript](https://docs.google.com/document/d/SELF_ID/edit)\n\n### Summary\nWe planned the sprint.\n\n# **📖 Transcript**\n\n" \
+                    "This is some transcript content that does not follow the speaker format at all. " \
+                    "It has multiple lines but none of them match the Name: text speaker pattern. " \
+                    "This is intentionally malformed to test the canary detection path in backfill mode.\n"
+    stub_drive_returning(no_speaker_tx)
+    Rails.logger.expects(:error).with { |msg| msg.include?("[gemini_notes]") && msg.include?("SELF_ID") }.once
+    out = []
+    Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1), parse_transcript: true).each_meeting { |r| out << r }
+    # Still emits notes (does not abort)
+    assert_equal [:gemini_notes], out.map { |r| r[:source] }
+  end
+
+  test "canary: tiny/empty transcript section does NOT log (Transcription ended message)" do
+    empty_tx = "# **📝 Notes**\n\n## **Quick Sync**\n\nInvited [A](mailto:a@x.co)\n\nMeeting records [Transcript](https://docs.google.com/document/d/SELF_ID/edit)\n\n### Summary\nShort.\n\n# **📖 Transcript**\n\n### Transcription ended after 00:01:30\n"
+    stub_drive_returning(empty_tx)
+    Rails.logger.expects(:error).never
+    out = []
+    Stacks::Etl::Meet::GeminiNotesSource.new("hugh@sanctuary.computer", since: Time.utc(2025, 1, 1), parse_transcript: true).each_meeting { |r| out << r }
+    assert_equal [:gemini_notes], out.map { |r| r[:source] }
   end
 end

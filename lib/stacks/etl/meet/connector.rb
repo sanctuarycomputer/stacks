@@ -2,11 +2,12 @@ module Stacks
   module Etl
     module Meet
       class Connector < Stacks::Etl::Connector
-        def initialize(admin_email:, mode: :api, since: nil, until_time: nil)
+        def initialize(admin_email:, mode: :api, since: nil, until_time: nil, parse_transcript: false)
           @admin_email = admin_email
           @mode = mode
           @since = since
           @until_time = until_time
+          @parse_transcript = parse_transcript
         end
 
         def source = :meet
@@ -19,17 +20,23 @@ module Stacks
         end
 
         def exclusion_for(normalized)
-          return normalized[:inherit_exclusion] if normalized[:inherit_exclusion]
-          # 1:1 PRIVACY POLICY (deliberate — do NOT "improve" this to max() with the
-          # contacts/Calendar count): the head-count must reflect who was ACTUALLY in the
-          # meeting, never who was invited. Invite counts over-count (a no-show on a 1:1
-          # makes it look like 3 people and the private transcript leaks). So we use the
-          # actual-attendance signal each source provides — Meet participants (API) or
-          # distinct speakers (Drive) — in participant_count, even when it's 0 ("couldn't
-          # confirm a group" -> conservatively excluded). Only when that signal is wholly
-          # ABSENT (nil) do we fall back to the contact count. Under-counting at worst
-          # over-excludes a quiet group meeting (recoverable); over-counting would leak.
-          count = normalized[:participant_count] || normalized[:contacts].size
+          if (tid = normalized[:transcript_doc_id])
+            tdoc = Document.for_drive_doc(tid).first
+            return [tdoc.excluded.to_sym, tdoc.excluded_reason.to_sym] if tdoc
+            # Transcript referenced but not ingested yet -> fall through and classify on the
+            # invited count below (a >2-invited meeting is never a 1:1; a <=2 invited stays a
+            # 1:1). Once the transcript's Document lands, apply_exclusion re-inherits its exact
+            # decision. No conservative hold is needed: the invited count is already the 1:1
+            # signal, and the notes carry their own invited list.
+          end
+          # 1:1 POLICY: privacy is defined by the INTENDED AUDIENCE (the invite count), NOT by
+          # who actually showed up. A meeting invited to more than 2 people is not a private
+          # 1:1, regardless of attendance — so take the LARGER of actual attendance
+          # (participant_count) and the invited/contact count. When the invite count is unknown
+          # (empty contacts) this falls back to actual attendance; when BOTH are absent (max is
+          # 0) it is conservatively treated as a possible 1:1. Title rules (perf/comp/HR/etc.)
+          # still wall off sensitively-named meetings regardless of size.
+          count = [normalized[:participant_count].to_i, normalized[:contacts].size].max
           Classifier.call(title: normalized[:title], participant_count: count)
         end
 
@@ -38,7 +45,7 @@ module Stacks
         def source_object(since)
           case @mode
           when :drive        then DriveSource.new(@admin_email, since: since || 90.days.ago, until_time: @until_time)
-          when :gemini_notes then GeminiNotesSource.new(@admin_email, since: since || 90.days.ago, until_time: @until_time)
+          when :gemini_notes then GeminiNotesSource.new(@admin_email, since: since || 90.days.ago, until_time: @until_time, parse_transcript: @parse_transcript)
           else MeetApiSource.new(@admin_email, since: since)
           end
         end
