@@ -97,6 +97,79 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
     assert_equal 0, oo.chunks.count, "a 1:1's notes must be walled off"
   end
 
+  test "API path: conference record with docsDestination ingests transcript + notes on one Meeting; 1:1 walled" do
+    skip_without_pgvector
+
+    # Two conference records: one group meeting, one 1:1.
+    cr_group = OpenStruct.new(name: 'conferenceRecords/g1', start_time: '2026-01-01T09:00:00Z',
+                               end_time: '2026-01-01T09:30:00Z', space: 'spaces/g1')
+    cr_11    = OpenStruct.new(name: 'conferenceRecords/oo1', start_time: '2026-01-01T10:00:00Z',
+                               end_time: '2026-01-01T10:30:00Z', space: 'spaces/oo1')
+
+    tx_group = OpenStruct.new(name: 'conferenceRecords/g1/transcripts/1',
+                               docs_destination: OpenStruct.new(document: 'NOTES_DOC_G1'))
+    tx_11    = OpenStruct.new(name: 'conferenceRecords/oo1/transcripts/1',
+                               docs_destination: OpenStruct.new(document: 'NOTES_DOC_OO1'))
+
+    entry_g  = OpenStruct.new(participant: 'p1', text: 'roadmap decision', start_time: '2026-01-01T09:01:00Z', end_time: '2026-01-01T09:01:05Z')
+    entry_oo = OpenStruct.new(participant: 'p1', text: 'sensitive', start_time: '2026-01-01T10:01:00Z', end_time: '2026-01-01T10:01:05Z')
+
+    # 3 participants in the group meeting; 2 in the 1:1.
+    parts_g  = [%w[p1 Alice], %w[p2 Bob], %w[p3 Carol]].map { |n, d| OpenStruct.new(name: n, signedin_user: OpenStruct.new(display_name: d)) }
+    parts_oo = [%w[p1 Drew], %w[p2 Hugh]].map { |n, d| OpenStruct.new(name: n, signedin_user: OpenStruct.new(display_name: d)) }
+
+    meet_svc = mock('meet')
+    meet_svc.stubs(:list_conference_records).returns(
+      OpenStruct.new(conference_records: [cr_group, cr_11], next_page_token: nil)
+    )
+    meet_svc.stubs(:get_space).returns(OpenStruct.new(meeting_code: 'abc', meeting_uri: 'https://meet.google.com/abc'))
+    meet_svc.stubs(:list_conference_record_transcripts).with('conferenceRecords/g1', page_token: nil)
+            .returns(OpenStruct.new(transcripts: [tx_group], next_page_token: nil))
+    meet_svc.stubs(:list_conference_record_transcripts).with('conferenceRecords/oo1', page_token: nil)
+            .returns(OpenStruct.new(transcripts: [tx_11], next_page_token: nil))
+    meet_svc.stubs(:list_conference_record_transcript_entries)
+            .with('conferenceRecords/g1/transcripts/1', page_size: 100, page_token: nil)
+            .returns(OpenStruct.new(transcript_entries: [entry_g], next_page_token: nil))
+    meet_svc.stubs(:list_conference_record_transcript_entries)
+            .with('conferenceRecords/oo1/transcripts/1', page_size: 100, page_token: nil)
+            .returns(OpenStruct.new(transcript_entries: [entry_oo], next_page_token: nil))
+    meet_svc.stubs(:list_conference_record_participants).with('conferenceRecords/g1', page_token: nil)
+            .returns(OpenStruct.new(participants: parts_g, next_page_token: nil))
+    meet_svc.stubs(:list_conference_record_participants).with('conferenceRecords/oo1', page_token: nil)
+            .returns(OpenStruct.new(participants: parts_oo, next_page_token: nil))
+    Stacks::Etl::Meet::Auth.stubs(:meet_service).returns(meet_svc)
+    Stacks::Etl::Meet::CalendarEnricher.any_instance.stubs(:enrich).returns(title: 'Team Sync', attendees: [])
+
+    notes_group_md = "# 📝 Notes\n\n## Team Sync\n\nInvited [A](mailto:alice@x.co) [B](mailto:bob@x.co) [C](mailto:carol@x.co)\n\n### Summary\nRoadmap aligned.\n"
+    notes_11_md    = "# 📝 Notes\n\n## Drew & Hugh\n\nInvited [D](mailto:drew@x.co) [H](mailto:hugh@x.co)\n\n### Summary\nSensitive 1:1 content.\n"
+
+    drive_svc = mock('drive')
+    drive_svc.stubs(:export_file).with('NOTES_DOC_G1', 'text/markdown').returns(notes_group_md)
+    drive_svc.stubs(:export_file).with('NOTES_DOC_OO1', 'text/markdown').returns(notes_11_md)
+    Stacks::Etl::Meet::Auth.stubs(:drive_service).returns(drive_svc)
+
+    Stacks::Etl::Meet::Connector.new(admin_email: 'hugh@sanctuary.computer', mode: :api).run(track: false)
+
+    # Group meeting — both documents eligible and chunked.
+    tx_g = Document.find_by!(source: :meet, external_id: 'conferenceRecords/g1')
+    nt_g = Document.find_by!(source: :gemini_notes, external_id: 'NOTES_DOC_G1')
+    assert tx_g.not_excluded?, "group transcript must be eligible"
+    assert nt_g.not_excluded?, "group notes must inherit eligibility"
+    assert tx_g.chunks.any?, "transcript must be chunked"
+    assert nt_g.chunks.any?, "notes must be chunked"
+    assert_equal tx_g.source_record_id, nt_g.source_record_id, "transcript and notes must share one Meeting"
+    assert_equal 'NOTES_DOC_G1', nt_g.raw_metadata['gemini_notes_doc_id']
+
+    # 1:1 meeting — both documents walled (0 chunks).
+    tx_oo = Document.find_by!(source: :meet, external_id: 'conferenceRecords/oo1')
+    nt_oo = Document.find_by!(source: :gemini_notes, external_id: 'NOTES_DOC_OO1')
+    assert tx_oo.auto_excluded?, "1:1 transcript must be auto-excluded by participant count"
+    assert tx_oo.reason_one_on_one?
+    assert nt_oo.auto_excluded?, "notes must inherit the 1:1 exclusion"
+    assert_equal 0, tx_oo.chunks.count
+    assert_equal 0, nt_oo.chunks.count
+  end
+
   test "combined doc ingests as a meet transcript + gemini_notes doc on one meeting; 1:1 walled by speakers" do
     skip_without_pgvector
     group = OpenStruct.new(id: "N_GROUP", name: "Roadmap - 2026/06/30 15:00 EDT - Notes by Gemini", created_time: "2026-06-30T15:00:00Z")
