@@ -166,6 +166,7 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
     assert tx_oo.auto_excluded?, "1:1 transcript must be auto-excluded by participant count"
     assert tx_oo.reason_one_on_one?
     assert nt_oo.auto_excluded?, "notes must inherit the 1:1 exclusion"
+    assert nt_oo.reason_one_on_one?, "notes must inherit the transcript's exclusion REASON verbatim"
     assert_equal 0, tx_oo.chunks.count
     assert_equal 0, nt_oo.chunks.count
   end
