@@ -2,11 +2,12 @@ module Stacks
   module Etl
     module Meet
       class Connector < Stacks::Etl::Connector
-        def initialize(admin_email:, mode: :api, since: nil, until_time: nil)
+        def initialize(admin_email:, mode: :api, since: nil, until_time: nil, parse_transcript: false)
           @admin_email = admin_email
           @mode = mode
           @since = since
           @until_time = until_time
+          @parse_transcript = parse_transcript
         end
 
         def source = :meet
@@ -43,7 +44,7 @@ module Stacks
         def source_object(since)
           case @mode
           when :drive        then DriveSource.new(@admin_email, since: since || 90.days.ago, until_time: @until_time)
-          when :gemini_notes then GeminiNotesSource.new(@admin_email, since: since || 90.days.ago, until_time: @until_time)
+          when :gemini_notes then GeminiNotesSource.new(@admin_email, since: since || 90.days.ago, until_time: @until_time, parse_transcript: @parse_transcript)
           else MeetApiSource.new(@admin_email, since: since)
           end
         end
