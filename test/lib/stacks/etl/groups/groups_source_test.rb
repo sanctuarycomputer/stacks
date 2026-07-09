@@ -85,6 +85,29 @@ class Stacks::Etl::Groups::GroupsSourceTest < ActiveSupport::TestCase
     assert_includes captured_q, "after:#{30.days.ago.strftime('%Y/%m/%d')}"
   end
 
+  test 'a group whose member-list lookup fails does not abort the other groups' do
+    Stacks::Etl::Groups::Workspace.stubs(:all_groups).returns([
+      { email: 'broken@sanctuary.computer', name: 'Broken' },
+      { email: 'dev@sanctuary.computer', name: 'Dev' }
+    ])
+    Stacks::Etl::Groups::Workspace.stubs(:members).with('broken@sanctuary.computer')
+      .raises(Google::Apis::ClientError.new('group vanished'))
+    Stacks::Etl::Groups::Workspace.stubs(:members).with('dev@sanctuary.computer')
+      .returns([{ email: 'alice@sanctuary.computer', role: 'OWNER', type: 'USER' }])
+    Stacks::Etl::Meet::Workspace.stubs(:all_active_user_emails).returns(['alice@sanctuary.computer'])
+
+    root = raw('<a@x>', 'Alice <alice@x.co>', 'Deploy failed', 'Mon, 01 Jun 2026 10:00:00 +0000', 'down')
+    gmail = mock('g')
+    gmail.stubs(:list_user_messages).returns(OpenStruct.new(messages: [OpenStruct.new(id: 'g_a')], next_page_token: nil))
+    gmail.stubs(:get_user_message).returns(OpenStruct.new(raw: root))
+    Stacks::Etl::Meet::Auth.stubs(:gmail_service).returns(gmail)
+
+    yielded = []
+    Stacks::Etl::Groups::GroupsSource.new(admin_email: 'hugh@sanctuary.computer').each_thread { |n| yielded << n }
+    assert_equal ['<a@x>'], yielded.map { |n| n[:external_id] },
+                 'the healthy group must still ingest despite the broken group failing member lookup'
+  end
+
   test 'a failing member mailbox does not abort the group' do
     Stacks::Etl::Groups::Workspace.stubs(:all_groups).returns([{ email: 'dev@sanctuary.computer', name: 'Dev' }])
     Stacks::Etl::Groups::Workspace.stubs(:members).with('dev@sanctuary.computer').returns([

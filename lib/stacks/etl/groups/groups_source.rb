@@ -22,17 +22,7 @@ module Stacks
         def each_thread
           active = active_emails
           Workspace.all_groups.each do |g|
-            crawlers = pick_crawlers(Workspace.members(g[:email]), active)
-            next if crawlers.empty?
-            by_id = {}
-            crawlers.each do |member_email|
-              fetch_group_messages(member_email, g[:email]) { |msg| by_id[msg[:message_id]] ||= msg }
-            rescue StandardError => e
-              Rails.logger.warn("[groups] #{g[:email]} via #{member_email} skipped: #{e.class}: #{e.message.to_s[0, 140]}")
-            end
-            next if by_id.empty?
-            MessageParser.assemble(group_email: g[:email], group_name: g[:name], messages: by_id.values)
-                         .each { |n| yield n }
+            assemble_group(g, active).each { |n| yield n }
           end
         end
 
@@ -40,6 +30,26 @@ module Stacks
 
         def active_emails
           Set.new(Stacks::Etl::Meet::Workspace.all_active_user_emails)
+        end
+
+        # Discover crawlers, crawl their mailboxes, dedup by Message-ID, and assemble this
+        # group's threads. Rescued as a unit: one group failing (deleted mid-run, a Directory
+        # members error, etc.) logs and yields nothing rather than aborting the whole run.
+        # yield stays in each_thread (outside this rescue) so consumer/ingest errors propagate.
+        def assemble_group(g, active)
+          crawlers = pick_crawlers(Workspace.members(g[:email]), active)
+          return [] if crawlers.empty?
+          by_id = {}
+          crawlers.each do |member_email|
+            fetch_group_messages(member_email, g[:email]) { |msg| by_id[msg[:message_id]] ||= msg }
+          rescue StandardError => e
+            Rails.logger.warn("[groups] #{g[:email]} via #{member_email} skipped: #{e.class}: #{e.message.to_s[0, 140]}")
+          end
+          return [] if by_id.empty?
+          MessageParser.assemble(group_email: g[:email], group_name: g[:name], messages: by_id.values)
+        rescue StandardError => e
+          Rails.logger.warn("[groups] group #{g[:email]} skipped: #{e.class}: #{e.message.to_s[0, 140]}")
+          []
         end
 
         # Owners/managers first, restricted to active internal users we can impersonate.
