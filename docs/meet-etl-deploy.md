@@ -101,7 +101,9 @@ Add a **Heroku Scheduler** job (Scheduler lets you pick the dyno size):
 - **Dyno size:** Performance-L (enough RAM for the embedding model; faster)
 - **Frequency:** daily (overnight)
 
-`stacks:etl:sync_all` is the nightly entry point across ALL sources. It now invokes `sync_meet_all` (Meet REST API transcripts, recent window) and then `sync_gemini_notes_all` (Gemini notes, Drive-only, `until_time: nil`, recent window — default 10 days). Future sources are added here so the Scheduler job never changes.
+`stacks:etl:sync_all` is the nightly entry point across ALL sources. It invokes `sync_meet_all` (Meet REST API transcripts, recent window), then `sync_gemini_notes_all` (Gemini notes, Drive-only, `until_time: nil`, recent window — default 10 days), then `sync_google_groups` (all Google Groups across every domain, recent window via the tracked cursor — ~2 days in steady state, 30 on first run). Each source is invoked independently so one failing doesn't stop the others. Future sources are added here so the Scheduler job never changes.
+
+> **Google Groups first-time backfill** (separate one-off, like the Meet backfill — the daily job only covers the recent window): run `heroku run:detached --size performance-l --app g3d-stacks "rake 'stacks:etl:backfill_google_groups[365]'"` (any day count; unbounded). Requires the service account's domain-wide delegation to include `https://www.googleapis.com/auth/gmail.readonly` and `https://www.googleapis.com/auth/admin.directory.group.readonly` (+ group-member readonly).
 
 ## 5. Operating notes
 
