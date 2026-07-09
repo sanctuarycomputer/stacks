@@ -4,7 +4,7 @@ class Document < ApplicationRecord
   has_many :document_contacts, dependent: :destroy
   has_many :contacts, through: :document_contacts
 
-  enum source: { meet: 0, gemini_notes: 1 }
+  enum source: { meet: 0, gemini_notes: 1, google_groups: 2 }
   enum excluded: { not_excluded: 0, auto_excluded: 1, manually_excluded: 2, manually_included: 3 }
   enum excluded_reason: {
     none: 0, one_on_one: 1, performance_review: 2, compensation: 3,
