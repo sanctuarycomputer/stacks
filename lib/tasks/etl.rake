@@ -30,6 +30,34 @@ namespace :stacks do
       end
     end
 
+    desc 'Ongoing Google Groups email sync (recent window; tracks cursor)'
+    task sync_google_groups: :environment do
+      system_task = SystemTask.create!(name: 'stacks:etl:sync_google_groups')
+      begin
+        admin = Stacks::Utils.config.dig(:google_oauth2, :admin_email) || 'hugh@sanctuary.computer'
+        Stacks::Etl::Groups::Connector.new(admin_email: admin).run
+      rescue => e
+        system_task.mark_as_error(e)
+      else
+        system_task.mark_as_success
+      end
+    end
+
+    desc 'Backfill Google Groups email (any number of days; default 90)'
+    task :backfill_google_groups, [:days] => :environment do |_t, args|
+      system_task = SystemTask.create!(name: 'stacks:etl:backfill_google_groups')
+      begin
+        days = (args[:days] || 90).to_i
+        admin = Stacks::Utils.config.dig(:google_oauth2, :admin_email) || 'hugh@sanctuary.computer'
+        # track:false so the explicit backfill window isn't written back into the ongoing cursor.
+        Stacks::Etl::Groups::Connector.new(admin_email: admin).run(since: days.days.ago, track: false)
+      rescue => e
+        system_task.mark_as_error(e)
+      else
+        system_task.mark_as_success
+      end
+    end
+
     # --- Org-wide multi-user sweeps ---------------------------------------------
     # These impersonate EVERY active Workspace user, error-isolated (one user's
     # failure never aborts the run), deduped by the global conference-record / Drive-
@@ -80,12 +108,12 @@ namespace :stacks do
     end
 
     # The nightly ETL entry point. Runs the ongoing sync for EVERY source; today that's
-    # Meet transcripts + Gemini notes, but new sources (Notion, Gmail, …) get added here
+    # Meet transcripts, Gemini notes + Google Groups, but new sources (Notion, Gmail, …) get added here
     # so the Scheduler job never has to change. Each source is invoked independently so
     # one source failing doesn't stop the others.
-    desc 'Nightly ETL sync across ALL sources (currently Meet transcripts + Gemini notes)'
+    desc 'Nightly ETL sync across ALL sources (currently Meet transcripts, Gemini notes + Google Groups)'
     task sync_all: :environment do
-      %w[stacks:etl:sync_meet_all stacks:etl:sync_gemini_notes_all].each do |task_name|
+      %w[stacks:etl:sync_meet_all stacks:etl:sync_gemini_notes_all stacks:etl:sync_google_groups].each do |task_name|
         Rake::Task[task_name].invoke
       rescue => e
         Rails.logger.error("stacks:etl:sync_all — #{task_name} failed: #{e.class}: #{e.message}")
