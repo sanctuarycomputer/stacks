@@ -143,10 +143,19 @@ console → Security → API Controls → Domain-wide delegation before the sour
   - `stacks:etl:backfill_google_groups[days]` — **unbounded**, exactly like Meet: any `days`,
     `track: false` so it never clobbers the ongoing cursor. Sensible default, no hard cap.
   - Wire `sync_google_groups` into `stacks:etl:sync_all` (error-isolated alongside the others).
-- **Volume:** org-wide all-history is potentially hundreds of thousands of messages. The
+- **Volume & quota:** org-wide all-history is potentially hundreds of thousands of messages. The
   embedder is local ONNX (no per-token cost), but pgvector storage and **Gmail API per-user
-  quota** both scale with volume → per-group rate-limiting in the crawl, and run large
-  backfills as their own windowed passes (like the Meet backfill), not in the nightly job.
+  quota** both scale with volume. Quota mitigation matches Meet's existing posture: rely on the
+  `google-apis-core` client's built-in **retriable backoff** (transient 429/5xx) rather than a
+  hand-rolled throttle (YAGNI — no explicit rate-limiter unless quota errors actually surface),
+  and run large backfills as their own **windowed passes** (like the Meet backfill), not in the
+  nightly job. The steady-state nightly is only a ~2-day window (the cursor advances to
+  `now - LOOKBACK` each run; only the very first run uses the 30-day default), so nightly fan-out
+  stays small; a full-history backfill is the one case that can burst quota — window it.
+- **Error isolation:** a single group failing (deleted between enumeration and crawl, a Directory
+  permissions edge, one member's revoked Gmail access) logs and is skipped — it never aborts the
+  remaining groups' ingestion for that run. Isolation is layered: per-message, per-crawler-mailbox,
+  and per-group.
 
 ## Testing
 
