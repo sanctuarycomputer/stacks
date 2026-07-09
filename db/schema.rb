@@ -443,7 +443,7 @@ ActiveRecord::Schema.define(version: 2026_07_09_000001) do
     t.index ["admin_user_id"], name: "index_gifted_profit_shares_on_admin_user_id"
   end
 
-  create_table "group_threads", force: :cascade do |t|
+  create_table "google_group_threads", force: :cascade do |t|
     t.string "group_email"
     t.string "list_id"
     t.string "subject"
@@ -453,8 +453,8 @@ ActiveRecord::Schema.define(version: 2026_07_09_000001) do
     t.datetime "last_message_at"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
-    t.index ["group_email"], name: "index_group_threads_on_group_email"
-    t.index ["root_message_id"], name: "index_group_threads_on_root_message_id", unique: true
+    t.index ["group_email"], name: "index_google_group_threads_on_group_email"
+    t.index ["root_message_id"], name: "index_google_group_threads_on_root_message_id", unique: true
   end
 
   create_table "invoice_passes", force: :cascade do |t|

@@ -20,7 +20,7 @@ class Stacks::Etl::Groups::ConnectorTest < ActiveSupport::TestCase
                  { email: 'alice@x.co', name: 'Alice', role: 'sender' }],
       segments: segs, raw_metadata: { 'group_email' => 'dev@sanctuary.computer' },
       build_source_record: ->(doc) {
-        GroupThread.find_or_create_by(root_message_id: doc.external_id) do |gt|
+        GoogleGroupThread.find_or_create_by(root_message_id: doc.external_id) do |gt|
           gt.group_email = 'dev@sanctuary.computer'
           gt.subject = subject
           gt.message_count = bodies.size
@@ -31,7 +31,7 @@ class Stacks::Etl::Groups::ConnectorTest < ActiveSupport::TestCase
     }
   end
 
-  test 'ingests a thread: not_excluded, chunked, embedded, with a GroupThread source_record' do
+  test 'ingests a thread: not_excluded, chunked, embedded, with a GoogleGroupThread source_record' do
     src = mock('source')
     src.stubs(:each_thread).multiple_yields([thread_doc(root: '<a@x>', bodies: ['the api is down'])])
     Stacks::Etl::Groups::GroupsSource.stubs(:new).returns(src)
@@ -41,7 +41,7 @@ class Stacks::Etl::Groups::ConnectorTest < ActiveSupport::TestCase
     doc = Document.find_by!(source: :google_groups, external_id: '<a@x>')
     assert doc.not_excluded?, 'public group mail is never auto-excluded'
     assert doc.chunks.any?, 'eligible thread must be chunked/embedded'
-    assert_equal 'GroupThread', doc.source_record_type
+    assert_equal 'GoogleGroupThread', doc.source_record_type
     assert_equal 'dev@sanctuary.computer', doc.source_record.group_email
   end
 

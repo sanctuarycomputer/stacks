@@ -54,7 +54,7 @@ module Stacks
                 'gmail_message_ids' => sorted.map { |m| m[:message_id] }
               },
               build_source_record: lambda { |doc|
-                gt = GroupThread.find_or_initialize_by(root_message_id: doc.external_id)
+                gt = GoogleGroupThread.find_or_initialize_by(root_message_id: doc.external_id)
                 gt.update!(group_email: group_email, list_id: group_email.sub('@', '.'),
                            subject: normalize_subject(first[:subject]), message_count: sorted.size,
                            first_message_at: first[:date], last_message_at: sorted.last[:date])

@@ -1,6 +1,6 @@
-class CreateGroupThreads < ActiveRecord::Migration[6.1]
+class CreateGoogleGroupThreads < ActiveRecord::Migration[6.1]
   def change
-    create_table :group_threads do |t|
+    create_table :google_group_threads do |t|
       t.string :group_email
       t.string :list_id
       t.string :subject
@@ -10,7 +10,7 @@ class CreateGroupThreads < ActiveRecord::Migration[6.1]
       t.datetime :last_message_at
       t.timestamps
     end
-    add_index :group_threads, :root_message_id, unique: true
-    add_index :group_threads, :group_email
+    add_index :google_group_threads, :root_message_id, unique: true
+    add_index :google_group_threads, :group_email
   end
 end

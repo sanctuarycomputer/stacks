@@ -47,8 +47,8 @@ Reuse `Document` verbatim, adding:
 
 - `Document.source` enum → `google_groups: 2` (mirror on `Chunk.source`). **No migration** —
   Rails enums are integer columns; the value is added in the model.
-- New polymorphic `source_record`: **`GroupThread`** (the only new migration —
-  `create_group_threads`):
+- New polymorphic `source_record`: **`GoogleGroupThread`** (the only new migration —
+  `create_google_group_threads`):
   - `group_email` (string), `list_id` (string), `subject` (string)
   - `message_count` (integer), `first_message_at` / `last_message_at` (datetime)
   - `root_message_id` (string) — the RFC822 root, mirrors `Document.external_id`
@@ -76,7 +76,7 @@ Reuse `Document` verbatim, adding:
       text: new_content_only, started_at: message_date, ended_at: nil },
   ],
   raw_metadata: { group_email:, list_id:, gmail_message_ids: [...] },
-  build_source_record: ->(doc) { GroupThread.find_or_initialize_by(root_message_id: doc.external_id) ... },
+  build_source_record: ->(doc) { GoogleGroupThread.find_or_initialize_by(root_message_id: doc.external_id) ... },
 }
 ```
 
@@ -86,7 +86,7 @@ handles late replies for free; the `LOOKBACK` re-scan catches them.
 **`occurred_at` note.** Set to `first_message_at` (thread start) — stable, so a June thread with
 a July reply still reads as June. Range-accurate retrieval is unaffected either way because each
 `Chunk` carries its own message's `occurred_at` (from `segment.started_at`); `Document.occurred_at`
-is only a thread-level display/sort field. `last_message_at` lives on `GroupThread` for freshness.
+is only a thread-level display/sort field. `last_message_at` lives on `GoogleGroupThread` for freshness.
 
 **Root-without-body note.** The root `Message-ID` is read from the `References` header of any
 reply, so `external_id` is stable even when the root message itself is older than the crawl
@@ -178,10 +178,10 @@ lib/stacks/etl/groups/connector.rb        # Groups::Connector < Etl::Connector
 lib/stacks/etl/groups/groups_source.rb    # enumerate + crawl + dedup + assemble
 lib/stacks/etl/groups/message_parser.rb   # RFC822 -> normalized message + thread assembly
 lib/stacks/etl/meet/auth.rb               # + gmail_service / directory_service / scopes
-app/models/group_thread.rb                # new source_record
+app/models/google_group_thread.rb                # new source_record
 app/models/document.rb                    # + google_groups: 2
 app/models/chunk.rb                       # + google_groups: 2
-db/migrate/XXXXXXXX_create_group_threads.rb
+db/migrate/XXXXXXXX_create_google_group_threads.rb
 lib/tasks/etl.rake                        # sync_google_groups, backfill_google_groups[days]
 Gemfile                                   # + google-apis-gmail_v1
 test/lib/stacks/etl/groups/*_test.rb
