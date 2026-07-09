@@ -172,6 +172,8 @@ GEM
       retriable (>= 2.0, < 4.a)
     google-apis-drive_v3 (0.81.0)
       google-apis-core (>= 0.15.0, < 2.a)
+    google-apis-gmail_v1 (0.51.0)
+      google-apis-core (>= 0.15.0, < 2.a)
     google-apis-meet_v2 (0.13.0)
       google-apis-core (>= 0.15.0, < 2.a)
     google-cloud-env (2.1.1)
@@ -539,6 +541,7 @@ DEPENDENCIES
   google-apis-admin_reports_v1
   google-apis-calendar_v3
   google-apis-drive_v3 (= 0.81.0)
+  google-apis-gmail_v1
   google-apis-meet_v2 (= 0.13.0)
   graphql-client
   hashdiff
