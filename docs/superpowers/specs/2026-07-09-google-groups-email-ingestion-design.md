@@ -62,8 +62,8 @@ Reuse `Document` verbatim, adding:
   source: :google_groups,
   external_id: root_message_id,                 # RFC822 Message-ID of the thread root
   title: subject,                               # normalized (strip Re:/Fwd:)
-  url: "https://groups.google.com/a/<domain>/g/<group>/c/<...>",  # best-effort permalink
-  occurred_at: last_message_at,                 # thread recency, so active threads stay fresh
+  url: "https://groups.google.com/a/<domain>/g/<group-localpart>",  # group archive page (a per-thread permalink isn't derivable from Gmail)
+  occurred_at: first_message_at,                # when the thread STARTED — stable; see note
   content_hash: Digest::SHA256.hexdigest(all_message_bodies_joined),  # reply => re-index
   participant_count: distinct_sender_count,     # informational only (no privacy rule here)
   contacts: [                                   # union across the thread
@@ -83,6 +83,18 @@ Reuse `Document` verbatim, adding:
 `content_hash` covering all bodies means the base `Connector`'s "changed → re-index" path
 handles late replies for free; the `LOOKBACK` re-scan catches them.
 
+**`occurred_at` note.** Set to `first_message_at` (thread start) — stable, so a June thread with
+a July reply still reads as June. Range-accurate retrieval is unaffected either way because each
+`Chunk` carries its own message's `occurred_at` (from `segment.started_at`); `Document.occurred_at`
+is only a thread-level display/sort field. `last_message_at` lives on `GroupThread` for freshness.
+
+**Root-without-body note.** The root `Message-ID` is read from the `References` header of any
+reply, so `external_id` is stable even when the root message itself is older than the crawl
+window (or in a mailbox we didn't crawl) and thus not among the fetched segments. A later
+backfill that fetches the root adds it as a segment → `content_hash` changes → re-index
+(self-healing). Replies with missing/broken `References` may fragment into separate threads —
+best-effort, also healed by a wider backfill.
+
 ## Extraction — `Stacks::Etl::Groups`
 
 New sibling module `lib/stacks/etl/groups/`, mirroring `etl/meet/`:
@@ -97,12 +109,15 @@ New sibling module `lib/stacks/etl/groups/`, mirroring `etl/meet/`:
      (owners/managers first; `K` configurable, default **2**). Unioning ≥2 mailboxes closes
      "joined late / deleted it" gaps; Message-ID dedup makes the union safe.
   3. **Fetch** — per impersonated member, Gmail `users.messages.list` with
-     `q = (list:<group> OR to:<group> OR deliveredto:<group>) after:<since>`, then
-     `messages.get` (full).
+     `q = (list:<group> OR to:<group> OR cc:<group>) after:<since>`, then `messages.get`
+     (full). **Not `deliveredto:`** — in a member's mailbox `Delivered-To` is the *member's*
+     address, not the group, so it would never match group traffic. `list:` matches the Google
+     Groups `List-ID`; `to:`/`cc:` catch messages that addressed the group directly.
   4. **Parse** — `Groups::MessageParser` (bundled `mail` gem) extracts `Message-ID`,
-     `References`/`In-Reply-To`, `From`, `To`/`Cc`, `Date`, `Subject`; prefers `text/plain`
-     (falls back to stripped `text/html`); strips quoted-reply text best-effort so a segment
-     holds new content.
+     `References`/`In-Reply-To`, `From`, `To`/`Cc`, `Date`, `Subject`; prefers `text/plain`,
+     falls back to **HTML → text** (much automated mail — Sentry, Mailchimp — is HTML-only, and
+     that's exactly the signal we want to keep, so this fallback is load-bearing, not an edge
+     case); strips quoted-reply text best-effort so a segment holds new content.
   5. **Dedup + assemble** — collect messages keyed by `Message-ID` (union across members),
      group into threads via the `References` chain, sort by `Date` → `segments`; yield one
      normalized thread per group. Bounded in memory per group's window.
@@ -120,7 +135,9 @@ console → Security → API Controls → Domain-wide delegation before the sour
 ## Scheduling, incremental & backfill
 
 - **Cursor:** `SourceSync.for(:google_groups)`, same `LOOKBACK` re-scan (late replies → new
-  `content_hash` → re-index).
+  `content_hash` → re-index). On the first run (empty cursor) `GroupsSource` applies a default
+  `since` (e.g. 30 days) for the nightly, exactly like Meet; the backfill always passes an
+  explicit window.
 - **Rake** (`lib/tasks/etl.rake`):
   - `stacks:etl:sync_google_groups` — recent window, tracks the cursor.
   - `stacks:etl:backfill_google_groups[days]` — **unbounded**, exactly like Meet: any `days`,
