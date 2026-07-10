@@ -99,8 +99,13 @@ class Stacks::Optix::DeactivateInactiveMembers
 
     begin
       preview = client.member_remove_preview(member_id)
-    rescue Stacks::Optix::ApiError => e
-      result.skipped << skip(user, "memberRemovePreview failed: #{e.message}")
+    rescue => e
+      result.skipped << skip(user, "memberRemovePreview failed: #{e.class}: #{e.message}")
+      return
+    end
+
+    if preview.nil?
+      result.skipped << skip(user, "memberRemovePreview returned no invoice preview")
       return
     end
 
@@ -118,7 +123,7 @@ class Stacks::Optix::DeactivateInactiveMembers
       member_id: member_id,
       email: user["email"],
       name: [user["name"], user["surname"]].compact.join(" "),
-      invoice_total: preview && preview["total"],
+      invoice_total: preview["total"],
     }
     result.deactivated << entry
     Rails.logger.info("[#{self.class.name}] deactivated #{entry[:email]} (user_id=#{user_id}, member_id=#{member_id}, invoice_total=#{entry[:invoice_total]})")

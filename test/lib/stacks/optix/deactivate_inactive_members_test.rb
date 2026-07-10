@@ -148,6 +148,32 @@ class StacksOptixDeactivateInactiveMembersTest < ActiveSupport::TestCase
     assert_match(/preview failed/i, result.skipped.first[:reason])
   end
 
+  test "a non-ApiError preview failure (network blip) is skipped and does not abort remaining candidates" do
+    users = [user("50"), user("51")]
+    plans = [ended_plan("50", days_ago: 30), ended_plan("51", days_ago: 30)]
+    client = stub_client(users: users, plans: plans, member_map: { "50" => 1050, "51" => 1051 })
+    client.stubs(:member_remove_preview).with(1050).raises(Errno::ECONNRESET)
+    client.stubs(:member_remove_preview).with(1051).returns({ "total" => 0.0 })
+    client.stubs(:member_remove!).with(1051, collect_payment: true).returns({ "member_id" => 1051, "is_active" => false })
+
+    result = call(client)
+    assert_equal 1, result.skipped.length
+    assert_equal "50", result.skipped.first[:user_id]
+    assert_match(/preview failed/i, result.skipped.first[:reason])
+    assert_equal ["51"], result.deactivated.map { |d| d[:user_id] }
+  end
+
+  test "a nil preview is skipped, never removed" do
+    client = stub_client(users: [user("50")], plans: [ended_plan("50", days_ago: 30)], member_map: { "50" => 1050 })
+    client.stubs(:member_remove_preview).returns(nil)
+    client.expects(:member_remove!).never
+
+    result = call(client)
+    assert_empty result.deactivated
+    assert_equal 1, result.skipped.length
+    assert_match(/no invoice preview/, result.skipped.first[:reason])
+  end
+
   test "a removal failure is recorded and does not abort remaining removals" do
     users = [user("50"), user("51")]
     plans = [ended_plan("50", days_ago: 30), ended_plan("51", days_ago: 30)]
