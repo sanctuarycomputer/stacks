@@ -60,7 +60,10 @@ class Stacks::Optix::DeactivateInactiveMembers
   private
 
   def select_candidates(now)
-    users = client.list_users
+    # Dedupe against pagination drift: if Optix's user list shifts across
+    # page boundaries mid-crawl, the same user can appear on two pages and
+    # would otherwise be processed (removed) twice.
+    users = client.list_users.uniq { |u| u["user_id"] }
     plans_by_user = client.list_account_plans.group_by { |p| p.dig("access_usage_user", "user_id") }
     cutoff = now - (grace_days * DAY_IN_SECONDS)
 
@@ -73,7 +76,13 @@ class Stacks::Optix::DeactivateInactiveMembers
       next false if user_plans.empty?
       next false if user_plans.any? { |p| ACTIVE_PLAN_STATUSES.include?(p["status"]) }
 
-      last_end = last_membership_end(user_plans, now)
+      # Conservative guard: a started plan with NO end data (e.g. status
+      # UNKNOWN — in the enum but intentionally not "membership") leaves us
+      # unable to prove the membership lapsed. Never remove on ambiguity.
+      started = user_plans.select { |p| p["start_timestamp"] && p["start_timestamp"] <= now }
+      next false if started.any? { |p| p["end_timestamp"].nil? && p["canceled_timestamp"].nil? }
+
+      last_end = last_membership_end(started)
       next false if last_end.nil?
 
       last_end <= cutoff
@@ -81,10 +90,9 @@ class Stacks::Optix::DeactivateInactiveMembers
   end
 
   # When did this user's membership actually lapse? Only plans that started
-  # count; effective end is end_timestamp, else canceled_timestamp. nil when
-  # no plan ever ran or no end data exists (caller skips — conservative).
-  def last_membership_end(user_plans, now)
-    started = user_plans.select { |p| p["start_timestamp"] && p["start_timestamp"] <= now }
+  # count (caller pre-filters); effective end is end_timestamp, else
+  # canceled_timestamp. nil when no plan ever ran (caller skips — conservative).
+  def last_membership_end(started)
     started.map { |p| p["end_timestamp"] || p["canceled_timestamp"] }.compact.max
   end
 

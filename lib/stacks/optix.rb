@@ -90,7 +90,7 @@ class Stacks::Optix
   # @return [Hash] the contents of the response's `data` key
   # @raise [ApiError] on HTTP non-2xx OR when the response contains GraphQL `errors`
   def execute(query:, variables: {}, token: organization_token, operation_name: nil)
-    raise ApiError.new("Optix bearer token is not configured for OptixOrganization ##{optix_organization.id}") if token.blank?
+    raise ApiError.new("Optix bearer token is not configured (optix_organization=#{optix_organization&.id.inspect})") if token.blank?
 
     body = { query: query, variables: variables }
     body[:operationName] = operation_name if operation_name.present?

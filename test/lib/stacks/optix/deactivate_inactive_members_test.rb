@@ -126,6 +126,16 @@ class StacksOptixDeactivateInactiveMembersTest < ActiveSupport::TestCase
     assert_equal 1, call(client).deactivated.length
   end
 
+  test "a started plan with no end data (e.g. UNKNOWN status) forces a conservative skip" do
+    plans = [
+      ended_plan("50", days_ago: 30),
+      plan("50", status: "UNKNOWN", start_ts: NOW - 10 * DAY),
+    ]
+    client = stub_client(users: [user("50")], plans: plans)
+    client.expects(:member_remove!).never
+    assert_empty call(client).deactivated
+  end
+
   # ---------- safety rails ----------
 
   test "skips (never removes) members missing from the member_id map" do
@@ -191,6 +201,14 @@ class StacksOptixDeactivateInactiveMembersTest < ActiveSupport::TestCase
     client = stub_client(users: [user("50")], plans: [ended_plan("50", days_ago: 30)], member_map: { "50" => 1050 })
     client.expects(:member_remove!).with(1050, collect_payment: false).returns({ "member_id" => 1050, "is_active" => false })
     call(client, collect_payment: false)
+  end
+
+  test "a user duplicated by pagination drift is only removed once" do
+    dup = user("50")
+    client = stub_client(users: [dup, dup.dup], plans: [ended_plan("50", days_ago: 30)], member_map: { "50" => 1050 })
+    client.expects(:member_remove!).with(1050, collect_payment: true).once.returns({ "member_id" => 1050, "is_active" => false })
+    result = call(client)
+    assert_equal 1, result.deactivated.length
   end
 
   test "does not fetch the member map when there are no candidates" do

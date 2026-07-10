@@ -64,4 +64,11 @@ class StacksOptixMemberRemovalTest < ActiveSupport::TestCase
     @client.stubs(:execute).returns({ "memberRemove" => { "member_id" => 1, "is_active" => false } })
     assert_equal 1, @client.member_remove!(1, collect_payment: false)["member_id"]
   end
+
+  test "execute with a blank token on a nil-org client raises ApiError, not NoMethodError" do
+    client = Stacks::Optix.new
+    client.stubs(:organization_token).returns(nil)
+    err = assert_raises(Stacks::Optix::ApiError) { client.execute(query: "query { ping }") }
+    assert_match(/not configured/, err.message)
+  end
 end
