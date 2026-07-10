@@ -50,18 +50,26 @@ class Contact < ApplicationRecord
         if existing_contact = Contact.find_by(apollo_id: apollo_contact["id"])
           # Merge from row-locked reads (id order, matching dedupe!) so a
           # concurrent source_events append isn't lost mid-merge.
+          merged = false
           ActiveRecord::Base.transaction do
             locked = Contact.where(id: [id, existing_contact.id]).lock.order(:id).index_by(&:id)
+            fresh_self = locked[id]
             fresh_existing = locked[existing_contact.id]
-            self.sources = [*locked[id].sources, *fresh_existing&.sources].uniq
-            self.source_events = Contact.merge_source_events(
-              [locked[id].source_events, fresh_existing&.source_events]
-            )
-            # Destroy before save!: self still carries the conflicting
-            # apollo_id, so saving first would re-trip the unique index.
-            fresh_existing&.destroy!
-            save!
+            if fresh_self
+              self.sources = [*fresh_self.sources, *fresh_existing&.sources].uniq
+              self.source_events = Contact.merge_source_events(
+                [fresh_self.source_events, fresh_existing&.source_events]
+              )
+              # Destroy before save!: self still carries the conflicting
+              # apollo_id, so saving first would re-trip the unique index.
+              fresh_existing&.destroy!
+              save!
+              merged = true
+            end
           end
+          # If our own row vanished (concurrent dedupe!), there is nothing
+          # left to sync — bail rather than retrying forever.
+          return unless merged
           puts "~~~> will retry for #{self.email}"
           retry
         else
@@ -114,33 +122,38 @@ class Contact < ApplicationRecord
       # delete would otherwise be silently dropped.
       dupes = Contact.where(id: dupe_ids).lock.order(:id).to_a
       survivor = dupes.first
-      losers = dupes[1..]
 
-      merged_sources = dupes.flat_map(&:sources).compact.uniq
-      merged_source_events = Contact.merge_source_events(dupes.map(&:source_events))
-      merged_apollo_id = dupes.map(&:apollo_id).compact.first
-      merged_display_name = dupes.map(&:display_name).compact.first
+      # A concurrent dedupe! may have already merged and deleted these rows
+      # between the pluck and the lock — nothing left to do here.
+      if dupes.length > 1
+        losers = dupes[1..]
 
-      losers.each do |loser|
-        CONTACT_REFERENCES.each do |table, fk, scope_cols|
-          repoint_references!(table, fk, scope_cols, from: loser.id, to: survivor.id)
+        merged_sources = dupes.flat_map(&:sources).compact.uniq
+        merged_source_events = Contact.merge_source_events(dupes.map(&:source_events))
+        merged_apollo_id = dupes.map(&:apollo_id).compact.first
+        merged_display_name = dupes.map(&:display_name).compact.first
+
+        losers.each do |loser|
+          CONTACT_REFERENCES.each do |table, fk, scope_cols|
+            repoint_references!(table, fk, scope_cols, from: loser.id, to: survivor.id)
+          end
         end
+
+        # Delete the losers BEFORE reassigning their attributes onto the survivor.
+        # contacts.apollo_id has a unique index, so assigning a loser's apollo_id to
+        # the survivor while that loser still exists would violate the constraint.
+        Contact.where(id: losers.map(&:id)).delete_all
+
+        survivor.update!(
+          sources: merged_sources,
+          source_events: merged_source_events,
+          apollo_id: merged_apollo_id,
+          display_name: survivor.display_name.presence || merged_display_name,
+        )
       end
-
-      # Delete the losers BEFORE reassigning their attributes onto the survivor.
-      # contacts.apollo_id has a unique index, so assigning a loser's apollo_id to
-      # the survivor while that loser still exists would violate the constraint.
-      Contact.where(id: losers.map(&:id)).delete_all
-
-      survivor.update!(
-        sources: merged_sources,
-        source_events: merged_source_events,
-        apollo_id: merged_apollo_id,
-        display_name: survivor.display_name.presence || merged_display_name,
-      )
     end
 
-    survivor.reload
+    survivor ? survivor.reload : self
   end
 
   private
