@@ -106,6 +106,30 @@ class ContactDedupeTest < ActiveSupport::TestCase
       result.source_events['a'].map { |e| e['added_at'] }
     )
   end
+
+  test 'merges source_events across three duplicates, including empty ones' do
+    keep = Contact.create!(
+      email: 'tri@gmail.com',
+      source_events: { 'a' => [{ 'added_at' => '2026-06-02T00:00:00Z' }] }
+    )
+    Contact.create!(
+      email: 'TRI@gmail.com',
+      source_events: {
+        'a' => [{ 'added_at' => '2026-06-01T00:00:00Z' }],
+        'b' => [{ 'added_at' => '2026-06-03T00:00:00Z' }],
+      }
+    )
+    Contact.create!(email: 'Tri@Gmail.com')
+
+    result = keep.dedupe!
+
+    assert_equal 2, result.source_events['a'].length
+    assert_equal 1, result.source_events['b'].length
+    assert_equal(
+      %w[2026-06-01T00:00:00Z 2026-06-02T00:00:00Z],
+      result.source_events['a'].map { |e| e['added_at'] }
+    )
+  end
 end
 
 class ContactSyncToApolloTest < ActiveSupport::TestCase
@@ -131,7 +155,7 @@ class ContactSyncToApolloTest < ActiveSupport::TestCase
 
     assert_equal 'apollo-x', contact.apollo_id
     assert_nil Contact.find_by(id: existing.id)
-    assert_equal %w[b], contact.sources.sort & %w[b]
+    assert_equal %w[a b], contact.sources.sort
     assert_equal 1, contact.source_events['b'].length
     assert_equal 1, contact.source_events['a'].length
   end

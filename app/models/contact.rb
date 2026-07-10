@@ -48,11 +48,20 @@ class Contact < ApplicationRecord
         self.update(apollo_id: apollo_contact["id"], apollo_data: apollo_contact)
       rescue ActiveRecord::RecordNotUnique => e
         if existing_contact = Contact.find_by(apollo_id: apollo_contact["id"])
-          self.sources = [*self.sources, *existing_contact.sources].uniq
-          self.source_events = Contact.merge_source_events(
-            [self.source_events, existing_contact.source_events]
-          )
-          existing_contact.destroy!
+          # Merge from row-locked reads (id order, matching dedupe!) so a
+          # concurrent source_events append isn't lost mid-merge.
+          ActiveRecord::Base.transaction do
+            locked = Contact.where(id: [id, existing_contact.id]).lock.order(:id).index_by(&:id)
+            fresh_existing = locked[existing_contact.id]
+            self.sources = [*locked[id].sources, *fresh_existing&.sources].uniq
+            self.source_events = Contact.merge_source_events(
+              [locked[id].source_events, fresh_existing&.source_events]
+            )
+            # Destroy before save!: self still carries the conflicting
+            # apollo_id, so saving first would re-trip the unique index.
+            fresh_existing&.destroy!
+            save!
+          end
           puts "~~~> will retry for #{self.email}"
           retry
         else
@@ -92,21 +101,26 @@ class Contact < ApplicationRecord
   def dedupe!
     self.update(sources: self.sources.uniq)
 
-    dupes = Contact
+    dupe_ids = Contact
       .where("LOWER(email) = ?", email.downcase)
       .order(:id)
-      .to_a
-    return self unless dupes.length > 1
+      .pluck(:id)
+    return self unless dupe_ids.length > 1
 
-    survivor = dupes.first
-    losers = dupes[1..]
-
-    merged_sources = dupes.flat_map(&:sources).compact.uniq
-    merged_source_events = Contact.merge_source_events(dupes.map(&:source_events))
-    merged_apollo_id = dupes.map(&:apollo_id).compact.first
-    merged_display_name = dupes.map(&:display_name).compact.first
-
+    survivor = nil
     ActiveRecord::Base.transaction do
+      # Row-lock the duplicates and merge from the locked reads: an API post
+      # appending to a loser's source_events between an unlocked load and the
+      # delete would otherwise be silently dropped.
+      dupes = Contact.where(id: dupe_ids).lock.order(:id).to_a
+      survivor = dupes.first
+      losers = dupes[1..]
+
+      merged_sources = dupes.flat_map(&:sources).compact.uniq
+      merged_source_events = Contact.merge_source_events(dupes.map(&:source_events))
+      merged_apollo_id = dupes.map(&:apollo_id).compact.first
+      merged_display_name = dupes.map(&:display_name).compact.first
+
       losers.each do |loser|
         CONTACT_REFERENCES.each do |table, fk, scope_cols|
           repoint_references!(table, fk, scope_cols, from: loser.id, to: survivor.id)
