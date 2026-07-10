@@ -110,6 +110,41 @@ class Stacks::Runn
     values
   end
 
+  # Projection-plane reads: planned (forward) assignments and scheduled
+  # leave. Read-only — these back the get_runn_projections MCP tool; the
+  # actuals write path above is untouched and nothing here writes to Runn.
+  def get_assignments
+    values = []
+    next_cursor = nil
+    loop do
+      response = handle_response {
+        self.class.get("/assignments?limit=200&cursor=#{next_cursor}", headers: @headers)
+      }
+      values = [*values, *response["values"]]
+      next_cursor = response["nextCursor"]
+      break if next_cursor.nil?
+    end
+    values
+  end
+
+  # Leave is only exposed per person (GET /people/:id/time-offs/leave).
+  # Runn splits assignments around scheduled leave, so leave that OVERLAPS
+  # an assignment means the leave was filed after the allocation — exactly
+  # the divergence the resourcing sweep looks for.
+  def get_leave_for_person(person_id)
+    values = []
+    next_cursor = nil
+    loop do
+      response = handle_response {
+        self.class.get("/people/#{person_id}/time-offs/leave?limit=200&cursor=#{next_cursor}", headers: @headers)
+      }
+      values = [*values, *response["values"]]
+      next_cursor = response["nextCursor"]
+      break if next_cursor.nil?
+    end
+    values
+  end
+
   def sync_projects!(all_projects = get_projects())
     data = all_projects.map do |c|
       {

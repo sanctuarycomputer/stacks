@@ -94,6 +94,44 @@ class Stacks::RunnTest < ActiveSupport::TestCase
     assert_equal parsed, result
   end
 
+  # --------------------------------------------------------------------------
+  # get_assignments / get_leave_for_person (projection-plane reads)
+  # --------------------------------------------------------------------------
+
+  def paged_response(values, next_cursor)
+    r = mock("response")
+    r.stubs(:success?).returns(true)
+    r.stubs(:[]).with("values").returns(values)
+    r.stubs(:[]).with("nextCursor").returns(next_cursor)
+    r
+  end
+
+  test "get_assignments paginates with cursor until exhausted" do
+    page1 = paged_response([{ "id" => 1, "personId" => 10 }], "abc")
+    page2 = paged_response([{ "id" => 2, "personId" => 11 }], nil)
+
+    requested_paths = []
+    Stacks::Runn.expects(:get).twice.with do |path, _opts|
+      requested_paths << path
+      true
+    end.returns(page1, page2)
+
+    result = @runn.get_assignments
+
+    assert_equal ["/assignments?limit=200&cursor=", "/assignments?limit=200&cursor=abc"], requested_paths
+    assert_equal [1, 2], result.map { |a| a["id"] }
+  end
+
+  test "get_leave_for_person hits the per-person leave endpoint" do
+    page = paged_response([{ "id" => 5, "startDate" => "2026-08-03", "endDate" => "2026-08-07" }], nil)
+
+    Stacks::Runn.expects(:get).once.with do |path, _opts|
+      path == "/people/869358/time-offs/leave?limit=200&cursor="
+    end.returns(page)
+
+    assert_equal [5], @runn.get_leave_for_person(869358).map { |l| l["id"] }
+  end
+
   test "create_project respects pricing_model and is_confirmed overrides" do
     response = mock("response")
     response.stubs(:success?).returns(true)
