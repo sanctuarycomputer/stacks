@@ -154,9 +154,9 @@ class Stacks::Optix
   # ---------- typed methods ----------
 
   # Pages through users (members) and returns Array<Hash>. Used by OptixSync
-  # to populate optix_users. Conservative field set — `User` field availability
-  # varies between Optix versions; introspect `User` to see what else is queryable
-  # and add fields here + columns in optix_users + mapping in OptixSync as needed.
+  # to populate optix_users, and by DeactivateInactiveMembers for candidate
+  # selection. `is_admin` / `is_lead` / `has_plans` are NOT synced to columns —
+  # OptixSync maps an explicit subset and stashes the full payload in `data`.
   def list_users(page_size: 100)
     paginate(page_size: page_size) do |limit, page|
       execute(query: <<~GQL, variables: { limit: limit, page: page })
@@ -169,6 +169,9 @@ class Stacks::Optix
               name
               surname
               is_active
+              is_admin
+              is_lead
+              has_plans
             }
           }
         }
@@ -282,6 +285,71 @@ class Stacks::Optix
     end
 
     results
+  end
+
+  # Maps Optix user_id -> member_id. memberRemove / memberRemovePreview take a
+  # member_id, which is NOT the same as user_id, and the only organization-token
+  # path to the mapping is via invoices (Invoice.member exposes both IDs).
+  # Members with no invoices on record are absent from the map — callers must
+  # treat a missing key as "cannot safely remove".
+  def user_id_to_member_id_map(page_size: 100)
+    map = {}
+    page = 1
+    loop do
+      data = execute(query: <<~GQL, variables: { limit: page_size, page: page })
+        query Invoices($limit: Int, $page: Int) {
+          invoices(limit: $limit, page: $page, include_paid: true, include_void: true, include_upcoming: true) {
+            total
+            data { invoice_id member { member_id user { user_id } } }
+          }
+        }
+      GQL
+      batch = data.dig("invoices", "data") || []
+      batch.each do |invoice|
+        member = invoice["member"]
+        next unless member.is_a?(Hash) && member["user"].is_a?(Hash)
+        map[member.dig("user", "user_id")] ||= member["member_id"]
+      end
+      break if batch.length < page_size
+      page += 1
+    end
+    map
+  end
+
+  # Previews the invoice that memberRemove would generate for this member.
+  # Read-only. NOTE: Optix responds with a GraphQL "Internal server error"
+  # for unknown member_ids (validated live 2026-07-10) — callers should treat
+  # ApiError as "cannot safely remove", not as retryable.
+  def member_remove_preview(member_id)
+    data = execute(query: <<~GQL, variables: { member_id: member_id.to_s })
+      query MemberRemovePreview($member_id: ID!) {
+        memberRemovePreview(member_id: $member_id) {
+          total
+          subtotal
+          invoice_due_timestamp
+        }
+      }
+    GQL
+    data["memberRemovePreview"]
+  end
+
+  # Removes (deactivates) a member from the organization. Creates an invoice
+  # with any pending charges; collect_payment: true makes it due immediately.
+  # Reversible: re-adding the same email reactivates the member.
+  #
+  # The mutation's member_id arg is a LIST ([ID!]!) per live introspection —
+  # we pass exactly one and return the single removed Member payload.
+  def member_remove!(member_id, collect_payment:)
+    data = execute(query: <<~GQL, variables: { member_id: [member_id.to_s], collect_payment: collect_payment })
+      mutation MemberRemove($member_id: [ID!]!, $collect_payment: Boolean) {
+        memberRemove(member_id: $member_id, collect_payment: $collect_payment) {
+          member_id
+          is_active
+        }
+      }
+    GQL
+    removed = data["memberRemove"]
+    removed.is_a?(Array) ? removed.first : removed
   end
 
   # Roll-up of memberships by (location, tier). Multi-location plans contribute
