@@ -21,7 +21,15 @@ class OptixOrganization < ApplicationRecord
 
   # ---------- member roster ----------
 
-  # All users with at least one ACTIVE or IN_TRIAL plan currently.
+  # Plan statuses that constitute current membership. UPCOMING (a scheduled
+  # future plan) counts — a member with a booked return date has not churned.
+  # NOTE: plans held through a team don't appear in optix_account_plans for
+  # the member, so these DB-backed rosters can still slightly overcount churn;
+  # the deactivation automation (Stacks::Optix::DeactivateInactiveMembers)
+  # additionally checks Optix's has_plans flag via the live API.
+  MEMBERSHIP_PLAN_STATUSES = %w[ACTIVE IN_TRIAL UPCOMING].freeze
+
+  # All users with at least one ACTIVE, IN_TRIAL, or UPCOMING plan currently.
   def active_members
     optix_users
       .joins(<<~SQL)
@@ -29,15 +37,15 @@ class OptixOrganization < ApplicationRecord
           ON optix_account_plans.access_usage_user_optix_id = optix_users.optix_id
           AND optix_account_plans.optix_organization_id = optix_users.optix_organization_id
       SQL
-      .where(optix_account_plans: { status: %w[ACTIVE IN_TRIAL] })
+      .where(optix_account_plans: { status: MEMBERSHIP_PLAN_STATUSES })
       .distinct
   end
 
-  # Users who exist but have NO active/in-trial plan right now. Useful as a
-  # "former members" / churned roster.
+  # Users who exist but have NO ACTIVE, IN_TRIAL, or UPCOMING plan right now.
+  # Useful as a "former members" / churned roster.
   def inactive_members
     user_ids_with_active_plans = optix_account_plans
-      .where(status: %w[ACTIVE IN_TRIAL])
+      .where(status: MEMBERSHIP_PLAN_STATUSES)
       .where.not(access_usage_user_optix_id: nil)
       .pluck(:access_usage_user_optix_id)
       .uniq
