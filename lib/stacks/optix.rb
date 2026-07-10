@@ -46,6 +46,17 @@ class Stacks::Optix
     @optix_organization = optix_organization
   end
 
+  # Daily automation entrypoint (called from Enterprise#daily_tasks for Index).
+  # Uses OptixOrganization.first — consistent with the single-tenant assumption
+  # documented on OptixOrganization and in stacks.rake.
+  def self.deactivate_inactive_members!(grace_days: 7, collect_payment: true)
+    Stacks::Optix::DeactivateInactiveMembers.call(
+      client: new(OptixOrganization.first),
+      grace_days: grace_days,
+      collect_payment: collect_payment,
+    )
+  end
+
   # ---------- credentials (currently global; per-org in the future) ----------
 
   def api_base
