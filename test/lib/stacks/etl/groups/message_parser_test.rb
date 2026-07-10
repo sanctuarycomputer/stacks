@@ -78,4 +78,21 @@ class Stacks::Etl::Groups::MessageParserTest < ActiveSupport::TestCase
     assert_includes m[:body], 'looking into it now'
     refute_includes m[:body], 'old quoted line', 'the quoted tail after "On ... wrote:" must be removed'
   end
+
+  # root_id_from is the shared key used by BOTH the raw parse (mail-gem values: References is an
+  # Array of bare ids, or a String for one) AND the crawl's pass-1 metadata pass (raw header
+  # value: a single space-joined String WITH angle brackets). Both must derive the identical
+  # root or cross-mailbox dedup and the split-thread fix break.
+  test 'root_id_from derives the identical root from the raw-metadata string and the mail-gem array shapes' do
+    assert_equal '<a@x>', P.root_id_from(message_id: '<c@x>', references: '<a@x> <b@x>'), 'metadata string, multi-ref'
+    assert_equal '<a@x>', P.root_id_from(message_id: '<c@x>', references: ['a@x', 'b@x']), 'mail-gem array, multi-ref'
+    assert_equal '<a@x>', P.root_id_from(message_id: '<c@x>', references: 'a@x'), 'mail-gem single-ref String'
+  end
+
+  test 'root_id_from falls back In-Reply-To -> self, and is nil with nothing' do
+    assert_equal '<a@x>', P.root_id_from(message_id: '<c@x>', references: nil, in_reply_to: '<a@x>')
+    assert_equal '<a@x>', P.root_id_from(message_id: '<c@x>', references: '   ', in_reply_to: '<a@x> <b@x>'), 'blank refs -> first In-Reply-To'
+    assert_equal '<r@x>', P.root_id_from(message_id: '<r@x>'), 'no refs / no in-reply-to -> the message is its own root'
+    assert_nil P.root_id_from(message_id: '')
+  end
 end

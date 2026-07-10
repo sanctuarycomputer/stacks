@@ -100,7 +100,11 @@ module Stacks
             resp = gmail.list_user_messages('me', q: query_for(group_email), max_results: GMAIL_PAGE, page_token: page)
             Array(resp.messages).each do |ref|
               root, mid = root_for(gmail, ref.id)
-              next if mid.nil? || seen.include?(mid)
+              if mid.nil?
+                Rails.logger.warn("[groups] #{group_email} message #{ref.id} has no Message-ID header; skipped")
+                next
+              end
+              next if seen.include?(mid)
               seen << mid
               (roots[root] ||= []) << ref.id
             rescue StandardError => e

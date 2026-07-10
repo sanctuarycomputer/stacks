@@ -164,6 +164,25 @@ class Stacks::Etl::Groups::GroupsSourceTest < ActiveSupport::TestCase
                  'only the owner-mailbox copy is kept once the root is already seen'
   end
 
+  test 'a message whose metadata has no Message-ID header is skipped, not crashed or misgrouped' do
+    Stacks::Etl::Groups::Workspace.stubs(:all_groups).returns([{ email: 'dev@sanctuary.computer', name: 'Dev' }])
+    Stacks::Etl::Groups::Workspace.stubs(:members).with('dev@sanctuary.computer')
+      .returns([{ email: 'alice@sanctuary.computer', role: 'OWNER', type: 'USER' }])
+    Stacks::Etl::Meet::Workspace.stubs(:all_active_user_emails).returns(['alice@sanctuary.computer'])
+
+    gmail = mock('g')
+    gmail.stubs(:list_user_messages).returns(one_page(ref('g_ok'), ref('g_bad')))
+    stub_msg(gmail, 'g_ok', '<a@x>', 'Alice <alice@x.co>', 'Deploy failed', 'Mon, 01 Jun 2026 10:00:00 +0000', 'down')
+    # g_bad: metadata present but NO Message-ID header -> must be skipped in pass 1 (never body-fetched).
+    gmail.stubs(:get_user_message).with('me', 'g_bad', format: 'metadata', metadata_headers: META)
+         .returns(OpenStruct.new(payload: OpenStruct.new(headers: [OpenStruct.new(name: 'Subject', value: 'no id')])))
+    Stacks::Etl::Meet::Auth.stubs(:gmail_service).returns(gmail)
+
+    yielded = []
+    Stacks::Etl::Groups::GroupsSource.new(admin_email: 'hugh@sanctuary.computer', k: 1).each_thread { |n| yielded << n }
+    assert_equal ['<a@x>'], yielded.map { |n| n[:external_id] }, 'the id-less message is dropped; the valid one still ingests'
+  end
+
   test 'pick_crawlers prefers owners, caps at k, excludes non-USER and inactive members' do
     Stacks::Etl::Groups::Workspace.stubs(:all_groups).returns([{ email: 'dev@sanctuary.computer', name: 'Dev' }])
     Stacks::Etl::Groups::Workspace.stubs(:members).with('dev@sanctuary.computer').returns([

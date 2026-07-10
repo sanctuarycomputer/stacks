@@ -41,15 +41,25 @@ module Stacks
           service
         end
 
+        # google-apis-core defaults to 0 retries, so without this a transient 429/5xx on a
+        # single Gmail/Directory call would surface to the crawl's per-item rescue and silently
+        # DROP that message. On a bulk backfill (thousands of sequential gets) rate-limit blips
+        # are expected — retries enables the client's built-in exponential backoff so transient
+        # errors recover instead of losing data. The per-item rescue then only catches genuinely
+        # permanent errors (403 no-access, 404).
+        GOOGLE_RETRIES = 5
+
         def self.gmail_service(sub:)
           service = Google::Apis::GmailV1::GmailService.new
           service.authorization = credentials(sub, [GMAIL_SCOPE])
+          service.request_options.retries = GOOGLE_RETRIES
           service
         end
 
         def self.directory_group_service(sub:)
           service = Google::Apis::AdminDirectoryV1::DirectoryService.new
           service.authorization = credentials(sub, DIRECTORY_GROUP_SCOPES)
+          service.request_options.retries = GOOGLE_RETRIES
           service
         end
 
