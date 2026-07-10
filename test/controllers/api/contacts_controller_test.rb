@@ -126,6 +126,51 @@ class Api::ContactsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "landing", contact.metadata["funnel"]
   end
 
+  test "index includes source_events so callers can read view counts" do
+    api_key = { "X-Api-Key" => Stacks::Utils.config[:stacks][:private_api_key] }
+    email = "view-counts@example.com"
+
+    2.times do
+      post "/api/contacts", headers: api_key,
+        params: { email: email, sources: ["fundraising"] }, as: :json
+    end
+
+    get "/api/contacts", headers: api_key, params: { source: "fundraising" }
+    assert_response :success
+    row = JSON.parse(response.body).first
+    assert_equal 2, row["source_events"]["fundraising"].length
+  end
+
+  test "appends a timestamped source event on every post, even for duplicate sources" do
+    api_key = { "X-Api-Key" => Stacks::Utils.config[:stacks][:private_api_key] }
+    email = "views@example.com"
+
+    post "/api/contacts", headers: api_key,
+      params: { email: email, sources: %w[newsletter fundraising] }, as: :json
+    post "/api/contacts", headers: api_key,
+      params: { email: email, sources: ["fundraising"] }, as: :json
+
+    assert_response :success
+    contact = Contact.find_by!(email: email)
+    assert_equal %w[newsletter fundraising], contact.sources
+    assert_equal 1, contact.source_events["newsletter"].length
+    assert_equal 2, contact.source_events["fundraising"].length
+    contact.source_events.values.flatten.each do |event|
+      assert_equal ["added_at"], event.keys
+      assert Time.iso8601(event["added_at"])
+    end
+  end
+
+  test "records no source events when no sources are posted" do
+    post "/api/contacts",
+      headers: { "X-Api-Key" => Stacks::Utils.config[:stacks][:private_api_key] },
+      params: { email: "no-events@example.com" },
+      as: :json
+
+    assert_response :success
+    assert_equal({}, Contact.find_by!(email: "no-events@example.com").source_events)
+  end
+
   test "top-level keys outside metadata are not stored in contact metadata" do
     email = "no-leak@sanctuary.computer"
 
