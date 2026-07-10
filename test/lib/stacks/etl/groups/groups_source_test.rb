@@ -3,14 +3,35 @@ require 'test_helper'
 require 'ostruct'
 
 class Stacks::Etl::Groups::GroupsSourceTest < ActiveSupport::TestCase
+  META = Stacks::Etl::Groups::GroupsSource::META_HEADERS
+
   def raw(mid, from, subject, date, body, references = nil)
     h = +"Message-ID: #{mid}\r\nFrom: #{from}\r\nTo: dev@sanctuary.computer\r\nSubject: #{subject}\r\nDate: #{date}\r\nContent-Type: text/plain\r\n"
     h << "References: #{references}\r\n" if references
     "#{h}\r\n#{body}"
   end
 
-  # A Gmail message list ref carries an id AND a thread_id (the crawl buckets by thread_id).
-  def ref(id, thread_id) = OpenStruct.new(id: id, thread_id: thread_id)
+  # A Gmail message list ref carries an id AND a thread_id (thread_id is intentionally NOT
+  # used for grouping — we group on the RFC822 root from the metadata pass).
+  def ref(id, thread_id = 't') = OpenStruct.new(id: id, thread_id: thread_id)
+
+  # Pass-1 metadata response: payload.headers with the root-relevant headers.
+  def meta(message_id, references = nil, in_reply_to = nil)
+    headers = [OpenStruct.new(name: 'Message-ID', value: message_id)]
+    headers << OpenStruct.new(name: 'References', value: references) if references
+    headers << OpenStruct.new(name: 'In-Reply-To', value: in_reply_to) if in_reply_to
+    OpenStruct.new(payload: OpenStruct.new(headers: headers))
+  end
+
+  # Stub BOTH passes for one message on a gmail mock: metadata (pass 1) + raw (pass 2).
+  def stub_msg(gmail, gid, message_id, from, subject, date, body, references = nil)
+    gmail.stubs(:get_user_message).with('me', gid, format: 'metadata', metadata_headers: META)
+         .returns(meta(message_id, references))
+    gmail.stubs(:get_user_message).with('me', gid, format: 'raw')
+         .returns(OpenStruct.new(raw: raw(message_id, from, subject, date, body, references)))
+  end
+
+  def one_page(*refs) = OpenStruct.new(messages: refs, next_page_token: nil)
 
   test 'dedups a thread received in two mailboxes into one Document (segments unioned once)' do
     Stacks::Etl::Groups::Workspace.stubs(:all_groups).returns([{ email: 'dev@sanctuary.computer', name: 'Dev' }])
@@ -22,19 +43,16 @@ class Stacks::Etl::Groups::GroupsSourceTest < ActiveSupport::TestCase
     Stacks::Etl::Meet::Workspace.stubs(:all_active_user_emails)
       .returns(['alice@sanctuary.computer', 'bob@sanctuary.computer'])
 
-    root  = raw('<a@x>', 'Alice <alice@x.co>', 'Deploy failed', 'Mon, 01 Jun 2026 10:00:00 +0000', 'down')
-    reply = raw('<c@x>', 'Bob <bob@x.co>', 'Re: Deploy failed', 'Mon, 01 Jun 2026 11:00:00 +0000', 'up', '<a@x>')
-
-    # Realistic list traffic: BOTH members received BOTH messages of the one thread.
+    # Both members received both messages of the one thread.
     alice_gmail = mock('alice')
-    alice_gmail.stubs(:list_user_messages).returns(OpenStruct.new(messages: [ref('a1', 't1'), ref('a2', 't1')], next_page_token: nil))
-    alice_gmail.stubs(:get_user_message).with('me', 'a1', format: 'raw').returns(OpenStruct.new(raw: root))
-    alice_gmail.stubs(:get_user_message).with('me', 'a2', format: 'raw').returns(OpenStruct.new(raw: reply))
+    alice_gmail.stubs(:list_user_messages).returns(one_page(ref('a1'), ref('a2')))
+    stub_msg(alice_gmail, 'a1', '<a@x>', 'Alice <alice@x.co>', 'Deploy failed', 'Mon, 01 Jun 2026 10:00:00 +0000', 'down')
+    stub_msg(alice_gmail, 'a2', '<c@x>', 'Bob <bob@x.co>', 'Re: Deploy failed', 'Mon, 01 Jun 2026 11:00:00 +0000', 'up', '<a@x>')
 
     bob_gmail = mock('bob')
-    bob_gmail.stubs(:list_user_messages).returns(OpenStruct.new(messages: [ref('b1', 't9'), ref('b2', 't9')], next_page_token: nil))
-    bob_gmail.stubs(:get_user_message).with('me', 'b1', format: 'raw').returns(OpenStruct.new(raw: root))
-    bob_gmail.stubs(:get_user_message).with('me', 'b2', format: 'raw').returns(OpenStruct.new(raw: reply))
+    bob_gmail.stubs(:list_user_messages).returns(one_page(ref('b1'), ref('b2')))
+    stub_msg(bob_gmail, 'b1', '<a@x>', 'Alice <alice@x.co>', 'Deploy failed', 'Mon, 01 Jun 2026 10:00:00 +0000', 'down')
+    stub_msg(bob_gmail, 'b2', '<c@x>', 'Bob <bob@x.co>', 'Re: Deploy failed', 'Mon, 01 Jun 2026 11:00:00 +0000', 'up', '<a@x>')
 
     Stacks::Etl::Meet::Auth.stubs(:gmail_service).with(sub: 'alice@sanctuary.computer').returns(alice_gmail)
     Stacks::Etl::Meet::Auth.stubs(:gmail_service).with(sub: 'bob@sanctuary.computer').returns(bob_gmail)
@@ -48,35 +66,76 @@ class Stacks::Etl::Groups::GroupsSourceTest < ActiveSupport::TestCase
     assert_equal ['down', 'up'], d[:segments].map { |s| s[:text] }
   end
 
-  test 'streams one Document per Gmail thread (bounded, incremental)' do
+  test 'groups by RFC822 root even when Gmail split the conversation across thread_ids (no message loss)' do
+    # The regression the streaming rewrite must NOT reintroduce: root <a@x> and its reply <c@x>
+    # sit in DIFFERENT Gmail thread_ids (tA, tB) — a real Gmail behaviour on subject drift.
+    # Grouping on root (via the metadata pass) keeps them in one Document with both segments;
+    # grouping on thread_id would have dropped the reply.
     Stacks::Etl::Groups::Workspace.stubs(:all_groups).returns([{ email: 'dev@sanctuary.computer', name: 'Dev' }])
     Stacks::Etl::Groups::Workspace.stubs(:members).with('dev@sanctuary.computer')
       .returns([{ email: 'alice@sanctuary.computer', role: 'OWNER', type: 'USER' }])
     Stacks::Etl::Meet::Workspace.stubs(:all_active_user_emails).returns(['alice@sanctuary.computer'])
 
-    t1 = raw('<a@x>', 'Alice <alice@x.co>', 'Deploy failed', 'Mon, 01 Jun 2026 10:00:00 +0000', 'down')
-    t2 = raw('<b@x>', 'Alice <alice@x.co>', 'Lunch?', 'Mon, 02 Jun 2026 10:00:00 +0000', 'tacos')
-
     gmail = mock('g')
-    # Two DISTINCT Gmail threads in one list page — must yield as two separate Documents.
-    gmail.stubs(:list_user_messages).returns(OpenStruct.new(messages: [ref('m1', 't1'), ref('m2', 't2')], next_page_token: nil))
-    gmail.stubs(:get_user_message).with('me', 'm1', format: 'raw').returns(OpenStruct.new(raw: t1))
-    gmail.stubs(:get_user_message).with('me', 'm2', format: 'raw').returns(OpenStruct.new(raw: t2))
+    gmail.stubs(:list_user_messages).returns(one_page(ref('g1', 'tA'), ref('g2', 'tB')))
+    stub_msg(gmail, 'g1', '<a@x>', 'Alice <alice@x.co>', 'Deploy failed', 'Mon, 01 Jun 2026 10:00:00 +0000', 'down')
+    stub_msg(gmail, 'g2', '<c@x>', 'Bob <bob@x.co>', 'Re: Deploy — status', 'Mon, 01 Jun 2026 11:00:00 +0000', 'up', '<a@x>')
     Stacks::Etl::Meet::Auth.stubs(:gmail_service).returns(gmail)
 
     yielded = []
     Stacks::Etl::Groups::GroupsSource.new(admin_email: 'hugh@sanctuary.computer', k: 1).each_thread { |n| yielded << n }
 
-    assert_equal 2, yielded.size, 'two distinct Gmail threads -> two Documents, streamed separately'
+    assert_equal 1, yielded.size
+    assert_equal '<a@x>', yielded.first[:external_id]
+    assert_equal ['down', 'up'], yielded.first[:segments].map { |s| s[:text] },
+                 'the reply in a different Gmail thread but same RFC822 root must not be lost'
+  end
+
+  test 'streams one Document per logical thread (bounded, incremental)' do
+    Stacks::Etl::Groups::Workspace.stubs(:all_groups).returns([{ email: 'dev@sanctuary.computer', name: 'Dev' }])
+    Stacks::Etl::Groups::Workspace.stubs(:members).with('dev@sanctuary.computer')
+      .returns([{ email: 'alice@sanctuary.computer', role: 'OWNER', type: 'USER' }])
+    Stacks::Etl::Meet::Workspace.stubs(:all_active_user_emails).returns(['alice@sanctuary.computer'])
+
+    gmail = mock('g')
+    gmail.stubs(:list_user_messages).returns(one_page(ref('m1'), ref('m2')))
+    stub_msg(gmail, 'm1', '<a@x>', 'Alice <alice@x.co>', 'Deploy failed', 'Mon, 01 Jun 2026 10:00:00 +0000', 'down')
+    stub_msg(gmail, 'm2', '<b@x>', 'Alice <alice@x.co>', 'Lunch?', 'Mon, 02 Jun 2026 10:00:00 +0000', 'tacos')
+    Stacks::Etl::Meet::Auth.stubs(:gmail_service).returns(gmail)
+
+    yielded = []
+    Stacks::Etl::Groups::GroupsSource.new(admin_email: 'hugh@sanctuary.computer', k: 1).each_thread { |n| yielded << n }
+
+    assert_equal 2, yielded.size, 'two distinct roots -> two Documents'
     assert_equal ['<a@x>', '<b@x>'], yielded.map { |n| n[:external_id] }.sort
     assert(yielded.all? { |d| d[:segments].size == 1 })
   end
 
-  test 'owner-first streaming: a later mailbox extra message on an already-seen thread is not merged' do
-    # alice (OWNER) has only the root; bob (MEMBER) has root + a reply. Under streaming union,
-    # alice's copy of the thread is emitted first, and bob's extra reply for that same root is
-    # deduped-by-root and dropped. This is the deliberate trade for bounded memory — locked
-    # here so it reads as intentional, not a regression.
+  test 'paginates the message list across pages' do
+    Stacks::Etl::Groups::Workspace.stubs(:all_groups).returns([{ email: 'dev@sanctuary.computer', name: 'Dev' }])
+    Stacks::Etl::Groups::Workspace.stubs(:members).with('dev@sanctuary.computer')
+      .returns([{ email: 'alice@sanctuary.computer', role: 'OWNER', type: 'USER' }])
+    Stacks::Etl::Meet::Workspace.stubs(:all_active_user_emails).returns(['alice@sanctuary.computer'])
+
+    gmail = mock('g')
+    gmail.stubs(:list_user_messages).with('me', has_entries(q: instance_of(String), max_results: 100, page_token: nil))
+         .returns(OpenStruct.new(messages: [ref('p1')], next_page_token: 'P2'))
+    gmail.stubs(:list_user_messages).with('me', has_entries(page_token: 'P2'))
+         .returns(OpenStruct.new(messages: [ref('p2')], next_page_token: nil))
+    stub_msg(gmail, 'p1', '<a@x>', 'Alice <alice@x.co>', 'One', 'Mon, 01 Jun 2026 10:00:00 +0000', 'first')
+    stub_msg(gmail, 'p2', '<b@x>', 'Bob <bob@x.co>', 'Two', 'Mon, 02 Jun 2026 10:00:00 +0000', 'second')
+    Stacks::Etl::Meet::Auth.stubs(:gmail_service).returns(gmail)
+
+    yielded = []
+    Stacks::Etl::Groups::GroupsSource.new(admin_email: 'hugh@sanctuary.computer', k: 1).each_thread { |n| yielded << n }
+    assert_equal ['<a@x>', '<b@x>'], yielded.map { |n| n[:external_id] }.sort,
+                 'messages from BOTH list pages must be ingested'
+  end
+
+  test 'owner-first: a later mailbox extra message on an already-seen root is not merged' do
+    # alice (OWNER) has only the root; bob (MEMBER) has root + a reply. alice's copy is emitted
+    # first; bob's extra reply for the same root is deduped-by-root and dropped — the deliberate
+    # cross-mailbox trade for bounded memory (within a mailbox nothing is lost — see the split test).
     Stacks::Etl::Groups::Workspace.stubs(:all_groups).returns([{ email: 'dev@sanctuary.computer', name: 'Dev' }])
     Stacks::Etl::Groups::Workspace.stubs(:members).with('dev@sanctuary.computer').returns([
       { email: 'alice@sanctuary.computer', role: 'OWNER', type: 'USER' },
@@ -85,17 +144,14 @@ class Stacks::Etl::Groups::GroupsSourceTest < ActiveSupport::TestCase
     Stacks::Etl::Meet::Workspace.stubs(:all_active_user_emails)
       .returns(['alice@sanctuary.computer', 'bob@sanctuary.computer'])
 
-    root  = raw('<a@x>', 'Alice <alice@x.co>', 'Deploy failed', 'Mon, 01 Jun 2026 10:00:00 +0000', 'down')
-    reply = raw('<c@x>', 'Bob <bob@x.co>', 'Re: Deploy failed', 'Mon, 01 Jun 2026 11:00:00 +0000', 'up', '<a@x>')
-
     alice_gmail = mock('alice')
-    alice_gmail.stubs(:list_user_messages).returns(OpenStruct.new(messages: [ref('a1', 't1')], next_page_token: nil))
-    alice_gmail.stubs(:get_user_message).with('me', 'a1', format: 'raw').returns(OpenStruct.new(raw: root))
+    alice_gmail.stubs(:list_user_messages).returns(one_page(ref('a1')))
+    stub_msg(alice_gmail, 'a1', '<a@x>', 'Alice <alice@x.co>', 'Deploy failed', 'Mon, 01 Jun 2026 10:00:00 +0000', 'down')
 
     bob_gmail = mock('bob')
-    bob_gmail.stubs(:list_user_messages).returns(OpenStruct.new(messages: [ref('b1', 't9'), ref('b2', 't9')], next_page_token: nil))
-    bob_gmail.stubs(:get_user_message).with('me', 'b1', format: 'raw').returns(OpenStruct.new(raw: root))
-    bob_gmail.stubs(:get_user_message).with('me', 'b2', format: 'raw').returns(OpenStruct.new(raw: reply))
+    bob_gmail.stubs(:list_user_messages).returns(one_page(ref('b1'), ref('b2')))
+    stub_msg(bob_gmail, 'b1', '<a@x>', 'Alice <alice@x.co>', 'Deploy failed', 'Mon, 01 Jun 2026 10:00:00 +0000', 'down')
+    stub_msg(bob_gmail, 'b2', '<c@x>', 'Bob <bob@x.co>', 'Re: Deploy failed', 'Mon, 01 Jun 2026 11:00:00 +0000', 'up', '<a@x>')
 
     Stacks::Etl::Meet::Auth.stubs(:gmail_service).with(sub: 'alice@sanctuary.computer').returns(alice_gmail)
     Stacks::Etl::Meet::Auth.stubs(:gmail_service).with(sub: 'bob@sanctuary.computer').returns(bob_gmail)
@@ -120,7 +176,7 @@ class Stacks::Etl::Groups::GroupsSourceTest < ActiveSupport::TestCase
       .returns(['member@sanctuary.computer', 'owner@sanctuary.computer'])
 
     gmail = mock('g')
-    gmail.stubs(:list_user_messages).returns(OpenStruct.new(messages: [], next_page_token: nil))
+    gmail.stubs(:list_user_messages).returns(one_page)
     # k:1 -> ONLY the OWNER mailbox may be crawled (owner beats member; GROUP + inactive excluded).
     Stacks::Etl::Meet::Auth.expects(:gmail_service).with(sub: 'owner@sanctuary.computer').returns(gmail)
 
@@ -160,10 +216,9 @@ class Stacks::Etl::Groups::GroupsSourceTest < ActiveSupport::TestCase
       .returns([{ email: 'alice@sanctuary.computer', role: 'OWNER', type: 'USER' }])
     Stacks::Etl::Meet::Workspace.stubs(:all_active_user_emails).returns(['alice@sanctuary.computer'])
 
-    root = raw('<a@x>', 'Alice <alice@x.co>', 'Deploy failed', 'Mon, 01 Jun 2026 10:00:00 +0000', 'down')
     gmail = mock('g')
-    gmail.stubs(:list_user_messages).returns(OpenStruct.new(messages: [ref('g_a', 't1')], next_page_token: nil))
-    gmail.stubs(:get_user_message).returns(OpenStruct.new(raw: root))
+    gmail.stubs(:list_user_messages).returns(one_page(ref('g_a')))
+    stub_msg(gmail, 'g_a', '<a@x>', 'Alice <alice@x.co>', 'Deploy failed', 'Mon, 01 Jun 2026 10:00:00 +0000', 'down')
     Stacks::Etl::Meet::Auth.stubs(:gmail_service).returns(gmail)
 
     yielded = []
@@ -181,10 +236,9 @@ class Stacks::Etl::Groups::GroupsSourceTest < ActiveSupport::TestCase
     Stacks::Etl::Meet::Workspace.stubs(:all_active_user_emails)
       .returns(['alice@sanctuary.computer', 'bob@sanctuary.computer'])
 
-    root = raw('<a@x>', 'Alice <alice@x.co>', 'Deploy failed', 'Mon, 01 Jun 2026 10:00:00 +0000', 'down')
     good = mock('alice')
-    good.stubs(:list_user_messages).returns(OpenStruct.new(messages: [ref('g_a', 't1')], next_page_token: nil))
-    good.stubs(:get_user_message).returns(OpenStruct.new(raw: root))
+    good.stubs(:list_user_messages).returns(one_page(ref('g_a')))
+    stub_msg(good, 'g_a', '<a@x>', 'Alice <alice@x.co>', 'Deploy failed', 'Mon, 01 Jun 2026 10:00:00 +0000', 'down')
     bad = mock('bob')
     bad.stubs(:list_user_messages).raises(Google::Apis::ClientError.new('no gmail license'))
 
