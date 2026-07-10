@@ -17,8 +17,12 @@ module Mcp
       # segments) is still readable. Callers prefer `segments` for transcripts, `body` for notes.
       body = doc.chunks.order(:position).pluck(:content).join("\n")
       meeting_key = is_meeting ? meeting.id : nil
+      # google_groups: expose the RFC822 root Message-ID (external_id) so an observing agent can
+      # build the precise Gmail deep link (rfc822msgid:<id>). url already carries the group.
+      extra = doc.google_groups? ? { root_message_id: doc.external_id } : {}
       Responses.ok({ id: doc.id, title: doc.title, url: doc.url, occurred_at: doc.occurred_at,
-                     meeting_key: meeting_key, segments: segments, body: body })
+                     source: doc.source, meeting_key: meeting_key, segments: segments, body: body }
+                   .merge(extra))
     end
   end
 end
