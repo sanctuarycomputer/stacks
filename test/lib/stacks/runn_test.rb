@@ -122,6 +122,27 @@ class Stacks::RunnTest < ActiveSupport::TestCase
     assert_equal [1, 2], result.map { |a| a["id"] }
   end
 
+  test "max_retries: 0 raises immediately on a 429 — no sleep, no second request" do
+    runn = Stacks::Runn.new(max_retries: 0)
+    response = mock("response")
+    response.stubs(:success?).returns(false)
+    response.stubs(:to_s).returns('{"statusCode":429}')
+    Stacks::Runn.expects(:get).once.returns(response)
+    runn.expects(:sleep).never
+
+    assert_raises(RuntimeError) { runn.get_assignments }
+  end
+
+  test "non-JSON error bodies re-raise the original error, not a JSON::ParserError" do
+    response = mock("response")
+    response.stubs(:success?).returns(false)
+    response.stubs(:to_s).returns("<html>502 Bad Gateway</html>")
+    Stacks::Runn.expects(:get).once.returns(response)
+
+    error = assert_raises(RuntimeError) { @runn.get_assignments }
+    assert_includes error.message, "502 Bad Gateway"
+  end
+
   test "get_leave_for_person hits the per-person leave endpoint" do
     page = paged_response([{ "id" => 5, "startDate" => "2026-08-03", "endDate" => "2026-08-07" }], nil)
 
