@@ -110,6 +110,16 @@ namespace :stacks do
         Sentry.capture_exception(e) if defined?(Sentry)
       end
       Rails.logger.info("[stacks:daily_enterprise_tasks] Auto-flipped #{flipped} legacy ledger(s) to qbo_bound")
+
+      # Per-enterprise daily automations (e.g. Optix inactive-member
+      # deactivation for Index). Per-enterprise errors are isolated so one
+      # enterprise's failure doesn't block the others.
+      Enterprise.find_each do |e|
+        e.daily_tasks
+      rescue => err
+        Rails.logger.error("[stacks:daily_enterprise_tasks] Enterprise##{e.id} (#{e.name}) daily_tasks failed: #{err.class}: #{err.message}")
+        Sentry.capture_exception(err) if defined?(Sentry)
+      end
     rescue => e
       system_task.mark_as_error(e)
     else
