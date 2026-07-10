@@ -57,6 +57,16 @@ class Enterprise < ApplicationRecord
     Thread.current[:garden3d_enterprise] ||= Enterprise.find_by!(name: GARDEN3D_NAME)
   end
 
+  def is_index?
+    name == INDEX_SPACE_NAME
+  end
+
+  # Per-enterprise daily automation, dispatched by stacks:daily_enterprise_tasks.
+  # Add new per-enterprise behaviors here rather than as new rake steps.
+  def daily_tasks
+    Stacks::Optix.deactivate_inactive_members! if is_index?
+  end
+
   def discover_verticals
     qbo_account.qbo_profit_and_loss_reports.reduce([]) do |acc, qbo_profit_and_loss_report|
       # Legacy P&L rows may have an empty `data` hash (e.g., rows backfilled
