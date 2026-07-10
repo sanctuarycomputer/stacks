@@ -12,13 +12,11 @@ module Stacks
 
         def self.parse(raw)
           m = Mail.read_from_string(raw)
-          refs = Array(m.references).map { |r| bracket(r) }
-          in_reply = m.in_reply_to ? bracket(Array(m.in_reply_to).first) : nil
           mid = bracket(m.message_id)
           from_name, from_email = address_parts(m[:from])
           {
             message_id: mid,
-            root_id: refs.first || in_reply || mid,
+            root_id: root_id_from(message_id: m.message_id, references: m.references, in_reply_to: m.in_reply_to),
             from_name: from_name,
             from_email: from_email,
             to: addresses(m[:to]),
@@ -27,6 +25,17 @@ module Stacks
             date: m.date&.to_time,
             body: strip_quoted(body_text(m))
           }
+        end
+
+        # Thread root = first References entry, else In-Reply-To, else the message's own
+        # Message-ID (all angle-bracket-normalized). Shared by parse (mail-gem values, arrays)
+        # and the crawl's cheap metadata pass (raw header strings), so both derive the SAME
+        # thread key regardless of how Gmail bucketed the message into a thread_id.
+        def self.root_id_from(message_id:, references: nil, in_reply_to: nil)
+          refs = Array(references).flat_map { |r| r.to_s.split }.reject(&:empty?).map { |r| bracket(r) }
+          irt  = Array(in_reply_to).flat_map { |r| r.to_s.split }.reject(&:empty?).map { |r| bracket(r) }.first
+          mid  = message_id.to_s.strip.empty? ? nil : bracket(message_id)
+          refs.first || irt || mid
         end
 
         # messages: parse-hashes already deduped by :message_id. Returns one doc per root.

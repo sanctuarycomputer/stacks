@@ -49,8 +49,12 @@ namespace :stacks do
       begin
         days = (args[:days] || 90).to_i
         admin = Stacks::Utils.config.dig(:google_oauth2, :admin_email) || 'hugh@sanctuary.computer'
+        # k:1 for the backfill — the two-pass crawl already costs ~2 Gmail gets/message, and a
+        # second crawler mailbox mostly re-fetches messages that dedup away, so a single
+        # (owner/longest-tenured) mailbox halves the volume for near-identical coverage over a
+        # large historical window. The nightly sync keeps the default k:2 on its tiny window.
         # track:false so the explicit backfill window isn't written back into the ongoing cursor.
-        Stacks::Etl::Groups::Connector.new(admin_email: admin).run(since: days.days.ago, track: false)
+        Stacks::Etl::Groups::Connector.new(admin_email: admin, k: 1).run(since: days.days.ago, track: false)
       rescue => e
         system_task.mark_as_error(e)
       else
