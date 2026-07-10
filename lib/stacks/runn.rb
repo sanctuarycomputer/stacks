@@ -2,7 +2,11 @@ class Stacks::Runn
   include HTTParty
   base_uri 'https://api.runn.io'
 
-  def initialize()
+  # max_retries: 429 backoff count. The cron-side sync keeps the historical
+  # 5×61s behavior; request-path callers (MCP tools) MUST pass 0 so a Runn
+  # rate-limit can never park a web worker in sleep().
+  def initialize(max_retries: 5)
+    @max_retries = max_retries
     @headers = {
       "Accept": "application/json",
       "Content-Type": "application/json",
@@ -19,8 +23,15 @@ class Stacks::Runn
       raise response.to_s unless response.success?
       response
     rescue => e
-      raise e unless JSON.parse(e.try(:message))["statusCode"] == 429
-      raise e unless retry_count < 5
+      # non-JSON error bodies (HTML 502s etc.) must re-raise the ORIGINAL
+      # error, not a JSON::ParserError that masks it
+      is_rate_limited = begin
+        JSON.parse(e.try(:message).to_s)["statusCode"] == 429
+      rescue JSON::ParserError, TypeError, NoMethodError
+        false
+      end
+      raise e unless is_rate_limited
+      raise e unless retry_count < @max_retries
 
       retry_count += 1
       puts "~~~> Sleeping 61.seconds then retrying for the #{retry_count} time"
@@ -110,15 +121,15 @@ class Stacks::Runn
     values
   end
 
-  # Projection-plane reads: planned (forward) assignments and scheduled
-  # leave. Read-only — these back the get_runn_projections MCP tool; the
-  # actuals write path above is untouched and nothing here writes to Runn.
+  # Projection-plane reads: planned (forward) assignments. Read-only — backs
+  # the get_runn_projections MCP tool; the actuals write path above is
+  # untouched and nothing here writes to Runn.
   def get_assignments
     values = []
     next_cursor = nil
     loop do
       response = handle_response {
-        self.class.get("/assignments?limit=200&cursor=#{next_cursor}", headers: @headers)
+        self.class.get("/assignments?limit=200&cursor=#{CGI.escape(next_cursor.to_s)}", headers: @headers)
       }
       values = [*values, *response["values"]]
       next_cursor = response["nextCursor"]
@@ -129,14 +140,18 @@ class Stacks::Runn
 
   # Leave is only exposed per person (GET /people/:id/time-offs/leave).
   # Runn splits assignments around scheduled leave, so leave that OVERLAPS
-  # an assignment means the leave was filed after the allocation — exactly
-  # the divergence the resourcing sweep looks for.
+  # an assignment means the leave was filed after the allocation — the
+  # divergence the resourcing sweep looks for. STAGED: not yet called by
+  # get_runn_projections (N-per-person live calls are too heavy for the
+  # synchronous MCP path) — the sweep currently reads leave from Runn
+  # directly; this lands here so a future batched read has one home.
   def get_leave_for_person(person_id)
+    person_id = Integer(person_id) # path-injection guard: callers may pass agent-derived input
     values = []
     next_cursor = nil
     loop do
       response = handle_response {
-        self.class.get("/people/#{person_id}/time-offs/leave?limit=200&cursor=#{next_cursor}", headers: @headers)
+        self.class.get("/people/#{person_id}/time-offs/leave?limit=200&cursor=#{CGI.escape(next_cursor.to_s)}", headers: @headers)
       }
       values = [*values, *response["values"]]
       next_cursor = response["nextCursor"]
