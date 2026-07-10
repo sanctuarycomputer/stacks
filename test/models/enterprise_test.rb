@@ -57,3 +57,24 @@ class EnterprisePayCycleCadenceTest < ActiveSupport::TestCase
     assert_nil @ent.pay_cycle_default_range_for(Date.new(2026, 5, 20))
   end
 end
+
+class EnterpriseDailyTasksTest < ActiveSupport::TestCase
+  test "is_index? is true only for Index Space, LLC" do
+    index = Enterprise.find_or_create_by!(name: Enterprise::INDEX_SPACE_NAME)
+    other = Enterprise.create!(name: "Some Other Enterprise #{SecureRandom.hex(4)}")
+    assert index.is_index?
+    refute other.is_index?
+  end
+
+  test "daily_tasks deactivates inactive Optix members for Index" do
+    index = Enterprise.find_or_create_by!(name: Enterprise::INDEX_SPACE_NAME)
+    Stacks::Optix.expects(:deactivate_inactive_members!).once
+    index.daily_tasks
+  end
+
+  test "daily_tasks is a no-op for non-Index enterprises" do
+    other = Enterprise.create!(name: "Some Other Enterprise #{SecureRandom.hex(4)}")
+    Stacks::Optix.expects(:deactivate_inactive_members!).never
+    other.daily_tasks
+  end
+end
