@@ -12,7 +12,18 @@ class Contact < ApplicationRecord
   scope :sources_cont, ->(value) { where("array_to_string(sources, ' ') ILIKE ?", "%#{value}%") }
 
   def self.ransackable_attributes(auth_object = nil)
-    super - %w[sources metadata]
+    super - %w[sources metadata source_events]
+  end
+
+  # Unions per-source event lists ({source => [{"added_at" => ts}, ...]}),
+  # keeping each list sorted by added_at, so a survivor keeps the full view
+  # history when duplicate contacts merge.
+  def self.merge_source_events(events_list)
+    events_list.compact.each_with_object({}) do |events, acc|
+      events.each do |source, entries|
+        acc[source] = [*acc[source], *entries].sort_by { |e| e['added_at'].to_s }
+      end
+    end
   end
 
   def self.ransackable_scopes(*)
@@ -38,6 +49,9 @@ class Contact < ApplicationRecord
       rescue ActiveRecord::RecordNotUnique => e
         if existing_contact = Contact.find_by(apollo_id: apollo_contact["id"])
           self.sources = [*self.sources, *existing_contact.sources].uniq
+          self.source_events = Contact.merge_source_events(
+            [self.source_events, existing_contact.source_events]
+          )
           existing_contact.destroy!
           puts "~~~> will retry for #{self.email}"
           retry
@@ -88,6 +102,7 @@ class Contact < ApplicationRecord
     losers = dupes[1..]
 
     merged_sources = dupes.flat_map(&:sources).compact.uniq
+    merged_source_events = Contact.merge_source_events(dupes.map(&:source_events))
     merged_apollo_id = dupes.map(&:apollo_id).compact.first
     merged_display_name = dupes.map(&:display_name).compact.first
 
@@ -105,6 +120,7 @@ class Contact < ApplicationRecord
 
       survivor.update!(
         sources: merged_sources,
+        source_events: merged_source_events,
         apollo_id: merged_apollo_id,
         display_name: survivor.display_name.presence || merged_display_name,
       )
