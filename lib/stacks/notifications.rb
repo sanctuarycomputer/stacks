@@ -54,11 +54,21 @@ class Stacks::Notifications
     def report_optix_deactivation_run(result)
       return if result.deactivated.empty? && result.skipped.empty? && result.errors.empty?
 
-      twist.add_comment_to_thread(
+      response = twist.add_comment_to_thread(
         TWIST_EXCEPTIONS_THREAD_ID,
         optix_deactivation_body(result),
         [TWIST_EXCEPTION_NOTIFY_USER_ID]
       )
+
+      # HTTParty doesn't raise on HTTP error statuses. This report is the
+      # durable surface for skipped members — a silently-swallowed Twist
+      # failure (expired token, archived thread) would defeat its purpose,
+      # so convert API-level failures into an exception the caller's rescue
+      # turns into log + Sentry.
+      code = response.try(:code)
+      raise "Twist comment failed: HTTP #{code}" if code && !(200..299).cover?(code)
+
+      response
     end
 
     def optix_deactivation_body(result)
@@ -86,6 +96,7 @@ class Stacks::Notifications
 
       lines.join("\n")
     end
+    private :optix_deactivation_body
 
     def make_notifications!
       task_count = Stacks::TaskBuilder.new.task_count

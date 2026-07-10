@@ -34,6 +34,16 @@ class StacksNotificationsOptixDeactivationTest < ActiveSupport::TestCase
     assert_includes captured[:content], "e@b.c — Stacks::Optix::ApiError: boom"
   end
 
+  test "a non-2xx Twist response raises so the caller's rescue can log + Sentry it" do
+    r = result(skipped: [{ user_id: "51", email: "s@b.c", reason: "no member_id mapping" }])
+    twist = mock
+    twist.expects(:add_comment_to_thread).returns(stub(code: 500))
+    Stacks::Notifications.stubs(:twist).returns(twist)
+
+    err = assert_raises(RuntimeError) { Stacks::Notifications.report_optix_deactivation_run(r) }
+    assert_match(/HTTP 500/, err.message)
+  end
+
   test "a run with nothing to report posts nothing" do
     Stacks::Notifications.expects(:twist).never
     Stacks::Notifications.report_optix_deactivation_run(result)
