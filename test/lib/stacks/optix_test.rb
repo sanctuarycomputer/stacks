@@ -72,3 +72,25 @@ class StacksOptixMemberRemovalTest < ActiveSupport::TestCase
     assert_match(/not configured/, err.message)
   end
 end
+
+class StacksOptixDeactivateClassMethodTest < ActiveSupport::TestCase
+  def empty_result
+    Stacks::Optix::DeactivateInactiveMembers::Result.new(deactivated: [], skipped: [], errors: [])
+  end
+
+  test "deactivate_inactive_members! reports the run to Twist and returns the result" do
+    result = empty_result
+    Stacks::Optix::DeactivateInactiveMembers.stubs(:call).returns(result)
+    Stacks::Notifications.expects(:report_optix_deactivation_run).with(result).once
+
+    assert_same result, Stacks::Optix.deactivate_inactive_members!
+  end
+
+  test "a notification failure does not break the run" do
+    result = empty_result
+    Stacks::Optix::DeactivateInactiveMembers.stubs(:call).returns(result)
+    Stacks::Notifications.stubs(:report_optix_deactivation_run).raises(RuntimeError.new("twist down"))
+
+    assert_same result, Stacks::Optix.deactivate_inactive_members!
+  end
+end

@@ -42,6 +42,62 @@ class Stacks::Notifications
       notification
     end
 
+    # How many deactivated emails to list before truncating — skips/errors
+    # are always listed in full (they're the actionable part).
+    OPTIX_DEACTIVATION_LIST_CAP = 50
+
+    # Posts a summary of an Optix inactive-member deactivation run
+    # (Stacks::Optix::DeactivateInactiveMembers::Result) to the same Twist
+    # thread + notify-user as exceptions. Skipped members need manual
+    # handling in Optix, and Heroku's log retention is too short to rely on —
+    # this is their durable surface. Silent when the run did nothing.
+    def report_optix_deactivation_run(result)
+      return if result.deactivated.empty? && result.skipped.empty? && result.errors.empty?
+
+      response = twist.add_comment_to_thread(
+        TWIST_EXCEPTIONS_THREAD_ID,
+        optix_deactivation_body(result),
+        [TWIST_EXCEPTION_NOTIFY_USER_ID]
+      )
+
+      # HTTParty doesn't raise on HTTP error statuses. This report is the
+      # durable surface for skipped members — a silently-swallowed Twist
+      # failure (expired token, archived thread) would defeat its purpose,
+      # so convert API-level failures into an exception the caller's rescue
+      # turns into log + Sentry.
+      code = response.try(:code)
+      raise "Twist comment failed: HTTP #{code}" if code && !(200..299).cover?(code)
+
+      response
+    end
+
+    def optix_deactivation_body(result)
+      lines = []
+      lines << "**Optix inactive-member deactivation run**"
+      lines << "#{result.deactivated.length} deactivated, #{result.skipped.length} skipped, #{result.errors.length} errored."
+
+      if result.deactivated.any?
+        shown = result.deactivated.first(OPTIX_DEACTIVATION_LIST_CAP)
+        line = "**Deactivated:** #{shown.map { |d| d[:email] }.join(", ")}"
+        overflow = result.deactivated.length - shown.length
+        line += " (+#{overflow} more)" if overflow.positive?
+        lines << line
+      end
+
+      if result.skipped.any?
+        lines << "**Skipped (needs manual handling in Optix):**"
+        result.skipped.each { |s| lines << "- #{s[:email]} — #{s[:reason]}" }
+      end
+
+      if result.errors.any?
+        lines << "**Errors (will retry tomorrow):**"
+        result.errors.each { |e| lines << "- #{e[:email]} — #{e[:error]}" }
+      end
+
+      lines.join("\n")
+    end
+    private :optix_deactivation_body
+
     def make_notifications!
       task_count = Stacks::TaskBuilder.new.task_count
       return if task_count == 0

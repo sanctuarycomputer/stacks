@@ -49,12 +49,25 @@ class Stacks::Optix
   # Daily automation entrypoint (called from Enterprise#daily_tasks for Index).
   # Uses OptixOrganization.first — consistent with the single-tenant assumption
   # documented on OptixOrganization and in stacks.rake.
+  #
+  # Reports the run summary (deactivations, members skipped for manual
+  # handling, errors) to Twist. Removals already happened by then, so a
+  # notification failure is logged + Sentried but never fails the run.
   def self.deactivate_inactive_members!(grace_days: 7, collect_payment: true)
-    Stacks::Optix::DeactivateInactiveMembers.call(
+    result = Stacks::Optix::DeactivateInactiveMembers.call(
       client: new(OptixOrganization.first),
       grace_days: grace_days,
       collect_payment: collect_payment,
     )
+
+    begin
+      Stacks::Notifications.report_optix_deactivation_run(result)
+    rescue => e
+      Rails.logger.error("[Stacks::Optix.deactivate_inactive_members!] failed to report run to Twist: #{e.class}: #{e.message}")
+      Sentry.capture_exception(e) if defined?(Sentry)
+    end
+
+    result
   end
 
   # ---------- credentials (currently global; per-org in the future) ----------
