@@ -128,3 +128,5 @@ PR's are merged. If you need to trigger a deploy manually, you can run:
 Deploys do not run migrations automatically (there is no `release:` phase in
 the `Procfile`), so run `production migrate` by hand after any deploy that adds
 a migration.
+
+<!-- deploy trigger -->
