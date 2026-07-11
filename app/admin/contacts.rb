@@ -59,6 +59,36 @@ ActiveAdmin.register Contact do
       row :created_at
       row :updated_at
     end
+
+    panel "Source Events" do
+      events = resource.source_events || {}
+      if events.blank?
+        para "No source events recorded yet."
+      else
+        rows = events.map do |source, entries|
+          times = Array(entries)
+            .map { |e| e.is_a?(Hash) ? e["added_at"] : nil }
+            .compact
+            .map { |t| Time.iso8601(t) rescue nil }
+            .compact
+            .sort
+          { source: source, count: times.length, times: times }
+        end.sort_by { |r| [-r[:count], r[:source]] }
+
+        table_for rows do
+          column("Source") { |r| r[:source] }
+          column("Times added") { |r| "#{r[:count]}×" }
+          column("When") do |r|
+            ul do
+              r[:times].each do |t|
+                li "#{t.utc.strftime('%b %-d, %Y %H:%M UTC')} " \
+                   "(#{ApplicationController.helpers.time_ago_in_words(t)} ago)"
+              end
+            end
+          end
+        end
+      end
+    end
   end
 
   index download_links: [:csv] do
