@@ -122,7 +122,7 @@ class Stacks::Runn
   end
 
   # Projection-plane reads: planned (forward) assignments. Read-only — backs
-  # the get_runn_projections MCP tool; the actuals write path above is
+  # the get_resourcing_projections MCP tool; the actuals write path above is
   # untouched and nothing here writes to Runn.
   def get_assignments
     values = []
@@ -142,7 +142,7 @@ class Stacks::Runn
   # Runn splits assignments around scheduled leave, so leave that OVERLAPS
   # an assignment means the leave was filed after the allocation — the
   # divergence the resourcing sweep looks for. STAGED: not yet called by
-  # get_runn_projections (N-per-person live calls are too heavy for the
+  # get_resourcing_projections (N-per-person live calls are too heavy for the
   # synchronous MCP path) — the sweep currently reads leave from Runn
   # directly; this lands here so a future batched read has one home.
   def get_leave_for_person(person_id)

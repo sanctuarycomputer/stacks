@@ -57,11 +57,11 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     assert body.key?("result"), "Expected JSON-RPC result key, got: #{body.inspect}"
     tool_names = body["result"]["tools"].map { |t| t["name"] }
     assert_includes tool_names, "search", "Expected 'search' tool in: #{tool_names.inspect}"
-    assert_equal %w[get_ar_aging get_document get_runn_projections get_studio_health list_documents list_open_admin_tasks list_overdue_invoices list_projects_at_risk list_sources search], tool_names.sort,
+    assert_equal %w[get_ar_aging get_document get_resourcing_projections get_studio_health list_documents list_open_admin_tasks list_overdue_invoices list_projects_at_risk list_sources search], tool_names.sort,
       "Expected all registered tools, got: #{tool_names.inspect}"
   end
 
-  test "tools/call round-trip for get_runn_projections window-filters and joins trackers" do
+  test "tools/call round-trip for get_resourcing_projections window-filters and joins trackers" do
     travel_to Time.zone.parse("2026-07-15 12:00:00") # midnight-proof: tool + test must agree on "today"
     today = Time.zone.today
     Stacks::Runn.any_instance.stubs(:get_projects).returns([
@@ -93,11 +93,11 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     )
     assert tracker.save(validate: false), "test tracker should persist"
 
-    payload = call_tool("get_runn_projections")
+    payload = call_tool("get_resourcing_projections")
 
     assert_equal 2, payload["projects"].size, "archived project should be excluded by default"
-    mapped = payload["projects"].find { |p| p["runn_id"] == 91_100 }
-    tentative = payload["projects"].find { |p| p["runn_id"] == 91_200 }
+    mapped = payload["projects"].find { |p| p["id"] == 91_100 }
+    tentative = payload["projects"].find { |p| p["id"] == 91_200 }
     assert_equal true, mapped["is_confirmed"]
     assert_equal "Mapped Tracker", mapped.dig("project_tracker", "name")
     assert_equal (today + 20).iso8601, mapped.dig("project_tracker", "snapshot_end_date")
@@ -115,15 +115,15 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     assert_equal (today + 90).iso8601, payload.dig("window", "end")
   end
 
-  test "get_runn_projections clamps a hostile window_days" do
+  test "get_resourcing_projections clamps a hostile window_days" do
     Stacks::Runn.any_instance.stubs(:get_projects).returns([])
     Stacks::Runn.any_instance.stubs(:get_people).returns([])
     Stacks::Runn.any_instance.stubs(:get_assignments).returns([])
 
-    payload = call_tool("get_runn_projections", { window_days: 100_000 })
+    payload = call_tool("get_resourcing_projections", { window_days: 100_000 })
     assert_equal (Time.zone.today + 365).iso8601, payload.dig("window", "end"), "window must clamp to 365 days"
 
-    payload = call_tool("get_runn_projections", { window_days: -5 })
+    payload = call_tool("get_resourcing_projections", { window_days: -5 })
     assert_equal (Time.zone.today + 1).iso8601, payload.dig("window", "end"), "window must clamp up to 1 day"
   end
 

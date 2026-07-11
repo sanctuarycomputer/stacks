@@ -1,14 +1,14 @@
 module Mcp
-  class GetRunnProjectionsTool < MCP::Tool
-    tool_name 'get_runn_projections'
-    description 'Runn PROJECTION plane: forward planned assignments (minutes_per_day, placeholders), ' \
+  class GetResourcingProjectionsTool < MCP::Tool
+    tool_name 'get_resourcing_projections'
+    description 'The resourcing PROJECTION plane: forward planned assignments (minutes_per_day, placeholders), ' \
                 'people, and projects with the tentative flag (is_confirmed=false), window-filtered ' \
-                'from today. Where a Runn project maps to a ProjectTracker, its snapshot dates and ' \
-                'hours are joined for divergence checks. Live read of the Runn API; never touches actuals.'
+                'from today. Where a project maps to a ProjectTracker, its snapshot dates and ' \
+                'hours are joined for divergence checks. Live read of the resourcing tool; never touches actuals.'
     input_schema(
       properties: {
         window_days: { type: 'number', description: 'Horizon in days from today (default 90). Assignments overlapping [today, today + window_days] are returned.' },
-        include_archived: { type: 'boolean', description: 'Default false. Include archived Runn projects (and their assignments).' },
+        include_archived: { type: 'boolean', description: 'Default false. Include archived projects (and their assignments).' },
       },
       required: []
     )
@@ -47,7 +47,7 @@ module Mcp
         projects: projects.map { |p|
           tracker = trackers_by_runn_id[p["id"]]
           {
-            runn_id: p["id"],
+            id: p["id"],
             name: p["name"],
             is_confirmed: p["isConfirmed"],
             is_archived: p["isArchived"],
@@ -68,11 +68,11 @@ module Mcp
         people: runn.get_people
           .reject { |p| p["isArchived"] && !include_archived }
           .map { |p|
-            # deliberately no email — assignments join on runn_id; former-staff
+            # deliberately no email — assignments join on id; former-staff
             # emails don't belong on this surface (matches get_studio_health's
             # precedent of excluding per-person contact detail)
             {
-              runn_id: p["id"],
+              id: p["id"],
               name: [p["firstName"], p["lastName"]].compact.join(" "),
               is_archived: p["isArchived"],
             }
@@ -93,10 +93,10 @@ module Mcp
         },
       })
     rescue StandardError => e
-      Rails.logger.warn("[Mcp::GetRunnProjectionsTool] #{e.class}: #{e.message}")
+      Rails.logger.warn("[Mcp::GetResourcingProjectionsTool] #{e.class}: #{e.message}")
       Sentry.capture_exception(e) if defined?(Sentry)
       # never echo upstream/internal error bodies to the caller
-      Responses.error("get_runn_projections failed; the error was logged")
+      Responses.error("get_resourcing_projections failed; the error was logged")
     end
   end
 end

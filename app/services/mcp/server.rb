@@ -21,7 +21,7 @@ module Mcp
       Mcp::ListOpenAdminTasksTool,
       Mcp::ListProjectsAtRiskTool,
       Mcp::GetStudioHealthTool,
-      Mcp::GetRunnProjectionsTool,
+      Mcp::GetResourcingProjectionsTool,
     ].freeze
 
     def self.build
