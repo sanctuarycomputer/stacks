@@ -81,4 +81,90 @@ class ContactDedupeTest < ActiveSupport::TestCase
     assert_equal solo.id, solo.dedupe!.id
     assert_equal 1, Contact.where(email: 'solo@gmail.com').count
   end
+
+  test 'merges source_events from duplicates into the survivor' do
+    keep = Contact.create!(
+      email: 'events@gmail.com',
+      sources: ['a'],
+      source_events: { 'a' => [{ 'added_at' => '2026-06-01T00:00:00Z' }] }
+    )
+    Contact.create!(
+      email: 'EVENTS@gmail.com',
+      sources: %w[a b],
+      source_events: {
+        'a' => [{ 'added_at' => '2026-06-02T00:00:00Z' }],
+        'b' => [{ 'added_at' => '2026-06-03T00:00:00Z' }],
+      }
+    )
+
+    result = keep.dedupe!
+
+    assert_equal 2, result.source_events['a'].length
+    assert_equal 1, result.source_events['b'].length
+    assert_equal(
+      %w[2026-06-01T00:00:00Z 2026-06-02T00:00:00Z],
+      result.source_events['a'].map { |e| e['added_at'] }
+    )
+  end
+
+  test 'merges source_events across three duplicates, including empty ones' do
+    keep = Contact.create!(
+      email: 'tri@gmail.com',
+      source_events: { 'a' => [{ 'added_at' => '2026-06-02T00:00:00Z' }] }
+    )
+    Contact.create!(
+      email: 'TRI@gmail.com',
+      source_events: {
+        'a' => [{ 'added_at' => '2026-06-01T00:00:00Z' }],
+        'b' => [{ 'added_at' => '2026-06-03T00:00:00Z' }],
+      }
+    )
+    Contact.create!(email: 'Tri@Gmail.com')
+
+    result = keep.dedupe!
+
+    assert_equal 2, result.source_events['a'].length
+    assert_equal 1, result.source_events['b'].length
+    assert_equal(
+      %w[2026-06-01T00:00:00Z 2026-06-02T00:00:00Z],
+      result.source_events['a'].map { |e| e['added_at'] }
+    )
+  end
+end
+
+class ContactSyncToApolloTest < ActiveSupport::TestCase
+  test 'merges source_events from the destroyed apollo-duplicate' do
+    existing = Contact.create!(
+      email: 'other@gmail.com',
+      apollo_id: 'apollo-x',
+      sources: ['b'],
+      source_events: { 'b' => [{ 'added_at' => '2026-06-01T00:00:00Z' }] }
+    )
+    contact = Contact.create!(
+      email: 'me@gmail.com',
+      sources: ['a'],
+      source_events: { 'a' => [{ 'added_at' => '2026-06-02T00:00:00Z' }] }
+    )
+    fake_apollo = Object.new
+    def fake_apollo.search_by_email(email)
+      [{ 'id' => 'apollo-x', 'email' => email }]
+    end
+
+    contact.sync_to_apollo!(fake_apollo)
+    contact.reload
+
+    assert_equal 'apollo-x', contact.apollo_id
+    assert_nil Contact.find_by(id: existing.id)
+    assert_equal %w[a b], contact.sources.sort
+    assert_equal 1, contact.source_events['b'].length
+    assert_equal 1, contact.source_events['a'].length
+  end
+end
+
+class ContactRansackTest < ActiveSupport::TestCase
+  test 'excludes jsonb/array columns from ransackable attributes' do
+    refute_includes Contact.ransackable_attributes, 'sources'
+    refute_includes Contact.ransackable_attributes, 'metadata'
+    refute_includes Contact.ransackable_attributes, 'source_events'
+  end
 end
