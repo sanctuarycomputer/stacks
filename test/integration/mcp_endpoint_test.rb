@@ -115,6 +115,54 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     assert_equal (today + 90).iso8601, payload.dig("window", "end")
   end
 
+  test "get_resourcing_projections computes recent_actuals from the Forecast mirror" do
+    travel_to Time.zone.parse("2026-07-15 12:00:00")
+    today = Time.zone.today
+
+    Stacks::Runn.any_instance.stubs(:get_projects).returns([
+      { "id" => 92_100, "name" => "Actuals Project", "isConfirmed" => true, "isArchived" => false, "isTemplate" => false, "clientId" => 5, "budget" => nil, "pricingModel" => "tm" },
+    ])
+    Stacks::Runn.any_instance.stubs(:get_people).returns([
+      { "id" => 30, "firstName" => "Fresh", "lastName" => "Worker", "email" => "fresh@example.com", "isArchived" => false },
+      { "id" => 31, "firstName" => "Stale", "lastName" => "Worker", "email" => "stale@example.com", "isArchived" => false },
+    ])
+    # one HISTORICAL (pre-window) assignment pins Fresh Worker's last-known role
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns([
+      { "id" => 900, "personId" => 30, "projectId" => 92_100, "roleId" => 7, "startDate" => (today - 200).iso8601, "endDate" => (today - 100).iso8601, "minutesPerDay" => 480, "isPlaceholder" => false, "isActive" => true, "isTemplate" => false, "note" => "" },
+    ])
+
+    RunnProject.create!(runn_id: 92_100, name: "Actuals Project", data: {})
+    tracker = ProjectTracker.new(name: "Actuals Tracker", runn_project_id: 92_100,
+      snapshot: { "last_forecast_assignment_end_date" => (today + 30).iso8601 })
+    assert tracker.save(validate: false)
+
+    # Forecast models key on forecast_id (the upstream Harvest Forecast id)
+    fclient = ForecastClient.create!(forecast_id: 70_001, name: "Actuals Client")
+    fproject = ForecastProject.create!(forecast_id: 70_100, name: "Actuals Project", code: "ACT-1", forecast_client: fclient)
+    ProjectTrackerForecastProject.create!(project_tracker: tracker, forecast_project: fproject)
+    fresh = ForecastPerson.create!(forecast_id: 70_030, email: "fresh@example.com", first_name: "Fresh", last_name: "Worker")
+    stale = ForecastPerson.create!(forecast_id: 70_031, email: "stale@example.com", first_name: "Stale", last_name: "Worker")
+    # fresh: 480 min/day (28800s) over the last two weeks — inside the 21d window
+    ForecastAssignment.create!(forecast_person: fresh, forecast_project: fproject,
+      start_date: today - 14, end_date: today - 1, allocation: 28_800)
+    # stale: activity entirely before the window
+    ForecastAssignment.create!(forecast_person: stale, forecast_project: fproject,
+      start_date: today - 90, end_date: today - 40, allocation: 28_800)
+
+    payload = call_tool("get_resourcing_projections")
+
+    project = payload["projects"].find { |p| p["id"] == 92_100 }
+    actuals = project["recent_actuals"]
+    assert_equal 1, actuals.size, "only in-window people appear; got: #{actuals.inspect}"
+    entry = actuals.first
+    assert_equal 30, entry["person_id"]
+    assert_equal "Fresh Worker", entry["name"]
+    assert_equal 480, entry["avg_minutes_per_day"]
+    assert_equal (today - 1).iso8601, entry["last_active_on"]
+    assert_equal 7, entry["role_id"], "role comes from the most recent historical assignment"
+    assert entry.keys.exclude?("email"), "no emails on the surface"
+  end
+
   test "get_resourcing_projections clamps a hostile window_days" do
     Stacks::Runn.any_instance.stubs(:get_projects).returns([])
     Stacks::Runn.any_instance.stubs(:get_people).returns([])
