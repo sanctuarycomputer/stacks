@@ -17,5 +17,6 @@ Rails.application.routes.draw do
     resources :profit_share_passes, only: [:index]
     resources :contacts, only: [:create, :index]
     match '/mcp', to: 'mcp#handle', via: [:post, :get, :delete]
+    match '/mcp/write', to: 'mcp_write#handle', via: [:post, :get, :delete]
   end
 end
