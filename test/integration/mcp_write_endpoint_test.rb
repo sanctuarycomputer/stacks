@@ -28,7 +28,7 @@ class McpWriteEndpointTest < ActionDispatch::IntegrationTest
   end
 
   setup do
-    Rails.cache.delete("mcp_write_count:#{Date.today.iso8601}")
+    Rails.cache.delete("mcp_write_count:#{Time.zone.today.iso8601}")
   end
 
   # ----- auth -----
@@ -98,6 +98,21 @@ class McpWriteEndpointTest < ActionDispatch::IntegrationTest
     assert_match(/confirmed/, payload["error"])
   end
 
+  test "archive_project fails CLOSED when the project is absent from the mirror" do
+    Stacks::Runn.any_instance.expects(:update_project).never
+    payload = call_tool("archive_project", { project_id: 77_777, is_archived: true })
+    assert_match(/not in the nightly mirror/, payload["error"])
+  end
+
+  test "fractional ids are rejected by the schema, never truncated into a neighbor" do
+    Stacks::Runn.any_instance.expects(:delete_assignment).never
+    post "/api/mcp/write", headers: api_key_headers,
+      params: { jsonrpc: "2.0", id: 99, method: "tools/call",
+                params: { name: "delete_assignment", arguments: { assignment_id: 5001.9 } } }.to_json
+    body = response.body
+    refute_match(/deleted_assignment_id/, body, "a fractional id must not delete anything")
+  end
+
   test "archive_project archives a tentative shell and returns before/after" do
     RunnProject.create!(runn_id: 88_300, name: "Dead Deal [lead:abc]", is_confirmed: false, data: {})
     Stacks::Runn.any_instance.expects(:update_project).once.with(88_300, is_archived: true)
@@ -129,7 +144,7 @@ class McpWriteEndpointTest < ActionDispatch::IntegrationTest
     # the test env cache is a :null_store — use a real store so the counter counts
     store = ActiveSupport::Cache::MemoryStore.new
     Rails.stubs(:cache).returns(store)
-    store.write("mcp_write_count:#{Date.today.iso8601}", Mcp::WriteGuard::DAILY_CAP)
+    store.write("mcp_write_count:#{Time.zone.today.iso8601}", Mcp::WriteGuard::DAILY_CAP)
     Stacks::Runn.any_instance.expects(:delete_assignment).never
 
     payload = call_tool("delete_assignment", { assignment_id: 1 })
@@ -142,6 +157,6 @@ class McpWriteEndpointTest < ActionDispatch::IntegrationTest
     Stacks::Runn.any_instance.expects(:delete_assignment).once.returns({})
 
     call_tool("delete_assignment", { assignment_id: 1 })
-    assert_equal 1, store.read("mcp_write_count:#{Date.today.iso8601}").to_i
+    assert_equal 1, store.read("mcp_write_count:#{Time.zone.today.iso8601}").to_i
   end
 end

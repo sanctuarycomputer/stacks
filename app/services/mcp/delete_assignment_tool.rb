@@ -5,7 +5,7 @@ module Mcp
                 'single-assignment read, so keep your own copy of the record as revert material ' \
                 'BEFORE deleting (the sweep world / finding payload carries it).'
     input_schema(
-      properties: { assignment_id: { type: 'number' } },
+      properties: { assignment_id: { type: 'integer' } },
       required: %w[assignment_id]
     )
     annotations(read_only_hint: false, destructive_hint: true, idempotent_hint: true)

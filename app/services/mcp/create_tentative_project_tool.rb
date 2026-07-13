@@ -7,7 +7,7 @@ module Mcp
     input_schema(
       properties: {
         name: { type: 'string' },
-        client_id: { type: 'number' },
+        client_id: { type: 'integer' },
         pricing_model: { type: 'string', description: '"tm" (default), "fp", or "nb"' },
       },
       required: %w[name client_id]
@@ -18,11 +18,12 @@ module Mcp
 
     def self.call(name:, client_id:, pricing_model: 'tm', server_context:)
       raise ArgumentError, 'name must be non-empty' if name.to_s.strip.empty?
+      name = WriteValidation.short_string!("name", name.to_s.strip, 255)
       raise ArgumentError, "pricing_model must be one of #{PRICING_MODELS.join(', ')}" unless PRICING_MODELS.include?(pricing_model)
       cid = WriteValidation.integer!("client_id", client_id)
       WriteGuard.check!
 
-      project = Stacks::Runn.new(max_retries: 0).create_project(name.to_s.strip, cid, pricing_model: pricing_model, is_confirmed: false)
+      project = Stacks::Runn.new(max_retries: 0).create_project(name, cid, pricing_model: pricing_model, is_confirmed: false)
       Responses.ok({ before: nil, after: project })
     rescue ArgumentError, WriteGuard::CapExceeded => e
       Responses.error(e.message)

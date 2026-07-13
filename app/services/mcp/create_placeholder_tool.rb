@@ -6,7 +6,7 @@ module Mcp
                 '~24h — call create_assignment for it immediately. Returns the placeholder person ' \
                 'id to assign.'
     input_schema(
-      properties: { role_id: { type: 'number' } },
+      properties: { role_id: { type: 'integer' } },
       required: %w[role_id]
     )
     annotations(read_only_hint: false, destructive_hint: false, idempotent_hint: false)

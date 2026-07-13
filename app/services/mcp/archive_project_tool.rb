@@ -6,7 +6,7 @@ module Mcp
                 'Intended for dead-deal tentative shells.'
     input_schema(
       properties: {
-        project_id: { type: 'number' },
+        project_id: { type: 'integer' },
         is_archived: { type: 'boolean', description: 'true to archive, false to restore' },
         allow_confirmed: { type: 'boolean', description: 'Required true to touch a confirmed project' },
       },
@@ -17,10 +17,15 @@ module Mcp
     def self.call(project_id:, is_archived:, allow_confirmed: false, server_context:)
       pid = WriteValidation.integer!("project_id", project_id)
 
-      # the nightly-synced mirror is the cheap source of truth for the flag
+      # FAIL CLOSED: the nightly-synced mirror is the cheap source of truth,
+      # and only a mirror row that explicitly says is_confirmed=false unlocks
+      # the unguarded path. A missing row (project newer than the last sync)
+      # or a nil flag is treated as confirmed.
       mirror = RunnProject.find_by(runn_id: pid)
-      if mirror&.is_confirmed && !allow_confirmed
-        raise ArgumentError, "project #{pid} is confirmed; archiving it requires allow_confirmed: true"
+      explicitly_tentative = mirror && mirror.is_confirmed == false
+      if !explicitly_tentative && !allow_confirmed
+        reason = mirror.nil? ? "is not in the nightly mirror yet" : "is confirmed"
+        raise ArgumentError, "project #{pid} #{reason}; archiving it requires allow_confirmed: true"
       end
 
       WriteGuard.check!

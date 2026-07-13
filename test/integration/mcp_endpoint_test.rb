@@ -145,6 +145,10 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     # fresh: 480 min/day (28800s) over the last two weeks — inside the 21d window
     ForecastAssignment.create!(forecast_person: fresh, forecast_project: fproject,
       start_date: today - 14, end_date: today - 1, allocation: 28_800)
+    # overlapping second FA (240 min/day over the last week) must SUM on shared
+    # days: 10 weekdays × 480 + 5 weekdays × 240 = 6000 over 10 days → 600 avg
+    ForecastAssignment.create!(forecast_person: fresh, forecast_project: fproject,
+      start_date: today - 7, end_date: today - 1, allocation: 14_400)
     # stale: activity entirely before the window
     ForecastAssignment.create!(forecast_person: stale, forecast_project: fproject,
       start_date: today - 90, end_date: today - 40, allocation: 28_800)
@@ -157,7 +161,7 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     entry = actuals.first
     assert_equal 30, entry["person_id"]
     assert_equal "Fresh Worker", entry["name"]
-    assert_equal 480, entry["avg_minutes_per_day"]
+    assert_equal 600, entry["avg_minutes_per_day"], "overlapping assignments must sum per day, not dilute the mean"
     assert_equal (today - 1).iso8601, entry["last_active_on"]
     assert_equal 7, entry["role_id"], "role comes from the most recent historical assignment"
     assert entry.keys.exclude?("email"), "no emails on the surface"

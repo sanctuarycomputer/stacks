@@ -192,6 +192,7 @@ class Stacks::Runn
 
   def update_project(project_id, is_archived: nil, is_confirmed: nil)
     project_id = Integer(project_id)
+    raise ArgumentError, "update_project: no fields to update" if is_archived.nil? && is_confirmed.nil?
     body = { "isArchived" => is_archived, "isConfirmed" => is_confirmed }.compact
     handle_response {
       self.class.patch("/projects/#{project_id}", { body: JSON.dump(body), headers: @headers })
