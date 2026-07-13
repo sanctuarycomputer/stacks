@@ -160,6 +160,52 @@ class Stacks::Runn
     values
   end
 
+  # --------------------------------------------------------------------------
+  # Projection-plane WRITES. Consumed only by the /api/mcp/write tools —
+  # planned assignments, tentative shells, placeholders. Runn has no
+  # assignment-update endpoint: changes are delete + recreate (the caller's
+  # concern). Nothing here touches actuals or rates.
+  # --------------------------------------------------------------------------
+
+  def create_assignment(person_id:, project_id:, role_id:, start_date:, end_date:, minutes_per_day:, note: nil, is_billable: nil)
+    body = {
+      "personId" => Integer(person_id),
+      "projectId" => Integer(project_id),
+      "roleId" => Integer(role_id),
+      "startDate" => start_date,
+      "endDate" => end_date,
+      "minutesPerDay" => Integer(minutes_per_day),
+      "note" => note,
+      "isBillable" => is_billable,
+    }.compact
+    handle_response {
+      self.class.post("/assignments", { body: JSON.dump(body), headers: @headers })
+    }.parsed_response
+  end
+
+  def delete_assignment(assignment_id)
+    assignment_id = Integer(assignment_id)
+    handle_response {
+      self.class.delete("/assignments/#{assignment_id}", headers: @headers)
+    }.parsed_response
+  end
+
+  def update_project(project_id, is_archived: nil, is_confirmed: nil)
+    project_id = Integer(project_id)
+    body = { "isArchived" => is_archived, "isConfirmed" => is_confirmed }.compact
+    handle_response {
+      self.class.patch("/projects/#{project_id}", { body: JSON.dump(body), headers: @headers })
+    }.parsed_response
+  end
+
+  # Placeholder "person" (names are Runn-generated). Runn garbage-collects
+  # placeholders with no assignment within ~24h — callers must assign fast.
+  def create_placeholder(role_id:)
+    handle_response {
+      self.class.post("/placeholders", { body: JSON.dump({ "roleId" => Integer(role_id) }), headers: @headers })
+    }.parsed_response
+  end
+
   def sync_projects!(all_projects = get_projects())
     data = all_projects.map do |c|
       {

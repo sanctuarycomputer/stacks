@@ -95,6 +95,81 @@ class Stacks::RunnTest < ActiveSupport::TestCase
   end
 
   # --------------------------------------------------------------------------
+  # projection-plane writes (assignment CRUD, project patch, placeholder)
+  # --------------------------------------------------------------------------
+
+  test "create_assignment POSTs the camelCase body and returns parsed segments" do
+    parsed = [{ "id" => 5001, "personId" => 10 }]
+    response = mock("response")
+    response.stubs(:success?).returns(true)
+    response.stubs(:parsed_response).returns(parsed)
+    posted = nil
+    Stacks::Runn.expects(:post).once.with do |path, opts|
+      posted = JSON.parse(opts[:body])
+      path == "/assignments"
+    end.returns(response)
+
+    result = @runn.create_assignment(person_id: 10, project_id: 100, role_id: 7,
+      start_date: "2026-07-14", end_date: "2026-09-30", minutes_per_day: 480, note: "x")
+
+    assert_equal({ "personId" => 10, "projectId" => 100, "roleId" => 7,
+      "startDate" => "2026-07-14", "endDate" => "2026-09-30", "minutesPerDay" => 480,
+      "note" => "x" }, posted)
+    assert_equal parsed, result
+  end
+
+  test "create_assignment omits nil optionals and coerces ids" do
+    response = mock("response")
+    response.stubs(:success?).returns(true)
+    response.stubs(:parsed_response).returns([])
+    posted = nil
+    Stacks::Runn.expects(:post).once.with { |_p, opts| posted = JSON.parse(opts[:body]); true }.returns(response)
+
+    @runn.create_assignment(person_id: "10", project_id: 100, role_id: 7,
+      start_date: "2026-07-14", end_date: "2026-09-30", minutes_per_day: 480)
+
+    assert_equal 10, posted["personId"], "string ids must be coerced"
+    refute posted.key?("note"), "nil optionals must be omitted"
+  end
+
+  test "delete_assignment DELETEs by coerced integer id" do
+    response = mock("response")
+    response.stubs(:success?).returns(true)
+    response.stubs(:parsed_response).returns({})
+    Stacks::Runn.expects(:delete).once.with { |path, _| path == "/assignments/5001" }.returns(response)
+    @runn.delete_assignment("5001")
+  end
+
+  test "update_project PATCHes only the provided flags" do
+    response = mock("response")
+    response.stubs(:success?).returns(true)
+    response.stubs(:parsed_response).returns({ "id" => 200, "isArchived" => true })
+    body = nil
+    Stacks::Runn.expects(:patch).once.with do |path, opts|
+      body = JSON.parse(opts[:body])
+      path == "/projects/200"
+    end.returns(response)
+
+    @runn.update_project(200, is_archived: true)
+    assert_equal({ "isArchived" => true }, body)
+  end
+
+  test "create_placeholder POSTs roleId and returns the placeholder person" do
+    parsed = { "id" => 999_001, "roleId" => 7, "firstName" => "Placeholder" }
+    response = mock("response")
+    response.stubs(:success?).returns(true)
+    response.stubs(:parsed_response).returns(parsed)
+    body = nil
+    Stacks::Runn.expects(:post).once.with do |path, opts|
+      body = JSON.parse(opts[:body])
+      path == "/placeholders"
+    end.returns(response)
+
+    assert_equal parsed, @runn.create_placeholder(role_id: 7)
+    assert_equal({ "roleId" => 7 }, body)
+  end
+
+  # --------------------------------------------------------------------------
   # get_assignments / get_leave_for_person (projection-plane reads)
   # --------------------------------------------------------------------------
 
