@@ -60,11 +60,22 @@ class Stacks::System
       assignments.map{|a| a.forecast_project.forecast_client}.compact.uniq
     end
 
-    def sync_founder_trueups!
+    # Every completed month from the New Deal start up to (but not
+    # including) the current, still-in-progress month.
+    def founder_trueup_months
+      months = []
       working_date = NEW_DEAL_START_AT.clone
       loop do
-        break if working_date.month == Date.today.month
+        break if working_date >= Date.today.beginning_of_month
 
+        months << working_date
+        working_date = working_date.advance(months: 1)
+      end
+      months
+    end
+
+    def sync_founder_trueups!
+      founder_trueup_months.each do |working_date|
         invoice_pass = InvoicePass.includes(invoice_trackers: :contributor_payouts).where(start_of_month: working_date).first
         raise "No invoice pass found for #{working_date}" unless invoice_pass.present?
 
@@ -80,9 +91,7 @@ class Stacks::System
         highest_contributor, highest_contributor_data = contributor_payouts_by_contributor.max_by{|k, v| v[:amount]}
 
         hugh = ForecastPerson.find_by(email: "hugh@sanctuary.computer").contributor
-        # Trueups land on the garden3d ledger now — they're a g3d-level
-        # founder-balance correction, not a Sanctuary obligation.
-        hugh_ledger = Ledger.find_or_create_for(enterprise: Enterprise.garden3d, contributor: hugh)
+        hugh_ledger = Ledger.find_or_create_for(enterprise: Enterprise.sanctuary, contributor: hugh)
         trueup = Trueup.find_or_initialize_by(invoice_pass: invoice_pass, ledger: hugh_ledger)
         founder_trueup_amount = highest_contributor_data[:amount] - contributor_payouts_by_contributor[hugh][:amount]
 
@@ -95,8 +104,6 @@ class Stacks::System
           - **Trueup Amount:** #{ActionController::Base.helpers.number_to_currency(founder_trueup_amount)}
           HEREDOC
         )
-
-        working_date = working_date.advance(months: 1)
       end
     end
   end
