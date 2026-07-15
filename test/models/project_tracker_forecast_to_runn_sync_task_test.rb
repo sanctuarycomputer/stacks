@@ -1,8 +1,14 @@
 require "test_helper"
 
 class ProjectTrackerForecastToRunnSyncTaskTest < ActiveSupport::TestCase
+  include ActiveSupport::Testing::TimeHelpers
+
   setup do
     Thread.current[:sanctuary_enterprise] = nil
+    # Fixture dates live in 2030; freeze "today" just past them so the
+    # future-date clamp (Runn refuses future actuals) is inert for the
+    # existing cases and testable for the new ones.
+    travel_to Time.zone.local(2030, 5, 2, 12)
 
     @date = Date.new(2030, 4, 29)
     @runn_role = { "id" => 999_999, "name" => "$195.00 p/h", "standardRate" => 195.0 }
@@ -246,4 +252,118 @@ class ProjectTrackerForecastToRunnSyncTaskTest < ActiveSupport::TestCase
     assert_nothing_raised { @task.send(:raise_skipped_if_runn_project_state_error!, RuntimeError.new("connection refused")) }
     assert_nothing_raised { @task.send(:raise_skipped_if_runn_project_state_error!, RuntimeError.new('{"statusCode":500}')) }
   end
+
+  # --------------------------------------------------------------------------
+  # future-date clamp + tentative auto-confirm (nightly failures of 2026-07)
+  # --------------------------------------------------------------------------
+
+  test "build_forecast_actuals never emits future-dated actuals" do
+    # frozen today = 2030-05-02; FA runs 05-01 → 05-04
+    fa = ForecastAssignment.create!(
+      forecast_id: rand(1..2_000_000_000),
+      person_id: @forecast_person.forecast_id,
+      project_id: @fp_maintenance.forecast_id,
+      start_date: Date.new(2030, 5, 1), end_date: Date.new(2030, 5, 4),
+      allocation: 2 * 60 * 60,
+    )
+
+    result = @task.send(:build_forecast_actuals, [fa])
+
+    assert_equal ["2030-05-01", "2030-05-02"], result.map { |r| r["date"] }.sort,
+      "days after today must not sync (Runn: 'Cannot create actual for future date')"
+  end
+
+  test "build_forecast_actuals skips assignments that are entirely in the future" do
+    fa = ForecastAssignment.create!(
+      forecast_id: rand(1..2_000_000_000),
+      person_id: @forecast_person.forecast_id,
+      project_id: @fp_maintenance.forecast_id,
+      start_date: Date.new(2030, 5, 3), end_date: Date.new(2030, 5, 6),
+      allocation: 2 * 60 * 60,
+    )
+
+    assert_equal [], @task.send(:build_forecast_actuals, [fa])
+  end
+
+  test "confirm_runn_project_if_needed! flips a tentative project before actuals flow" do
+    runn_project = RunnProject.create!(runn_id: 77_100, name: "Storm King Test", is_confirmed: false, data: {})
+    tracker = ProjectTracker.new(name: "Storm King Test Tracker", runn_project_id: 77_100)
+    assert tracker.save(validate: false)
+    task = ProjectTrackerForecastToRunnSyncTask.new(project_tracker_id: tracker.id)
+    task.stubs(:project_tracker).returns(tracker)
+
+    runn = mock("runn")
+    runn.expects(:update_project).once.with(77_100, is_confirmed: true).returns({ "id" => 77_100, "isConfirmed" => true })
+    task.send(:runn, runn)
+
+    task.send(:confirm_runn_project_if_needed!)
+
+    assert_equal true, runn_project.reload.is_confirmed, "local mirror must flip too"
+  end
+
+  test "confirm_runn_project_if_needed! is a no-op for confirmed projects" do
+    runn_project = RunnProject.create!(runn_id: 77_200, name: "Confirmed Test", is_confirmed: true, data: {})
+    tracker = ProjectTracker.new(name: "Confirmed Test Tracker", runn_project_id: 77_200)
+    assert tracker.save(validate: false)
+    task = ProjectTrackerForecastToRunnSyncTask.new(project_tracker_id: tracker.id)
+    task.stubs(:project_tracker).returns(tracker)
+
+    runn = mock("runn")
+    runn.expects(:update_project).never
+    task.send(:runn, runn)
+
+    task.send(:confirm_runn_project_if_needed!)
+  end
+  # --------------------------------------------------------------------------
+  # sync! integration — the wiring + reconciliation the unit tests don't pin
+  # --------------------------------------------------------------------------
+
+  test "sync! confirms a tentative project and reconciles clamped revenue for a future-extending assignment" do
+    runn_project = RunnProject.create!(runn_id: 78_300, name: "Integ Tentative", is_confirmed: false, data: {})
+    tracker = ProjectTracker.new(name: "Integ Tentative Tracker", runn_project_id: 78_300)
+    assert tracker.save(validate: false)
+
+    fp = ForecastProject.create!(forecast_id: rand(1..2_000_000_000), client_id: @fc.forecast_id,
+      name: "Integ #{SecureRandom.hex(2)}", tags: ["195p/h"])
+    # link the forecast project so tracker.forecast_assignments reaches the FA
+    ProjectTrackerForecastProject.create!(project_tracker: tracker, forecast_project: fp)
+    # 05-01 → 05-05 while today is frozen at 05-02: 2 syncable days (05-01, 05-02), 3 future
+    ForecastAssignment.create!(forecast_id: rand(1..2_000_000_000),
+      person_id: @forecast_person.forecast_id, project_id: fp.forecast_id,
+      start_date: Date.new(2030, 5, 1), end_date: Date.new(2030, 5, 5),
+      allocation: 60 * 60) # 1h/day
+
+    task = ProjectTrackerForecastToRunnSyncTask.new(project_tracker_id: tracker.id)
+    task.stubs(:project_tracker).returns(tracker)
+    task.stubs(:find_or_create_runn_role_for_forecast_project).returns(@runn_role)
+    task.stubs(:find_or_create_runn_person_for_forecast_person).returns(@runn_person)
+
+    runn = mock("runn")
+    runn.stubs(:get_roles).returns([@runn_role])
+    runn.stubs(:get_people).returns([@runn_person])
+    # empty before the write; after the write the reload reflects the 2 rows
+    # we sent (2 days × 60min × $195/60 = $390), matching expected revenue
+    written_back = [
+      { "date" => "2030-05-01", "billableMinutes" => 60, "roleId" => @runn_role["id"], "personId" => @runn_person["id"] },
+      { "date" => "2030-05-02", "billableMinutes" => 60, "roleId" => @runn_role["id"], "personId" => @runn_person["id"] },
+    ]
+    runn.stubs(:get_actuals_for_project).returns([], written_back)
+    # F3: confirm fires (real actuals exist) BEFORE the actuals write
+    confirm_seq = sequence("confirm-then-write")
+    runn.expects(:update_project).with(78_300, is_confirmed: true).in_sequence(confirm_seq)
+      .returns({ "id" => 78_300, "isConfirmed" => true })
+    # 2 syncable days × 1h × $195 = $390; the write carries exactly those 2 rows
+    written = nil
+    runn.expects(:create_or_update_actuals_bulk).in_sequence(confirm_seq).with do |rows|
+      written = rows; true
+    end
+
+    task.send(:sync!, runn)
+
+    assert_equal true, runn_project.reload.is_confirmed
+    assert_equal ["2030-05-01", "2030-05-02"], written.map { |r| r["date"] }.sort,
+      "only past/today days are written; the 3 future days are held"
+    # F1: reconciliation compares written revenue to itself, not unclamped LTV — no raise
+  end
+
 end
