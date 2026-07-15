@@ -34,6 +34,7 @@ class ProjectTrackerForecastToRunnSyncTask < ApplicationRecord
   def sync!(runn_instance)
     runn(runn_instance)
     raise_if_skip_required!
+    confirm_runn_project_if_needed!
 
     runn_actuals_did_change = false
     forecast_assignments = project_tracker.forecast_assignments.includes(:forecast_person, :forecast_project)
@@ -178,6 +179,20 @@ class ProjectTrackerForecastToRunnSyncTask < ApplicationRecord
     )
   end
 
+  # Runn refuses actuals on tentative projects ("Actuals cannot be on a
+  # tentative project."), and nothing else ever flips the flag — the admin
+  # "Create Runn project" button deliberately creates is_confirmed:false and
+  # nobody finalizes state inside Runn. Real hours flowing IS the
+  # confirmation signal: when we are about to sync actuals for a tentative
+  # project, confirm it first (in Runn and in the local mirror).
+  def confirm_runn_project_if_needed!
+    rp = project_tracker.runn_project
+    return if rp.nil? || rp.is_confirmed != false
+    puts "~~~> Runn project #{rp.runn_id} is tentative but actuals are flowing — confirming it"
+    runn.update_project(rp.runn_id, is_confirmed: true)
+    rp.update(is_confirmed: true)
+  end
+
   # Raises Stacks::Errors::Skipped when the linked Runn project is in a state
   # where syncing actuals can't possibly succeed — archived, non-billable, or
   # missing from our local mirror. The raise flows through run!'s rescue and
@@ -207,10 +222,16 @@ class ProjectTrackerForecastToRunnSyncTask < ApplicationRecord
   # ensures the write to Runn matches the total Stacks lifetime_value.
   def build_forecast_actuals(forecast_assignments)
     forecast_assignments.reduce([]) do |acc, fa|
+      # Runn refuses future-dated actuals ("Cannot create actual for future
+      # date…"): an open assignment stretching past today only syncs the days
+      # that have already happened — the rest sync on future nights.
+      last_syncable_date = [fa.end_date, Date.today].min
+      next acc if fa.start_date > last_syncable_date
+
       runn_role = find_or_create_runn_role_for_forecast_project(fa.forecast_project)
       runn_person = find_or_create_runn_person_for_forecast_person(fa.forecast_person)
 
-      (fa.start_date..fa.end_date).each do |date|
+      (fa.start_date..last_syncable_date).each do |date|
         allocation_in_minutes = (fa.allocation_during_range_in_seconds(date, date, false) / 60.0)
 
         # Runn rounds to the nearest minute - no seconds are permitted.
