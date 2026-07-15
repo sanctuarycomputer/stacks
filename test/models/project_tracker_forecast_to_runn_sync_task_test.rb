@@ -314,4 +314,56 @@ class ProjectTrackerForecastToRunnSyncTaskTest < ActiveSupport::TestCase
 
     task.send(:confirm_runn_project_if_needed!)
   end
+  # --------------------------------------------------------------------------
+  # sync! integration — the wiring + reconciliation the unit tests don't pin
+  # --------------------------------------------------------------------------
+
+  test "sync! confirms a tentative project and reconciles clamped revenue for a future-extending assignment" do
+    runn_project = RunnProject.create!(runn_id: 78_300, name: "Integ Tentative", is_confirmed: false, data: {})
+    tracker = ProjectTracker.new(name: "Integ Tentative Tracker", runn_project_id: 78_300)
+    assert tracker.save(validate: false)
+
+    fp = ForecastProject.create!(forecast_id: rand(1..2_000_000_000), client_id: @fc.forecast_id,
+      name: "Integ #{SecureRandom.hex(2)}", tags: ["195p/h"])
+    # link the forecast project so tracker.forecast_assignments reaches the FA
+    ProjectTrackerForecastProject.create!(project_tracker: tracker, forecast_project: fp)
+    # 05-01 → 05-05 while today is frozen at 05-02: 2 syncable days (05-01, 05-02), 3 future
+    ForecastAssignment.create!(forecast_id: rand(1..2_000_000_000),
+      person_id: @forecast_person.forecast_id, project_id: fp.forecast_id,
+      start_date: Date.new(2030, 5, 1), end_date: Date.new(2030, 5, 5),
+      allocation: 60 * 60) # 1h/day
+
+    task = ProjectTrackerForecastToRunnSyncTask.new(project_tracker_id: tracker.id)
+    task.stubs(:project_tracker).returns(tracker)
+    task.stubs(:find_or_create_runn_role_for_forecast_project).returns(@runn_role)
+    task.stubs(:find_or_create_runn_person_for_forecast_person).returns(@runn_person)
+
+    runn = mock("runn")
+    runn.stubs(:get_roles).returns([@runn_role])
+    runn.stubs(:get_people).returns([@runn_person])
+    # empty before the write; after the write the reload reflects the 2 rows
+    # we sent (2 days × 60min × $195/60 = $390), matching expected revenue
+    written_back = [
+      { "date" => "2030-05-01", "billableMinutes" => 60, "roleId" => @runn_role["id"], "personId" => @runn_person["id"] },
+      { "date" => "2030-05-02", "billableMinutes" => 60, "roleId" => @runn_role["id"], "personId" => @runn_person["id"] },
+    ]
+    runn.stubs(:get_actuals_for_project).returns([], written_back)
+    # F3: confirm fires (real actuals exist) BEFORE the actuals write
+    confirm_seq = sequence("confirm-then-write")
+    runn.expects(:update_project).with(78_300, is_confirmed: true).in_sequence(confirm_seq)
+      .returns({ "id" => 78_300, "isConfirmed" => true })
+    # 2 syncable days × 1h × $195 = $390; the write carries exactly those 2 rows
+    written = nil
+    runn.expects(:create_or_update_actuals_bulk).in_sequence(confirm_seq).with do |rows|
+      written = rows; true
+    end
+
+    task.send(:sync!, runn)
+
+    assert_equal true, runn_project.reload.is_confirmed
+    assert_equal ["2030-05-01", "2030-05-02"], written.map { |r| r["date"] }.sort,
+      "only past/today days are written; the 3 future days are held"
+    # F1: reconciliation compares written revenue to itself, not unclamped LTV — no raise
+  end
+
 end

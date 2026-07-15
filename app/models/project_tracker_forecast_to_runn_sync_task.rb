@@ -34,13 +34,18 @@ class ProjectTrackerForecastToRunnSyncTask < ApplicationRecord
   def sync!(runn_instance)
     runn(runn_instance)
     raise_if_skip_required!
-    confirm_runn_project_if_needed!
 
     runn_actuals_did_change = false
     forecast_assignments = project_tracker.forecast_assignments.includes(:forecast_person, :forecast_project)
 
     # 1. Expand our multi-day forecast_assignments as single day Runn.io actuals for easy diffing
     forecast_assigments_as_runn_actuals = build_forecast_actuals(forecast_assignments)
+
+    # Real (past/today, billable) hours flowing IS the confirmation signal —
+    # confirm a tentative project only once we have actuals to write, never
+    # for an all-future or empty assignment set (which would strip a still-
+    # pipeline shell out of automated dead-deal cleanup).
+    confirm_runn_project_if_needed! if forecast_assigments_as_runn_actuals.any?
 
     runn_actuals = runn.get_actuals_for_project(project_tracker.runn_project.runn_id)
     project_runn_id = project_tracker.runn_project.runn_id
@@ -50,6 +55,13 @@ class ProjectTrackerForecastToRunnSyncTask < ApplicationRecord
     # instead of one HTTP round-trip per actual. For PT 27 (The Light Phone)
     # this collapses ~thousands of POSTs into ~tens.
     pending_writes = []
+
+    # Guard: never emit a future-dated write in EITHER direction. A stale
+    # future actual already in Runn (pre-fix) has no clamped counterpart and
+    # would otherwise be "zeroed" in step 3 — but Runn rejects future writes,
+    # re-raising. Drop such rows from the Runn-side sweep; they age out once
+    # their date passes.
+    runn_actuals = runn_actuals.reject { |ra| Date.parse(ra["date"]) > Time.zone.today }
 
     # 2. Find Forecast Assignments that don't have a corresponding Runn actual & write them
     forecast_assigments_as_runn_actuals.each do |faara|
@@ -127,19 +139,18 @@ class ProjectTrackerForecastToRunnSyncTask < ApplicationRecord
     end
 
     calculated_runn_revenue = calculate_runn_revenue(runn_actuals)
-    # Reconcile against the SAME hours we just wrote, not against the
-    # snapshot-bounded `project_tracker.lifetime_value`. `lifetime_value`
-    # uses pt.start_date..pt.end_date which are read from
-    # `project_tracker.snapshot["last_forecast_assignment_end_date"]` —
-    # that snapshot key isn't refreshed in lockstep with FA changes, so
-    # when an FA's end_date extends past the snapshotted value, LTV
-    # silently undercounts while Runn (correctly) reflects the new dates.
-    # Summing FA#value_in_usd directly bypasses the snapshot and matches
-    # exactly what build_forecast_actuals expanded into Runn.
-    project_tracker_ltv = forecast_assignments.sum(&:value_in_usd).to_f
-    unless calculated_runn_revenue == project_tracker_ltv
-      puts "~~~> Failure, even after sync, Runn revenue is different to total ForecastAssignment value"
-      raise Stacks::Errors::Base.new("Failed Runn sync for Project Tracker (#{project_tracker.name} ID: #{project_tracker.id}), Runn Revenue: #{calculated_runn_revenue}, Project Tracker LTV: #{project_tracker_ltv}")
+    # Reconcile against the SAME hours we just wrote — i.e. the clamped
+    # `forecast_assigments_as_runn_actuals` list, NOT `FA#value_in_usd`.
+    # value_in_usd spans the full unclamped start..end range, so for an
+    # assignment extending past today it counts future days Runn never
+    # received (we never write future-dated actuals), which would make this
+    # equality fail every night for exactly the open/ongoing projects this
+    # sync targets. Deriving expected revenue from the built list keeps the
+    # two sides on identical hours.
+    expected_revenue = calculate_runn_revenue(forecast_assigments_as_runn_actuals)
+    unless calculated_runn_revenue == expected_revenue
+      puts "~~~> Failure, even after sync, Runn revenue is different to the actuals we wrote"
+      raise Stacks::Errors::Base.new("Failed Runn sync for Project Tracker (#{project_tracker.name} ID: #{project_tracker.id}), Runn Revenue: #{calculated_runn_revenue}, Expected (written) Revenue: #{expected_revenue}")
     end
 
     puts "~~~> Worked! Stacks lifetime_value and runn_actuals revenue are in sync!"
@@ -224,8 +235,9 @@ class ProjectTrackerForecastToRunnSyncTask < ApplicationRecord
     forecast_assignments.reduce([]) do |acc, fa|
       # Runn refuses future-dated actuals ("Cannot create actual for future
       # date…"): an open assignment stretching past today only syncs the days
-      # that have already happened — the rest sync on future nights.
-      last_syncable_date = [fa.end_date, Date.today].min
+      # that have already happened — the rest sync on future nights. Bind to
+      # the org calendar (Time.zone.today), not the process UTC date.
+      last_syncable_date = [fa.end_date, Time.zone.today].min
       next acc if fa.start_date > last_syncable_date
 
       runn_role = find_or_create_runn_role_for_forecast_project(fa.forecast_project)
