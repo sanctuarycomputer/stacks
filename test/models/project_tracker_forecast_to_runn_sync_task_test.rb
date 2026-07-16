@@ -366,4 +366,49 @@ class ProjectTrackerForecastToRunnSyncTaskTest < ActiveSupport::TestCase
     # F1: reconciliation compares written revenue to itself, not unclamped LTV — no raise
   end
 
+  # --------------------------------------------------------------------------
+  # revenue reconciliation float tolerance (2026-07 nightly false-failure)
+  # --------------------------------------------------------------------------
+  # calculate_runn_revenue sums `rate * (billableMinutes / 60.0)` in each
+  # side's row order. Float addition isn't associative, so identical hours
+  # summed in Runn's returned order vs our built order differ in the last
+  # binary digit — an exact `==` then fails reconciliation every night for
+  # otherwise-synced projects. We reconcile at a one-cent tolerance instead.
+  test "runn_revenue_reconciled? treats float-summation-order noise as reconciled" do
+    a = 0.1 + 0.2 + 0.3   # => 0.6000000000000001
+    b = 0.3 + 0.2 + 0.1   # => 0.6
+    refute_equal a, b, "precondition: these must be float-unequal to exercise reconciliation"
+    assert @task.send(:runn_revenue_reconciled?, a, b),
+      "sub-cent float noise must reconcile (not raise)"
+  end
+
+  test "runn_revenue_reconciled? treats a sub-cent difference as reconciled" do
+    assert @task.send(:runn_revenue_reconciled?, 100.00, 100.004)
+  end
+
+  test "runn_revenue_reconciled? flags a genuine one-cent discrepancy (float-safe boundary)" do
+    # The exact-1c cases a raw `.abs < 0.01` tolerance would leak: these
+    # differences compute as 0.00999… < 0.01. Integer-cent comparison catches
+    # them — this is the regression guard for the reviewed boundary bug.
+    refute @task.send(:runn_revenue_reconciled?, 1.12, 1.13),
+      "a real one-cent revenue mismatch must still raise"
+    refute @task.send(:runn_revenue_reconciled?, 100.00, 100.01)
+  end
+
+  test "runn_revenue_reconciled? is true for exactly equal revenues" do
+    assert @task.send(:runn_revenue_reconciled?, 999.99, 999.99)
+  end
+
+  test "runn_revenue_reconciled? reconciles zero revenue on both sides" do
+    assert @task.send(:runn_revenue_reconciled?, 0.0, 0.0)
+  end
+
+  test "runn_revenue_reconciled? reconciles a half-cent-boundary total split only by reorder noise" do
+    # Guards the residual of a per-side integer-cent form: for a total on an
+    # x.xx5 boundary (e.g. from a $87.50-style rate), reorder noise near the
+    # half-cent line would round the two sides to adjacent cents and spuriously
+    # raise. Rounding the DIFFERENCE (only noise here) reconciles correctly.
+    assert @task.send(:runn_revenue_reconciled?, 100.005, 100.005 + 1e-12)
+  end
+
 end

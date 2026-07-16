@@ -148,7 +148,7 @@ class ProjectTrackerForecastToRunnSyncTask < ApplicationRecord
     # sync targets. Deriving expected revenue from the built list keeps the
     # two sides on identical hours.
     expected_revenue = calculate_runn_revenue(forecast_assigments_as_runn_actuals)
-    unless calculated_runn_revenue == expected_revenue
+    unless runn_revenue_reconciled?(calculated_runn_revenue, expected_revenue)
       puts "~~~> Failure, even after sync, Runn revenue is different to the actuals we wrote"
       raise Stacks::Errors::Base.new("Failed Runn sync for Project Tracker (#{project_tracker.name} ID: #{project_tracker.id}), Runn Revenue: #{calculated_runn_revenue}, Expected (written) Revenue: #{expected_revenue}")
     end
@@ -160,6 +160,29 @@ class ProjectTrackerForecastToRunnSyncTask < ApplicationRecord
     runn_actuals.reduce(0) do |acc, ra|
       acc += (runn_roles.find{|rr| rr["id"] == ra["roleId"]}["standardRate"] * (ra["billableMinutes"] / 60.0))
     end
+  end
+
+  # Reconcile two revenue sums at whole-cent resolution. calculate_runn_revenue
+  # sums `rate * (billableMinutes / 60.0)` in each side's row order; float
+  # addition isn't associative, so identical hours summed in Runn's returned
+  # order vs our built order can differ in the last binary digit. An exact
+  # `==` then fails the reconciliation every night for otherwise-synced
+  # projects. Round the DIFFERENCE to cents and require it to be zero: float
+  # summation noise (well under a tenth of a cent even at tens-of-thousands
+  # of rows) rounds away, while a genuine >=1c discrepancy — the smallest real
+  # mis-sync is one billable minute, >= ~$0.20 — survives rounding and fails.
+  #
+  # Two forms were rejected. A raw `(a - b).abs < 0.01` tolerance is unsafe:
+  # `0.01` has no exact binary representation, so a true one-cent gap (e.g.
+  # 1.13 - 1.12) computes as 0.00999… < 0.01 and wrongly reconciles. Rounding
+  # each side to cents — `(a*100).round == (b*100).round` — fixes that but adds
+  # a half-cent rounding seam: for a `.50`-ending rate whose total lands on an
+  # x.xx5 boundary, reorder noise can push the two sides to adjacent cents and
+  # spuriously raise. Rounding the difference (which is only ever noise, or a
+  # real >=1c gap) has no per-side seam and is rate-domain-independent.
+  # (PayStub, app/models/pay_stub.rb, uses the looser per-side tolerance form.)
+  def runn_revenue_reconciled?(runn_revenue, expected_revenue)
+    (runn_revenue - expected_revenue).abs.round(2) == 0
   end
 
   # If Runn returns a 4xx whose response body signals "this project can't
