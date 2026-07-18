@@ -27,6 +27,35 @@ class ContributorPayoutTest < ActiveSupport::TestCase
     assert_equal 0, cp.as_commission
   end
 
+  test "as_individual_contributor sums IndividualContributor blueprint entries" do
+    cp = ContributorPayout.new(blueprint: {
+      "IndividualContributor" => [
+        { "amount" => 100.0 },
+        { "amount" => 50.5 },
+      ],
+    })
+    assert_in_delta 150.5, cp.as_individual_contributor, 0.001
+  end
+
+  test "as_individual_contributor coerces string amounts (e.g. QBO discount lines stored as strings)" do
+    # A comped/$0 "Discount" invoice line arrives from the QBO mirror with its
+    # numeric fields serialized as strings, so make_contributor_payouts! can
+    # persist a String amount alongside Float amounts. Summing raw would raise
+    # "String can't be coerced into Float" and 500 the payouts index.
+    cp = ContributorPayout.new(blueprint: {
+      "IndividualContributor" => [
+        { "amount" => 15783.3 },
+        { "amount" => "0.0" },
+      ],
+    })
+    assert_in_delta 15783.3, cp.as_individual_contributor, 0.001
+  end
+
+  test "as_individual_contributor returns 0 when no IndividualContributor entries" do
+    cp = ContributorPayout.new(blueprint: { "Commission" => [{ "amount" => 200.0 }] })
+    assert_equal 0, cp.as_individual_contributor
+  end
+
   test "70% cap excludes commission entries from LHS sum and uses post-commission total as basis" do
     invoice_tracker = mock("invoice_tracker")
     forecast_client = mock("forecast_client")
