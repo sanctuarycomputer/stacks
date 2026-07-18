@@ -500,7 +500,13 @@ class InvoiceTracker < ApplicationRecord
             }
           else
             ic_share = 1 - pt.company_treasury_split - (account_lead.present? ? 0.08 : 0) - (project_lead.present? ? 0.05 : 0)
-            amount = (working_amount * ic_share).round(2)
+            # company_treasury_split is a BigDecimal column, so ic_share (and thus
+            # working_amount * ic_share) is a BigDecimal — which serializes into the
+            # jsonb blueprint as a STRING ("0.0"), unlike the AL/PL lines above that
+            # use Float literals. A string amount then blows up numeric sums like
+            # ContributorPayout#as_individual_contributor. Coerce to Float so every
+            # blueprint amount is stored as a number.
+            amount = (working_amount * ic_share).round(2).to_f
             payouts[individual_contributor][:blueprint][:IndividualContributor] << {
               blueprint_metadata: ContributorPayout.slim_metadata(metadata),
               amount: amount,

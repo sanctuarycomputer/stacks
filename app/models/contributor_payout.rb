@@ -344,7 +344,7 @@ class ContributorPayout < ApplicationRecord
 
   def as_individual_contributor
     return 0 unless blueprint["IndividualContributor"].present?
-    blueprint["IndividualContributor"].sum{|l| l["amount"]}
+    blueprint["IndividualContributor"].sum{|l| l["amount"].to_f}
   end
 
   def as_commission
