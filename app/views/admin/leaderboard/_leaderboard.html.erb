@@ -13,14 +13,6 @@
   <% end %>
 </div>
 
-<%# Export sits top-right, mirroring the Money page's "Sync all to QBO". %>
-<div class="title_bar" id="title_bar" style="padding: 0px 0px 20px 0px;">
-  <div id="titlebar_left"></div>
-  <div id="titlebar_right">
-    <%= link_to "Export CSV", admin_leaderboard_export_csv_path(limit: limit), class: "action_item" %>
-  </div>
-</div>
-
 <% if months.empty? %>
   <div class="dashboard-modules table index_table index">
     <div class="dashboard-module">
@@ -67,4 +59,14 @@
       </tbody>
     </table>
   <% end %>
+
+  <%# Mirrors the #index_footer > .download_links markup ActiveAdmin renders
+      beneath a standard index table, so the download reads as the convention
+      it is. Keeps the current ?limit= so you export exactly what you see. %>
+  <div id="index_footer">
+    <div class="download_links">
+      <span><%= I18n.t("active_admin.download") %></span>
+      <%= link_to "CSV", admin_leaderboard_path(limit: limit, format: :csv) %>
+    </div>
+  </div>
 <% end %>

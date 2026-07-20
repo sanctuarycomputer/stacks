@@ -60,6 +60,10 @@ class AdminLeaderboardTest < ActionDispatch::IntegrationTest
     assert_includes response.body,
       %(<a href="/admin/contributors/#{alpha.id}">alpha@example.com</a>),
       'links each contributor through to their contributor page'
+    assert_includes response.body, 'download_links',
+      'renders the standard ActiveAdmin download footer'
+    assert_includes response.body, %(<a href="/admin/leaderboard.csv?limit=5">CSV</a>),
+      'download link uses the conventional .csv URL and carries the current limit'
   end
 
   test 'defaults to the top 5 and honors ?limit=' do
@@ -95,7 +99,7 @@ class AdminLeaderboardTest < ActionDispatch::IntegrationTest
     contributor_with_payout('csvbeta@example.com', 300)
     sign_in @admin
 
-    get '/admin/leaderboard/export_csv'
+    get '/admin/leaderboard.csv'
 
     assert_response :success
     assert_match %r{text/csv}, response.content_type
@@ -113,7 +117,7 @@ class AdminLeaderboardTest < ActionDispatch::IntegrationTest
     3.times { |i| contributor_with_payout("csvlim#{i}@example.com", (i + 1) * 100) }
     sign_in @admin
 
-    get '/admin/leaderboard/export_csv?limit=1'
+    get '/admin/leaderboard.csv?limit=1'
 
     assert_response :success
     body = CSV.parse(response.body).drop(1).select { |r| r[0] == @month.strftime('%Y-%m') }
@@ -131,10 +135,15 @@ class AdminLeaderboardTest < ActionDispatch::IntegrationTest
     )
     sign_in non_admin
 
-    get '/admin/leaderboard/export_csv'
+    get '/admin/leaderboard.csv'
 
-    assert_response :redirect
-    refute_includes response.body.to_s, 'secret@example.com'
+    # ActiveAdmin's authorize_access! runs first and answers a non-HTML format
+    # with 401 rather than a redirect. Either way the data must not be served,
+    # so assert the security property instead of a specific status.
+    refute_equal 200, response.status, 'must never serve the CSV to a non-admin'
+    refute_includes response.body.to_s, 'secret@example.com', 'must not leak earnings'
+    refute_includes response.body.to_s, Stacks::Leaderboard::CSV_HEADERS.join(','),
+      'no CSV payload is emitted at all'
   end
 
   test 'non-admins are redirected away' do
