@@ -69,6 +69,19 @@ class Stacks::LeaderboardTest < ActiveSupport::TestCase
     assert_equal [1, 2], group.entries.map(&:rank)
     assert_equal BigDecimal("500"), group.entries.first.amount
     assert_equal BigDecimal("800"), group.total, "total reflects only the listed entries"
+    assert_equal BigDecimal("400"), group.average, "average is across the listed entries only"
+  end
+
+  test "average is the mean of the listed entries, not the whole collective" do
+    make_contributor("a@example.com").tap { |c| payout!(c, 900) }
+    make_contributor("b@example.com").tap { |c| payout!(c, 300) }
+    # A third earner that falls outside a limit of 2 must not drag the average.
+    make_contributor("c@example.com").tap { |c| payout!(c, 30) }
+
+    group = Stacks::Leaderboard.call(limit: 2).find { |g| g.start_of_month == @month }
+
+    assert_equal BigDecimal("1200"), group.total
+    assert_equal BigDecimal("600"), group.average
   end
 
   test "excludes Trueups from earnings" do

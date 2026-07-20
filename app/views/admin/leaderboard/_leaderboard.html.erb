@@ -1,0 +1,67 @@
+<%# Top X earners per month, styled to match the Money (payable QBO bills)
+    screen: a title_bar per group with the heading on the left and a pill on
+    the right, over a standard .index_table.index table. %>
+
+<div style="margin-bottom: 24px;">
+  <p style="margin-bottom: 8px;">
+    Top <%= limit %> earners per month, by aggregate contributor payouts across all ledgers.
+    Trueups are excluded — they top leadership roles up to these averages, so counting them
+    would double back on the benchmark.
+  </p>
+  <span style="opacity: 0.6;">Show top:</span>
+  <% [3, 5, 10, 20].each do |n| %>
+    <% if n == limit %>
+      <span class="pill complete" style="margin-right: 4px;"><%= n %></span>
+    <% else %>
+      <%= link_to n, admin_leaderboard_path(limit: n), style: "margin-right: 8px;" %>
+    <% end %>
+  <% end %>
+</div>
+
+<% if months.empty? %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <p style="margin: 20px 0;"><em>No contributor payouts recorded yet.</em></p>
+      </div>
+    </div>
+  </div>
+<% else %>
+  <% months.each do |group| %>
+    <div class="title_bar" id="title_bar" style="padding: 40px 0px 20px 0px;">
+      <div id="titlebar_left">
+        <h2 id="page_title"><%= group.start_of_month.strftime("%B %Y") %></h2>
+      </div>
+      <div id="titlebar_right">
+        <span class="pill complete">
+          <%= number_to_currency(group.average) %>
+          <span class="split">avg of top <%= group.entries.size %></span>
+        </span>
+      </div>
+    </div>
+
+    <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="table-layout: fixed; width: 100%;">
+      <thead>
+        <tr>
+          <th class="col" style="width: 4em;">#</th>
+          <th class="col">Contributor</th>
+          <th class="col text-right">Earnings</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% group.entries.each_with_index do |entry, index| %>
+          <tr class="<%= index.even? ? "even" : "odd" %>">
+            <td class="col"><%= entry.rank %></td>
+            <td class="col"><%= entry.display_name %></td>
+            <td class="col text-right"><%= number_to_currency(entry.amount) %></td>
+          </tr>
+        <% end %>
+        <tr class="<%= group.entries.size.even? ? "even" : "odd" %>">
+          <td class="col"></td>
+          <td class="col"><strong>Total</strong></td>
+          <td class="col text-right"><strong><%= number_to_currency(group.total) %></strong></td>
+        </tr>
+      </tbody>
+    </table>
+  <% end %>
+<% end %>

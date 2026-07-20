@@ -19,7 +19,11 @@ module Stacks
     MAX_LIMIT = 50
 
     Entry = Struct.new(:rank, :contributor_id, :display_name, :amount, keyword_init: true)
-    MonthGroup = Struct.new(:start_of_month, :entries, :total, keyword_init: true)
+
+    # `average` is the mean across the listed entries only (not the whole
+    # collective) — i.e. the "average top-N earner", which is the figure the
+    # leadership compensation model multiplies against.
+    MonthGroup = Struct.new(:start_of_month, :entries, :total, :average, keyword_init: true)
 
     # Coerces an untrusted ?limit= param into a sane integer.
     def self.sanitize_limit(raw)
@@ -65,10 +69,13 @@ module Stacks
             )
           end
 
+          total = entries.sum(&:amount)
+
           MonthGroup.new(
             start_of_month: month,
             entries: entries,
-            total: entries.sum(&:amount)
+            total: total,
+            average: entries.empty? ? BigDecimal(0) : (total / entries.size)
           )
         end
     end

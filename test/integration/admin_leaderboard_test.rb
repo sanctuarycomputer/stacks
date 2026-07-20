@@ -53,7 +53,10 @@ class AdminLeaderboardTest < ActionDispatch::IntegrationTest
     assert_includes response.body, 'beta@example.com'
     assert_includes response.body, '$900.00'
     assert_includes response.body, '$1,300.00', 'shows the month total'
+    assert_includes response.body, '$650.00', 'shows the average of the listed earners'
+    assert_includes response.body, 'avg of top 2'
     assert_includes response.body, 'Trueups are excluded'
+    assert_includes response.body, 'index_table', 'uses the shared ActiveAdmin table styling'
   end
 
   test 'defaults to the top 5 and honors ?limit=' do
