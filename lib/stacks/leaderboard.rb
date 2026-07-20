@@ -25,8 +25,6 @@ module Stacks
       "Rank",
       "Contributor",
       "Earnings",
-      "Month Average",
-      "Month Total",
     ].freeze
 
     Entry = Struct.new(:rank, :contributor_id, :display_name, :amount, keyword_init: true)
@@ -47,10 +45,11 @@ module Stacks
       new(limit: limit).call
     end
 
-    # Flat, spreadsheet-friendly rendering: one row per ranked contributor,
-    # with the month's average and total repeated so the file pivots cleanly.
-    # Amounts are unformatted decimals (no currency symbols or thousands
-    # separators) so they land in a spreadsheet as numbers, not text.
+    # Flat, spreadsheet-friendly rendering: one row per ranked contributor.
+    # Month average and total are deliberately omitted — they're derivable from
+    # these rows, so repeating them would just be denormalised noise in a
+    # spreadsheet. Amounts are unformatted decimals (no currency symbols or
+    # thousands separators) so they land as numbers, not text.
     def self.to_csv(limit: DEFAULT_LIMIT, months: nil)
       groups = months || call(limit: limit)
 
@@ -63,8 +62,6 @@ module Stacks
               entry.rank,
               entry.display_name,
               format("%.2f", entry.amount),
-              format("%.2f", group.average),
-              format("%.2f", group.total),
             ]
           end
         end

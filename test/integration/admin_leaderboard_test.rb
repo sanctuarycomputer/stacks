@@ -110,7 +110,8 @@ class AdminLeaderboardTest < ActionDispatch::IntegrationTest
     assert_equal Stacks::Leaderboard::CSV_HEADERS, rows.first
     alpha = rows.find { |r| r[2] == 'csvalpha@example.com' }
     assert_equal '900.00', alpha[3]
-    assert_equal '600.00', alpha[4], 'carries the month average'
+    assert_equal %w[Month Rank Contributor Earnings], rows.first,
+      'no month average/total columns'
   end
 
   test 'CSV export honors ?limit=' do

@@ -160,8 +160,7 @@ class Stacks::LeaderboardTest < ActiveSupport::TestCase
     assert_equal "2097-03", row[0], "month is ISO-ish for sorting"
     assert_equal "1", row[1], "rank"
     assert_equal "900.00", row[3], "earnings are plain decimals, not currency strings"
-    assert_equal "600.00", row[4], "month average repeats on each row"
-    assert_equal "1200.00", row[5], "month total repeats on each row"
+    assert_equal 4, row.size, "no month average/total columns"
   end
 
   test "to_csv honors the limit" do
