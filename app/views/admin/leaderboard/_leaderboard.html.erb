@@ -2,18 +2,13 @@
     screen: a title_bar per group with the heading on the left and a pill on
     the right, over a standard .index_table.index table. %>
 
-<div style="margin-bottom: 24px;">
-  <p style="margin-bottom: 8px;">
-    Top <%= limit %> earners per month, by aggregate contributor payouts across all ledgers.
-    Trueups are excluded — they top leadership roles up to these averages, so counting them
-    would double back on the benchmark.
-  </p>
-  <span style="opacity: 0.6;">Show top:</span>
+<%# Limit toggles, styled as the same nag-pill tab bar the Money page uses. %>
+<div style="margin-bottom: 32px;">
   <% [3, 5, 10, 20].each do |n| %>
-    <% if n == limit %>
-      <span class="pill complete" style="margin-right: 4px;"><%= n %></span>
-    <% else %>
-      <%= link_to n, admin_leaderboard_path(limit: n), style: "margin-right: 8px;" %>
+    <%= link_to admin_leaderboard_path(limit: n), style: "margin-right: 6px" do %>
+      <p class="nag pill <%= 'complete' if n == limit %>" style="margin-bottom: 0px;margin-right: 6px;position: relative;">
+        <%= n %>
+      </p>
     <% end %>
   <% end %>
 </div>
@@ -52,7 +47,7 @@
         <% group.entries.each_with_index do |entry, index| %>
           <tr class="<%= index.even? ? "even" : "odd" %>">
             <td class="col"><%= entry.rank %></td>
-            <td class="col"><%= entry.display_name %></td>
+            <td class="col"><%= link_to entry.display_name, admin_contributor_path(entry.contributor_id) %></td>
             <td class="col text-right"><%= number_to_currency(entry.amount) %></td>
           </tr>
         <% end %>

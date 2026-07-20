@@ -41,7 +41,7 @@ class AdminLeaderboardTest < ActionDispatch::IntegrationTest
   end
 
   test 'renders the ledger with the month, ranked earners and amounts' do
-    contributor_with_payout('alpha@example.com', 900)
+    alpha = contributor_with_payout('alpha@example.com', 900)
     contributor_with_payout('beta@example.com', 400)
     sign_in @admin
 
@@ -55,8 +55,11 @@ class AdminLeaderboardTest < ActionDispatch::IntegrationTest
     assert_includes response.body, '$1,300.00', 'shows the month total'
     assert_includes response.body, '$650.00', 'shows the average of the listed earners'
     assert_includes response.body, 'avg of top 2'
-    assert_includes response.body, 'Trueups are excluded'
     assert_includes response.body, 'index_table', 'uses the shared ActiveAdmin table styling'
+    assert_includes response.body, 'nag pill complete', 'marks the active limit toggle'
+    assert_includes response.body,
+      %(<a href="/admin/contributors/#{alpha.id}">alpha@example.com</a>),
+      'links each contributor through to their contributor page'
   end
 
   test 'defaults to the top 5 and honors ?limit=' do
