@@ -149,6 +149,47 @@ class Stacks::LeaderboardTest < ActiveSupport::TestCase
     assert_equal "Ada Lovelace", month_group.entries.first.display_name
   end
 
+  test "to_csv emits a header and one row per ranked contributor" do
+    make_contributor("first@example.com").tap { |c| payout!(c, 900) }
+    make_contributor("second@example.com").tap { |c| payout!(c, 300) }
+
+    rows = CSV.parse(Stacks::Leaderboard.to_csv(limit: 5))
+
+    assert_equal Stacks::Leaderboard::CSV_HEADERS, rows.first
+    row = rows.find { |r| r[2] == "first@example.com" }
+    assert_equal "2097-03", row[0], "month is ISO-ish for sorting"
+    assert_equal "1", row[1], "rank"
+    assert_equal "900.00", row[3], "earnings are plain decimals, not currency strings"
+    assert_equal "600.00", row[4], "month average repeats on each row"
+    assert_equal "1200.00", row[5], "month total repeats on each row"
+  end
+
+  test "to_csv honors the limit" do
+    5.times { |i| make_contributor("csv#{i}@example.com").tap { |c| payout!(c, (i + 1) * 100) } }
+
+    rows = CSV.parse(Stacks::Leaderboard.to_csv(limit: 2))
+    body = rows.drop(1).select { |r| r[0] == "2097-03" }
+
+    assert_equal 2, body.size
+    assert_equal ["csv4@example.com", "csv3@example.com"], body.map { |r| r[2] }
+  end
+
+  test "to_csv escapes names containing commas" do
+    person = ForecastPerson.create!(
+      forecast_id: rand(1..2_000_000_000),
+      email: "comma@example.com",
+      first_name: "Lovelace, Ada",
+      last_name: "",
+      data: {}
+    )
+    payout!(Contributor.create!(forecast_person: person), 100)
+
+    parsed = CSV.parse(Stacks::Leaderboard.to_csv(limit: 5))
+
+    assert_includes parsed.map { |r| r[2] }, "Lovelace, Ada",
+      "a comma in a name must survive a CSV round-trip"
+  end
+
   test "sanitize_limit defaults, clamps, and rejects junk" do
     assert_equal 5, Stacks::Leaderboard.sanitize_limit(nil)
     assert_equal 5, Stacks::Leaderboard.sanitize_limit("")

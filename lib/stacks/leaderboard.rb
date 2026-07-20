@@ -12,11 +12,22 @@
 # ledgers.contributor_id to aggregate "across all their contributor ledgers".
 # Months are bucketed on invoice_passes.start_of_month, matching the canonical
 # dating used by ContributorPayout#effective_on_for_display.
+require "csv"
+
 module Stacks
   class Leaderboard
     DEFAULT_LIMIT = 5
     MIN_LIMIT = 1
     MAX_LIMIT = 50
+
+    CSV_HEADERS = [
+      "Month",
+      "Rank",
+      "Contributor",
+      "Earnings",
+      "Month Average",
+      "Month Total",
+    ].freeze
 
     Entry = Struct.new(:rank, :contributor_id, :display_name, :amount, keyword_init: true)
 
@@ -34,6 +45,30 @@ module Stacks
 
     def self.call(limit: DEFAULT_LIMIT)
       new(limit: limit).call
+    end
+
+    # Flat, spreadsheet-friendly rendering: one row per ranked contributor,
+    # with the month's average and total repeated so the file pivots cleanly.
+    # Amounts are unformatted decimals (no currency symbols or thousands
+    # separators) so they land in a spreadsheet as numbers, not text.
+    def self.to_csv(limit: DEFAULT_LIMIT, months: nil)
+      groups = months || call(limit: limit)
+
+      CSV.generate do |csv|
+        csv << CSV_HEADERS
+        groups.each do |group|
+          group.entries.each do |entry|
+            csv << [
+              group.start_of_month.strftime("%Y-%m"),
+              entry.rank,
+              entry.display_name,
+              format("%.2f", entry.amount),
+              format("%.2f", group.average),
+              format("%.2f", group.total),
+            ]
+          end
+        end
+      end
     end
 
     def initialize(limit: DEFAULT_LIMIT)

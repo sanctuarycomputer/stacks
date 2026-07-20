@@ -90,6 +90,53 @@ class AdminLeaderboardTest < ActionDispatch::IntegrationTest
     assert_includes response.body, 'solo@example.com'
   end
 
+  test 'exports CSV as an attachment' do
+    contributor_with_payout('csvalpha@example.com', 900)
+    contributor_with_payout('csvbeta@example.com', 300)
+    sign_in @admin
+
+    get '/admin/leaderboard/export_csv'
+
+    assert_response :success
+    assert_match %r{text/csv}, response.content_type
+    assert_match /attachment; filename="leaderboard-top-5-\d{4}-\d{2}-\d{2}\.csv"/,
+      response.headers['Content-Disposition']
+
+    rows = CSV.parse(response.body)
+    assert_equal Stacks::Leaderboard::CSV_HEADERS, rows.first
+    alpha = rows.find { |r| r[2] == 'csvalpha@example.com' }
+    assert_equal '900.00', alpha[3]
+    assert_equal '600.00', alpha[4], 'carries the month average'
+  end
+
+  test 'CSV export honors ?limit=' do
+    3.times { |i| contributor_with_payout("csvlim#{i}@example.com", (i + 1) * 100) }
+    sign_in @admin
+
+    get '/admin/leaderboard/export_csv?limit=1'
+
+    assert_response :success
+    body = CSV.parse(response.body).drop(1).select { |r| r[0] == @month.strftime('%Y-%m') }
+    assert_equal 1, body.size
+    assert_equal 'csvlim2@example.com', body.first[2]
+  end
+
+  test 'non-admins cannot export the CSV' do
+    contributor_with_payout('secret@example.com', 900)
+    non_admin = AdminUser.create!(
+      email: "plain-csv-#{SecureRandom.hex(4)}@example.com",
+      password: 'password12345',
+      password_confirmation: 'password12345',
+      roles: []
+    )
+    sign_in non_admin
+
+    get '/admin/leaderboard/export_csv'
+
+    assert_response :redirect
+    refute_includes response.body.to_s, 'secret@example.com'
+  end
+
   test 'non-admins are redirected away' do
     non_admin = AdminUser.create!(
       email: "plain-#{SecureRandom.hex(4)}@example.com",
