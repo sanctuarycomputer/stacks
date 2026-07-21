@@ -36,7 +36,7 @@ class Stacks::GhostSync
   end
 
   def sync_all!
-    enabled = GhostSyncedSource.pluck(:source)
+    enabled = System.first_or_create!(settings: {}).ghost_synced_sources
     members = @ghost.all_members
     members_by_id = members.index_by { |m| m["id"] }
     members_by_email = members.index_by { |m| m["email"].to_s.downcase }
@@ -117,10 +117,9 @@ class Stacks::GhostSync
     member
   end
 
-  # Shared inbound path for the sweep's pull leg and the webhook receiver.
+  # Inbound path for the sweep's pull leg.
   # Idempotent: only writes when something changed; source_events recorded
-  # only for newly added sources — this is also our echo suppression, since
-  # the webhook fired by our own outbound label write finds nothing to do.
+  # only for newly added sources.
   def upsert_contact_from_member(member)
     email = member["email"].to_s.downcase
     contact = Contact.find_by(ghost_id: member["id"]) ||
@@ -147,14 +146,6 @@ class Stacks::GhostSync
     contact.ghost_data = new_ghost_data if new_ghost_data != contact.ghost_data
     contact.save! if contact.changed?
     contact.record_source_events!(new_sources)
-    contact
-  end
-
-  # member.deleted: keep the contact (funnel history), sever the link.
-  def handle_member_deleted(previous_member)
-    contact = Contact.find_by(ghost_id: previous_member["id"])
-    return nil unless contact
-    apply_member_deleted!(contact)
     contact
   end
 

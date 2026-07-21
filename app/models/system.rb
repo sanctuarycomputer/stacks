@@ -8,6 +8,7 @@ class System < ApplicationRecord
     default_hourly_rate Float, default: 175
     tentative_assignment_label String, default: "Tentative"
     expected_skill_tree_cadence_days Integer, default: 365
+    ghost_synced_sources Array, default: []
   end
 
   def display_name

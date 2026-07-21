@@ -20,5 +20,5 @@ Rails.application.routes.draw do
     match '/mcp/write', to: 'mcp_write#handle', via: [:post, :get, :delete]
   end
 
-  post "/webhooks/ghost" => "ghost_webhooks#handle"
+
 end

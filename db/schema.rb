@@ -438,13 +438,6 @@ ActiveRecord::Schema.define(version: 2026_07_20_000001) do
     t.index ["admin_user_id"], name: "index_full_time_periods_on_admin_user_id"
   end
 
-  create_table "ghost_synced_sources", force: :cascade do |t|
-    t.string "source", null: false
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["source"], name: "index_ghost_synced_sources_on_source", unique: true
-  end
-
   create_table "gifted_profit_shares", force: :cascade do |t|
     t.bigint "admin_user_id", null: false
     t.decimal "amount"

@@ -13,8 +13,12 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
     Stacks::GhostSync.new(ghost)
   end
 
+  def enable_sources(*sources)
+    System.first_or_create!(settings: {}).update!(ghost_synced_sources: sources)
+  end
+
   test "creates a member with source-name labels for an eligible contact and links ghost_id" do
-    GhostSyncedSource.create!(source: "newsletter")
+    enable_sources("newsletter")
     contact = Contact.create!(email: "new@example.com", sources: ["newsletter"], display_name: "New Person")
 
     ghost = mock("ghost")
@@ -33,8 +37,7 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
   end
 
   test "updates managed labels while preserving unmanaged (hand-added) labels; never writes newsletters" do
-    GhostSyncedSource.create!(source: "newsletter")
-    GhostSyncedSource.create!(source: "fundraising")
+    enable_sources("newsletter", "fundraising")
     contact = Contact.create!(
       email: "update@example.com",
       sources: %w[newsletter fundraising],
@@ -59,7 +62,7 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
   end
 
   test "no-op when labels already match" do
-    GhostSyncedSource.create!(source: "newsletter")
+    enable_sources("newsletter")
     Contact.create!(email: "same@example.com", sources: ["newsletter"], ghost_id: "m3")
     existing = member(id: "m3", email: "same@example.com", labels: ["newsletter"])
 
@@ -72,7 +75,7 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
   end
 
   test "adopts the existing member on 422 duplicate-email create" do
-    GhostSyncedSource.create!(source: "newsletter")
+    enable_sources("newsletter")
     contact = Contact.create!(email: "dupe@example.com", sources: ["newsletter"])
     existing = member(id: "m4", email: "dupe@example.com", labels: [])
 
@@ -89,7 +92,7 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
   end
 
   test "delabels a linked contact that is no longer eligible, keeps the member" do
-    GhostSyncedSource.create!(source: "newsletter")
+    enable_sources("newsletter")
     Contact.create!(email: "gone@example.com", sources: ["etl:meet"], ghost_id: "m5")
     existing = member(id: "m5", email: "gone@example.com", labels: ["VIP", "newsletter"])
 
@@ -114,7 +117,7 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
   end
 
   test "a per-contact failure is counted and does not halt the sweep" do
-    GhostSyncedSource.create!(source: "newsletter")
+    enable_sources("newsletter")
     Contact.create!(email: "fail@example.com", sources: ["newsletter"])
     ok_contact = Contact.create!(email: "ok@example.com", sources: ["newsletter"])
 
@@ -197,16 +200,6 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
     assert_equal true, contact.ghost_data.dig("snapshot", "email_disabled")
   end
 
-  test "handle_member_deleted keeps the contact, clears ghost_id, stamps deleted_at" do
-    existing = Contact.create!(email: "bye@example.com", ghost_id: "m16", sources: ["g3d:ghost"])
-    sync = sync_with(mock("ghost"))
-    sync.handle_member_deleted("id" => "m16", "email" => "bye@example.com")
-    existing.reload
-    assert_nil existing.ghost_id
-    assert existing.ghost_data.dig("snapshot", "deleted_at").present?
-    assert_equal ["g3d:ghost"], existing.sources
-  end
-
   test "sync_all! pull leg upserts Ghost-only members" do
     ghost = mock("ghost")
     ghost.expects(:all_members).returns([
@@ -231,7 +224,7 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
   end
 
   test "skips contacts with invalid email and increments skipped_invalid" do
-    GhostSyncedSource.create!(source: "newsletter")
+    enable_sources("newsletter")
     # Create a valid contact with an enabled source, then bypass validation to set invalid email
     contact = Contact.create!(email: "invalid@example.com", sources: ["newsletter"])
     contact.update_column(:email, "not-an-email")
@@ -270,7 +263,7 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
 
   # Finding A: synced_at stamped only on real outbound writes
   test "already-linked contact with matching labels is not written during sweep" do
-    GhostSyncedSource.create!(source: "newsletter")
+    enable_sources("newsletter")
     contact = Contact.create!(
       email: "stable@example.com",
       sources: ["newsletter", "g3d:ghost"],
@@ -314,7 +307,7 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
   end
 
   test "linked ELIGIBLE contact missing from all_members gets reconciled, not re-created in same sweep" do
-    GhostSyncedSource.create!(source: "newsletter")
+    enable_sources("newsletter")
     contact = Contact.create!(email: "vanished@example.com", sources: ["newsletter"], ghost_id: "m51")
 
     ghost = mock("ghost")
@@ -330,7 +323,7 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
 
   # Finding C: deletion sticks — no re-create of deleted members
   test "contact with deleted_at and no member match is suppressed, not re-created" do
-    GhostSyncedSource.create!(source: "newsletter")
+    enable_sources("newsletter")
     contact = Contact.create!(
       email: "deleted@example.com",
       sources: ["newsletter"],
@@ -347,7 +340,7 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
   end
 
   test "contact with deleted_at that re-signed up in Ghost is adopted and deleted_at cleared" do
-    GhostSyncedSource.create!(source: "newsletter")
+    enable_sources("newsletter")
     contact = Contact.create!(
       email: "resigup@example.com",
       sources: ["newsletter"],
@@ -368,7 +361,7 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
 
   # Fix #3: link_contact! steal skips case-fold duplicates to avoid ping-pong
   test "link_contact! skips steal when owner email case-folds equal to contact email and counts link_conflict" do
-    GhostSyncedSource.create!(source: "newsletter")
+    enable_sources("newsletter")
     # Two contacts differing only by email case (case-fold duplicates)
     owner = Contact.create!(
       email: "casefold@example.com",
@@ -400,7 +393,7 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
 
   # Fix #4: label comparison is case/slug-insensitive — existing "newsletter" matches desired "Newsletter"
   test "no-op when Ghost label name differs only by case from the enabled source name" do
-    GhostSyncedSource.create!(source: "Newsletter")
+    enable_sources("Newsletter")
     Contact.create!(email: "caselab@example.com", sources: ["Newsletter"], ghost_id: "m-caselab")
     # Ghost stored the label as lowercase "newsletter" (Ghost dedupes by slug)
     existing = member(id: "m-caselab", email: "caselab@example.com", labels: ["newsletter"])
@@ -417,7 +410,7 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
 
   # Fix #4b: non-managed label case is not destroyed when diffing
   test "non-managed label with unusual casing is preserved and update_member is not called spuriously" do
-    GhostSyncedSource.create!(source: "Newsletter")
+    enable_sources("Newsletter")
     Contact.create!(
       email: "nonmanaged@example.com",
       sources: ["Newsletter"],

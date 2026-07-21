@@ -8,7 +8,7 @@ ActiveAdmin.register_page "Ghost Sync" do
       GROUP BY s.source
       ORDER BY COUNT(*) DESC, s.source
     SQL
-    enabled = GhostSyncedSource.pluck(:source)
+    enabled = System.instance.ghost_synced_sources
 
     # Union enabled sources that have no contacts so they stay visible in the UI
     # and aren't silently destroyed on the next save.
@@ -44,19 +44,11 @@ ActiveAdmin.register_page "Ghost Sync" do
         input type: :submit, value: "Sync Now"
       end
     end
-
-    panel "Webhook Setup (one-time, in Ghost Admin)" do
-      para "Settings → Integrations → the stacks custom integration → add " \
-           "webhooks for member.added, member.edited, member.deleted pointing " \
-           "at #{request.base_url}/webhooks/ghost, each with the shared secret " \
-           "from credentials (ghost.webhook_secret)."
-    end
   end
 
   page_action :update_sources, method: :post do
     checked = Array(params[:sources]).map(&:to_s).reject(&:blank?)
-    GhostSyncedSource.where.not(source: checked).destroy_all
-    checked.each { |s| GhostSyncedSource.find_or_create_by!(source: s) }
+    System.instance.update!(ghost_synced_sources: checked)
     redirect_to admin_ghost_sync_path, notice: "Synced sources updated (#{checked.length} enabled)"
   end
 
