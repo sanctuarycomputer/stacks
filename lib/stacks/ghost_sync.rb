@@ -198,7 +198,10 @@ class Stacks::GhostSync
     # "newsletter" even when the enabled source is named "Newsletter".
     # We converge when the downcased sets match; we still SEND the verbatim
     # desired names so the source name is the write contract.
-    if managed_label_names(member, enabled).map(&:downcase).sort != desired.map(&:downcase).sort
+    # uniq both sides: Ghost stores one label per slug, so two enabled sources
+    # differing only by case can never both appear on the member — without
+    # uniq that mismatch would re-PUT every sweep forever.
+    if managed_label_names(member, enabled).map(&:downcase).uniq.sort != desired.map(&:downcase).uniq.sort
       enabled_downcased = enabled.map(&:downcase)
       preserved = label_names(member).reject { |n| enabled_downcased.include?(n.downcase) }
       attrs[:labels] = preserved + desired
