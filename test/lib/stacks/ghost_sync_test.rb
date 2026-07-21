@@ -246,4 +246,26 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
 
     assert_equal 1, sync.summary[:skipped_invalid]
   end
+
+  test "repeat upsert with identical member issues no write" do
+    sync = sync_with(mock("ghost"))
+    m = member(id: "m30", email: "steady@example.com", newsletters: %w[weekly-digest])
+    contact = sync.upsert_contact_from_member(m).reload
+
+    # Count UPDATE queries on the second call
+    update_count = 0
+    original_handler = ActiveRecord::Base.connection.instance_variable_get(:@query_cache_enabled)
+
+    subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |name, started, finished, unique_id, payload|
+      if payload[:sql].match?(/UPDATE\s+contacts/i)
+        update_count += 1
+      end
+    end
+
+    sync.upsert_contact_from_member(m)
+
+    ActiveSupport::Notifications.unsubscribe(subscriber)
+
+    assert_equal 0, update_count, "repeat upsert with identical member should issue no UPDATE"
+  end
 end

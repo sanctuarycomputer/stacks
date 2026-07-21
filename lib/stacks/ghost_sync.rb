@@ -111,7 +111,7 @@ class Stacks::GhostSync
     if contact.display_name.blank? && member["name"].present?
       contact.display_name = member["name"]
     end
-    contact.ghost_data = contact.ghost_data.merge(
+    new_ghost_data = contact.ghost_data.merge(
       "snapshot" => {
         "newsletters" => slugs,
         "suppressed" => member.dig("email_suppression", "suppressed") || false,
@@ -119,6 +119,7 @@ class Stacks::GhostSync
         "email_in_ghost" => (email == contact.email.downcase ? nil : member["email"]),
       }.compact
     )
+    contact.ghost_data = new_ghost_data if new_ghost_data != contact.ghost_data
     contact.save! if contact.changed?
     contact.record_source_events!(new_sources)
     contact
