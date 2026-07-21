@@ -83,4 +83,20 @@ class GhostWebhooksControllerTest < ActionDispatch::IntegrationTest
     signed_post({ "post" => { "current" => { "id" => "p1" } } })
     assert_response :ok
   end
+
+  test "rejects when no webhook secret is configured" do
+    GhostWebhooksController.any_instance.stubs(:webhook_secret).returns("")
+    signed_post({ "member" => {} }, secret: "")
+    assert_response :unauthorized
+  end
+
+  test "rejects a non-numeric timestamp" do
+    body = JSON.dump({ "member" => {} })
+    hex = OpenSSL::HMAC.hexdigest("SHA256", SECRET, body + "abc")
+    post "/webhooks/ghost", params: body, headers: {
+      "Content-Type" => "application/json",
+      "X-Ghost-Signature" => "sha256=#{hex}, t=abc",
+    }
+    assert_response :unauthorized
+  end
 end
