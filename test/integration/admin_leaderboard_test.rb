@@ -57,6 +57,10 @@ class AdminLeaderboardTest < ActionDispatch::IntegrationTest
     assert_includes response.body, 'avg of top 2'
     assert_includes response.body, 'index_table', 'uses the shared ActiveAdmin table styling'
     assert_includes response.body, 'nag pill complete', 'marks the active limit toggle'
+    [3, 4, 5, 10, 20].each do |n|
+      assert_includes response.body, %(href="/admin/leaderboard?limit=#{n}"),
+        "offers a limit toggle for #{n}"
+    end
     assert_includes response.body,
       %(<a href="/admin/contributors/#{alpha.id}">alpha@example.com</a>),
       'links each contributor through to their contributor page'

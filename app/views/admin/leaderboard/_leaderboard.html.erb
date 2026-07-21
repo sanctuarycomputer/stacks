@@ -4,7 +4,7 @@
 
 <%# Limit toggles, styled as the same nag-pill tab bar the Money page uses. %>
 <div style="margin-bottom: 32px;">
-  <% [3, 5, 10, 20].each do |n| %>
+  <% [3, 4, 5, 10, 20].each do |n| %>
     <%= link_to admin_leaderboard_path(limit: n), style: "margin-right: 6px" do %>
       <p class="nag pill <%= 'complete' if n == limit %>" style="margin-bottom: 0px;margin-right: 6px;position: relative;">
         <%= n %>
