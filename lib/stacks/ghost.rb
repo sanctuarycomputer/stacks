@@ -1,3 +1,5 @@
+require 'jwt'
+
 class Stacks::Ghost
   include HTTParty
 
