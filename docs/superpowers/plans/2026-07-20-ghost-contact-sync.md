@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Two-way sync between stacks `Contact` records and Ghost (garden3d.ghost.io) members, with stacks sources mapped to Ghost `stacks:*` labels for email segmentation, and Ghost signups flowing back as `g3d:ghost:*` sources.
+**Goal:** Two-way sync between stacks `Contact` records and Ghost (garden3d.ghost.io) members, with stacks sources recorded verbatim as Ghost labels for email segmentation, and Ghost signups flowing back as `g3d:ghost:*` sources.
 
-**Architecture:** Full-state reconciliation sweep (`Stacks::GhostSync#sync_all!`) run by a rake task on Heroku Scheduler + an ActiveAdmin "Sync now" button; Ghost webhooks (`POST /webhooks/ghost`) are a latency optimization only. Stacks owns segmentation (`stacks:*` labels), Ghost owns opt-in state (newsletters) and deliverability. See spec: `docs/superpowers/specs/2026-07-20-ghost-contact-sync-design.md`.
+**Architecture:** Full-state reconciliation sweep (`Stacks::GhostSync#sync_all!`) run by a rake task on Heroku Scheduler + an ActiveAdmin "Sync now" button; Ghost webhooks (`POST /webhooks/ghost`) are a latency optimization only. Stacks owns segmentation (labels named exactly after enabled sources), Ghost owns opt-in state (newsletters) and deliverability. See spec: `docs/superpowers/specs/2026-07-20-ghost-contact-sync-design.md`.
 
 **Tech Stack:** Rails 6.1 / Ruby 3.1, PostgreSQL, HTTParty, `jwt` gem, ActiveAdmin, minitest + mocha (NO webmock — stub with mocha).
 
@@ -12,7 +12,7 @@
 
 - Ghost Admin API v6: base `#{api_url}/ghost/api/admin`, header `Accept-Version: v6.0`, auth `Authorization: Ghost <jwt>` (HS256, `kid` = key id, secret **hex-decoded**, `exp` ≤ 5 min, `aud: "/admin/"`).
 - Credentials already exist: `Stacks::Utils.config[:ghost]` → `:api_url` (`https://garden3d.ghost.io`), `:admin_api_key` (`id:secret`), `:content_api_key`. `:webhook_secret` added in Task 7.
-- Label prefix owned by stacks: `stacks:` — never touch labels without this prefix. Never write `newsletters` on member update. Never delete Ghost members. Never mutate `contact.email` from Ghost data.
+- Labels are exact source names (no prefix): source `newsletter` → Ghost label `newsletter`. The managed label set = the enabled source names (`GhostSyncedSource.pluck(:source)`); never touch member labels outside that set. Unchecking a source stops managing its labels (existing ones remain in Ghost). Never write `newsletters` on member update. Never delete Ghost members. Never mutate `contact.email` from Ghost data.
 - Inbound source names: `g3d:ghost:<newsletter-slug>` per active subscription; bare `g3d:ghost` for members with no active newsletters.
 - All API bodies are wrapped: `{"members": [{...}]}`. Duplicate-email create returns HTTP 422.
 - Run tests with `bin/rails test <path>`. Commit after every green task.
@@ -416,7 +416,7 @@ git commit -m "feat(ghost): Ghost Admin API client with JWT auth and backoff"
   - `Stacks::GhostSync.new(ghost = Stacks::Ghost.new)` — `#summary` (Hash of counters), `#errors` (Array of strings)
   - `#sync_all!` — full two-way sweep (inbound leg completed in Task 4; this task builds the outbound legs and a stub pull leg)
   - `#sync_contact!(contact, enabled, members_by_id, members_by_email)` → member hash
-  - `LABEL_PREFIX = "stacks:"`, `SOURCE_PREFIX = "g3d:ghost"`
+  - `SOURCE_PREFIX = "g3d:ghost"` (labels have NO prefix — they are enabled source names verbatim)
 - Note: member hashes use string keys throughout (parsed JSON).
 
 - [ ] **Step 1: Write failing tests**
@@ -438,15 +438,15 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
     Stacks::GhostSync.new(ghost)
   end
 
-  test "creates a member with stacks labels for an eligible contact and links ghost_id" do
+  test "creates a member with source-name labels for an eligible contact and links ghost_id" do
     GhostSyncedSource.create!(source: "newsletter")
     contact = Contact.create!(email: "new@example.com", sources: ["newsletter"], display_name: "New Person")
 
     ghost = mock("ghost")
     ghost.expects(:all_members).returns([])
-    created = member(id: "m1", email: "new@example.com", labels: ["stacks:newsletter"], newsletters: ["weekly"])
+    created = member(id: "m1", email: "new@example.com", labels: ["newsletter"], newsletters: ["weekly"])
     ghost.expects(:create_member)
-      .with(email: "new@example.com", name: "New Person", labels: ["stacks:newsletter"])
+      .with(email: "new@example.com", name: "New Person", labels: ["newsletter"])
       .returns(created)
 
     sync = sync_with(ghost)
@@ -457,7 +457,7 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
     assert_equal 1, sync.summary[:created]
   end
 
-  test "updates stacks labels while preserving hand-added labels; never writes newsletters" do
+  test "updates managed labels while preserving unmanaged (hand-added) labels; never writes newsletters" do
     GhostSyncedSource.create!(source: "newsletter")
     GhostSyncedSource.create!(source: "fundraising")
     contact = Contact.create!(
@@ -466,16 +466,16 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
       ghost_id: "m2"
     )
     existing = member(id: "m2", email: "update@example.com",
-      labels: ["VIP", "stacks:newsletter"], newsletters: ["weekly"], name: "Kept Name")
+      labels: ["VIP", "newsletter"], newsletters: ["weekly"], name: "Kept Name")
 
     ghost = mock("ghost")
     ghost.expects(:all_members).returns([existing])
     ghost.expects(:update_member).with do |id, attrs|
       id == "m2" &&
-        attrs[:labels].sort == ["VIP", "stacks:fundraising", "stacks:newsletter"] &&
+        attrs[:labels].sort == ["VIP", "fundraising", "newsletter"] &&
         !attrs.key?(:newsletters) && !attrs.key?(:name)
     end.returns(existing.merge("labels" => [
-      { "name" => "VIP" }, { "name" => "stacks:fundraising" }, { "name" => "stacks:newsletter" },
+      { "name" => "VIP" }, { "name" => "fundraising" }, { "name" => "newsletter" },
     ]))
 
     sync = sync_with(ghost)
@@ -486,7 +486,7 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
   test "no-op when labels already match" do
     GhostSyncedSource.create!(source: "newsletter")
     Contact.create!(email: "same@example.com", sources: ["newsletter"], ghost_id: "m3")
-    existing = member(id: "m3", email: "same@example.com", labels: ["stacks:newsletter"])
+    existing = member(id: "m3", email: "same@example.com", labels: ["newsletter"])
 
     ghost = mock("ghost")
     ghost.expects(:all_members).returns([existing])
@@ -506,8 +506,8 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
     ghost.expects(:create_member).raises(Stacks::Ghost::RequestError.new(422, "Member already exists."))
     ghost.expects(:find_member_by_email).with("dupe@example.com").returns(existing)
     ghost.expects(:update_member).with do |id, attrs|
-      id == "m4" && attrs[:labels] == ["stacks:newsletter"]
-    end.returns(existing.merge("labels" => [{ "name" => "stacks:newsletter" }]))
+      id == "m4" && attrs[:labels] == ["newsletter"]
+    end.returns(existing.merge("labels" => [{ "name" => "newsletter" }]))
 
     sync_with(ghost).sync_all!
     assert_equal "m4", contact.reload.ghost_id
@@ -516,7 +516,7 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
   test "delabels a linked contact that is no longer eligible, keeps the member" do
     GhostSyncedSource.create!(source: "newsletter")
     Contact.create!(email: "gone@example.com", sources: ["etl:meet"], ghost_id: "m5")
-    existing = member(id: "m5", email: "gone@example.com", labels: ["VIP", "stacks:newsletter"])
+    existing = member(id: "m5", email: "gone@example.com", labels: ["VIP", "newsletter"])
 
     ghost = mock("ghost")
     ghost.expects(:all_members).returns([existing])
@@ -545,7 +545,7 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
 
     ghost = mock("ghost")
     ghost.expects(:all_members).returns([])
-    created = member(id: "m6", email: "ok@example.com", labels: ["stacks:newsletter"])
+    created = member(id: "m6", email: "ok@example.com", labels: ["newsletter"])
     ghost.stubs(:create_member).with do |attrs|
       raise Stacks::Ghost::RequestError.new(500, "boom") if attrs[:email] == "fail@example.com"
       true
@@ -571,11 +571,11 @@ Expected: FAIL — `uninitialized constant Stacks::GhostSync`.
 # lib/stacks/ghost_sync.rb
 #
 # Full-state reconciliation between stacks Contacts and Ghost members.
-# Stacks owns segmentation (stacks:* labels); Ghost owns opt-in state
+# Stacks owns segmentation (labels named after enabled sources, verbatim —
+# no prefix); Ghost owns opt-in state
 # (newsletters) and deliverability. See
 # docs/superpowers/specs/2026-07-20-ghost-contact-sync-design.md
 class Stacks::GhostSync
-  LABEL_PREFIX = "stacks:".freeze
   SOURCE_PREFIX = "g3d:ghost".freeze
 
   attr_reader :summary, :errors
@@ -609,7 +609,7 @@ class Stacks::GhostSync
           capture_errors(contact) do
             member = members_by_id[contact.ghost_id]
             next unless member
-            members_by_id[member["id"]] = delabel_member!(contact, member)
+            members_by_id[member["id"]] = delabel_member!(contact, member, enabled)
           end
         end
     end
@@ -633,10 +633,10 @@ class Stacks::GhostSync
         # Someone created this email in Ghost since our sweep snapshot — adopt it.
         member = @ghost.find_member_by_email(contact.email)
         raise if member.nil?
-        member = update_member_labels(contact, member, desired) || member
+        member = update_member_labels(contact, member, desired, enabled) || member
       end
     else
-      member = update_member_labels(contact, member, desired) || member
+      member = update_member_labels(contact, member, desired, enabled) || member
     end
 
     link_contact!(contact, member)
@@ -645,25 +645,28 @@ class Stacks::GhostSync
 
   private
 
+  # Labels are source names verbatim; the managed label set is exactly the
+  # enabled sources. Labels outside that set (hand-added in Ghost, or from a
+  # since-unchecked source) are never touched.
   def desired_labels_for(contact, enabled)
-    (contact.sources & enabled).sort.map { |s| "#{LABEL_PREFIX}#{s}" }
+    (contact.sources & enabled).sort
   end
 
   def label_names(member)
     (member["labels"] || []).map { |l| l["name"] }
   end
 
-  def stacks_label_names(member)
-    label_names(member).select { |n| n.start_with?(LABEL_PREFIX) }.sort
+  def managed_label_names(member, enabled)
+    (label_names(member) & enabled).sort
   end
 
   # Returns the updated member hash when a write happened, nil for a no-op.
   # Labels are full-replace in Ghost, so always resend the preserved
-  # (non-stacks) labels alongside ours. Never includes :newsletters.
-  def update_member_labels(contact, member, desired)
+  # (unmanaged) labels alongside ours. Never includes :newsletters.
+  def update_member_labels(contact, member, desired, enabled)
     attrs = {}
-    if stacks_label_names(member) != desired
-      attrs[:labels] = label_names(member).reject { |n| n.start_with?(LABEL_PREFIX) } + desired
+    if managed_label_names(member, enabled) != desired
+      attrs[:labels] = (label_names(member) - enabled) + desired
     end
     if member["name"].blank? && contact.display_name.present?
       attrs[:name] = contact.display_name
@@ -675,10 +678,9 @@ class Stacks::GhostSync
     updated
   end
 
-  def delabel_member!(contact, member)
-    return member if stacks_label_names(member).empty?
-    updated = @ghost.update_member(member["id"],
-      labels: label_names(member).reject { |n| n.start_with?(LABEL_PREFIX) })
+  def delabel_member!(contact, member, enabled)
+    return member if managed_label_names(member, enabled).empty?
+    updated = @ghost.update_member(member["id"], labels: label_names(member) - enabled)
     @summary[:delabeled] += 1
     updated
   end
@@ -731,7 +733,7 @@ Expected: PASS.
 
 ```bash
 git add lib/stacks/ghost_sync.rb test/lib/stacks/ghost_sync_test.rb
-git commit -m "feat(ghost): outbound sweep — contacts to Ghost members with stacks:* labels"
+git commit -m "feat(ghost): outbound sweep — contacts to Ghost members with source-name labels"
 ```
 
 ---
@@ -1197,8 +1199,9 @@ ActiveAdmin.register_page "Ghost Sync" do
 
     panel "Synced Sources" do
       para "Contacts with a checked source are pushed to Ghost as members, " \
-           "labeled stacks:<source>. Unchecking removes stacks labels on the " \
-           "next sweep (members are never deleted)."
+           "labeled with the source name verbatim. Unchecking a source stops " \
+           "label management for it (existing labels stay in Ghost; members " \
+           "are never deleted)."
       form action: admin_ghost_sync_update_sources_path, method: :post do
         input type: :hidden, name: :authenticity_token, value: form_authenticity_token
         table_for sources_with_counts do
@@ -1318,7 +1321,7 @@ git commit -m "feat(ghost): admin UI — synced-source checkboxes, sync-now, con
 ```ruby
 # lib/tasks/ghost.rake
 namespace :ghost do
-  desc "Two-way sync contacts with Ghost (members, stacks:* labels, funnel sources)"
+  desc "Two-way sync contacts with Ghost (members, source-name labels, funnel sources)"
   task sync: :environment do
     sync = Stacks::GhostSync.sync_all_with_lock!
     if sync
@@ -1365,9 +1368,9 @@ git commit -m "feat(ghost): ghost:sync rake task + webhook secret"
 1. Deploy to Heroku; set the same `ghost.webhook_secret` in production credentials if scoped per-host.
 2. Heroku Scheduler: add `rake ghost:sync`, every 10 minutes.
 3. Ghost Admin (garden3d.ghost.io) → Settings → Advanced → Integrations → the custom integration whose Admin API key stacks uses → add 3 webhooks, each with the shared secret and target `https://<production-host>/webhooks/ghost`: `member.added`, `member.edited`, `member.deleted`. (Ghost has no webhook-list API — record their existence in the integration UI only.)
-4. In `/admin/ghost_sync`, check the first opt-in source (e.g. `newsletter`), press Sync Now, and verify members + `stacks:newsletter` label appear in Ghost Admin → Members.
+4. In `/admin/ghost_sync`, check the first opt-in source (e.g. `newsletter`), press Sync Now, and verify members + the `newsletter` label appear in Ghost Admin → Members.
 5. Test the loop end-to-end: sign up a test address on the Ghost site; confirm the webhook creates the contact (source `g3d:ghost:<slug>`) within seconds, and that the next sweep is a no-op for it.
-6. In Ghost, compose a post → Send via email → audience "Specific people" → pick the `stacks:newsletter` label to confirm segmentation targeting works.
+6. In Ghost, compose a post → Send via email → audience "Specific people" → pick the `newsletter` label to confirm segmentation targeting works.
 
 ---
 

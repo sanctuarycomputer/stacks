@@ -20,11 +20,11 @@ Scale assumption: newsletter-sized lists (thousands, not millions). A paginated 
 
 | Fact | Authority | Consequence |
 |---|---|---|
-| Segmentation (`stacks:*` labels) | **stacks** | Sweep enforces exactly the `stacks:*` labels a contact should have; hand-added non-`stacks:` labels in Ghost are never touched. |
+| Segmentation (labels named after enabled sources) | **stacks** | Label names are the source names **verbatim** (no prefix). The managed label set = the enabled sources (`GhostSyncedSource` rows); the sweep enforces that a synced member carries exactly the enabled sources its contact has. Labels outside the enabled set — hand-added in Ghost, or belonging to a since-unchecked source — are never touched. Caveat: a hand-added Ghost label that happens to equal an enabled source name is adopted as managed. |
 | Opt-in state (newsletter subscriptions) | **Ghost** | We set newsletters only implicitly at member **creation** (Ghost's `subscribe_on_signup` default). We never write `newsletters` on update and never re-subscribe anyone. |
 | Deliverability (`email_suppression`, `email_disabled`) | **Ghost** (read-only) | Snapshotted into `ghost_data` for visibility; never written. |
 | Contact email | **stacks** | Email changes made in Ghost do NOT mutate `contact.email` (unique key + dedupe machinery). Mismatch recorded in `ghost_data.email_in_ghost` and surfaced in admin. |
-| Member existence | shared | Stacks creates members for eligible contacts; stacks **never deletes** Ghost members (un-checking a source only removes `stacks:*` labels). Ghost deleting a member keeps the stacks contact (clears `ghost_id`, stamps `ghost_data.deleted_at`). |
+| Member existence | shared | Stacks creates members for eligible contacts; stacks **never deletes** Ghost members (a contact losing eligibility only loses its managed labels). Ghost deleting a member keeps the stacks contact (clears `ghost_id`, stamps `ghost_data.deleted_at`). |
 
 ## 1. Data model & configuration
 
@@ -58,10 +58,10 @@ HTTParty class following `Stacks::Apollo` / `Stacks::Runn` patterns.
 1. Load `enabled = GhostSyncedSource.pluck(:source)`; abort (no-op) if empty.
 2. Fetch all Ghost members into a map by lowercased email and by id. Fetch newsletters (id → slug map).
 3. Eligible contacts: `Contact.where("sources && ARRAY[?]::varchar[]", enabled)` with a validly-formatted email (reuse the `resolve_email` regex; skip + count invalid).
-4. Per eligible contact, desired `stacks:*` labels = `enabled ∩ contact.sources`, each mapped to label name `stacks:<source>` (e.g. `stacks:newsletter`; Ghost slugifies to `stacks-newsletter` for NQL targeting).
+4. Per eligible contact, desired labels = `enabled ∩ contact.sources`, used verbatim as label names (source `newsletter` → label `newsletter`; Ghost slugifies for NQL targeting, e.g. `etl:meet` → `etl-meet`).
 5. **Create** if no member matches (by `ghost_id`, else email): `POST /members/` with `{email, name: display_name, labels: desired}`. No `newsletters` key → Ghost subscribes them to `subscribe_on_signup` newsletters. No `send_email` param (defaults off — no welcome email). On 422 "Member already exists": re-fetch by email, adopt, fall through to update.
-6. **Update** if the member's actual `stacks:*` label set ≠ desired, or name is blank in Ghost while contact has `display_name`: PUT with `labels = (member's non-stacks labels) + desired`, GET-then-PUT semantics (we have the fresh member from the sweep fetch). Never include `newsletters`. Never overwrite a non-blank Ghost name.
-7. **De-labeling:** contacts linked to a member (`ghost_id` set) but no longer eligible get their `stacks:*` labels removed (member kept, subscriptions untouched).
+6. **Update** if the member's actual managed label set (member labels ∩ enabled) ≠ desired, or name is blank in Ghost while contact has `display_name`: PUT with `labels = (member's labels outside the enabled set) + desired`, GET-then-PUT semantics (we have the fresh member from the sweep fetch). Never include `newsletters`. Never overwrite a non-blank Ghost name.
+7. **De-labeling:** contacts linked to a member (`ghost_id` set) but no longer eligible get their managed (enabled-set) labels removed (member kept, subscriptions untouched). Fully unchecking a source shrinks the managed set instead, so that source's existing labels remain in Ghost unmanaged.
 8. After any successful write: update `ghost_data.synced_at`; store `ghost_id` on create. The sweep's pull leg (§4) then refreshes `ghost_data.snapshot` for every member. `RecordNotUnique` on `ghost_id` (member already linked to another contact — e.g. its email was changed in Ghost and now matches a different contact): if the member's current email matches this contact's email, steal the link (clear the stale owner's `ghost_id`, retry once); otherwise skip and count as a conflict.
 9. Sweep summary (created/updated/delabeled/skipped-invalid/inbound-upserted/errors) returned for the admin flash and logged for Scheduler runs. Per-contact errors are rescued, counted, and don't halt the sweep.
 
@@ -105,14 +105,14 @@ One shared upsert path, `Stacks::GhostSync#upsert_contact_from_member(member)`, 
 ## 8. Testing (minitest, existing patterns)
 
 - **Client:** JWT construction (kid/aud/exp, hex-decoded secret), pagination, backoff — WebMock-style stubs.
-- **Sweep:** create/update/delabel decisions; non-stacks labels preserved; `newsletters` never written on update; unsubscribed member not re-subscribed; 422-adopt path; invalid email skip; advisory-lock no-overlap.
+- **Sweep:** create/update/delabel decisions; unmanaged labels preserved; `newsletters` never written on update; unsubscribed member not re-subscribed; 422-adopt path; invalid email skip; advisory-lock no-overlap.
 - **Inbound upsert:** new contact from member; source added only once; `source_events` only on newly added source; `display_name` backfill; email-mismatch snapshot.
 - **Webhook controller:** signature valid/invalid/stale; echo suppression; added/edited/deleted flows; unknown event 200.
 
 ## Out of scope (explicit)
 
 - Pushing metadata-derived labels (only `sources` map to labels, per Hugh).
-- Two-way label sync (non-`stacks:` Ghost labels never become stacks sources).
+- Two-way label sync (Ghost labels never become stacks sources; only newsletter subscriptions do, as `g3d:ghost:*`).
 - Syncing paid-tier/Stripe state.
 - Job queue infrastructure; CSV bulk-import path.
 - Managing Ghost webhooks via API.
