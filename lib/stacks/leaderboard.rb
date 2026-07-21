@@ -33,7 +33,7 @@ module Stacks
     # one of these roles up to the figure derived here, so letting it count
     # as earnings would feed the benchmark back into itself.
     MSO_TIERS = [
-      ["Heads", BigDecimal("0.8")],
+      ["Heads", BigDecimal("0.75")],
       ["Chiefs", BigDecimal("1")],
       ["Founders", BigDecimal("1.2")],
     ].freeze
