@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_07_10_200715) do
+ActiveRecord::Schema.define(version: 2026_07_20_000001) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -146,8 +146,11 @@ ActiveRecord::Schema.define(version: 2026_07_10_200715) do
     t.jsonb "metadata", default: {}, null: false
     t.string "display_name"
     t.jsonb "source_events", default: {}, null: false
+    t.string "ghost_id"
+    t.jsonb "ghost_data", default: {}, null: false
     t.index ["apollo_id"], name: "index_contacts_on_apollo_id", unique: true
     t.index ["email"], name: "index_contacts_on_email", unique: true
+    t.index ["ghost_id"], name: "index_contacts_on_ghost_id", unique: true
   end
 
   create_table "contributor_adjustments", force: :cascade do |t|

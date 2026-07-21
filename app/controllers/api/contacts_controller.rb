@@ -20,31 +20,11 @@ class Api::ContactsController < ApiController
       sources: [*contact.sources, *(params["sources"] || [])].uniq,
       metadata: contact.metadata.deep_merge(api_contact_metadata_blob)
     )
-    record_source_events!(contact, params["sources"] || [])
+    contact.record_source_events!(params["sources"] || [])
     head :ok
   end
 
   private
-
-  # Appends { added_at: now() } to source_events[source] for every posted source,
-  # even when the source is already in the deduped sources array — this is the
-  # view counter. jsonb_set at the SQL level so concurrent posts cannot lose events.
-  def record_source_events!(contact, sources)
-    Array(sources).each do |source|
-      Contact.where(id: contact.id).update_all([
-        <<~SQL.squish,
-          source_events = jsonb_set(
-            source_events,
-            ARRAY[?],
-            COALESCE(source_events->?, '[]'::jsonb)
-              || jsonb_build_array(jsonb_build_object('added_at', now())),
-            true
-          )
-        SQL
-        source.to_s, source.to_s
-      ])
-    end
-  end
 
   def api_contact_metadata_blob
     payload = api_contact_request_payload_hash
