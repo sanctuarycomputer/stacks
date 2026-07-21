@@ -168,3 +168,23 @@ class ContactRansackTest < ActiveSupport::TestCase
     refute_includes Contact.ransackable_attributes, 'source_events'
   end
 end
+
+class ContactRecordSourceEventsTest < ActiveSupport::TestCase
+  test "record_source_events! appends an event per source, even for repeats" do
+    contact = Contact.create!(email: "events@example.com", sources: ["newsletter"])
+    contact.record_source_events!(["newsletter"])
+    contact.record_source_events!(["newsletter", "g3d:ghost"])
+    contact.reload
+    assert_equal 2, contact.source_events["newsletter"].length
+    assert_equal 1, contact.source_events["g3d:ghost"].length
+    assert contact.source_events["newsletter"].first["added_at"].present?
+  end
+
+  test "ghost scopes filter on ghost_id presence" do
+    linked = Contact.create!(email: "linked@example.com", ghost_id: "abc123")
+    unlinked = Contact.create!(email: "unlinked@example.com")
+    assert_includes Contact.synced_to_ghost, linked
+    assert_includes Contact.not_synced_to_ghost, unlinked
+    assert_not_includes Contact.synced_to_ghost, unlinked
+  end
+end

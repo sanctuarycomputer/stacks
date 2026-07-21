@@ -8,6 +8,13 @@ class Contact < ApplicationRecord
     where(apollo_id: nil)
   }
 
+  scope :synced_to_ghost, -> {
+    where.not(ghost_id: nil)
+  }
+  scope :not_synced_to_ghost, -> {
+    where(ghost_id: nil)
+  }
+
   scope :address_cont, ->(value) { where_address_contains(value) }
   scope :sources_cont, ->(value) { where("array_to_string(sources, ' ') ILIKE ?", "%#{value}%") }
 
@@ -23,6 +30,26 @@ class Contact < ApplicationRecord
       events.each do |source, entries|
         acc[source] = [*acc[source], *entries].sort_by { |e| e['added_at'].to_s }
       end
+    end
+  end
+
+  # Appends { added_at: now() } to source_events[source] for every given source,
+  # even when the source is already in the deduped sources array — this is the
+  # view counter. jsonb_set at the SQL level so concurrent writes cannot lose events.
+  def record_source_events!(sources)
+    Array(sources).each do |source|
+      Contact.where(id: id).update_all([
+        <<~SQL.squish,
+          source_events = jsonb_set(
+            source_events,
+            ARRAY[?],
+            COALESCE(source_events->?, '[]'::jsonb)
+              || jsonb_build_array(jsonb_build_object('added_at', now())),
+            true
+          )
+        SQL
+        source.to_s, source.to_s
+      ])
     end
   end
 

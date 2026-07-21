@@ -10,17 +10,13 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_07_10_200715) do
+ActiveRecord::Schema.define(version: 2026_07_20_000001) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_stat_statements"
   enable_extension "plpgsql"
-  # The "vector" (pgvector) extension and the embeddings.embedding vector column + HNSW
-  # index are intentionally omitted here so db:schema:load works on a Postgres without
-  # pgvector (e.g. Heroku CI's in-dyno Postgres). They are created by migrations in
-  # development/production, and re-established idempotently for tests/seeds in
-  # test/test_helper.rb and db/seeds.rb. Keep them out of this dumped schema.
+  enable_extension "vector"
 
   create_table "account_lead_periods", force: :cascade do |t|
     t.bigint "project_tracker_id", null: false
@@ -112,10 +108,8 @@ ActiveRecord::Schema.define(version: 2026_07_10_200715) do
     t.datetime "occurred_at"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
-    # content_tsv (tsvector GENERATED ALWAYS AS) and its GIN index are intentionally
-    # omitted here: Rails 6.1 dumps generated columns as DEFAULT expressions, which
-    # PostgreSQL rejects on schema:load. They are added idempotently in test_helper.rb
-    # and exist in the development/production DBs via the CreateChunks migration.
+    t.tsvector "content_tsv"
+    t.index ["content_tsv"], name: "index_chunks_on_content_tsv", using: :gin
     t.index ["document_id", "position"], name: "index_chunks_on_document_id_and_position", unique: true
     t.index ["document_id"], name: "index_chunks_on_document_id"
     t.index ["speaker_contact_id"], name: "index_chunks_on_speaker_contact_id"
@@ -146,8 +140,11 @@ ActiveRecord::Schema.define(version: 2026_07_10_200715) do
     t.jsonb "metadata", default: {}, null: false
     t.string "display_name"
     t.jsonb "source_events", default: {}, null: false
+    t.string "ghost_id"
+    t.jsonb "ghost_data", default: {}, null: false
     t.index ["apollo_id"], name: "index_contacts_on_apollo_id", unique: true
     t.index ["email"], name: "index_contacts_on_email", unique: true
+    t.index ["ghost_id"], name: "index_contacts_on_ghost_id", unique: true
   end
 
   create_table "contributor_adjustments", force: :cascade do |t|
@@ -289,10 +286,10 @@ ActiveRecord::Schema.define(version: 2026_07_10_200715) do
     t.string "owner_type", null: false
     t.bigint "owner_id", null: false
     t.string "model", null: false
-    # embedding vector(1024) + its HNSW index are added outside this schema (see the
-    # pgvector note at the top of the file) so schema:load works without pgvector.
+    t.vector "embedding", limit: 1024
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.index ["embedding"], name: "index_embeddings_on_embedding", opclass: :vector_cosine_ops, using: :hnsw
     t.index ["owner_type", "owner_id", "model"], name: "index_embeddings_on_owner_and_model", unique: true
     t.index ["owner_type", "owner_id"], name: "index_embeddings_on_owner"
   end
@@ -433,6 +430,13 @@ ActiveRecord::Schema.define(version: 2026_07_10_200715) do
     t.integer "contributor_type", default: 0
     t.boolean "considered_temporary", default: false
     t.index ["admin_user_id"], name: "index_full_time_periods_on_admin_user_id"
+  end
+
+  create_table "ghost_synced_sources", force: :cascade do |t|
+    t.string "source", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["source"], name: "index_ghost_synced_sources_on_source", unique: true
   end
 
   create_table "gifted_profit_shares", force: :cascade do |t|
@@ -1357,7 +1361,7 @@ ActiveRecord::Schema.define(version: 2026_07_10_200715) do
   add_foreign_key "account_lead_periods", "project_trackers"
   add_foreign_key "adhoc_invoice_trackers", "project_trackers"
   add_foreign_key "adhoc_invoice_trackers", "qbo_accounts"
-  # Composite FK fk_adhoc_invoice_trackers_qbo_invoice managed by migration (not expressible in schema.rb)
+  add_foreign_key "adhoc_invoice_trackers", "qbo_invoices", column: "qbo_account_id", primary_key: "qbo_account_id", name: "fk_adhoc_invoice_trackers_qbo_invoice"
   add_foreign_key "admin_user_salary_windows", "admin_users"
   add_foreign_key "associates_award_agreements", "admin_users"
   add_foreign_key "chunks", "contacts", column: "speaker_contact_id"
@@ -1366,7 +1370,7 @@ ActiveRecord::Schema.define(version: 2026_07_10_200715) do
   add_foreign_key "commissions", "project_trackers"
   add_foreign_key "contributor_adjustments", "ledgers"
   add_foreign_key "contributor_adjustments", "qbo_accounts"
-  # Composite FK fk_contributor_adjustments_qbo_invoice managed by migration (not expressible in schema.rb)
+  add_foreign_key "contributor_adjustments", "qbo_invoices", column: "qbo_account_id", primary_key: "qbo_account_id", name: "fk_contributor_adjustments_qbo_invoice"
   add_foreign_key "contributor_payouts", "admin_users", column: "created_by_id"
   add_foreign_key "contributor_payouts", "invoice_trackers"
   add_foreign_key "contributor_payouts", "ledgers"
@@ -1387,7 +1391,7 @@ ActiveRecord::Schema.define(version: 2026_07_10_200715) do
   add_foreign_key "invoice_trackers", "admin_users"
   add_foreign_key "invoice_trackers", "invoice_passes"
   add_foreign_key "invoice_trackers", "qbo_accounts"
-  # Composite FK fk_invoice_trackers_qbo_invoice managed by migration (not expressible in schema.rb)
+  add_foreign_key "invoice_trackers", "qbo_invoices", column: "qbo_account_id", primary_key: "qbo_account_id", name: "fk_invoice_trackers_qbo_invoice"
   add_foreign_key "ledgers", "contributors"
   add_foreign_key "ledgers", "enterprises"
   add_foreign_key "mailing_list_subscribers", "mailing_lists"
