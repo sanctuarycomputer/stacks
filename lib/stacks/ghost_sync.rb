@@ -6,6 +6,9 @@
 # docs/superpowers/specs/2026-07-20-ghost-contact-sync-design.md
 class Stacks::GhostSync
   SOURCE_PREFIX = "g3d:ghost".freeze
+  # Fixed app-wide advisory lock key for the sweep (rand of a keyboard mash;
+  # any stable int works — must only avoid colliding with other app locks).
+  ADVISORY_LOCK_KEY = 728534291
 
   attr_reader :summary, :errors
 
@@ -13,6 +16,23 @@ class Stacks::GhostSync
     @ghost = ghost
     @summary = Hash.new(0)
     @errors = []
+  end
+
+  # Wraps the sweep in a pg advisory lock so an overlapping Scheduler run or
+  # admin-button click exits cleanly instead of double-writing. Returns the
+  # sync (for summary/errors), or nil when another run holds the lock.
+  def self.sync_all_with_lock!(ghost = Stacks::Ghost.new)
+    conn = ActiveRecord::Base.connection
+    got_lock = conn.select_value("SELECT pg_try_advisory_lock(#{ADVISORY_LOCK_KEY})")
+    return nil unless got_lock
+
+    begin
+      sync = new(ghost)
+      sync.sync_all!
+      sync
+    ensure
+      conn.execute("SELECT pg_advisory_unlock(#{ADVISORY_LOCK_KEY})")
+    end
   end
 
   def sync_all!
@@ -70,6 +90,53 @@ class Stacks::GhostSync
 
     link_contact!(contact, member)
     member
+  end
+
+  # Shared inbound path for the sweep's pull leg and the webhook receiver.
+  # Idempotent: only writes when something changed; source_events recorded
+  # only for newly added sources — this is also our echo suppression, since
+  # the webhook fired by our own outbound label write finds nothing to do.
+  def upsert_contact_from_member(member)
+    email = member["email"].to_s.downcase
+    contact = Contact.find_by(ghost_id: member["id"]) ||
+      Contact.where("LOWER(email) = ?", email).first ||
+      Contact.create_or_find_by!(email: email)
+
+    slugs = (member["newsletters"] || []).map { |n| n["slug"] }.compact.sort
+    ghost_sources = slugs.any? ? slugs.map { |s| "#{SOURCE_PREFIX}:#{s}" } : [SOURCE_PREFIX]
+    new_sources = ghost_sources - contact.sources
+
+    contact.sources = (contact.sources + ghost_sources).uniq
+    contact.ghost_id ||= member["id"]
+    if contact.display_name.blank? && member["name"].present?
+      contact.display_name = member["name"]
+    end
+    contact.ghost_data = contact.ghost_data.merge(
+      "snapshot" => {
+        "newsletters" => slugs,
+        "suppressed" => member.dig("email_suppression", "suppressed") || false,
+        "email_disabled" => !!member["email_disabled"],
+        "email_in_ghost" => (email == contact.email.downcase ? nil : member["email"]),
+      }.compact
+    )
+    contact.save! if contact.changed?
+    contact.record_source_events!(new_sources)
+    contact
+  end
+
+  # member.deleted: keep the contact (funnel history), sever the link.
+  def handle_member_deleted(previous_member)
+    contact = Contact.find_by(ghost_id: previous_member["id"])
+    return nil unless contact
+
+    contact.update!(
+      ghost_id: nil,
+      ghost_data: contact.ghost_data.merge(
+        "snapshot" => (contact.ghost_data["snapshot"] || {})
+          .merge("deleted_at" => Time.current.iso8601)
+      )
+    )
+    contact
   end
 
   private
@@ -147,7 +214,19 @@ class Stacks::GhostSync
     @errors << "#{contact.email}: #{e.class}: #{e.message}"
   end
 
-  # Inbound pull leg — implemented in the next task.
-  def pull_members!(_members)
+  # Reconciliation for missed webhooks: every Ghost member flows through the
+  # shared upsert, so organic signups land in the funnel even if their
+  # webhook was dropped (Ghost has a 2s timeout and no retries).
+  def pull_members!(members)
+    members.each do |member|
+      contact = Contact.find_by(ghost_id: member["id"])
+      begin
+        upserted = upsert_contact_from_member(member)
+        @summary[:pulled] += 1 if contact.nil? && upserted.ghost_id == member["id"]
+      rescue => e
+        @summary[:errors] += 1
+        @errors << "#{member["email"]}: #{e.class}: #{e.message}"
+      end
+    end
   end
 end
