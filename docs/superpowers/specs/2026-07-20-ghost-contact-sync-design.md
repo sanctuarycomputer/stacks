@@ -12,7 +12,7 @@ Keep stacks contacts in sync with Ghost (garden3d.ghost.io, Ghost(Pro) Publisher
 
 ## Architecture: full-state reconciliation (Approach A)
 
-A scheduled sweep (`rake ghost:sync`, Heroku Scheduler every 10 min, plus an admin "Sync now" button) pulls **all** Ghost members and all sync-eligible contacts, computes desired state per person, and applies the diff in both directions. Ghost webhooks (`member.added` / `member.edited` / `member.deleted`) are a latency optimization only — correctness never depends on them, because Ghost webhook delivery has a 2s timeout and effectively no retries. Any missed event is corrected by the next sweep.
+A scheduled sweep (`rake ghost:sync`, Heroku Scheduler every 10 min, plus an admin "Sync now" button) pulls **all** Ghost members and all sync-eligible contacts, computes desired state per person, and applies the diff in both directions. **The sweep is the only transport** — no webhooks. (Ghost webhooks were originally in scope as a latency optimization, but their 2s delivery timeout and lack of retries meant the sweep had to be fully correct on its own anyway; per Hugh 2026-07-21 they were removed entirely. Signup latency is at most one sweep interval, ~10 minutes.) Any Ghost-side change is picked up by the next sweep.
 
 Scale assumption: newsletter-sized lists (thousands, not millions). A paginated full sweep is seconds of work. If that ever changes, `filter=updated_at:>cursor` delta-sync can be layered on without changing semantics.
 
@@ -20,11 +20,11 @@ Scale assumption: newsletter-sized lists (thousands, not millions). A paginated 
 
 | Fact | Authority | Consequence |
 |---|---|---|
-| Segmentation (labels named after enabled sources) | **stacks** | Label names are the source names **verbatim** (no prefix). The managed label set = the enabled sources (`GhostSyncedSource` rows); the sweep enforces that a synced member carries exactly the enabled sources its contact has. Labels outside the enabled set — hand-added in Ghost, or belonging to a since-unchecked source — are never touched. Caveat: a hand-added Ghost label that happens to equal an enabled source name is adopted as managed. |
+| Segmentation (labels named after enabled sources) | **stacks** | Label names are the source names **verbatim** (no prefix). The managed label set = the enabled sources (`System.settings.ghost_synced_sources`); the sweep enforces that a synced member carries exactly the enabled sources its contact has. Labels outside the enabled set — hand-added in Ghost, or belonging to a since-unchecked source — are never touched. Caveat: a hand-added Ghost label that happens to equal an enabled source name is adopted as managed. |
 | Opt-in state (newsletter subscriptions) | **Ghost** | We set newsletters only implicitly at member **creation** (Ghost's `subscribe_on_signup` default). We never write `newsletters` on update and never re-subscribe anyone. |
 | Deliverability (`email_suppression`, `email_disabled`) | **Ghost** (read-only) | Snapshotted into `ghost_data` for visibility; never written. |
 | Contact email | **stacks** | Email changes made in Ghost do NOT mutate `contact.email` (unique key + dedupe machinery). Mismatch recorded in `ghost_data.email_in_ghost` and surfaced in admin. |
-| Member existence | shared | Stacks creates members for eligible contacts; stacks **never deletes** Ghost members (a contact losing eligibility only loses its managed labels). Ghost deleting a member keeps the stacks contact (clears `ghost_id`, stamps `snapshot.deleted_at`) — detected by webhook AND by the sweep (any linked contact whose member is absent from the full fetch). **Deletion sticks**: a contact with `snapshot.deleted_at` is never re-created in Ghost (deletion is the strongest opt-out); if the person signs up on Ghost again, the fresh member match clears `deleted_at` automatically and sync resumes. |
+| Member existence | shared | Stacks creates members for eligible contacts; stacks **never deletes** Ghost members (a contact losing eligibility only loses its managed labels). Ghost deleting a member keeps the stacks contact (clears `ghost_id`, stamps `snapshot.deleted_at`) — detected by the sweep (any linked contact whose member is absent from the full fetch). **Deletion sticks**: a contact with `snapshot.deleted_at` is never re-created in Ghost (deletion is the strongest opt-out); if the person signs up on Ghost again, the fresh member match clears `deleted_at` automatically and sync resumes. |
 
 ## 1. Data model & configuration
 
@@ -36,9 +36,9 @@ Scale assumption: newsletter-sized lists (thousands, not millions). A paginated 
 
   (No pushed-state "fingerprint" is stored: outbound needs-update checks compare desired labels against the freshly fetched member, and inbound echo suppression falls out of upsert idempotence — see §4.)
 
-**New model `GhostSyncedSource`** — single `source` string column, unique index. Row exists ⇔ contacts with that source are pushed to Ghost. Written by the admin checkbox UI.
+**Enabled sources** live on the `System` singleton's Storext settings store as `ghost_synced_sources` (array of source strings, default `[]`) — matching where this app keeps other app-wide config (no dedicated table). Written by the admin checkbox UI. Note: `System.instance` memoizes per-process; only the checkbox *display* can go stale across web processes — the sweep (the only Ghost writer) runs in fresh rake dynos and always reads current state.
 
-**Credentials** (already present under `Stacks::Utils.config[:ghost]`): `api_url` (`https://garden3d.ghost.io`), `admin_api_key` (`id:secret`), `content_api_key` (unused by this feature). **To add:** `webhook_secret` (we generate it; configured on each webhook in Ghost Admin).
+**Credentials** (already present under `Stacks::Utils.config[:ghost]`): `api_url` (`https://garden3d.ghost.io`), `admin_api_key` (`id:secret`), `content_api_key` (unused by this feature). A `webhook_secret` key exists from the earlier webhook design; it is unused and harmless.
 
 **Gemfile:** add `jwt` explicitly (already in bundle transitively).
 
@@ -49,14 +49,14 @@ HTTParty class following `Stacks::Apollo` / `Stacks::Runn` patterns.
 - **Auth:** per-request JWT — header `{alg: HS256, typ: JWT, kid: <key id>}`, payload `{iat: now, exp: now+300, aud: "/admin/"}`, signed with the **hex-decoded** secret. Sent as `Authorization: Ghost <token>`. Pin `Accept-Version: v6.0`.
 - **Methods:** `all_members` (browse, `?limit=100&include=labels,newsletters`, follow `meta.pagination.next`), `find_member_by_email(email)` (`?filter=email:'<email>'`), `create_member(attrs)`, `update_member(id, attrs)`. (No newsletters endpoint needed — member payloads embed newsletter slugs.)
 - **Resilience:** shared request wrapper with Runn-style exponential backoff on 429/5xx. (No proactive req/s throttle is implemented — rate control is reactive via 429 backoff; Ghost publishes no rate limits. The admin "Sync Now" path uses `max_retries: 1` so backoff sleeps can't park a web dyno.)
-- Webhook registration is manual, one-time, in Ghost Admin (Settings → Integrations → custom integration): three webhooks (member.added/edited/deleted) → `POST https://<stacks-host>/webhooks/ghost`, each with the shared secret. (Ghost has no webhook browse endpoint; API-managed webhooks aren't worth it.)
+- No webhook management — the sync is sweep-only.
 
 ## 3. Outbound sweep (stacks → Ghost) — `lib/stacks/ghost_sync.rb`
 
 `Stacks::GhostSync#sync_all!`:
 
-1. Load `enabled = GhostSyncedSource.pluck(:source)`; the **outbound legs** no-op if empty (an empty checkbox set means "push off", never "mass-delabel"). The inbound pull leg (§4) always runs — matching the webhook receiver, which has no enabled-gate.
-1a. **Deletion reconciliation** (before the outbound leg): any linked contact whose `ghost_id` is absent from the fetched member set was deleted in Ghost — clear `ghost_id`, stamp `snapshot.deleted_at` (same path as the webhook's member.deleted handling), count `member_deleted`. Eligible contacts with `snapshot.deleted_at` and no matching member are NOT re-created (counted `suppressed_deleted`).
+1. Load `enabled` from the System setting; the **outbound legs** no-op if empty (an empty checkbox set means "push off", never "mass-delabel"). The inbound pull leg (§4) always runs.
+1a. **Deletion reconciliation** (before the outbound leg): any linked contact whose `ghost_id` is absent from the fetched member set was deleted in Ghost — clear `ghost_id`, stamp `snapshot.deleted_at`, count `member_deleted`. Eligible contacts with `snapshot.deleted_at` and no matching member are NOT re-created (counted `suppressed_deleted`).
 2. Fetch all Ghost members into a map by lowercased email and by id. Fetch newsletters (id → slug map).
 3. Eligible contacts: `Contact.where("sources && ARRAY[?]::varchar[]", enabled)` with a validly-formatted email (reuse the `resolve_email` regex; skip + count invalid).
 4. Per eligible contact, desired labels = `enabled ∩ contact.sources`, used verbatim as label names (source `newsletter` → label `newsletter`; Ghost slugifies for NQL targeting, e.g. `etl:meet` → `etl-meet`).
@@ -70,23 +70,17 @@ HTTParty class following `Stacks::Apollo` / `Stacks::Runn` patterns.
 
 ## 4. Inbound (Ghost → stacks)
 
-One shared upsert path, `Stacks::GhostSync#upsert_contact_from_member(member)`, used by both the sweep's pull leg and the webhook receiver:
+One upsert path, `Stacks::GhostSync#upsert_contact_from_member(member)`, driven by the sweep's pull leg:
 
 - Match contact by `ghost_id`, else by lowercased email; else `Contact.create_or_find_by!(email:)`.
-- Sources to ensure: `g3d:ghost:<newsletter-slug>` for each **active** newsletter the member subscribes to; plain `g3d:ghost` if they have none (signed up but unsubscribed). Add only missing sources; record a `source_events` entry **only for newly added sources** (so repeated `member.edited` events don't inflate funnel counts) — reusing the atomic `jsonb_set` pattern from `Api::ContactsController`.
+- Sources to ensure: `g3d:ghost:<newsletter-slug>` for each **active** newsletter the member subscribes to; plain `g3d:ghost` if they have none (signed up but unsubscribed). Add only missing sources; record a `source_events` entry **only for newly added sources** (so repeat sweeps don't inflate funnel counts) — reusing the atomic `jsonb_set` pattern from `Api::ContactsController`.
 - Set `ghost_id` if unset; refresh `ghost_data.snapshot` (newsletter slugs, `suppressed`, `email_disabled`, `email_in_ghost` when it differs from `contact.email`). Fill blank `display_name` from member name.
-- Sweep pull leg: every Ghost member not matched to an eligible contact runs through this upsert (reconciliation for missed webhooks).
-
-**Webhook receiver** — `POST /webhooks/ghost` (new controller, outside `/api`; no session/CSRF):
-
-- **Signature:** verify `X-Ghost-Signature: sha256=<hex>, t=<ms>` where hex = HMAC-SHA256(secret, raw_body + t) — computed against raw request bytes. Constant-time compare; reject with 401 on mismatch or if `t` is >5 min stale. (Ghost 6 format; we're on Ghost(Pro) current, so no legacy body-only fallback.)
-- `member.added` / `member.edited` (distinguished from deletion by payload shape: `member.current` populated) → run the shared upsert. **Echo suppression is idempotence:** the upsert only writes when something actually changed and only records `source_events` for newly added sources, so the webhook echo of our own label push is a no-op; and since the inbound path never writes to Ghost, no loop is possible.
-- `member.deleted` (payload has empty `current`, member in `previous`) → keep the contact; clear `ghost_id`, stamp `ghost_data.snapshot.deleted_at`.
-- Always respond inside Ghost's 2s window — the upsert is single-row writes, done inline; no queue needed. Unknown events → 200 no-op. Handler errors → 200 anyway (sweep is the safety net; a 5xx buys nothing since Ghost won't retry, and a 410 would delete the webhook).
+- The upsert is **idempotent** — it only writes when something actually changed — so sweeping the same member every 10 minutes is free, and since the inbound path never writes to Ghost, no loop is possible.
+- Member deletion (detected via §3.1a reconciliation): keep the contact; clear `ghost_id`, stamp `ghost_data.snapshot.deleted_at`.
 
 ## 5. Admin UI (ActiveAdmin)
 
-- **"Ghost Sync" page:** table of all distinct `Contact.sources` values with contact counts and a checkbox per source (checked ⇔ `GhostSyncedSource` row exists); save updates rows. "Sync now" button runs `sync_all!` inline and flashes the summary. Shows webhook URL + setup instructions for the one-time Ghost Admin configuration.
+- **"Ghost Sync" page:** table of all distinct `Contact.sources` values (unioned with already-enabled sources) with contact counts and a checkbox per source (checked ⇔ present in `System.settings.ghost_synced_sources`); save replaces the setting. "Sync now" button runs `sync_all!` inline and flashes the summary (steady-state only — initial backfill goes through `rake ghost:sync`).
 - **Contact show page:** "Ghost" panel — `ghost_id` linked to the Ghost Admin member page (`https://garden3d.ghost.io/ghost/#/members/<id>`), newsletter subscriptions, suppression + email-disabled flags, email-mismatch warning, `synced_at`. (Pushed labels are not snapshotted locally — they're derivable as `sources ∩ enabled` and visible in Ghost Admin via the link.)
 - **Scopes on Contacts:** `:synced_to_ghost` / `:not_synced_to_ghost` (by `ghost_id` presence), alongside the Apollo scopes.
 
@@ -99,16 +93,14 @@ One shared upsert path, `Stacks::GhostSync#upsert_contact_from_member(member)`, 
 
 - 429/5xx from Ghost → backoff+retry in client; persistent failure raises, sweep rescues per-contact and reports.
 - 422 duplicate-email on create → adopt existing member (fetch by email), update path.
-- `RecordNotUnique` on `ghost_id` → lock, `dedupe!`, retry (Apollo pattern).
+- `RecordNotUnique` on `ghost_id` → steal the link only when the member's email matches this contact (case-fold duplicates skip and wait for `dedupe!`, which carries ghost link + deletion opt-out through merges).
 - Invalid contact emails → skipped, counted.
-- Webhook bad signature → 401; stale timestamp → 401; processing error → 200 + log (sweep reconciles).
 
 ## 8. Testing (minitest, existing patterns)
 
 - **Client:** JWT construction (kid/aud/exp, hex-decoded secret), pagination, backoff — WebMock-style stubs.
 - **Sweep:** create/update/delabel decisions; unmanaged labels preserved; `newsletters` never written on update; unsubscribed member not re-subscribed; 422-adopt path; invalid email skip; advisory-lock no-overlap.
-- **Inbound upsert:** new contact from member; source added only once; `source_events` only on newly added source; `display_name` backfill; email-mismatch snapshot.
-- **Webhook controller:** signature valid/invalid/stale; echo suppression; added/edited/deleted flows; unknown event 200.
+- **Inbound upsert:** new contact from member; source added only once; `source_events` only on newly added source; `display_name` backfill; email-mismatch snapshot; repeat upsert issues no write.
 
 ## Out of scope (explicit)
 
@@ -116,4 +108,4 @@ One shared upsert path, `Stacks::GhostSync#upsert_contact_from_member(member)`, 
 - Two-way label sync (Ghost labels never become stacks sources; only newsletter subscriptions do, as `g3d:ghost:*`).
 - Syncing paid-tier/Stripe state.
 - Job queue infrastructure; CSV bulk-import path.
-- Managing Ghost webhooks via API.
+- Webhooks in any form (removed 2026-07-21 per Hugh — sweep-only; the `POST /webhooks/ghost` receiver existed briefly during development).

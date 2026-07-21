@@ -1,5 +1,7 @@
 # Ghost ↔ Stacks Contact Sync Implementation Plan
 
+> **Post-plan amendments (2026-07-21, per Hugh):** this plan is a historical artifact of the original build. Two simplifications landed after execution: (1) the `ghost_synced_sources` table (Task 1) was replaced by a `ghost_synced_sources` array on the `System` singleton's settings store; (2) the webhook receiver (Task 5) was removed entirely — the sync is sweep-only. The spec (`../specs/2026-07-20-ghost-contact-sync-design.md`) reflects current behavior; where they disagree, the spec wins.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Two-way sync between stacks `Contact` records and Ghost (garden3d.ghost.io) members, with stacks sources recorded verbatim as Ghost labels for email segmentation, and Ghost signups flowing back as `g3d:ghost:*` sources.

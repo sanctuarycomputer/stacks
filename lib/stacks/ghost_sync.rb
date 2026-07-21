@@ -151,9 +151,9 @@ class Stacks::GhostSync
 
   private
 
-  # Shared logic for severing a Ghost member link: clears ghost_id and stamps
-  # snapshot.deleted_at while preserving other snapshot keys. Used by both
-  # handle_member_deleted (webhook path) and the sweep reconciliation leg.
+  # Severs a Ghost member link: clears ghost_id and stamps snapshot.deleted_at
+  # while preserving other snapshot keys. Called by the sweep's deletion
+  # reconciliation leg.
   def apply_member_deleted!(contact)
     contact.update!(
       ghost_id: nil,
