@@ -19,4 +19,6 @@ Rails.application.routes.draw do
     match '/mcp', to: 'mcp#handle', via: [:post, :get, :delete]
     match '/mcp/write', to: 'mcp_write#handle', via: [:post, :get, :delete]
   end
+
+  post "/webhooks/ghost" => "ghost_webhooks#handle"
 end
