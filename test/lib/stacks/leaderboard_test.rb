@@ -192,15 +192,23 @@ class Stacks::LeaderboardTest < ActiveSupport::TestCase
   test "mso_compensation scales the month average by each tier multiplier" do
     tiers = Stacks::Leaderboard.mso_compensation(BigDecimal("1000"))
 
-    assert_equal ["Heads", "Chiefs", "Founders"], tiers.map(&:label)
-    assert_equal ["0.75x", "1x", "1.2x"], tiers.map(&:multiplier_label),
+    assert_equal ["Heads", "SVPs", "Chiefs", "Founders"], tiers.map(&:label)
+    assert_equal ["0.7x", "0.85x", "1x", "1.2x"], tiers.map(&:multiplier_label),
       "1x renders without a trailing .0"
-    assert_equal [BigDecimal("750"), BigDecimal("1000"), BigDecimal("1200")],
+    assert_equal [BigDecimal("700"), BigDecimal("850"), BigDecimal("1000"), BigDecimal("1200")],
       tiers.map(&:amount)
   end
 
+  test "SVPs sit exactly halfway between Heads and Chiefs" do
+    by_label = Stacks::Leaderboard::MSO_TIERS.to_h
+    midpoint = (by_label.fetch("Heads") + by_label.fetch("Chiefs")) / 2
+
+    assert_equal midpoint, by_label.fetch("SVPs")
+  end
+
   test "mso_compensation handles a zero average" do
-    assert_equal [0, 0, 0], Stacks::Leaderboard.mso_compensation(BigDecimal(0)).map { |t| t.amount.to_i }
+    amounts = Stacks::Leaderboard.mso_compensation(BigDecimal(0)).map { |t| t.amount.to_i }
+    assert_equal [0] * Stacks::Leaderboard::MSO_TIERS.size, amounts
   end
 
   test "sanitize_limit defaults, clamps, and rejects junk" do
