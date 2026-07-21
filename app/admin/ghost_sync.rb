@@ -14,7 +14,7 @@ ActiveAdmin.register_page "Ghost Sync" do
     # and aren't silently destroyed on the next save.
     counts_by_source = sources_with_counts_raw.to_h
     enabled.each { |s| counts_by_source[s] ||= 0 }
-    sources_with_counts = counts_by_source.sort_by { |_s, c| -c }.map { |s, c| [s, c] }
+    sources_with_counts = counts_by_source.sort_by { |s, c| [-c, s] }.map { |s, c| [s, c] }
 
     panel "Synced Sources" do
       para "Contacts with a checked source are pushed to Ghost as members, " \
