@@ -51,7 +51,7 @@ class GhostWebhooksController < ActionController::Base
     return false if secret.blank?
 
     parts = request.headers["X-Ghost-Signature"].to_s
-      .split(",").map(&:strip).map { |p| p.split("=", 2) }.to_h
+      .split(",").map(&:strip).map { |p| p.split("=", 2) }.select { |p| p.length == 2 }.to_h
     hex, ts = parts["sha256"], parts["t"]
     return false if hex.blank? || ts.blank?
     return false if (Time.current.to_f * 1000 - ts.to_i).abs > TIMESTAMP_TOLERANCE_MS

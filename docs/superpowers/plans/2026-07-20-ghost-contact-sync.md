@@ -1368,7 +1368,7 @@ git commit -m "feat(ghost): ghost:sync rake task + webhook secret"
 1. Deploy to Heroku; set the same `ghost.webhook_secret` in production credentials if scoped per-host.
 2. Heroku Scheduler: add `rake ghost:sync`, every 10 minutes.
 3. Ghost Admin (garden3d.ghost.io) → Settings → Advanced → Integrations → the custom integration whose Admin API key stacks uses → add 3 webhooks, each with the shared secret and target `https://<production-host>/webhooks/ghost`: `member.added`, `member.edited`, `member.deleted`. (Ghost has no webhook-list API — record their existence in the integration UI only.)
-4. In `/admin/ghost_sync`, check the first opt-in source (e.g. `newsletter`), press Sync Now, and verify members + the `newsletter` label appear in Ghost Admin → Members.
+4. In `/admin/ghost_sync`, check the first opt-in source (e.g. `newsletter`). Run the initial backfill via `heroku run rake ghost:sync` (NOT the Sync Now button — a large first push can exceed Heroku's 30s router timeout on a web request; the button is fine for steady-state). Verify members + the `newsletter` label appear in Ghost Admin → Members.
 5. Test the loop end-to-end: sign up a test address on the Ghost site; confirm the webhook creates the contact (source `g3d:ghost:<slug>`) within seconds, and that the next sweep is a no-op for it.
 6. In Ghost, compose a post → Send via email → audience "Specific people" → pick the `newsletter` label to confirm segmentation targeting works.
 

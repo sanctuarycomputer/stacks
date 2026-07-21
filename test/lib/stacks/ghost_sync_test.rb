@@ -21,7 +21,7 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
     ghost.expects(:all_members).returns([])
     created = member(id: "m1", email: "new@example.com", labels: ["newsletter"], newsletters: ["weekly"])
     ghost.expects(:create_member)
-      .with(email: "new@example.com", name: "New Person", labels: ["newsletter"])
+      .with { |attrs| attrs == { email: "new@example.com", name: "New Person", labels: ["newsletter"] } }
       .returns(created)
 
     sync = sync_with(ghost)
@@ -254,7 +254,6 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
 
     # Count UPDATE queries on the second call
     update_count = 0
-    original_handler = ActiveRecord::Base.connection.instance_variable_get(:@query_cache_enabled)
 
     subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |name, started, finished, unique_id, payload|
       if payload[:sql].match?(/UPDATE\s+contacts/i)
@@ -267,5 +266,129 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
     ActiveSupport::Notifications.unsubscribe(subscriber)
 
     assert_equal 0, update_count, "repeat upsert with identical member should issue no UPDATE"
+  end
+
+  # Finding A: synced_at stamped only on real outbound writes
+  test "already-linked contact with matching labels is not written during sweep" do
+    GhostSyncedSource.create!(source: "newsletter")
+    contact = Contact.create!(
+      email: "stable@example.com",
+      sources: ["newsletter", "g3d:ghost"],
+      ghost_id: "m40",
+      display_name: "Stable",
+      ghost_data: {
+        "synced_at" => "2024-01-01T00:00:00Z",
+        "snapshot" => {
+          "newsletters" => [],
+          "suppressed" => false,
+          "email_disabled" => false,
+        }
+      }
+    )
+    existing = member(id: "m40", email: "stable@example.com", labels: ["newsletter"], name: "Stable",
+      extra: { "email_suppression" => { "suppressed" => false }, "email_disabled" => false })
+
+    ghost = mock("ghost")
+    ghost.expects(:all_members).returns([existing])
+    ghost.expects(:update_member).never
+    ghost.expects(:create_member).never
+
+    assert_no_changes -> { contact.reload.updated_at } do
+      sync_with(ghost).sync_all!
+    end
+  end
+
+  # Finding B: sweep reconciles Ghost-side member deletion
+  test "linked non-eligible contact missing from all_members gets ghost_id cleared and deleted_at stamped" do
+    contact = Contact.create!(email: "gone@example.com", sources: ["etl:meet"], ghost_id: "m50")
+
+    ghost = mock("ghost")
+    ghost.expects(:all_members).returns([])
+
+    sync = sync_with(ghost)
+    sync.sync_all!
+    contact.reload
+    assert_nil contact.ghost_id
+    assert contact.ghost_data.dig("snapshot", "deleted_at").present?
+    assert_equal 1, sync.summary[:member_deleted]
+  end
+
+  test "linked ELIGIBLE contact missing from all_members gets reconciled, not re-created in same sweep" do
+    GhostSyncedSource.create!(source: "newsletter")
+    contact = Contact.create!(email: "vanished@example.com", sources: ["newsletter"], ghost_id: "m51")
+
+    ghost = mock("ghost")
+    ghost.expects(:all_members).returns([])
+    ghost.expects(:create_member).never
+
+    sync = sync_with(ghost)
+    sync.sync_all!
+    contact.reload
+    assert_nil contact.ghost_id
+    assert contact.ghost_data.dig("snapshot", "deleted_at").present?
+  end
+
+  # Finding C: deletion sticks — no re-create of deleted members
+  test "contact with deleted_at and no member match is suppressed, not re-created" do
+    GhostSyncedSource.create!(source: "newsletter")
+    contact = Contact.create!(
+      email: "deleted@example.com",
+      sources: ["newsletter"],
+      ghost_data: { "snapshot" => { "deleted_at" => "2024-01-01T00:00:00Z" } }
+    )
+
+    ghost = mock("ghost")
+    ghost.expects(:all_members).returns([])
+    ghost.expects(:create_member).never
+
+    sync = sync_with(ghost)
+    sync.sync_all!
+    assert_equal 1, sync.summary[:suppressed_deleted]
+  end
+
+  test "contact with deleted_at that re-signed up in Ghost is adopted and deleted_at cleared" do
+    GhostSyncedSource.create!(source: "newsletter")
+    contact = Contact.create!(
+      email: "resigup@example.com",
+      sources: ["newsletter"],
+      ghost_data: { "snapshot" => { "deleted_at" => "2024-01-01T00:00:00Z" } }
+    )
+    existing = member(id: "m52", email: "resigup@example.com", labels: ["newsletter"])
+
+    ghost = mock("ghost")
+    ghost.expects(:all_members).returns([existing])
+    ghost.expects(:update_member).never
+
+    sync = sync_with(ghost)
+    sync.sync_all!
+    contact.reload
+    assert_equal "m52", contact.ghost_id
+    assert_nil contact.ghost_data.dig("snapshot", "deleted_at")
+  end
+
+  # Finding F: NQL email filter escapes single quotes
+  test "find_member_by_email escapes single quotes in the NQL filter" do
+    Stacks::Utils.stubs(:config).returns({
+      ghost: {
+        api_url: "https://example.ghost.io",
+        admin_api_key: "65abc123def:0123456789abcdef0123456789abcdef",
+      }
+    })
+    client = Stacks::Ghost.new(max_retries: 0)
+    captured_filter = nil
+    Stacks::Ghost.stubs(:get).with { |_url, opts|
+      captured_filter = opts[:query][:filter]
+      true
+    }.returns(
+      begin
+        resp = mock("response")
+        resp.stubs(:success?).returns(true)
+        resp.stubs(:code).returns(200)
+        resp.stubs(:parsed_response).returns({ "members" => [] })
+        resp
+      end
+    )
+    client.find_member_by_email("o'brien@x.com")
+    assert captured_filter.include?("o\\'brien"), "Expected escaped quote in filter, got: #{captured_filter}"
   end
 end

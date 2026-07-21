@@ -55,7 +55,7 @@ class Stacks::Ghost
   def find_member_by_email(email)
     response = handle_response {
       self.class.get(url("/members/"), query: {
-        filter: "email:'#{email.to_s.downcase}'", include: "labels,newsletters",
+        filter: "email:'#{email.to_s.downcase.gsub("'", "\\\\'")}'", include: "labels,newsletters",
       }, headers: headers)
     }
     (response.parsed_response["members"] || []).first

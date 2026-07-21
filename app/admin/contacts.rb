@@ -73,6 +73,7 @@ ActiveAdmin.register Contact do
         end
         row("Newsletters") { (resource.ghost_data.dig("snapshot", "newsletters") || []).join(", ") }
         row("Suppressed?") { resource.ghost_data.dig("snapshot", "suppressed").inspect }
+        row("Email Disabled?") { resource.ghost_data.dig("snapshot", "email_disabled").inspect }
         row("Email in Ghost") do
           mismatch = resource.ghost_data.dig("snapshot", "email_in_ghost")
           mismatch.present? ? status_tag(mismatch, class: "warning") : "—"

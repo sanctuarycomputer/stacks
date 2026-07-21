@@ -41,6 +41,15 @@ class Stacks::GhostSync
     members_by_id = members.index_by { |m| m["id"] }
     members_by_email = members.index_by { |m| m["email"].to_s.downcase }
 
+    # Reconcile Ghost-side deletions: any contact whose ghost_id is no longer
+    # present in the fetched member list had their member deleted without a
+    # webhook reaching us. Clear the link and stamp deleted_at.
+    Contact.where.not(ghost_id: nil).find_each do |contact|
+      next if members_by_id.key?(contact.ghost_id)
+      apply_member_deleted!(contact)
+      @summary[:member_deleted] += 1
+    end
+
     # Outbound legs only run when at least one source is enabled: an empty
     # checkbox set means "sync off", not "remove every label in Ghost".
     if enabled.any?
@@ -70,25 +79,41 @@ class Stacks::GhostSync
   def sync_contact!(contact, enabled, members_by_id, members_by_email)
     desired = desired_labels_for(contact, enabled)
     member = members_by_id[contact.ghost_id] || members_by_email[contact.email.downcase]
+    wrote = false
 
     if member.nil?
+      # Finding C: do not re-create members that were explicitly deleted.
+      if contact.ghost_data.dig("snapshot", "deleted_at").present?
+        @summary[:suppressed_deleted] += 1
+        return nil
+      end
+
       begin
         member = @ghost.create_member(
           { email: contact.email, name: contact.display_name.presence, labels: desired }.compact
         )
         @summary[:created] += 1
+        wrote = true
       rescue Stacks::Ghost::RequestError => e
         raise unless e.code == 422
         # Someone created this email in Ghost since our sweep snapshot — adopt it.
         member = @ghost.find_member_by_email(contact.email)
         raise if member.nil?
-        member = update_member_labels(contact, member, desired, enabled) || member
+        updated = update_member_labels(contact, member, desired, enabled)
+        if updated
+          member = updated
+          wrote = true
+        end
       end
     else
-      member = update_member_labels(contact, member, desired, enabled) || member
+      updated = update_member_labels(contact, member, desired, enabled)
+      if updated
+        member = updated
+        wrote = true
+      end
     end
 
-    link_contact!(contact, member)
+    link_contact!(contact, member, wrote)
     member
   end
 
@@ -129,7 +154,16 @@ class Stacks::GhostSync
   def handle_member_deleted(previous_member)
     contact = Contact.find_by(ghost_id: previous_member["id"])
     return nil unless contact
+    apply_member_deleted!(contact)
+    contact
+  end
 
+  private
+
+  # Shared logic for severing a Ghost member link: clears ghost_id and stamps
+  # snapshot.deleted_at while preserving other snapshot keys. Used by both
+  # handle_member_deleted (webhook path) and the sweep reconciliation leg.
+  def apply_member_deleted!(contact)
     contact.update!(
       ghost_id: nil,
       ghost_data: contact.ghost_data.merge(
@@ -137,10 +171,7 @@ class Stacks::GhostSync
           .merge("deleted_at" => Time.current.iso8601)
       )
     )
-    contact
   end
-
-  private
 
   # Labels are source names verbatim; the managed label set is exactly the
   # enabled sources. Labels outside that set (hand-added in Ghost, or from a
@@ -182,11 +213,14 @@ class Stacks::GhostSync
     updated
   end
 
-  def link_contact!(contact, member)
-    contact.update!(
-      ghost_id: member["id"],
-      ghost_data: contact.ghost_data.merge("synced_at" => Time.current.iso8601)
-    )
+  # Finding A: only stamp synced_at when a real Ghost write occurred (wrote=true).
+  # Skip the update entirely when ghost_id already matches and nothing was written.
+  def link_contact!(contact, member, wrote = false)
+    already_linked = contact.ghost_id == member["id"]
+    return if already_linked && !wrote
+
+    new_data = wrote ? contact.ghost_data.merge("synced_at" => Time.current.iso8601) : contact.ghost_data
+    contact.update!(ghost_id: member["id"], ghost_data: new_data)
   rescue ActiveRecord::RecordNotUnique
     # Member already linked to another contact (its email was changed in
     # Ghost). Email is stacks-owned: if the member's email now matches THIS
@@ -194,10 +228,8 @@ class Stacks::GhostSync
     owner = Contact.where(ghost_id: member["id"]).where.not(id: contact.id).first
     if owner && member["email"].to_s.downcase == contact.email.downcase
       owner.update!(ghost_id: nil)
-      contact.update!(
-        ghost_id: member["id"],
-        ghost_data: contact.ghost_data.merge("synced_at" => Time.current.iso8601)
-      )
+      new_data = wrote ? contact.ghost_data.merge("synced_at" => Time.current.iso8601) : contact.ghost_data
+      contact.update!(ghost_id: member["id"], ghost_data: new_data)
     else
       @summary[:link_conflicts] += 1
     end

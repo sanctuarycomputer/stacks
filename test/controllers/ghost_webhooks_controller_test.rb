@@ -99,4 +99,15 @@ class GhostWebhooksControllerTest < ActionDispatch::IntegrationTest
     }
     assert_response :unauthorized
   end
+
+  # Finding E: malformed header must return 401, not 200
+  test "rejects a malformed X-Ghost-Signature header" do
+    post "/webhooks/ghost",
+      params: JSON.dump({ "member" => {} }),
+      headers: {
+        "Content-Type" => "application/json",
+        "X-Ghost-Signature" => "garbage",
+      }
+    assert_response :unauthorized
+  end
 end
