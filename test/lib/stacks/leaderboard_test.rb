@@ -189,6 +189,20 @@ class Stacks::LeaderboardTest < ActiveSupport::TestCase
       "a comma in a name must survive a CSV round-trip"
   end
 
+  test "mso_compensation scales the month average by each tier multiplier" do
+    tiers = Stacks::Leaderboard.mso_compensation(BigDecimal("1000"))
+
+    assert_equal ["Heads", "Chiefs", "Founders"], tiers.map(&:label)
+    assert_equal ["0.8x", "1x", "1.2x"], tiers.map(&:multiplier_label),
+      "1x renders without a trailing .0"
+    assert_equal [BigDecimal("800"), BigDecimal("1000"), BigDecimal("1200")],
+      tiers.map(&:amount)
+  end
+
+  test "mso_compensation handles a zero average" do
+    assert_equal [0, 0, 0], Stacks::Leaderboard.mso_compensation(BigDecimal(0)).map { |t| t.amount.to_i }
+  end
+
   test "sanitize_limit defaults, clamps, and rejects junk" do
     assert_equal 5, Stacks::Leaderboard.sanitize_limit(nil)
     assert_equal 5, Stacks::Leaderboard.sanitize_limit("")

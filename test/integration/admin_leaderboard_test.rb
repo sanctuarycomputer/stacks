@@ -64,6 +64,12 @@ class AdminLeaderboardTest < ActionDispatch::IntegrationTest
       'each month gets an MSO Compensation panel'
     assert_includes response.body, 'panel_contents',
       'the panel uses the standard ActiveAdmin panel markup'
+    # Month average is $650.00 (900 + 400, over 2 listed earners).
+    assert_includes response.body, 'Heads (0.8x)'
+    assert_includes response.body, '$520.00', 'Heads = 650 x 0.8'
+    assert_includes response.body, 'Chiefs (1x)'
+    assert_includes response.body, 'Founders (1.2x)'
+    assert_includes response.body, '$780.00', 'Founders = 650 x 1.2'
     assert_includes response.body, 'download_links',
       'renders the standard ActiveAdmin download footer'
     assert_includes response.body, %(<a href="/admin/leaderboard.csv?limit=5">CSV</a>),

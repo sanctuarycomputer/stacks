@@ -40,7 +40,16 @@
     <div class="panel">
       <h3>MSO Compensation</h3>
       <div class="panel_contents">
-        <p>TKTKTK</p>
+        <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="width: 100%;">
+          <tbody>
+            <% Stacks::Leaderboard.mso_compensation(group.average).each_with_index do |tier, index| %>
+              <tr class="<%= index.even? ? "even" : "odd" %>">
+                <td class="col"><%= tier.label %> (<%= tier.multiplier_label %>)</td>
+                <td class="col text-right"><%= number_to_currency(tier.amount) %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
       </div>
     </div>
 

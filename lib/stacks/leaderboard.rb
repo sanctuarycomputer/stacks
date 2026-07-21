@@ -27,6 +27,32 @@ module Stacks
       "Earnings",
     ].freeze
 
+    # Leadership compensation tiers. Each tier earns the month's average
+    # top-N earner times its multiplier — which is exactly why Trueups are
+    # excluded from the earnings above: a Trueup is the payment that lifts
+    # one of these roles up to the figure derived here, so letting it count
+    # as earnings would feed the benchmark back into itself.
+    MSO_TIERS = [
+      ["Heads", BigDecimal("0.8")],
+      ["Chiefs", BigDecimal("1")],
+      ["Founders", BigDecimal("1.2")],
+    ].freeze
+
+    MsoTier = Struct.new(:label, :multiplier, :multiplier_label, :amount, keyword_init: true)
+
+    # What each leadership tier is paid for a month, given that month's
+    # average top-N earner.
+    def self.mso_compensation(average)
+      MSO_TIERS.map do |label, multiplier|
+        MsoTier.new(
+          label: label,
+          multiplier: multiplier,
+          multiplier_label: "#{multiplier.to_s("F").sub(/\.0+\z/, "")}x",
+          amount: average * multiplier
+        )
+      end
+    end
+
     Entry = Struct.new(:rank, :contributor_id, :display_name, :amount, keyword_init: true)
 
     # `average` is the mean across the listed entries only (not the whole
