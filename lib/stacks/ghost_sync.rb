@@ -185,7 +185,8 @@ class Stacks::GhostSync
   end
 
   def managed_label_names(member, enabled)
-    (label_names(member) & enabled).sort
+    enabled_downcased = enabled.map(&:downcase)
+    label_names(member).select { |n| enabled_downcased.include?(n.downcase) }.sort
   end
 
   # Returns the updated member hash when a write happened, nil for a no-op.
@@ -193,8 +194,14 @@ class Stacks::GhostSync
   # (unmanaged) labels alongside ours. Never includes :newsletters.
   def update_member_labels(contact, member, desired, enabled)
     attrs = {}
-    if managed_label_names(member, enabled) != desired
-      attrs[:labels] = (label_names(member) - enabled) + desired
+    # Compare case-insensitively: Ghost dedupes labels by slug so it may store
+    # "newsletter" even when the enabled source is named "Newsletter".
+    # We converge when the downcased sets match; we still SEND the verbatim
+    # desired names so the source name is the write contract.
+    if managed_label_names(member, enabled).map(&:downcase).sort != desired.map(&:downcase).sort
+      enabled_downcased = enabled.map(&:downcase)
+      preserved = label_names(member).reject { |n| enabled_downcased.include?(n.downcase) }
+      attrs[:labels] = preserved + desired
     end
     if member["name"].blank? && contact.display_name.present?
       attrs[:name] = contact.display_name
@@ -208,7 +215,11 @@ class Stacks::GhostSync
 
   def delabel_member!(contact, member, enabled)
     return member if managed_label_names(member, enabled).empty?
-    updated = @ghost.update_member(member["id"], labels: label_names(member) - enabled)
+    enabled_downcased = enabled.map(&:downcase)
+    updated = @ghost.update_member(
+      member["id"],
+      labels: label_names(member).reject { |n| enabled_downcased.include?(n.downcase) }
+    )
     @summary[:delabeled] += 1
     updated
   end
@@ -227,6 +238,13 @@ class Stacks::GhostSync
     # contact, steal the link from the stale owner; otherwise leave it.
     owner = Contact.where(ghost_id: member["id"]).where.not(id: contact.id).first
     if owner && member["email"].to_s.downcase == contact.email.downcase
+      # Skip the steal when the current owner's email is a case-fold duplicate of
+      # this contact's email: stealing would just ping-pong the link every sweep.
+      # dedupe! will collapse them later (and fix #1 will carry the link through).
+      if owner.email.downcase == contact.email.downcase
+        @summary[:link_conflicts] += 1
+        return
+      end
       owner.update!(ghost_id: nil)
       new_data = wrote ? contact.ghost_data.merge("synced_at" => Time.current.iso8601) : contact.ghost_data
       contact.update!(ghost_id: member["id"], ghost_data: new_data)

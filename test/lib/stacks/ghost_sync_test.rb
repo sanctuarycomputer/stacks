@@ -366,6 +366,73 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
     assert_nil contact.ghost_data.dig("snapshot", "deleted_at")
   end
 
+  # Fix #3: link_contact! steal skips case-fold duplicates to avoid ping-pong
+  test "link_contact! skips steal when owner email case-folds equal to contact email and counts link_conflict" do
+    GhostSyncedSource.create!(source: "newsletter")
+    # Two contacts differing only by email case (case-fold duplicates)
+    owner = Contact.create!(
+      email: "casefold@example.com",
+      sources: ["newsletter"],
+      ghost_id: "m-cf1"
+    )
+    other = Contact.create!(
+      email: "CASEFOLD@example.com",
+      sources: ["newsletter"]
+    )
+    ghost_member = member(id: "m-cf1", email: "casefold@example.com", labels: ["newsletter"])
+
+    ghost = mock("ghost")
+    ghost.expects(:all_members).returns([ghost_member])
+    # The sync will try to sync the other contact (uppercase email, same source)
+    # It finds the member by email; link_contact! should detect owner email case-folds
+    # equal to other.email and skip the steal
+    ghost.stubs(:update_member).returns(ghost_member)
+
+    sync = sync_with(ghost)
+    sync.sync_all!
+
+    # owner must keep ghost_id (steal was skipped)
+    assert_equal "m-cf1", owner.reload.ghost_id
+    # other must NOT have stolen ghost_id
+    assert_nil other.reload.ghost_id
+    assert_equal 1, sync.summary[:link_conflicts]
+  end
+
+  # Fix #4: label comparison is case/slug-insensitive — existing "newsletter" matches desired "Newsletter"
+  test "no-op when Ghost label name differs only by case from the enabled source name" do
+    GhostSyncedSource.create!(source: "Newsletter")
+    Contact.create!(email: "caselab@example.com", sources: ["Newsletter"], ghost_id: "m-caselab")
+    # Ghost stored the label as lowercase "newsletter" (Ghost dedupes by slug)
+    existing = member(id: "m-caselab", email: "caselab@example.com", labels: ["newsletter"])
+
+    ghost = mock("ghost")
+    ghost.expects(:all_members).returns([existing])
+    ghost.expects(:update_member).never
+    ghost.expects(:create_member).never
+
+    sync = sync_with(ghost)
+    sync.sync_all!
+    assert_equal 0, sync.summary[:updated]
+  end
+
+  # Fix #4b: non-managed label case is not destroyed when diffing
+  test "non-managed label with unusual casing is preserved and update_member is not called spuriously" do
+    GhostSyncedSource.create!(source: "Newsletter")
+    Contact.create!(
+      email: "nonmanaged@example.com",
+      sources: ["Newsletter"],
+      ghost_id: "m-nonmgd"
+    )
+    # Ghost has "newsletter" (managed, case mismatch) and "VIP" (non-managed)
+    existing = member(id: "m-nonmgd", email: "nonmanaged@example.com", labels: ["newsletter", "VIP"])
+
+    ghost = mock("ghost")
+    ghost.expects(:all_members).returns([existing])
+    ghost.expects(:update_member).never
+
+    sync_with(ghost).sync_all!
+  end
+
   # Finding F: NQL email filter escapes single quotes
   test "find_member_by_email escapes single quotes in the NQL filter" do
     Stacks::Utils.stubs(:config).returns({

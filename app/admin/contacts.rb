@@ -23,7 +23,7 @@ ActiveAdmin.register Contact do
         sources: row["Sources"] || row["sources"] || row["Source"] || row["source"]
       }
       if d[:email].present?
-        contact = Contact.create_or_find_by!(email: d[:email])
+        contact = Contact.create_or_find_by!(email: d[:email].to_s.downcase.strip)
         contact.update(sources: [*contact.sources, *(d[:sources].split(" ").map(&:strip) || [])].uniq)
       end
     end

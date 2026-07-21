@@ -87,8 +87,24 @@ class Contact < ApplicationRecord
               self.source_events = Contact.merge_source_events(
                 [fresh_self.source_events, fresh_existing&.source_events]
               )
+              # Carry ghost_id/ghost_data from fresh_existing when self lacks them.
+              # ghost_id has a unique index — destroy fresh_existing before saving self.
+              if fresh_existing
+                self.ghost_id ||= fresh_existing.ghost_id
+                if self.ghost_data.blank? || self.ghost_data == {}
+                  self.ghost_data = fresh_existing.ghost_data
+                elsif fresh_existing.ghost_data.dig("snapshot", "deleted_at").present? &&
+                      self.ghost_data.dig("snapshot", "deleted_at").blank?
+                  self.ghost_data = self.ghost_data.merge(
+                    "snapshot" => (self.ghost_data["snapshot"] || {}).merge(
+                      "deleted_at" => fresh_existing.ghost_data.dig("snapshot", "deleted_at")
+                    )
+                  )
+                end
+              end
               # Destroy before save!: self still carries the conflicting
-              # apollo_id, so saving first would re-trip the unique index.
+              # apollo_id (and now potentially ghost_id), so saving first would
+              # re-trip the unique index.
               fresh_existing&.destroy!
               save!
               merged = true
@@ -160,6 +176,20 @@ class Contact < ApplicationRecord
         merged_apollo_id = dupes.map(&:apollo_id).compact.first
         merged_display_name = dupes.map(&:display_name).compact.first
 
+        # Carry ghost_id from the first dupe that has one (ordered by id, same as
+        # apollo_id). ghost_id has a unique index — delete losers before assigning.
+        merged_ghost_id = dupes.map(&:ghost_id).compact.first
+        # Carry ghost_data from the dupe that owns merged_ghost_id (fall back to the
+        # first dupe with non-empty ghost_data, else {}).
+        ghost_id_owner = dupes.find { |d| d.ghost_id == merged_ghost_id }
+        merged_ghost_data = (ghost_id_owner&.ghost_data.presence || dupes.map(&:ghost_data).find(&:present?) || {}).dup
+        # Opt-out must survive any merge direction: if ANY dupe has deleted_at and
+        # the carried ghost_data lacks it, preserve it into the carried snapshot.
+        any_deleted_at = dupes.map { |d| d.ghost_data.dig("snapshot", "deleted_at") }.compact.first
+        if any_deleted_at && merged_ghost_data.dig("snapshot", "deleted_at").blank?
+          merged_ghost_data["snapshot"] = (merged_ghost_data["snapshot"] || {}).merge("deleted_at" => any_deleted_at)
+        end
+
         losers.each do |loser|
           CONTACT_REFERENCES.each do |table, fk, scope_cols|
             repoint_references!(table, fk, scope_cols, from: loser.id, to: survivor.id)
@@ -167,8 +197,9 @@ class Contact < ApplicationRecord
         end
 
         # Delete the losers BEFORE reassigning their attributes onto the survivor.
-        # contacts.apollo_id has a unique index, so assigning a loser's apollo_id to
-        # the survivor while that loser still exists would violate the constraint.
+        # contacts.apollo_id and contacts.ghost_id both have unique indexes, so
+        # assigning a loser's value to the survivor while that loser still exists
+        # would violate the constraint.
         Contact.where(id: losers.map(&:id)).delete_all
 
         survivor.update!(
@@ -176,6 +207,8 @@ class Contact < ApplicationRecord
           source_events: merged_source_events,
           apollo_id: merged_apollo_id,
           display_name: survivor.display_name.presence || merged_display_name,
+          ghost_id: merged_ghost_id,
+          ghost_data: merged_ghost_data,
         )
       end
     end
