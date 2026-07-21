@@ -31,9 +31,10 @@ Scale assumption: newsletter-sized lists (thousands, not millions). A paginated 
 **Migration — contacts:**
 - `ghost_id` string, unique index. Stable join key (Ghost emails are mutable). Set on first push or first inbound event.
 - `ghost_data` jsonb, default `{}`, null: false. Contents:
-  - `fingerprint`: what we last pushed — `{labels: [sorted stacks:* label names], name: "..."}`. Used for echo suppression and needs-update checks.
   - `snapshot`: Ghost-owned state for admin visibility — `{newsletters: [slugs], suppressed: bool, email_disabled: bool, email_in_ghost: "...", deleted_at: ts}`.
   - `synced_at`: last successful outbound write.
+
+  (No pushed-state "fingerprint" is stored: outbound needs-update checks compare desired labels against the freshly fetched member, and inbound echo suppression falls out of upsert idempotence — see §4.)
 
 **New model `GhostSyncedSource`** — single `source` string column, unique index. Row exists ⇔ contacts with that source are pushed to Ghost. Written by the admin checkbox UI.
 
@@ -46,7 +47,7 @@ Scale assumption: newsletter-sized lists (thousands, not millions). A paginated 
 HTTParty class following `Stacks::Apollo` / `Stacks::Runn` patterns.
 
 - **Auth:** per-request JWT — header `{alg: HS256, typ: JWT, kid: <key id>}`, payload `{iat: now, exp: now+300, aud: "/admin/"}`, signed with the **hex-decoded** secret. Sent as `Authorization: Ghost <token>`. Pin `Accept-Version: v6.0`.
-- **Methods:** `all_members` (browse, `?limit=100&include=labels,newsletters`, follow `meta.pagination.next`), `find_member_by_email(email)` (`?filter=email:'<email>'`), `create_member(attrs)`, `update_member(id, attrs)`, `all_newsletters`.
+- **Methods:** `all_members` (browse, `?limit=100&include=labels,newsletters`, follow `meta.pagination.next`), `find_member_by_email(email)` (`?filter=email:'<email>'`), `create_member(attrs)`, `update_member(id, attrs)`. (No newsletters endpoint needed — member payloads embed newsletter slugs.)
 - **Resilience:** shared request wrapper with Runn-style exponential backoff on 429/5xx; ~5 req/s self-throttle on write loops.
 - Webhook registration is manual, one-time, in Ghost Admin (Settings → Integrations → custom integration): three webhooks (member.added/edited/deleted) → `POST https://<stacks-host>/webhooks/ghost`, each with the shared secret. (Ghost has no webhook browse endpoint; API-managed webhooks aren't worth it.)
 
@@ -61,7 +62,7 @@ HTTParty class following `Stacks::Apollo` / `Stacks::Runn` patterns.
 5. **Create** if no member matches (by `ghost_id`, else email): `POST /members/` with `{email, name: display_name, labels: desired}`. No `newsletters` key → Ghost subscribes them to `subscribe_on_signup` newsletters. No `send_email` param (defaults off — no welcome email). On 422 "Member already exists": re-fetch by email, adopt, fall through to update.
 6. **Update** if the member's actual `stacks:*` label set ≠ desired, or name is blank in Ghost while contact has `display_name`: PUT with `labels = (member's non-stacks labels) + desired`, GET-then-PUT semantics (we have the fresh member from the sweep fetch). Never include `newsletters`. Never overwrite a non-blank Ghost name.
 7. **De-labeling:** contacts linked to a member (`ghost_id` set) but no longer eligible get their `stacks:*` labels removed (member kept, subscriptions untouched).
-8. After any successful write: update `ghost_data.fingerprint` + `synced_at`; store `ghost_id` on create. The sweep also refreshes `ghost_data.snapshot` for every matched member (not just pull-leg upserts), so the webhook echo check always compares against current state. `RecordNotUnique` on `ghost_id` → reuse the `sync_to_apollo!` lock-merge-retry pattern (`dedupe!`).
+8. After any successful write: update `ghost_data.synced_at`; store `ghost_id` on create. The sweep's pull leg (§4) then refreshes `ghost_data.snapshot` for every member. `RecordNotUnique` on `ghost_id` (member already linked to another contact — e.g. its email was changed in Ghost and now matches a different contact): if the member's current email matches this contact's email, steal the link (clear the stale owner's `ghost_id`, retry once); otherwise skip and count as a conflict.
 9. Sweep summary (created/updated/delabeled/skipped-invalid/inbound-upserted/errors) returned for the admin flash and logged for Scheduler runs. Per-contact errors are rescued, counted, and don't halt the sweep.
 
 **Initial backfill note:** first real run just uses this same loop. If the eligible set were ever huge (>~5k creates), Ghost's CSV import endpoint (`POST /members/upload/`, fires no webhooks) is the escape hatch — not built now (YAGNI).
@@ -78,8 +79,8 @@ One shared upsert path, `Stacks::GhostSync#upsert_contact_from_member(member)`, 
 **Webhook receiver** — `POST /webhooks/ghost` (new controller, outside `/api`; no session/CSRF):
 
 - **Signature:** verify `X-Ghost-Signature: sha256=<hex>, t=<ms>` where hex = HMAC-SHA256(secret, raw_body + t) — computed against raw request bytes. Constant-time compare; reject with 401 on mismatch or if `t` is >5 min stale. (Ghost 6 format; we're on Ghost(Pro) current, so no legacy body-only fallback.)
-- `member.added` / `member.edited` → **echo check first**: if the payload's `stacks:*` labels + name match `ghost_data.fingerprint` and its newsletters match `ghost_data.snapshot`, it's the echo of our own write — 200, skip. Otherwise run the shared upsert.
-- `member.deleted` → keep the contact; clear `ghost_id`, stamp `ghost_data.snapshot.deleted_at`. (Payload's `previous` holds the member.)
+- `member.added` / `member.edited` (distinguished from deletion by payload shape: `member.current` populated) → run the shared upsert. **Echo suppression is idempotence:** the upsert only writes when something actually changed and only records `source_events` for newly added sources, so the webhook echo of our own label push is a no-op; and since the inbound path never writes to Ghost, no loop is possible.
+- `member.deleted` (payload has empty `current`, member in `previous`) → keep the contact; clear `ghost_id`, stamp `ghost_data.snapshot.deleted_at`.
 - Always respond inside Ghost's 2s window — the upsert is single-row writes, done inline; no queue needed. Unknown events → 200 no-op. Handler errors → 200 anyway (sweep is the safety net; a 5xx buys nothing since Ghost won't retry, and a 410 would delete the webhook).
 
 ## 5. Admin UI (ActiveAdmin)
@@ -104,7 +105,7 @@ One shared upsert path, `Stacks::GhostSync#upsert_contact_from_member(member)`, 
 ## 8. Testing (minitest, existing patterns)
 
 - **Client:** JWT construction (kid/aud/exp, hex-decoded secret), pagination, backoff — WebMock-style stubs.
-- **Sweep:** create/update/delabel decisions; non-stacks labels preserved; `newsletters` never written on update; unsubscribed member not re-subscribed; 422-adopt path; fingerprint updates; invalid email skip; advisory-lock no-overlap.
+- **Sweep:** create/update/delabel decisions; non-stacks labels preserved; `newsletters` never written on update; unsubscribed member not re-subscribed; 422-adopt path; invalid email skip; advisory-lock no-overlap.
 - **Inbound upsert:** new contact from member; source added only once; `source_events` only on newly added source; `display_name` backfill; email-mismatch snapshot.
 - **Webhook controller:** signature valid/invalid/stale; echo suppression; added/edited/deleted flows; unknown event 200.
 
