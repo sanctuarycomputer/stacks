@@ -60,6 +60,10 @@ class AdminLeaderboardTest < ActionDispatch::IntegrationTest
     assert_includes response.body,
       %(<a href="/admin/contributors/#{alpha.id}">alpha@example.com</a>),
       'links each contributor through to their contributor page'
+    assert_includes response.body, '<h3>MSO Compensation</h3>',
+      'each month gets an MSO Compensation panel'
+    assert_includes response.body, 'panel_contents',
+      'the panel uses the standard ActiveAdmin panel markup'
     assert_includes response.body, 'download_links',
       'renders the standard ActiveAdmin download footer'
     assert_includes response.body, %(<a href="/admin/leaderboard.csv?limit=5">CSV</a>),
