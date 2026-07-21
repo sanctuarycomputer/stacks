@@ -192,18 +192,18 @@ class Stacks::LeaderboardTest < ActiveSupport::TestCase
   test "mso_compensation scales the month average by each tier multiplier" do
     tiers = Stacks::Leaderboard.mso_compensation(BigDecimal("1000"))
 
-    assert_equal ["Heads", "SVPs", "Chiefs", "Founders"], tiers.map(&:label)
-    assert_equal ["0.7x", "0.85x", "1x", "1.2x"], tiers.map(&:multiplier_label),
+    assert_equal ["Heads", "SVPs", "Chiefs", "Principals"], tiers.map(&:label)
+    assert_equal ["0.7x", "0.85x", "1x", "1.15x"], tiers.map(&:multiplier_label),
       "1x renders without a trailing .0"
-    assert_equal [BigDecimal("700"), BigDecimal("850"), BigDecimal("1000"), BigDecimal("1200")],
+    assert_equal [BigDecimal("700"), BigDecimal("850"), BigDecimal("1000"), BigDecimal("1150")],
       tiers.map(&:amount)
   end
 
-  test "SVPs sit exactly halfway between Heads and Chiefs" do
-    by_label = Stacks::Leaderboard::MSO_TIERS.to_h
-    midpoint = (by_label.fetch("Heads") + by_label.fetch("Chiefs")) / 2
+  test "the tier ladder steps by a uniform +0.15" do
+    steps = Stacks::Leaderboard::MSO_TIERS.map(&:last).each_cons(2).map { |a, b| b - a }
 
-    assert_equal midpoint, by_label.fetch("SVPs")
+    assert_equal [Stacks::Leaderboard::MSO_TIER_STEP] * steps.size, steps,
+      "every tier should sit one even step above the one below it"
   end
 
   test "mso_compensation handles a zero average" do

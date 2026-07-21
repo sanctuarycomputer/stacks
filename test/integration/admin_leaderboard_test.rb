@@ -70,8 +70,8 @@ class AdminLeaderboardTest < ActionDispatch::IntegrationTest
     assert_includes response.body, 'SVPs (0.85x)'
     assert_includes response.body, '$552.50', 'SVPs = 650 x 0.85'
     assert_includes response.body, 'Chiefs (1x)'
-    assert_includes response.body, 'Founders (1.2x)'
-    assert_includes response.body, '$780.00', 'Founders = 650 x 1.2'
+    assert_includes response.body, 'Principals (1.15x)'
+    assert_includes response.body, '$747.50', 'Principals = 650 x 1.15'
     assert_includes response.body, 'download_links',
       'renders the standard ActiveAdmin download footer'
     assert_includes response.body, %(<a href="/admin/leaderboard.csv?limit=5">CSV</a>),

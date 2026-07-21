@@ -32,13 +32,15 @@ module Stacks
     # excluded from the earnings above: a Trueup is the payment that lifts
     # one of these roles up to the figure derived here, so letting it count
     # as earnings would feed the benchmark back into itself.
-    # SVPs sit exactly halfway between Heads and Chiefs: (0.7 + 1.0) / 2.
+    # A uniform ladder: every tier is +0.15 above the one below it.
     MSO_TIERS = [
       ["Heads", BigDecimal("0.7")],
       ["SVPs", BigDecimal("0.85")],
       ["Chiefs", BigDecimal("1")],
-      ["Founders", BigDecimal("1.2")],
+      ["Principals", BigDecimal("1.15")],
     ].freeze
+
+    MSO_TIER_STEP = BigDecimal("0.15")
 
     MsoTier = Struct.new(:label, :multiplier, :multiplier_label, :amount, keyword_init: true)
 
