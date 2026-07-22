@@ -17,6 +17,36 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
     System.first_or_create!(settings: {}).update!(ghost_synced_sources: sources)
   end
 
+  test "upsert resolves newsletter slugs via the newsletters endpoint when the member payload lacks them" do
+    ghost = mock("ghost")
+    # .once also proves the map is memoized across upserts on the same sync
+    ghost.expects(:all_newsletters).once.returns([
+      { "id" => "nl-1", "name" => "garden3d", "slug" => "garden3d" },
+    ])
+    sync = sync_with(ghost)
+    slugless = { "newsletters" => [{ "id" => "nl-1", "name" => "garden3d", "status" => "active" }] }
+
+    contact = sync.upsert_contact_from_member(
+      member(id: "m40", email: "slugless@example.com", extra: slugless)
+    ).reload
+    assert_equal ["g3d:ghost:garden3d"], contact.sources
+
+    contact2 = sync.upsert_contact_from_member(
+      member(id: "m41", email: "slugless2@example.com", extra: slugless)
+    ).reload
+    assert_equal ["g3d:ghost:garden3d"], contact2.sources
+  end
+
+  test "upsert does not call the newsletters endpoint when payload slugs are present" do
+    ghost = mock("ghost")
+    ghost.expects(:all_newsletters).never
+    sync = sync_with(ghost)
+    contact = sync.upsert_contact_from_member(
+      member(id: "m42", email: "hasslug@example.com", newsletters: %w[weekly])
+    ).reload
+    assert_equal ["g3d:ghost:weekly"], contact.sources
+  end
+
   test "creates a member with source-name labels for an eligible contact and links ghost_id" do
     enable_sources("newsletter")
     contact = Contact.create!(email: "new@example.com", sources: ["newsletter"], display_name: "New Person")

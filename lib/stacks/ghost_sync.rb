@@ -126,7 +126,8 @@ class Stacks::GhostSync
       Contact.where("LOWER(email) = ?", email).first ||
       Contact.create_or_find_by!(email: email)
 
-    slugs = (member["newsletters"] || []).map { |n| n["slug"] }.compact.sort
+    slugs = (member["newsletters"] || [])
+      .map { |n| n["slug"] || newsletter_slug_map[n["id"]] }.compact.sort
     ghost_sources = slugs.any? ? slugs.map { |s| "#{SOURCE_PREFIX}:#{s}" } : [SOURCE_PREFIX]
     new_sources = ghost_sources - contact.sources
 
@@ -150,6 +151,16 @@ class Stacks::GhostSync
   end
 
   private
+
+  # Member browse payloads embed newsletters WITHOUT their slug (only
+  # id/name/status — verified against Ghost(Pro) v6 in production), so resolve
+  # slugs via the newsletters endpoint: fetched lazily only when a payload
+  # actually lacks a slug, memoized per sync instance.
+  def newsletter_slug_map
+    @newsletter_slug_map ||= @ghost.all_newsletters.each_with_object({}) do |n, map|
+      map[n["id"]] = n["slug"]
+    end
+  end
 
   # Severs a Ghost member link: clears ghost_id and stamps snapshot.deleted_at
   # while preserving other snapshot keys. Called by the sweep's deletion
