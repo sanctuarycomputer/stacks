@@ -57,6 +57,13 @@ class Stacks::GhostTest < ActiveSupport::TestCase
     assert_nil client.find_member_by_email("nope@x.com")
   end
 
+  test "all_newsletters fetches the newsletters collection" do
+    client = build_client
+    resp = fake_response(code: 200, body: { newsletters: [{ id: "nl-1", slug: "garden3d" }] })
+    Stacks::Ghost.expects(:get).with { |url, _opts| url.include?("/newsletters/") }.returns(resp)
+    assert_equal "garden3d", client.all_newsletters.first["slug"]
+  end
+
   test "non-success raises RequestError with code; 422 is not retryable" do
     client = build_client
     Stacks::Ghost.stubs(:post).returns(

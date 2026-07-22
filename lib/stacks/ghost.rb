@@ -61,6 +61,13 @@ class Stacks::Ghost
     (response.parsed_response["members"] || []).first
   end
 
+  def all_newsletters
+    response = handle_response {
+      self.class.get(url("/newsletters/"), query: { limit: "all" }, headers: headers)
+    }
+    response.parsed_response["newsletters"] || []
+  end
+
   def create_member(attrs)
     response = handle_response {
       self.class.post(url("/members/"), query: { include: "labels,newsletters" },
