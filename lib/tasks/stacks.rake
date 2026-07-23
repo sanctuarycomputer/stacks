@@ -120,6 +120,24 @@ namespace :stacks do
         Rails.logger.error("[stacks:daily_enterprise_tasks] Enterprise##{e.id} (#{e.name}) daily_tasks failed: #{err.class}: #{err.message}")
         Sentry.capture_exception(err) if defined?(Sentry)
       end
+
+      # Ghost two-way contact sync (members, source-name labels, funnel
+      # sources). Per-contact errors are already isolated inside the sweep;
+      # a total failure (e.g. Ghost API unreachable) is isolated here so it
+      # doesn't fail the rest of the daily pass. Advisory lock makes an
+      # overlap with a manual "Sync Now" a clean no-op (returns nil).
+      begin
+        ghost_sync = Stacks::GhostSync.sync_all_with_lock!
+        if ghost_sync
+          Rails.logger.info("[stacks:daily_enterprise_tasks] Ghost sync: #{ghost_sync.summary.to_h.inspect}")
+          ghost_sync.errors.each { |err| Rails.logger.error("[stacks:daily_enterprise_tasks] Ghost sync error: #{err}") }
+        else
+          Rails.logger.info("[stacks:daily_enterprise_tasks] Ghost sync skipped: another run holds the advisory lock")
+        end
+      rescue => e
+        Rails.logger.error("[stacks:daily_enterprise_tasks] Ghost sync failed: #{e.class}: #{e.message}")
+        Sentry.capture_exception(e) if defined?(Sentry)
+      end
     rescue => e
       system_task.mark_as_error(e)
     else
