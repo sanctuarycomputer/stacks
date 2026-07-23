@@ -38,7 +38,9 @@ ActiveAdmin.register_page "Ghost Sync" do
     end
 
     panel "Sync" do
-      para "Runs every 10 minutes via Heroku Scheduler (rake ghost:sync)."
+      para "Runs once a day as part of stacks:daily_enterprise_tasks " \
+           "(also available standalone as rake ghost:sync). Use Sync Now " \
+           "for an immediate pass."
       form action: admin_ghost_sync_sync_now_path, method: :post do
         input type: :hidden, name: :authenticity_token, value: form_authenticity_token
         input type: :submit, value: "Sync Now"

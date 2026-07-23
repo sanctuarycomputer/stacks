@@ -12,7 +12,7 @@ Keep stacks contacts in sync with Ghost (garden3d.ghost.io, Ghost(Pro) Publisher
 
 ## Architecture: full-state reconciliation (Approach A)
 
-A scheduled sweep (`rake ghost:sync`, Heroku Scheduler every 10 min, plus an admin "Sync now" button) pulls **all** Ghost members and all sync-eligible contacts, computes desired state per person, and applies the diff in both directions. **The sweep is the only transport** — no webhooks. (Ghost webhooks were originally in scope as a latency optimization, but their 2s delivery timeout and lack of retries meant the sweep had to be fully correct on its own anyway; per Hugh 2026-07-21 they were removed entirely. Signup latency is at most one sweep interval, ~10 minutes.) Any Ghost-side change is picked up by the next sweep.
+A scheduled sweep (a step in `stacks:daily_enterprise_tasks`, once daily — also standalone as `rake ghost:sync` — plus an admin "Sync now" button) pulls **all** Ghost members and all sync-eligible contacts, computes desired state per person, and applies the diff in both directions. **The sweep is the only transport** — no webhooks. (Ghost webhooks were originally in scope as a latency optimization, but their 2s delivery timeout and lack of retries meant the sweep had to be fully correct on its own anyway; per Hugh 2026-07-21 they were removed entirely. Signup latency is at most one sweep interval — daily, per Hugh 2026-07-22; use "Sync now" when sooner matters.) Any Ghost-side change is picked up by the next sweep.
 
 Scale assumption: newsletter-sized lists (thousands, not millions). A paginated full sweep is seconds of work. If that ever changes, `filter=updated_at:>cursor` delta-sync can be layered on without changing semantics.
 
@@ -75,7 +75,7 @@ One upsert path, `Stacks::GhostSync#upsert_contact_from_member(member)`, driven 
 - Match contact by `ghost_id`, else by lowercased email; else `Contact.create_or_find_by!(email:)`.
 - Sources to ensure: `g3d:ghost:<newsletter-slug>` for each **active** newsletter the member subscribes to; plain `g3d:ghost` if they have none (signed up but unsubscribed). Add only missing sources; record a `source_events` entry **only for newly added sources** (so repeat sweeps don't inflate funnel counts) — reusing the atomic `jsonb_set` pattern from `Api::ContactsController`.
 - Set `ghost_id` if unset; refresh `ghost_data.snapshot` (newsletter slugs, `suppressed`, `email_disabled`, `email_in_ghost` when it differs from `contact.email`). Fill blank `display_name` from member name.
-- The upsert is **idempotent** — it only writes when something actually changed — so sweeping the same member every 10 minutes is free, and since the inbound path never writes to Ghost, no loop is possible.
+- The upsert is **idempotent** — it only writes when something actually changed — so repeat sweeps are free, and since the inbound path never writes to Ghost, no loop is possible.
 - Member deletion (detected via §3.1a reconciliation): keep the contact; clear `ghost_id`, stamp `ghost_data.snapshot.deleted_at`.
 
 ## 5. Admin UI (ActiveAdmin)
@@ -86,7 +86,7 @@ One upsert path, `Stacks::GhostSync#upsert_contact_from_member(member)`, driven 
 
 ## 6. Scheduling & concurrency
 
-- `lib/tasks/ghost.rake` → `ghost:sync` invoking `Stacks::GhostSync.new.sync_all!`; Heroku Scheduler every 10 minutes.
+- The sweep runs as an isolated step in `stacks:daily_enterprise_tasks` (once daily, existing Heroku Scheduler job); `lib/tasks/ghost.rake` → `ghost:sync` remains for manual/backfill runs.
 - Postgres advisory lock (`pg_try_advisory_lock` on a fixed key) wraps the sweep so an overlapping Scheduler run / admin button click exits cleanly instead of double-writing.
 
 ## 7. Error handling summary
