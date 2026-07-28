@@ -1,5 +1,5 @@
 ActiveAdmin.register Document do
-  menu parent: 'MCP', label: 'ETL: Documents', if: proc { current_admin_user&.can_access_etl_admin? }
+  menu parent: 'Dashboard', label: 'ETL: Documents', if: proc { current_admin_user&.can_access_etl_admin? }
   actions :index, :show
 
   # Only Hugh can reach these pages — blocks direct URL navigation, not just the menu.
