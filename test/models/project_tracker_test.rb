@@ -80,6 +80,32 @@ class ProjectTrackerTest < ActiveSupport::TestCase
     assert_equal Date.new(2024, 6, 30), pt.last_recorded_assignment_end_date
   end
 
+  test "batch-cached edge assignments expose Date bounds, not raw SQL strings" do
+    pt = ProjectTracker.new(name: "Edge assignment bounds")
+    pt.save!(validate: false)
+    pt.update_column(:snapshot, {}) # no snapshot bounds -> forces the edge-assignment fallback
+
+    fp = ForecastProject.new(forecast_id: 987_654, name: "FP", client_id: 123_456)
+    fp.save!(validate: false)
+    ProjectTrackerForecastProject.create!(project_tracker: pt, forecast_project: fp)
+    fa = ForecastAssignment.new(
+      project_id: fp.forecast_id,
+      start_date: Date.new(2021, 6, 23),
+      end_date: Date.new(2022, 3, 31),
+    )
+    fa.save!(validate: false)
+
+    # preload_for_render runs batch_cache_edge_recorded_assignments!, the path the
+    # admin index uses (and the only path that populates @_first_recorded_assignment
+    # from raw SQL).
+    ProjectTracker.preload_for_render([pt])
+
+    assert_instance_of Date, pt.first_recorded_assignment_start_date
+    assert_equal Date.new(2021, 6, 23), pt.first_recorded_assignment_start_date
+    assert_instance_of Date, pt.last_recorded_assignment_end_date
+    assert_equal Date.new(2022, 3, 31), pt.last_recorded_assignment_end_date
+  end
+
   test "lifetime_commissions_paid sums as_commission across all CPs on this tracker's invoices" do
     pt = ProjectTracker.new(name: "Commission Total Test")
     pt.save!(validate: false)

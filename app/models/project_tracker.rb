@@ -147,8 +147,13 @@ class ProjectTracker < ApplicationRecord
                 ORDER BY end_date DESC LIMIT 1) AS max_end
       FROM unnest(ARRAY[#{int_ids_csv}]::int[]) AS pt(pid)
     SQL
+    # exec_query bypasses model attribute casting, so date columns come back as
+    # ISO strings ("2021-06-23"), not Dates. Cast them here — downstream callers
+    # (first_recorded_assignment_start_date, period_started_at) compare these
+    # against Date.today and a String would raise "comparison of String with Date".
+    cast_date = ->(v) { v.blank? ? nil : (v.is_a?(Date) ? v : Date.iso8601(v.to_s)) }
     edges_by_project_id = rows.each_with_object({}) do |row, h|
-      h[row["pid"].to_i] = [row["min_start"], row["max_end"]]
+      h[row["pid"].to_i] = [cast_date.call(row["min_start"]), cast_date.call(row["max_end"])]
     end
 
     list.each do |pt|
