@@ -1,5 +1,5 @@
 ActiveAdmin.register_page "Ghost Sync" do
-  menu label: "Ghost Sync"
+  menu label: "Ghost Sync", parent: "Contacts"
 
   content title: "Ghost Sync" do
     sources_with_counts_raw = Contact.connection.select_rows(<<~SQL)

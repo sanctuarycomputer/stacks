@@ -1,5 +1,5 @@
 ActiveAdmin.register Meeting do
-  menu parent: 'MCP', label: 'ETL: Meetings', if: proc { current_admin_user&.can_access_etl_admin? }
+  menu parent: 'Dashboard', label: 'ETL: Meetings', if: proc { current_admin_user&.can_access_etl_admin? }
   actions :index, :show
 
   # Only Hugh can reach these pages — blocks direct URL navigation, not just the menu.
