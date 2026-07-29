@@ -130,6 +130,7 @@ ActiveAdmin.register Survey do
     render 'show', {
       survey_responder: SurveyResponder.find_by(survey: survey, admin_user: current_admin_user),
       expected_responder_status: resource.expected_responder_status,
+      responder_status: resource.responder_status,
       results: resource.results
     }
   end
