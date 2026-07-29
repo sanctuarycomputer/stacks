@@ -1,6 +1,22 @@
 require "test_helper"
 
 class SurveyTest < ActiveSupport::TestCase
+  test "reference_date is capped at today for surveys opening in the future" do
+    survey = Survey.create!(title: "Future", description: "d", opens_at: Date.today + 4.weeks)
+    assert_equal Date.today, survey.reference_date
+    # elevated-service window = the 3 completed months before THIS month (not shifted forward)
+    assert_equal 3, survey.elevated_service_periods.size
+    assert_equal (Date.today.beginning_of_month - 3.months),
+                 survey.elevated_service_periods.first.starts_at
+    assert_equal (Date.today.beginning_of_month - 1.month),
+                 survey.elevated_service_periods.last.starts_at
+  end
+
+  test "reference_date uses opens_at for past (closed) surveys" do
+    survey = Survey.create!(title: "Past", description: "d", opens_at: Date.new(2024, 6, 1))
+    assert_equal Date.new(2024, 6, 1), survey.reference_date
+  end
+
   test "clone_from copies free-text questions into the correct association" do
     studio = Studio.create!(name: "S1", mini_name: "s1")
     survey = Survey.create!(title: "Original", description: "Original survey", opens_at: Date.today)

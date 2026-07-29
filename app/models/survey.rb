@@ -36,7 +36,12 @@ class Survey < ApplicationRecord
   end
 
   def reference_date
-    opens_at&.to_date || Date.today
+    # Anchor for "as of" membership + the elevated-service window. Use the survey's
+    # open date so a closed/past survey reflects the cohort that was actually surveyed,
+    # but never the future: a draft opening later (e.g. a freshly duplicated survey,
+    # whose opens_at is set weeks out) must still evaluate against the trailing
+    # completed months from today, not a shifted/incomplete future window.
+    [opens_at&.to_date || Date.today, Date.today].min
   end
 
   def elevated_service_periods
