@@ -33,19 +33,41 @@ class Survey < ApplicationRecord
     end
   end
 
-  def expected_responders
-    studios.reduce([]) do |acc, studio|
-      [*acc, *studio.core_members_active_on(Date.today)]
-    end
+  def reference_date
+    opens_at&.to_date || Date.today
   end
 
+  def elevated_service_periods
+    ref = reference_date.beginning_of_month
+    # NOTE: Stacks::Period.for_gradation excludes the month CONTAINING `through`
+    # (it stops at through.last_month.end_of_month). Passing `ref` (first of the
+    # current month) therefore yields exactly the 3 completed months before it.
+    Stacks::Period.for_gradation(:month, ref - 3.months, ref)
+  end
+
+  def expected_responders
+    expected_responder_status.values.flat_map(&:keys).uniq
+  end
+
+  # Memoized: called repeatedly per survey (index rows call expected_responders twice),
+  # and the elevated-service bulk is the expensive part.
   def expected_responder_status
-    studios.reduce({}) do |acc, studio|
-      acc[studio] = studio.core_members_active_on(Date.today).reduce({}) do |acc, admin_user|
-        acc[admin_user] = SurveyResponder.find_by(survey: self, admin_user: admin_user)
-        acc
+    @expected_responder_status ||= begin
+      ref = reference_date
+      # One bulk elevated-service computation for the whole survey.
+      candidate_fp_ids = studios.flat_map { |s|
+        s.members_active_on(ref).joins(:forecast_person).pluck("forecast_people.forecast_id")
+      }.uniq
+      elevated_ids = Contributor.elevated_service_admin_user_ids(elevated_service_periods, candidate_fp_ids)
+
+      studios.each_with_object({}) do |studio, acc|
+        core = studio.core_members_active_on(ref).to_a
+        elevated = studio.members_active_on(ref).where(id: elevated_ids.to_a).to_a
+        members = (core + elevated).uniq
+        acc[studio] = members.each_with_object({}) do |admin_user, h|
+          h[admin_user] = SurveyResponder.find_by(survey: self, admin_user: admin_user)
+        end
       end
-      acc
     end
   end
 
