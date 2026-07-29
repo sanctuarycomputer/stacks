@@ -94,7 +94,7 @@ class Survey < ApplicationRecord
       prev_survey.survey_free_text_questions.each do |sq|
         n = sq.dup
         n.survey = new_survey
-        new_survey.survey_questions << n
+        new_survey.survey_free_text_questions << n
       end
 
       prev_survey.survey_studios.each do |ss|
