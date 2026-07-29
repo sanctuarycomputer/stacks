@@ -352,18 +352,23 @@ git commit -m "feat(contributor): bulk elevated_service_admin_user_ids over N mo
 # add to test/models/survey_test.rb
   test "expected_responder_status includes elevated-service members as of reference date" do
     studio = Studio.create!(name: "Beta", mini_name: "beta")
-    survey = Survey.create!(title: "B", opens_at: Date.new(2026, 7, 1)) # reference_date -> months Apr,May,Jun 2026
+    survey = Survey.create!(title: "B", description: "d", opens_at: Date.new(2026, 7, 1)) # ref -> Apr,May,Jun 2026
     survey.survey_studios.create!(studio: studio)
 
     au = AdminUser.create!(email: "elev@sanctuary.computer", password: "password12345", password_confirmation: "password12345")
     StudioMembership.create!(studio: studio, admin_user: au, started_at: Date.new(2026, 1, 1))
-    fp = ForecastPerson.create!(forecast_id: 55_601, email: au.email, first_name: "E", last_name: "L")
+    fp = ForecastPerson.create!(forecast_id: 55_601, email: au.email, first_name: "E", last_name: "L", data: {})
     Contributor.create!(forecast_person: fp)
-    survey.elevated_service_periods.each do |p|
-      ip = InvoicePass.create!(start_of_month: p.starts_at)
-      it = InvoiceTracker.create!(invoice_pass: ip)
-      ContributorPayout.create!(invoice_tracker: it, forecast_person_id: fp.forecast_id, amount: 9_000)
-    end
+
+    # Qualify via the HOURS path (avoids the payout/ledger/qbo fixture chain):
+    # one assignment spanning the 3 completed months, 8h/day => ~240h each month >= 120.
+    project = ForecastProject.new(forecast_id: 77_601, name: "Client Work", client_id: 123_456)
+    project.save!(validate: false)
+    fa = ForecastAssignment.new(
+      person_id: fp.forecast_id, project_id: project.forecast_id,
+      allocation: 28_800, start_date: Date.new(2026, 4, 1), end_date: Date.new(2026, 6, 30)
+    )
+    fa.save!(validate: false)
 
     assert_equal 3, survey.elevated_service_periods.size
     assert_includes survey.expected_responders, au
@@ -387,7 +392,10 @@ Replace the existing `expected_responders` and `expected_responder_status` with:
 
   def elevated_service_periods
     ref = reference_date.beginning_of_month
-    Stacks::Period.for_gradation(:month, ref - 3.months, ref - 1.day)
+    # NOTE: Stacks::Period.for_gradation excludes the month CONTAINING `through`
+    # (it stops at through.last_month.end_of_month). Passing `ref` (first of the
+    # current month) therefore yields exactly the 3 completed months before it.
+    Stacks::Period.for_gradation(:month, ref - 3.months, ref)
   end
 
   def expected_responders
