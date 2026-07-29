@@ -352,6 +352,36 @@ class ContributorPayout < ApplicationRecord
     blueprint["Commission"].sum { |l| l["amount"].to_f }
   end
 
+  def blueprint_entries
+    bp = blueprint
+    return [] unless bp.is_a?(Hash)
+    bp.values.flatten.select { |entry| entry.is_a?(Hash) }
+  end
+
+  # The portion of this payout earned against `forecast_project_ids`.
+  #
+  # Payouts hang off a client-level InvoiceTracker, so every ProjectTracker on
+  # that client sees the same payout. Splitting by each entry's forecast_project
+  # is the only thing stopping a client with separate Design and Development
+  # trackers from booking the full cost against both.
+  #
+  # Attribution keys off the presence of forecast_project metadata rather than a
+  # list of known role names: blueprints have gained roles twice (ProjectLead,
+  # then Commission), and a name-based check silently reverts to charging every
+  # tracker the full amount each time. A blueprint with no attributable entries
+  # at all — the legacy payouts that predate blueprints — still falls back to the
+  # full amount so its cost stays visible somewhere.
+  def amount_attributable_to(forecast_project_ids)
+    entries = blueprint_entries
+    attributable = entries.select { |entry| entry.dig("blueprint_metadata", "forecast_project").present? }
+    return amount.to_f if attributable.empty?
+
+    attributable.reduce(0.0) { |acc, entry|
+      next acc unless forecast_project_ids.include?(entry.dig("blueprint_metadata", "forecast_project"))
+      acc + entry["amount"].to_f
+    }.round(2)
+  end
+
   # SyncsAsQboBill contract
   def bill_txn_date
     invoice_tracker.invoice_pass.start_of_month.end_of_month

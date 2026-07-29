@@ -120,4 +120,73 @@ class ProjectTrackerTest < ActiveSupport::TestCase
 
     assert_in_delta 80.0, pt.lifetime_commissions_paid, 0.001
   end
+
+  # A client with separate Design and Development trackers shares one
+  # client-level InvoiceTracker, so both trackers see the same payouts.
+  # monthly_cosr has to split them by each blueprint entry's forecast_project,
+  # or both projects book the full cost and both margins crater.
+  test "monthly_cosr attributes a shared client payout to each tracker by forecast project" do
+    enterprise = Enterprise.find_by!(name: Enterprise::SANCTUARY_NAME)
+    forecast_client = ForecastClient.create!(forecast_id: 90_100_001, name: "Split Client")
+    invoice_pass = InvoicePass.find_or_create_by!(start_of_month: Date.new(2026, 6, 1))
+    qbo_account = enterprise.qbo_account || QboAccount.create!(
+      enterprise: enterprise,
+      client_id: "test_client",
+      client_secret: "test_secret",
+      realm_id: "test_realm_#{SecureRandom.hex(4)}",
+    )
+    invoice_tracker = InvoiceTracker.create!(
+      forecast_client: forecast_client,
+      invoice_pass: invoice_pass,
+      qbo_account: qbo_account,
+    )
+
+    design_fp = ForecastProject.create!(forecast_id: 90_200_001, name: "Design", code: "SPL-1", client_id: forecast_client.forecast_id)
+    dev_fp = ForecastProject.create!(forecast_id: 90_200_002, name: "Development", code: "SPL-2", client_id: forecast_client.forecast_id)
+
+    design = ProjectTracker.new(name: "Split Design")
+    design.save!(validate: false)
+    ProjectTrackerForecastProject.create!(project_tracker: design, forecast_project_id: design_fp.forecast_id)
+
+    dev = ProjectTracker.new(name: "Split Development")
+    dev.save!(validate: false)
+    ProjectTrackerForecastProject.create!(project_tracker: dev, forecast_project_id: dev_fp.forecast_id)
+
+    person = ForecastPerson.create!(forecast_id: 90_300_001, first_name: "Lead", last_name: "Person", email: "lead-#{SecureRandom.hex(3)}@example.com")
+    contributor = Contributor.create!(forecast_person_id: person.forecast_id)
+    ledger = Ledger.find_by!(contributor: contributor, enterprise: enterprise)
+
+    payout = ContributorPayout.new(
+      invoice_tracker: invoice_tracker,
+      ledger: ledger,
+      created_by: AdminUser.first || AdminUser.create!(email: "admin-#{SecureRandom.hex(3)}@example.com", password: SecureRandom.hex(8)),
+      amount: 3310.50,
+      blueprint: {
+        "AccountLead" => [
+          { "amount" => 228.0, "blueprint_metadata" => { "forecast_project" => dev_fp.forecast_id } },
+          { "amount" => 336.0, "blueprint_metadata" => { "forecast_project" => design_fp.forecast_id } },
+        ],
+        "ProjectLead" => [
+          { "amount" => 142.5, "blueprint_metadata" => { "forecast_project" => dev_fp.forecast_id } },
+          { "amount" => 210.0, "blueprint_metadata" => { "forecast_project" => design_fp.forecast_id } },
+        ],
+        "IndividualContributor" => [
+          { "amount" => 2394.0, "blueprint_metadata" => { "forecast_project" => design_fp.forecast_id } },
+        ],
+        "Commission" => [],
+      },
+    )
+    payout.save!(validate: false)
+
+    design.stubs(:invoice_trackers).returns([invoice_tracker])
+    dev.stubs(:invoice_trackers).returns([invoice_tracker])
+
+    accrual = invoice_pass.start_of_month.end_of_month
+    design_cost = design.monthly_cosr[accrual].values.sum { |c| c[:amount] }
+    dev_cost = dev.monthly_cosr[accrual].values.sum { |c| c[:amount] }
+
+    assert_in_delta 2940.0, design_cost, 0.001
+    assert_in_delta 370.5, dev_cost, 0.001
+    assert_in_delta payout.amount, design_cost + dev_cost, 0.001
+  end
 end
