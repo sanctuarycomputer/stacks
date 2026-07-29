@@ -371,13 +371,21 @@ class ContributorPayout < ApplicationRecord
   # tracker the full amount each time. A blueprint with no attributable entries
   # at all — the legacy payouts that predate blueprints — still falls back to the
   # full amount so its cost stays visible somewhere.
+  # blueprint is editable as raw JSON from the admin, so an entry's metadata is
+  # not guaranteed to be a Hash. Reaching into a malformed one with dig raises
+  # TypeError, and this runs inside the nightly generate_snapshot!, so one bad
+  # paste would take down every project's cost rather than one payout's.
+  def entry_forecast_project(entry)
+    metadata = entry["blueprint_metadata"]
+    metadata.is_a?(Hash) ? metadata["forecast_project"] : nil
+  end
+
   def amount_attributable_to(forecast_project_ids)
-    entries = blueprint_entries
-    attributable = entries.select { |entry| entry.dig("blueprint_metadata", "forecast_project").present? }
+    attributable = blueprint_entries.select { |entry| entry_forecast_project(entry).present? }
     return amount.to_f if attributable.empty?
 
     attributable.reduce(0.0) { |acc, entry|
-      next acc unless forecast_project_ids.include?(entry.dig("blueprint_metadata", "forecast_project"))
+      next acc unless forecast_project_ids.include?(entry_forecast_project(entry))
       acc + entry["amount"].to_f
     }.round(2)
   end

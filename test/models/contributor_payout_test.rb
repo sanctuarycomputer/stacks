@@ -214,4 +214,34 @@ class ContributorPayoutTest < ActiveSupport::TestCase
     assert_in_delta 100.0, cp.amount_attributable_to([1]), 0.001
     assert_in_delta 200.0, cp.amount_attributable_to([2]), 0.001
   end
+
+  # blueprint is editable as raw JSON from the admin, so a malformed entry has to
+  # skip that entry rather than raise — monthly_cosr runs inside the nightly
+  # generate_snapshot!, where a TypeError would take down every project's cost.
+  test "amount_attributable_to skips an entry whose blueprint_metadata is not a hash" do
+    cp = ContributorPayout.new(
+      amount: 500.0,
+      blueprint: {
+        "IndividualContributor" => [
+          { "amount" => 300.0, "blueprint_metadata" => { "forecast_project" => 1 } },
+          { "amount" => 200.0, "blueprint_metadata" => "corrupted" },
+        ],
+      },
+    )
+
+    assert_in_delta 300.0, cp.amount_attributable_to([1]), 0.001
+  end
+
+  test "amount_attributable_to falls back to the full amount when every entry's metadata is malformed" do
+    cp = ContributorPayout.new(
+      amount: 500.0,
+      blueprint: {
+        "IndividualContributor" => [
+          { "amount" => 500.0, "blueprint_metadata" => "corrupted" },
+        ],
+      },
+    )
+
+    assert_in_delta 500.0, cp.amount_attributable_to([1]), 0.001
+  end
 end
