@@ -1,6 +1,10 @@
 class Contributor < ApplicationRecord
   ELEVATED_SERVICE_MIN_HOURS  = 120
   ELEVATED_SERVICE_MIN_INCOME = 9_000
+  # How many of the supplied months must individually meet the threshold for a
+  # contributor to count as "in elevated service" over the window (e.g. 3 of the
+  # trailing 6 months). Callers choose the window length by how many periods they pass.
+  ELEVATED_SERVICE_MIN_QUALIFYING_MONTHS = 3
 
   def self.elevated_service?(total_hours:, total_income:)
     total_hours >= ELEVATED_SERVICE_MIN_HOURS || total_income >= ELEVATED_SERVICE_MIN_INCOME
@@ -626,11 +630,12 @@ class Contributor < ApplicationRecord
       .group_by(&:person_id)
 
     qualifying_fp_ids = fp_ids.select do |fp_id|
-      periods.all? do |p|
+      months_elevated = periods.count do |p|
         hours = (assignments_by_fp[fp_id] || []).sum { |fa| fa.allocation_during_range_in_hours(p.starts_at, p.ends_at) }
         inc   = income[[fp_id, p.starts_at.to_date]]
         elevated_service?(total_hours: hours, total_income: inc)
       end
+      months_elevated >= ELEVATED_SERVICE_MIN_QUALIFYING_MONTHS
     end
 
     ForecastPerson.where(forecast_id: qualifying_fp_ids)

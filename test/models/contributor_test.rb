@@ -436,20 +436,19 @@ class ContributorElevatedServiceAdminUserIdsTest < ActiveSupport::TestCase
     ).save!(validate: false)
   end
 
-  test "elevated_service_admin_user_ids requires all periods to qualify" do
+  test "elevated_service_admin_user_ids includes a contributor elevated in at least 3 of the months" do
     au = AdminUser.create!(email: "heavy@sanctuary.computer", password: "password12345", password_confirmation: "password12345")
     fp = ForecastPerson.create!(forecast_id: 55_501, email: au.email, first_name: "H", last_name: "Y")
     contributor = Contributor.create!(forecast_person: fp)
     ledger = contributor.ledgers.find_by!(enterprise: @sanctuary)
 
-    # Stacks::Period.for_gradation excludes any month containing `through`
-    # itself (it stops at `through.last_month.end_of_month`), so `through`
-    # must land a month past the last period we want included.
-    periods = Stacks::Period.for_gradation(:month, Date.new(2026, 4, 1), Date.new(2026, 7, 1))
-    assert_equal 3, periods.size
+    # 6-month window (Jan..Jun); Stacks::Period.for_gradation excludes the month
+    # containing `through`, so pass the following month as `through`.
+    periods = Stacks::Period.for_gradation(:month, Date.new(2026, 1, 1), Date.new(2026, 7, 1))
+    assert_equal 6, periods.size
 
-    # $9000 income in each of the 3 months -> qualifies via income
-    periods.each do |p|
+    # $9000 income in exactly 3 of the 6 months -> qualifies (>= 3 of 6)
+    [periods[0], periods[2], periods[4]].each do |p|
       create_payout!(p, 9_000, ledger, au)
     end
 
@@ -457,14 +456,14 @@ class ContributorElevatedServiceAdminUserIdsTest < ActiveSupport::TestCase
     assert_includes ids, au.id
   end
 
-  test "elevated_service_admin_user_ids excludes a contributor with a gap month" do
+  test "elevated_service_admin_user_ids excludes a contributor elevated in fewer than 3 months" do
     au = AdminUser.create!(email: "gap@sanctuary.computer", password: "password12345", password_confirmation: "password12345")
     fp = ForecastPerson.create!(forecast_id: 55_502, email: au.email, first_name: "G", last_name: "P")
     contributor = Contributor.create!(forecast_person: fp)
     ledger = contributor.ledgers.find_by!(enterprise: @sanctuary)
 
-    periods = Stacks::Period.for_gradation(:month, Date.new(2026, 4, 1), Date.new(2026, 7, 1))
-    # Only 2 of 3 months have income; middle month has none.
+    periods = Stacks::Period.for_gradation(:month, Date.new(2026, 1, 1), Date.new(2026, 7, 1))
+    # Only 2 of the 6 months have income -> below the 3-month bar.
     [periods[0], periods[2]].each do |p|
       create_payout!(p, 9_000, ledger, au)
     end

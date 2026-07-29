@@ -4,9 +4,9 @@ class SurveyTest < ActiveSupport::TestCase
   test "reference_date is capped at today for surveys opening in the future" do
     survey = Survey.create!(title: "Future", description: "d", opens_at: Date.today + 4.weeks)
     assert_equal Date.today, survey.reference_date
-    # elevated-service window = the 3 completed months before THIS month (not shifted forward)
-    assert_equal 3, survey.elevated_service_periods.size
-    assert_equal (Date.today.beginning_of_month - 3.months),
+    # elevated-service window = the 6 completed months before THIS month (not shifted forward)
+    assert_equal 6, survey.elevated_service_periods.size
+    assert_equal (Date.today.beginning_of_month - 6.months),
                  survey.elevated_service_periods.first.starts_at
     assert_equal (Date.today.beginning_of_month - 1.month),
                  survey.elevated_service_periods.last.starts_at
@@ -34,7 +34,7 @@ class SurveyTest < ActiveSupport::TestCase
 
   test "expected_responder_status includes elevated-service members as of reference date" do
     studio = Studio.create!(name: "Beta", mini_name: "beta")
-    survey = Survey.create!(title: "B", description: "d", opens_at: Date.new(2026, 7, 1)) # ref -> Apr,May,Jun 2026
+    survey = Survey.create!(title: "B", description: "d", opens_at: Date.new(2026, 7, 1)) # ref -> Jan..Jun 2026 window
     survey.survey_studios.create!(studio: studio)
 
     au = AdminUser.create!(email: "elev@sanctuary.computer", password: "password12345", password_confirmation: "password12345")
@@ -43,7 +43,8 @@ class SurveyTest < ActiveSupport::TestCase
     Contributor.create!(forecast_person: fp)
 
     # Qualify via the HOURS path (avoids the payout/ledger/qbo fixture chain):
-    # one assignment spanning the 3 completed months, 8h/day => ~240h each month >= 120.
+    # one assignment spanning 3 of the 6 window months, 8h/day => ~240h each >= 120,
+    # so 3 of 6 months are elevated (meets the >= 3 bar).
     project = ForecastProject.new(forecast_id: 77_601, name: "Client Work", client_id: 123_456)
     project.save!(validate: false)
     fa = ForecastAssignment.new(
@@ -52,7 +53,7 @@ class SurveyTest < ActiveSupport::TestCase
     )
     fa.save!(validate: false)
 
-    assert_equal 3, survey.elevated_service_periods.size
+    assert_equal 6, survey.elevated_service_periods.size
     assert_includes survey.expected_responders, au
     assert survey.expected_responder_status[studio].key?(au)
   end

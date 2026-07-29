@@ -33,16 +33,19 @@ via the convenience predicate (`include_salary: false`) it reduces to
 
 > total recorded hours ≥ **120** **OR** total income (ContributorPayout + Trueup) ≥ **$9000**
 
-for that month. "Provided escalated service for the past 3 months straight" = this is true for
-**each of the 3 completed calendar months** before the survey's reference date.
+for that month. "Provided elevated service" = this is true for **at least 3 of the trailing 6
+completed calendar months** before the survey's reference date (`Contributor::ELEVATED_SERVICE_MIN_QUALIFYING_MONTHS = 3`).
 
-**Reference date.** `Survey#reference_date = opens_at&.to_date || Date.today`. All "as of" logic
-(membership activity, the 3-month window) anchors to this so a closed survey reflects the cohort
-that was actually surveyed, not today's.
+**Reference date.** `Survey#reference_date = [opens_at&.to_date || Date.today, Date.today].min` —
+the survey's open date, but never the future. A closed survey reflects the cohort that was actually
+surveyed; a draft opening later (e.g. a freshly duplicated survey, whose `opens_at` is set weeks out)
+still evaluates against the trailing completed months from today, not a shifted/incomplete future window.
 
-**3 completed months.** The 3 full calendar months strictly before `reference_date.beginning_of_month`.
-E.g. reference date in July 2026 → April, May, June 2026. Computed with
-`Stacks::Period.for_gradation(:month, reference_date.beginning_of_month - 3.months, reference_date.beginning_of_month - 1.day)`.
+**Trailing 6 completed months.** The 6 full calendar months strictly before `reference_date.beginning_of_month`.
+E.g. reference date in July 2026 → Jan–June 2026. Computed with
+`Stacks::Period.for_gradation(:month, reference_date.beginning_of_month - 6.months, reference_date.beginning_of_month)`
+(`for_gradation` excludes the month containing `through`). A contributor qualifies when ≥3 of these
+months individually meet the threshold.
 
 **Studio membership (for the elevated-service scope).**
 - **garden3d studio → everyone**: all `AdminUser`s who have a `Contributor` (i.e. a `forecast_person`).
@@ -163,7 +166,7 @@ already takes a date argument — Survey passes `reference_date` instead of `Dat
   questions, free-text questions, and studios (fails today with `AssociationTypeMismatch`).
 - **elevated_service? / parity**: shared predicate at the boundaries (119/120 hrs, 8999/9000 income);
   parity between the bulk set and `elevated_service_for_month` on sample data.
-- **bulk set / "3 months straight"**: qualifies only when all 3 completed months meet the threshold;
+- **bulk set / "3 of 6 months"**: qualifies when ≥3 of the 6 window months meet the threshold;
   a gap in any month disqualifies; window anchored to `reference_date`.
 - **expected_responders**: includes core members + elevated-service members, deduplicated; g3d scope =
   everyone, other studios scoped to membership as of `reference_date`. An actual respondent who was
