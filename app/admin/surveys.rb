@@ -104,7 +104,7 @@ ActiveAdmin.register Survey do
       if resource.status == :draft
         # No options
       elsif resource.status == :open
-        if resource.expected_responders.include?(current_admin_user)
+        if resource.expected_responder?(current_admin_user)
           if SurveyResponder.find_by(survey: resource, admin_user: current_admin_user).present?
             span("✓ Responded", class: "pill yes")
           else
@@ -129,7 +129,7 @@ ActiveAdmin.register Survey do
   show do
     render 'show', {
       survey_responder: SurveyResponder.find_by(survey: survey, admin_user: current_admin_user),
-      expected_responder_status: resource.expected_responder_status,
+      responder_status: resource.responder_status,
       results: resource.results
     }
   end

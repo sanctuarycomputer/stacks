@@ -23,7 +23,7 @@ ActiveAdmin.register_page "All Surveys" do
     def index
       # First, check for regular surveys needing a response
       pending_regular_survey = Survey.open.find do |s|
-        s.expected_responders.include?(current_admin_user) &&
+        s.expected_responder?(current_admin_user) &&
         SurveyResponder.find_by(survey: s, admin_user: current_admin_user).nil?
       end
 

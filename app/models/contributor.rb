@@ -1,4 +1,15 @@
 class Contributor < ApplicationRecord
+  ELEVATED_SERVICE_MIN_HOURS  = 120
+  ELEVATED_SERVICE_MIN_INCOME = 9_000
+  # How many of the supplied months must individually meet the threshold for a
+  # contributor to count as "in elevated service" over the window (e.g. 3 of the
+  # trailing 6 months). Callers choose the window length by how many periods they pass.
+  ELEVATED_SERVICE_MIN_QUALIFYING_MONTHS = 3
+
+  def self.elevated_service?(total_hours:, total_income:)
+    total_hours >= ELEVATED_SERVICE_MIN_HOURS || total_income >= ELEVATED_SERVICE_MIN_INCOME
+  end
+
   default_scope -> { joins(:forecast_person).order("forecast_people.email ASC") }
 
   belongs_to :forecast_person, class_name: "ForecastPerson", foreign_key: "forecast_person_id", primary_key: "forecast_id"
@@ -550,7 +561,10 @@ class Contributor < ApplicationRecord
         total_income: total_income,
         partial_salary: partial_salary,
         fulltime: ftp.present?,
-        elevated_service: ftp.present? || (total_hours >= 120 || (partial_salary + total_income) >= 9000)
+        elevated_service: ftp.present? || Contributor.elevated_service?(
+          total_hours: total_hours,
+          total_income: partial_salary + total_income
+        )
       }
       acc
     end
@@ -562,6 +576,70 @@ class Contributor < ApplicationRecord
   def elevated_service_for_month(period, items_result = all_items_grouped_by_month(false, period.starts_at, period.ends_at + 1.day))
     data = items_result[:by_month][period]
     !!(data && data[:elevated_service])
+  end
+
+  # Bulk version of elevated_service_for_month, across N periods and M candidates —
+  # a few queries total instead of one per-contributor ledger walk. Returns the Set
+  # of admin_user ids whose contributor met elevated service in EVERY given period.
+  #
+  # periods: Array<Stacks::Period> (months). forecast_person_ids: Array<Integer>
+  # (forecast_people.forecast_id values).
+  #
+  # ContributorPayout / Trueup no longer carry a forecast_person_id (or even a
+  # contributor_id) column directly — both were dropped by
+  # MoveLedgerItemsToContributors / the later ledger backfill migration, which
+  # left `ledger_id` as the only link back to a Contributor. So income is bucketed
+  # via ledgers.contributor_id, then mapped back to forecast_person_id for the
+  # per-period qualification check below (mirrors the join `contributor_payouts_with_deleted`
+  # above already uses for the same reason).
+  def self.elevated_service_admin_user_ids(periods, forecast_person_ids)
+    fp_ids = Array(forecast_person_ids).uniq
+    return Set.new if fp_ids.empty? || periods.blank?
+
+    span_start = periods.map(&:starts_at).min
+    span_end   = periods.map(&:ends_at).max
+
+    fp_id_by_contributor_id = Contributor.unscoped.where(forecast_person_id: fp_ids).pluck(:id, :forecast_person_id).to_h
+    contributor_ids = fp_id_by_contributor_id.keys
+
+    # Income per [forecast_person_id, month-start-date]
+    income = Hash.new(0)
+    [
+      ContributorPayout.joins(:ledger).joins(invoice_tracker: :invoice_pass)
+        .where(ledgers: { contributor_id: contributor_ids })
+        .where("invoice_passes.start_of_month BETWEEN ? AND ?", span_start, span_end)
+        .group("ledgers.contributor_id", "invoice_passes.start_of_month").sum(:amount),
+      Trueup.joins(:ledger).joins(:invoice_pass)
+        .where(ledgers: { contributor_id: contributor_ids })
+        .where("invoice_passes.start_of_month BETWEEN ? AND ?", span_start, span_end)
+        .group("ledgers.contributor_id", "invoice_passes.start_of_month").sum(:amount),
+    ].each do |grouped|
+      grouped.each do |(contributor_id, month), amt|
+        fp_id = fp_id_by_contributor_id[contributor_id]
+        next unless fp_id
+
+        income[[fp_id, month.to_date]] += amt
+      end
+    end
+
+    # Hours per [forecast_person_id, period] — load overlapping assignments once, compute in Ruby.
+    assignments_by_fp = ForecastAssignment
+      .includes(:forecast_project)
+      .where(person_id: fp_ids)
+      .where("end_date >= ? AND start_date <= ?", span_start, span_end)
+      .group_by(&:person_id)
+
+    qualifying_fp_ids = fp_ids.select do |fp_id|
+      months_elevated = periods.count do |p|
+        hours = (assignments_by_fp[fp_id] || []).sum { |fa| fa.allocation_during_range_in_hours(p.starts_at, p.ends_at) }
+        inc   = income[[fp_id, p.starts_at.to_date]]
+        elevated_service?(total_hours: hours, total_income: inc)
+      end
+      months_elevated >= ELEVATED_SERVICE_MIN_QUALIFYING_MONTHS
+    end
+
+    ForecastPerson.where(forecast_id: qualifying_fp_ids)
+      .joins(:admin_user).pluck("admin_users.id").to_set
   end
 
 end

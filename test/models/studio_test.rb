@@ -122,4 +122,13 @@ class StudioTest < ActiveSupport::TestCase
     assert u[:sellable] == 0
     assert u[:non_sellable] == 0
   end
+
+  test "members_active_on returns studio members active on the date" do
+    studio = Studio.create!(name: "Alpha", mini_name: "alpha")
+    au = AdminUser.create!(email: "m@sanctuary.computer", password: "password12345", password_confirmation: "password12345")
+    StudioMembership.create!(studio: studio, admin_user: au, started_at: Date.new(2026, 1, 1), ended_at: nil)
+
+    assert_includes studio.members_active_on(Date.new(2026, 6, 1)), au
+    assert_not_includes studio.members_active_on(Date.new(2025, 1, 1)), au # before membership
+  end
 end

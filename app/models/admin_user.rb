@@ -181,7 +181,7 @@ class AdminUser < ApplicationRecord
 
     # Count pending regular surveys
     Survey.open.each do |s|
-      if s.expected_responders.include?(self) &&
+      if s.expected_responder?(self) &&
          SurveyResponder.find_by(survey: s, admin_user: self).nil?
         count += 1
       end

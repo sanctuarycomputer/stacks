@@ -140,11 +140,11 @@
 <% end %>
 
 
-<% expected_responder_status.each do |studio, studio_expected_responder_status| %>
+<% responder_status.each do |group, group_status| %>
   <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
     <div id="titlebar_left">
       <h2 id="page_title">
-        <%= studio.name %>
+        <%= group.respond_to?(:name) ? group.name : group.to_s %>
       </h2>
     </div>
   </div>
@@ -158,7 +158,7 @@
     </thead>
 
     <tbody>
-      <% studio_expected_responder_status.each_with_index do |tuple, idx| %>
+      <% group_status.each_with_index do |tuple, idx| %>
         <% admin_user, has_responded = tuple %>
         <tr class="<%= idx.even? ? "even" : "odd" %>">
           <td class="col">

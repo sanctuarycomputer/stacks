@@ -401,6 +401,21 @@ class Studio < ApplicationRecord
     end
   end
 
+  def members_active_on(date)
+    if is_garden3d?
+      AdminUser.joins(:forecast_person).distinct
+    else
+      AdminUser
+        .joins(:studio_memberships)
+        .where(
+          "studio_memberships.started_at <= :d AND " \
+          "coalesce(studio_memberships.ended_at, 'infinity') >= :d AND " \
+          "studio_memberships.studio_id = :sid",
+          d: date, sid: id
+        ).distinct
+    end
+  end
+
   def profit_and_loss_for_period(period, accounting_method)
     if is_garden3d?
       {
