@@ -405,3 +405,71 @@ class ContributorTest < ActiveSupport::TestCase
     assert_not Contributor.elevated_service?(total_hours: 0,   total_income: 8_999.99)
   end
 end
+
+class ContributorElevatedServiceAdminUserIdsTest < ActiveSupport::TestCase
+  setup do
+    Thread.current[:sanctuary_enterprise] = nil
+    @sanctuary = Enterprise.find_by!(name: Enterprise::SANCTUARY_NAME)
+    @sanctuary_qa = @sanctuary.qbo_account || QboAccount.create!(
+      enterprise: @sanctuary,
+      client_id: "test_client_id",
+      client_secret: "test_client_secret",
+      realm_id: "test_realm_#{SecureRandom.hex(4)}",
+    )
+    @fc = ForecastClient.create!(forecast_id: rand(1..2_000_000_000), name: "TestClient-#{SecureRandom.hex(2)}")
+  end
+
+  # Builds a ContributorPayout for `fp` in the month of `period`, with `amount`
+  # of income. InvoiceTracker's 70%-cap validation (contributor_payouts_within_seventy_percent)
+  # is unrelated to elevated-service logic and would reject any payout against
+  # a zero-total invoice tracker, so we bypass validations here (same pattern
+  # used elsewhere in this suite) while still satisfying the NOT NULL
+  # `ledger_id` / `created_by_id` columns.
+  def create_payout!(period, amount, ledger, created_by)
+    ip = InvoicePass.create!(start_of_month: period.starts_at)
+    it = InvoiceTracker.create!(invoice_pass: ip, forecast_client: @fc, qbo_account: @sanctuary_qa)
+    ContributorPayout.new(
+      invoice_tracker: it,
+      amount: amount,
+      ledger: ledger,
+      created_by: created_by,
+    ).save!(validate: false)
+  end
+
+  test "elevated_service_admin_user_ids requires all periods to qualify" do
+    au = AdminUser.create!(email: "heavy@sanctuary.computer", password: "password12345", password_confirmation: "password12345")
+    fp = ForecastPerson.create!(forecast_id: 55_501, email: au.email, first_name: "H", last_name: "Y")
+    contributor = Contributor.create!(forecast_person: fp)
+    ledger = contributor.ledgers.find_by!(enterprise: @sanctuary)
+
+    # Stacks::Period.for_gradation excludes any month containing `through`
+    # itself (it stops at `through.last_month.end_of_month`), so `through`
+    # must land a month past the last period we want included.
+    periods = Stacks::Period.for_gradation(:month, Date.new(2026, 4, 1), Date.new(2026, 7, 1))
+    assert_equal 3, periods.size
+
+    # $9000 income in each of the 3 months -> qualifies via income
+    periods.each do |p|
+      create_payout!(p, 9_000, ledger, au)
+    end
+
+    ids = Contributor.elevated_service_admin_user_ids(periods, [fp.forecast_id])
+    assert_includes ids, au.id
+  end
+
+  test "elevated_service_admin_user_ids excludes a contributor with a gap month" do
+    au = AdminUser.create!(email: "gap@sanctuary.computer", password: "password12345", password_confirmation: "password12345")
+    fp = ForecastPerson.create!(forecast_id: 55_502, email: au.email, first_name: "G", last_name: "P")
+    contributor = Contributor.create!(forecast_person: fp)
+    ledger = contributor.ledgers.find_by!(enterprise: @sanctuary)
+
+    periods = Stacks::Period.for_gradation(:month, Date.new(2026, 4, 1), Date.new(2026, 7, 1))
+    # Only 2 of 3 months have income; middle month has none.
+    [periods[0], periods[2]].each do |p|
+      create_payout!(p, 9_000, ledger, au)
+    end
+
+    ids = Contributor.elevated_service_admin_user_ids(periods, [fp.forecast_id])
+    assert_not_includes ids, au.id
+  end
+end

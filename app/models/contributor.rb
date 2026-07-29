@@ -574,4 +574,67 @@ class Contributor < ApplicationRecord
     !!(data && data[:elevated_service])
   end
 
+  # Bulk version of elevated_service_for_month, across N periods and M candidates —
+  # a few queries total instead of one per-contributor ledger walk. Returns the Set
+  # of admin_user ids whose contributor met elevated service in EVERY given period.
+  #
+  # periods: Array<Stacks::Period> (months). forecast_person_ids: Array<Integer>
+  # (forecast_people.forecast_id values).
+  #
+  # ContributorPayout / Trueup no longer carry a forecast_person_id (or even a
+  # contributor_id) column directly — both were dropped by
+  # MoveLedgerItemsToContributors / the later ledger backfill migration, which
+  # left `ledger_id` as the only link back to a Contributor. So income is bucketed
+  # via ledgers.contributor_id, then mapped back to forecast_person_id for the
+  # per-period qualification check below (mirrors the join `contributor_payouts_with_deleted`
+  # above already uses for the same reason).
+  def self.elevated_service_admin_user_ids(periods, forecast_person_ids)
+    fp_ids = Array(forecast_person_ids).uniq
+    return Set.new if fp_ids.empty? || periods.blank?
+
+    span_start = periods.map(&:starts_at).min
+    span_end   = periods.map(&:ends_at).max
+
+    fp_id_by_contributor_id = Contributor.unscoped.where(forecast_person_id: fp_ids).pluck(:id, :forecast_person_id).to_h
+    contributor_ids = fp_id_by_contributor_id.keys
+
+    # Income per [forecast_person_id, month-start-date]
+    income = Hash.new(0)
+    [
+      ContributorPayout.joins(:ledger).joins(invoice_tracker: :invoice_pass)
+        .where(ledgers: { contributor_id: contributor_ids })
+        .where("invoice_passes.start_of_month BETWEEN ? AND ?", span_start, span_end)
+        .group("ledgers.contributor_id", "invoice_passes.start_of_month").sum(:amount),
+      Trueup.joins(:ledger).joins(:invoice_pass)
+        .where(ledgers: { contributor_id: contributor_ids })
+        .where("invoice_passes.start_of_month BETWEEN ? AND ?", span_start, span_end)
+        .group("ledgers.contributor_id", "invoice_passes.start_of_month").sum(:amount),
+    ].each do |grouped|
+      grouped.each do |(contributor_id, month), amt|
+        fp_id = fp_id_by_contributor_id[contributor_id]
+        next unless fp_id
+
+        income[[fp_id, month.to_date]] += amt
+      end
+    end
+
+    # Hours per [forecast_person_id, period] — load overlapping assignments once, compute in Ruby.
+    assignments_by_fp = ForecastAssignment
+      .includes(:forecast_project)
+      .where(person_id: fp_ids)
+      .where("end_date >= ? AND start_date <= ?", span_start, span_end)
+      .group_by(&:person_id)
+
+    qualifying_fp_ids = fp_ids.select do |fp_id|
+      periods.all? do |p|
+        hours = (assignments_by_fp[fp_id] || []).sum { |fa| fa.allocation_during_range_in_hours(p.starts_at, p.ends_at) }
+        inc   = income[[fp_id, p.starts_at.to_date]]
+        elevated_service?(total_hours: hours, total_income: inc)
+      end
+    end
+
+    ForecastPerson.where(forecast_id: qualifying_fp_ids)
+      .joins(:admin_user).pluck("admin_users.id").to_set
+  end
+
 end
