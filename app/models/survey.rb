@@ -1,4 +1,6 @@
 class Survey < ApplicationRecord
+  OTHER_RESPONDENTS = Struct.new(:name).new("Other respondents").freeze
+
   scope :draft, -> {
     where(closed_at: nil).where("opens_at IS NULL OR opens_at > ?", Date.today)
 
@@ -69,6 +71,19 @@ class Survey < ApplicationRecord
         end
       end
     end
+  end
+
+  def responder_status
+    status = expected_responder_status
+    already = status.values.flat_map(&:keys).to_set
+
+    others = SurveyResponder.where(survey: self).includes(:admin_user).each_with_object({}) do |responder, h|
+      au = responder.admin_user
+      next if au.nil? || already.include?(au)
+      h[au] = responder
+    end
+
+    others.empty? ? status : status.merge(OTHER_RESPONDENTS => others)
   end
 
   def results

@@ -40,4 +40,19 @@ class SurveyTest < ActiveSupport::TestCase
     assert_includes survey.expected_responders, au
     assert survey.expected_responder_status[studio].key?(au)
   end
+
+  test "responder_status adds actual respondents not in the expected set under Other" do
+    studio = Studio.create!(name: "Gamma", mini_name: "gamma")
+    survey = Survey.create!(title: "G", description: "d", opens_at: Date.new(2026, 7, 1))
+    survey.survey_studios.create!(studio: studio)
+
+    outsider = AdminUser.create!(email: "outsider@sanctuary.computer", password: "password12345", password_confirmation: "password12345")
+    SurveyResponder.create!(survey: survey, admin_user: outsider)
+
+    status = survey.responder_status
+    other_key = status.keys.find { |k| k == Survey::OTHER_RESPONDENTS }
+    assert other_key, "expected an Other respondents group"
+    assert status[other_key].key?(outsider)
+    assert_not survey.expected_responders.include?(outsider) # not inflated
+  end
 end
