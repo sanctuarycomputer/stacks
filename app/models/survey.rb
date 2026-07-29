@@ -51,6 +51,22 @@ class Survey < ApplicationRecord
     expected_responder_status.values.flat_map(&:keys).uniq
   end
 
+  # Cheap membership test for ONE user — avoids computing the whole expected set
+  # (which runs the elevated-service bulk). Equivalent to
+  # expected_responders.include?(admin_user).
+  def expected_responder?(admin_user)
+    return false if admin_user.nil?
+    ref = reference_date
+    # Core members (full-time) of any of the survey's studios — cheap existence checks.
+    return true if studios.any? { |s| s.core_members_active_on(ref).exists?(id: admin_user.id) }
+    # Elevated service: only if the user is a member of one of the survey's studios,
+    # and only checks THIS user's contributor (bulk call with a single candidate).
+    return false unless studios.any? { |s| s.members_active_on(ref).exists?(id: admin_user.id) }
+    fp_id = admin_user.forecast_person&.forecast_id
+    return false if fp_id.nil?
+    Contributor.elevated_service_admin_user_ids(elevated_service_periods, [fp_id]).include?(admin_user.id)
+  end
+
   # Memoized: called repeatedly per survey (index rows call expected_responders twice),
   # and the elevated-service bulk is the expensive part.
   def expected_responder_status

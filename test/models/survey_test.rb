@@ -55,4 +55,29 @@ class SurveyTest < ActiveSupport::TestCase
     assert status[other_key].key?(outsider)
     assert_not survey.expected_responders.include?(outsider) # not inflated
   end
+
+  test "expected_responder? matches expected_responders membership without inflating" do
+    studio = Studio.create!(name: "Delta", mini_name: "delta")
+    survey = Survey.create!(title: "D", description: "d", opens_at: Date.new(2026, 7, 1))
+    survey.survey_studios.create!(studio: studio)
+
+    # elevated member (hours path), studio member
+    au = AdminUser.create!(email: "er@sanctuary.computer", password: "password12345", password_confirmation: "password12345")
+    StudioMembership.create!(studio: studio, admin_user: au, started_at: Date.new(2026, 1, 1))
+    fp = ForecastPerson.create!(forecast_id: 78_101, email: au.email, first_name: "E", last_name: "R", data: {})
+    Contributor.create!(forecast_person: fp)
+    project = ForecastProject.new(forecast_id: 78_111, name: "Client Work", client_id: 123_456)
+    project.save!(validate: false)
+    ForecastAssignment.new(person_id: fp.forecast_id, project_id: project.forecast_id,
+      allocation: 28_800, start_date: Date.new(2026, 4, 1), end_date: Date.new(2026, 6, 30)).save!(validate: false)
+
+    # a non-member outsider
+    outsider = AdminUser.create!(email: "out@sanctuary.computer", password: "password12345", password_confirmation: "password12345")
+
+    assert survey.expected_responder?(au),        "elevated studio member should be expected"
+    assert_not survey.expected_responder?(outsider), "non-member should not be expected"
+    # parity with the full set
+    assert_equal survey.expected_responders.include?(au), survey.expected_responder?(au)
+    assert_equal survey.expected_responders.include?(outsider), survey.expected_responder?(outsider)
+  end
 end
