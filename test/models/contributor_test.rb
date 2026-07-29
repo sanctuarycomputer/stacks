@@ -396,3 +396,12 @@ class ContributorEnsureAllForForecastPeopleTest < ActiveSupport::TestCase
       "Contributor.after_create should fire Ledger.ensure_for_contributor!"
   end
 end
+
+class ContributorTest < ActiveSupport::TestCase
+  test "elevated_service? thresholds on hours and income" do
+    assert_not Contributor.elevated_service?(total_hours: 119, total_income: 8_999)
+    assert     Contributor.elevated_service?(total_hours: 120, total_income: 0)
+    assert     Contributor.elevated_service?(total_hours: 0,   total_income: 9_000)
+    assert_not Contributor.elevated_service?(total_hours: 0,   total_income: 8_999.99)
+  end
+end

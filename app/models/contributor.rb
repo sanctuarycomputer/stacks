@@ -1,4 +1,11 @@
 class Contributor < ApplicationRecord
+  ELEVATED_SERVICE_MIN_HOURS  = 120
+  ELEVATED_SERVICE_MIN_INCOME = 9_000
+
+  def self.elevated_service?(total_hours:, total_income:)
+    total_hours >= ELEVATED_SERVICE_MIN_HOURS || total_income >= ELEVATED_SERVICE_MIN_INCOME
+  end
+
   default_scope -> { joins(:forecast_person).order("forecast_people.email ASC") }
 
   belongs_to :forecast_person, class_name: "ForecastPerson", foreign_key: "forecast_person_id", primary_key: "forecast_id"
@@ -550,7 +557,10 @@ class Contributor < ApplicationRecord
         total_income: total_income,
         partial_salary: partial_salary,
         fulltime: ftp.present?,
-        elevated_service: ftp.present? || (total_hours >= 120 || (partial_salary + total_income) >= 9000)
+        elevated_service: ftp.present? || Contributor.elevated_service?(
+          total_hours: total_hours,
+          total_income: partial_salary + total_income
+        )
       }
       acc
     end
