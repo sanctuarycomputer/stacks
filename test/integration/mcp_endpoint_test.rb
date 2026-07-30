@@ -57,7 +57,7 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     assert body.key?("result"), "Expected JSON-RPC result key, got: #{body.inspect}"
     tool_names = body["result"]["tools"].map { |t| t["name"] }
     assert_includes tool_names, "search", "Expected 'search' tool in: #{tool_names.inspect}"
-    assert_equal %w[get_ar_aging get_document get_resourcing_projections get_studio_health list_documents list_open_admin_tasks list_overdue_invoices list_projects_at_risk list_sources search], tool_names.sort,
+    assert_equal %w[get_ar_aging get_document get_resourcing_projections get_resourcing_world get_studio_health list_documents list_open_admin_tasks list_overdue_invoices list_projects_at_risk list_sources search], tool_names.sort,
       "Expected all registered tools, got: #{tool_names.inspect}"
   end
 
@@ -211,5 +211,53 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
         params: TOOLS_LIST_REQUEST.to_json
       assert_response :forbidden
     end
+  end
+
+  test "get_resourcing_world includes default_role_id, managed overlay, and degraded flag" do
+    travel_to Time.zone.parse("2026-07-15 12:00:00")
+    today = Time.zone.today
+    Stacks::Runn.any_instance.stubs(:get_projects).returns([
+      { "id" => 91_100, "name" => "P", "isConfirmed" => true, "isArchived" => false, "isTemplate" => false,
+        "clientId" => 5, "budget" => 100_000, "pricingModel" => "tm" },
+    ])
+    Stacks::Runn.any_instance.stubs(:get_people).returns([
+      { "id" => 10, "firstName" => "Ada", "lastName" => "Lovelace", "email" => "ada@x.com", "isArchived" => false },
+    ])
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns([
+      { "id" => 1, "personId" => 10, "projectId" => 91_100, "roleId" => 7, "startDate" => (today - 30).iso8601,
+        "endDate" => (today - 1).iso8601, "minutesPerDay" => 480, "isTemplate" => false },
+      { "id" => 2, "personId" => 10, "projectId" => 91_100, "roleId" => 9, "startDate" => (today + 1).iso8601,
+        "endDate" => (today + 10).iso8601, "minutesPerDay" => 480, "isTemplate" => false },
+    ])
+    RunnProject.create!(runn_id: 91_100, name: "P", data: {})
+    tr = ProjectTracker.new(name: "T", runn_project_id: 91_100)
+    tr.save(validate: false)
+    ProjectedAssignment.create!(source_key: "world:1", project_tracker: tr, runn_person_id: 10, runn_role_id: 7,
+      start_date: (today + 1), end_date: (today + 20), minutes_per_day: 480, kind: "work",
+      runn_assignment_ids: [2], managed_by: "detector")
+
+    payload = call_tool("get_resourcing_world")
+    ada = payload["people"].find { |p| p["id"] == 10 }
+    assert_equal 9, ada["default_role_id"] # most-recent assignment by endDate
+    assert_equal false, payload["degraded"]
+    managed = payload["managed"].find { |m| m["source_key"] == "world:1" }
+    assert_equal [2], managed["runn_assignment_ids"]
+    assert_equal "detector", managed["managed_by"]
+  end
+
+  test "get_resourcing_world degrades (partial + degraded:true) when a Runn read fails" do
+    Stacks::Runn.any_instance.stubs(:get_projects).raises(RuntimeError, "runn 429")
+    Stacks::Runn.any_instance.stubs(:get_people).returns([])
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns([])
+    payload = call_tool("get_resourcing_world")
+    assert_equal true, payload["degraded"]
+  end
+
+  test "deprecated get_resourcing_projections alias still responds" do
+    Stacks::Runn.any_instance.stubs(:get_projects).returns([])
+    Stacks::Runn.any_instance.stubs(:get_people).returns([])
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns([])
+    payload = call_tool("get_resourcing_projections")
+    assert payload.key?("people")
   end
 end

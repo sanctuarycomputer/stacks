@@ -21,6 +21,7 @@ module Mcp
       Mcp::ListOpenAdminTasksTool,
       Mcp::ListProjectsAtRiskTool,
       Mcp::GetStudioHealthTool,
+      Mcp::GetResourcingWorldTool,
       Mcp::GetResourcingProjectionsTool,
     ].freeze
 
