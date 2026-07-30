@@ -19,7 +19,7 @@ class Api::V1::Resourcing::ProjectedAssignmentsController < ApiController
     return render json: { status: "noop" }, status: :ok if row.nil?
 
     if ActiveModel::Type::Boolean.new.cast(params[:archive_runn])
-      result = Resourcing::WriteThrough.new.archive(row)
+      result = write_through.archive(row)
       if result.status == :conflict
         return render json: { status: "conflict", conflict: result.conflict }, status: :conflict
       end
@@ -62,13 +62,19 @@ class Api::V1::Resourcing::ProjectedAssignmentsController < ApiController
     end
 
     row.save!
-    result = Resourcing::WriteThrough.new.apply(row, preview: preview?)
+    result = write_through.apply(row, preview: preview?)
     { status: result.status.to_s, source_key: source_key, before: result.before,
       after: result.after, runn_assignment_id: result.runn_assignment_id, conflict: result.conflict }.compact
   end
 
   def preview?
     ActiveModel::Type::Boolean.new.cast(params[:preview])
+  end
+
+  # One WriteThrough for the whole request so a batch fetches the Runn people
+  # list once (memoized on its resolver) instead of once per item.
+  def write_through
+    @write_through ||= Resourcing::WriteThrough.new
   end
 
   def http_status(status)

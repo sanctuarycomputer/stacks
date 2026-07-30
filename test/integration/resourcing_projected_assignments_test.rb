@@ -221,6 +221,18 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
     assert_equal "invalid", results["batch:bad"]["status"]
   end
 
+  test "POST batch fetches the Runn people list only once across items" do
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns(prior_assignment_stub)
+    Stacks::Runn.any_instance.stubs(:create_assignment).returns({ "id" => 5001 })
+    # the whole request shares one WriteThrough, so get_people is fetched once, not per item
+    Stacks::Runn.any_instance.expects(:get_people).once.returns(people_stub(10))
+    items = [body.merge(source_key: "opt:1"), body.merge(source_key: "opt:2")]
+    post "/api/v1/resourcing/projected_assignments/batch",
+      headers: auth_headers, params: { items: items }.to_json
+    assert_response :success
+    assert_equal %w[applied applied], JSON.parse(response.body)["results"].map { |r| r["status"] }
+  end
+
   test "POST batch reports a per-item error when a contributor can't be resolved" do
     Stacks::Runn.any_instance.stubs(:get_assignments).returns(prior_assignment_stub)
     Stacks::Runn.any_instance.stubs(:get_people).returns([])

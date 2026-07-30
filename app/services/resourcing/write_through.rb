@@ -18,7 +18,7 @@ module Resourcing
     end
 
     def apply(row, preview: false)
-      runn_person_id = RunnPersonResolver.new(@runn).runn_person_id_for(row.contributor)
+      runn_person_id = resolver.runn_person_id_for(row.contributor)
       if runn_person_id.nil?
         raise UnresolvedContributor,
           "contributor #{row.contributor_id} has no unique active Runn person (email matched 0 or multiple)"
@@ -68,6 +68,12 @@ module Resourcing
     end
 
     private
+
+    # One resolver per WriteThrough so its people list is fetched once and reused
+    # across every apply in a shared request/batch (see RunnPersonResolver#people).
+    def resolver
+      @resolver ||= RunnPersonResolver.new(@runn)
+    end
 
     # create the (shorter/new) assignment first, then delete the old — rollback the create on failure.
     def replace!(old_id:, desired:, source_key:, note: nil)
