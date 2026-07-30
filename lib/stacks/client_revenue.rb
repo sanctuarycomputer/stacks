@@ -8,10 +8,13 @@
 class Stacks::ClientRevenue
   Row = Struct.new(:client, :month, :amount, keyword_init: true)
 
+  attr_reader :skipped_tracker_count
+
   def initialize(studio, preloaded_studios = Studio.all, trackers = nil)
     @studio = studio
     @preloaded_studios = preloaded_studios
     @trackers = trackers || self.class.all_trackers
+    @skipped_tracker_count = 0
     @rows = build_rows
   end
 
@@ -73,6 +76,16 @@ class Stacks::ClientRevenue
       begin
         invoice = tracker.qbo_invoice
         client = tracker.forecast_client
+
+        # Guard: skip invoices with no stored data to prevent the lazy live-QBO
+        # sync in QboInvoice#data from firing inside the nightly snapshot hot
+        # path. Use read_attribute to bypass the lazy-sync override in #data.
+        # These are data-quality drops, so they count toward skipped_tracker_count.
+        if invoice && invoice.read_attribute(:data).blank?
+          @skipped_tracker_count += 1
+          next
+        end
+
         next if invoice.nil? || invoice.status == :voided
         next if client.nil? || client.is_internal?
 
@@ -82,6 +95,7 @@ class Stacks::ClientRevenue
         Row.new(client: client, month: tracker.invoice_pass.start_of_month, amount: amount)
       rescue => e
         Rails.logger.warn("[ClientRevenue] invoice_tracker=#{tracker.id} skipped: #{e.class}: #{e.message}")
+        @skipped_tracker_count += 1
         nil
       end
     end

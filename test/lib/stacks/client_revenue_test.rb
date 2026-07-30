@@ -14,7 +14,8 @@ class StacksClientRevenueTest < ActiveSupport::TestCase
     if no_invoice
       tracker.stubs(:qbo_invoice).returns(nil)
     else
-      invoice = QboInvoice.new
+      # Use non-blank data so the blank-data guard in build_rows doesn't skip these trackers.
+      invoice = QboInvoice.new(data: { "synced" => true })
       invoice.stubs(:status).returns(voided ? :voided : :paid)
       invoice.stubs(:total).returns(total.to_f)
       tracker.stubs(:qbo_invoice).returns(invoice)
@@ -159,7 +160,7 @@ class StacksClientRevenueTest < ActiveSupport::TestCase
 
   test "a tracker whose invoice raises TypeError from #status is skipped while a healthy tracker still counts" do
     # Simulates QboInvoice#status calling `due_date - Date.today` where due_date is nil
-    bad_invoice = QboInvoice.new
+    bad_invoice = QboInvoice.new(data: { "synced" => true })
     bad_invoice.stubs(:status).raises(TypeError, "nil can't be coerced into Integer")
 
     bad_tracker = InvoiceTracker.new
@@ -174,5 +175,28 @@ class StacksClientRevenueTest < ActiveSupport::TestCase
 
     assert_equal 1, cr.client_count_asof(Date.new(2025, 12, 31))
     assert_equal 5_000.0, cr.average_lifetime_value_asof(Date.new(2025, 12, 31))
+    assert_equal 1, cr.skipped_tracker_count
+  end
+
+  test "a tracker whose invoice has blank data is skipped without triggering lazy sync; a healthy tracker still counts" do
+    # blank-data invoice: QboInvoice.new with NO data attribute — the new guard must skip it
+    # without ever calling #status or #total (which would trigger the lazy live-QBO sync).
+    blank_invoice = QboInvoice.new  # data column is nil/blank — no data: kwarg
+    blank_invoice.expects(:status).never
+    blank_invoice.expects(:total).never
+
+    blank_tracker = InvoiceTracker.new
+    blank_tracker.stubs(:qbo_invoice).returns(blank_invoice)
+    blank_tracker.stubs(:forecast_client).returns(@acme)
+    blank_tracker.stubs(:invoice_pass).returns(InvoicePass.new(start_of_month: Date.new(2025, 1, 1)))
+    blank_tracker.stubs(:blueprint).returns(nil)
+
+    healthy_tracker = make_tracker(client: @globex, month: Date.new(2025, 2, 1), total: 5_000)
+
+    cr = Stacks::ClientRevenue.new(@g3d, @studios, [blank_tracker, healthy_tracker])
+
+    assert_equal 1, cr.client_count_asof(Date.new(2025, 12, 31))
+    assert_equal 5_000.0, cr.average_lifetime_value_asof(Date.new(2025, 12, 31))
+    assert_equal 1, cr.skipped_tracker_count
   end
 end
