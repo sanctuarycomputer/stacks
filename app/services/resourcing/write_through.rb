@@ -72,7 +72,7 @@ module Resourcing
 
     def scope_rows(row)
       rows = ProjectedAssignment.for_contributor(row.contributor_id)
-        .includes(:project_tracker, contributor: :forecast_person).to_a
+        .includes(:project_tracker, contributor: :forecast_person).order(:id).to_a
       return rows if row.project_tracker_id.nil? # an org-wide write touches the whole person
 
       trackers = [row.project_tracker_id, nil]
