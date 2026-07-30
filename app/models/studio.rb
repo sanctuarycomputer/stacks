@@ -107,7 +107,8 @@ class Studio < ApplicationRecord
     g3d_utilization_by_period,
     preloaded_studios,
     preloaded_new_biz_leads,
-    all_okrs
+    all_okrs,
+    preloaded_client_revenue = client_revenue(preloaded_studios)
   )
     d = {
       label: period.label,
@@ -128,6 +129,7 @@ class Studio < ApplicationRecord
       utilization_by_period[prev_period],
       g3d_utilization_by_period[period],
       g3d_utilization_by_period[prev_period],
+      preloaded_client_revenue
     )
 
     d[:cash][:okrs] = self.okrs_for_period(period, d[:cash][:datapoints], all_okrs)
@@ -141,6 +143,7 @@ class Studio < ApplicationRecord
       utilization_by_period[prev_period],
       g3d_utilization_by_period[period],
       g3d_utilization_by_period[prev_period],
+      preloaded_client_revenue
     )
     d[:accrual][:okrs] = self.okrs_for_period(period, d[:accrual][:datapoints], all_okrs)
     d
@@ -148,7 +151,8 @@ class Studio < ApplicationRecord
 
   def generate_snapshot!(
     preloaded_studios = Studio.all,
-    preloaded_new_biz_leads = new_biz_leads
+    preloaded_new_biz_leads = new_biz_leads,
+    preloaded_client_revenue = client_revenue(preloaded_studios)
   )
     all_okrs = Okr.includes({ okr_periods: { okr_period_studios: :studio }}).all
     g3d = preloaded_studios.find(&:is_garden3d?)
@@ -179,7 +183,8 @@ class Studio < ApplicationRecord
               g3d_utilization_by_period,
               preloaded_studios,
               preloaded_new_biz_leads,
-              all_okrs
+              all_okrs,
+              preloaded_client_revenue
             )
           end
         end
@@ -266,6 +271,14 @@ class Studio < ApplicationRecord
       "#{ActionController::Base.helpers.number_to_currency(datapoints[:income][:value])} income recieved"
     when "lead_growth"
       "#{datapoints[:lead_count][:value]} leads recieved"
+    when "average_client_lifetime_value"
+      "across #{datapoints[:average_client_lifetime_value][:extras][:client_count]} clients invoiced since June 2021"
+    when "average_client_tenure"
+      "across #{datapoints[:average_client_tenure][:extras][:client_count]} clients invoiced since June 2021"
+    when "client_revenue_concentration"
+      "#{datapoints[:client_revenue_concentration][:extras][:top_client_name] || "no top client"}: #{ActionController::Base.helpers.number_to_currency(datapoints[:client_revenue_concentration][:extras][:top_client_amount])} of #{ActionController::Base.helpers.number_to_currency(datapoints[:client_revenue_concentration][:extras][:total_revenue])}"
+    when "forecasted_sales_revenue"
+      "#{datapoints[:forecasted_sales_revenue][:extras][:budgeted_lead_count]} of #{datapoints[:forecasted_sales_revenue][:extras][:open_lead_count]} open leads budgeted"
     else
       ""
     end
