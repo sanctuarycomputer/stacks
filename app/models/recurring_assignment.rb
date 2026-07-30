@@ -5,6 +5,8 @@ class RecurringAssignment < ApplicationRecord
     foreign_key: "forecast_person_id", primary_key: "forecast_id", optional: true
   belongs_to :forecast_project, class_name: "ForecastProject",
     foreign_key: "forecast_project_id", primary_key: "forecast_id", optional: true
+  before_destroy :remove_future_forecast_assignments!
+
   has_many :recurring_assignment_occurrences, dependent: :destroy
 
   validates :forecast_person_id, presence: true
@@ -43,6 +45,16 @@ class RecurringAssignment < ApplicationRecord
     last = [ends_on, Date.today + HORIZON].compact.min
     return [] if starts_on > last
     (starts_on..last).select { |d| weekdays.include?(d.wday) }
+  end
+
+  # Deletes only FUTURE materialized occurrences from Forecast on rule teardown;
+  # past occurrences are left for historical accuracy, tombstoned ones are already gone.
+  def remove_future_forecast_assignments!(forecast_client = Stacks::Forecast.new)
+    recurring_assignment_occurrences
+      .materialized
+      .where.not(forecast_assignment_id: nil)
+      .where("occurs_on >= ?", Date.today)
+      .find_each { |occ| forecast_client.delete_assignment(occ.forecast_assignment_id) }
   end
 
   private
