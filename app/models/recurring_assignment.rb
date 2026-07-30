@@ -1,6 +1,4 @@
 class RecurringAssignment < ApplicationRecord
-  HORIZON = 26.weeks
-
   belongs_to :forecast_person, class_name: "ForecastPerson",
     foreign_key: "forecast_person_id", primary_key: "forecast_id", optional: true
   belongs_to :forecast_project, class_name: "ForecastProject",
@@ -41,9 +39,14 @@ class RecurringAssignment < ApplicationRecord
     create_missing_occurrences!(forecast_client || Stacks::Forecast.new)
   end
 
+  # Occurrences are only ever created on/before today — never in advance. A rule with
+  # a blank ends_on "never ends"; it simply materializes each day's occurrence once
+  # that day arrives. Bounding creation to today (rather than a future horizon) also
+  # guarantees every occurrence falls inside the Forecast sync window, which is what
+  # keeps deletion-detection safe (see detect_deletions!).
   def expected_occurrence_dates
-    last = [ends_on, Date.today + HORIZON].compact.min
-    return [] if starts_on > last
+    last = [ends_on, Date.today].compact.min
+    return [] if starts_on.nil? || starts_on > last
     (starts_on..last).select { |d| weekdays.include?(d.wday) }
   end
 
@@ -73,14 +76,17 @@ class RecurringAssignment < ApplicationRecord
   end
 
   def detect_deletions!
-    # Only occurrences the Forecast sync actually covers are eligible for
-    # deletion-detection. sync_all_assignments! walks month-by-month only up to
-    # the CURRENT month, so future-dated assignments are never in the mirror —
-    # absence there means "not yet synced," NOT "deleted in the UI." Bounding to
-    # end-of-current-month prevents falsely tombstoning every future occurrence on
-    # the next daily run. (Pass 2 never recreates a date that already has an
-    # occurrence row, so a genuinely deleted future assignment is still never
-    # recreated; it just isn't labeled deleted until its month enters the sync window.)
+    # Tombstone occurrences whose Forecast assignment vanished from the freshly-synced
+    # mirror (i.e. deleted in the Forecast UI). Two independent guards keep this safe:
+    #   1. materialize! creates occurrences only on/before today (never in advance), and
+    #   2. we only judge occurrences the sync actually covers — sync_all_assignments!
+    #      walks month-by-month up to the CURRENT month, so we bound detection to
+    #      end-of-current-month.
+    # Together these guarantee an in-window occurrence absent from the mirror was
+    # deleted, not merely "not yet synced." Detection runs BEFORE creation so this
+    # run's fresh rows (created after this pass) are never judged before their next
+    # sync. A false tombstone is permanent — Pass 2 never recreates a date that
+    # already has a row — so the bound is deliberately conservative defense-in-depth.
     recurring_assignment_occurrences
       .materialized
       .where.not(forecast_assignment_id: nil)

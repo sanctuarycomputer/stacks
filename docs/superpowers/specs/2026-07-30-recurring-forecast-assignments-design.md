@@ -94,13 +94,16 @@ recreate. This is the "deleted in the UI, don't recreate" mechanism.
 > If `sync_all!` raises, the `SystemTask` rescue skips `materialize!` entirely — so
 > `materialize!` only ever runs against a freshly-synced mirror.
 
-**Pass 2 — creation:**
-Compute expected occurrence dates = days in `[starts_on, min(ends_on, today + HORIZON)]` whose
-weekday ∈ `weekdays`. `HORIZON = 26.weeks` (open-ended rules extend each run). For each expected
-date with **no** occurrence row (any status), `POST` a 1-day Forecast assignment
-(`start_date == end_date == occurs_on`) and record the occurrence as `materialized` with the
-returned `forecast_assignment_id`. Dates that already have an occurrence row — `materialized`
-**or** `deleted` — are skipped (tombstones are permanent).
+**Pass 2 — creation (retrospect-only):**
+Compute expected occurrence dates = days in `[starts_on, min(ends_on, today)]` whose
+weekday ∈ `weekdays`. Occurrences are **only ever created on/before today — never in advance.**
+A blank `ends_on` means "never ends": the rule simply materializes each day's occurrence once
+that day arrives. (Bounding creation to today, rather than a future horizon, also guarantees
+every occurrence falls inside the Forecast sync window — the second half of what makes
+deletion-detection safe.) For each expected date with **no** occurrence row (any status), `POST`
+a 1-day Forecast assignment (`start_date == end_date == occurs_on`) and record the occurrence as
+`materialized` with the returned `forecast_assignment_id`. Dates that already have an occurrence
+row — `materialized` **or** `deleted` — are skipped (tombstones are permanent).
 
 Per-occurrence work is wrapped so one Forecast API failure doesn't abort the rule
 (`rescue` + `Sentry.capture_exception`, matching the `daily_enterprise_tasks` loop).
@@ -169,6 +172,9 @@ per `test/lib/stacks/runn_test.rb`.
 2. **v1 = create + respect-delete only; no edit reconciliation.** Rule edits affect only
    future unmaterialized occurrences.
 3. **People only** (no placeholder assignees) in v1.
-4. **26-week rolling horizon** for open-ended rules.
-5. **Destroy deletes future occurrences only** from Forecast; past left intact.
+4. **Retrospect-only creation** — occurrences are created only on/before today, never in
+   advance. A blank `ends_on` means "never ends" (materializes each day as it arrives); there is
+   no forward horizon.
+5. **Destroy deletes future occurrences only** from Forecast; past left intact. (Under
+   retrospect-only this now only ever affects today's occurrence — see open question in PR.)
 6. **Rides `daily_tasks`** (daily cadence) rather than a dedicated scheduler entry.

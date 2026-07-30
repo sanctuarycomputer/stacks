@@ -94,7 +94,7 @@ ActiveAdmin.register RecurringAssignment do
       f.input :allocation_in_hours, label: "Hours per day", hint: "Stored as seconds/day for Forecast."
       f.input :weekdays, as: :check_boxes, collection: WEEKDAY_CHOICES
       f.input :starts_on, as: :datepicker
-      f.input :ends_on, as: :datepicker, hint: "Leave blank for open-ended (materializes 26 weeks ahead, extending each day)."
+      f.input :ends_on, as: :datepicker, hint: "Leave blank for open-ended (never ends). Assignments are only ever created up to today — never in advance; each day's occurrence materializes on/after its date."
       f.input :active_on_days_off
       f.input :notes
     end
