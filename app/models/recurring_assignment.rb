@@ -28,6 +28,23 @@ class RecurringAssignment < ApplicationRecord
     self.allocation = (hours.to_f * 3600).round
   end
 
+  # Idempotent. Pass 1 tombstones occurrences deleted in Forecast (absent from the
+  # freshly-synced ForecastAssignment mirror); Pass 2 creates any missing occurrence.
+  # MUST run after Stacks::Forecast#sync_all! so the mirror is authoritative — see the
+  # daily_tasks wiring. Detection runs BEFORE creation so this-run creations are never
+  # mistaken for deletions.
+  def materialize!(forecast_client: nil)
+    return if paused?
+    detect_deletions!
+    create_missing_occurrences!(forecast_client || Stacks::Forecast.new)
+  end
+
+  def expected_occurrence_dates
+    last = [ends_on, Date.today + HORIZON].compact.min
+    return [] if starts_on > last
+    (starts_on..last).select { |d| weekdays.include?(d.wday) }
+  end
+
   private
 
   def weekdays_valid
@@ -41,5 +58,37 @@ class RecurringAssignment < ApplicationRecord
   def ends_on_not_before_starts_on
     return if ends_on.blank? || starts_on.blank?
     errors.add(:ends_on, "cannot be before starts_on") if ends_on < starts_on
+  end
+
+  def detect_deletions!
+    recurring_assignment_occurrences.materialized.where.not(forecast_assignment_id: nil).find_each do |occ|
+      next if ForecastAssignment.exists?(forecast_id: occ.forecast_assignment_id)
+      occ.update!(status: "deleted")
+    end
+  end
+
+  def create_missing_occurrences!(forecast_client)
+    existing = recurring_assignment_occurrences.pluck(:occurs_on).to_set
+    expected_occurrence_dates.each do |date|
+      next if existing.include?(date)
+      begin
+        assignment = forecast_client.create_assignment(
+          project_id: forecast_project_id,
+          person_id: forecast_person_id,
+          start_date: date,
+          end_date: date,
+          allocation: allocation,
+          notes: notes,
+          active_on_days_off: active_on_days_off,
+        )
+        recurring_assignment_occurrences.create!(
+          occurs_on: date,
+          status: "materialized",
+          forecast_assignment_id: assignment["id"],
+        )
+      rescue => e
+        Sentry.capture_exception(e)
+      end
+    end
   end
 end
