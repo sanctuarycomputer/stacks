@@ -245,6 +245,18 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     assert_equal "detector", managed["managed_by"]
   end
 
+  test "get_resourcing_world exposes leave[] and a stale flag from the mirror" do
+    Stacks::Runn.any_instance.stubs(:get_projects).returns([])
+    Stacks::Runn.any_instance.stubs(:get_people).returns([])
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns([])
+    RunnLeaveMirror.create!(runn_person_id: 10, start_date: Date.new(2030, 5, 10), end_date: Date.new(2030, 5, 15),
+      minutes_per_day: 480, refreshed_at: Time.current)
+    payload = call_tool("get_resourcing_world")
+    assert_equal false, payload["stale"]
+    assert_equal 1, payload["leave"].size
+    assert_equal 10, payload["leave"].first["runn_person_id"]
+  end
+
   test "get_resourcing_world degrades (partial + degraded:true) when a Runn read fails" do
     Stacks::Runn.any_instance.stubs(:get_projects).raises(RuntimeError, "runn 429")
     Stacks::Runn.any_instance.stubs(:get_people).returns([])
