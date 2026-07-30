@@ -50,6 +50,7 @@ class StacksClientRevenueTest < ActiveSupport::TestCase
 
     assert_equal 1, cr.client_count_asof(Date.new(2025, 12, 31))
     assert_equal 10_000.0, cr.average_lifetime_value_asof(Date.new(2025, 12, 31))
+    assert_equal 0, cr.skipped_tracker_count
   end
 
   test "asof date excludes later invoices" do
