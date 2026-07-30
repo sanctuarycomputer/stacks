@@ -44,6 +44,19 @@ class StacksTaskBuilderDiscoveriesNotionLeadsTest < ActiveSupport::TestCase
     refute tasks.any? { |t| t.type == :needs_budget_estimate }
   end
 
+  test "an open unbudgeted lead with an Account Lead routes to that admin user" do
+    account_lead = AdminUser.create!(email: "seller@sanctuary.computer", password: "passw0rd")
+    tasks = discover([lead_page(
+      "Lead Status" => { "type" => "status", "status" => { "name" => "Active" } },
+      "✨ Lead Received" => { "type" => "date", "date" => { "start" => Date.today.iso8601 } },
+      "Account Lead" => { "type" => "people", "people" => [{ "person" => { "email" => "seller@sanctuary.computer" } }] }
+    )])
+
+    task = tasks.find { |t| t.type == :needs_budget_estimate }
+    assert task, "expected a needs_budget_estimate task"
+    assert_equal [account_lead], task.owners
+  end
+
   test "needs_budget_estimate has an explicit humanized label" do
     assert_equal "Notion lead needs an estimated budget",
       StacksTask::HUMANIZED_TYPES[:needs_budget_estimate]
