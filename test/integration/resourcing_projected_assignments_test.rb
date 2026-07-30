@@ -123,4 +123,35 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
     assert kept.present?
     assert_equal "work", kept.kind   # the bug fix: row is NOT corrupted on conflict
   end
+
+  test "POST batch applies each item and reports per-item status" do
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns([])
+    Stacks::Runn.any_instance.stubs(:get_leave_for_person).returns([])
+    Stacks::Runn.any_instance.stubs(:create_assignment).returns([{ "id" => 5001 }])
+    items = [
+      body.merge(source_key: "batch:1"),
+      body(minutes_per_day: 9999).merge(source_key: "batch:bad"),
+    ]
+    post "/api/v1/resourcing/projected_assignments/batch",
+      headers: auth_headers, params: { items: items }.to_json
+    assert_response :success
+    results = JSON.parse(response.body)["results"].index_by { |r| r["source_key"] }
+    assert_equal "applied", results["batch:1"]["status"]
+    assert_equal "invalid", results["batch:bad"]["status"]
+  end
+
+  test "POST batch marks remaining items deferred when WriteGuard cap is hit" do
+    store = ActiveSupport::Cache::MemoryStore.new
+    Rails.stubs(:cache).returns(store)
+    store.write("mcp_write_count:#{Time.zone.today.iso8601}", Mcp::WriteGuard::DAILY_CAP)
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns([])
+    Stacks::Runn.any_instance.stubs(:get_leave_for_person).returns([])
+    Stacks::Runn.any_instance.expects(:create_assignment).never
+    items = [body.merge(source_key: "over:1"), body.merge(source_key: "over:2")]
+    post "/api/v1/resourcing/projected_assignments/batch",
+      headers: auth_headers, params: { items: items }.to_json
+    assert_response :success
+    statuses = JSON.parse(response.body)["results"].map { |r| r["status"] }
+    assert statuses.all? { |s| s == "deferred" }
+  end
 end

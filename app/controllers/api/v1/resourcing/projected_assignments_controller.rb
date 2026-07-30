@@ -29,6 +29,22 @@ class Api::V1::Resourcing::ProjectedAssignmentsController < ApiController
     render json: { status: "error", error: e.message }, status: :unprocessable_entity
   end
 
+  def batch
+    deferred = false
+    results = Array(params[:items]).map do |item|
+      permitted = item.permit(:source_key, *ATTRS)
+      next { status: "deferred", source_key: permitted[:source_key] } if deferred
+
+      begin
+        apply_one(permitted)
+      rescue Mcp::WriteGuard::CapExceeded
+        deferred = true
+        { status: "deferred", source_key: permitted[:source_key] }
+      end
+    end
+    render json: { results: results }, status: :ok
+  end
+
   private
 
   # Applies a single upsert. Returns a Hash whose :status is a String

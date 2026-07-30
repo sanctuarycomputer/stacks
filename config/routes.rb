@@ -21,6 +21,7 @@ Rails.application.routes.draw do
 
     namespace :v1 do
       namespace :resourcing do
+        post "projected_assignments/batch", to: "projected_assignments#batch", defaults: { format: :json }
         put "projected_assignments/*source_key", to: "projected_assignments#upsert", format: false, defaults: { format: :json }
         delete "projected_assignments/*source_key", to: "projected_assignments#destroy", format: false, defaults: { format: :json }
       end
