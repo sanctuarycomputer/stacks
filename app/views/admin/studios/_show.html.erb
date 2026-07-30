@@ -209,8 +209,66 @@ function update(a, b) {
 </div>
 
 <script>
-  var columnWidth = document.querySelector('#main_content > div:nth-child(15) > div > div.module-body > table.index_table.index.info').clientWidth;
-  document.querySelector('#main_content > div:nth-child(15) > div > div.module-body > table.index_table.index.right-scrolling').style.paddingLeft = `${columnWidth}px`;
+  // Keeps the frozen "info" column (OKR names) aligned with the horizontally
+  // scrolling values table. Both tables transpose their rows into visual
+  // columns via `tr.invert`, so alignment depends on every OKR row being the
+  // same height across both tables. A fixed `min-height` used to hold that
+  // invariant, but longer OKR names now wrap and overflow it, causing rows to
+  // drift and overlap. Instead of a hardcoded height, measure the natural
+  // height of each row and lock every cell in that row to the tallest one.
+  (function () {
+    function syncSplitTable(moduleBody) {
+      var infoTable = moduleBody.querySelector('table.info');
+      var scrollTable = moduleBody.querySelector('table.right-scrolling');
+      if (!infoTable || !scrollTable) return;
+
+      // Horizontal: reserve space for the (absolutely positioned) info column.
+      scrollTable.style.paddingLeft = infoTable.clientWidth + 'px';
+
+      var infoRow = infoTable.querySelector('tbody tr.invert');
+      if (!infoRow) return;
+      var infoCells = Array.prototype.slice.call(infoRow.querySelectorAll('td.col'));
+      var periodCols = Array.prototype.slice
+        .call(scrollTable.querySelectorAll('tbody tr.invert'))
+        .map(function (row) {
+          return Array.prototype.slice.call(row.querySelectorAll('td.col'));
+        });
+
+      // Align the header spacer so both bodies start at the same y-offset.
+      var infoHead = infoTable.querySelector('thead th');
+      var scrollHeadRow = scrollTable.querySelector('thead tr');
+      if (infoHead && scrollHeadRow) {
+        infoHead.style.height = '';
+        infoHead.style.height = scrollHeadRow.offsetHeight + 'px';
+      }
+
+      // Clear previously applied heights so we re-measure natural content size.
+      infoCells.forEach(function (cell) { cell.style.height = ''; });
+      periodCols.forEach(function (cols) {
+        cols.forEach(function (cell) { cell.style.height = ''; });
+      });
+
+      // Lock each OKR row (frozen name + every period's value) to its tallest
+      // cell, so the two tables stay in vertical lockstep however long a name is.
+      infoCells.forEach(function (infoCell, i) {
+        var tallest = infoCell.offsetHeight;
+        periodCols.forEach(function (cols) {
+          if (cols[i]) tallest = Math.max(tallest, cols[i].offsetHeight);
+        });
+        infoCell.style.height = tallest + 'px';
+        periodCols.forEach(function (cols) {
+          if (cols[i]) cols[i].style.height = tallest + 'px';
+        });
+      });
+    }
+
+    function syncAll() {
+      document.querySelectorAll('.dashboard-module .module-body').forEach(syncSplitTable);
+    }
+
+    window.addEventListener('load', syncAll);
+    window.addEventListener('resize', syncAll);
+  })();
 </script>
 
 <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
