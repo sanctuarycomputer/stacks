@@ -1,7 +1,7 @@
 ActiveAdmin.register RecurringAssignment do
   menu label: "Recurring Assignments", parent: "Team"
   config.filters = false
-  actions :index, :new, :create, :edit, :update, :destroy
+  actions :index, :new, :create, :edit, :update, :destroy, :show
 
   WEEKDAY_CHOICES = [%w[Mon 1], %w[Tue 2], %w[Wed 3], %w[Thu 4], %w[Fri 5], %w[Sat 6], %w[Sun 0]].freeze
 
@@ -57,8 +57,8 @@ ActiveAdmin.register RecurringAssignment do
 
   show do
     attributes_table do
-      row(:person) { |r| r.forecast_person&.email }
-      row(:project) { |r| r.forecast_project&.name }
+      row(:person) { |r| r.forecast_person&.email || "Person ##{r.forecast_person_id}" }
+      row(:project) { |r| r.forecast_project&.name || "Project ##{r.forecast_project_id}" }
       row(:hours_per_day) { |r| r.allocation_in_hours }
       row(:weekdays) { |r| r.weekdays.sort.map { |d| Date::ABBR_DAYNAMES[d] }.join(", ") }
       row :starts_on
