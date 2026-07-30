@@ -648,8 +648,14 @@ class Studio < ApplicationRecord
     data
   end
 
+  # Deliberately NOT memoized: an argument-ignoring memo (||=) would let the
+  # first caller's preloaded_studios win forever, silently ignoring later
+  # callers' arguments. It is also a thread-safety foot-gun when called inside
+  # Parallel.map (the snapshot path). Construction is cheap (~0.05-0.13s);
+  # callers that need a shared instance (generate_snapshot!) pass one in via the
+  # preloaded_client_revenue default argument instead of relying on the memo.
   def client_revenue(preloaded_studios = Studio.all)
-    @_client_revenue ||= Stacks::ClientRevenue.new(self, preloaded_studios)
+    Stacks::ClientRevenue.new(self, preloaded_studios)
   end
 
   def utilization_for_period(period)
