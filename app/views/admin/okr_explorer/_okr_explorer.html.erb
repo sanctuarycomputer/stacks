@@ -46,6 +46,41 @@ function update(a, b) {
   </div>
 <% end %>
 
+<%
+  generic_okrs = ["average_client_lifetime_value", "average_client_tenure", "client_revenue_concentration", "forecasted_sales_revenue"]
+  dedicated_okrs = ["successful_projects", "successful_proposals", "average_hourly_rate"]
+%>
+<% if generic_okrs.include?(current_okr) %>
+  <% snapshot[current_gradation].reverse.each do |period| %>
+    <%
+      dp = period.dig(accounting_method, "datapoints", current_okr)
+      raw_value = dp&.dig("value")
+      unit      = dp&.dig("unit")
+      formatted = if raw_value.nil?
+        "—"
+      elsif unit == "usd"
+        number_to_currency(raw_value)
+      elsif unit == "percentage"
+        "#{raw_value.round(1)}%"
+      else
+        raw_value.round(1).to_s
+      end
+    %>
+    <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
+      <div id="titlebar_left">
+        <h2 id="page_title">
+          <%= period["label"] %>
+        </h2>
+      </div>
+      <div id="titlebar_right">
+        <h2 id="page_title">
+          <%= formatted %>
+        </h2>
+      </div>
+    </div>
+  <% end %>
+<% end %>
+
 <% if current_okr == "time_to_merge_pr" %>
 <% end %>
 
