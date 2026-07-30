@@ -42,7 +42,7 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
   end
 
   test "PUT without X-Api-Key returns 403" do
-    put "/api/v1/resourcing/projected_assignments/some:key", headers: HEADERS, params: body.to_json
+    put "/api/v1/projected_assignments/some:key", headers: HEADERS, params: body.to_json
     assert_response :forbidden
   end
 
@@ -50,7 +50,7 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
     Stacks::Runn.any_instance.stubs(:get_assignments).returns(prior_assignment_stub)
     Stacks::Runn.any_instance.stubs(:get_people).returns(people_stub(10))
     Stacks::Runn.any_instance.expects(:create_assignment).once.returns({ "id" => 5001 })
-    put "/api/v1/resourcing/projected_assignments/sweep:extrapolate:10:#{@tr.id}",
+    put "/api/v1/projected_assignments/sweep:extrapolate:10:#{@tr.id}",
       headers: auth_headers, params: body.to_json
     assert_response :success
     json = JSON.parse(response.body)
@@ -61,7 +61,7 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
 
   test "PUT rejects an out-of-range minutes_per_day with 422 and no Runn write" do
     Stacks::Runn.any_instance.expects(:create_assignment).never
-    put "/api/v1/resourcing/projected_assignments/bad:key",
+    put "/api/v1/projected_assignments/bad:key",
       headers: auth_headers, params: body(minutes_per_day: 5000).to_json
     assert_response :unprocessable_entity
   end
@@ -70,7 +70,7 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
     Stacks::Runn.any_instance.stubs(:get_assignments).returns(prior_assignment_stub)
     Stacks::Runn.any_instance.stubs(:get_people).returns(people_stub(10))
     Stacks::Runn.any_instance.expects(:create_assignment).never
-    put "/api/v1/resourcing/projected_assignments/preview:key?preview=true",
+    put "/api/v1/projected_assignments/preview:key?preview=true",
       headers: auth_headers, params: body.to_json
     assert_response :success
     assert_equal "preview", JSON.parse(response.body)["status"]
@@ -88,7 +88,7 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
       "roleId" => 7, "startDate" => "2030-05-01", "endDate" => "2030-05-10", "minutesPerDay" => 480, "note" => marker }])
     Stacks::Runn.any_instance.stubs(:get_people).returns(people_stub(10))
     Stacks::Runn.any_instance.expects(:create_assignment).never
-    put "/api/v1/resourcing/projected_assignments/cas:key",
+    put "/api/v1/projected_assignments/cas:key",
       headers: auth_headers, params: body(end_date: "2030-06-15").to_json
     assert_response :conflict
     assert_equal "conflict", JSON.parse(response.body)["status"]
@@ -106,7 +106,7 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
       "note" => "hand-edited by a human" }])
     Stacks::Runn.any_instance.stubs(:get_people).returns(people_stub(10))
     Stacks::Runn.any_instance.expects(:create_assignment).never
-    put "/api/v1/resourcing/projected_assignments/prov:key",
+    put "/api/v1/projected_assignments/prov:key",
       headers: auth_headers, params: body(end_date: "2030-06-15").to_json
     assert_response :conflict
   end
@@ -124,7 +124,7 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
     seq = sequence("apply")
     Stacks::Runn.any_instance.expects(:create_assignment).once.in_sequence(seq).returns({ "id" => 5002 })
     Stacks::Runn.any_instance.expects(:delete_assignment).once.in_sequence(seq).with(5001).returns({})
-    put "/api/v1/resourcing/projected_assignments/shorten:key",
+    put "/api/v1/projected_assignments/shorten:key",
       headers: auth_headers, params: body(end_date: "2030-05-20").to_json
     assert_response :success
     row = ProjectedAssignment.find_by(source_key: "shorten:key")
@@ -134,7 +134,7 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
   test "PUT returns 422 when the contributor has no unique active Runn person" do
     Stacks::Runn.any_instance.stubs(:get_people).returns([])
     Stacks::Runn.any_instance.expects(:create_assignment).never
-    put "/api/v1/resourcing/projected_assignments/unresolved:key",
+    put "/api/v1/projected_assignments/unresolved:key",
       headers: auth_headers, params: body.to_json
     assert_response :unprocessable_entity
   end
@@ -143,7 +143,7 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
     Stacks::Runn.any_instance.stubs(:get_assignments).returns([])
     Stacks::Runn.any_instance.stubs(:get_people).returns(people_stub(10))
     Stacks::Runn.any_instance.expects(:create_assignment).never
-    put "/api/v1/resourcing/projected_assignments/norole:key",
+    put "/api/v1/projected_assignments/norole:key",
       headers: auth_headers, params: body.to_json
     assert_response :unprocessable_entity
   end
@@ -151,15 +151,15 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
   test "DELETE removes the row and is idempotent" do
     ProjectedAssignment.create!(source_key: "del:key", project_tracker: @tr, contributor: @contributor,
       start_date: "2030-05-01", end_date: "2030-05-31", minutes_per_day: 0)
-    delete "/api/v1/resourcing/projected_assignments/del:key", headers: auth_headers
+    delete "/api/v1/projected_assignments/del:key", headers: auth_headers
     assert_response :success
     assert_nil ProjectedAssignment.find_by(source_key: "del:key")
-    delete "/api/v1/resourcing/projected_assignments/del:key", headers: auth_headers
+    delete "/api/v1/projected_assignments/del:key", headers: auth_headers
     assert_response :success # idempotent
   end
 
   test "DELETE without X-Api-Key returns 403" do
-    delete "/api/v1/resourcing/projected_assignments/x:key", headers: HEADERS
+    delete "/api/v1/projected_assignments/x:key", headers: HEADERS
     assert_response :forbidden
   end
 
@@ -173,7 +173,7 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
     Stacks::Runn.any_instance.stubs(:get_assignments).returns([{ "id" => 5001, "personId" => 10, "projectId" => 91_100,
       "roleId" => 7, "startDate" => "2030-05-01", "endDate" => "2030-05-31", "minutesPerDay" => 480, "note" => marker }])
     Stacks::Runn.any_instance.expects(:delete_assignment).once.with(5001).returns({})
-    delete "/api/v1/resourcing/projected_assignments/arch:key?archive_runn=true", headers: auth_headers
+    delete "/api/v1/projected_assignments/arch:key?archive_runn=true", headers: auth_headers
     assert_response :success
     assert_nil ProjectedAssignment.find_by(source_key: "arch:key")
   end
@@ -188,7 +188,7 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
     Stacks::Runn.any_instance.stubs(:get_assignments).returns([{ "id" => 5001, "personId" => 10, "projectId" => 91_100,
       "roleId" => 7, "startDate" => "2030-05-01", "endDate" => "2030-05-20", "minutesPerDay" => 480, "note" => marker }])
     Stacks::Runn.any_instance.expects(:delete_assignment).never
-    delete "/api/v1/resourcing/projected_assignments/arch2:key?archive_runn=true", headers: auth_headers
+    delete "/api/v1/projected_assignments/arch2:key?archive_runn=true", headers: auth_headers
     assert_response :conflict
     kept = ProjectedAssignment.find_by(source_key: "arch2:key")
     assert kept.present?
@@ -200,7 +200,7 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
       start_date: "2030-05-01", end_date: "2030-05-31", minutes_per_day: 0)
     Stacks::Runn.any_instance.expects(:get_assignments).never
     Stacks::Runn.any_instance.expects(:delete_assignment).never
-    delete "/api/v1/resourcing/projected_assignments/arch3:key?archive_runn=true", headers: auth_headers
+    delete "/api/v1/projected_assignments/arch3:key?archive_runn=true", headers: auth_headers
     assert_response :success
     assert_nil ProjectedAssignment.find_by(source_key: "arch3:key")
   end
@@ -213,7 +213,7 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
       body.merge(source_key: "batch:1"),
       body(minutes_per_day: 9999).merge(source_key: "batch:bad"),
     ]
-    post "/api/v1/resourcing/projected_assignments/batch",
+    post "/api/v1/projected_assignments/batch",
       headers: auth_headers, params: { items: items }.to_json
     assert_response :success
     results = JSON.parse(response.body)["results"].index_by { |r| r["source_key"] }
@@ -227,7 +227,7 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
     # the whole request shares one WriteThrough, so get_people is fetched once, not per item
     Stacks::Runn.any_instance.expects(:get_people).once.returns(people_stub(10))
     items = [body.merge(source_key: "opt:1"), body.merge(source_key: "opt:2")]
-    post "/api/v1/resourcing/projected_assignments/batch",
+    post "/api/v1/projected_assignments/batch",
       headers: auth_headers, params: { items: items }.to_json
     assert_response :success
     assert_equal %w[applied applied], JSON.parse(response.body)["results"].map { |r| r["status"] }
@@ -238,7 +238,7 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
     Stacks::Runn.any_instance.stubs(:get_people).returns([])
     Stacks::Runn.any_instance.expects(:create_assignment).never
     items = [body.merge(source_key: "batch:unresolved")]
-    post "/api/v1/resourcing/projected_assignments/batch",
+    post "/api/v1/projected_assignments/batch",
       headers: auth_headers, params: { items: items }.to_json
     assert_response :success
     result = JSON.parse(response.body)["results"].first
@@ -253,7 +253,7 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
     Stacks::Runn.any_instance.stubs(:get_people).returns(people_stub(10))
     Stacks::Runn.any_instance.expects(:create_assignment).never
     items = [body.merge(source_key: "over:1"), body.merge(source_key: "over:2")]
-    post "/api/v1/resourcing/projected_assignments/batch",
+    post "/api/v1/projected_assignments/batch",
       headers: auth_headers, params: { items: items }.to_json
     assert_response :success
     statuses = JSON.parse(response.body)["results"].map { |r| r["status"] }

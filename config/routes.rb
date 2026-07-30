@@ -20,11 +20,9 @@ Rails.application.routes.draw do
     match '/mcp/write', to: 'mcp_write#handle', via: [:post, :get, :delete]
 
     namespace :v1 do
-      namespace :resourcing do
-        post "projected_assignments/batch", to: "projected_assignments#batch", defaults: { format: :json }
-        put "projected_assignments/*source_key", to: "projected_assignments#upsert", format: false, defaults: { format: :json }
-        delete "projected_assignments/*source_key", to: "projected_assignments#destroy", format: false, defaults: { format: :json }
-      end
+      post "projected_assignments/batch", to: "projected_assignments#batch", defaults: { format: :json }
+      put "projected_assignments/*source_key", to: "projected_assignments#upsert", format: false, defaults: { format: :json }
+      delete "projected_assignments/*source_key", to: "projected_assignments#destroy", format: false, defaults: { format: :json }
     end
   end
 

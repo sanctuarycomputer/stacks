@@ -1,4 +1,4 @@
-class Api::V1::Resourcing::ProjectedAssignmentsController < ApiController
+class Api::V1::ProjectedAssignmentsController < ApiController
   skip_before_action :verify_authenticity_token
   before_action :check_private_api_key!
 
