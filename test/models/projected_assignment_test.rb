@@ -6,15 +6,21 @@ class ProjectedAssignmentTest < ActiveSupport::TestCase
     Contributor.create!(forecast_person: fp)
   end
 
+  def tracker(runn_project_id: rand(1..2_000_000_000))
+    RunnProject.find_or_create_by!(runn_id: runn_project_id) { |rp| rp.name = "RP#{runn_project_id}"; rp.data = {} }
+    t = ProjectTracker.new(name: "T#{runn_project_id}", runn_project_id: runn_project_id)
+    t.save(validate: false)
+    t
+  end
+
   def valid_attrs(overrides = {})
     {
       source_key: "resourcing-sweep:extrapolate:#{SecureRandom.hex(4)}",
       contributor: contributor_for,
-      runn_role_id: 7,
+      project_tracker: tracker,
       start_date: Date.new(2030, 5, 1),
       end_date: Date.new(2030, 5, 31),
       minutes_per_day: 480,
-      kind: "work",
     }.merge(overrides)
   end
 
@@ -30,10 +36,16 @@ class ProjectedAssignmentTest < ActiveSupport::TestCase
     assert dup.errors[:source_key].present?
   end
 
-  test "kind must be in KINDS" do
-    row = ProjectedAssignment.new(valid_attrs(kind: "vacation"))
+  test "contributor is required" do
+    row = ProjectedAssignment.new(valid_attrs(contributor: nil))
     refute row.valid?
-    assert row.errors[:kind].present?
+    assert row.errors[:contributor].present?
+  end
+
+  test "project_tracker is required" do
+    row = ProjectedAssignment.new(valid_attrs(project_tracker: nil))
+    refute row.valid?
+    assert row.errors[:project_tracker].present?
   end
 
   test "minutes_per_day must be within 0..1440" do
@@ -59,26 +71,21 @@ class ProjectedAssignmentTest < ActiveSupport::TestCase
     assert ProjectedAssignment.new(valid_attrs(note: "x" * 2000)).valid?
   end
 
-  test "runn_assignment_ids defaults to an empty array and owned_runn_assignment_ids returns it" do
+  test "runn_assignment_id defaults to nil" do
     row = ProjectedAssignment.create!(valid_attrs)
-    assert_equal [], row.runn_assignment_ids
-    assert_equal [], row.owned_runn_assignment_ids
+    assert_nil row.runn_assignment_id
   end
 
-  test "owned scope returns only rows with runn_assignment_ids" do
+  test "owned scope returns only rows with a runn_assignment_id" do
     bare = ProjectedAssignment.create!(valid_attrs)
-    owned = ProjectedAssignment.create!(valid_attrs(runn_assignment_ids: [5001]))
+    owned = ProjectedAssignment.create!(valid_attrs(runn_assignment_id: 5001))
     assert_includes ProjectedAssignment.owned, owned
     refute_includes ProjectedAssignment.owned, bare
   end
 
-  test "for_contributor and time_off scopes filter" do
-    shared = contributor_for
-    a = ProjectedAssignment.create!(valid_attrs(contributor: shared, kind: "work"))
-    b = ProjectedAssignment.create!(valid_attrs(contributor: shared, kind: "time_off", minutes_per_day: 0))
-    c = ProjectedAssignment.create!(valid_attrs(kind: "work"))
-    assert_equal [a, b].sort_by(&:id), ProjectedAssignment.for_contributor(shared.id).order(:id).to_a
-    assert_equal [b], ProjectedAssignment.time_off.to_a
-    assert_not_includes ProjectedAssignment.for_contributor(shared.id), c
+  test "runn_project_id delegates to project_tracker" do
+    tr = tracker(runn_project_id: 92_222)
+    row = ProjectedAssignment.create!(valid_attrs(project_tracker: tr))
+    assert_equal 92_222, row.runn_project_id
   end
 end

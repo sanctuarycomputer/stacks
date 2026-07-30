@@ -23,9 +23,16 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
     [{ "id" => runn_id, "email" => email, "isArchived" => false }]
   end
 
+  # a historical live Runn assignment for the person, used to supply role_id
+  # resolution for brand-new rows (which own nothing yet).
+  def prior_assignment_stub(person: 10, role: 7, project: 91_100)
+    [{ "id" => 4000, "personId" => person, "projectId" => project, "roleId" => role,
+       "startDate" => "2029-01-01", "endDate" => "2029-01-31", "minutesPerDay" => 480, "note" => "" }]
+  end
+
   def body(overrides = {})
-    { contributor_id: @contributor.id, runn_role_id: 7, project_tracker_id: @tr.id,
-      start_date: "2030-05-01", end_date: "2030-05-31", minutes_per_day: 480, kind: "work" }.merge(overrides)
+    { contributor_id: @contributor.id, project_tracker_id: @tr.id,
+      start_date: "2030-05-01", end_date: "2030-05-31", minutes_per_day: 480 }.merge(overrides)
   end
 
   setup do
@@ -40,17 +47,16 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
   end
 
   test "PUT upserts the row and applies through to Runn" do
-    Stacks::Runn.any_instance.stubs(:get_assignments).returns([])
-    Stacks::Runn.any_instance.stubs(:get_leave_for_person).returns([])
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns(prior_assignment_stub)
     Stacks::Runn.any_instance.stubs(:get_people).returns(people_stub(10))
-    Stacks::Runn.any_instance.expects(:create_assignment).once.returns([{ "id" => 5001 }])
+    Stacks::Runn.any_instance.expects(:create_assignment).once.returns({ "id" => 5001 })
     put "/api/v1/resourcing/projected_assignments/sweep:extrapolate:10:#{@tr.id}",
       headers: auth_headers, params: body.to_json
     assert_response :success
     json = JSON.parse(response.body)
     assert_equal "applied", json["status"]
     row = ProjectedAssignment.find_by(source_key: "sweep:extrapolate:10:#{@tr.id}")
-    assert_equal [5001], row.runn_assignment_ids
+    assert_equal 5001, row.runn_assignment_id
   end
 
   test "PUT rejects an out-of-range minutes_per_day with 422 and no Runn write" do
@@ -61,8 +67,7 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
   end
 
   test "PUT ?preview=true writes nothing to Runn" do
-    Stacks::Runn.any_instance.stubs(:get_assignments).returns([])
-    Stacks::Runn.any_instance.stubs(:get_leave_for_person).returns([])
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns(prior_assignment_stub)
     Stacks::Runn.any_instance.stubs(:get_people).returns(people_stub(10))
     Stacks::Runn.any_instance.expects(:create_assignment).never
     put "/api/v1/resourcing/projected_assignments/preview:key?preview=true",
@@ -73,15 +78,14 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
 
   test "PUT returns 409 on a CAS conflict" do
     marker = Resourcing::WriteThrough.provenance_marker("cas:key")
-    ProjectedAssignment.create!(source_key: "cas:key", project_tracker: @tr, contributor: @contributor, runn_role_id: 7,
-      start_date: "2030-05-01", end_date: "2030-05-31", minutes_per_day: 480, kind: "work",
-      runn_assignment_ids: [5001],
-      last_synced_runn_state: [{ "personId" => 10, "projectId" => 91_100, "roleId" => 7,
-        "startDate" => "2030-05-01", "endDate" => "2030-05-31", "minutesPerDay" => 480, "id" => 5001, "note" => marker }])
+    ProjectedAssignment.create!(source_key: "cas:key", project_tracker: @tr, contributor: @contributor,
+      start_date: "2030-05-01", end_date: "2030-05-31", minutes_per_day: 480,
+      runn_assignment_id: 5001,
+      last_synced_runn_state: { "personId" => 10, "projectId" => 91_100, "roleId" => 7,
+        "startDate" => "2030-05-01", "endDate" => "2030-05-31", "minutesPerDay" => 480, "id" => 5001, "note" => marker })
     # human moved it in Runn
     Stacks::Runn.any_instance.stubs(:get_assignments).returns([{ "id" => 5001, "personId" => 10, "projectId" => 91_100,
       "roleId" => 7, "startDate" => "2030-05-01", "endDate" => "2030-05-10", "minutesPerDay" => 480, "note" => marker }])
-    Stacks::Runn.any_instance.stubs(:get_leave_for_person).returns([])
     Stacks::Runn.any_instance.stubs(:get_people).returns(people_stub(10))
     Stacks::Runn.any_instance.expects(:create_assignment).never
     put "/api/v1/resourcing/projected_assignments/cas:key",
@@ -90,9 +94,63 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
     assert_equal "conflict", JSON.parse(response.body)["status"]
   end
 
+  test "PUT returns 409 on a provenance conflict (marker lost)" do
+    ProjectedAssignment.create!(source_key: "prov:key", project_tracker: @tr, contributor: @contributor,
+      start_date: "2030-05-01", end_date: "2030-05-31", minutes_per_day: 480,
+      runn_assignment_id: 5001,
+      last_synced_runn_state: { "personId" => 10, "projectId" => 91_100, "roleId" => 7,
+        "startDate" => "2030-05-01", "endDate" => "2030-05-31", "minutesPerDay" => 480, "id" => 5001,
+        "note" => Resourcing::WriteThrough.provenance_marker("prov:key") })
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns([{ "id" => 5001, "personId" => 10, "projectId" => 91_100,
+      "roleId" => 7, "startDate" => "2030-05-01", "endDate" => "2030-05-31", "minutesPerDay" => 480,
+      "note" => "hand-edited by a human" }])
+    Stacks::Runn.any_instance.stubs(:get_people).returns(people_stub(10))
+    Stacks::Runn.any_instance.expects(:create_assignment).never
+    put "/api/v1/resourcing/projected_assignments/prov:key",
+      headers: auth_headers, params: body(end_date: "2030-06-15").to_json
+    assert_response :conflict
+  end
+
+  test "PUT replace (shorten): creates the new assignment then deletes the old, updating ownership" do
+    marker = Resourcing::WriteThrough.provenance_marker("shorten:key")
+    ProjectedAssignment.create!(source_key: "shorten:key", project_tracker: @tr, contributor: @contributor,
+      start_date: "2030-05-01", end_date: "2030-05-31", minutes_per_day: 480,
+      runn_assignment_id: 5001,
+      last_synced_runn_state: { "personId" => 10, "projectId" => 91_100, "roleId" => 7,
+        "startDate" => "2030-05-01", "endDate" => "2030-05-31", "minutesPerDay" => 480, "id" => 5001, "note" => marker })
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns([{ "id" => 5001, "personId" => 10, "projectId" => 91_100,
+      "roleId" => 7, "startDate" => "2030-05-01", "endDate" => "2030-05-31", "minutesPerDay" => 480, "note" => marker }])
+    Stacks::Runn.any_instance.stubs(:get_people).returns(people_stub(10))
+    seq = sequence("apply")
+    Stacks::Runn.any_instance.expects(:create_assignment).once.in_sequence(seq).returns({ "id" => 5002 })
+    Stacks::Runn.any_instance.expects(:delete_assignment).once.in_sequence(seq).with(5001).returns({})
+    put "/api/v1/resourcing/projected_assignments/shorten:key",
+      headers: auth_headers, params: body(end_date: "2030-05-20").to_json
+    assert_response :success
+    row = ProjectedAssignment.find_by(source_key: "shorten:key")
+    assert_equal 5002, row.runn_assignment_id
+  end
+
+  test "PUT returns 422 when the contributor has no unique active Runn person" do
+    Stacks::Runn.any_instance.stubs(:get_people).returns([])
+    Stacks::Runn.any_instance.expects(:create_assignment).never
+    put "/api/v1/resourcing/projected_assignments/unresolved:key",
+      headers: auth_headers, params: body.to_json
+    assert_response :unprocessable_entity
+  end
+
+  test "PUT returns 422 when no Runn role can be resolved for a brand-new row" do
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns([])
+    Stacks::Runn.any_instance.stubs(:get_people).returns(people_stub(10))
+    Stacks::Runn.any_instance.expects(:create_assignment).never
+    put "/api/v1/resourcing/projected_assignments/norole:key",
+      headers: auth_headers, params: body.to_json
+    assert_response :unprocessable_entity
+  end
+
   test "DELETE removes the row and is idempotent" do
     ProjectedAssignment.create!(source_key: "del:key", project_tracker: @tr, contributor: @contributor,
-      start_date: "2030-05-01", end_date: "2030-05-31", minutes_per_day: 0, kind: "time_off")
+      start_date: "2030-05-01", end_date: "2030-05-31", minutes_per_day: 0)
     delete "/api/v1/resourcing/projected_assignments/del:key", headers: auth_headers
     assert_response :success
     assert_nil ProjectedAssignment.find_by(source_key: "del:key")
@@ -105,13 +163,13 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
     assert_response :forbidden
   end
 
-  test "DELETE ?archive_runn=true deletes owned Runn assignments then the row" do
+  test "DELETE ?archive_runn=true deletes the owned Runn assignment then the row" do
     marker = Resourcing::WriteThrough.provenance_marker("arch:key")
-    ProjectedAssignment.create!(source_key: "arch:key", project_tracker: @tr, contributor: @contributor, runn_role_id: 7,
-      start_date: "2030-05-01", end_date: "2030-05-31", minutes_per_day: 480, kind: "work",
-      runn_assignment_ids: [5001],
-      last_synced_runn_state: [{ "personId" => 10, "projectId" => 91_100, "roleId" => 7,
-        "startDate" => "2030-05-01", "endDate" => "2030-05-31", "minutesPerDay" => 480, "id" => 5001, "note" => marker }])
+    ProjectedAssignment.create!(source_key: "arch:key", project_tracker: @tr, contributor: @contributor,
+      start_date: "2030-05-01", end_date: "2030-05-31", minutes_per_day: 480,
+      runn_assignment_id: 5001,
+      last_synced_runn_state: { "personId" => 10, "projectId" => 91_100, "roleId" => 7,
+        "startDate" => "2030-05-01", "endDate" => "2030-05-31", "minutesPerDay" => 480, "id" => 5001, "note" => marker })
     Stacks::Runn.any_instance.stubs(:get_assignments).returns([{ "id" => 5001, "personId" => 10, "projectId" => 91_100,
       "roleId" => 7, "startDate" => "2030-05-01", "endDate" => "2030-05-31", "minutesPerDay" => 480, "note" => marker }])
     Stacks::Runn.any_instance.expects(:delete_assignment).once.with(5001).returns({})
@@ -122,11 +180,11 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
 
   test "DELETE ?archive_runn=true returns 409 and keeps the (unmodified) row when a human edited Runn" do
     marker = Resourcing::WriteThrough.provenance_marker("arch2:key")
-    ProjectedAssignment.create!(source_key: "arch2:key", project_tracker: @tr, contributor: @contributor, runn_role_id: 7,
-      start_date: "2030-05-01", end_date: "2030-05-31", minutes_per_day: 480, kind: "work",
-      runn_assignment_ids: [5001],
-      last_synced_runn_state: [{ "personId" => 10, "projectId" => 91_100, "roleId" => 7,
-        "startDate" => "2030-05-01", "endDate" => "2030-05-31", "minutesPerDay" => 480, "id" => 5001, "note" => marker }])
+    ProjectedAssignment.create!(source_key: "arch2:key", project_tracker: @tr, contributor: @contributor,
+      start_date: "2030-05-01", end_date: "2030-05-31", minutes_per_day: 480,
+      runn_assignment_id: 5001,
+      last_synced_runn_state: { "personId" => 10, "projectId" => 91_100, "roleId" => 7,
+        "startDate" => "2030-05-01", "endDate" => "2030-05-31", "minutesPerDay" => 480, "id" => 5001, "note" => marker })
     Stacks::Runn.any_instance.stubs(:get_assignments).returns([{ "id" => 5001, "personId" => 10, "projectId" => 91_100,
       "roleId" => 7, "startDate" => "2030-05-01", "endDate" => "2030-05-20", "minutesPerDay" => 480, "note" => marker }])
     Stacks::Runn.any_instance.expects(:delete_assignment).never
@@ -134,14 +192,23 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
     assert_response :conflict
     kept = ProjectedAssignment.find_by(source_key: "arch2:key")
     assert kept.present?
-    assert_equal "work", kept.kind   # the bug fix: row is NOT corrupted on conflict
+    assert_equal 5001, kept.runn_assignment_id # the row is NOT corrupted on conflict
+  end
+
+  test "DELETE ?archive_runn=true on a row with no owned assignment is a noop that still deletes the row" do
+    ProjectedAssignment.create!(source_key: "arch3:key", project_tracker: @tr, contributor: @contributor,
+      start_date: "2030-05-01", end_date: "2030-05-31", minutes_per_day: 0)
+    Stacks::Runn.any_instance.expects(:get_assignments).never
+    Stacks::Runn.any_instance.expects(:delete_assignment).never
+    delete "/api/v1/resourcing/projected_assignments/arch3:key?archive_runn=true", headers: auth_headers
+    assert_response :success
+    assert_nil ProjectedAssignment.find_by(source_key: "arch3:key")
   end
 
   test "POST batch applies each item and reports per-item status" do
-    Stacks::Runn.any_instance.stubs(:get_assignments).returns([])
-    Stacks::Runn.any_instance.stubs(:get_leave_for_person).returns([])
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns(prior_assignment_stub)
     Stacks::Runn.any_instance.stubs(:get_people).returns(people_stub(10))
-    Stacks::Runn.any_instance.stubs(:create_assignment).returns([{ "id" => 5001 }])
+    Stacks::Runn.any_instance.stubs(:create_assignment).returns({ "id" => 5001 })
     items = [
       body.merge(source_key: "batch:1"),
       body(minutes_per_day: 9999).merge(source_key: "batch:bad"),
@@ -154,12 +221,23 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
     assert_equal "invalid", results["batch:bad"]["status"]
   end
 
+  test "POST batch reports a per-item error when a contributor can't be resolved" do
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns(prior_assignment_stub)
+    Stacks::Runn.any_instance.stubs(:get_people).returns([])
+    Stacks::Runn.any_instance.expects(:create_assignment).never
+    items = [body.merge(source_key: "batch:unresolved")]
+    post "/api/v1/resourcing/projected_assignments/batch",
+      headers: auth_headers, params: { items: items }.to_json
+    assert_response :success
+    result = JSON.parse(response.body)["results"].first
+    assert_equal "error", result["status"]
+  end
+
   test "POST batch marks remaining items deferred when WriteGuard cap is hit" do
     store = ActiveSupport::Cache::MemoryStore.new
     Rails.stubs(:cache).returns(store)
     store.write("mcp_write_count:#{Time.zone.today.iso8601}", Mcp::WriteGuard::DAILY_CAP)
-    Stacks::Runn.any_instance.stubs(:get_assignments).returns([])
-    Stacks::Runn.any_instance.stubs(:get_leave_for_person).returns([])
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns(prior_assignment_stub)
     Stacks::Runn.any_instance.stubs(:get_people).returns(people_stub(10))
     Stacks::Runn.any_instance.expects(:create_assignment).never
     items = [body.merge(source_key: "over:1"), body.merge(source_key: "over:2")]

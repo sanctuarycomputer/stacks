@@ -213,7 +213,7 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "get_resourcing_projections includes default_role_id, managed overlay, and degraded flag" do
+  test "get_resourcing_projections includes people[].contributor_id, the new managed overlay shape, and degraded flag" do
     travel_to Time.zone.parse("2026-07-15 12:00:00")
     today = Time.zone.today
     Stacks::Runn.any_instance.stubs(:get_projects).returns([
@@ -234,19 +234,24 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     tr.save(validate: false)
     fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "ada@x.com", data: {})
     contributor = Contributor.create!(forecast_person: fp)
-    ProjectedAssignment.create!(source_key: "world:1", project_tracker: tr, contributor: contributor, runn_role_id: 7,
-      start_date: (today + 1), end_date: (today + 20), minutes_per_day: 480, kind: "work",
-      runn_assignment_ids: [2], managed_by: "detector")
+    ProjectedAssignment.create!(source_key: "world:1", project_tracker: tr, contributor: contributor,
+      start_date: (today + 1), end_date: (today + 20), minutes_per_day: 480,
+      runn_assignment_id: 2, managed_by: "detector")
 
     payload = call_tool("get_resourcing_projections")
     ada = payload["people"].find { |p| p["id"] == 10 }
-    assert_equal 9, ada["default_role_id"] # most-recent assignment by endDate
+    refute ada.key?("default_role_id"), "the client no longer deals with roles"
     assert_equal contributor.id, ada["contributor_id"]
     assert_equal false, payload["degraded"]
     managed = payload["managed"].find { |m| m["source_key"] == "world:1" }
-    assert_equal [2], managed["runn_assignment_ids"]
+    assert_equal 2, managed["runn_assignment_id"]
     assert_equal "detector", managed["managed_by"]
     assert_equal contributor.id, managed["contributor_id"]
+    assert_equal tr.id, managed["project_tracker_id"]
+    refute managed.key?("kind")
+    refute managed.key?("capacity_pct")
+    refute managed.key?("runn_role_id")
+    refute managed.key?("is_placeholder")
   end
 
   test "get_resourcing_projections degrades (partial + degraded:true) when a Runn read fails" do

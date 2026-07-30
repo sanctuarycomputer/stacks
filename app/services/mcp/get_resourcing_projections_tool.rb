@@ -43,13 +43,6 @@ module Mcp
       raw_assignments = safe_read.call([]) { runn.get_assignments }.reject { |a| a["isTemplate"] }
       raw_people = safe_read.call([]) { runn.get_people }
 
-      # most-recent assignment per person by endDate, from the unfiltered
-      # history, so a person's most-recent PAST role still resolves even
-      # when they have no in-window assignment right now
-      latest_role_by_person = raw_assignments
-        .group_by { |a| a["personId"] }
-        .transform_values { |as| as.max_by { |a| a["endDate"].to_s }&.dig("roleId") }
-
       assignments = raw_assignments.select do |a|
         next false unless project_ids.include?(a["projectId"])
 
@@ -73,9 +66,8 @@ module Mcp
 
       managed_overlay = ProjectedAssignment.all.map do |pa|
         { source_key: pa.source_key, contributor_id: pa.contributor_id, project_tracker_id: pa.project_tracker_id,
-          runn_role_id: pa.runn_role_id, start_date: pa.start_date, end_date: pa.end_date,
-          minutes_per_day: pa.minutes_per_day, kind: pa.kind, capacity_pct: pa.capacity_pct,
-          is_placeholder: pa.is_placeholder, runn_assignment_ids: pa.runn_assignment_ids, managed_by: pa.managed_by }
+          start_date: pa.start_date, end_date: pa.end_date, minutes_per_day: pa.minutes_per_day,
+          runn_assignment_id: pa.runn_assignment_id, managed_by: pa.managed_by }
       end
 
       Responses.ok({
@@ -113,7 +105,6 @@ module Mcp
               id: p["id"],
               name: [p["firstName"], p["lastName"]].compact.join(" "),
               is_archived: p["isArchived"],
-              default_role_id: latest_role_by_person[p["id"]],
               contributor_id: contributor_id_by_email[p["email"].to_s.strip.downcase],
             }
           },

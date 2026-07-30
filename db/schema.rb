@@ -1033,24 +1033,21 @@ ActiveRecord::Schema.define(version: 2026_07_29_000001) do
 
   create_table "projected_assignments", force: :cascade do |t|
     t.string "source_key", null: false
-    t.bigint "project_tracker_id"
-    t.bigint "contributor_id"
-    t.bigint "runn_role_id"
+    t.bigint "contributor_id", null: false
+    t.bigint "project_tracker_id", null: false
     t.date "start_date", null: false
     t.date "end_date", null: false
     t.integer "minutes_per_day", default: 0, null: false
-    t.string "kind", default: "work", null: false
-    t.integer "capacity_pct"
-    t.boolean "is_placeholder", default: false, null: false
+    t.bigint "runn_assignment_id"
+    t.jsonb "last_synced_runn_state"
     t.text "note"
     t.string "source_ref"
-    t.jsonb "runn_assignment_ids", default: [], null: false
-    t.jsonb "last_synced_runn_state"
     t.string "managed_by"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.index ["contributor_id"], name: "index_projected_assignments_on_contributor_id"
     t.index ["project_tracker_id"], name: "index_projected_assignments_on_project_tracker_id"
+    t.index ["runn_assignment_id"], name: "index_projected_assignments_on_runn_assignment_id"
     t.index ["source_key"], name: "index_projected_assignments_on_source_key", unique: true
   end
 

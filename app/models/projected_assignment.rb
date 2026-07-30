@@ -1,29 +1,19 @@
 class ProjectedAssignment < ApplicationRecord
-  KINDS = %w[work time_off reduced].freeze
   MAX_RANGE_DAYS = 366
 
-  belongs_to :project_tracker, optional: true
   belongs_to :contributor
-  delegate :runn_project_id, to: :project_tracker, allow_nil: true
+  belongs_to :project_tracker
+  delegate :runn_project_id, to: :project_tracker
 
   validates :source_key, presence: true, uniqueness: true
-  validates :start_date, presence: true
-  validates :end_date, presence: true
-  validates :kind, inclusion: { in: KINDS }
+  validates :start_date, :end_date, presence: true
   validates :minutes_per_day,
             numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 1440 }
   validates :note, length: { maximum: 2000 }, allow_nil: true
   validate :end_on_or_after_start
   validate :range_within_max
 
-  scope :for_tracker, ->(tracker_id) { where(project_tracker_id: tracker_id) }
-  scope :for_contributor, ->(contributor_id) { where(contributor_id: contributor_id) }
-  scope :time_off, -> { where(kind: "time_off") }
-  scope :owned, -> { where("jsonb_array_length(runn_assignment_ids) > 0") }
-
-  def owned_runn_assignment_ids
-    Array(runn_assignment_ids)
-  end
+  scope :owned, -> { where.not(runn_assignment_id: nil) }
 
   private
 
