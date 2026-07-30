@@ -4,7 +4,7 @@
 
 **Goal:** Add four new Studio-level OKR datapoints — `average_client_lifetime_value`, `average_client_tenure`, `client_revenue_concentration`, `forecasted_sales_revenue` — plus a `needs_budget_estimate` data-hygiene task, per the approved spec at `docs/superpowers/specs/2026-07-29-studio-okr-client-kpis-design.md`.
 
-**Architecture:** A new PORO `Stacks::ClientRevenue` turns InvoiceTracker history into per-client revenue rows (studio-attributed via blueprint lines) and answers LTV/tenure/concentration queries. `Studio#key_datapoints_for_period` merges four new datapoint hash entries, so the existing OKR machinery (targets, health, nightly snapshots, OKR Explorer, MCP tool) picks them up with no further plumbing. `Stacks::Notion::Lead` gains status/budget readers shared by the pipeline KPI and a new TaskBuilder discovery rule.
+**Architecture:** Service objects carry the logic, keeping the already-large `Studio` model thin. `Stacks::ClientRevenue` turns InvoiceTracker history into per-client revenue rows (studio-attributed via blueprint lines) and answers LTV/tenure/concentration queries; `Stacks::ClientKpiDatapoints` builds the four datapoint hash entries from it. `Studio#key_datapoints_for_period` merely merges that service's result, so the existing OKR machinery (targets, health, nightly snapshots, OKR Explorer, MCP tool) picks the KPIs up with no further plumbing. `Stacks::Notion::Lead` gains status/budget readers shared by the pipeline KPI and a new TaskBuilder discovery rule.
 
 **Tech Stack:** Rails, PostgreSQL (jsonb), Minitest + mocha (NOT RSpec — the spec doc says RSpec but this repo uses Minitest; follow this plan), ActiveAdmin.
 
@@ -477,12 +477,13 @@ git commit -m "feat: add Stacks::ClientRevenue for per-client studio revenue"
 
 ---
 
-### Task 3: Okr enum entries + the four datapoints on Studio
+### Task 3: Okr enum entries + `Stacks::ClientKpiDatapoints` service
 
 **Files:**
+- Create: `lib/stacks/client_kpi_datapoints.rb`
 - Modify: `app/models/okr.rb:46` (end of `datapoint` enum)
-- Modify: `app/models/studio.rb` (`key_datapoints_for_period`, ends ~line 629; add two new methods after it)
-- Test: `test/models/studio_test.rb` (append tests)
+- Modify: `app/models/studio.rb` (`key_datapoints_for_period`, ends ~line 629; add one small memoized helper after it)
+- Test: `test/lib/stacks/client_kpi_datapoints_test.rb` (create)
 
 **Interfaces:**
 - Consumes:
@@ -492,14 +493,17 @@ git commit -m "feat: add Stacks::ClientRevenue for per-client studio revenue"
 - Produces (used by Task 5):
   - `Okr.datapoints` gains `average_client_lifetime_value: 27, average_client_tenure: 28, client_revenue_concentration: 29, forecasted_sales_revenue: 30`
   - `Studio#client_revenue(preloaded_studios = Studio.all)` → memoized `Stacks::ClientRevenue`
-  - `Studio#client_and_pipeline_datapoints(period, preloaded_new_biz_leads, client_revenue)` → Hash with the four datapoint keys, each `{value:, unit:, extras:}` shaped like existing datapoints
-  - `Studio#key_datapoints_for_period` gains a final positional param `preloaded_client_revenue = client_revenue(preloaded_studios)` and merges the four keys into its return value
+  - `Stacks::ClientKpiDatapoints.call(period:, leads:, client_revenue:)` → Hash with the four datapoint keys, each `{value:, unit:, extras:}` shaped like existing datapoints
+  - `Studio#key_datapoints_for_period` gains a final positional param `preloaded_client_revenue = client_revenue(preloaded_studios)` and merges the service's four keys into its return value
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `test/models/studio_test.rb` (inside `class StudioTest`):
+Create `test/lib/stacks/client_kpi_datapoints_test.rb`:
 
 ```ruby
+require 'test_helper'
+
+class StacksClientKpiDatapointsTest < ActiveSupport::TestCase
   test "datapoint enum includes the four client & pipeline KPIs at 27-30" do
     assert_equal 27, Okr.datapoints["average_client_lifetime_value"]
     assert_equal 28, Okr.datapoints["average_client_tenure"]
@@ -507,7 +511,7 @@ Append to `test/models/studio_test.rb` (inside `class StudioTest`):
     assert_equal 30, Okr.datapoints["forecasted_sales_revenue"]
   end
 
-  test "#client_and_pipeline_datapoints returns the four KPI entries" do
+  test ".call returns the four KPI entries" do
     studio = Studio.new(name: "garden3d", mini_name: "g3d")
     acme = ForecastClient.new(name: "Acme")
 
@@ -536,7 +540,11 @@ Append to `test/models/studio_test.rb` (inside `class StudioTest`):
     } }).as_lead
 
     period = Stacks::Period.new("Feb 2025", Date.new(2025, 2, 1), Date.new(2025, 2, 28))
-    data = studio.client_and_pipeline_datapoints(period, [open_budgeted, open_unbudgeted, lost], client_revenue)
+    data = Stacks::ClientKpiDatapoints.call(
+      period: period,
+      leads: [open_budgeted, open_unbudgeted, lost],
+      client_revenue: client_revenue
+    )
 
     assert_equal 10_000.0, data[:average_client_lifetime_value][:value]
     assert_equal :usd, data[:average_client_lifetime_value][:unit]
@@ -554,12 +562,13 @@ Append to `test/models/studio_test.rb` (inside `class StudioTest`):
     assert_equal 2, data[:forecasted_sales_revenue][:extras][:open_lead_count]
     assert_equal 1, data[:forecasted_sales_revenue][:extras][:budgeted_lead_count]
   end
+end
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bin/rails test test/models/studio_test.rb`
-Expected: the two new tests FAIL (`Okr.datapoints["average_client_lifetime_value"]` is nil; `NoMethodError: undefined method 'client_and_pipeline_datapoints'`). Pre-existing tests in this file must PASS — if any fail before your change, stop and report.
+Run: `bin/rails test test/lib/stacks/client_kpi_datapoints_test.rb`
+Expected: FAIL — `Okr.datapoints["average_client_lifetime_value"]` is nil, and `NameError: uninitialized constant Stacks::ClientKpiDatapoints`.
 
 - [ ] **Step 3: Write the implementation**
 
@@ -595,33 +604,50 @@ In `app/models/studio.rb`:
 (b) At the end of `key_datapoints_for_period`, immediately before the final `data` return (currently line 628), add:
 
 ```ruby
-    data.merge!(client_and_pipeline_datapoints(period, preloaded_new_biz_leads, preloaded_client_revenue))
+    data.merge!(Stacks::ClientKpiDatapoints.call(
+      period: period,
+      leads: preloaded_new_biz_leads,
+      client_revenue: preloaded_client_revenue
+    ))
 
     data
   end
 ```
 
-(c) After `key_datapoints_for_period` ends, add the two new methods:
+(c) After `key_datapoints_for_period` ends, add one small memoized helper:
 
 ```ruby
   def client_revenue(preloaded_studios = Studio.all)
     @_client_revenue ||= Stacks::ClientRevenue.new(self, preloaded_studios)
   end
+```
 
-  def client_and_pipeline_datapoints(period, preloaded_new_biz_leads, client_revenue)
-    open_leads = preloaded_new_biz_leads.select(&:open?)
-    budgets = open_leads.filter_map(&:estimated_budget)
-    concentration = client_revenue.concentration_for_range(period.starts_at, period.ends_at)
-    client_count = client_revenue.client_count_asof(period.ends_at)
+(d) Create the service at `lib/stacks/client_kpi_datapoints.rb`:
 
+```ruby
+# Builds the four client & pipeline OKR datapoint entries that
+# Studio#key_datapoints_for_period merges into its result. Each entry is
+# shaped like the existing datapoints: { value:, unit:, extras: }.
+class Stacks::ClientKpiDatapoints
+  def self.call(period:, leads:, client_revenue:)
+    new(period: period, leads: leads, client_revenue: client_revenue).call
+  end
+
+  def initialize(period:, leads:, client_revenue:)
+    @period = period
+    @leads = leads
+    @client_revenue = client_revenue
+  end
+
+  def call
     {
       average_client_lifetime_value: {
-        value: client_revenue.average_lifetime_value_asof(period.ends_at),
+        value: @client_revenue.average_lifetime_value_asof(@period.ends_at),
         unit: :usd,
         extras: { client_count: client_count }
       },
       average_client_tenure: {
-        value: client_revenue.average_tenure_months_asof(period.ends_at),
+        value: @client_revenue.average_tenure_months_asof(@period.ends_at),
         unit: :count,
         extras: { client_count: client_count }
       },
@@ -644,17 +670,39 @@ In `app/models/studio.rb`:
       }
     }
   end
+
+  private
+
+  def open_leads
+    @_open_leads ||= @leads.select(&:open?)
+  end
+
+  def budgets
+    @_budgets ||= open_leads.filter_map(&:estimated_budget)
+  end
+
+  def concentration
+    @_concentration ||= @client_revenue.concentration_for_range(@period.starts_at, @period.ends_at)
+  end
+
+  def client_count
+    @_client_count ||= @client_revenue.client_count_asof(@period.ends_at)
+  end
+end
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `bin/rails test test/models/studio_test.rb`
-Expected: PASS (including the pre-existing tests)
+Run: `bin/rails test test/lib/stacks/client_kpi_datapoints_test.rb`
+Expected: PASS (2 tests)
+
+Also run: `bin/rails test test/models/studio_test.rb`
+Expected: PASS — the `key_datapoints_for_period` signature change must not break pre-existing tests.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/models/okr.rb app/models/studio.rb test/models/studio_test.rb
+git add app/models/okr.rb app/models/studio.rb lib/stacks/client_kpi_datapoints.rb test/lib/stacks/client_kpi_datapoints_test.rb
 git commit -m "feat(okrs): add client LTV, tenure, concentration & pipeline datapoints"
 ```
 
@@ -879,7 +927,7 @@ puts "LTV:      #{cr.average_lifetime_value_asof(today).round(0)} across #{cr.cl
 puts "Tenure:   #{cr.average_tenure_months_asof(today).round(1)} months"
 puts "Conc YTD: #{cr.concentration_for_range(today.beginning_of_year, today).inspect}"
 period = Stacks::Period.new("YTD", today.beginning_of_year, today)
-puts "Pipeline: #{g3d.client_and_pipeline_datapoints(period, g3d.new_biz_leads, cr)[:forecasted_sales_revenue].inspect}"
+puts "Pipeline: #{Stacks::ClientKpiDatapoints.call(period: period, leads: g3d.new_biz_leads, client_revenue: cr)[:forecasted_sales_revenue].inspect}"
 '
 ```
 
