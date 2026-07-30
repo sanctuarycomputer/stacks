@@ -447,7 +447,8 @@ class Studio < ApplicationRecord
     utilization_for_period = utilization_for_period(period, preloaded_studios),
     utilization_for_prev_period = utilization_for_period(prev_period, preloaded_studios),
     g3d_utilization_for_period = preloaded_studios.find(&:is_garden3d?).utilization_for_period(period, preloaded_studios),
-    g3d_utilization_for_prev_period = preloaded_studios.find(&:is_garden3d?).utilization_for_period(prev_period, preloaded_studios)
+    g3d_utilization_for_prev_period = preloaded_studios.find(&:is_garden3d?).utilization_for_period(prev_period, preloaded_studios),
+    preloaded_client_revenue = client_revenue(preloaded_studios)
   )
     # TODO: Fix me - right now I return nil if this period predates utilization data OR
     # there's just no one there
@@ -625,7 +626,17 @@ class Studio < ApplicationRecord
       data[:actual_cost_per_hour_sold][:value] = total_billable > 0 ? (cost_of_doing_business / total_billable) : 0
     end
 
+    data.merge!(Stacks::ClientKpiDatapoints.call(
+      period: period,
+      leads: preloaded_new_biz_leads,
+      client_revenue: preloaded_client_revenue
+    ))
+
     data
+  end
+
+  def client_revenue(preloaded_studios = Studio.all)
+    @_client_revenue ||= Stacks::ClientRevenue.new(self, preloaded_studios)
   end
 
   def utilization_for_period(period)
