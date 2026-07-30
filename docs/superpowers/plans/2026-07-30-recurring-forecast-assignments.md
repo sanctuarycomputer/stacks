@@ -417,7 +417,6 @@ class RecurringAssignmentMaterializeTest < ActiveSupport::TestCase
   test "creates one Forecast assignment per expected weekday and records occurrences" do
     ra = rule # Mondays 2026-08-03,10,17,24 => 4 occurrences
     client = build_client
-    seq = sequence("ids")
     client.expects(:create_assignment).times(4).returns(
       { "id" => 1 }, { "id" => 2 }, { "id" => 3 }, { "id" => 4 }
     )
