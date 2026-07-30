@@ -1,0 +1,89 @@
+require "test_helper"
+
+class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
+  HEADERS = { "Content-Type" => "application/json", "Accept" => "application/json" }.freeze
+
+  def auth_headers
+    HEADERS.merge("X-Api-Key" => Stacks::Utils.config[:stacks][:private_api_key])
+  end
+
+  def tracker(runn_project_id: 91_100)
+    RunnProject.find_or_create_by!(runn_id: runn_project_id) { |rp| rp.name = "RP#{runn_project_id}"; rp.data = {} }
+    t = ProjectTracker.new(name: "T", runn_project_id: runn_project_id)
+    t.save(validate: false)
+    t
+  end
+
+  def body(overrides = {})
+    { runn_person_id: 10, runn_role_id: 7, project_tracker_id: @tr.id,
+      start_date: "2030-05-01", end_date: "2030-05-31", minutes_per_day: 480, kind: "work" }.merge(overrides)
+  end
+
+  setup do
+    Rails.cache.delete("mcp_write_count:#{Time.zone.today.iso8601}")
+    @tr = tracker
+  end
+
+  test "PUT without X-Api-Key returns 403" do
+    put "/api/v1/resourcing/projected_assignments/some:key", headers: HEADERS, params: body.to_json
+    assert_response :forbidden
+  end
+
+  test "PUT upserts the row and applies through to Runn" do
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns([])
+    Stacks::Runn.any_instance.stubs(:get_leave_for_person).returns([])
+    Stacks::Runn.any_instance.expects(:create_assignment).once.returns([{ "id" => 5001 }])
+    put "/api/v1/resourcing/projected_assignments/sweep:extrapolate:10:#{@tr.id}",
+      headers: auth_headers, params: body.to_json
+    assert_response :success
+    json = JSON.parse(response.body)
+    assert_equal "applied", json["status"]
+    row = ProjectedAssignment.find_by(source_key: "sweep:extrapolate:10:#{@tr.id}")
+    assert_equal [5001], row.runn_assignment_ids
+  end
+
+  test "PUT rejects an out-of-range minutes_per_day with 422 and no Runn write" do
+    Stacks::Runn.any_instance.expects(:create_assignment).never
+    put "/api/v1/resourcing/projected_assignments/bad:key",
+      headers: auth_headers, params: body(minutes_per_day: 5000).to_json
+    assert_response :unprocessable_entity
+  end
+
+  test "PUT ?preview=true writes nothing to Runn" do
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns([])
+    Stacks::Runn.any_instance.stubs(:get_leave_for_person).returns([])
+    Stacks::Runn.any_instance.expects(:create_assignment).never
+    put "/api/v1/resourcing/projected_assignments/preview:key?preview=true",
+      headers: auth_headers, params: body.to_json
+    assert_response :success
+    assert_equal "preview", JSON.parse(response.body)["status"]
+  end
+
+  test "PUT returns 409 on a CAS conflict" do
+    marker = Resourcing::WriteThrough.provenance_marker("cas:key")
+    ProjectedAssignment.create!(source_key: "cas:key", project_tracker: @tr, runn_person_id: 10, runn_role_id: 7,
+      start_date: "2030-05-01", end_date: "2030-05-31", minutes_per_day: 480, kind: "work",
+      runn_assignment_ids: [5001],
+      last_synced_runn_state: [{ "personId" => 10, "projectId" => 91_100, "roleId" => 7,
+        "startDate" => "2030-05-01", "endDate" => "2030-05-31", "minutesPerDay" => 480, "id" => 5001, "note" => marker }])
+    # human moved it in Runn
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns([{ "id" => 5001, "personId" => 10, "projectId" => 91_100,
+      "roleId" => 7, "startDate" => "2030-05-01", "endDate" => "2030-05-10", "minutesPerDay" => 480, "note" => marker }])
+    Stacks::Runn.any_instance.stubs(:get_leave_for_person).returns([])
+    Stacks::Runn.any_instance.expects(:create_assignment).never
+    put "/api/v1/resourcing/projected_assignments/cas:key",
+      headers: auth_headers, params: body(end_date: "2030-06-15").to_json
+    assert_response :conflict
+    assert_equal "conflict", JSON.parse(response.body)["status"]
+  end
+
+  test "DELETE removes the row and is idempotent" do
+    ProjectedAssignment.create!(source_key: "del:key", project_tracker: @tr, runn_person_id: 10,
+      start_date: "2030-05-01", end_date: "2030-05-31", minutes_per_day: 0, kind: "time_off")
+    delete "/api/v1/resourcing/projected_assignments/del:key", headers: auth_headers
+    assert_response :success
+    assert_nil ProjectedAssignment.find_by(source_key: "del:key")
+    delete "/api/v1/resourcing/projected_assignments/del:key", headers: auth_headers
+    assert_response :success # idempotent
+  end
+end
