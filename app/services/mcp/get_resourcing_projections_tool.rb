@@ -67,7 +67,7 @@ module Mcp
       managed_overlay = ProjectedAssignment.all.map do |pa|
         { source_key: pa.source_key, contributor_id: pa.contributor_id, project_tracker_id: pa.project_tracker_id,
           start_date: pa.start_date, end_date: pa.end_date, minutes_per_day: pa.minutes_per_day,
-          runn_assignment_id: pa.runn_assignment_id, managed_by: pa.managed_by }
+          runn_assignment_id: pa.runn_assignment_id, managed_by: pa.managed_by, note: pa.note }
       end
 
       Responses.ok({

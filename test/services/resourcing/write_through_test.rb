@@ -87,7 +87,9 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
     runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))])
     runn.stubs(:get_people).returns(people_stub(10))
     seq = sequence("apply")
-    runn.expects(:create_assignment).once.in_sequence(seq).returns({ "id" => 5002 })
+    # the reused role (7, from the current owned assignment) must reach Runn unchanged —
+    # a regression here would silently re-role an existing assignment on every edit.
+    runn.expects(:create_assignment).in_sequence(seq).with { |kw| kw[:role_id] == 7 }.returns({ "id" => 5002 })
     runn.expects(:delete_assignment).once.in_sequence(seq).with(5001).returns({})
     result = service(runn).apply(w)
     assert_equal :applied, result.status
@@ -102,6 +104,23 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
     runn = mock("runn")
     # human moved the end date in Runn since we last synced
     runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 20))])
+    runn.stubs(:get_people).returns(people_stub(10))
+    runn.expects(:create_assignment).never
+    runn.expects(:delete_assignment).never
+    result = service(runn).apply(w)
+    assert_equal :conflict, result.status
+    assert result.conflict.present?
+  end
+
+  test "CAS conflict: minutes-only drift (same person/project/role/dates) → conflict, no Runn write" do
+    tr = tracker
+    c = contributor_for(10)
+    base = live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31), minutes: 480)
+    w = row(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31), minutes: 480, contributor: c,
+      owned_id: 5001, baseline: base, key: "wkey")
+    runn = mock("runn")
+    # human changed only minutesPerDay in Runn since we last synced
+    runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31), minutes: 240)])
     runn.stubs(:get_people).returns(people_stub(10))
     runn.expects(:create_assignment).never
     runn.expects(:delete_assignment).never

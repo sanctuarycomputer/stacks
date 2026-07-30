@@ -10,7 +10,6 @@ class CreateProjectedAssignments < ActiveRecord::Migration[6.1]
       t.bigint :runn_assignment_id            # the 1:1 mirror; null until created in Runn
       t.jsonb :last_synced_runn_state         # CAS baseline for THIS assignment
       t.text :note
-      t.string :source_ref
       t.string :managed_by
       t.timestamps
     end

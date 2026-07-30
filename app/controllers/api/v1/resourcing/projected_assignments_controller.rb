@@ -3,7 +3,7 @@ class Api::V1::Resourcing::ProjectedAssignmentsController < ApiController
   before_action :check_private_api_key!
 
   ATTRS = %i[contributor_id project_tracker_id start_date end_date
-             minutes_per_day note source_ref managed_by].freeze
+             minutes_per_day note managed_by].freeze
 
   def upsert
     result = apply_one(params.permit(:source_key, *ATTRS))
@@ -27,8 +27,6 @@ class Api::V1::Resourcing::ProjectedAssignmentsController < ApiController
     row.destroy!
     render json: { status: "deleted" }, status: :ok
   rescue Mcp::WriteGuard::CapExceeded => e
-    render json: { status: "error", error: e.message }, status: :unprocessable_entity
-  rescue Resourcing::WriteThrough::UnresolvedContributor, Resourcing::WriteThrough::UnresolvableRole => e
     render json: { status: "error", error: e.message }, status: :unprocessable_entity
   end
 

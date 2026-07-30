@@ -34,7 +34,7 @@ module Resourcing
         return conflict(current) unless same_state?(current, row.last_synced_runn_state)
       end
 
-      role_id = current ? current["roleId"] : most_recent_role_id(runn_person_id, assignments)
+      role_id = current ? current["roleId"] : most_recent_role_id(runn_person_id, row.runn_project_id, assignments)
       raise UnresolvableRole, "no Runn role for contributor #{row.contributor_id}" if role_id.nil?
 
       desired = {
@@ -42,12 +42,12 @@ module Resourcing
         "startDate" => row.start_date.iso8601, "endDate" => row.end_date.iso8601,
         "minutesPerDay" => row.minutes_per_day,
       }
-      if current && same_desired?(current, desired)
+      if current && same_state?(current, desired)
         return Result.new(status: :noop, before: current, after: current, runn_assignment_id: row.runn_assignment_id)
       end
       return Result.new(status: :preview, before: current, after: desired) if preview
 
-      new_hash = replace!(old_id: row.runn_assignment_id, desired: desired, source_key: row.source_key)
+      new_hash = replace!(old_id: row.runn_assignment_id, desired: desired, source_key: row.source_key, note: row.note)
       row.update!(runn_assignment_id: new_hash["id"], last_synced_runn_state: new_hash)
       Result.new(status: :applied, before: current, after: new_hash, runn_assignment_id: new_hash["id"])
     end
@@ -70,20 +70,24 @@ module Resourcing
     private
 
     # create the (shorter/new) assignment first, then delete the old — rollback the create on failure.
-    def replace!(old_id:, desired:, source_key:)
+    def replace!(old_id:, desired:, source_key:, note: nil)
       Mcp::WriteGuard.check!
       created = @runn.create_assignment(
         person_id: desired["personId"], project_id: desired["projectId"], role_id: desired["roleId"],
         start_date: desired["startDate"], end_date: desired["endDate"],
-        minutes_per_day: desired["minutesPerDay"], note: provenance_note(desired, source_key)
+        minutes_per_day: desired["minutesPerDay"], note: provenance_note(source_key, note)
       )
-      new_hash = normalize_created(created, desired, source_key)
+      new_hash = normalize_created(created, desired, source_key, note)
       begin
         if old_id
           Mcp::WriteGuard.check!
           @runn.delete_assignment(old_id)
         end
       rescue StandardError => e
+        # Not transactional: if this delete times out client-side after actually
+        # succeeding server-side, this compensating delete of the new assignment can
+        # itself fail/race, leaving the row's runn_assignment_id stale and every future
+        # apply() reading a conflict until a human reconciles it.
         @runn.delete_assignment(new_hash["id"]) rescue nil # compensating rollback
         raise e
       end
@@ -92,25 +96,30 @@ module Resourcing
 
     # Runn create returns a bare Hash OR an array of segments; we expect exactly one here
     # (no native leave → no auto-split). Take the first, stamp the fields we sent.
-    def normalize_created(resp, desired, source_key)
+    def normalize_created(resp, desired, source_key, note = nil)
       row = resp.is_a?(Array) ? resp.first : resp
       id = row.is_a?(Hash) ? row["id"] : row
-      desired.merge("id" => id, "note" => provenance_note(desired, source_key))
+      desired.merge("id" => id, "note" => provenance_note(source_key, note))
     end
 
-    def provenance_note(desired, source_key)
-      self.class.provenance_marker(source_key)
+    def provenance_note(source_key, note)
+      marker = self.class.provenance_marker(source_key)
+      note.present? ? "#{marker} #{note}" : marker
     end
 
-    # most-recent (by endDate) role for this person across the given live assignments; nil if none
-    def most_recent_role_id(runn_person_id, assignments)
-      assignments.select { |a| a["personId"] == runn_person_id }
-                 .max_by { |a| a["endDate"].to_s }&.dig("roleId")
+    # most-recent (by endDate) role for this person, preferring an assignment on the
+    # SAME project (so a new create can't stamp another project's rate), falling back
+    # to the person's most-recent role across any project. Templates are excluded —
+    # they aren't real billing history.
+    def most_recent_role_id(runn_person_id, project_id, assignments)
+      person = assignments.reject { |a| a["isTemplate"] }.select { |a| a["personId"] == runn_person_id }
+      pool = person.select { |a| a["projectId"] == project_id }
+      pool = person if pool.empty?
+      pool.max_by { |a| a["endDate"].to_s }&.dig("roleId")
     end
 
     # CAS baseline compare (ignore id/note): person/project/role/dates/minutes
     def same_state?(a, b) = state_key(a) == state_key(b)
-    def same_desired?(a, desired) = state_key(a) == state_key(desired)
 
     # tolerant of Runn returning dates as either "2030-05-01" or a full
     # datetime, and ids as Integer or String, so an unchanged assignment

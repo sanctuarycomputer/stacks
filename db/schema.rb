@@ -1041,7 +1041,6 @@ ActiveRecord::Schema.define(version: 2026_07_29_000001) do
     t.bigint "runn_assignment_id"
     t.jsonb "last_synced_runn_state"
     t.text "note"
-    t.string "source_ref"
     t.string "managed_by"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
