@@ -75,4 +75,33 @@ class RecurringAssignmentMaterializeTest < ActiveSupport::TestCase
     assert dates.max <= Date.today + RecurringAssignment::HORIZON
     assert dates.max > Date.today + (RecurringAssignment::HORIZON - 1.week)
   end
+
+  test "does not tombstone a future occurrence merely absent from the month-bounded mirror" do
+    # Future-dated assignments are never in the ForecastAssignment mirror (sync only
+    # walks up to the current month), so absence must NOT be read as a UI deletion.
+    ra = rule(starts_on: Date.today, ends_on: Date.today)
+    future = ra.recurring_assignment_occurrences.create!(
+      occurs_on: Date.today.next_month.beginning_of_month + 10,
+      status: "materialized", forecast_assignment_id: 424242,
+    )
+    client = build_client
+    client.stubs(:create_assignment).returns({ "id" => 1 })
+
+    ra.materialize!(forecast_client: client)
+
+    assert_equal "materialized", future.reload.status, "future occurrence must not be falsely tombstoned"
+  end
+
+  test "tombstones a past occurrence absent from the mirror" do
+    ra = rule(starts_on: Date.today - 60, ends_on: Date.today - 60)
+    past = ra.recurring_assignment_occurrences.create!(
+      occurs_on: Date.today - 40, status: "materialized", forecast_assignment_id: 777,
+    )
+    client = build_client
+    client.stubs(:create_assignment).returns({ "id" => 1 })
+
+    ra.materialize!(forecast_client: client)
+
+    assert_equal "deleted", past.reload.status
+  end
 end

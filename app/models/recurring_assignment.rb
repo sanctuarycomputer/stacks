@@ -73,10 +73,22 @@ class RecurringAssignment < ApplicationRecord
   end
 
   def detect_deletions!
-    recurring_assignment_occurrences.materialized.where.not(forecast_assignment_id: nil).find_each do |occ|
-      next if ForecastAssignment.exists?(forecast_id: occ.forecast_assignment_id)
-      occ.update!(status: "deleted")
-    end
+    # Only occurrences the Forecast sync actually covers are eligible for
+    # deletion-detection. sync_all_assignments! walks month-by-month only up to
+    # the CURRENT month, so future-dated assignments are never in the mirror —
+    # absence there means "not yet synced," NOT "deleted in the UI." Bounding to
+    # end-of-current-month prevents falsely tombstoning every future occurrence on
+    # the next daily run. (Pass 2 never recreates a date that already has an
+    # occurrence row, so a genuinely deleted future assignment is still never
+    # recreated; it just isn't labeled deleted until its month enters the sync window.)
+    recurring_assignment_occurrences
+      .materialized
+      .where.not(forecast_assignment_id: nil)
+      .where("occurs_on <= ?", Date.today.end_of_month)
+      .find_each do |occ|
+        next if ForecastAssignment.exists?(forecast_id: occ.forecast_assignment_id)
+        occ.update!(status: "deleted")
+      end
   end
 
   def create_missing_occurrences!(forecast_client)
