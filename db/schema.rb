@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_07_20_000001) do
+ActiveRecord::Schema.define(version: 2026_07_29_000001) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -1031,6 +1031,25 @@ ActiveRecord::Schema.define(version: 2026_07_20_000001) do
     t.check_constraint "(company_treasury_split >= (0)::numeric) AND (company_treasury_split <= (1)::numeric)", name: "check_company_treasury_split_range"
   end
 
+  create_table "projected_assignments", force: :cascade do |t|
+    t.string "source_key", null: false
+    t.bigint "contributor_id", null: false
+    t.bigint "project_tracker_id", null: false
+    t.date "start_date", null: false
+    t.date "end_date", null: false
+    t.integer "minutes_per_day", default: 0, null: false
+    t.bigint "runn_assignment_id"
+    t.jsonb "last_synced_runn_state"
+    t.text "note"
+    t.string "managed_by"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["contributor_id"], name: "index_projected_assignments_on_contributor_id"
+    t.index ["project_tracker_id"], name: "index_projected_assignments_on_project_tracker_id"
+    t.index ["runn_assignment_id"], name: "index_projected_assignments_on_runn_assignment_id"
+    t.index ["source_key"], name: "index_projected_assignments_on_source_key", unique: true
+  end
+
   create_table "qbo_accounts", force: :cascade do |t|
     t.string "client_id", null: false
     t.string "client_secret", null: false
@@ -1449,6 +1468,8 @@ ActiveRecord::Schema.define(version: 2026_07_20_000001) do
   add_foreign_key "project_tracker_forecast_to_runn_sync_tasks", "project_trackers"
   add_foreign_key "project_tracker_links", "project_trackers"
   add_foreign_key "project_trackers", "runn_projects", primary_key: "runn_id"
+  add_foreign_key "projected_assignments", "contributors"
+  add_foreign_key "projected_assignments", "project_trackers"
   add_foreign_key "qbo_accounts", "enterprises"
   add_foreign_key "qbo_bills", "qbo_accounts"
   add_foreign_key "qbo_invoices", "qbo_accounts"

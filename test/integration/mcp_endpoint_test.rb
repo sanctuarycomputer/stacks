@@ -212,4 +212,53 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
       assert_response :forbidden
     end
   end
+
+  test "get_resourcing_projections includes people[].contributor_id, the new managed overlay shape, and degraded flag" do
+    travel_to Time.zone.parse("2026-07-15 12:00:00")
+    today = Time.zone.today
+    Stacks::Runn.any_instance.stubs(:get_projects).returns([
+      { "id" => 91_100, "name" => "P", "isConfirmed" => true, "isArchived" => false, "isTemplate" => false,
+        "clientId" => 5, "budget" => 100_000, "pricingModel" => "tm" },
+    ])
+    Stacks::Runn.any_instance.stubs(:get_people).returns([
+      { "id" => 10, "firstName" => "Ada", "lastName" => "Lovelace", "email" => "ada@x.com", "isArchived" => false },
+    ])
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns([
+      { "id" => 1, "personId" => 10, "projectId" => 91_100, "roleId" => 7, "startDate" => (today - 30).iso8601,
+        "endDate" => (today - 1).iso8601, "minutesPerDay" => 480, "isTemplate" => false },
+      { "id" => 2, "personId" => 10, "projectId" => 91_100, "roleId" => 9, "startDate" => (today + 1).iso8601,
+        "endDate" => (today + 10).iso8601, "minutesPerDay" => 480, "isTemplate" => false },
+    ])
+    RunnProject.create!(runn_id: 91_100, name: "P", data: {})
+    tr = ProjectTracker.new(name: "T", runn_project_id: 91_100)
+    tr.save(validate: false)
+    fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "ada@x.com", data: {})
+    contributor = Contributor.create!(forecast_person: fp)
+    ProjectedAssignment.create!(source_key: "world:1", project_tracker: tr, contributor: contributor,
+      start_date: (today + 1), end_date: (today + 20), minutes_per_day: 480,
+      runn_assignment_id: 2, managed_by: "detector")
+
+    payload = call_tool("get_resourcing_projections")
+    ada = payload["people"].find { |p| p["id"] == 10 }
+    refute ada.key?("default_role_id"), "the client no longer deals with roles"
+    assert_equal contributor.id, ada["contributor_id"]
+    assert_equal false, payload["degraded"]
+    managed = payload["managed"].find { |m| m["source_key"] == "world:1" }
+    assert_equal 2, managed["runn_assignment_id"]
+    assert_equal "detector", managed["managed_by"]
+    assert_equal contributor.id, managed["contributor_id"]
+    assert_equal tr.id, managed["project_tracker_id"]
+    refute managed.key?("kind")
+    refute managed.key?("capacity_pct")
+    refute managed.key?("runn_role_id")
+    refute managed.key?("is_placeholder")
+  end
+
+  test "get_resourcing_projections degrades (partial + degraded:true) when a Runn read fails" do
+    Stacks::Runn.any_instance.stubs(:get_projects).raises(RuntimeError, "runn 429")
+    Stacks::Runn.any_instance.stubs(:get_people).returns([])
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns([])
+    payload = call_tool("get_resourcing_projections")
+    assert_equal true, payload["degraded"]
+  end
 end

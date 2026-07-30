@@ -25,13 +25,23 @@ module Mcp
       today = Time.zone.today
       horizon = today + window_days.days
 
-      projects = runn.get_projects.reject { |p| p["isTemplate"] }
+      degraded = false
+      safe_read = lambda do |default, &blk|
+        blk.call
+      rescue StandardError => e
+        Rails.logger.warn("[get_resourcing_projections] degraded read: #{e.class}")
+        Sentry.capture_exception(e) if defined?(Sentry)
+        degraded = true
+        default
+      end
+
+      projects = safe_read.call([]) { runn.get_projects }.reject { |p| p["isTemplate"] }
       projects = projects.reject { |p| p["isArchived"] } unless include_archived
       project_ids = projects.map { |p| p["id"] }.to_set
 
       # full history retained: recent_actuals derives last-known roles from it
-      raw_assignments = runn.get_assignments.reject { |a| a["isTemplate"] }
-      raw_people = runn.get_people
+      raw_assignments = safe_read.call([]) { runn.get_assignments }.reject { |a| a["isTemplate"] }
+      raw_people = safe_read.call([]) { runn.get_people }
 
       assignments = raw_assignments.select do |a|
         next false unless project_ids.include?(a["projectId"])
@@ -48,6 +58,17 @@ module Mcp
         .index_by(&:runn_project_id)
 
       recent_actuals_by_runn_id = recent_actuals(trackers_by_runn_id, raw_people, raw_assignments, today)
+
+      contributor_id_by_email = Contributor.includes(:forecast_person).each_with_object({}) do |c, h|
+        email = c.forecast_person&.email.to_s.strip.downcase
+        h[email] = c.id if email.present?
+      end
+
+      managed_overlay = ProjectedAssignment.all.map do |pa|
+        { source_key: pa.source_key, contributor_id: pa.contributor_id, project_tracker_id: pa.project_tracker_id,
+          start_date: pa.start_date, end_date: pa.end_date, minutes_per_day: pa.minutes_per_day,
+          runn_assignment_id: pa.runn_assignment_id, managed_by: pa.managed_by, note: pa.note }
+      end
 
       Responses.ok({
         as_of: today.iso8601,
@@ -84,6 +105,7 @@ module Mcp
               id: p["id"],
               name: [p["firstName"], p["lastName"]].compact.join(" "),
               is_archived: p["isArchived"],
+              contributor_id: contributor_id_by_email[p["email"].to_s.strip.downcase],
             }
           },
         assignments: assignments.map { |a|
@@ -100,6 +122,8 @@ module Mcp
             note: a["note"],
           }
         },
+        managed: managed_overlay,
+        degraded: degraded,
       })
     rescue StandardError => e
       Rails.logger.warn("[Mcp::GetResourcingProjectionsTool] #{e.class}: #{e.message}")
