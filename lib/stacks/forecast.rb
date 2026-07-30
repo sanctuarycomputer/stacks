@@ -100,7 +100,33 @@ class Stacks::Forecast
     self.class.get("/roles", headers: @headers)
   end
 
+  def create_assignment(project_id:, person_id:, start_date:, end_date:, allocation:, notes: "", active_on_days_off: false)
+    body = { assignment: {
+      project_id: project_id,
+      person_id: person_id,
+      start_date: start_date.to_s,
+      end_date: end_date.to_s,
+      allocation: allocation,
+      notes: notes.to_s,
+      active_on_days_off: active_on_days_off,
+    } }
+    response = self.class.post("/assignments", headers: write_headers, body: JSON.dump(body))
+    raise "Forecast create_assignment failed: #{response.code} #{response.body}" unless response.success?
+    response.parsed_response["assignment"]
+  end
+
+  def delete_assignment(forecast_id)
+    response = self.class.delete("/assignments/#{forecast_id}", headers: write_headers)
+    return true if response.success?
+    return true if response.code == 404 # already gone — idempotent
+    raise "Forecast delete_assignment failed: #{response.code} #{response.body}"
+  end
+
   private
+
+  def write_headers
+    @headers.merge("Content-Type": "application/json")
+  end
 
   # Forecast re-sends every record that overlaps each sync window, and sync_all_assignments!
   # walks month-by-month from 2020, so an unconditional `upsert_all` rewrites unchanged rows
