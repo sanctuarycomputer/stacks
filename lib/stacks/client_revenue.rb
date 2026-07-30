@@ -70,15 +70,20 @@ class Stacks::ClientRevenue
 
   def build_rows
     @trackers.filter_map do |tracker|
-      invoice = tracker.qbo_invoice
-      client = tracker.forecast_client
-      next if invoice.nil? || invoice.status == :voided
-      next if client.nil? || client.is_internal?
+      begin
+        invoice = tracker.qbo_invoice
+        client = tracker.forecast_client
+        next if invoice.nil? || invoice.status == :voided
+        next if client.nil? || client.is_internal?
 
-      amount = @studio.is_garden3d? ? invoice.total : studio_share(tracker, invoice.total)
-      next if amount.nil? || amount.zero?
+        amount = @studio.is_garden3d? ? invoice.total : studio_share(tracker, invoice.total)
+        next if amount.nil? || amount.zero?
 
-      Row.new(client: client, month: tracker.invoice_pass.start_of_month, amount: amount)
+        Row.new(client: client, month: tracker.invoice_pass.start_of_month, amount: amount)
+      rescue => e
+        Rails.logger.warn("[ClientRevenue] invoice_tracker=#{tracker.id} skipped: #{e.class}: #{e.message}")
+        nil
+      end
     end
   end
 

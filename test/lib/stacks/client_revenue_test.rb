@@ -156,4 +156,23 @@ class StacksClientRevenueTest < ActiveSupport::TestCase
 
     assert_equal 0, cr.client_count_asof(Date.new(2025, 12, 31))
   end
+
+  test "a tracker whose invoice raises TypeError from #status is skipped while a healthy tracker still counts" do
+    # Simulates QboInvoice#status calling `due_date - Date.today` where due_date is nil
+    bad_invoice = QboInvoice.new
+    bad_invoice.stubs(:status).raises(TypeError, "nil can't be coerced into Integer")
+
+    bad_tracker = InvoiceTracker.new
+    bad_tracker.stubs(:qbo_invoice).returns(bad_invoice)
+    bad_tracker.stubs(:forecast_client).returns(@acme)
+    bad_tracker.stubs(:invoice_pass).returns(InvoicePass.new(start_of_month: Date.new(2025, 1, 1)))
+    bad_tracker.stubs(:blueprint).returns(nil)
+
+    healthy_tracker = make_tracker(client: @globex, month: Date.new(2025, 2, 1), total: 5_000)
+
+    cr = Stacks::ClientRevenue.new(@g3d, @studios, [bad_tracker, healthy_tracker])
+
+    assert_equal 1, cr.client_count_asof(Date.new(2025, 12, 31))
+    assert_equal 5_000.0, cr.average_lifetime_value_asof(Date.new(2025, 12, 31))
+  end
 end
