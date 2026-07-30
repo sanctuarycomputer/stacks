@@ -12,7 +12,7 @@ class StacksClientKpiDatapointsTest < ActiveSupport::TestCase
     studio = Studio.new(name: "garden3d", mini_name: "g3d")
     acme = ForecastClient.new(name: "Acme")
 
-    invoice = QboInvoice.new
+    invoice = QboInvoice.new(data: { "synced" => true })
     invoice.stubs(:status).returns(:paid)
     invoice.stubs(:total).returns(10_000.0)
     tracker = InvoiceTracker.new
@@ -46,6 +46,7 @@ class StacksClientKpiDatapointsTest < ActiveSupport::TestCase
     assert_equal 10_000.0, data[:average_client_lifetime_value][:value]
     assert_equal :usd, data[:average_client_lifetime_value][:unit]
     assert_equal 1, data[:average_client_lifetime_value][:extras][:client_count]
+    assert_equal 0, data[:average_client_lifetime_value][:extras][:skipped_tracker_count]
 
     assert_equal 0.0, data[:average_client_tenure][:value]
     assert_equal :count, data[:average_client_tenure][:unit]
@@ -53,6 +54,7 @@ class StacksClientKpiDatapointsTest < ActiveSupport::TestCase
     assert_equal 100.0, data[:client_revenue_concentration][:value]
     assert_equal :percentage, data[:client_revenue_concentration][:unit]
     assert_equal "Acme", data[:client_revenue_concentration][:extras][:top_client_name]
+    assert_equal 0, data[:client_revenue_concentration][:extras][:skipped_tracker_count]
 
     assert_equal 50_000.0, data[:forecasted_sales_revenue][:value]
     assert_equal :usd, data[:forecasted_sales_revenue][:unit]

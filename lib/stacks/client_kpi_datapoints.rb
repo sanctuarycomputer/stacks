@@ -17,7 +17,7 @@ class Stacks::ClientKpiDatapoints
       average_client_lifetime_value: {
         value: @client_revenue.average_lifetime_value_asof(@period.ends_at),
         unit: :usd,
-        extras: { client_count: client_count }
+        extras: { client_count: client_count, skipped_tracker_count: @client_revenue.skipped_tracker_count }
       },
       average_client_tenure: {
         value: @client_revenue.average_tenure_months_asof(@period.ends_at),
@@ -30,7 +30,8 @@ class Stacks::ClientKpiDatapoints
         extras: {
           top_client_name: concentration[:top_client_name],
           top_client_amount: concentration[:top_client_amount],
-          total_revenue: concentration[:total_revenue]
+          total_revenue: concentration[:total_revenue],
+          skipped_tracker_count: @client_revenue.skipped_tracker_count
         }
       },
       forecasted_sales_revenue: {

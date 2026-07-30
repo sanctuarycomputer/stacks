@@ -171,10 +171,12 @@ class StudioTest < ActiveSupport::TestCase
 
     # extras keys present
     assert data[:average_client_lifetime_value][:extras].key?(:client_count)
+    assert data[:average_client_lifetime_value][:extras].key?(:skipped_tracker_count)
     assert data[:average_client_tenure][:extras].key?(:client_count)
     assert data[:client_revenue_concentration][:extras].key?(:top_client_name)
     assert data[:client_revenue_concentration][:extras].key?(:top_client_amount)
     assert data[:client_revenue_concentration][:extras].key?(:total_revenue)
+    assert data[:client_revenue_concentration][:extras].key?(:skipped_tracker_count)
     assert data[:forecasted_sales_revenue][:extras].key?(:open_lead_count)
     assert data[:forecasted_sales_revenue][:extras].key?(:budgeted_lead_count)
   end
