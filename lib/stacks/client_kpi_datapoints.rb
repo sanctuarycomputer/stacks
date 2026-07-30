@@ -21,7 +21,7 @@ class Stacks::ClientKpiDatapoints
       },
       average_client_tenure: {
         value: @client_revenue.average_tenure_months_asof(@period.ends_at),
-        unit: :count,
+        unit: :months,
         extras: { client_count: client_count, skipped_tracker_count: @client_revenue.skipped_tracker_count }
       },
       client_revenue_concentration: {

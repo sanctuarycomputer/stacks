@@ -49,7 +49,7 @@ class StacksClientKpiDatapointsTest < ActiveSupport::TestCase
     assert_equal 0, data[:average_client_lifetime_value][:extras][:skipped_tracker_count]
 
     assert_equal 0.0, data[:average_client_tenure][:value]
-    assert_equal :count, data[:average_client_tenure][:unit]
+    assert_equal :months, data[:average_client_tenure][:unit]
     assert_equal 0, data[:average_client_tenure][:extras][:skipped_tracker_count]
 
     assert_equal 100.0, data[:client_revenue_concentration][:value]

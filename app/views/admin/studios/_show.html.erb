@@ -189,6 +189,8 @@ function update(a, b) {
                             <strong style="font-size: 15px"><%= okr_results.dig("value") %></strong>
                           <% elsif unit == "days" %>
                             <strong style="font-size: 15px"><%= value.round(2) %> days</strong> (target: <%= target.round(2) %>)
+                          <% elsif unit == "months" %>
+                            <strong style="font-size: 15px"><%= value.round(1) %> months</strong> (target: <%= target.round(1) %> months)
                           <% else %>
                             <strong style="font-size: 15px"><%= value.round(2) %></strong> (target: <%= target.round(2) %>)
                           <% end %>

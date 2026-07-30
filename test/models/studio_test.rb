@@ -162,7 +162,7 @@ class StudioTest < ActiveSupport::TestCase
 
     # Units
     assert_equal :usd,        data[:average_client_lifetime_value][:unit]
-    assert_equal :count,      data[:average_client_tenure][:unit]
+    assert_equal :months,     data[:average_client_tenure][:unit]
     assert_equal :percentage, data[:client_revenue_concentration][:unit]
     assert_equal :usd,        data[:forecasted_sales_revenue][:unit]
 
