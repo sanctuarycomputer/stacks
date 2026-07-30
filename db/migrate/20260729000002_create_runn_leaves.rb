@@ -1,6 +1,6 @@
-class CreateRunnLeaveMirrors < ActiveRecord::Migration[6.1]
+class CreateRunnLeaves < ActiveRecord::Migration[6.1]
   def change
-    create_table :runn_leave_mirrors do |t|
+    create_table :runn_leaves do |t|
       t.bigint :runn_person_id, null: false
       t.date :start_date, null: false
       t.date :end_date, null: false
@@ -9,6 +9,6 @@ class CreateRunnLeaveMirrors < ActiveRecord::Migration[6.1]
       t.jsonb :raw, null: false, default: {}
       t.timestamps
     end
-    add_index :runn_leave_mirrors, :runn_person_id
+    add_index :runn_leaves, :runn_person_id
   end
 end

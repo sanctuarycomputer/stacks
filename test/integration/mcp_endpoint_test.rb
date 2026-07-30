@@ -57,7 +57,7 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     assert body.key?("result"), "Expected JSON-RPC result key, got: #{body.inspect}"
     tool_names = body["result"]["tools"].map { |t| t["name"] }
     assert_includes tool_names, "search", "Expected 'search' tool in: #{tool_names.inspect}"
-    assert_equal %w[get_ar_aging get_document get_resourcing_projections get_resourcing_world get_studio_health list_documents list_open_admin_tasks list_overdue_invoices list_projects_at_risk list_sources search], tool_names.sort,
+    assert_equal %w[get_ar_aging get_document get_resourcing_projections get_studio_health list_documents list_open_admin_tasks list_overdue_invoices list_projects_at_risk list_sources search], tool_names.sort,
       "Expected all registered tools, got: #{tool_names.inspect}"
   end
 
@@ -213,7 +213,7 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "get_resourcing_world includes default_role_id, managed overlay, and degraded flag" do
+  test "get_resourcing_projections includes default_role_id, managed overlay, and degraded flag" do
     travel_to Time.zone.parse("2026-07-15 12:00:00")
     today = Time.zone.today
     Stacks::Runn.any_instance.stubs(:get_projects).returns([
@@ -236,7 +236,7 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
       start_date: (today + 1), end_date: (today + 20), minutes_per_day: 480, kind: "work",
       runn_assignment_ids: [2], managed_by: "detector")
 
-    payload = call_tool("get_resourcing_world")
+    payload = call_tool("get_resourcing_projections")
     ada = payload["people"].find { |p| p["id"] == 10 }
     assert_equal 9, ada["default_role_id"] # most-recent assignment by endDate
     assert_equal false, payload["degraded"]
@@ -245,41 +245,33 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     assert_equal "detector", managed["managed_by"]
   end
 
-  test "get_resourcing_world exposes leave[] and a stale flag from the mirror" do
+  test "get_resourcing_projections exposes leave[] and a stale flag from the mirror" do
     Stacks::Runn.any_instance.stubs(:get_projects).returns([])
     Stacks::Runn.any_instance.stubs(:get_people).returns([])
     Stacks::Runn.any_instance.stubs(:get_assignments).returns([])
-    RunnLeaveMirror.create!(runn_person_id: 10, start_date: Date.new(2030, 5, 10), end_date: Date.new(2030, 5, 15),
+    RunnLeave.create!(runn_person_id: 10, start_date: Date.new(2030, 5, 10), end_date: Date.new(2030, 5, 15),
       minutes_per_day: 480, refreshed_at: Time.current)
-    payload = call_tool("get_resourcing_world")
+    payload = call_tool("get_resourcing_projections")
     assert_equal false, payload["stale"]
     assert_equal 1, payload["leave"].size
     assert_equal 10, payload["leave"].first["runn_person_id"]
   end
 
-  test "get_resourcing_world degrades (partial + degraded:true) when a Runn read fails" do
+  test "get_resourcing_projections degrades (partial + degraded:true) when a Runn read fails" do
     Stacks::Runn.any_instance.stubs(:get_projects).raises(RuntimeError, "runn 429")
     Stacks::Runn.any_instance.stubs(:get_people).returns([])
     Stacks::Runn.any_instance.stubs(:get_assignments).returns([])
-    payload = call_tool("get_resourcing_world")
+    payload = call_tool("get_resourcing_projections")
     assert_equal true, payload["degraded"]
   end
 
-  test "get_resourcing_world reports stale:true when the oldest mirror row is older than 36h" do
+  test "get_resourcing_projections reports stale:true when the oldest mirror row is older than 36h" do
     Stacks::Runn.any_instance.stubs(:get_projects).returns([])
     Stacks::Runn.any_instance.stubs(:get_people).returns([])
     Stacks::Runn.any_instance.stubs(:get_assignments).returns([])
-    RunnLeaveMirror.create!(runn_person_id: 10, start_date: Date.new(2030, 5, 10), end_date: Date.new(2030, 5, 15),
+    RunnLeave.create!(runn_person_id: 10, start_date: Date.new(2030, 5, 10), end_date: Date.new(2030, 5, 15),
       minutes_per_day: 480, refreshed_at: 48.hours.ago)
-    payload = call_tool("get_resourcing_world")
-    assert_equal true, payload["stale"]
-  end
-
-  test "deprecated get_resourcing_projections alias still responds" do
-    Stacks::Runn.any_instance.stubs(:get_projects).returns([])
-    Stacks::Runn.any_instance.stubs(:get_people).returns([])
-    Stacks::Runn.any_instance.stubs(:get_assignments).returns([])
     payload = call_tool("get_resourcing_projections")
-    assert payload.key?("people")
+    assert_equal true, payload["stale"]
   end
 end

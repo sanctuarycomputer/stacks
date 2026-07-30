@@ -1183,7 +1183,7 @@ ActiveRecord::Schema.define(version: 2026_07_29_000002) do
     t.index ["deleted_at"], name: "index_reviews_on_deleted_at"
   end
 
-  create_table "runn_leave_mirrors", force: :cascade do |t|
+  create_table "runn_leaves", force: :cascade do |t|
     t.bigint "runn_person_id", null: false
     t.date "start_date", null: false
     t.date "end_date", null: false
@@ -1192,7 +1192,7 @@ ActiveRecord::Schema.define(version: 2026_07_29_000002) do
     t.jsonb "raw", default: {}, null: false
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
-    t.index ["runn_person_id"], name: "index_runn_leave_mirrors_on_runn_person_id"
+    t.index ["runn_person_id"], name: "index_runn_leaves_on_runn_person_id"
   end
 
   create_table "runn_projects", force: :cascade do |t|
