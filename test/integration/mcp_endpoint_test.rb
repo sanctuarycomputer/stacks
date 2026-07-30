@@ -265,6 +265,16 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     assert_equal true, payload["degraded"]
   end
 
+  test "get_resourcing_world reports stale:true when the oldest mirror row is older than 36h" do
+    Stacks::Runn.any_instance.stubs(:get_projects).returns([])
+    Stacks::Runn.any_instance.stubs(:get_people).returns([])
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns([])
+    RunnLeaveMirror.create!(runn_person_id: 10, start_date: Date.new(2030, 5, 10), end_date: Date.new(2030, 5, 15),
+      minutes_per_day: 480, refreshed_at: 48.hours.ago)
+    payload = call_tool("get_resourcing_world")
+    assert_equal true, payload["stale"]
+  end
+
   test "deprecated get_resourcing_projections alias still responds" do
     Stacks::Runn.any_instance.stubs(:get_projects).returns([])
     Stacks::Runn.any_instance.stubs(:get_people).returns([])

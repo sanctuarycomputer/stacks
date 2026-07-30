@@ -77,8 +77,8 @@ module Mcp
         { runn_person_id: lm.runn_person_id, start_date: lm.start_date, end_date: lm.end_date,
           minutes_per_day: lm.minutes_per_day }
       end
-      newest = RunnLeaveMirror.maximum(:refreshed_at)
-      stale = newest.nil? || newest < 36.hours.ago
+      oldest = RunnLeaveMirror.minimum(:refreshed_at)
+      stale = oldest.nil? || oldest < 36.hours.ago
 
       Responses.ok({
         as_of: today.iso8601,

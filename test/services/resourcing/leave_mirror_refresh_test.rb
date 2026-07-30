@@ -31,4 +31,18 @@ class Resourcing::LeaveMirrorRefreshTest < ActiveSupport::TestCase
     svc.run!
     assert_equal [Date.new(2030, 5, 10)], RunnLeaveMirror.where(runn_person_id: 10).pluck(:start_date)
   end
+
+  test "run! isolates a per-person failure and still mirrors the rest" do
+    RunnLeaveMirror.create!(runn_person_id: 11, start_date: Date.new(2029, 1, 1), end_date: Date.new(2029, 1, 2),
+      refreshed_at: 1.week.ago)
+    runn = mock("runn")
+    runn.stubs(:get_people).returns([{ "id" => 10, "isArchived" => false }, { "id" => 11, "isArchived" => false }])
+    runn.stubs(:get_leave_for_person).with(10).returns([{ "startDate" => "2030-05-10", "endDate" => "2030-05-15" }])
+    runn.stubs(:get_leave_for_person).with(11).raises(RuntimeError, "runn 500")
+    svc = Resourcing::LeaveMirrorRefresh.new
+    svc.runn = runn
+    assert_nothing_raised { svc.run! }
+    assert RunnLeaveMirror.find_by(runn_person_id: 10).present?
+    assert_equal Date.new(2029, 1, 1), RunnLeaveMirror.find_by(runn_person_id: 11).start_date
+  end
 end
