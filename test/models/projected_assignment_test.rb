@@ -1,10 +1,15 @@
 require "test_helper"
 
 class ProjectedAssignmentTest < ActiveSupport::TestCase
+  def contributor_for(email: "c#{SecureRandom.hex(4)}@example.com")
+    fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: email, data: {})
+    Contributor.create!(forecast_person: fp)
+  end
+
   def valid_attrs(overrides = {})
     {
       source_key: "resourcing-sweep:extrapolate:#{SecureRandom.hex(4)}",
-      runn_person_id: 10,
+      contributor: contributor_for,
       runn_role_id: 7,
       start_date: Date.new(2030, 5, 1),
       end_date: Date.new(2030, 5, 31),
@@ -67,12 +72,13 @@ class ProjectedAssignmentTest < ActiveSupport::TestCase
     refute_includes ProjectedAssignment.owned, bare
   end
 
-  test "for_person and time_off scopes filter" do
-    a = ProjectedAssignment.create!(valid_attrs(runn_person_id: 10, kind: "work"))
-    b = ProjectedAssignment.create!(valid_attrs(runn_person_id: 10, kind: "time_off", minutes_per_day: 0))
-    c = ProjectedAssignment.create!(valid_attrs(runn_person_id: 99, kind: "work"))
-    assert_equal [a, b].sort_by(&:id), ProjectedAssignment.for_person(10).order(:id).to_a
+  test "for_contributor and time_off scopes filter" do
+    shared = contributor_for
+    a = ProjectedAssignment.create!(valid_attrs(contributor: shared, kind: "work"))
+    b = ProjectedAssignment.create!(valid_attrs(contributor: shared, kind: "time_off", minutes_per_day: 0))
+    c = ProjectedAssignment.create!(valid_attrs(kind: "work"))
+    assert_equal [a, b].sort_by(&:id), ProjectedAssignment.for_contributor(shared.id).order(:id).to_a
     assert_equal [b], ProjectedAssignment.time_off.to_a
-    assert_not_includes ProjectedAssignment.for_person(10), c
+    assert_not_includes ProjectedAssignment.for_contributor(shared.id), c
   end
 end

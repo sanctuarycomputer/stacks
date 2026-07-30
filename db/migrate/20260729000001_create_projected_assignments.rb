@@ -3,7 +3,7 @@ class CreateProjectedAssignments < ActiveRecord::Migration[6.1]
     create_table :projected_assignments do |t|
       t.string :source_key, null: false
       t.references :project_tracker, null: true, foreign_key: true
-      t.bigint :runn_person_id, null: false
+      t.references :contributor, null: true, foreign_key: true
       t.bigint :runn_role_id
       t.date :start_date, null: false
       t.date :end_date, null: false
@@ -19,6 +19,5 @@ class CreateProjectedAssignments < ActiveRecord::Migration[6.1]
       t.timestamps
     end
     add_index :projected_assignments, :source_key, unique: true
-    add_index :projected_assignments, :runn_person_id
   end
 end

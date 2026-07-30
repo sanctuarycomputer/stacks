@@ -3,10 +3,10 @@ class ProjectedAssignment < ApplicationRecord
   MAX_RANGE_DAYS = 366
 
   belongs_to :project_tracker, optional: true
+  belongs_to :contributor
   delegate :runn_project_id, to: :project_tracker, allow_nil: true
 
   validates :source_key, presence: true, uniqueness: true
-  validates :runn_person_id, presence: true
   validates :start_date, presence: true
   validates :end_date, presence: true
   validates :kind, inclusion: { in: KINDS }
@@ -17,7 +17,7 @@ class ProjectedAssignment < ApplicationRecord
   validate :range_within_max
 
   scope :for_tracker, ->(tracker_id) { where(project_tracker_id: tracker_id) }
-  scope :for_person, ->(person_id) { where(runn_person_id: person_id) }
+  scope :for_contributor, ->(contributor_id) { where(contributor_id: contributor_id) }
   scope :time_off, -> { where(kind: "time_off") }
   scope :owned, -> { where("jsonb_array_length(runn_assignment_ids) > 0") }
 

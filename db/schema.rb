@@ -1034,7 +1034,7 @@ ActiveRecord::Schema.define(version: 2026_07_29_000001) do
   create_table "projected_assignments", force: :cascade do |t|
     t.string "source_key", null: false
     t.bigint "project_tracker_id"
-    t.bigint "runn_person_id", null: false
+    t.bigint "contributor_id"
     t.bigint "runn_role_id"
     t.date "start_date", null: false
     t.date "end_date", null: false
@@ -1049,8 +1049,8 @@ ActiveRecord::Schema.define(version: 2026_07_29_000001) do
     t.string "managed_by"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.index ["contributor_id"], name: "index_projected_assignments_on_contributor_id"
     t.index ["project_tracker_id"], name: "index_projected_assignments_on_project_tracker_id"
-    t.index ["runn_person_id"], name: "index_projected_assignments_on_runn_person_id"
     t.index ["source_key"], name: "index_projected_assignments_on_source_key", unique: true
   end
 
@@ -1472,6 +1472,7 @@ ActiveRecord::Schema.define(version: 2026_07_29_000001) do
   add_foreign_key "project_tracker_forecast_to_runn_sync_tasks", "project_trackers"
   add_foreign_key "project_tracker_links", "project_trackers"
   add_foreign_key "project_trackers", "runn_projects", primary_key: "runn_id"
+  add_foreign_key "projected_assignments", "contributors"
   add_foreign_key "projected_assignments", "project_trackers"
   add_foreign_key "qbo_accounts", "enterprises"
   add_foreign_key "qbo_bills", "qbo_accounts"

@@ -6,6 +6,8 @@ module Resourcing
   #   - compensating rollback: undo created rows on a partial failure
   # Only `work` rows own Runn assignments; time_off/reduced are pure modifiers.
   class WriteThrough
+    class UnresolvedContributor < StandardError; end
+
     Result = Struct.new(:status, :before, :after, :runn_assignment_ids, :conflict, keyword_init: true)
 
     def self.provenance_marker(source_key)
@@ -21,12 +23,16 @@ module Resourcing
       work_rows = scope.select { |r| r.kind == "work" }
       modifier_rows = scope.reject { |r| r.kind == "work" }
 
+      runn_person_id = RunnPersonResolver.new(@runn).runn_person_id_for(row.contributor)
+      raise UnresolvedContributor, "contributor #{row.contributor_id} has no matching Runn person" if runn_person_id.nil?
+
       owned_ids = scope.flat_map(&:owned_runn_assignment_ids).uniq
       live_owned = fetch_owned(owned_ids)
 
       return conflict(live_owned) unless cas_ok?(scope, live_owned, owned_ids)
 
-      desired = SegmentPlan.new(work_rows: work_rows, modifier_rows: modifier_rows).desired_segments
+      desired = SegmentPlan.new(work_rows: work_rows, modifier_rows: modifier_rows,
+                                 runn_person_id: runn_person_id).desired_segments
 
       if segments_match?(desired, live_owned)
         return Result.new(status: :noop, before: live_owned, after: live_owned, runn_assignment_ids: owned_ids)
@@ -62,7 +68,8 @@ module Resourcing
     # --- scope ---------------------------------------------------------------
 
     def scope_rows(row)
-      rows = ProjectedAssignment.for_person(row.runn_person_id).includes(:project_tracker).to_a
+      rows = ProjectedAssignment.for_contributor(row.contributor_id)
+        .includes(:project_tracker, contributor: :forecast_person).to_a
       return rows if row.project_tracker_id.nil? # an org-wide write touches the whole person
 
       trackers = [row.project_tracker_id, nil]

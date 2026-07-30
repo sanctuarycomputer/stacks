@@ -1,6 +1,15 @@
 require "test_helper"
 
 class Resourcing::WriteThroughTest < ActiveSupport::TestCase
+  def contributor_for(runn_id, email: "c#{runn_id}@example.com")
+    fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: email, data: {})
+    Contributor.create!(forecast_person: fp)
+  end
+
+  def people_stub(runn_id, email: "c#{runn_id}@example.com")
+    [{ "id" => runn_id, "email" => email, "isArchived" => false }]
+  end
+
   def tracker(runn_project_id: 91_100)
     RunnProject.find_or_create_by!(runn_id: runn_project_id) { |rp| rp.name = "RP#{runn_project_id}"; rp.data = {} }
     t = ProjectTracker.new(name: "T#{runn_project_id}", runn_project_id: runn_project_id)
@@ -8,8 +17,8 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
     t
   end
 
-  def work(tr, start_d, end_d, minutes: 480, person: 10, role: 7, owned: [], baseline: nil, key: "w#{SecureRandom.hex(3)}")
-    ProjectedAssignment.create!(source_key: key, project_tracker: tr, runn_person_id: person, runn_role_id: role,
+  def work(tr, start_d, end_d, minutes: 480, contributor:, role: 7, owned: [], baseline: nil, key: "w#{SecureRandom.hex(3)}")
+    ProjectedAssignment.create!(source_key: key, project_tracker: tr, contributor: contributor, runn_role_id: role,
       start_date: start_d, end_date: end_d, minutes_per_day: minutes, kind: "work",
       runn_assignment_ids: owned, last_synced_runn_state: baseline)
   end
@@ -27,9 +36,11 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
 
   test "create: a brand-new work row creates one Runn assignment and records ownership" do
     tr = tracker
-    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31))
+    c = contributor_for(10)
+    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31), contributor: c)
     runn = mock("runn")
     runn.stubs(:get_assignments).returns([])
+    runn.stubs(:get_people).returns(people_stub(10))
     runn.expects(:create_assignment).once.returns([{ "id" => 5001 }])
     result = service(runn).apply(w)
     assert_equal :applied, result.status
@@ -39,10 +50,12 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
 
   test "noop: desired equals live owned → no Runn writes" do
     tr = tracker
+    c = contributor_for(10)
     base = [live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))]
-    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31), owned: [5001], baseline: base, key: "wkey")
+    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31), contributor: c, owned: [5001], baseline: base, key: "wkey")
     runn = mock("runn")
     runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))])
+    runn.stubs(:get_people).returns(people_stub(10))
     runn.expects(:create_assignment).never
     runn.expects(:delete_assignment).never
     assert_equal :noop, service(runn).apply(w).status
@@ -50,10 +63,12 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
 
   test "align: changing the end date deletes the old assignment and creates the new one" do
     tr = tracker
+    c = contributor_for(10)
     base = [live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))]
-    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 6, 15), owned: [5001], baseline: base, key: "wkey")
+    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 6, 15), contributor: c, owned: [5001], baseline: base, key: "wkey")
     runn = mock("runn")
     runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))])
+    runn.stubs(:get_people).returns(people_stub(10))
     runn.expects(:create_assignment).once.returns([{ "id" => 5002 }])
     runn.expects(:delete_assignment).once.with(5001).returns({})
     result = service(runn).apply(w)
@@ -63,11 +78,13 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
 
   test "CAS conflict: live owned no longer equals baseline → 409, no Runn write" do
     tr = tracker
+    c = contributor_for(10)
     base = [live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))]
-    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 6, 15), owned: [5001], baseline: base, key: "wkey")
+    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 6, 15), contributor: c, owned: [5001], baseline: base, key: "wkey")
     runn = mock("runn")
     # human moved the end date in Runn since we last synced
     runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 20))])
+    runn.stubs(:get_people).returns(people_stub(10))
     runn.expects(:create_assignment).never
     runn.expects(:delete_assignment).never
     result = service(runn).apply(w)
@@ -77,11 +94,13 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
 
   test "provenance conflict: a claimed-owned assignment lost our marker → 409, no write" do
     tr = tracker
+    c = contributor_for(10)
     base = [live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))]
-    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 6, 15), owned: [5001], baseline: base, key: "wkey")
+    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 6, 15), contributor: c, owned: [5001], baseline: base, key: "wkey")
     hijacked = live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31)).merge("note" => "hand-edited by a human")
     runn = mock("runn")
     runn.stubs(:get_assignments).returns([hijacked])
+    runn.stubs(:get_people).returns(people_stub(10))
     runn.expects(:create_assignment).never
     runn.expects(:delete_assignment).never
     assert_equal :conflict, service(runn).apply(w).status
@@ -89,10 +108,12 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
 
   test "compensating rollback: a delete failure after a create removes the created assignment" do
     tr = tracker
+    c = contributor_for(10)
     base = [live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))]
-    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 6, 15), owned: [5001], baseline: base, key: "wkey")
+    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 6, 15), contributor: c, owned: [5001], baseline: base, key: "wkey")
     runn = mock("runn")
     runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))])
+    runn.stubs(:get_people).returns(people_stub(10))
     runn.expects(:create_assignment).once.returns([{ "id" => 5002 }])
     seq = sequence("apply")
     runn.expects(:delete_assignment).with(5001).in_sequence(seq).raises(RuntimeError, "runn 500")
@@ -103,9 +124,11 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
 
   test "preview: computes the delta but writes nothing" do
     tr = tracker
-    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31))
+    c = contributor_for(10)
+    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31), contributor: c)
     runn = mock("runn")
     runn.stubs(:get_assignments).returns([])
+    runn.stubs(:get_people).returns(people_stub(10))
     runn.expects(:create_assignment).never
     result = service(runn).apply(w, preview: true)
     assert_equal :preview, result.status
@@ -114,12 +137,14 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
 
   test "scope re-plan: a time_off modifier PUT carves an overlapping work row; modifier owns nothing" do
     tr = tracker
+    c = contributor_for(10)
     base = [live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))]
-    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31), owned: [5001], baseline: base, key: "wkey")
-    t = ProjectedAssignment.create!(source_key: "tkey", project_tracker: tr, runn_person_id: 10,
+    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31), contributor: c, owned: [5001], baseline: base, key: "wkey")
+    t = ProjectedAssignment.create!(source_key: "tkey", project_tracker: tr, contributor: c,
       start_date: Date.new(2030, 5, 10), end_date: Date.new(2030, 5, 15), minutes_per_day: 0, kind: "time_off")
     runn = mock("runn")
     runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))])
+    runn.stubs(:get_people).returns(people_stub(10))
     runn.expects(:create_assignment).twice.returns([{ "id" => 6001 }], [{ "id" => 6002 }])
     runn.expects(:delete_assignment).once.with(5001).returns({})
     result = service(runn).apply(t)
@@ -130,12 +155,14 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
 
   test "org-wide modifier (nil tracker) re-plans the person's work" do
     tr = tracker
+    c = contributor_for(10)
     base = [live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))]
-    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31), owned: [5001], baseline: base, key: "wkey")
-    org = ProjectedAssignment.create!(source_key: "obs:org", project_tracker: nil, runn_person_id: 10,
+    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31), contributor: c, owned: [5001], baseline: base, key: "wkey")
+    org = ProjectedAssignment.create!(source_key: "obs:org", project_tracker: nil, contributor: c,
       start_date: Date.new(2030, 5, 10), end_date: Date.new(2030, 5, 15), minutes_per_day: 0, kind: "time_off")
     runn = mock("runn")
     runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))])
+    runn.stubs(:get_people).returns(people_stub(10))
     runn.expects(:create_assignment).twice.returns([{ "id" => 6001 }], [{ "id" => 6002 }])
     runn.expects(:delete_assignment).once.with(5001).returns({})
     assert_equal :applied, service(runn).apply(org).status
@@ -144,12 +171,14 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
 
   test "fully-carved work row: ownership is emptied, no create" do
     tr = tracker
+    c = contributor_for(10)
     base = [live(5001, "wkey", Date.new(2030, 5, 10), Date.new(2030, 5, 15))]
-    w = work(tr, Date.new(2030, 5, 10), Date.new(2030, 5, 15), owned: [5001], baseline: base, key: "wkey")
-    t = ProjectedAssignment.create!(source_key: "tkey", project_tracker: tr, runn_person_id: 10,
+    w = work(tr, Date.new(2030, 5, 10), Date.new(2030, 5, 15), contributor: c, owned: [5001], baseline: base, key: "wkey")
+    t = ProjectedAssignment.create!(source_key: "tkey", project_tracker: tr, contributor: c,
       start_date: Date.new(2030, 5, 1), end_date: Date.new(2030, 5, 31), minutes_per_day: 0, kind: "time_off")
     runn = mock("runn")
     runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 10), Date.new(2030, 5, 15))])
+    runn.stubs(:get_people).returns(people_stub(10))
     runn.expects(:create_assignment).never
     runn.expects(:delete_assignment).once.with(5001).returns({})
     assert_equal :applied, service(runn).apply(t).status
@@ -158,17 +187,19 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
 
   test "distribution: created ids map back to the right work rows by source_key" do
     tr = tracker
-    w1 = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 10), owned: [5001], key: "w1",
+    c = contributor_for(10)
+    w1 = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 10), contributor: c, owned: [5001], key: "w1",
       baseline: [live(5001, "w1", Date.new(2030, 5, 1), Date.new(2030, 5, 10))])
-    w2 = work(tr, Date.new(2030, 5, 20), Date.new(2030, 5, 31), owned: [5002], key: "w2",
+    w2 = work(tr, Date.new(2030, 5, 20), Date.new(2030, 5, 31), contributor: c, owned: [5002], key: "w2",
       baseline: [live(5002, "w2", Date.new(2030, 5, 20), Date.new(2030, 5, 31))])
-    t = ProjectedAssignment.create!(source_key: "tkey", project_tracker: tr, runn_person_id: 10,
+    t = ProjectedAssignment.create!(source_key: "tkey", project_tracker: tr, contributor: c,
       start_date: Date.new(2030, 5, 5), end_date: Date.new(2030, 5, 7), minutes_per_day: 0, kind: "time_off")
     runn = mock("runn")
     runn.stubs(:get_assignments).returns([
       live(5001, "w1", Date.new(2030, 5, 1), Date.new(2030, 5, 10)),
       live(5002, "w2", Date.new(2030, 5, 20), Date.new(2030, 5, 31)),
     ])
+    runn.stubs(:get_people).returns(people_stub(10))
     runn.expects(:create_assignment).times(3).returns([{ "id" => 6001 }], [{ "id" => 6002 }], [{ "id" => 6003 }])
     runn.stubs(:delete_assignment)
     assert_equal :applied, service(runn).apply(t).status
@@ -177,10 +208,21 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
     assert_equal [], t.reload.runn_assignment_ids
   end
 
+  test "unresolved contributor: a contributor with no matching Runn person raises UnresolvedContributor" do
+    tr = tracker
+    c = contributor_for(10, email: "nomatch@example.com")
+    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31), contributor: c)
+    runn = mock("runn")
+    runn.stubs(:get_people).returns(people_stub(10, email: "someoneelse@example.com"))
+    runn.expects(:create_assignment).never
+    assert_raises(Resourcing::WriteThrough::UnresolvedContributor) { service(runn).apply(w) }
+  end
+
   test "archive: deletes owned assignments when live still matches" do
     tr = tracker
+    c = contributor_for(10)
     base = [live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))]
-    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31), owned: [5001], baseline: base, key: "wkey")
+    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31), contributor: c, owned: [5001], baseline: base, key: "wkey")
     runn = mock("runn")
     runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))])
     runn.expects(:delete_assignment).once.with(5001).returns({})
@@ -189,8 +231,9 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
 
   test "archive: a human edit blocks deletion (conflict); assignment untouched" do
     tr = tracker
+    c = contributor_for(10)
     base = [live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))]
-    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31), owned: [5001], baseline: base, key: "wkey")
+    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31), contributor: c, owned: [5001], baseline: base, key: "wkey")
     runn = mock("runn")
     runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 20))])
     runn.expects(:delete_assignment).never
@@ -199,7 +242,8 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
 
   test "archive: no owned assignments is a noop" do
     tr = tracker
-    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31), key: "wkey")
+    c = contributor_for(10)
+    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31), contributor: c, key: "wkey")
     runn = mock("runn")
     runn.expects(:delete_assignment).never
     assert_equal :noop, service(runn).archive(w).status

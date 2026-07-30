@@ -2,13 +2,15 @@ class Api::V1::Resourcing::ProjectedAssignmentsController < ApiController
   skip_before_action :verify_authenticity_token
   before_action :check_private_api_key!
 
-  ATTRS = %i[project_tracker_id runn_person_id runn_role_id start_date end_date
+  ATTRS = %i[project_tracker_id contributor_id runn_role_id start_date end_date
              minutes_per_day kind capacity_pct is_placeholder note source_ref managed_by].freeze
 
   def upsert
     result = apply_one(params.permit(:source_key, *ATTRS))
     render json: result, status: http_status(result[:status])
   rescue Mcp::WriteGuard::CapExceeded => e
+    render json: { status: "error", error: e.message }, status: :unprocessable_entity
+  rescue Resourcing::WriteThrough::UnresolvedContributor => e
     render json: { status: "error", error: e.message }, status: :unprocessable_entity
   end
 
@@ -29,6 +31,8 @@ class Api::V1::Resourcing::ProjectedAssignmentsController < ApiController
     render json: { status: "deleted" }, status: :ok
   rescue Mcp::WriteGuard::CapExceeded => e
     render json: { status: "error", error: e.message }, status: :unprocessable_entity
+  rescue Resourcing::WriteThrough::UnresolvedContributor => e
+    render json: { status: "error", error: e.message }, status: :unprocessable_entity
   end
 
   def batch
@@ -42,6 +46,8 @@ class Api::V1::Resourcing::ProjectedAssignmentsController < ApiController
       rescue Mcp::WriteGuard::CapExceeded
         deferred = true
         { status: "deferred", source_key: permitted[:source_key] }
+      rescue Resourcing::WriteThrough::UnresolvedContributor => e
+        { status: "error", source_key: permitted[:source_key], error: e.message }
       end
     end
     render json: { results: results }, status: :ok

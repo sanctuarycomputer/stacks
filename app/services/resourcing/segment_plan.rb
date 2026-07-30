@@ -6,9 +6,10 @@ module Resourcing
                          :start_date, :end_date, :minutes_per_day, :note, :source_key,
                          keyword_init: true)
 
-    def initialize(work_rows:, modifier_rows:)
+    def initialize(work_rows:, modifier_rows:, runn_person_id:)
       @work_rows = work_rows
       @modifier_rows = modifier_rows
+      @runn_person_id = runn_person_id
     end
 
     def desired_segments
@@ -63,7 +64,7 @@ module Resourcing
 
     def to_segment(work, piece)
       Segment.new(
-        runn_person_id: work.runn_person_id,
+        runn_person_id: @runn_person_id,
         runn_project_id: work.runn_project_id,
         runn_role_id: work.runn_role_id,
         start_date: piece[:start],

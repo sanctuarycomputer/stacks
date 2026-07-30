@@ -66,8 +66,13 @@ module Mcp
 
       recent_actuals_by_runn_id = recent_actuals(trackers_by_runn_id, raw_people, raw_assignments, today)
 
+      contributor_id_by_email = Contributor.includes(:forecast_person).each_with_object({}) do |c, h|
+        email = c.forecast_person&.email.to_s.strip.downcase
+        h[email] = c.id if email.present?
+      end
+
       managed_overlay = ProjectedAssignment.all.map do |pa|
-        { source_key: pa.source_key, runn_person_id: pa.runn_person_id, project_tracker_id: pa.project_tracker_id,
+        { source_key: pa.source_key, contributor_id: pa.contributor_id, project_tracker_id: pa.project_tracker_id,
           runn_role_id: pa.runn_role_id, start_date: pa.start_date, end_date: pa.end_date,
           minutes_per_day: pa.minutes_per_day, kind: pa.kind, capacity_pct: pa.capacity_pct,
           is_placeholder: pa.is_placeholder, runn_assignment_ids: pa.runn_assignment_ids, managed_by: pa.managed_by }
@@ -109,6 +114,7 @@ module Mcp
               name: [p["firstName"], p["lastName"]].compact.join(" "),
               is_archived: p["isArchived"],
               default_role_id: latest_role_by_person[p["id"]],
+              contributor_id: contributor_id_by_email[p["email"].to_s.strip.downcase],
             }
           },
         assignments: assignments.map { |a|
