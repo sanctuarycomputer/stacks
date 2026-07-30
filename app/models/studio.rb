@@ -107,7 +107,8 @@ class Studio < ApplicationRecord
     g3d_utilization_by_period,
     preloaded_studios,
     preloaded_new_biz_leads,
-    all_okrs
+    all_okrs,
+    preloaded_client_revenue = client_revenue(preloaded_studios)
   )
     d = {
       label: period.label,
@@ -128,6 +129,7 @@ class Studio < ApplicationRecord
       utilization_by_period[prev_period],
       g3d_utilization_by_period[period],
       g3d_utilization_by_period[prev_period],
+      preloaded_client_revenue
     )
 
     d[:cash][:okrs] = self.okrs_for_period(period, d[:cash][:datapoints], all_okrs)
@@ -141,6 +143,7 @@ class Studio < ApplicationRecord
       utilization_by_period[prev_period],
       g3d_utilization_by_period[period],
       g3d_utilization_by_period[prev_period],
+      preloaded_client_revenue
     )
     d[:accrual][:okrs] = self.okrs_for_period(period, d[:accrual][:datapoints], all_okrs)
     d
@@ -148,7 +151,8 @@ class Studio < ApplicationRecord
 
   def generate_snapshot!(
     preloaded_studios = Studio.all,
-    preloaded_new_biz_leads = new_biz_leads
+    preloaded_new_biz_leads = new_biz_leads,
+    preloaded_client_revenue = client_revenue(preloaded_studios)
   )
     all_okrs = Okr.includes({ okr_periods: { okr_period_studios: :studio }}).all
     g3d = preloaded_studios.find(&:is_garden3d?)
@@ -179,7 +183,8 @@ class Studio < ApplicationRecord
               g3d_utilization_by_period,
               preloaded_studios,
               preloaded_new_biz_leads,
-              all_okrs
+              all_okrs,
+              preloaded_client_revenue
             )
           end
         end
@@ -266,6 +271,14 @@ class Studio < ApplicationRecord
       "#{ActionController::Base.helpers.number_to_currency(datapoints[:income][:value])} income recieved"
     when "lead_growth"
       "#{datapoints[:lead_count][:value]} leads recieved"
+    when "average_client_lifetime_value"
+      "across #{datapoints[:average_client_lifetime_value][:extras][:client_count]} clients invoiced since June 2021"
+    when "average_client_tenure"
+      "across #{datapoints[:average_client_tenure][:extras][:client_count]} clients invoiced since June 2021"
+    when "client_revenue_concentration"
+      "#{datapoints[:client_revenue_concentration][:extras][:top_client_name] || "no top client"}: #{ActionController::Base.helpers.number_to_currency(datapoints[:client_revenue_concentration][:extras][:top_client_amount])} of #{ActionController::Base.helpers.number_to_currency(datapoints[:client_revenue_concentration][:extras][:total_revenue])}"
+    when "forecasted_sales_revenue"
+      "#{datapoints[:forecasted_sales_revenue][:extras][:budgeted_lead_count]} of #{datapoints[:forecasted_sales_revenue][:extras][:open_lead_count]} open leads budgeted"
     else
       ""
     end
@@ -447,7 +460,8 @@ class Studio < ApplicationRecord
     utilization_for_period = utilization_for_period(period, preloaded_studios),
     utilization_for_prev_period = utilization_for_period(prev_period, preloaded_studios),
     g3d_utilization_for_period = preloaded_studios.find(&:is_garden3d?).utilization_for_period(period, preloaded_studios),
-    g3d_utilization_for_prev_period = preloaded_studios.find(&:is_garden3d?).utilization_for_period(prev_period, preloaded_studios)
+    g3d_utilization_for_prev_period = preloaded_studios.find(&:is_garden3d?).utilization_for_period(prev_period, preloaded_studios),
+    preloaded_client_revenue = client_revenue(preloaded_studios)
   )
     # TODO: Fix me - right now I return nil if this period predates utilization data OR
     # there's just no one there
@@ -625,7 +639,23 @@ class Studio < ApplicationRecord
       data[:actual_cost_per_hour_sold][:value] = total_billable > 0 ? (cost_of_doing_business / total_billable) : 0
     end
 
+    data.merge!(Stacks::ClientKpiDatapoints.call(
+      period: period,
+      leads: preloaded_new_biz_leads,
+      client_revenue: preloaded_client_revenue
+    ))
+
     data
+  end
+
+  # Deliberately NOT memoized: an argument-ignoring memo (||=) would let the
+  # first caller's preloaded_studios win forever, silently ignoring later
+  # callers' arguments. It is also a thread-safety foot-gun when called inside
+  # Parallel.map (the snapshot path). Construction is cheap (~0.05-0.13s);
+  # callers that need a shared instance (generate_snapshot!) pass one in via the
+  # preloaded_client_revenue default argument instead of relying on the memo.
+  def client_revenue(preloaded_studios = Studio.all)
+    Stacks::ClientRevenue.new(self, preloaded_studios)
   end
 
   def utilization_for_period(period)
