@@ -86,4 +86,41 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
     delete "/api/v1/resourcing/projected_assignments/del:key", headers: auth_headers
     assert_response :success # idempotent
   end
+
+  test "DELETE without X-Api-Key returns 403" do
+    delete "/api/v1/resourcing/projected_assignments/x:key", headers: HEADERS
+    assert_response :forbidden
+  end
+
+  test "DELETE ?archive_runn=true deletes owned Runn assignments then the row" do
+    marker = Resourcing::WriteThrough.provenance_marker("arch:key")
+    ProjectedAssignment.create!(source_key: "arch:key", project_tracker: @tr, runn_person_id: 10, runn_role_id: 7,
+      start_date: "2030-05-01", end_date: "2030-05-31", minutes_per_day: 480, kind: "work",
+      runn_assignment_ids: [5001],
+      last_synced_runn_state: [{ "personId" => 10, "projectId" => 91_100, "roleId" => 7,
+        "startDate" => "2030-05-01", "endDate" => "2030-05-31", "minutesPerDay" => 480, "id" => 5001, "note" => marker }])
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns([{ "id" => 5001, "personId" => 10, "projectId" => 91_100,
+      "roleId" => 7, "startDate" => "2030-05-01", "endDate" => "2030-05-31", "minutesPerDay" => 480, "note" => marker }])
+    Stacks::Runn.any_instance.expects(:delete_assignment).once.with(5001).returns({})
+    delete "/api/v1/resourcing/projected_assignments/arch:key?archive_runn=true", headers: auth_headers
+    assert_response :success
+    assert_nil ProjectedAssignment.find_by(source_key: "arch:key")
+  end
+
+  test "DELETE ?archive_runn=true returns 409 and keeps the (unmodified) row when a human edited Runn" do
+    marker = Resourcing::WriteThrough.provenance_marker("arch2:key")
+    ProjectedAssignment.create!(source_key: "arch2:key", project_tracker: @tr, runn_person_id: 10, runn_role_id: 7,
+      start_date: "2030-05-01", end_date: "2030-05-31", minutes_per_day: 480, kind: "work",
+      runn_assignment_ids: [5001],
+      last_synced_runn_state: [{ "personId" => 10, "projectId" => 91_100, "roleId" => 7,
+        "startDate" => "2030-05-01", "endDate" => "2030-05-31", "minutesPerDay" => 480, "id" => 5001, "note" => marker }])
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns([{ "id" => 5001, "personId" => 10, "projectId" => 91_100,
+      "roleId" => 7, "startDate" => "2030-05-01", "endDate" => "2030-05-20", "minutesPerDay" => 480, "note" => marker }])
+    Stacks::Runn.any_instance.expects(:delete_assignment).never
+    delete "/api/v1/resourcing/projected_assignments/arch2:key?archive_runn=true", headers: auth_headers
+    assert_response :conflict
+    kept = ProjectedAssignment.find_by(source_key: "arch2:key")
+    assert kept.present?
+    assert_equal "work", kept.kind   # the bug fix: row is NOT corrupted on conflict
+  end
 end

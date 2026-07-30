@@ -8,7 +8,7 @@ class Api::V1::Resourcing::ProjectedAssignmentsController < ApiController
   def upsert
     result = apply_one(params.permit(:source_key, *ATTRS))
     render json: result, status: http_status(result[:status])
-  rescue ArgumentError, Mcp::WriteGuard::CapExceeded => e
+  rescue Mcp::WriteGuard::CapExceeded => e
     render json: { status: "error", error: e.message }, status: :unprocessable_entity
   end
 
@@ -16,12 +16,12 @@ class Api::V1::Resourcing::ProjectedAssignmentsController < ApiController
     row = ProjectedAssignment.find_by(source_key: params[:source_key])
     return render json: { status: "noop" }, status: :ok if row.nil?
 
-    if ActiveModel::Type::Boolean.new.cast(params[:archive_runn])
+    if ActiveModel::Type::Boolean.new.cast(params[:archive_runn]) && row.owned_runn_assignment_ids.any?
       Mcp::WriteGuard.check!
-      # empty the row's work so WriteThrough deletes its owned Runn assignments, CAS-guarded
-      row.update!(kind: "time_off", minutes_per_day: 0) if row.kind == "work"
-      result = Resourcing::WriteThrough.new.apply(row)
-      return render json: { status: "conflict", conflict: result.conflict }, status: :conflict if result.status == :conflict
+      result = Resourcing::WriteThrough.new.archive(row)
+      if result.status == :conflict
+        return render json: { status: "conflict", conflict: result.conflict }, status: :conflict
+      end
     end
     row.destroy!
     render json: { status: "deleted" }, status: :ok

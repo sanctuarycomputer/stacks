@@ -42,6 +42,21 @@ module Resourcing
                  after: created.map { |c| c[:hash] }, runn_assignment_ids: created.map { |c| c[:id] })
     end
 
+    # Deletes the Runn assignment(s) this row owns, CAS + provenance guarded.
+    # Backs DELETE ?archive_runn=true. Does NOT re-plan sibling rows and does
+    # NOT mutate the row — the caller destroys the row only if this returns
+    # non-conflict.
+    def archive(row)
+      owned_ids = row.owned_runn_assignment_ids
+      return Result.new(status: :noop, before: [], after: [], runn_assignment_ids: []) if owned_ids.empty?
+
+      live_owned = fetch_owned(owned_ids)
+      return conflict(live_owned) unless cas_ok?([row], live_owned, owned_ids)
+
+      owned_ids.each { |id| @runn.delete_assignment(id) }
+      Result.new(status: :applied, before: live_owned, after: [], runn_assignment_ids: [])
+    end
+
     private
 
     # --- scope ---------------------------------------------------------------

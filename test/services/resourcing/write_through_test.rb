@@ -189,4 +189,32 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
     assert_equal [6003], w2.reload.runn_assignment_ids
     assert_equal [], t.reload.runn_assignment_ids
   end
+
+  test "archive: deletes owned assignments when live still matches" do
+    tr = tracker
+    base = [live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))]
+    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31), owned: [5001], baseline: base, key: "wkey")
+    runn = mock("runn")
+    runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))])
+    runn.expects(:delete_assignment).once.with(5001).returns({})
+    assert_equal :applied, service(runn).archive(w).status
+  end
+
+  test "archive: a human edit blocks deletion (conflict); assignment untouched" do
+    tr = tracker
+    base = [live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))]
+    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31), owned: [5001], baseline: base, key: "wkey")
+    runn = mock("runn")
+    runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 20))])
+    runn.expects(:delete_assignment).never
+    assert_equal :conflict, service(runn).archive(w).status
+  end
+
+  test "archive: no owned assignments is a noop" do
+    tr = tracker
+    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31), key: "wkey")
+    runn = mock("runn")
+    runn.expects(:delete_assignment).never
+    assert_equal :noop, service(runn).archive(w).status
+  end
 end
