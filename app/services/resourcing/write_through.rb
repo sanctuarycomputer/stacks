@@ -24,7 +24,10 @@ module Resourcing
       modifier_rows = scope.reject { |r| r.kind == "work" }
 
       runn_person_id = RunnPersonResolver.new(@runn).runn_person_id_for(row.contributor)
-      raise UnresolvedContributor, "contributor #{row.contributor_id} has no matching Runn person" if runn_person_id.nil?
+      if runn_person_id.nil?
+        raise UnresolvedContributor,
+          "contributor #{row.contributor_id} has no unique active Runn person (email matched 0 or multiple)"
+      end
 
       owned_ids = scope.flat_map(&:owned_runn_assignment_ids).uniq
       live_owned = fetch_owned(owned_ids)

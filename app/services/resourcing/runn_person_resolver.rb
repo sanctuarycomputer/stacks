@@ -11,10 +11,10 @@ module Resourcing
       email = contributor&.forecast_person&.email.to_s.strip.downcase
       return nil if email.blank?
 
-      match = @runn.get_people.find do |p|
+      matches = @runn.get_people.select do |p|
         !p["isArchived"] && p["email"].to_s.strip.downcase == email
       end
-      match && match["id"]
+      matches.one? ? matches.first["id"] : nil
     end
   end
 end
