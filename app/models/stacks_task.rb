@@ -36,6 +36,7 @@ class StacksTask
     no_received_at_timestamp_set: "Notion lead needs received-at timestamp",
     needs_settling: "Notion lead needs settling",
     no_studios_set: "Notion lead needs studios assigned",
+    needs_budget_estimate: "Notion lead needs an estimated budget",
 
     # Survey issues
     survey: "Studio survey response required",
