@@ -90,6 +90,7 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
     runn.stubs(:get_assignments).returns([hijacked])
     runn.stubs(:get_leave_for_person).returns([])
     runn.expects(:create_assignment).never
+    runn.expects(:delete_assignment).never
     assert_equal :conflict, service(runn).apply(w).status
   end
 
@@ -118,5 +119,74 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
     result = service(runn).apply(w, preview: true)
     assert_equal :preview, result.status
     assert_equal 1, result.after.size
+  end
+
+  test "scope re-plan: a time_off modifier PUT carves an overlapping work row; modifier owns nothing" do
+    tr = tracker
+    base = [live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))]
+    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31), owned: [5001], baseline: base, key: "wkey")
+    t = ProjectedAssignment.create!(source_key: "tkey", project_tracker: tr, runn_person_id: 10,
+      start_date: Date.new(2030, 5, 10), end_date: Date.new(2030, 5, 15), minutes_per_day: 0, kind: "time_off")
+    runn = mock("runn")
+    runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))])
+    runn.stubs(:get_leave_for_person).returns([])
+    runn.expects(:create_assignment).twice.returns([{ "id" => 6001 }], [{ "id" => 6002 }])
+    runn.expects(:delete_assignment).once.with(5001).returns({})
+    result = service(runn).apply(t)
+    assert_equal :applied, result.status
+    assert_equal [6001, 6002], w.reload.runn_assignment_ids
+    assert_equal [], t.reload.runn_assignment_ids
+  end
+
+  test "org-wide modifier (nil tracker) re-plans the person's work" do
+    tr = tracker
+    base = [live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))]
+    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31), owned: [5001], baseline: base, key: "wkey")
+    org = ProjectedAssignment.create!(source_key: "obs:org", project_tracker: nil, runn_person_id: 10,
+      start_date: Date.new(2030, 5, 10), end_date: Date.new(2030, 5, 15), minutes_per_day: 0, kind: "time_off")
+    runn = mock("runn")
+    runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))])
+    runn.stubs(:get_leave_for_person).returns([])
+    runn.expects(:create_assignment).twice.returns([{ "id" => 6001 }], [{ "id" => 6002 }])
+    runn.expects(:delete_assignment).once.with(5001).returns({})
+    assert_equal :applied, service(runn).apply(org).status
+    assert_equal [6001, 6002], w.reload.runn_assignment_ids
+  end
+
+  test "fully-carved work row: ownership is emptied, no create" do
+    tr = tracker
+    base = [live(5001, "wkey", Date.new(2030, 5, 10), Date.new(2030, 5, 15))]
+    w = work(tr, Date.new(2030, 5, 10), Date.new(2030, 5, 15), owned: [5001], baseline: base, key: "wkey")
+    t = ProjectedAssignment.create!(source_key: "tkey", project_tracker: tr, runn_person_id: 10,
+      start_date: Date.new(2030, 5, 1), end_date: Date.new(2030, 5, 31), minutes_per_day: 0, kind: "time_off")
+    runn = mock("runn")
+    runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 10), Date.new(2030, 5, 15))])
+    runn.stubs(:get_leave_for_person).returns([])
+    runn.expects(:create_assignment).never
+    runn.expects(:delete_assignment).once.with(5001).returns({})
+    assert_equal :applied, service(runn).apply(t).status
+    assert_equal [], w.reload.runn_assignment_ids
+  end
+
+  test "distribution: created ids map back to the right work rows by source_key" do
+    tr = tracker
+    w1 = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 10), owned: [5001], key: "w1",
+      baseline: [live(5001, "w1", Date.new(2030, 5, 1), Date.new(2030, 5, 10))])
+    w2 = work(tr, Date.new(2030, 5, 20), Date.new(2030, 5, 31), owned: [5002], key: "w2",
+      baseline: [live(5002, "w2", Date.new(2030, 5, 20), Date.new(2030, 5, 31))])
+    t = ProjectedAssignment.create!(source_key: "tkey", project_tracker: tr, runn_person_id: 10,
+      start_date: Date.new(2030, 5, 5), end_date: Date.new(2030, 5, 7), minutes_per_day: 0, kind: "time_off")
+    runn = mock("runn")
+    runn.stubs(:get_assignments).returns([
+      live(5001, "w1", Date.new(2030, 5, 1), Date.new(2030, 5, 10)),
+      live(5002, "w2", Date.new(2030, 5, 20), Date.new(2030, 5, 31)),
+    ])
+    runn.stubs(:get_leave_for_person).returns([])
+    runn.expects(:create_assignment).times(3).returns([{ "id" => 6001 }], [{ "id" => 6002 }], [{ "id" => 6003 }])
+    runn.stubs(:delete_assignment)
+    assert_equal :applied, service(runn).apply(t).status
+    assert_equal [6001, 6002], w1.reload.runn_assignment_ids
+    assert_equal [6003], w2.reload.runn_assignment_ids
+    assert_equal [], t.reload.runn_assignment_ids
   end
 end

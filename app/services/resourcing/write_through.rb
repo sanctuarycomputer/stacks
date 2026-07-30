@@ -141,7 +141,8 @@ module Resourcing
     end
 
     def assignment_ids(resp)
-      Array(resp).map { |a| a.is_a?(Hash) ? a["id"] : a }.compact
+      rows = resp.is_a?(Hash) ? [resp] : Array(resp)
+      rows.map { |a| a.is_a?(Hash) ? a["id"] : a }.compact
     end
 
     def conflict(live_owned)
