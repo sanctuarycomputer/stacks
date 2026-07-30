@@ -13,11 +13,13 @@ class Api::V1::Resourcing::ProjectedAssignmentsController < ApiController
   end
 
   def destroy
+    # NOTE: deleting a time_off/reduced modifier row removes only that row — it
+    # does NOT restore the work assignment it carved/scaled (modifiers own
+    # nothing). To un-split a work row, re-PUT it after removing the modifier.
     row = ProjectedAssignment.find_by(source_key: params[:source_key])
     return render json: { status: "noop" }, status: :ok if row.nil?
 
     if ActiveModel::Type::Boolean.new.cast(params[:archive_runn]) && row.owned_runn_assignment_ids.any?
-      Mcp::WriteGuard.check!
       result = Resourcing::WriteThrough.new.archive(row)
       if result.status == :conflict
         return render json: { status: "conflict", conflict: result.conflict }, status: :conflict
@@ -57,7 +59,6 @@ class Api::V1::Resourcing::ProjectedAssignmentsController < ApiController
       return { status: "invalid", source_key: source_key, errors: row.errors.full_messages }
     end
 
-    Mcp::WriteGuard.check! unless preview?
     row.save!
     result = Resourcing::WriteThrough.new.apply(row, preview: preview?)
     { status: result.status.to_s, source_key: source_key, before: result.before,

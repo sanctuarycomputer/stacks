@@ -5,7 +5,6 @@ module Resourcing
     def initialize(runn: Stacks::Runn.new(max_retries: 5))
       @runn = runn
     end
-    attr_writer :runn
 
     def run!
       now = Time.current

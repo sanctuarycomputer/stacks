@@ -15,7 +15,6 @@ module Resourcing
     def initialize(runn: Stacks::Runn.new(max_retries: 0))
       @runn = runn
     end
-    attr_writer :runn
 
     def apply(row, preview: false)
       scope = scope_rows(row)
@@ -53,7 +52,10 @@ module Resourcing
       live_owned = fetch_owned(owned_ids)
       return conflict(live_owned) unless cas_ok?([row], live_owned, owned_ids)
 
-      owned_ids.each { |id| @runn.delete_assignment(id) }
+      owned_ids.each do |id|
+        Mcp::WriteGuard.check!
+        @runn.delete_assignment(id)
+      end
       Result.new(status: :applied, before: live_owned, after: [], runn_assignment_ids: [])
     end
 
@@ -96,6 +98,7 @@ module Resourcing
       created = []
       begin
         desired.each do |seg|
+          Mcp::WriteGuard.check!
           resp = @runn.create_assignment(
             person_id: seg.runn_person_id, project_id: seg.runn_project_id, role_id: seg.runn_role_id,
             start_date: seg.start_date.iso8601, end_date: seg.end_date.iso8601,
@@ -103,7 +106,10 @@ module Resourcing
           )
           assignment_ids(resp).each { |id| created << { id: id, source_key: seg.source_key, hash: live_hash(id, seg) } }
         end
-        delete_ids.each { |id| @runn.delete_assignment(id) }
+        delete_ids.each do |id|
+          Mcp::WriteGuard.check!
+          @runn.delete_assignment(id)
+        end
         created
       rescue StandardError => e
         created.each { |c| safe_delete(c[:id]) } # compensating rollback
@@ -133,12 +139,28 @@ module Resourcing
       normalize(desired.map { |s| segment_hash(s) }) == normalize(live_owned)
     end
 
-    # compare only the fields that define an assignment (ignore id/note)
+    # Canonical comparison key — tolerant of Runn returning dates as either
+    # "2030-05-01" or full datetimes, and ids as Integer or String — so an
+    # unchanged assignment never reads as a divergence.
     def normalize(rows)
       rows.compact.map do |r|
-        { person: r["personId"], project: r["projectId"], role: r["roleId"],
-          start: r["startDate"], end: r["endDate"], minutes: r["minutesPerDay"] }
-      end.sort_by(&:to_a)
+        {
+          person: r["personId"].to_i,
+          project: r["projectId"].to_i,
+          role: r["roleId"].nil? ? nil : r["roleId"].to_i,
+          start: to_date(r["startDate"]),
+          end: to_date(r["endDate"]),
+          minutes: r["minutesPerDay"].to_i,
+        }
+      end.sort_by { |h| [h[:person], h[:project], h[:role].to_i, h[:start].to_s, h[:end].to_s, h[:minutes]] }
+    end
+
+    def to_date(value)
+      return value if value.is_a?(Date)
+
+      Date.parse(value.to_s)
+    rescue ArgumentError
+      value
     end
 
     def segment_hash(seg)
@@ -152,7 +174,7 @@ module Resourcing
 
     def provenance_note(seg)
       marker = WriteThrough.provenance_marker(seg.source_key)
-      seg.note.present? ? "#{seg.note} #{marker}" : marker
+      seg.note.present? ? "#{marker} #{seg.note}" : marker
     end
 
     def assignment_ids(resp)

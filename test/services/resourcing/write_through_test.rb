@@ -22,9 +22,7 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
   end
 
   def service(runn)
-    s = Resourcing::WriteThrough.new
-    s.runn = runn
-    s
+    Resourcing::WriteThrough.new(runn: runn)
   end
 
   test "create: a brand-new work row creates one Runn assignment and records ownership" do
