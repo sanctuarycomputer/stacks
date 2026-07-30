@@ -84,7 +84,14 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
     base = live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))
     w = row(tr, Date.new(2030, 5, 1), Date.new(2030, 6, 15), contributor: c, owned_id: 5001, baseline: base, key: "wkey")
     runn = mock("runn")
-    runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))])
+    # A second, LATER assignment with a different role (9) so the fallback
+    # (most_recent_role_id) would pick 9 — the matcher below only passes if the
+    # code reuses the CURRENT owned assignment's role (7), genuinely guarding the
+    # reuse branch against regressing to the fallback.
+    runn.stubs(:get_assignments).returns([
+      live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31)),
+      live(5099, "other", Date.new(2030, 6, 1), Date.new(2030, 6, 30), role: 9),
+    ])
     runn.stubs(:get_people).returns(people_stub(10))
     seq = sequence("apply")
     # the reused role (7, from the current owned assignment) must reach Runn unchanged —
