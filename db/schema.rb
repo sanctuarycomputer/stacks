@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_07_29_000002) do
+ActiveRecord::Schema.define(version: 2026_07_29_000001) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -1181,18 +1181,6 @@ ActiveRecord::Schema.define(version: 2026_07_29_000002) do
     t.datetime "deleted_at"
     t.index ["admin_user_id"], name: "index_reviews_on_admin_user_id"
     t.index ["deleted_at"], name: "index_reviews_on_deleted_at"
-  end
-
-  create_table "runn_leaves", force: :cascade do |t|
-    t.bigint "runn_person_id", null: false
-    t.date "start_date", null: false
-    t.date "end_date", null: false
-    t.integer "minutes_per_day"
-    t.datetime "refreshed_at", null: false
-    t.jsonb "raw", default: {}, null: false
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.index ["runn_person_id"], name: "index_runn_leaves_on_runn_person_id"
   end
 
   create_table "runn_projects", force: :cascade do |t|

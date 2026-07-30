@@ -1,16 +1,14 @@
 module Resourcing
   # Pure: turns a person's projected_assignment rows into the DESIRED set of Runn
-  # work segments. No DB writes, no Runn calls. time_off carves; reduced scales;
-  # Runn-native leave (passed in) suppresses carving because Runn auto-splits on it.
+  # work segments. No DB writes, no Runn calls. time_off carves; reduced scales.
   class SegmentPlan
     Segment = Struct.new(:runn_person_id, :runn_project_id, :runn_role_id,
                          :start_date, :end_date, :minutes_per_day, :note, :source_key,
                          keyword_init: true)
 
-    def initialize(work_rows:, modifier_rows:, native_leave: [])
+    def initialize(work_rows:, modifier_rows:)
       @work_rows = work_rows
       @modifier_rows = modifier_rows
-      @native_leave = native_leave || []
     end
 
     def desired_segments
@@ -42,8 +40,6 @@ module Resourcing
 
       case mod.kind
       when "time_off"
-        return [piece] if leave_covers?(mod) # Runn already handles it → noop
-
         [before(piece, lo), after(piece, hi)].compact
       when "reduced"
         scaled = (piece[:minutes] * (mod.capacity_pct || 0) / 100.0).round
@@ -63,12 +59,6 @@ module Resourcing
       return nil if hi + 1 > piece[:end]
 
       piece.merge(start: hi + 1)
-    end
-
-    def leave_covers?(mod)
-      @native_leave.any? do |l|
-        Date.parse(l["startDate"].to_s) <= mod.start_date && Date.parse(l["endDate"].to_s) >= mod.end_date
-      end
     end
 
     def to_segment(work, piece)

@@ -245,33 +245,11 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     assert_equal "detector", managed["managed_by"]
   end
 
-  test "get_resourcing_projections exposes leave[] and a stale flag from the mirror" do
-    Stacks::Runn.any_instance.stubs(:get_projects).returns([])
-    Stacks::Runn.any_instance.stubs(:get_people).returns([])
-    Stacks::Runn.any_instance.stubs(:get_assignments).returns([])
-    RunnLeave.create!(runn_person_id: 10, start_date: Date.new(2030, 5, 10), end_date: Date.new(2030, 5, 15),
-      minutes_per_day: 480, refreshed_at: Time.current)
-    payload = call_tool("get_resourcing_projections")
-    assert_equal false, payload["stale"]
-    assert_equal 1, payload["leave"].size
-    assert_equal 10, payload["leave"].first["runn_person_id"]
-  end
-
   test "get_resourcing_projections degrades (partial + degraded:true) when a Runn read fails" do
     Stacks::Runn.any_instance.stubs(:get_projects).raises(RuntimeError, "runn 429")
     Stacks::Runn.any_instance.stubs(:get_people).returns([])
     Stacks::Runn.any_instance.stubs(:get_assignments).returns([])
     payload = call_tool("get_resourcing_projections")
     assert_equal true, payload["degraded"]
-  end
-
-  test "get_resourcing_projections reports stale:true when the oldest mirror row is older than 36h" do
-    Stacks::Runn.any_instance.stubs(:get_projects).returns([])
-    Stacks::Runn.any_instance.stubs(:get_people).returns([])
-    Stacks::Runn.any_instance.stubs(:get_assignments).returns([])
-    RunnLeave.create!(runn_person_id: 10, start_date: Date.new(2030, 5, 10), end_date: Date.new(2030, 5, 15),
-      minutes_per_day: 480, refreshed_at: 48.hours.ago)
-    payload = call_tool("get_resourcing_projections")
-    assert_equal true, payload["stale"]
   end
 end

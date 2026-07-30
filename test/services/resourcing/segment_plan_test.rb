@@ -37,16 +37,6 @@ class Resourcing::SegmentPlanTest < ActiveSupport::TestCase
     assert_equal [Date.new(2030, 5, 16), Date.new(2030, 5, 31)], [segs[1].start_date, segs[1].end_date]
   end
 
-  test "time_off noop when Runn native leave already covers the window" do
-    tr = tracker
-    w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31))
-    t = modifier("time_off", tr, Date.new(2030, 5, 10), Date.new(2030, 5, 15))
-    leave = [{ "startDate" => "2030-05-09", "endDate" => "2030-05-16" }]
-    segs = Resourcing::SegmentPlan.new(work_rows: [w], modifier_rows: [t], native_leave: leave).desired_segments
-    assert_equal 1, segs.size
-    assert_equal [Date.new(2030, 5, 1), Date.new(2030, 5, 31)], [segs[0].start_date, segs[0].end_date]
-  end
-
   test "reduced scale: a reduced modifier scales minutes over its window into three pieces" do
     tr = tracker
     w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31), minutes: 480)

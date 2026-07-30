@@ -73,13 +73,6 @@ module Mcp
           is_placeholder: pa.is_placeholder, runn_assignment_ids: pa.runn_assignment_ids, managed_by: pa.managed_by }
       end
 
-      leave = RunnLeave.all.map do |lm|
-        { runn_person_id: lm.runn_person_id, start_date: lm.start_date, end_date: lm.end_date,
-          minutes_per_day: lm.minutes_per_day }
-      end
-      oldest = RunnLeave.minimum(:refreshed_at)
-      stale = oldest.nil? || oldest < 36.hours.ago
-
       Responses.ok({
         as_of: today.iso8601,
         window: { start: today.iso8601, end: horizon.iso8601 },
@@ -133,9 +126,7 @@ module Mcp
           }
         },
         managed: managed_overlay,
-        leave: leave,
         degraded: degraded,
-        stale: stale,
       })
     rescue StandardError => e
       Rails.logger.warn("[Mcp::GetResourcingProjectionsTool] #{e.class}: #{e.message}")

@@ -30,7 +30,6 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
     w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31))
     runn = mock("runn")
     runn.stubs(:get_assignments).returns([])
-    runn.stubs(:get_leave_for_person).returns([])
     runn.expects(:create_assignment).once.returns([{ "id" => 5001 }])
     result = service(runn).apply(w)
     assert_equal :applied, result.status
@@ -44,7 +43,6 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
     w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31), owned: [5001], baseline: base, key: "wkey")
     runn = mock("runn")
     runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))])
-    runn.stubs(:get_leave_for_person).returns([])
     runn.expects(:create_assignment).never
     runn.expects(:delete_assignment).never
     assert_equal :noop, service(runn).apply(w).status
@@ -56,7 +54,6 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
     w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 6, 15), owned: [5001], baseline: base, key: "wkey")
     runn = mock("runn")
     runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))])
-    runn.stubs(:get_leave_for_person).returns([])
     runn.expects(:create_assignment).once.returns([{ "id" => 5002 }])
     runn.expects(:delete_assignment).once.with(5001).returns({})
     result = service(runn).apply(w)
@@ -71,7 +68,6 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
     runn = mock("runn")
     # human moved the end date in Runn since we last synced
     runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 20))])
-    runn.stubs(:get_leave_for_person).returns([])
     runn.expects(:create_assignment).never
     runn.expects(:delete_assignment).never
     result = service(runn).apply(w)
@@ -86,7 +82,6 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
     hijacked = live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31)).merge("note" => "hand-edited by a human")
     runn = mock("runn")
     runn.stubs(:get_assignments).returns([hijacked])
-    runn.stubs(:get_leave_for_person).returns([])
     runn.expects(:create_assignment).never
     runn.expects(:delete_assignment).never
     assert_equal :conflict, service(runn).apply(w).status
@@ -98,7 +93,6 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
     w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 6, 15), owned: [5001], baseline: base, key: "wkey")
     runn = mock("runn")
     runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))])
-    runn.stubs(:get_leave_for_person).returns([])
     runn.expects(:create_assignment).once.returns([{ "id" => 5002 }])
     seq = sequence("apply")
     runn.expects(:delete_assignment).with(5001).in_sequence(seq).raises(RuntimeError, "runn 500")
@@ -112,7 +106,6 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
     w = work(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31))
     runn = mock("runn")
     runn.stubs(:get_assignments).returns([])
-    runn.stubs(:get_leave_for_person).returns([])
     runn.expects(:create_assignment).never
     result = service(runn).apply(w, preview: true)
     assert_equal :preview, result.status
@@ -127,7 +120,6 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
       start_date: Date.new(2030, 5, 10), end_date: Date.new(2030, 5, 15), minutes_per_day: 0, kind: "time_off")
     runn = mock("runn")
     runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))])
-    runn.stubs(:get_leave_for_person).returns([])
     runn.expects(:create_assignment).twice.returns([{ "id" => 6001 }], [{ "id" => 6002 }])
     runn.expects(:delete_assignment).once.with(5001).returns({})
     result = service(runn).apply(t)
@@ -144,7 +136,6 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
       start_date: Date.new(2030, 5, 10), end_date: Date.new(2030, 5, 15), minutes_per_day: 0, kind: "time_off")
     runn = mock("runn")
     runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))])
-    runn.stubs(:get_leave_for_person).returns([])
     runn.expects(:create_assignment).twice.returns([{ "id" => 6001 }], [{ "id" => 6002 }])
     runn.expects(:delete_assignment).once.with(5001).returns({})
     assert_equal :applied, service(runn).apply(org).status
@@ -159,7 +150,6 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
       start_date: Date.new(2030, 5, 1), end_date: Date.new(2030, 5, 31), minutes_per_day: 0, kind: "time_off")
     runn = mock("runn")
     runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 10), Date.new(2030, 5, 15))])
-    runn.stubs(:get_leave_for_person).returns([])
     runn.expects(:create_assignment).never
     runn.expects(:delete_assignment).once.with(5001).returns({})
     assert_equal :applied, service(runn).apply(t).status
@@ -179,7 +169,6 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
       live(5001, "w1", Date.new(2030, 5, 1), Date.new(2030, 5, 10)),
       live(5002, "w2", Date.new(2030, 5, 20), Date.new(2030, 5, 31)),
     ])
-    runn.stubs(:get_leave_for_person).returns([])
     runn.expects(:create_assignment).times(3).returns([{ "id" => 6001 }], [{ "id" => 6002 }], [{ "id" => 6003 }])
     runn.stubs(:delete_assignment)
     assert_equal :applied, service(runn).apply(t).status

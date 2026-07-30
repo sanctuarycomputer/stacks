@@ -26,9 +26,7 @@ module Resourcing
 
       return conflict(live_owned) unless cas_ok?(scope, live_owned, owned_ids)
 
-      leave = row.runn_person_id ? @runn.get_leave_for_person(row.runn_person_id) : []
-      desired = SegmentPlan.new(work_rows: work_rows, modifier_rows: modifier_rows, native_leave: leave)
-                           .desired_segments
+      desired = SegmentPlan.new(work_rows: work_rows, modifier_rows: modifier_rows).desired_segments
 
       if segments_match?(desired, live_owned)
         return Result.new(status: :noop, before: live_owned, after: live_owned, runn_assignment_ids: owned_ids)
