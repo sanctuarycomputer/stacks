@@ -60,6 +60,12 @@ Current open pipeline, from Notion leads via the existing
   "now" metric for steering against current-period targets; it does not
   reconstruct what the pipeline looked like in past periods.
 
+### Open-lead count note
+
+Raw DB counts of Notion pages with active statuses include soft-deleted pages
+(acts_as_paranoid default scope is not applied to Notion data); live
+(acts_as_paranoid-scoped) open leads ≈ 25 as of 2026-07-29.
+
 ### Known caveat (accepted)
 
 Only ~10% of currently-open leads have Est. Budget filled, so forecasted

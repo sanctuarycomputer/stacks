@@ -945,3 +945,5 @@ git commit -m "feat(okrs): wire client & pipeline KPIs into snapshots, hints, ex
 ## Post-implementation (manual, not code)
 
 Creating the Okr records is an admin-UI step, done after deploy via ActiveAdmin ("Okey Dokeys"): one Okr per KPI with a name, description, operator (`greater_than` for LTV/tenure/forecast, `less_than` for concentration), the matching datapoint, and OkrPeriods (target, tolerance, date range, studios). Recommended names: "Average Client Lifetime Value", "Average Client Tenure", "Client Revenue Concentration", "Forecasted Sales Revenue".
+
+Note: the four new datapoints appear in dashboards and the OKR Explorer only after the next nightly snapshot run (or a manual `studio.generate_snapshot!` call) — old snapshots lack the new keys and the explorer will show "—" for those periods.
