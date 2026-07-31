@@ -371,4 +371,57 @@ class Mcp::ProvisioningToolsTest < ActiveSupport::TestCase
     Mcp::SetProjectTrackerWorkCompletedAtTool.call(project_tracker_id: tracker.id, completed_at: "2026-06-30", server_context: {})
     assert_equal "2026-06-30", tracker.reload.work_completed_at.to_date.to_s
   end
+
+  # ---- set_project_tracker_role_assignee ----------------------------------
+  test "role assignee: first-time set creates a period for the right role" do
+    tracker = ProjectTracker.new(name: "Lead Co").tap { |t| t.save!(validate: false) }
+    admin = make_admin(email: "acct@sanctuary.computer")
+    resp = Mcp::SetProjectTrackerRoleAssigneeTool.call(
+      project_tracker_id: tracker.id, role: "account_lead", admin_user_email: "acct@sanctuary.computer", server_context: {})
+    assert_equal "acct@sanctuary.computer", payload(resp)["after"]["assignee"]["email"]
+    assert_equal admin.id, tracker.account_lead_periods.where(ended_at: nil).first.admin_user_id
+    assert_empty tracker.project_lead_periods
+  end
+
+  test "role assignee: reassign across months ends the prior period at end of prior month" do
+    tracker = ProjectTracker.new(name: "Lead Co").tap { |t| t.save!(validate: false) }
+    old = make_admin(email: "old@sanctuary.computer")
+    new = make_admin(email: "new@sanctuary.computer")
+    tracker.account_lead_periods.create!(admin_user: old, started_at: (Date.today.beginning_of_month - 1.month), ended_at: nil)
+
+    Mcp::SetProjectTrackerRoleAssigneeTool.call(
+      project_tracker_id: tracker.id, role: "account_lead", admin_user_email: "new@sanctuary.computer", server_context: {})
+    prior = tracker.account_lead_periods.find_by(admin_user: old)
+    assert_equal (Date.today.beginning_of_month - 1.day), prior.ended_at
+    assert_equal new.id, tracker.account_lead_periods.where(ended_at: nil).first.admin_user_id
+  end
+
+  test "role assignee: no-op when already the current lead (no cap)" do
+    tracker = ProjectTracker.new(name: "Lead Co").tap { |t| t.save!(validate: false) }
+    admin = make_admin(email: "acct@sanctuary.computer")
+    tracker.account_lead_periods.create!(admin_user: admin, started_at: Date.today.beginning_of_month, ended_at: nil)
+    Mcp::WriteGuard.expects(:check!).never
+    resp = Mcp::SetProjectTrackerRoleAssigneeTool.call(
+      project_tracker_id: tracker.id, role: "account_lead", admin_user_email: "acct@sanctuary.computer", server_context: {})
+    assert_equal "acct@sanctuary.computer", payload(resp)["after"]["assignee"]["email"]
+    assert_equal 1, tracker.account_lead_periods.count
+  end
+
+  test "role assignee: same-month swap raises a clear error" do
+    tracker = ProjectTracker.new(name: "Lead Co").tap { |t| t.save!(validate: false) }
+    a = make_admin(email: "a@sanctuary.computer")
+    make_admin(email: "b@sanctuary.computer")
+    tracker.account_lead_periods.create!(admin_user: a, started_at: Date.today.beginning_of_month, ended_at: nil)
+    resp = Mcp::SetProjectTrackerRoleAssigneeTool.call(
+      project_tracker_id: tracker.id, role: "account_lead", admin_user_email: "b@sanctuary.computer", server_context: {})
+    assert_match(/same-month|admin UI/i, payload(resp)["error"])
+  end
+
+  test "role assignee: unknown admin email and bad role are surfaced" do
+    tracker = ProjectTracker.new(name: "Lead Co").tap { |t| t.save!(validate: false) }
+    r1 = Mcp::SetProjectTrackerRoleAssigneeTool.call(project_tracker_id: tracker.id, role: "account_lead", admin_user_email: "nobody@example.com", server_context: {})
+    assert_match(/admin.*not found/i, payload(r1)["error"])
+    r2 = Mcp::SetProjectTrackerRoleAssigneeTool.call(project_tracker_id: tracker.id, role: "cto", admin_user_email: "x@example.com", server_context: {})
+    assert_match(/role must be/i, payload(r2)["error"])
+  end
 end

@@ -83,6 +83,27 @@ class ProjectTracker < ApplicationRecord
     project_capsule.present? && project_capsule.complete?
   end
 
+  ROLE_PERIOD_ASSOCIATIONS = { "account_lead" => :account_lead_periods, "project_lead" => :project_lead_periods }.freeze
+
+  # Assign a lead role via a full-month, non-overlapping period. Ends the current open
+  # period at the end of the prior month and starts a new one at `starts_on` (first of a
+  # month). No-op if `admin_user` is already the open lead. Raises on a same-month swap.
+  def set_role_assignee!(role:, admin_user:, starts_on: Date.today.beginning_of_month)
+    assoc = ROLE_PERIOD_ASSOCIATIONS[role.to_s]
+    raise ArgumentError, "role must be one of #{ROLE_PERIOD_ASSOCIATIONS.keys.join(', ')}" if assoc.nil?
+    raise ArgumentError, "starts_on must be the first day of a month" unless starts_on == starts_on.beginning_of_month
+
+    periods = public_send(assoc)
+    current = periods.detect { |p| p.ended_at.nil? }
+    return current if current&.admin_user_id == admin_user.id
+
+    if current
+      raise ArgumentError, "a #{role} already starts this month; resolve same-month lead changes in the admin UI" if current.started_at && current.started_at >= starts_on
+      current.update!(ended_at: starts_on.prev_day)
+    end
+    periods.create!(admin_user: admin_user, started_at: starts_on, ended_at: nil)
+  end
+
   def self.provision!(name:, msa_url: nil, sow_url: nil, budget_low_end: nil, budget_high_end: nil)
     warnings = []
     # Array#<< returns the (truthy) array, so `&&` short-circuits into the placeholder URL
