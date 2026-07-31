@@ -3,9 +3,11 @@ class Api::RecurringAssignmentsController < ApiController
   before_action :check_private_api_key!
 
   def create
+    contributor = Contributor.find(params.require(:contributor_id))
+    workstream = ProjectTrackerForecastProject.find(params.require(:workstream_id))
     ra = RecurringAssignment.new(
-      forecast_person_id: params.require(:forecast_person_id),
-      forecast_project_id: params.require(:forecast_project_id),
+      forecast_person_id: contributor.forecast_person_id,
+      forecast_project_id: workstream.forecast_project_id,
       weekdays: (params[:weekdays].presence || [1, 2, 3, 4, 5]).map(&:to_i),
       starts_on: params[:starts_on].presence || Date.today,
       ends_on: params[:ends_on].presence,
@@ -14,14 +16,10 @@ class Api::RecurringAssignmentsController < ApiController
     )
     ra.allocation_in_hours = params[:allocation_hours].presence || 8
     ra.save!
-    render json: recurring_json(ra)
-  end
-
-  private
-
-  def recurring_json(ra)
-    { id: ra.id, forecast_person_id: ra.forecast_person_id, forecast_project_id: ra.forecast_project_id,
-      allocation: ra.allocation, allocation_hours: ra.allocation_in_hours, weekdays: ra.weekdays,
-      starts_on: ra.starts_on, ends_on: ra.ends_on }
+    render json: {
+      id: ra.id, contributor_id: contributor.id, workstream_id: workstream.id,
+      allocation_hours: ra.allocation_in_hours, weekdays: ra.weekdays,
+      starts_on: ra.starts_on, ends_on: ra.ends_on,
+    }
   end
 end
