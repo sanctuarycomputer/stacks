@@ -167,37 +167,37 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
     assert_equal 5002, w.reload.runn_assignment_id
   end
 
-  test "CAS conflict: live owned no longer equals baseline → conflict, no Runn write" do
+  test "CAS: live owned no longer equals baseline (human edited it) → relinquished, no Runn write" do
     tr = tracker
     c = contributor_for(10)
     base = live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31))
     w = row(tr, Date.new(2030, 5, 1), Date.new(2030, 6, 15), contributor: c, owned_id: 5001, baseline: base, key: "wkey")
     runn = mock("runn")
-    # human moved the end date in Runn since we last synced
+    # human moved the end date in Runn since we last synced → we yield permanently
     runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 20))])
     runn.stubs(:get_people).returns(people_stub(10))
     runn.expects(:create_assignment).never
     runn.expects(:delete_assignment).never
     result = service(runn).apply(w)
-    assert_equal :conflict, result.status
-    assert result.conflict.present?
+    assert_equal :relinquished, result.status
+    assert_equal "relinquished", w.reload.managed_by
   end
 
-  test "CAS conflict: minutes-only drift (same person/project/role/dates) → conflict, no Runn write" do
+  test "CAS: minutes-only drift (human edited it) → relinquished, no Runn write" do
     tr = tracker
     c = contributor_for(10)
     base = live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31), minutes: 480)
     w = row(tr, Date.new(2030, 5, 1), Date.new(2030, 5, 31), minutes: 480, contributor: c,
       owned_id: 5001, baseline: base, key: "wkey")
     runn = mock("runn")
-    # human changed only minutesPerDay in Runn since we last synced
+    # human changed only minutesPerDay in Runn since we last synced → we yield
     runn.stubs(:get_assignments).returns([live(5001, "wkey", Date.new(2030, 5, 1), Date.new(2030, 5, 31), minutes: 240)])
     runn.stubs(:get_people).returns(people_stub(10))
     runn.expects(:create_assignment).never
     runn.expects(:delete_assignment).never
     result = service(runn).apply(w)
-    assert_equal :conflict, result.status
-    assert result.conflict.present?
+    assert_equal :relinquished, result.status
+    assert_equal "relinquished", w.reload.managed_by
   end
 
   test "provenance conflict: a claimed-owned assignment lost our marker → conflict, no write" do
@@ -486,4 +486,63 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
     assert_nil r1.reload.runn_assignment_id
     assert_nil r2.reload.runn_assignment_id
   end
+  # --- relinquish: a human hand-edit to an owned assignment yields it permanently ---
+  test "apply: human hand-edited our owned assignment → relinquished, no write, row marked" do
+    tr = tracker
+    c = contributor_for(10)
+    key = "obs:owned:1"
+    baseline = live(555, key, Date.new(2030, 1, 1), Date.new(2030, 6, 30)) # what we last wrote
+    w = row(tr, Date.new(2030, 1, 1), Date.new(2030, 6, 30), contributor: c, owned_id: 555, baseline: baseline, key: key)
+    edited = live(555, key, Date.new(2030, 1, 1), Date.new(2030, 9, 30)) # human moved the end date; marker + id intact
+    runn = mock("runn")
+    runn.stubs(:get_assignments).returns([edited])
+    runn.stubs(:get_people).returns(people_stub(10))
+    runn.expects(:create_assignment).never
+    runn.expects(:delete_assignment).never
+    result = service(runn).apply(w)
+    assert_equal :relinquished, result.status
+    assert_equal edited, result.before
+    assert_equal "relinquished", w.reload.managed_by
+  end
+
+  test "apply: a relinquished row is never touched again (noop, no Runn calls at all)" do
+    tr = tracker
+    c = contributor_for(11)
+    w = ProjectedAssignment.create!(source_key: "obs:relinq:1", project_tracker: tr, contributor: c,
+      start_date: Date.new(2030, 1, 1), end_date: Date.new(2030, 6, 30), minutes_per_day: 480,
+      runn_assignment_id: 556, last_synced_runn_state: live(556, "obs:relinq:1", Date.new(2030, 1, 1), Date.new(2030, 6, 30)),
+      managed_by: "relinquished")
+    runn = mock("runn")
+    runn.expects(:get_assignments).never
+    runn.expects(:get_people).never
+    assert_equal :noop, service(runn).apply(w).status
+  end
+
+  test "apply preview: relinquish is detected but NOT persisted" do
+    tr = tracker
+    c = contributor_for(12)
+    key = "obs:owned:2"
+    baseline = live(557, key, Date.new(2030, 1, 1), Date.new(2030, 6, 30))
+    w = row(tr, Date.new(2030, 1, 1), Date.new(2030, 6, 30), contributor: c, owned_id: 557, baseline: baseline, key: key)
+    edited = live(557, key, Date.new(2030, 1, 1), Date.new(2030, 9, 30))
+    runn = mock("runn")
+    runn.stubs(:get_assignments).returns([edited])
+    runn.stubs(:get_people).returns(people_stub(12))
+    assert_equal :relinquished, service(runn).apply(w, preview: true).status
+    assert_nil w.reload.managed_by, "preview must not persist the yield"
+  end
+
+  test "archive: a relinquished row is never touched (noop)" do
+    tr = tracker
+    c = contributor_for(13)
+    w = ProjectedAssignment.create!(source_key: "obs:relinq:2", project_tracker: tr, contributor: c,
+      start_date: Date.new(2030, 1, 1), end_date: Date.new(2030, 6, 30), minutes_per_day: 480,
+      runn_assignment_id: 558, last_synced_runn_state: live(558, "obs:relinq:2", Date.new(2030, 1, 1), Date.new(2030, 6, 30)),
+      managed_by: "relinquished")
+    runn = mock("runn")
+    runn.expects(:get_assignments).never
+    runn.expects(:delete_assignment).never
+    assert_equal :noop, service(runn).archive(w).status
+  end
+
 end

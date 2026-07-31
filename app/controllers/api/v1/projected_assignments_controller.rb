@@ -66,7 +66,9 @@ class Api::V1::ProjectedAssignmentsController < ApiController
     rows = segments.map do |seg|
       permitted = seg.permit(:source_key, *ATTRS)
       r = ProjectedAssignment.find_or_initialize_by(source_key: permitted[:source_key])
-      r.assign_attributes(permitted.except(:source_key).to_h.symbolize_keys)
+      # never let an upsert overwrite a permanently-yielded row (WriteThrough#apply
+      # then no-ops it via the owned partition); leaving managed_by intact is the guard.
+      r.assign_attributes(permitted.except(:source_key).to_h.symbolize_keys) unless r.managed_by == "relinquished"
       r
     end
     invalid = rows.reject(&:valid?)
@@ -95,6 +97,11 @@ class Api::V1::ProjectedAssignmentsController < ApiController
   def apply_one(attrs, adopt: nil)
     source_key = attrs[:source_key]
     row = ProjectedAssignment.find_or_initialize_by(source_key: source_key)
+    # a human took this assignment back — the row is permanently yielded. Return
+    # before assign_attributes so an incoming upsert can't overwrite managed_by
+    # and resurrect management (the guard in WriteThrough#apply reads the row,
+    # but the controller must not clobber the stored value first).
+    return { status: "noop", source_key: source_key } if row.managed_by == "relinquished"
     row.assign_attributes(attrs.except(:source_key).to_h.symbolize_keys)
     unless row.valid?
       return { status: "invalid", source_key: source_key, errors: row.errors.full_messages }
