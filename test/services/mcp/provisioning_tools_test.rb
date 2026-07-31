@@ -415,6 +415,8 @@ class Mcp::ProvisioningToolsTest < ActiveSupport::TestCase
     resp = Mcp::SetProjectTrackerRoleAssigneeTool.call(
       project_tracker_id: tracker.id, role: "account_lead", admin_user_email: "b@sanctuary.computer", server_context: {})
     assert_match(/same-month|admin UI/i, payload(resp)["error"])
+    assert_equal 1, tracker.account_lead_periods.count
+    assert_nil tracker.account_lead_periods.first.reload.ended_at
   end
 
   test "role assignee: unknown admin email and bad role are surfaced" do

@@ -97,11 +97,12 @@ class ProjectTracker < ApplicationRecord
     current = periods.detect { |p| p.ended_at.nil? }
     return current if current&.admin_user_id == admin_user.id
 
-    if current
-      raise ArgumentError, "a #{role} already starts this month; resolve same-month lead changes in the admin UI" if current.started_at && current.started_at >= starts_on
-      current.update!(ended_at: starts_on.prev_day)
+    raise ArgumentError, "a #{role} already starts this month; resolve same-month lead changes in the admin UI" if current&.started_at && current.started_at >= starts_on
+
+    transaction do
+      current&.update!(ended_at: starts_on.prev_day)
+      periods.create!(admin_user: admin_user, started_at: starts_on, ended_at: nil)
     end
-    periods.create!(admin_user: admin_user, started_at: starts_on, ended_at: nil)
   end
 
   def self.provision!(name:, msa_url: nil, sow_url: nil, budget_low_end: nil, budget_high_end: nil)

@@ -19,7 +19,7 @@ module Mcp
 
     def self.call(project_tracker_id:, role:, admin_user_email:, starts_on: nil, server_context:)
       ptid = WriteValidation.integer!("project_tracker_id", project_tracker_id)
-      raise ArgumentError, "role must be one of account_lead, project_lead" unless %w[account_lead project_lead].include?(role.to_s)
+      raise ArgumentError, "role must be one of #{ProjectTracker::ROLE_PERIOD_ASSOCIATIONS.keys.join(', ')}" unless ProjectTracker::ROLE_PERIOD_ASSOCIATIONS.key?(role.to_s)
       start_date = starts_on.present? ? WriteValidation.date!("starts_on", starts_on) : Date.today.beginning_of_month
 
       tracker = ProjectTracker.find(ptid)
