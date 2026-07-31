@@ -129,6 +129,22 @@ class ProjectTracker < ApplicationRecord
     transaction { project_tracker_forecast_projects.create!(forecast_project_id: project["id"]) }
   end
 
+  def update_details!(name: nil, budget_low_end: nil, budget_high_end: nil, msa_url: nil, sow_url: nil)
+    self.name = name if name.present?
+    self.budget_low_end = budget_low_end unless budget_low_end.nil?
+    self.budget_high_end = budget_high_end unless budget_high_end.nil?
+    upsert_link!(:msa, "MSA", msa_url) unless msa_url.nil?
+    upsert_link!(:sow, "SOW", sow_url) unless sow_url.nil?
+    save!
+    self
+  end
+
+  private def upsert_link!(type, label, url)
+    link = project_tracker_links.find { |l| l.link_type == type.to_s } ||
+           project_tracker_links.build(name: label, link_type: type)
+    link.url = url
+  end
+
   def self.capsule_pending
     ProjectTracker.where.not(work_completed_at: nil).select do |pt|
       pt.work_status == :capsule_pending

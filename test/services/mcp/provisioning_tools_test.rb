@@ -298,4 +298,38 @@ class Mcp::ProvisioningToolsTest < ActiveSupport::TestCase
   test "find_admin_user returns empty array when no match" do
     assert_equal [], payload(Mcp::FindAdminUserTool.call(email: "nobody@example.com", server_context: {}))
   end
+
+  # ---- update_project_tracker ---------------------------------------------
+  test "update_project_tracker replaces the MSA link and updates budgets" do
+    tracker, _ws, _fp, _c = make_tracker_with_workstream(tracker_name: "Qualitate", client_name: "Q Inc", code: "QUAL")
+    tracker.project_tracker_links.create!(name: "MSA", url: "https://old.test/msa", link_type: :msa)
+    tracker.project_tracker_links.create!(name: "SOW", url: "https://old.test/sow", link_type: :sow)
+
+    resp = Mcp::UpdateProjectTrackerTool.call(
+      project_tracker_id: tracker.id, msa_url: "https://new.test/msa",
+      budget_low_end: 500, budget_high_end: 900, server_context: {})
+    after = payload(resp)["after"]
+    assert_equal "https://new.test/msa", after["msa_url"]
+    assert_equal 500, after["budget_low_end"]
+    assert_equal 900, after["budget_high_end"]
+    assert_equal "https://old.test/sow", after["sow_url"], "unspecified fields unchanged"
+  end
+
+  test "update_project_tracker builds an SOW link when none exists" do
+    # has_msa_and_sow_links requires BOTH link types to exist before save! will succeed, so an
+    # MSA link is seeded here (deviating from the brief's fully-bare fixture) — otherwise the
+    # tool's save! would raise on the missing MSA before we ever get to assert on the built SOW.
+    tracker = ProjectTracker.new(name: "Bare").tap { |t| t.save!(validate: false) }
+    tracker.project_tracker_links.create!(name: "MSA", url: "https://x.test/msa", link_type: :msa)
+    resp = Mcp::UpdateProjectTrackerTool.call(project_tracker_id: tracker.id, sow_url: "https://x.test/sow", server_context: {})
+    assert_equal "https://x.test/sow", payload(resp)["after"]["sow_url"]
+  end
+
+  test "update_project_tracker surfaces budget validation" do
+    tracker, = make_tracker_with_workstream(tracker_name: "Q", client_name: "Q Inc", code: "QUAL")
+    tracker.project_tracker_links.create!(name: "MSA", url: "https://x/msa", link_type: :msa)
+    tracker.project_tracker_links.create!(name: "SOW", url: "https://x/sow", link_type: :sow)
+    resp = Mcp::UpdateProjectTrackerTool.call(project_tracker_id: tracker.id, budget_low_end: 900, budget_high_end: 100, server_context: {})
+    assert_match(/budget/i, payload(resp)["error"])
+  end
 end
