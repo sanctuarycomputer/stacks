@@ -1,7 +1,10 @@
 require 'test_helper'
 
 class McpWriteEndpointTest < ActionDispatch::IntegrationTest
-  WRITE_TOOLS = %w[archive_project create_assignment create_placeholder create_tentative_project delete_assignment].freeze
+  WRITE_TOOLS = %w[
+    archive_project create_assignment create_placeholder create_recurring_assignment
+    create_tentative_project delete_assignment ensure_project_tracker ensure_workstream
+  ].freeze
 
   MCP_HEADERS = {
     "Content-Type" => "application/json",
@@ -47,7 +50,7 @@ class McpWriteEndpointTest < ActionDispatch::IntegrationTest
 
   # ----- surface isolation (the read-only invariant, pinned) -----
 
-  test "write surface exposes exactly the five write tools" do
+  test "write surface exposes exactly the provisioning + projection write tools" do
     assert_equal WRITE_TOOLS, tools_list("/api/mcp/write").sort
   end
 
@@ -158,5 +161,26 @@ class McpWriteEndpointTest < ActionDispatch::IntegrationTest
 
     call_tool("delete_assignment", { assignment_id: 1 })
     assert_equal 1, store.read("mcp_write_count:#{Time.zone.today.iso8601}").to_i
+  end
+
+  # ----- provisioning happy-path -----
+
+  test "ensure_project_tracker over the write endpoint creates and is idempotent" do
+    # Mocha's `.returns(value)` evaluates `value` eagerly, at stub-setup time — well before
+    # `call_tool` runs. If we persisted the stand-in tracker here, it would already exist in
+    # the DB when the tool's own pre-check query runs on the FIRST call, so we hand back an
+    # unsaved instance and persist it ourselves right after, mirroring what a real
+    # `provision!` would have done — so the second call's lookup-by-name finds exactly one row.
+    tracker = ProjectTracker.new(name: "Endpoint Co")
+    ProjectTracker.expects(:provision!).once.with(has_entries(name: "Endpoint Co")).returns([tracker, []])
+
+    created = call_tool("ensure_project_tracker", { "name" => "Endpoint Co" })
+    assert_equal true, created["created"]
+
+    tracker.save!(validate: false)
+
+    # second call finds the now-existing tracker; provision! is NOT called again
+    found = call_tool("ensure_project_tracker", { "name" => "Endpoint Co" })
+    assert_equal false, found["created"]
   end
 end
