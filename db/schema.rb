@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_07_29_000001) do
+ActiveRecord::Schema.define(version: 2026_07_30_000002) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -1114,6 +1114,35 @@ ActiveRecord::Schema.define(version: 2026_07_29_000001) do
     t.datetime "updated_at", precision: 6, null: false
   end
 
+  create_table "recurring_assignment_occurrences", force: :cascade do |t|
+    t.bigint "recurring_assignment_id", null: false
+    t.date "occurs_on", null: false
+    t.bigint "forecast_assignment_id"
+    t.string "status", default: "materialized", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["forecast_assignment_id"], name: "idx_recurring_occurrences_on_forecast_assignment_id"
+    t.index ["recurring_assignment_id", "occurs_on"], name: "idx_recurring_occurrences_on_rule_and_date", unique: true
+    t.index ["recurring_assignment_id"], name: "idx_recurring_occurrences_on_recurring_assignment_id"
+  end
+
+  create_table "recurring_assignments", force: :cascade do |t|
+    t.bigint "forecast_person_id", null: false
+    t.bigint "forecast_project_id", null: false
+    t.integer "allocation", null: false
+    t.boolean "active_on_days_off", default: false, null: false
+    t.text "notes", default: "", null: false
+    t.integer "weekdays", default: [1, 2, 3, 4, 5], null: false, array: true
+    t.date "starts_on", null: false
+    t.date "ends_on"
+    t.datetime "paused_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["forecast_person_id"], name: "index_recurring_assignments_on_forecast_person_id"
+    t.index ["forecast_project_id"], name: "index_recurring_assignments_on_forecast_project_id"
+    t.index ["paused_at"], name: "index_recurring_assignments_on_paused_at"
+  end
+
   create_table "recurring_charges", force: :cascade do |t|
     t.bigint "forecast_client_id", null: false
     t.decimal "quantity", default: "0.0", null: false
@@ -1476,6 +1505,7 @@ ActiveRecord::Schema.define(version: 2026_07_29_000001) do
   add_foreign_key "qbo_profit_and_loss_reports", "qbo_accounts"
   add_foreign_key "qbo_tokens", "qbo_accounts"
   add_foreign_key "qbo_vendors", "qbo_accounts"
+  add_foreign_key "recurring_assignment_occurrences", "recurring_assignments"
   add_foreign_key "recurring_ledger_adjustments", "ledgers"
   add_foreign_key "reimbursements", "admin_users", column: "accepted_by_id"
   add_foreign_key "reimbursements", "ledgers"

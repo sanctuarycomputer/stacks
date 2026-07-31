@@ -56,4 +56,61 @@ class StacksForecastTest < ActiveSupport::TestCase
     forecast.send(:upsert_changed!, ForecastAssignment, [row(1, "2024-02-01T00:00:00Z", allocation: 42)])
     assert_equal 42, ForecastAssignment.find_by(forecast_id: 1).allocation
   end
+
+  def build_forecast_client
+    fc = Stacks::Forecast.allocate
+    fc.instance_variable_set(:@headers, { "Authorization": "Bearer test" })
+    fc
+  end
+
+  test "create_assignment POSTs the assignment envelope and returns the assignment hash" do
+    fc = build_forecast_client
+    response = mock("response")
+    response.stubs(:success?).returns(true)
+    response.stubs(:parsed_response).returns({ "assignment" => { "id" => 42, "allocation" => 900 } })
+
+    posted = {}
+    Stacks::Forecast.expects(:post).once.with do |path, opts|
+      posted[:path] = path
+      posted[:body] = JSON.parse(opts[:body])
+      true
+    end.returns(response)
+
+    result = fc.create_assignment(
+      project_id: 5039734, person_id: 324711,
+      start_date: Date.new(2035, 6, 1), end_date: Date.new(2035, 6, 1),
+      allocation: 900, notes: "hi", active_on_days_off: false,
+    )
+
+    assert_equal 42, result["id"]
+    assert_equal "/assignments", posted[:path]
+    assert_equal 5039734, posted[:body]["assignment"]["project_id"]
+    assert_equal "2035-06-01", posted[:body]["assignment"]["start_date"]
+    assert_equal 900, posted[:body]["assignment"]["allocation"]
+  end
+
+  test "create_assignment raises on failure" do
+    fc = build_forecast_client
+    response = mock("response")
+    response.stubs(:success?).returns(false)
+    response.stubs(:code).returns(422)
+    response.stubs(:body).returns("nope")
+    Stacks::Forecast.stubs(:post).returns(response)
+
+    assert_raises(RuntimeError) do
+      fc.create_assignment(project_id: 1, person_id: 2, start_date: Date.today, end_date: Date.today, allocation: 900)
+    end
+  end
+
+  test "delete_assignment DELETEs by id and treats 404 as already-gone" do
+    fc = build_forecast_client
+
+    ok = mock("ok"); ok.stubs(:success?).returns(true)
+    Stacks::Forecast.expects(:delete).once.with("/assignments/99", has_entry(:headers, instance_of(Hash))).returns(ok)
+    assert_equal true, fc.delete_assignment(99)
+
+    gone = mock("gone"); gone.stubs(:success?).returns(false); gone.stubs(:code).returns(404)
+    Stacks::Forecast.expects(:delete).once.returns(gone)
+    assert_equal true, fc.delete_assignment(1234)
+  end
 end

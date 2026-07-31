@@ -510,6 +510,18 @@ namespace :stacks do
 
       Stacks::Forecast.new.sync_all! # Has internal retry counter
 
+      # Materialize Stacks-owned recurring assignments into Forecast. MUST run
+      # right after sync_all! so the ForecastAssignment mirror is fresh — that's
+      # how materialize! distinguishes "deleted in the UI" from "not yet synced".
+      forecast_client = Stacks::Forecast.new
+      RecurringAssignment.active.find_each do |ra|
+        begin
+          ra.materialize!(forecast_client: forecast_client)
+        rescue => e
+          Sentry.capture_exception(e)
+        end
+      end
+
       Retriable.retriable(tries: 3, base_interval: 5, multiplier: 2, max_interval: 60) do
         Stacks::OptixSync.new(OptixOrganization.first).sync_all!
       end
