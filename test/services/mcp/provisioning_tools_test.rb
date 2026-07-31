@@ -260,4 +260,21 @@ class Mcp::ProvisioningToolsTest < ActiveSupport::TestCase
       contributor_id: c.id, workstream_id: ws.id, weekdays: [9], server_context: {})
     assert_match(/weekdays/i, payload(resp)["error"])
   end
+
+  # ---- find_admin_user -----------------------------------------------------
+  def make_admin(email:)
+    AdminUser.create!(email: email, password: "password123", password_confirmation: "password123", roles: ["admin"])
+  end
+
+  test "find_admin_user matches by case-insensitive email" do
+    a = make_admin(email: "lead@sanctuary.computer")
+    resp = Mcp::FindAdminUserTool.call(email: "LEAD@Sanctuary.Computer", server_context: {})
+    rows = payload(resp)
+    assert_equal [a.id], rows.map { |r| r["id"] }
+    assert_equal "lead@sanctuary.computer", rows.first["email"]
+  end
+
+  test "find_admin_user returns empty array when no match" do
+    assert_equal [], payload(Mcp::FindAdminUserTool.call(email: "nobody@example.com", server_context: {}))
+  end
 end
