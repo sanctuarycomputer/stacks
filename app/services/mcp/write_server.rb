@@ -19,6 +19,7 @@ module Mcp
       Mcp::ArchiveProjectTool,
       Mcp::CreatePlaceholderTool,
       Mcp::EnsureProjectTrackerTool,
+      Mcp::EnsureWorkstreamTool,
     ].freeze
 
     def self.build

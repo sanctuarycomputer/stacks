@@ -115,4 +115,75 @@ class Mcp::ProvisioningToolsTest < ActiveSupport::TestCase
     Mcp::WriteGuard.expects(:check!).never
     Mcp::EnsureProjectTrackerTool.call(name: "Qualitate", server_context: {})
   end
+
+  # ---- ensure_workstream ---------------------------------------------------
+  test "ensure_workstream creates a workstream when the code is absent" do
+    tracker = ProjectTracker.new(name: "Qualitate")
+    tracker.save!(validate: false)
+    fake_ws = ProjectTrackerForecastProject.new(id: 123, project_tracker: tracker, forecast_project_id: 999)
+    ProjectTracker.any_instance.expects(:add_workstream!).with(
+      name: "Qualitate", code: "QUAL", rate: "450p/h", client_name: "Qualitate Inc"
+    ).returns(fake_ws)
+    Mcp::ProvisioningSerializers.stubs(:workstream_json).with(fake_ws).returns({ id: 123, code: "QUAL" })
+
+    resp = Mcp::EnsureWorkstreamTool.call(
+      project_tracker_id: tracker.id, name: "Qualitate", code: "QUAL",
+      rate: "450p/h", client_name: "Qualitate Inc", server_context: {})
+    body = payload(resp)
+    assert_equal true, body["created"]
+    assert_equal true, body["rate_added"]
+  end
+
+  test "ensure_workstream adds a missing rate to an existing workstream" do
+    tracker, ws, fp, _c = make_tracker_with_workstream(
+      tracker_name: "Qualitate", client_name: "Q Inc", code: "QUAL", rate_tags: ["300p/h"])
+    Stacks::Forecast.any_instance.expects(:add_project_rate!).with(fp.forecast_id, "450p/h").returns(true)
+
+    resp = Mcp::EnsureWorkstreamTool.call(
+      project_tracker_id: tracker.id, name: "Qualitate", code: "QUAL", rate: "450p/h", server_context: {})
+    body = payload(resp)
+    assert_equal false, body["created"]
+    assert_equal true, body["rate_added"]
+  end
+
+  test "ensure_workstream is a no-op when the rate is already present (no cap, no API)" do
+    tracker, _ws, _fp, _c = make_tracker_with_workstream(
+      tracker_name: "Qualitate", client_name: "Q Inc", code: "QUAL", rate_tags: ["450p/h"])
+    Stacks::Forecast.any_instance.expects(:add_project_rate!).never
+    Mcp::WriteGuard.expects(:check!).never
+
+    resp = Mcp::EnsureWorkstreamTool.call(
+      project_tracker_id: tracker.id, name: "Qualitate", code: "QUAL", rate: "450p/h", server_context: {})
+    body = payload(resp)
+    assert_equal false, body["created"]
+    assert_equal false, body["rate_added"]
+  end
+
+  test "ensure_workstream surfaces the 'client required' validation for a first workstream" do
+    tracker = ProjectTracker.new(name: "Bare")
+    tracker.save!(validate: false)
+    # add_workstream! raises RecordInvalid when no client is derivable and none is given
+    inv = ProjectTracker.new
+    inv.errors.add(:base, "A client is required for the first workstream.")
+    ProjectTracker.any_instance.expects(:add_workstream!).raises(ActiveRecord::RecordInvalid.new(inv))
+
+    resp = Mcp::EnsureWorkstreamTool.call(
+      project_tracker_id: tracker.id, name: "Bare", code: "BARE", rate: "450p/h", server_context: {})
+    assert_match(/client is required/i, payload(resp)["error"])
+  end
+
+  test "ensure_workstream rejects a non-positive rate before any work" do
+    tracker = ProjectTracker.new(name: "Qualitate")
+    tracker.save!(validate: false)
+    ProjectTracker.any_instance.expects(:add_workstream!).never
+    resp = Mcp::EnsureWorkstreamTool.call(
+      project_tracker_id: tracker.id, name: "Q", code: "QUAL", rate: "0", server_context: {})
+    assert_match(/rate must be a positive/i, payload(resp)["error"])
+  end
+
+  test "ensure_workstream reports a missing tracker cleanly" do
+    resp = Mcp::EnsureWorkstreamTool.call(
+      project_tracker_id: 999_999, name: "Q", code: "QUAL", rate: "450p/h", server_context: {})
+    assert_match(/not found/i, payload(resp)["error"])
+  end
 end
