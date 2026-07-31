@@ -31,6 +31,14 @@ class RecurringAssignment < ApplicationRecord
     self.allocation = (hours.to_f * 3600).round
   end
 
+  # Normalize incoming weekdays to a clean integer array. HTML checkbox forms submit
+  # strings plus a hidden "" (Formtastic's unchecked placeholder); the "" casts to nil
+  # in the integer[] column, which then fails the 0..6 range validation. Strip blanks
+  # and coerce to Integer so form/MCP/API callers all land on the same shape.
+  def weekdays=(value)
+    super(Array(value).map { |v| v.to_s.strip }.reject(&:empty?).map(&:to_i))
+  end
+
   # Idempotent. Pass 1 tombstones occurrences deleted in Forecast (absent from the
   # freshly-synced ForecastAssignment mirror); Pass 2 creates any missing occurrence.
   # MUST run after Stacks::Forecast#sync_all! so the mirror is authoritative — see the

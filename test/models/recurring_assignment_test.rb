@@ -39,4 +39,25 @@ class RecurringAssignmentTest < ActiveSupport::TestCase
     ra.allocation_in_hours = 4
     assert_equal 14_400, ra.allocation
   end
+
+  test "weekdays= strips the blank checkbox placeholder and casts strings to ints" do
+    ra = RecurringAssignment.new(valid_attrs)
+    # HTML checkbox form: Friday checked, plus Formtastic's hidden "" placeholder
+    ra.weekdays = ["", "5"]
+    assert_equal [5], ra.weekdays
+    assert ra.valid?, ra.errors.full_messages.to_sentence
+  end
+
+  test "weekdays= with only the blank placeholder (nothing checked) is empty and invalid" do
+    ra = RecurringAssignment.new(valid_attrs)
+    ra.weekdays = [""]
+    assert_equal [], ra.weekdays
+    assert_not ra.valid?
+    assert_includes ra.errors[:weekdays], "must include at least one day"
+  end
+
+  test "weekdays= accepts plain string arrays and integer arrays alike" do
+    assert_equal [5, 6], RecurringAssignment.new(valid_attrs(weekdays: %w[5 6])).weekdays
+    assert_equal [1, 2], RecurringAssignment.new(valid_attrs(weekdays: [1, 2])).weekdays
+  end
 end

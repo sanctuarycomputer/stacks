@@ -3,7 +3,10 @@ ActiveAdmin.register RecurringAssignment do
   config.filters = false
   actions :index, :new, :create, :edit, :update, :destroy, :show
 
-  WEEKDAY_CHOICES = [%w[Mon 1], %w[Tue 2], %w[Wed 3], %w[Thu 4], %w[Fri 5], %w[Sat 6], %w[Sun 0]].freeze
+  # Integer values (not strings): Formtastic's check_boxes marks a box checked via
+  # selected_values.include?(value), comparing against the record's integer weekdays.
+  # String values here would never match, so every box would render unchecked.
+  WEEKDAY_CHOICES = [["Mon", 1], ["Tue", 2], ["Wed", 3], ["Thu", 4], ["Fri", 5], ["Sat", 6], ["Sun", 0]].freeze
 
   permit_params :forecast_person_id, :forecast_project_id, :allocation_in_hours,
     :active_on_days_off, :notes, :starts_on, :ends_on, :paused_at, weekdays: []
