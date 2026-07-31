@@ -22,6 +22,7 @@ module Mcp
       Mcp::UpdateProjectTrackerTool,
       Mcp::EnsureWorkstreamTool,
       Mcp::CreateRecurringAssignmentTool,
+      Mcp::ManageRecurringAssignmentTool,
       Mcp::RemoveWorkstreamRateTool,
       Mcp::SetProjectTrackerWorkCompletedAtTool,
       Mcp::SetProjectTrackerRoleAssigneeTool,

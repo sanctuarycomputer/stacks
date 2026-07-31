@@ -426,4 +426,34 @@ class Mcp::ProvisioningToolsTest < ActiveSupport::TestCase
     r2 = Mcp::SetProjectTrackerRoleAssigneeTool.call(project_tracker_id: tracker.id, role: "cto", admin_user_email: "x@example.com", server_context: {})
     assert_match(/role must be/i, payload(r2)["error"])
   end
+
+  # ---- manage_recurring_assignment ----------------------------------------
+  def make_recurring(person_fid: 555, project_fid: 777)
+    RecurringAssignment.create!(forecast_person_id: person_fid, forecast_project_id: project_fid,
+                                allocation: 8 * 3600, weekdays: [1, 2, 3, 4, 5], starts_on: Date.today)
+  end
+
+  test "manage_recurring_assignment pauses and resumes" do
+    ra = make_recurring
+    paused = Mcp::ManageRecurringAssignmentTool.call(recurring_assignment_id: ra.id, action: "pause", server_context: {})
+    assert_not_nil payload(paused)["after"]["paused_at"]
+    assert_not_nil ra.reload.paused_at
+    resumed = Mcp::ManageRecurringAssignmentTool.call(recurring_assignment_id: ra.id, action: "resume", server_context: {})
+    assert_nil payload(resumed)["after"]["paused_at"]
+    assert_nil ra.reload.paused_at
+  end
+
+  test "manage_recurring_assignment destroy removes the rule and does NOT delete Forecast assignments" do
+    ra = make_recurring
+    Stacks::Forecast.any_instance.expects(:delete_assignment).never
+    resp = Mcp::ManageRecurringAssignmentTool.call(recurring_assignment_id: ra.id, action: "destroy", server_context: {})
+    assert_equal false, payload(resp)["after"]["exists"]
+    assert_nil RecurringAssignment.find_by(id: ra.id)
+  end
+
+  test "manage_recurring_assignment rejects a bad action and a missing id" do
+    ra = make_recurring
+    assert_match(/action must be/i, payload(Mcp::ManageRecurringAssignmentTool.call(recurring_assignment_id: ra.id, action: "frobnicate", server_context: {}))["error"])
+    assert_match(/not found/i, payload(Mcp::ManageRecurringAssignmentTool.call(recurring_assignment_id: 999999, action: "pause", server_context: {}))["error"])
+  end
 end
