@@ -23,6 +23,7 @@ module Mcp
       Mcp::GetStudioHealthTool,
       Mcp::GetResourcingProjectionsTool,
       Mcp::FindContributorTool,
+      Mcp::ListProjectTrackersTool,
     ].freeze
 
     def self.build
