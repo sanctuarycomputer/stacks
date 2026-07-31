@@ -20,6 +20,7 @@ module Mcp
       Mcp::CreatePlaceholderTool,
       Mcp::EnsureProjectTrackerTool,
       Mcp::EnsureWorkstreamTool,
+      Mcp::CreateRecurringAssignmentTool,
     ].freeze
 
     def self.build

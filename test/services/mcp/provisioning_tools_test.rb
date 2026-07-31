@@ -186,4 +186,62 @@ class Mcp::ProvisioningToolsTest < ActiveSupport::TestCase
       project_tracker_id: 999_999, name: "Q", code: "QUAL", rate: "450p/h", server_context: {})
     assert_match(/not found/i, payload(resp)["error"])
   end
+
+  # ---- create_recurring_assignment ----------------------------------------
+  test "create_recurring_assignment creates a rule with defaults (8h/Mon-Fri/today)" do
+    c, fp = make_contributor(email: "hugh@sanctuary.computer")
+    _t, ws, _proj, _cl = make_tracker_with_workstream(
+      tracker_name: "Qualitate", client_name: "Q Inc", code: "QUAL")
+
+    resp = Mcp::CreateRecurringAssignmentTool.call(
+      contributor_id: c.id, workstream_id: ws.id, server_context: {})
+    body = payload(resp)
+    assert_equal true, body["created"]
+    ra = RecurringAssignment.find(body["after"]["id"])
+    assert_equal fp.forecast_id, ra.forecast_person_id
+    assert_equal ws.forecast_project_id, ra.forecast_project_id
+    assert_equal [1, 2, 3, 4, 5], ra.weekdays
+    assert_equal 8.0, ra.allocation_in_hours
+    assert_equal Date.today, ra.starts_on
+  end
+
+  test "create_recurring_assignment honors weekly cadence and overrides" do
+    c, _fp = make_contributor(email: "hugh@sanctuary.computer")
+    _t, ws, _proj, _cl = make_tracker_with_workstream(
+      tracker_name: "Qualitate", client_name: "Q Inc", code: "QUAL")
+
+    resp = Mcp::CreateRecurringAssignmentTool.call(
+      contributor_id: c.id, workstream_id: ws.id, weekdays: [1], allocation_hours: 4,
+      starts_on: "2026-08-03", server_context: {})
+    ra = RecurringAssignment.find(payload(resp)["after"]["id"])
+    assert_equal [1], ra.weekdays
+    assert_equal 4.0, ra.allocation_in_hours
+    assert_equal Date.new(2026, 8, 3), ra.starts_on
+  end
+
+  test "create_recurring_assignment returns the existing active rule instead of duplicating" do
+    c, fp = make_contributor(email: "hugh@sanctuary.computer")
+    _t, ws, _proj, _cl = make_tracker_with_workstream(
+      tracker_name: "Qualitate", client_name: "Q Inc", code: "QUAL")
+    existing = RecurringAssignment.create!(
+      forecast_person_id: fp.forecast_id, forecast_project_id: ws.forecast_project_id,
+      allocation: 8 * 3600, weekdays: [1, 2, 3, 4, 5], starts_on: Date.today)
+
+    assert_no_difference -> { RecurringAssignment.count } do
+      resp = Mcp::CreateRecurringAssignmentTool.call(
+        contributor_id: c.id, workstream_id: ws.id, server_context: {})
+      body = payload(resp)
+      assert_equal false, body["created"]
+      assert_equal existing.id, body["after"]["id"]
+    end
+  end
+
+  test "create_recurring_assignment rejects an empty or out-of-range weekdays list" do
+    c, _fp = make_contributor(email: "hugh@sanctuary.computer")
+    _t, ws, _proj, _cl = make_tracker_with_workstream(
+      tracker_name: "Qualitate", client_name: "Q Inc", code: "QUAL")
+    resp = Mcp::CreateRecurringAssignmentTool.call(
+      contributor_id: c.id, workstream_id: ws.id, weekdays: [9], server_context: {})
+    assert_match(/weekdays/i, payload(resp)["error"])
+  end
 end
