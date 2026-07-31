@@ -264,6 +264,50 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
     assert_equal "error", result["status"]
   end
 
+  test "POST adopt splits one human assignment into N owned segments" do
+    snapshot = { "id" => 9001, "personId" => 10, "projectId" => 91_100, "roleId" => 7,
+      "startDate" => "2030-01-01", "endDate" => "2030-12-31", "minutesPerDay" => 480, "note" => "hand-authored" }
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns([snapshot])
+    Stacks::Runn.any_instance.stubs(:get_people).returns(people_stub(10))
+    Stacks::Runn.any_instance.expects(:create_assignment).twice.returns({ "id" => 9101 }, { "id" => 9102 })
+    Stacks::Runn.any_instance.expects(:delete_assignment).once.with(9001).returns({})
+    segments = [
+      body(start_date: "2030-01-01", end_date: "2030-08-31").merge(source_key: "adopt:seg:1"),
+      body(start_date: "2030-10-01", end_date: "2030-12-31").merge(source_key: "adopt:seg:2"),
+    ]
+    post "/api/v1/projected_assignments/adopt",
+      headers: auth_headers, params: { adopt_expected: snapshot, segments: segments }.to_json
+    assert_response :success
+    json = JSON.parse(response.body)
+    assert_equal 2, json["results"].size
+    results = json["results"].index_by { |r| r["source_key"] }
+    assert_equal "applied", results["adopt:seg:1"]["status"]
+    assert_equal "applied", results["adopt:seg:2"]["status"]
+    assert_equal 9101, ProjectedAssignment.find_by(source_key: "adopt:seg:1").runn_assignment_id
+    assert_equal 9102, ProjectedAssignment.find_by(source_key: "adopt:seg:2").runn_assignment_id
+  end
+
+  test "POST adopt with all-invalid segments returns 422, per-segment errors, and writes nothing" do
+    snapshot = { "id" => 9001, "personId" => 10, "projectId" => 91_100, "roleId" => 7,
+      "startDate" => "2030-01-01", "endDate" => "2030-12-31", "minutesPerDay" => 480, "note" => "hand-authored" }
+    Stacks::Runn.any_instance.expects(:create_assignment).never
+    Stacks::Runn.any_instance.expects(:delete_assignment).never
+    segments = [
+      body(minutes_per_day: 9999).merge(source_key: "adopt:bad:1"),
+      body(end_date: "2020-01-01").merge(source_key: "adopt:bad:2"), # end before start
+    ]
+    post "/api/v1/projected_assignments/adopt",
+      headers: auth_headers, params: { adopt_expected: snapshot, segments: segments }.to_json
+    assert_response :unprocessable_entity
+    json = JSON.parse(response.body)
+    results = json["results"].index_by { |r| r["source_key"] }
+    assert_equal "invalid", results["adopt:bad:1"]["status"]
+    assert_equal "invalid", results["adopt:bad:2"]["status"]
+    assert results["adopt:bad:1"]["errors"].present?
+    assert_nil ProjectedAssignment.find_by(source_key: "adopt:bad:1")
+    assert_nil ProjectedAssignment.find_by(source_key: "adopt:bad:2")
+  end
+
   test "POST batch marks remaining items deferred when WriteGuard cap is hit" do
     store = ActiveSupport::Cache::MemoryStore.new
     Rails.stubs(:cache).returns(store)

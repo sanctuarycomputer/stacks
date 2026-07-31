@@ -50,6 +50,37 @@ class Api::V1::ProjectedAssignmentsController < ApiController
     render json: { results: results }, status: :ok
   end
 
+  # Atomic N-way split: replaces ONE human-authored Runn assignment with N
+  # stacksbot-owned rows via WriteThrough#adopt_into (see that method for the
+  # rollback ordering). Segments are upserted by source_key like upsert/batch,
+  # but validated as a whole BEFORE anything is saved or written to Runn —
+  # any invalid segment aborts the entire request with no side effects.
+  def adopt
+    adopt_expected = params[:adopt_expected]&.permit!&.to_h
+    rows = Array(params[:segments]).map do |seg|
+      permitted = seg.permit(:source_key, *ATTRS)
+      r = ProjectedAssignment.find_or_initialize_by(source_key: permitted[:source_key])
+      r.assign_attributes(permitted.except(:source_key).to_h.symbolize_keys)
+      r
+    end
+    invalid = rows.reject(&:valid?)
+    if invalid.any?
+      return render json: { results: invalid.map { |r| { status: "invalid", source_key: r.source_key, errors: r.errors.full_messages } } },
+        status: :unprocessable_entity
+    end
+
+    rows.each(&:save!)
+    results = write_through.adopt_into(rows: rows, adopt_expected: adopt_expected, preview: preview?)
+    render json: { results: rows.zip(results).map { |r, res|
+      { status: res.status.to_s, source_key: r.source_key, before: res.before,
+        after: res.after, runn_assignment_id: res.runn_assignment_id, conflict: res.conflict }.compact
+    } }, status: :ok
+  rescue Mcp::WriteGuard::CapExceeded => e
+    render json: { status: "error", error: e.message }, status: :unprocessable_entity
+  rescue Resourcing::WriteThrough::UnresolvedContributor, Resourcing::WriteThrough::UnresolvableRole => e
+    render json: { status: "error", error: e.message }, status: :unprocessable_entity
+  end
+
   private
 
   # Applies a single upsert. Returns a Hash whose :status is a String
