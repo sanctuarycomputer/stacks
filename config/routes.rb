@@ -22,6 +22,7 @@ Rails.application.routes.draw do
     post   "forecast_projects/:forecast_id/rates",       to: "forecast_projects#add_rate"
     delete "forecast_projects/:forecast_id/rates/:rate", to: "forecast_projects#remove_rate"
     resources :project_trackers, only: [:create]
+    resources :recurring_assignments, only: [:create]
 
     namespace :v1 do
       post "projected_assignments/batch", to: "projected_assignments#batch", defaults: { format: :json }
