@@ -83,6 +83,28 @@ class ProjectTracker < ApplicationRecord
     project_capsule.present? && project_capsule.complete?
   end
 
+  ROLE_PERIOD_ASSOCIATIONS = { "account_lead" => :account_lead_periods, "project_lead" => :project_lead_periods }.freeze
+
+  # Assign a lead role via a full-month, non-overlapping period. Ends the current open
+  # period at the end of the prior month and starts a new one at `starts_on` (first of a
+  # month). No-op if `admin_user` is already the open lead. Raises on a same-month swap.
+  def set_role_assignee!(role:, admin_user:, starts_on: Date.today.beginning_of_month)
+    assoc = ROLE_PERIOD_ASSOCIATIONS[role.to_s]
+    raise ArgumentError, "role must be one of #{ROLE_PERIOD_ASSOCIATIONS.keys.join(', ')}" if assoc.nil?
+    raise ArgumentError, "starts_on must be the first day of a month" unless starts_on == starts_on.beginning_of_month
+
+    periods = public_send(assoc)
+    current = periods.detect { |p| p.ended_at.nil? }
+    return current if current&.admin_user_id == admin_user.id
+
+    raise ArgumentError, "a #{role} already starts this month; resolve same-month lead changes in the admin UI" if current&.started_at && current.started_at >= starts_on
+
+    transaction do
+      current&.update!(ended_at: starts_on.prev_day)
+      periods.create!(admin_user: admin_user, started_at: starts_on, ended_at: nil)
+    end
+  end
+
   def self.provision!(name:, msa_url: nil, sow_url: nil, budget_low_end: nil, budget_high_end: nil)
     warnings = []
     # Array#<< returns the (truthy) array, so `&&` short-circuits into the placeholder URL
@@ -127,6 +149,31 @@ class ProjectTracker < ApplicationRecord
     tags = rate.present? ? [Stacks::Forecast.rate_tag(rate)] : []
     project = forecast_client.create_project(client_id: client.forecast_id, name: name, code: code, tags: tags)
     transaction { project_tracker_forecast_projects.create!(forecast_project_id: project["id"]) }
+  end
+
+  def update_details!(name: nil, budget_low_end: nil, budget_high_end: nil, msa_url: nil, sow_url: nil)
+    self.name = name if name.present?
+    self.budget_low_end = budget_low_end unless budget_low_end.nil?
+    self.budget_high_end = budget_high_end unless budget_high_end.nil?
+    upsert_link!(:msa, "MSA", msa_url) unless msa_url.nil?
+    upsert_link!(:sow, "SOW", sow_url) unless sow_url.nil?
+    save!
+    self
+  end
+
+  def mark_work_completed!(at:)
+    # validate: false — work_completed_at has no validations of its own, and this action must
+    # not be blocked by unrelated model validations (e.g. has_msa_and_sow_links) on trackers
+    # that haven't had their MSA/SOW links set up yet.
+    self.work_completed_at = at
+    save!(validate: false)
+    self
+  end
+
+  private def upsert_link!(type, label, url)
+    link = project_tracker_links.find { |l| l.link_type == type.to_s } ||
+           project_tracker_links.build(name: label, link_type: type)
+    link.url = url
   end
 
   def self.capsule_pending

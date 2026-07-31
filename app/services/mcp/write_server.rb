@@ -19,8 +19,13 @@ module Mcp
       Mcp::ArchiveProjectTool,
       Mcp::CreatePlaceholderTool,
       Mcp::EnsureProjectTrackerTool,
+      Mcp::UpdateProjectTrackerTool,
       Mcp::EnsureWorkstreamTool,
       Mcp::CreateRecurringAssignmentTool,
+      Mcp::ManageRecurringAssignmentTool,
+      Mcp::RemoveWorkstreamRateTool,
+      Mcp::SetProjectTrackerWorkCompletedAtTool,
+      Mcp::SetProjectTrackerRoleAssigneeTool,
     ].freeze
 
     def self.build

@@ -4,6 +4,8 @@ class McpWriteEndpointTest < ActionDispatch::IntegrationTest
   WRITE_TOOLS = %w[
     archive_project create_assignment create_placeholder create_recurring_assignment
     create_tentative_project delete_assignment ensure_project_tracker ensure_workstream
+    manage_recurring_assignment remove_workstream_rate set_project_tracker_role_assignee
+    set_project_tracker_work_completed_at update_project_tracker
   ].freeze
 
   MCP_HEADERS = {
@@ -182,5 +184,13 @@ class McpWriteEndpointTest < ActionDispatch::IntegrationTest
     # second call finds the now-existing tracker; provision! is NOT called again
     found = call_tool("ensure_project_tracker", { "name" => "Endpoint Co" })
     assert_equal false, found["created"]
+  end
+
+  test "update_project_tracker over the write endpoint replaces a link" do
+    tracker = ProjectTracker.new(name: "Endpoint Admin Co").tap { |t| t.save!(validate: false) }
+    tracker.project_tracker_links.create!(name: "MSA", url: "https://old/msa", link_type: :msa)
+    tracker.project_tracker_links.create!(name: "SOW", url: "https://old/sow", link_type: :sow)
+    out = call_tool("update_project_tracker", { "project_tracker_id" => tracker.id, "msa_url" => "https://new/msa" })
+    assert_equal "https://new/msa", out["after"]["msa_url"]
   end
 end

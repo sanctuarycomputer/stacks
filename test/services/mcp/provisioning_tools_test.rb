@@ -75,6 +75,27 @@ class Mcp::ProvisioningToolsTest < ActiveSupport::TestCase
     assert_equal [keep.id], payload(resp).map { |t| t["id"] }
   end
 
+  # ---- tracker_json enrichment (via list_project_trackers) ------------------
+  test "list_project_trackers surfaces budgets, completion, links, and leads" do
+    tracker, _ws, _fp, _c = make_tracker_with_workstream(
+      tracker_name: "Qualitate", client_name: "Q Inc", code: "QUAL", rate_tags: ["450p/h"])
+    tracker.update_columns(budget_low_end: 1000, budget_high_end: 2000, work_completed_at: nil)
+    tracker.project_tracker_links.create!(name: "MSA", url: "https://x.test/msa", link_type: :msa)
+    tracker.project_tracker_links.create!(name: "SOW", url: "https://x.test/sow", link_type: :sow)
+    admin = make_admin(email: "acct@sanctuary.computer")
+    tracker.account_lead_periods.create!(admin_user: admin, started_at: Date.today.beginning_of_month, ended_at: nil)
+
+    row = payload(Mcp::ListProjectTrackersTool.call(name: "qualitate", server_context: {})).first
+    assert_equal 1000, row["budget_low_end"]
+    assert_equal 2000, row["budget_high_end"]
+    assert_equal false, row["completed"]
+    assert_nil row["work_completed_at"]
+    assert_equal "https://x.test/msa", row["msa_url"]
+    assert_equal "https://x.test/sow", row["sow_url"]
+    assert_equal "acct@sanctuary.computer", row["account_lead"]["email"]
+    assert_nil row["project_lead"]
+  end
+
   # ---- ensure_project_tracker ---------------------------------------------
   test "ensure_project_tracker creates a bare tracker when none exists" do
     # Deliberately unpersisted: this stands in for provision!'s return value only. If it were
@@ -259,5 +280,167 @@ class Mcp::ProvisioningToolsTest < ActiveSupport::TestCase
     resp = Mcp::CreateRecurringAssignmentTool.call(
       contributor_id: c.id, workstream_id: ws.id, weekdays: [9], server_context: {})
     assert_match(/weekdays/i, payload(resp)["error"])
+  end
+
+  def make_admin(email:)
+    AdminUser.create!(email: email, password: "password123", password_confirmation: "password123", roles: ["admin"])
+  end
+
+  # ---- update_project_tracker ---------------------------------------------
+  test "update_project_tracker replaces the MSA link and updates budgets" do
+    tracker, _ws, _fp, _c = make_tracker_with_workstream(tracker_name: "Qualitate", client_name: "Q Inc", code: "QUAL")
+    tracker.project_tracker_links.create!(name: "MSA", url: "https://old.test/msa", link_type: :msa)
+    tracker.project_tracker_links.create!(name: "SOW", url: "https://old.test/sow", link_type: :sow)
+
+    resp = Mcp::UpdateProjectTrackerTool.call(
+      project_tracker_id: tracker.id, msa_url: "https://new.test/msa",
+      budget_low_end: 500, budget_high_end: 900, server_context: {})
+    after = payload(resp)["after"]
+    assert_equal "https://new.test/msa", after["msa_url"]
+    assert_equal 500, after["budget_low_end"]
+    assert_equal 900, after["budget_high_end"]
+    assert_equal "https://old.test/sow", after["sow_url"], "unspecified fields unchanged"
+  end
+
+  test "update_project_tracker builds an SOW link when none exists" do
+    # has_msa_and_sow_links requires BOTH link types to exist before save! will succeed, so an
+    # MSA link is seeded here (deviating from the brief's fully-bare fixture) — otherwise the
+    # tool's save! would raise on the missing MSA before we ever get to assert on the built SOW.
+    tracker = ProjectTracker.new(name: "Bare").tap { |t| t.save!(validate: false) }
+    tracker.project_tracker_links.create!(name: "MSA", url: "https://x.test/msa", link_type: :msa)
+    resp = Mcp::UpdateProjectTrackerTool.call(project_tracker_id: tracker.id, sow_url: "https://x.test/sow", server_context: {})
+    assert_equal "https://x.test/sow", payload(resp)["after"]["sow_url"]
+  end
+
+  test "update_project_tracker surfaces budget validation" do
+    tracker, = make_tracker_with_workstream(tracker_name: "Q", client_name: "Q Inc", code: "QUAL")
+    tracker.project_tracker_links.create!(name: "MSA", url: "https://x/msa", link_type: :msa)
+    tracker.project_tracker_links.create!(name: "SOW", url: "https://x/sow", link_type: :sow)
+    resp = Mcp::UpdateProjectTrackerTool.call(project_tracker_id: tracker.id, budget_low_end: 900, budget_high_end: 100, server_context: {})
+    assert_match(/budget/i, payload(resp)["error"])
+  end
+
+  # ---- remove_workstream_rate ---------------------------------------------
+  test "remove_workstream_rate removes a present rate" do
+    _t, ws, fp, _c = make_tracker_with_workstream(tracker_name: "Q", client_name: "Q Inc", code: "QUAL", rate_tags: ["450p/h", "300p/h"])
+    Stacks::Forecast.any_instance.expects(:remove_project_rate!).with(fp.forecast_id, "450p/h").returns(true)
+    resp = Mcp::RemoveWorkstreamRateTool.call(workstream_id: ws.id, rate: "450p/h", server_context: {})
+    assert_equal true, payload(resp)["removed"]
+  end
+
+  test "remove_workstream_rate is a no-op when the rate is absent (no cap, no API)" do
+    _t, ws, _fp, _c = make_tracker_with_workstream(tracker_name: "Q", client_name: "Q Inc", code: "QUAL", rate_tags: ["300p/h"])
+    Stacks::Forecast.any_instance.expects(:remove_project_rate!).never
+    Mcp::WriteGuard.expects(:check!).never
+    resp = Mcp::RemoveWorkstreamRateTool.call(workstream_id: ws.id, rate: "450p/h", server_context: {})
+    assert_equal false, payload(resp)["removed"]
+  end
+
+  test "remove_workstream_rate reports a missing workstream" do
+    resp = Mcp::RemoveWorkstreamRateTool.call(workstream_id: 999999, rate: "450p/h", server_context: {})
+    assert_match(/not found/i, payload(resp)["error"])
+  end
+
+  # ---- set_project_tracker_work_completed_at ------------------------------
+  test "work_completed_at defaults to today when omitted, and unmarks on null" do
+    tracker = ProjectTracker.new(name: "Done Co").tap { |t| t.save!(validate: false) }
+    mark = Mcp::SetProjectTrackerWorkCompletedAtTool.call(project_tracker_id: tracker.id, server_context: {})
+    assert_equal true, payload(mark)["after"]["completed"]
+    assert_equal Date.today.to_s, tracker.reload.work_completed_at.to_date.to_s
+
+    unmark = Mcp::SetProjectTrackerWorkCompletedAtTool.call(project_tracker_id: tracker.id, completed_at: nil, server_context: {})
+    assert_equal false, payload(unmark)["after"]["completed"]
+    assert_nil tracker.reload.work_completed_at
+  end
+
+  test "work_completed_at accepts an explicit date" do
+    tracker = ProjectTracker.new(name: "Back Co").tap { |t| t.save!(validate: false) }
+    Mcp::SetProjectTrackerWorkCompletedAtTool.call(project_tracker_id: tracker.id, completed_at: "2026-06-30", server_context: {})
+    assert_equal "2026-06-30", tracker.reload.work_completed_at.to_date.to_s
+  end
+
+  # ---- set_project_tracker_role_assignee ----------------------------------
+  test "role assignee: first-time set creates a period for the right role" do
+    tracker = ProjectTracker.new(name: "Lead Co").tap { |t| t.save!(validate: false) }
+    admin = make_admin(email: "acct@sanctuary.computer")
+    resp = Mcp::SetProjectTrackerRoleAssigneeTool.call(
+      project_tracker_id: tracker.id, role: "account_lead", admin_user_email: "acct@sanctuary.computer", server_context: {})
+    assert_equal "acct@sanctuary.computer", payload(resp)["after"]["assignee"]["email"]
+    assert_equal admin.id, tracker.account_lead_periods.where(ended_at: nil).first.admin_user_id
+    assert_empty tracker.project_lead_periods
+  end
+
+  test "role assignee: reassign across months ends the prior period at end of prior month" do
+    tracker = ProjectTracker.new(name: "Lead Co").tap { |t| t.save!(validate: false) }
+    old = make_admin(email: "old@sanctuary.computer")
+    new = make_admin(email: "new@sanctuary.computer")
+    tracker.account_lead_periods.create!(admin_user: old, started_at: (Date.today.beginning_of_month - 1.month), ended_at: nil)
+
+    Mcp::SetProjectTrackerRoleAssigneeTool.call(
+      project_tracker_id: tracker.id, role: "account_lead", admin_user_email: "new@sanctuary.computer", server_context: {})
+    prior = tracker.account_lead_periods.find_by(admin_user: old)
+    assert_equal (Date.today.beginning_of_month - 1.day), prior.ended_at
+    assert_equal new.id, tracker.account_lead_periods.where(ended_at: nil).first.admin_user_id
+  end
+
+  test "role assignee: no-op when already the current lead (no cap)" do
+    tracker = ProjectTracker.new(name: "Lead Co").tap { |t| t.save!(validate: false) }
+    admin = make_admin(email: "acct@sanctuary.computer")
+    tracker.account_lead_periods.create!(admin_user: admin, started_at: Date.today.beginning_of_month, ended_at: nil)
+    Mcp::WriteGuard.expects(:check!).never
+    resp = Mcp::SetProjectTrackerRoleAssigneeTool.call(
+      project_tracker_id: tracker.id, role: "account_lead", admin_user_email: "acct@sanctuary.computer", server_context: {})
+    assert_equal "acct@sanctuary.computer", payload(resp)["after"]["assignee"]["email"]
+    assert_equal 1, tracker.account_lead_periods.count
+  end
+
+  test "role assignee: same-month swap raises a clear error" do
+    tracker = ProjectTracker.new(name: "Lead Co").tap { |t| t.save!(validate: false) }
+    a = make_admin(email: "a@sanctuary.computer")
+    make_admin(email: "b@sanctuary.computer")
+    tracker.account_lead_periods.create!(admin_user: a, started_at: Date.today.beginning_of_month, ended_at: nil)
+    resp = Mcp::SetProjectTrackerRoleAssigneeTool.call(
+      project_tracker_id: tracker.id, role: "account_lead", admin_user_email: "b@sanctuary.computer", server_context: {})
+    assert_match(/same-month|admin UI/i, payload(resp)["error"])
+    assert_equal 1, tracker.account_lead_periods.count
+    assert_nil tracker.account_lead_periods.first.reload.ended_at
+  end
+
+  test "role assignee: unknown admin email and bad role are surfaced" do
+    tracker = ProjectTracker.new(name: "Lead Co").tap { |t| t.save!(validate: false) }
+    r1 = Mcp::SetProjectTrackerRoleAssigneeTool.call(project_tracker_id: tracker.id, role: "account_lead", admin_user_email: "nobody@example.com", server_context: {})
+    assert_match(/admin.*not found/i, payload(r1)["error"])
+    r2 = Mcp::SetProjectTrackerRoleAssigneeTool.call(project_tracker_id: tracker.id, role: "cto", admin_user_email: "x@example.com", server_context: {})
+    assert_match(/role must be/i, payload(r2)["error"])
+  end
+
+  # ---- manage_recurring_assignment ----------------------------------------
+  def make_recurring(person_fid: 555, project_fid: 777)
+    RecurringAssignment.create!(forecast_person_id: person_fid, forecast_project_id: project_fid,
+                                allocation: 8 * 3600, weekdays: [1, 2, 3, 4, 5], starts_on: Date.today)
+  end
+
+  test "manage_recurring_assignment pauses and resumes" do
+    ra = make_recurring
+    paused = Mcp::ManageRecurringAssignmentTool.call(recurring_assignment_id: ra.id, action: "pause", server_context: {})
+    assert_not_nil payload(paused)["after"]["paused_at"]
+    assert_not_nil ra.reload.paused_at
+    resumed = Mcp::ManageRecurringAssignmentTool.call(recurring_assignment_id: ra.id, action: "resume", server_context: {})
+    assert_nil payload(resumed)["after"]["paused_at"]
+    assert_nil ra.reload.paused_at
+  end
+
+  test "manage_recurring_assignment destroy removes the rule and does NOT delete Forecast assignments" do
+    ra = make_recurring
+    Stacks::Forecast.any_instance.expects(:delete_assignment).never
+    resp = Mcp::ManageRecurringAssignmentTool.call(recurring_assignment_id: ra.id, action: "destroy", server_context: {})
+    assert_equal false, payload(resp)["after"]["exists"]
+    assert_nil RecurringAssignment.find_by(id: ra.id)
+  end
+
+  test "manage_recurring_assignment rejects a bad action and a missing id" do
+    ra = make_recurring
+    assert_match(/action must be/i, payload(Mcp::ManageRecurringAssignmentTool.call(recurring_assignment_id: ra.id, action: "frobnicate", server_context: {}))["error"])
+    assert_match(/not found/i, payload(Mcp::ManageRecurringAssignmentTool.call(recurring_assignment_id: 999999, action: "pause", server_context: {}))["error"])
   end
 end
