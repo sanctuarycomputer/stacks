@@ -332,4 +332,25 @@ class Mcp::ProvisioningToolsTest < ActiveSupport::TestCase
     resp = Mcp::UpdateProjectTrackerTool.call(project_tracker_id: tracker.id, budget_low_end: 900, budget_high_end: 100, server_context: {})
     assert_match(/budget/i, payload(resp)["error"])
   end
+
+  # ---- remove_workstream_rate ---------------------------------------------
+  test "remove_workstream_rate removes a present rate" do
+    _t, ws, fp, _c = make_tracker_with_workstream(tracker_name: "Q", client_name: "Q Inc", code: "QUAL", rate_tags: ["450p/h", "300p/h"])
+    Stacks::Forecast.any_instance.expects(:remove_project_rate!).with(fp.forecast_id, "450p/h").returns(true)
+    resp = Mcp::RemoveWorkstreamRateTool.call(workstream_id: ws.id, rate: "450p/h", server_context: {})
+    assert_equal true, payload(resp)["removed"]
+  end
+
+  test "remove_workstream_rate is a no-op when the rate is absent (no cap, no API)" do
+    _t, ws, _fp, _c = make_tracker_with_workstream(tracker_name: "Q", client_name: "Q Inc", code: "QUAL", rate_tags: ["300p/h"])
+    Stacks::Forecast.any_instance.expects(:remove_project_rate!).never
+    Mcp::WriteGuard.expects(:check!).never
+    resp = Mcp::RemoveWorkstreamRateTool.call(workstream_id: ws.id, rate: "450p/h", server_context: {})
+    assert_equal false, payload(resp)["removed"]
+  end
+
+  test "remove_workstream_rate reports a missing workstream" do
+    resp = Mcp::RemoveWorkstreamRateTool.call(workstream_id: 999999, rate: "450p/h", server_context: {})
+    assert_match(/not found/i, payload(resp)["error"])
+  end
 end
