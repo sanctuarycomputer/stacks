@@ -44,7 +44,7 @@ class SurveyTest < ActiveSupport::TestCase
 
     # Qualify via the HOURS path (avoids the payout/ledger/qbo fixture chain):
     # one assignment spanning 3 of the 6 window months, 8h/day => ~240h each >= 120,
-    # so 3 of 6 months are elevated (meets the >= 3 bar).
+    # so 3 of 6 months are elevated (meets the >= 1 bar).
     project = ForecastProject.new(forecast_id: 77_601, name: "Client Work", client_id: 123_456)
     project.save!(validate: false)
     fa = ForecastAssignment.new(

@@ -48,7 +48,7 @@ class Survey < ApplicationRecord
     ref = reference_date.beginning_of_month
     # The trailing 6 completed months before reference_date. A contributor counts as
     # "elevated" if they met the threshold in at least
-    # Contributor::ELEVATED_SERVICE_MIN_QUALIFYING_MONTHS (3) of these.
+    # Contributor::ELEVATED_SERVICE_MIN_QUALIFYING_MONTHS (1) of these.
     # NOTE: Stacks::Period.for_gradation excludes the month CONTAINING `through`
     # (it stops at through.last_month.end_of_month), so passing `ref` (first of the
     # current month) yields exactly the 6 completed months before it.
