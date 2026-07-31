@@ -6,7 +6,8 @@ class Api::V1::ProjectedAssignmentsController < ApiController
              minutes_per_day note managed_by].freeze
 
   def upsert
-    result = apply_one(params.permit(:source_key, *ATTRS))
+    adopt = params[:adopt_expected]&.permit!&.to_h  # the human snapshot, if this is an adopt
+    result = apply_one(params.permit(:source_key, *ATTRS), adopt: adopt)
     render json: result, status: http_status(result[:status])
   rescue Mcp::WriteGuard::CapExceeded => e
     render json: { status: "error", error: e.message }, status: :unprocessable_entity
@@ -34,10 +35,11 @@ class Api::V1::ProjectedAssignmentsController < ApiController
     deferred = false
     results = Array(params[:items]).map do |item|
       permitted = item.permit(:source_key, *ATTRS)
+      adopt = item[:adopt_expected]&.permit!&.to_h  # the human snapshot, if this item is an adopt
       next { status: "deferred", source_key: permitted[:source_key] } if deferred
 
       begin
-        apply_one(permitted)
+        apply_one(permitted, adopt: adopt)
       rescue Mcp::WriteGuard::CapExceeded
         deferred = true
         { status: "deferred", source_key: permitted[:source_key] }
@@ -53,7 +55,7 @@ class Api::V1::ProjectedAssignmentsController < ApiController
   # Applies a single upsert. Returns a Hash whose :status is a String
   # ("applied"|"noop"|"conflict"|"preview"|"invalid"). Raises WriteGuard::CapExceeded,
   # UnresolvedContributor, UnresolvableRole.
-  def apply_one(attrs)
+  def apply_one(attrs, adopt: nil)
     source_key = attrs[:source_key]
     row = ProjectedAssignment.find_or_initialize_by(source_key: source_key)
     row.assign_attributes(attrs.except(:source_key).to_h.symbolize_keys)
@@ -62,7 +64,7 @@ class Api::V1::ProjectedAssignmentsController < ApiController
     end
 
     row.save!
-    result = write_through.apply(row, preview: preview?)
+    result = write_through.apply(row, preview: preview?, adopt_expected: adopt)
     { status: result.status.to_s, source_key: source_key, before: result.before,
       after: result.after, runn_assignment_id: result.runn_assignment_id, conflict: result.conflict }.compact
   end

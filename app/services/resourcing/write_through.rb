@@ -17,7 +17,7 @@ module Resourcing
       @runn = runn
     end
 
-    def apply(row, preview: false)
+    def apply(row, preview: false, adopt_expected: nil)
       runn_person_id = resolver.runn_person_id_for(row.contributor)
       if runn_person_id.nil?
         raise UnresolvedContributor,
@@ -25,6 +25,30 @@ module Resourcing
       end
 
       assignments = @runn.get_assignments
+
+      # --- adopt: take over a human-authored assignment on a stated human directive ---
+      if adopt_expected && row.runn_assignment_id.nil?
+        live = assignments.find { |a| a["id"] == adopt_expected["id"] }
+        return conflict(live) if live.nil?                          # target gone → human already changed it
+        # adopt only takes over HUMAN (unmarked) assignments — never one stacksbot
+        # already owns, which would silently orphan the owning row.
+        return conflict(live) if live["note"].to_s.include?("[stacksbot:")
+        # NOTE: same_state? (CAS baseline) intentionally omits `note` from the projected
+        # mirror, so a human note-only edit here isn't caught — acceptable because
+        # `before:` still captures the current note as revert material.
+        return conflict(live) unless same_state?(live, adopt_expected) # target moved since the snapshot
+        role_id = live["roleId"]
+        desired = {
+          "personId" => runn_person_id, "projectId" => row.runn_project_id, "roleId" => role_id,
+          "startDate" => row.start_date.iso8601, "endDate" => row.end_date.iso8601,
+          "minutesPerDay" => row.minutes_per_day,
+        }
+        return Result.new(status: :preview, before: live, after: desired) if preview
+        new_hash = replace!(old_id: live["id"], desired: desired, source_key: row.source_key, note: row.note)
+        row.update!(runn_assignment_id: new_hash["id"], last_synced_runn_state: new_hash)
+        return Result.new(status: :applied, before: live, after: new_hash, runn_assignment_id: new_hash["id"])
+      end
+
       current = row.runn_assignment_id && assignments.find { |a| a["id"] == row.runn_assignment_id }
 
       # CAS + provenance: if we think we own an assignment, it must still be ours & unchanged.
