@@ -1,23 +1,22 @@
 require "test_helper"
 
 class RecurringAssignmentDestroyTest < ActiveSupport::TestCase
-  test "destroying a rule deletes future materialized occurrences from Forecast, not past ones" do
+  test "destroying a rule leaves its Forecast assignments intact (they are historical records)" do
     ra = RecurringAssignment.create!(
       forecast_person_id: 1, forecast_project_id: 2, allocation: 900,
       weekdays: [1], starts_on: Date.today - 30,
     )
-    past   = ra.recurring_assignment_occurrences.create!(occurs_on: Date.today - 7, status: "materialized", forecast_assignment_id: 100)
-    future = ra.recurring_assignment_occurrences.create!(occurs_on: Date.today + 7, status: "materialized", forecast_assignment_id: 200)
-    tomb   = ra.recurring_assignment_occurrences.create!(occurs_on: Date.today + 8, status: "deleted",      forecast_assignment_id: 300)
+    ra.recurring_assignment_occurrences.create!(occurs_on: Date.today - 7, status: "materialized", forecast_assignment_id: 100)
+    ra.recurring_assignment_occurrences.create!(occurs_on: Date.today, status: "materialized", forecast_assignment_id: 200)
 
-    client = Stacks::Forecast.allocate.tap { |c| c.instance_variable_set(:@headers, {}) }
-    Stacks::Forecast.stubs(:new).returns(client)
-    client.expects(:delete_assignment).with(200).once.returns(true)
-    # past (100) and tombstoned (300) must NOT be deleted
-    client.expects(:delete_assignment).with(100).never
-    client.expects(:delete_assignment).with(300).never
+    # Destroy makes NO Forecast API calls — every materialized assignment is a record of
+    # allocation that already happened, so it's left untouched; only tracking rows go.
+    Stacks::Forecast.expects(:new).never
+    Stacks::Forecast.expects(:delete).never
 
     ra.destroy!
-    assert_equal 0, RecurringAssignmentOccurrence.where(recurring_assignment_id: ra.id).count
+
+    assert_equal 0, RecurringAssignmentOccurrence.where(recurring_assignment_id: ra.id).count,
+      "occurrence tracking rows are removed, but the Forecast assignments remain"
   end
 end

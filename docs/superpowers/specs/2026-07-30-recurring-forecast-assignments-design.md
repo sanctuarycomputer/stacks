@@ -128,10 +128,10 @@ No new Heroku Scheduler entry required (rides the existing daily sync → correc
 ## Rule lifecycle
 
 - **Pause** (`paused_at`): rule skipped by `active` scope; existing Forecast assignments left intact.
-- **Destroy:** before destroying the rule, delete **future** (`occurs_on >= Date.today`),
-  non-tombstoned materialized occurrences from Forecast (`delete_assignment`), then destroy
-  occurrences via `dependent: :destroy`. Past occurrences are left in Forecast for historical
-  accuracy. (Flagged decision: future-only cleanup.)
+- **Destroy:** removes the rule and its occurrence tracking rows (`dependent: :destroy`) but
+  **leaves every already-created Forecast assignment intact**. Under retrospect-only
+  materialization each occurrence is a record of allocation that already happened, so it's
+  historical — not ours to erase. Destroying simply stops future materialization.
 
 ## Admin UI (ActiveAdmin — primary internal UI)
 
@@ -175,6 +175,7 @@ per `test/lib/stacks/runn_test.rb`.
 4. **Retrospect-only creation** — occurrences are created only on/before today, never in
    advance. A blank `ends_on` means "never ends" (materializes each day as it arrives); there is
    no forward horizon.
-5. **Destroy deletes future occurrences only** from Forecast; past left intact. (Under
-   retrospect-only this now only ever affects today's occurrence — see open question in PR.)
+5. **Destroy leaves all Forecast assignments intact** — every materialized occurrence is
+   historical allocation; destroying a rule only stops future materialization and drops the
+   local tracking rows.
 6. **Rides `daily_tasks`** (daily cadence) rather than a dedicated scheduler entry.
