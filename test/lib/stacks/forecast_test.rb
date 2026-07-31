@@ -145,28 +145,36 @@ class StacksForecastTest < ActiveSupport::TestCase
     assert_equal "99.75p/h", Stacks::Forecast.rate_tag(99.75)
   end
 
-  test "add_project_rate! appends the tag without clobbering others and is idempotent" do
+  test "add_project_rate! appends the tag without clobbering others, asserting the sent payload" do
     ForecastProject.new(forecast_id: 900, code: "C", name: "N", client_id: 1, tags: ["300p/h"]).save!(validate: false)
     fc = build_forecast_client
-    # update_project is exercised for real against the mirror; stub only the HTTP PUT it calls.
     resp = mock("r"); resp.stubs(:success?).returns(true)
     resp.stubs(:parsed_response).returns({ "project" => { "id" => 900, "tags" => ["300p/h","450p/h"], "code"=>"C","name"=>"N","client_id"=>1 } })
-    Stacks::Forecast.stubs(:put).returns(resp)
+    # Assert the tags array actually SENT to Forecast — this proves the computation, not the stub.
+    Stacks::Forecast.expects(:put).once.with do |path, opts|
+      path == "/projects/900" && JSON.parse(opts[:body])["project"]["tags"] == ["300p/h","450p/h"]
+    end.returns(resp)
 
     fc.add_project_rate!(900, 450)
     assert_equal ["300p/h","450p/h"], ForecastProject.find_by(forecast_id: 900).tags
-
-    # idempotent: adding again sends no new tag / no crash
-    fc.add_project_rate!(900, 450)
-    assert_equal ["300p/h","450p/h"], ForecastProject.find_by(forecast_id: 900).tags.uniq
   end
 
-  test "remove_project_rate! drops just that rate" do
+  test "add_project_rate! is idempotent — no write when the rate is already present" do
+    ForecastProject.new(forecast_id: 902, code: "C", name: "N", client_id: 1, tags: ["450p/h"]).save!(validate: false)
+    fc = build_forecast_client
+    Stacks::Forecast.expects(:put).never   # already present → no HTTP write at all
+    fc.add_project_rate!(902, 450)
+    assert_equal ["450p/h"], ForecastProject.find_by(forecast_id: 902).tags
+  end
+
+  test "remove_project_rate! sends the tags array with only that rate dropped" do
     ForecastProject.new(forecast_id: 901, code: "C", name: "N", client_id: 1, tags: ["300p/h","450p/h"]).save!(validate: false)
     fc = build_forecast_client
     resp = mock("r"); resp.stubs(:success?).returns(true)
     resp.stubs(:parsed_response).returns({ "project" => { "id" => 901, "tags" => ["300p/h"], "code"=>"C","name"=>"N","client_id"=>1 } })
-    Stacks::Forecast.stubs(:put).returns(resp)
+    Stacks::Forecast.expects(:put).once.with do |path, opts|
+      path == "/projects/901" && JSON.parse(opts[:body])["project"]["tags"] == ["300p/h"]
+    end.returns(resp)
 
     fc.remove_project_rate!(901, 450)
     assert_equal ["300p/h"], ForecastProject.find_by(forecast_id: 901).tags
