@@ -46,6 +46,32 @@ class ProjectTrackerWorkstreamTest < ActiveSupport::TestCase
 
   test "raises when the first workstream has no client to resolve" do
     t = tracker
-    assert_raises(ArgumentError) { t.add_workstream!(name: "X", code: "C", forecast_client: Object.new) }
+    assert_raises(ActiveRecord::RecordInvalid) { t.add_workstream!(name: "X", code: "C", forecast_client: Object.new) }
+  end
+
+  test "raises when the code is blank, without calling create_project" do
+    client = ForecastClient.new(forecast_id: 42, name: "Qualitate").tap { |c| c.save!(validate: false) }
+    t = tracker
+    fc = Object.new
+    fc.define_singleton_method(:find_or_create_client!) { |_name| client }
+    fc.define_singleton_method(:create_project) { |**_kwargs| flunk "create_project should not be called when the code is blank" }
+    assert_raises(ActiveRecord::RecordInvalid) do
+      t.add_workstream!(name: "X", code: "", client_name: "Qualitate", forecast_client: fc)
+    end
+  end
+
+  test "raises when the code is already attached to another tracker, without calling create_project" do
+    client = ForecastClient.new(forecast_id: 42, name: "Qualitate").tap { |c| c.save!(validate: false) }
+    tracker_a = tracker
+    ForecastProject.new(forecast_id: 6001, client_id: 42, name: "Existing", code: "DUP-1", tags: []).save!(validate: false)
+    tracker_a.project_tracker_forecast_projects.create!(forecast_project_id: 6001)
+
+    tracker_b = tracker
+    fc = Object.new
+    fc.define_singleton_method(:find_or_create_client!) { |_name| client }
+    fc.define_singleton_method(:create_project) { |**_kwargs| flunk "create_project should not be called for a colliding code" }
+    assert_raises(ActiveRecord::RecordInvalid) do
+      tracker_b.add_workstream!(name: "Y", code: "DUP-1", client_name: "Qualitate", forecast_client: fc)
+    end
   end
 end
