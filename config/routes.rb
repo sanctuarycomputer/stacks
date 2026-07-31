@@ -18,14 +18,16 @@ Rails.application.routes.draw do
     resources :contacts, only: [:create, :index]
     match '/mcp', to: 'mcp#handle', via: [:post, :get, :delete]
     match '/mcp/write', to: 'mcp_write#handle', via: [:post, :get, :delete]
-    resources :forecast_projects, only: [:create]
-    post   "forecast_projects/:forecast_id/rates",       to: "forecast_projects#add_rate"
-    delete "forecast_projects/:forecast_id/rates", to: "forecast_projects#remove_rate"
-    resources :project_trackers, only: [:create]
+    resources :contributors, only: [:index]
+    resources :project_trackers, only: [:index, :create] do
+      resources :workstreams, only: [:create] do
+        member do
+          post   "rates", to: "workstreams#add_rate"
+          delete "rates", to: "workstreams#remove_rate"
+        end
+      end
+    end
     resources :recurring_assignments, only: [:create]
-    get "forecast_clients", to: "forecast_clients#index"
-    get "forecast_clients/:forecast_client_id/forecast_projects", to: "forecast_clients#projects"
-    get "forecast_people", to: "forecast_people#index"
 
     namespace :v1 do
       post "projected_assignments/batch", to: "projected_assignments#batch", defaults: { format: :json }
