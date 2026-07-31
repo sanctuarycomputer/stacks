@@ -75,6 +75,27 @@ class Mcp::ProvisioningToolsTest < ActiveSupport::TestCase
     assert_equal [keep.id], payload(resp).map { |t| t["id"] }
   end
 
+  # ---- tracker_json enrichment (via list_project_trackers) ------------------
+  test "list_project_trackers surfaces budgets, completion, links, and leads" do
+    tracker, _ws, _fp, _c = make_tracker_with_workstream(
+      tracker_name: "Qualitate", client_name: "Q Inc", code: "QUAL", rate_tags: ["450p/h"])
+    tracker.update_columns(budget_low_end: 1000, budget_high_end: 2000, work_completed_at: nil)
+    tracker.project_tracker_links.create!(name: "MSA", url: "https://x.test/msa", link_type: :msa)
+    tracker.project_tracker_links.create!(name: "SOW", url: "https://x.test/sow", link_type: :sow)
+    admin = make_admin(email: "acct@sanctuary.computer")
+    tracker.account_lead_periods.create!(admin_user: admin, started_at: Date.today.beginning_of_month, ended_at: nil)
+
+    row = payload(Mcp::ListProjectTrackersTool.call(name: "qualitate", server_context: {})).first
+    assert_equal 1000, row["budget_low_end"]
+    assert_equal 2000, row["budget_high_end"]
+    assert_equal false, row["completed"]
+    assert_nil row["work_completed_at"]
+    assert_equal "https://x.test/msa", row["msa_url"]
+    assert_equal "https://x.test/sow", row["sow_url"]
+    assert_equal "acct@sanctuary.computer", row["account_lead"]["email"]
+    assert_nil row["project_lead"]
+  end
+
   # ---- ensure_project_tracker ---------------------------------------------
   test "ensure_project_tracker creates a bare tracker when none exists" do
     # Deliberately unpersisted: this stands in for provision!'s return value only. If it were
