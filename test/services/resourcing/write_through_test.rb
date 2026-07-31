@@ -301,4 +301,189 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
     runn.expects(:delete_assignment).never
     assert_equal :noop, service(runn).archive(w).status
   end
+
+  # --- adopt_into: atomic N-way split of one human assignment ---
+
+  test "adopt_into: splits one human assignment into N owned segments (creates first, deletes once)" do
+    tr = tracker
+    c = contributor_for(10)
+    snapshot = human(9001, Date.new(2030, 1, 1), Date.new(2030, 12, 31))
+    r1 = row(tr, Date.new(2030, 1, 1), Date.new(2030, 8, 31), contributor: c, key: "seg:1")
+    r2 = row(tr, Date.new(2030, 10, 1), Date.new(2030, 12, 31), contributor: c, key: "seg:2")
+    runn = mock("runn")
+    runn.stubs(:get_assignments).returns([snapshot])
+    runn.stubs(:get_people).returns(people_stub(10))
+    runn.expects(:create_assignment).twice.returns({ "id" => 9101 }, { "id" => 9102 })
+    runn.expects(:delete_assignment).once.with(9001).returns({})
+    results = service(runn).adopt_into(rows: [r1, r2], adopt_expected: snapshot)
+    assert_equal [:applied, :applied], results.map(&:status)
+    assert_equal 9101, r1.reload.runn_assignment_id
+    assert_equal 9102, r2.reload.runn_assignment_id
+    assert r1.last_synced_runn_state.present?
+    assert r2.last_synced_runn_state.present?
+    assert_equal snapshot, results[0].before
+    assert_equal snapshot, results[1].before
+  end
+
+  test "adopt_into: group CAS conflict (target moved since snapshot) → all segments conflict, no writes" do
+    tr = tracker
+    c = contributor_for(10)
+    snapshot = human(9001, Date.new(2030, 1, 1), Date.new(2030, 12, 31))
+    moved    = human(9001, Date.new(2030, 1, 1), Date.new(2030, 10, 15))
+    r1 = row(tr, Date.new(2030, 1, 1), Date.new(2030, 8, 31), contributor: c, key: "seg:1")
+    r2 = row(tr, Date.new(2030, 10, 1), Date.new(2030, 12, 31), contributor: c, key: "seg:2")
+    runn = mock("runn")
+    runn.stubs(:get_assignments).returns([moved])
+    runn.stubs(:get_people).returns(people_stub(10))
+    runn.expects(:create_assignment).never
+    runn.expects(:delete_assignment).never
+    results = service(runn).adopt_into(rows: [r1, r2], adopt_expected: snapshot)
+    assert_equal [:conflict, :conflict], results.map(&:status)
+  end
+
+  test "adopt_into: target vanished from Runn → all segments conflict, no writes" do
+    tr = tracker
+    c = contributor_for(10)
+    snapshot = human(9001, Date.new(2030, 1, 1), Date.new(2030, 12, 31))
+    r1 = row(tr, Date.new(2030, 1, 1), Date.new(2030, 8, 31), contributor: c, key: "seg:1")
+    r2 = row(tr, Date.new(2030, 10, 1), Date.new(2030, 12, 31), contributor: c, key: "seg:2")
+    runn = mock("runn")
+    runn.stubs(:get_assignments).returns([])
+    runn.stubs(:get_people).returns(people_stub(10))
+    runn.expects(:create_assignment).never
+    runn.expects(:delete_assignment).never
+    results = service(runn).adopt_into(rows: [r1, r2], adopt_expected: snapshot)
+    assert_equal [:conflict, :conflict], results.map(&:status)
+  end
+
+  test "adopt_into: target already stacksbot-owned (marked) → all segments conflict, no writes" do
+    tr = tracker
+    c = contributor_for(10)
+    owned = human(9001, Date.new(2030, 1, 1), Date.new(2030, 12, 31)).merge(
+      "note" => Resourcing::WriteThrough.provenance_marker("some-other-key"))
+    r1 = row(tr, Date.new(2030, 1, 1), Date.new(2030, 8, 31), contributor: c, key: "seg:1")
+    r2 = row(tr, Date.new(2030, 10, 1), Date.new(2030, 12, 31), contributor: c, key: "seg:2")
+    runn = mock("runn")
+    runn.stubs(:get_assignments).returns([owned])
+    runn.stubs(:get_people).returns(people_stub(10))
+    runn.expects(:create_assignment).never
+    runn.expects(:delete_assignment).never
+    results = service(runn).adopt_into(rows: [r1, r2], adopt_expected: owned)
+    assert_equal [:conflict, :conflict], results.map(&:status)
+  end
+
+  test "adopt_into: a segment on a different project than the human → all segments conflict, no writes" do
+    tr = tracker
+    other_tr = tracker(runn_project_id: 91_200)
+    c = contributor_for(10)
+    snapshot = human(9001, Date.new(2030, 1, 1), Date.new(2030, 12, 31)) # project 91_100
+    r1 = row(tr, Date.new(2030, 1, 1), Date.new(2030, 8, 31), contributor: c, key: "seg:1")
+    r2 = row(other_tr, Date.new(2030, 10, 1), Date.new(2030, 12, 31), contributor: c, key: "seg:2")
+    runn = mock("runn")
+    runn.stubs(:get_assignments).returns([snapshot])
+    runn.stubs(:get_people).returns(people_stub(10))
+    runn.expects(:create_assignment).never
+    runn.expects(:delete_assignment).never
+    results = service(runn).adopt_into(rows: [r1, r2], adopt_expected: snapshot)
+    assert_equal [:conflict, :conflict], results.map(&:status)
+  end
+
+  test "adopt_into: create failure rolls back prior creates, leaves the human assignment untouched" do
+    tr = tracker
+    c = contributor_for(10)
+    snapshot = human(9001, Date.new(2030, 1, 1), Date.new(2030, 12, 31))
+    r1 = row(tr, Date.new(2030, 1, 1), Date.new(2030, 8, 31), contributor: c, key: "seg:1")
+    r2 = row(tr, Date.new(2030, 10, 1), Date.new(2030, 12, 31), contributor: c, key: "seg:2")
+    runn = mock("runn")
+    runn.stubs(:get_assignments).returns([snapshot])
+    runn.stubs(:get_people).returns(people_stub(10))
+    seq = sequence("adopt_into")
+    runn.expects(:create_assignment).in_sequence(seq).returns({ "id" => 9101 })
+    runn.expects(:create_assignment).in_sequence(seq).raises(RuntimeError, "runn 500")
+    runn.expects(:delete_assignment).with(9101).once.returns({}) # compensating rollback of the first create
+    runn.expects(:delete_assignment).with(9001).never             # human never touched
+    assert_raises(RuntimeError) { service(runn).adopt_into(rows: [r1, r2], adopt_expected: snapshot) }
+    assert_nil r1.reload.runn_assignment_id
+    assert_nil r2.reload.runn_assignment_id
+  end
+
+  test "adopt_into: final delete failure rolls back ALL creates (total rollback)" do
+    tr = tracker
+    c = contributor_for(10)
+    snapshot = human(9001, Date.new(2030, 1, 1), Date.new(2030, 12, 31))
+    r1 = row(tr, Date.new(2030, 1, 1), Date.new(2030, 8, 31), contributor: c, key: "seg:1")
+    r2 = row(tr, Date.new(2030, 10, 1), Date.new(2030, 12, 31), contributor: c, key: "seg:2")
+    runn = mock("runn")
+    runn.stubs(:get_assignments).returns([snapshot])
+    runn.stubs(:get_people).returns(people_stub(10))
+    runn.expects(:create_assignment).twice.returns({ "id" => 9101 }, { "id" => 9102 })
+    runn.expects(:delete_assignment).with(9001).raises(RuntimeError, "runn 500")
+    runn.expects(:delete_assignment).with(9101).once.returns({})
+    runn.expects(:delete_assignment).with(9102).once.returns({})
+    assert_raises(RuntimeError) { service(runn).adopt_into(rows: [r1, r2], adopt_expected: snapshot) }
+    assert_nil r1.reload.runn_assignment_id
+    assert_nil r2.reload.runn_assignment_id
+  end
+
+  test "adopt_into: an already-owned row re-runs through apply() as a no-op (idempotent re-run)" do
+    tr = tracker
+    c = contributor_for(10)
+    base = live(9101, "seg:1", Date.new(2030, 1, 1), Date.new(2030, 8, 31))
+    r1 = row(tr, Date.new(2030, 1, 1), Date.new(2030, 8, 31), contributor: c, owned_id: 9101, baseline: base, key: "seg:1")
+    runn = mock("runn")
+    runn.stubs(:get_assignments).returns([live(9101, "seg:1", Date.new(2030, 1, 1), Date.new(2030, 8, 31))])
+    runn.stubs(:get_people).returns(people_stub(10))
+    runn.expects(:create_assignment).never
+    runn.expects(:delete_assignment).never
+    results = service(runn).adopt_into(rows: [r1], adopt_expected: { "id" => 9999 })
+    assert_equal [:noop], results.map(&:status)
+  end
+
+  test "adopt_into: resolved person differs from the live assignment's personId → all segments conflict, no writes" do
+    tr = tracker
+    c = contributor_for(11) # resolves to runn person 11 ("Bob")
+    snapshot = human(9001, Date.new(2030, 1, 1), Date.new(2030, 12, 31), person: 10) # live assignment belongs to person 10 ("Alice")
+    r1 = row(tr, Date.new(2030, 1, 1), Date.new(2030, 8, 31), contributor: c, key: "seg:1")
+    r2 = row(tr, Date.new(2030, 10, 1), Date.new(2030, 12, 31), contributor: c, key: "seg:2")
+    runn = mock("runn")
+    runn.stubs(:get_assignments).returns([snapshot])
+    runn.stubs(:get_people).returns(people_stub(11))
+    runn.expects(:create_assignment).never
+    runn.expects(:delete_assignment).never
+    results = service(runn).adopt_into(rows: [r1, r2], adopt_expected: snapshot)
+    assert_equal [:conflict, :conflict], results.map(&:status)
+  end
+
+  test "adopt_into: mixed contributors across segments → all conflict, no writes" do
+    tr = tracker
+    c1 = contributor_for(10)
+    c2 = contributor_for(11)
+    snapshot = human(9001, Date.new(2030, 1, 1), Date.new(2030, 12, 31), person: 10)
+    r1 = row(tr, Date.new(2030, 1, 1), Date.new(2030, 8, 31), contributor: c1, key: "seg:1")
+    r2 = row(tr, Date.new(2030, 10, 1), Date.new(2030, 12, 31), contributor: c2, key: "seg:2")
+    runn = mock("runn")
+    runn.stubs(:get_assignments).returns([snapshot])
+    runn.stubs(:get_people).returns(people_stub(10)) # resolver only resolves fresh.first's contributor (c1 → person 10)
+    runn.expects(:create_assignment).never
+    runn.expects(:delete_assignment).never
+    results = service(runn).adopt_into(rows: [r1, r2], adopt_expected: snapshot)
+    assert_equal [:conflict, :conflict], results.map(&:status)
+  end
+
+  test "adopt_into preview: computes the delta for every segment but writes nothing" do
+    tr = tracker
+    c = contributor_for(10)
+    snapshot = human(9001, Date.new(2030, 1, 1), Date.new(2030, 12, 31))
+    r1 = row(tr, Date.new(2030, 1, 1), Date.new(2030, 8, 31), contributor: c, key: "seg:1")
+    r2 = row(tr, Date.new(2030, 10, 1), Date.new(2030, 12, 31), contributor: c, key: "seg:2")
+    runn = mock("runn")
+    runn.stubs(:get_assignments).returns([snapshot])
+    runn.stubs(:get_people).returns(people_stub(10))
+    runn.expects(:create_assignment).never
+    runn.expects(:delete_assignment).never
+    results = service(runn).adopt_into(rows: [r1, r2], adopt_expected: snapshot, preview: true)
+    assert_equal [:preview, :preview], results.map(&:status)
+    assert_nil r1.reload.runn_assignment_id
+    assert_nil r2.reload.runn_assignment_id
+  end
 end

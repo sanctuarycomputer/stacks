@@ -76,6 +76,40 @@ module Resourcing
       Result.new(status: :applied, before: current, after: new_hash, runn_assignment_id: new_hash["id"])
     end
 
+    # Adopts ONE human-authored Runn assignment into N stacksbot-owned
+    # projected_assignment rows, as a single atomic operation.
+    #
+    # Emitting N independent apply(adopt_expected:) calls for one human is
+    # unsafe: the first adopt deletes the human assignment and creates
+    # segment 1's replacement; every subsequent adopt then finds the target
+    # already gone and conflicts (or, worse, races another human edit into
+    # the gap) — data loss on segments 2..N. adopt_into instead treats the
+    # split as one unit: validate the WHOLE group against the live human
+    # snapshot up front (zero writes if any guard fails), then create every
+    # replacement assignment FIRST, and only once ALL creates have
+    # succeeded delete the original human assignment ONCE. Ordering matters
+    # for the rollback story:
+    #   - a create fails partway through  → roll back every create so far,
+    #     the human assignment is never touched, re-raise.
+    #   - all creates succeed but the single delete fails → roll back EVERY
+    #     created assignment (total rollback), the human assignment survives
+    #     untouched, re-raise.
+    # Either way, a failure anywhere leaves Runn exactly as it was before
+    # the call — never a half-adopted mess with some segments live and
+    # others missing.
+    #
+    # Rows that already own a Runn assignment are routed through the
+    # ordinary apply() path (no adopt) instead of group_adopt — this is
+    # what makes re-running adopt_into after a prior success a no-op rather
+    # than a re-adopt attempt against an already-consumed human assignment.
+    def adopt_into(rows:, adopt_expected:, preview: false)
+      owned, fresh = rows.partition(&:runn_assignment_id)
+      by_key = {}
+      owned.each { |r| by_key[r.source_key] = apply(r, preview: preview) }
+      by_key.merge!(group_adopt(fresh, adopt_expected, preview)) if fresh.any?
+      rows.map { |r| by_key[r.source_key] }
+    end
+
     # DELETE ?archive_runn=true — remove the owned Runn assignment, CAS-guarded.
     # Does NOT mutate/destroy the row — the caller destroys it only on non-conflict.
     def archive(row)
@@ -162,5 +196,78 @@ module Resourcing
     end
 
     def conflict(current) = Result.new(status: :conflict, conflict: current, before: current)
+
+    # The group half of adopt_into: takes the "fresh" (unowned) rows of a
+    # split, validates them as one unit against the live human snapshot,
+    # and either returns an all-conflict Hash (zero writes) or performs the
+    # create-all-then-delete-once sequence. Returns Hash{source_key => Result}.
+    def group_adopt(fresh, adopt_expected, preview)
+      runn_person_id = resolver.runn_person_id_for(fresh.first.contributor)
+      if runn_person_id.nil?
+        raise UnresolvedContributor,
+          "contributor #{fresh.first.contributor_id} has no unique active Runn person (email matched 0 or multiple)"
+      end
+
+      assignments = @runn.get_assignments
+      live = assignments.find { |a| a["id"] == adopt_expected["id"] }
+
+      if live.nil? ||                                          # target gone → human already changed it
+         live["note"].to_s.include?("[stacksbot:") ||          # already owned — never re-adopt
+         !same_state?(live, adopt_expected) ||                 # target moved since the snapshot
+         fresh.any? { |r| r.runn_project_id.to_i != live["projectId"].to_i } || # never split a human across projects
+         runn_person_id.to_i != live["personId"].to_i ||        # resolved person ≠ the human being replaced
+         fresh.any? { |r| r.contributor_id != fresh.first.contributor_id } # mixed contributors in one adopt group
+        return fresh.each_with_object({}) { |r, h| h[r.source_key] = conflict(live) }
+      end
+
+      role_id = live["roleId"]
+      desired_by_key = fresh.each_with_object({}) do |r, h|
+        h[r.source_key] = {
+          "personId" => runn_person_id, "projectId" => r.runn_project_id, "roleId" => role_id,
+          "startDate" => r.start_date.iso8601, "endDate" => r.end_date.iso8601,
+          "minutesPerDay" => r.minutes_per_day,
+        }
+      end
+
+      if preview
+        return fresh.each_with_object({}) do |r, h|
+          h[r.source_key] = Result.new(status: :preview, before: live, after: desired_by_key[r.source_key])
+        end
+      end
+
+      created = [] # [{ row:, hash: }, ...] in create order, for compensating rollback
+      begin
+        fresh.each do |row|
+          desired = desired_by_key[row.source_key]
+          Mcp::WriteGuard.check!
+          resp = @runn.create_assignment(
+            person_id: desired["personId"], project_id: desired["projectId"], role_id: role_id,
+            start_date: desired["startDate"], end_date: desired["endDate"],
+            minutes_per_day: desired["minutesPerDay"], note: provenance_note(row.source_key, row.note)
+          )
+          hash = normalize_created(resp, desired, row.source_key, row.note)
+          created << { row: row, hash: hash }
+        end
+      rescue StandardError => e
+        created.each { |c| @runn.delete_assignment(c[:hash]["id"]) rescue nil }
+        raise e
+      end
+
+      begin
+        Mcp::WriteGuard.check!
+        @runn.delete_assignment(live["id"])
+      rescue StandardError => e
+        # total rollback: every create succeeded but the one delete didn't —
+        # undo all of them so the human assignment is the only survivor.
+        created.each { |c| @runn.delete_assignment(c[:hash]["id"]) rescue nil }
+        raise e
+      end
+
+      created.each_with_object({}) do |c, h|
+        c[:row].update!(runn_assignment_id: c[:hash]["id"], last_synced_runn_state: c[:hash])
+        h[c[:row].source_key] =
+          Result.new(status: :applied, before: live, after: c[:hash], runn_assignment_id: c[:hash]["id"])
+      end
+    end
   end
 end
