@@ -18,6 +18,10 @@ module Resourcing
     end
 
     def apply(row, preview: false, adopt_expected: nil)
+      # A relinquished row is one a human took back (see the CAS block below). We
+      # permanently stop managing it — never write, never re-flag.
+      return Result.new(status: :noop) if row.managed_by == "relinquished"
+
       runn_person_id = resolver.runn_person_id_for(row.contributor)
       if runn_person_id.nil?
         raise UnresolvedContributor,
@@ -53,9 +57,18 @@ module Resourcing
 
       # CAS + provenance: if we think we own an assignment, it must still be ours & unchanged.
       if row.runn_assignment_id
-        return conflict(current) if current.nil? # human deleted it
-        return conflict(current) unless current["note"].to_s.include?(self.class.provenance_marker(row.source_key))
-        return conflict(current) unless same_state?(current, row.last_synced_runn_state)
+        return conflict(current) if current.nil? # human deleted it → Decision
+        return conflict(current) unless current["note"].to_s.include?(self.class.provenance_marker(row.source_key)) # human replaced it → Decision
+        # human hand-edited an assignment we own (marker still present, same id, but
+        # the fields drifted from what we last wrote): the human is taking it back.
+        # We never undo their edit — we RELINQUISH management (yield permanently), so
+        # this assignment is left exactly as they set it and never touched or re-flagged
+        # again. Persist the yield (except in preview) by marking the row relinquished;
+        # the top-of-apply guard then no-ops every future write to it.
+        unless same_state?(current, row.last_synced_runn_state)
+          row.update!(managed_by: "relinquished") unless preview
+          return Result.new(status: :relinquished, before: current)
+        end
       end
 
       role_id = current ? current["roleId"] : most_recent_role_id(runn_person_id, row.runn_project_id, assignments)
@@ -113,6 +126,7 @@ module Resourcing
     # DELETE ?archive_runn=true — remove the owned Runn assignment, CAS-guarded.
     # Does NOT mutate/destroy the row — the caller destroys it only on non-conflict.
     def archive(row)
+      return Result.new(status: :noop) if row.managed_by == "relinquished" # yielded to a human — never touch
       return Result.new(status: :noop) if row.runn_assignment_id.nil?
 
       current = @runn.get_assignments.find { |a| a["id"] == row.runn_assignment_id }

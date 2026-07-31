@@ -76,19 +76,39 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
     assert_equal "preview", JSON.parse(response.body)["status"]
   end
 
-  test "PUT returns 409 on a CAS conflict" do
+  test "PUT relinquishes (200) when a human hand-edited an assignment we own" do
     marker = Resourcing::WriteThrough.provenance_marker("cas:key")
     ProjectedAssignment.create!(source_key: "cas:key", project_tracker: @tr, contributor: @contributor,
       start_date: "2030-05-01", end_date: "2030-05-31", minutes_per_day: 480,
       runn_assignment_id: 5001,
       last_synced_runn_state: { "personId" => 10, "projectId" => 91_100, "roleId" => 7,
         "startDate" => "2030-05-01", "endDate" => "2030-05-31", "minutesPerDay" => 480, "id" => 5001, "note" => marker })
-    # human moved it in Runn
+    # human moved it in Runn (marker + id intact) → we yield permanently, never undo it
     Stacks::Runn.any_instance.stubs(:get_assignments).returns([{ "id" => 5001, "personId" => 10, "projectId" => 91_100,
       "roleId" => 7, "startDate" => "2030-05-01", "endDate" => "2030-05-10", "minutesPerDay" => 480, "note" => marker }])
     Stacks::Runn.any_instance.stubs(:get_people).returns(people_stub(10))
     Stacks::Runn.any_instance.expects(:create_assignment).never
+    Stacks::Runn.any_instance.expects(:delete_assignment).never
     put "/api/v1/projected_assignments/cas:key",
+      headers: auth_headers, params: body(end_date: "2030-06-15").to_json
+    assert_response :success
+    assert_equal "relinquished", JSON.parse(response.body)["status"]
+    assert_equal "relinquished", ProjectedAssignment.find_by(source_key: "cas:key").managed_by
+  end
+
+  test "PUT returns 409 when a claimed-owned assignment lost our marker (human replaced it)" do
+    marker = Resourcing::WriteThrough.provenance_marker("cas2:key")
+    ProjectedAssignment.create!(source_key: "cas2:key", project_tracker: @tr, contributor: @contributor,
+      start_date: "2030-05-01", end_date: "2030-05-31", minutes_per_day: 480,
+      runn_assignment_id: 5002,
+      last_synced_runn_state: { "personId" => 10, "projectId" => 91_100, "roleId" => 7,
+        "startDate" => "2030-05-01", "endDate" => "2030-05-31", "minutesPerDay" => 480, "id" => 5002, "note" => marker })
+    # marker gone → not a clean yield, a genuine conflict for a human to resolve
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns([{ "id" => 5002, "personId" => 10, "projectId" => 91_100,
+      "roleId" => 7, "startDate" => "2030-05-01", "endDate" => "2030-05-31", "minutesPerDay" => 480, "note" => "hand-authored" }])
+    Stacks::Runn.any_instance.stubs(:get_people).returns(people_stub(10))
+    Stacks::Runn.any_instance.expects(:create_assignment).never
+    put "/api/v1/projected_assignments/cas2:key",
       headers: auth_headers, params: body(end_date: "2030-06-15").to_json
     assert_response :conflict
     assert_equal "conflict", JSON.parse(response.body)["status"]
