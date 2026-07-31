@@ -74,4 +74,45 @@ class Mcp::ProvisioningToolsTest < ActiveSupport::TestCase
     resp = Mcp::ListProjectTrackersTool.call(client: "qualitate inc", server_context: {})
     assert_equal [keep.id], payload(resp).map { |t| t["id"] }
   end
+
+  # ---- ensure_project_tracker ---------------------------------------------
+  test "ensure_project_tracker creates a bare tracker when none exists" do
+    # Deliberately unpersisted: this stands in for provision!'s return value only. If it were
+    # saved, the tool's own pre-check (`ProjectTracker.where(lower(name) = ...)`, which runs
+    # for real even though provision! is mocked) would find it and short-circuit to the
+    # "already exists" branch before the mock is ever consulted.
+    bare_tracker = ProjectTracker.new(name: "New Co")
+    ProjectTracker.expects(:provision!).with(has_entries(name: "New Co")).returns([bare_tracker, ["placeholder MSA"]])
+    resp = Mcp::EnsureProjectTrackerTool.call(name: "New Co", server_context: {})
+    body = payload(resp)
+    assert_equal true, body["created"]
+    assert_equal "New Co", body["after"]["name"]
+    assert_equal ["placeholder MSA"], body["warnings"]
+  end
+
+  test "ensure_project_tracker returns the existing tracker without provisioning" do
+    tracker, _ws, _fp, _c = make_tracker_with_workstream(
+      tracker_name: "Qualitate", client_name: "Qualitate Inc", code: "QUAL")
+    ProjectTracker.expects(:provision!).never
+    resp = Mcp::EnsureProjectTrackerTool.call(name: "qualitate", server_context: {})
+    body = payload(resp)
+    assert_equal false, body["created"]
+    assert_equal tracker.id, body["after"]["id"]
+  end
+
+  test "ensure_project_tracker errors on an ambiguous name" do
+    dup1 = ProjectTracker.new(name: "Dup")
+    dup1.save!(validate: false)
+    dup2 = ProjectTracker.new(name: "Dup")
+    dup2.save!(validate: false)
+    ProjectTracker.expects(:provision!).never
+    resp = Mcp::EnsureProjectTrackerTool.call(name: "Dup", server_context: {})
+    assert_match(/multiple project trackers/i, payload(resp)["error"])
+  end
+
+  test "ensure_project_tracker no-op does not consume a write-guard slot" do
+    make_tracker_with_workstream(tracker_name: "Qualitate", client_name: "Q Inc", code: "QUAL")
+    Mcp::WriteGuard.expects(:check!).never
+    Mcp::EnsureProjectTrackerTool.call(name: "Qualitate", server_context: {})
+  end
 end
