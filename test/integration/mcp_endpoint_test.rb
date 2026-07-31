@@ -57,7 +57,7 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     assert body.key?("result"), "Expected JSON-RPC result key, got: #{body.inspect}"
     tool_names = body["result"]["tools"].map { |t| t["name"] }
     assert_includes tool_names, "search", "Expected 'search' tool in: #{tool_names.inspect}"
-    assert_equal %w[get_ar_aging get_document get_resourcing_projections get_studio_health list_documents list_open_admin_tasks list_overdue_invoices list_projects_at_risk list_sources search], tool_names.sort,
+    assert_equal %w[find_contributor get_ar_aging get_document get_resourcing_projections get_studio_health list_documents list_open_admin_tasks list_overdue_invoices list_project_trackers list_projects_at_risk list_sources search], tool_names.sort,
       "Expected all registered tools, got: #{tool_names.inspect}"
   end
 
@@ -260,5 +260,20 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     Stacks::Runn.any_instance.stubs(:get_assignments).returns([])
     payload = call_tool("get_resourcing_projections")
     assert_equal true, payload["degraded"]
+  end
+
+  test "find_contributor is exposed on the read surface and returns matches" do
+    ForecastPerson.create!(forecast_id: 7_654_321, first_name: "Hugh", last_name: "Person",
+      email: "hugh@sanctuary.computer", archived: false, roles: [], updated_at: Time.current)
+    # ForecastPerson#after_create (ensure_contributor_exists!) already provisions the Contributor row.
+
+    post "/api/mcp", headers: api_key_headers, params: TOOLS_LIST_REQUEST.to_json
+    assert_response :success
+    tool_names = JSON.parse(response.body)["result"]["tools"].map { |t| t["name"] }
+    assert_includes tool_names, "find_contributor"
+    assert_includes tool_names, "list_project_trackers"
+
+    result = call_tool("find_contributor", { "email" => "hugh@sanctuary.computer" })
+    assert_equal "hugh@sanctuary.computer", result.first["email"]
   end
 end
