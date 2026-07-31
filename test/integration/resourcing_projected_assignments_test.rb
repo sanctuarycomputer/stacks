@@ -131,6 +131,25 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
     assert_equal 5002, row.runn_assignment_id
   end
 
+  test "PUT with adopt_expected takes over a human assignment (delete + recreate owned)" do
+    snapshot = { "id" => 9001, "personId" => 10, "projectId" => 91_100, "roleId" => 7,
+      "startDate" => "2030-01-01", "endDate" => "2030-12-31", "minutesPerDay" => 480, "note" => "hand-authored" }
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns([snapshot])
+    Stacks::Runn.any_instance.stubs(:get_people).returns(people_stub(10))
+    seq = sequence("apply")
+    Stacks::Runn.any_instance.expects(:create_assignment).once.in_sequence(seq).returns({ "id" => 9002 })
+    Stacks::Runn.any_instance.expects(:delete_assignment).once.in_sequence(seq).with(9001).returns({})
+    put "/api/v1/projected_assignments/adopt:key",
+      headers: auth_headers,
+      params: body(start_date: "2030-01-01", end_date: "2030-08-31").merge(adopt_expected: snapshot).to_json
+    assert_response :success
+    json = JSON.parse(response.body)
+    assert_equal "applied", json["status"]
+    assert_equal snapshot, json["before"]
+    row = ProjectedAssignment.find_by(source_key: "adopt:key")
+    assert_equal 9002, row.runn_assignment_id
+  end
+
   test "PUT returns 422 when the contributor has no unique active Runn person" do
     Stacks::Runn.any_instance.stubs(:get_people).returns([])
     Stacks::Runn.any_instance.expects(:create_assignment).never

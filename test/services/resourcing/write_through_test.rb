@@ -34,6 +34,54 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
     Resourcing::WriteThrough.new(runn: runn)
   end
 
+  # a live human-authored Runn assignment hash WITHOUT our provenance marker
+  def human(id, start_d, end_d, minutes: 480, person: 10, project: 91_100, role: 7)
+    { "id" => id, "personId" => person, "projectId" => project, "roleId" => role,
+      "startDate" => start_d.iso8601, "endDate" => end_d.iso8601, "minutesPerDay" => minutes, "note" => "hand-authored" }
+  end
+
+  test "adopt: takes over a human assignment (delete + recreate owned), before = human snapshot" do
+    tr = tracker
+    c = contributor_for(10)
+    snapshot = human(9001, Date.new(2030, 1, 1), Date.new(2030, 12, 31))
+    # a NEW row (no runn_assignment_id) that will shorten the human assignment to end 2030-08-31
+    w = row(tr, Date.new(2030, 1, 1), Date.new(2030, 8, 31), contributor: c, owned_id: nil, key: "obs:roll:1")
+    runn = mock("runn")
+    runn.stubs(:get_assignments).returns([snapshot])
+    runn.stubs(:get_people).returns(people_stub(10))
+    runn.expects(:create_assignment).once.returns({ "id" => 9002 })
+    runn.expects(:delete_assignment).once.with(9001).returns({})
+    result = service(runn).apply(w, adopt_expected: snapshot)
+    assert_equal :applied, result.status
+    assert_equal 9002, w.reload.runn_assignment_id
+    assert_equal snapshot, result.before   # the pre-adoption human state is the revert material
+  end
+
+  test "adopt CAS: human moved the target since the snapshot → conflict, no write" do
+    tr = tracker
+    c = contributor_for(10)
+    snapshot = human(9001, Date.new(2030, 1, 1), Date.new(2030, 12, 31))
+    moved    = human(9001, Date.new(2030, 1, 1), Date.new(2030, 10, 15)) # human changed the end
+    w = row(tr, Date.new(2030, 1, 1), Date.new(2030, 8, 31), contributor: c, owned_id: nil, key: "obs:roll:1")
+    runn = mock("runn")
+    runn.stubs(:get_assignments).returns([moved])
+    runn.stubs(:get_people).returns(people_stub(10))
+    runn.expects(:create_assignment).never
+    runn.expects(:delete_assignment).never
+    assert_equal :conflict, service(runn).apply(w, adopt_expected: snapshot).status
+  end
+
+  test "adopt: target vanished from Runn → conflict, no write" do
+    tr = tracker; c = contributor_for(10)
+    snapshot = human(9001, Date.new(2030, 1, 1), Date.new(2030, 12, 31))
+    w = row(tr, Date.new(2030, 1, 1), Date.new(2030, 8, 31), contributor: c, owned_id: nil, key: "obs:roll:1")
+    runn = mock("runn")
+    runn.stubs(:get_assignments).returns([]) # gone
+    runn.stubs(:get_people).returns(people_stub(10))
+    runn.expects(:create_assignment).never
+    assert_equal :conflict, service(runn).apply(w, adopt_expected: snapshot).status
+  end
+
   test "create: a brand-new row with a prior role for the person creates one Runn assignment and records ownership" do
     tr = tracker
     c = contributor_for(10)
