@@ -2,9 +2,9 @@ class Contributor < ApplicationRecord
   ELEVATED_SERVICE_MIN_HOURS  = 120
   ELEVATED_SERVICE_MIN_INCOME = 9_000
   # How many of the supplied months must individually meet the threshold for a
-  # contributor to count as "in elevated service" over the window (e.g. 3 of the
+  # contributor to count as "in elevated service" over the window (e.g. 1 of the
   # trailing 6 months). Callers choose the window length by how many periods they pass.
-  ELEVATED_SERVICE_MIN_QUALIFYING_MONTHS = 3
+  ELEVATED_SERVICE_MIN_QUALIFYING_MONTHS = 1
 
   def self.elevated_service?(total_hours:, total_income:)
     total_hours >= ELEVATED_SERVICE_MIN_HOURS || total_income >= ELEVATED_SERVICE_MIN_INCOME

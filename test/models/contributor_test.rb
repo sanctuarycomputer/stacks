@@ -436,7 +436,7 @@ class ContributorElevatedServiceAdminUserIdsTest < ActiveSupport::TestCase
     ).save!(validate: false)
   end
 
-  test "elevated_service_admin_user_ids includes a contributor elevated in at least 3 of the months" do
+  test "elevated_service_admin_user_ids includes a contributor elevated in at least 1 of the months" do
     au = AdminUser.create!(email: "heavy@sanctuary.computer", password: "password12345", password_confirmation: "password12345")
     fp = ForecastPerson.create!(forecast_id: 55_501, email: au.email, first_name: "H", last_name: "Y")
     contributor = Contributor.create!(forecast_person: fp)
@@ -447,25 +447,23 @@ class ContributorElevatedServiceAdminUserIdsTest < ActiveSupport::TestCase
     periods = Stacks::Period.for_gradation(:month, Date.new(2026, 1, 1), Date.new(2026, 7, 1))
     assert_equal 6, periods.size
 
-    # $9000 income in exactly 3 of the 6 months -> qualifies (>= 3 of 6)
-    [periods[0], periods[2], periods[4]].each do |p|
-      create_payout!(p, 9_000, ledger, au)
-    end
+    # $9000 income in exactly 1 of the 6 months -> qualifies (>= 1 of 6)
+    create_payout!(periods[2], 9_000, ledger, au)
 
     ids = Contributor.elevated_service_admin_user_ids(periods, [fp.forecast_id])
     assert_includes ids, au.id
   end
 
-  test "elevated_service_admin_user_ids excludes a contributor elevated in fewer than 3 months" do
+  test "elevated_service_admin_user_ids excludes a contributor with no elevated months" do
     au = AdminUser.create!(email: "gap@sanctuary.computer", password: "password12345", password_confirmation: "password12345")
     fp = ForecastPerson.create!(forecast_id: 55_502, email: au.email, first_name: "G", last_name: "P")
     contributor = Contributor.create!(forecast_person: fp)
     ledger = contributor.ledgers.find_by!(enterprise: @sanctuary)
 
     periods = Stacks::Period.for_gradation(:month, Date.new(2026, 1, 1), Date.new(2026, 7, 1))
-    # Only 2 of the 6 months have income -> below the 3-month bar.
+    # Income in the window, but never meeting the monthly threshold -> no elevated months.
     [periods[0], periods[2]].each do |p|
-      create_payout!(p, 9_000, ledger, au)
+      create_payout!(p, 8_000, ledger, au)
     end
 
     ids = Contributor.elevated_service_admin_user_ids(periods, [fp.forecast_id])
