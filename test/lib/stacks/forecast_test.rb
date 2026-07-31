@@ -139,6 +139,39 @@ class StacksForecastTest < ActiveSupport::TestCase
     assert_equal ["450p/h","300p/h"], ForecastProject.find_by(forecast_id: 777).tags
   end
 
+  test "rate_tag normalizes numbers and $ prefixes" do
+    assert_equal "450p/h", Stacks::Forecast.rate_tag(450)
+    assert_equal "450p/h", Stacks::Forecast.rate_tag("$450p/h")
+    assert_equal "99.75p/h", Stacks::Forecast.rate_tag(99.75)
+  end
+
+  test "add_project_rate! appends the tag without clobbering others and is idempotent" do
+    ForecastProject.new(forecast_id: 900, code: "C", name: "N", client_id: 1, tags: ["300p/h"]).save!(validate: false)
+    fc = build_forecast_client
+    # update_project is exercised for real against the mirror; stub only the HTTP PUT it calls.
+    resp = mock("r"); resp.stubs(:success?).returns(true)
+    resp.stubs(:parsed_response).returns({ "project" => { "id" => 900, "tags" => ["300p/h","450p/h"], "code"=>"C","name"=>"N","client_id"=>1 } })
+    Stacks::Forecast.stubs(:put).returns(resp)
+
+    fc.add_project_rate!(900, 450)
+    assert_equal ["300p/h","450p/h"], ForecastProject.find_by(forecast_id: 900).tags
+
+    # idempotent: adding again sends no new tag / no crash
+    fc.add_project_rate!(900, 450)
+    assert_equal ["300p/h","450p/h"], ForecastProject.find_by(forecast_id: 900).tags.uniq
+  end
+
+  test "remove_project_rate! drops just that rate" do
+    ForecastProject.new(forecast_id: 901, code: "C", name: "N", client_id: 1, tags: ["300p/h","450p/h"]).save!(validate: false)
+    fc = build_forecast_client
+    resp = mock("r"); resp.stubs(:success?).returns(true)
+    resp.stubs(:parsed_response).returns({ "project" => { "id" => 901, "tags" => ["300p/h"], "code"=>"C","name"=>"N","client_id"=>1 } })
+    Stacks::Forecast.stubs(:put).returns(resp)
+
+    fc.remove_project_rate!(901, 450)
+    assert_equal ["300p/h"], ForecastProject.find_by(forecast_id: 901).tags
+  end
+
   test "delete_assignment DELETEs by id and treats 404 as already-gone" do
     fc = build_forecast_client
 

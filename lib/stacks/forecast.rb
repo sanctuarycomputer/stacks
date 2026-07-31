@@ -133,6 +133,24 @@ class Stacks::Forecast
     project
   end
 
+  def self.rate_tag(rate)
+    n = rate.to_s.delete("$").to_f            # "$450p/h" -> 450.0, 99.75 -> 99.75
+    s = Kernel.format("%g", n)                  # 450.0 -> "450", 99.75 -> "99.75"
+    "#{s}p/h"
+  end
+
+  def add_project_rate!(forecast_id, rate)
+    tag = self.class.rate_tag(rate)
+    current = local_tags(forecast_id)
+    return refetchable_project(forecast_id) if current.include?(tag)
+    update_project(forecast_id, tags: current + [tag])
+  end
+
+  def remove_project_rate!(forecast_id, rate)
+    tag = self.class.rate_tag(rate)
+    update_project(forecast_id, tags: local_tags(forecast_id) - [tag])
+  end
+
   def delete_assignment(forecast_id)
     response = self.class.delete("/assignments/#{forecast_id}", headers: write_headers)
     return true if response.success?
@@ -144,6 +162,16 @@ class Stacks::Forecast
 
   def write_headers
     @headers.merge("Content-Type": "application/json")
+  end
+
+  def local_tags(forecast_id)
+    fp = ForecastProject.find_by(forecast_id: forecast_id)
+    raise "Unknown Forecast project #{forecast_id}" if fp.nil?
+    Array(fp.tags)
+  end
+
+  def refetchable_project(forecast_id)
+    ForecastProject.find_by(forecast_id: forecast_id).data || {}
   end
 
   def upsert_project_locally!(c)
