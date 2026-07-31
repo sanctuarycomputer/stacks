@@ -115,6 +115,22 @@ class Stacks::Forecast
     response.parsed_response["assignment"]
   end
 
+  def create_client(name:)
+    body = { client: { name: name } }
+    response = self.class.post("/clients", headers: write_headers, body: JSON.dump(body))
+    raise "Forecast create_client failed: #{response.code} #{response.body}" unless response.success?
+    client = response.parsed_response["client"]
+    upsert_client_locally!(client)
+    client
+  end
+
+  def find_or_create_client!(name)
+    existing = ForecastClient.where("lower(name) = ?", name.to_s.strip.downcase).first
+    return existing if existing
+    created = create_client(name: name)
+    ForecastClient.find_by(forecast_id: created["id"])
+  end
+
   def create_project(client_id:, name:, code:, tags: [], notes: "")
     body = { project: { client_id: client_id, name: name, code: code, tags: tags, notes: notes.to_s } }
     response = self.class.post("/projects", headers: write_headers, body: JSON.dump(body))
@@ -176,6 +192,13 @@ class Stacks::Forecast
 
   def refetchable_project(forecast_id)
     ForecastProject.find_by(forecast_id: forecast_id).data || {}
+  end
+
+  def upsert_client_locally!(c)
+    ForecastClient.upsert_all([{
+      forecast_id: c["id"], name: c["name"], harvest_id: c["harvest_id"],
+      archived: c["archived"], updated_at: c["updated_at"], updated_by_id: c["updated_by_id"], data: c,
+    }], unique_by: :forecast_id)
   end
 
   def upsert_project_locally!(c)

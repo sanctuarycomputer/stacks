@@ -102,6 +102,35 @@ class StacksForecastTest < ActiveSupport::TestCase
     end
   end
 
+  test "create_client POSTs the envelope and upserts the local mirror" do
+    fc = build_forecast_client
+    resp = mock("r"); resp.stubs(:success?).returns(true)
+    resp.stubs(:parsed_response).returns({ "client" => { "id" => 42, "name" => "Qualitate", "archived" => false } })
+    posted = {}
+    Stacks::Forecast.expects(:post).once.with { |path, opts| posted[:path]=path; posted[:body]=JSON.parse(opts[:body]); true }.returns(resp)
+
+    result = fc.create_client(name: "Qualitate")
+    assert_equal 42, result["id"]
+    assert_equal "/clients", posted[:path]
+    assert_equal "Qualitate", posted[:body]["client"]["name"]
+    assert_equal "Qualitate", ForecastClient.find_by(forecast_id: 42).name
+  end
+
+  test "find_or_create_client! returns an existing client without POSTing" do
+    ForecastClient.new(forecast_id: 7, name: "Acme").save!(validate: false)
+    fc = build_forecast_client
+    Stacks::Forecast.expects(:post).never
+    assert_equal 7, fc.find_or_create_client!("acme").forecast_id
+  end
+
+  test "find_or_create_client! creates when absent" do
+    fc = build_forecast_client
+    resp = mock("r"); resp.stubs(:success?).returns(true)
+    resp.stubs(:parsed_response).returns({ "client" => { "id" => 99, "name" => "NewCo" } })
+    Stacks::Forecast.expects(:post).once.returns(resp)
+    assert_equal 99, fc.find_or_create_client!("NewCo").forecast_id
+  end
+
   test "create_project POSTs the project envelope, returns it, and upserts the local mirror" do
     fc = build_forecast_client
     response = mock("resp"); response.stubs(:success?).returns(true)
