@@ -368,4 +368,24 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
     statuses = JSON.parse(response.body)["results"].map { |r| r["status"] }
     assert statuses.all? { |s| s == "deferred" }
   end
+  test "PUT on a relinquished row is a no-op that survives an incoming upsert (managed_by not clobbered)" do
+    marker = Resourcing::WriteThrough.provenance_marker("relinq:key")
+    ProjectedAssignment.create!(source_key: "relinq:key", project_tracker: @tr, contributor: @contributor,
+      start_date: "2030-05-01", end_date: "2030-05-31", minutes_per_day: 480,
+      runn_assignment_id: 7001, managed_by: "relinquished",
+      last_synced_runn_state: { "id" => 7001, "note" => marker })
+    # the sweep re-derives a write (managed_by:'detector') for the same source_key —
+    # must NOT resurrect management or touch Runn.
+    Stacks::Runn.any_instance.expects(:get_assignments).never
+    Stacks::Runn.any_instance.expects(:create_assignment).never
+    Stacks::Runn.any_instance.expects(:delete_assignment).never
+    put "/api/v1/projected_assignments/relinq:key",
+      headers: auth_headers, params: body(end_date: "2030-06-15", managed_by: "detector").to_json
+    assert_response :success
+    assert_equal "noop", JSON.parse(response.body)["status"]
+    row = ProjectedAssignment.find_by(source_key: "relinq:key")
+    assert_equal "relinquished", row.managed_by, "the yield must survive the upsert"
+    assert_equal Date.new(2030, 5, 31), row.end_date, "the row must not be mutated"
+  end
+
 end
