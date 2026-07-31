@@ -60,6 +60,16 @@ class ProjectTrackerWorkstreamTest < ActiveSupport::TestCase
     end
   end
 
+  test "raises when the code is blank and a new client_name is given, without calling find_or_create_client!" do
+    t = tracker
+    fc = Object.new
+    fc.define_singleton_method(:find_or_create_client!) { |_name| flunk "find_or_create_client! should not be called when the code is blank" }
+    fc.define_singleton_method(:create_project) { |**_kwargs| flunk "create_project should not be called when the code is blank" }
+    assert_raises(ActiveRecord::RecordInvalid) do
+      t.add_workstream!(name: "X", code: "", client_name: "Brand New Client", forecast_client: fc)
+    end
+  end
+
   test "raises when the code is already attached to another tracker, without calling create_project" do
     client = ForecastClient.new(forecast_id: 42, name: "Qualitate").tap { |c| c.save!(validate: false) }
     tracker_a = tracker

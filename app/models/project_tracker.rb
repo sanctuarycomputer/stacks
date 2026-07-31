@@ -109,19 +109,19 @@ class ProjectTracker < ApplicationRecord
   # first workstream establishes the tracker's client). Creates the underlying Forecast
   # project (outside a txn, per the create-external-then-link convention) and links it.
   def add_workstream!(name:, code:, rate: nil, client_name: nil, forecast_client: Stacks::Forecast.new)
-    client = derived_client
-    client ||= forecast_client.find_or_create_client!(client_name) if client_name.present?
-
-    # Restore the data-integrity guards provision!'s save! used to run, BEFORE creating the
-    # external Forecast project (so a rejected workstream can't orphan a Forecast record).
-    # Raised as a validation error → the API renders 422.
+    # Code guards first — they need no client, and must run before any external call
+    # so a rejected workstream can't orphan a Forecast client/project.
     errors.clear
-    errors.add(:base, "A client is required for the first workstream.") if client.nil?
     errors.add(:base, "A workstream Project Code is required.") if code.blank?
     if code.present?
       taken = ForecastProject.forecast_codes_already_associated_to_project_tracker(id)
       errors.add(:base, "Project Code #{code} is already used by another Project Tracker.") if taken.include?(code)
     end
+    raise ActiveRecord::RecordInvalid.new(self) if errors.any?
+
+    client = derived_client
+    client ||= forecast_client.find_or_create_client!(client_name) if client_name.present?
+    errors.add(:base, "A client is required for the first workstream.") if client.nil?
     raise ActiveRecord::RecordInvalid.new(self) if errors.any?
 
     tags = rate.present? ? [Stacks::Forecast.rate_tag(rate)] : []

@@ -12,13 +12,13 @@ class Api::WorkstreamsController < ApiController
   end
 
   def add_rate
-    ws = ProjectTrackerForecastProject.find(params[:id])
+    ws = ProjectTracker.find(params[:project_tracker_id]).project_tracker_forecast_projects.find(params[:id])
     Stacks::Forecast.new.add_project_rate!(ws.forecast_project_id, params.require(:rate))
     render json: workstream_json(ws.reload)
   end
 
   def remove_rate
-    ws = ProjectTrackerForecastProject.find(params[:id])
+    ws = ProjectTracker.find(params[:project_tracker_id]).project_tracker_forecast_projects.find(params[:id])
     Stacks::Forecast.new.remove_project_rate!(ws.forecast_project_id, params.require(:rate))
     render json: workstream_json(ws.reload)
   end

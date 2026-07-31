@@ -40,6 +40,16 @@ class Api::WorkstreamsTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test "add_rate 404s when the workstream id belongs to a different tracker" do
+    t = tracker
+    ForecastProject.new(forecast_id: 5004, client_id: 42, name: "P", code: "Q-4", tags: ["300p/h"]).save!(validate: false)
+    ws = t.project_tracker_forecast_projects.create!(forecast_project_id: 5004)
+
+    other_tracker = tracker
+    post "/api/project_trackers/#{other_tracker.id}/workstreams/#{ws.id}/rates", params: { rate: 450 }.to_json, headers: auth
+    assert_response :not_found
+  end
+
   test "remove_rate handles decimals" do
     t = tracker
     ForecastProject.new(forecast_id: 5003, client_id: 42, name: "P", code: "Q-3", tags: ["99.75p/h"]).save!(validate: false)

@@ -93,6 +93,14 @@ module Stacks::Errors
     end
   end
 
+  class NotFound < Stacks::Errors::Base
+    def initialize(message = 'Not found'); @message = message; end
+    def title; 'Not Found'; end
+    def detail; @message; end
+    def source; nil; end
+    def status; :not_found; end
+  end
+
   # Raised by the API exception handler for genuinely-unexpected errors. Renders a
   # generic 500 that NEVER echoes the underlying exception's message (which may carry
   # upstream response bodies), while logging + Sentry-capturing the real exception.
