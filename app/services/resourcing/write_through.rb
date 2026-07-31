@@ -10,7 +10,6 @@ module Resourcing
     Result = Struct.new(:status, :before, :after, :runn_assignment_id, :conflict, keyword_init: true)
     class UnresolvedContributor < StandardError; end
     class UnresolvableRole < StandardError; end
-    class AdoptTargetMissing < StandardError; end
 
     def self.provenance_marker(source_key) = "[stacksbot:#{source_key}]"
 
@@ -31,6 +30,12 @@ module Resourcing
       if adopt_expected && row.runn_assignment_id.nil?
         live = assignments.find { |a| a["id"] == adopt_expected["id"] }
         return conflict(live) if live.nil?                          # target gone → human already changed it
+        # adopt only takes over HUMAN (unmarked) assignments — never one stacksbot
+        # already owns, which would silently orphan the owning row.
+        return conflict(live) if live["note"].to_s.include?("[stacksbot:")
+        # NOTE: same_state? (CAS baseline) intentionally omits `note` from the projected
+        # mirror, so a human note-only edit here isn't caught — acceptable because
+        # `before:` still captures the current note as revert material.
         return conflict(live) unless same_state?(live, adopt_expected) # target moved since the snapshot
         role_id = live["roleId"]
         desired = {

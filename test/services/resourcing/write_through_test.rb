@@ -79,7 +79,23 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
     runn.stubs(:get_assignments).returns([]) # gone
     runn.stubs(:get_people).returns(people_stub(10))
     runn.expects(:create_assignment).never
+    runn.expects(:delete_assignment).never
     assert_equal :conflict, service(runn).apply(w, adopt_expected: snapshot).status
+  end
+
+  test "adopt refuses a target stacksbot already owns (marked) → conflict, no write" do
+    tr = tracker
+    c = contributor_for(10)
+    # a live assignment that already carries OUR marker (owned by some other row)
+    owned = human(9001, Date.new(2030, 1, 1), Date.new(2030, 12, 31)).merge(
+      "note" => Resourcing::WriteThrough.provenance_marker("some-other-key"))
+    w = row(tr, Date.new(2030, 1, 1), Date.new(2030, 8, 31), contributor: c, owned_id: nil, key: "obs:roll:1")
+    runn = mock("runn")
+    runn.stubs(:get_assignments).returns([owned])
+    runn.stubs(:get_people).returns(people_stub(10))
+    runn.expects(:create_assignment).never
+    runn.expects(:delete_assignment).never
+    assert_equal :conflict, service(runn).apply(w, adopt_expected: owned).status
   end
 
   test "create: a brand-new row with a prior role for the person creates one Runn assignment and records ownership" do
