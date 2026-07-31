@@ -1,8 +1,9 @@
 module Mcp
   class SetProjectTrackerRoleAssigneeTool < MCP::Tool
     tool_name 'set_project_tracker_role_assignee'
-    description 'WRITE: set the account_lead or project_lead of a project tracker (assignee is ' \
-                'an AdminUser — use find_admin_user). Lead changes take effect at month ' \
+    description 'WRITE: set the account_lead or project_lead of a project tracker (the assignee ' \
+                'is identified by their email — the same email as their contributor record). ' \
+                'Lead changes take effect at month ' \
                 'boundaries: the prior lead ends at the end of the prior month and the new lead ' \
                 'starts on the first of starts_on\'s month (default this month). No-op if already ' \
                 'the lead. A same-month swap is refused (resolve in the admin UI). Returns {before, after}.'
