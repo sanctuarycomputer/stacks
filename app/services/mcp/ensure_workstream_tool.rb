@@ -4,15 +4,15 @@ module Mcp
     description 'WRITE: ensure a workstream with the given code exists on a project ' \
                 'tracker at the given rate (idempotent). If the code is absent, creates ' \
                 'the workstream — a tracker\'s FIRST workstream also needs client_name. ' \
-                'If the code is present, adds the rate only if missing. rate is a number ' \
-                'or "Np/h" string (e.g. 450 or "450p/h"). Returns ' \
+                'If the code is present, adds the rate only if missing. rate is a string ' \
+                'like "450p/h" or "450". Returns ' \
                 '{before, after, created, rate_added}.'
     input_schema(
       properties: {
         project_tracker_id: { type: 'integer' },
         name: { type: 'string' },
         code: { type: 'string' },
-        rate: { type: 'string', description: 'number or "Np/h", e.g. "450p/h"' },
+        rate: { type: 'string', description: 'rate as a string, e.g. "450p/h" or "450"' },
         client_name: { type: 'string', description: 'required for a tracker\'s first workstream' },
       },
       required: %w[project_tracker_id name code rate]
@@ -28,7 +28,7 @@ module Mcp
       validate_rate!(rate)
 
       tracker = ProjectTracker.find(ptid)
-      existing = tracker.project_tracker_forecast_projects.detect { |ws| ws.forecast_project&.code == cd }
+      existing = tracker.project_tracker_forecast_projects.detect { |ws| ws.forecast_project&.code&.casecmp?(cd) }
 
       if existing
         tag = Stacks::Forecast.rate_tag(rate)

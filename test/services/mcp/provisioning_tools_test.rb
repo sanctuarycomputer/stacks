@@ -159,6 +159,22 @@ class Mcp::ProvisioningToolsTest < ActiveSupport::TestCase
     assert_equal false, body["rate_added"]
   end
 
+  test "ensure_workstream matches an existing code case-insensitively (no duplicate)" do
+    tracker, _ws, _fp, _c = make_tracker_with_workstream(
+      tracker_name: "Qualitate", client_name: "Q Inc", code: "QUAL", rate_tags: ["450p/h"])
+    Stacks::Forecast.any_instance.expects(:add_project_rate!).never
+    Mcp::WriteGuard.expects(:check!).never
+
+    resp = nil
+    assert_no_difference -> { ProjectTrackerForecastProject.count } do
+      resp = Mcp::EnsureWorkstreamTool.call(
+        project_tracker_id: tracker.id, name: "Qualitate", code: "qual", rate: "450p/h", server_context: {})
+    end
+    body = payload(resp)
+    assert_equal false, body["created"]
+    assert_equal false, body["rate_added"]
+  end
+
   test "ensure_workstream surfaces the 'client required' validation for a first workstream" do
     tracker = ProjectTracker.new(name: "Bare")
     tracker.save!(validate: false)

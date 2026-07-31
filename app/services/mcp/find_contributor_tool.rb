@@ -8,7 +8,7 @@ module Mcp
       properties: { email: { type: 'string' } },
       required: %w[email]
     )
-    annotations(read_only_hint: true)
+    annotations(read_only_hint: true, destructive_hint: false, idempotent_hint: true)
 
     def self.call(email:, server_context:)
       fp_ids = ForecastPerson.where("lower(email) = ?", email.to_s.strip.downcase).select(:forecast_id)
