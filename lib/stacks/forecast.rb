@@ -115,6 +115,24 @@ class Stacks::Forecast
     response.parsed_response["assignment"]
   end
 
+  def create_project(client_id:, name:, code:, tags: [], notes: "")
+    body = { project: { client_id: client_id, name: name, code: code, tags: tags, notes: notes.to_s } }
+    response = self.class.post("/projects", headers: write_headers, body: JSON.dump(body))
+    raise "Forecast create_project failed: #{response.code} #{response.body}" unless response.success?
+    project = response.parsed_response["project"]
+    upsert_project_locally!(project)
+    project
+  end
+
+  def update_project(forecast_id, attrs)
+    body = { project: attrs }
+    response = self.class.put("/projects/#{forecast_id}", headers: write_headers, body: JSON.dump(body))
+    raise "Forecast update_project failed: #{response.code} #{response.body}" unless response.success?
+    project = response.parsed_response["project"]
+    upsert_project_locally!(project)
+    project
+  end
+
   def delete_assignment(forecast_id)
     response = self.class.delete("/assignments/#{forecast_id}", headers: write_headers)
     return true if response.success?
@@ -126,6 +144,15 @@ class Stacks::Forecast
 
   def write_headers
     @headers.merge("Content-Type": "application/json")
+  end
+
+  def upsert_project_locally!(c)
+    ForecastProject.upsert_all([{
+      forecast_id: c["id"], name: c["name"], code: c["code"], notes: c["notes"],
+      start_date: c["start_date"], end_date: c["end_date"], harvest_id: c["harvest_id"],
+      archived: c["archived"], client_id: c["client_id"], tags: c["tags"],
+      updated_at: c["updated_at"], updated_by_id: c["updated_by_id"], data: c,
+    }], unique_by: :forecast_id)
   end
 
   # Forecast re-sends every record that overlaps each sync window, and sync_all_assignments!

@@ -102,6 +102,43 @@ class StacksForecastTest < ActiveSupport::TestCase
     end
   end
 
+  test "create_project POSTs the project envelope, returns it, and upserts the local mirror" do
+    fc = build_forecast_client
+    response = mock("resp"); response.stubs(:success?).returns(true)
+    response.stubs(:parsed_response).returns({ "project" => {
+      "id" => 777, "name" => "Qualitate Retainer", "code" => "QUAL-1", "client_id" => 42,
+      "tags" => ["450p/h"], "archived" => false, "updated_at" => "2026-07-31T00:00:00Z",
+    } })
+    posted = {}
+    Stacks::Forecast.expects(:post).once.with do |path, opts|
+      posted[:path] = path; posted[:body] = JSON.parse(opts[:body]); true
+    end.returns(response)
+
+    result = fc.create_project(client_id: 42, name: "Qualitate Retainer", code: "QUAL-1", tags: ["450p/h"])
+
+    assert_equal 777, result["id"]
+    assert_equal "/projects", posted[:path]
+    assert_equal 42, posted[:body]["project"]["client_id"]
+    assert_equal ["450p/h"], posted[:body]["project"]["tags"]
+    fp = ForecastProject.find_by(forecast_id: 777)
+    assert_equal "QUAL-1", fp.code
+    assert_equal ["450p/h"], fp.tags
+  end
+
+  test "update_project PUTs partial attrs and re-upserts the mirror" do
+    fc = build_forecast_client
+    response = mock("resp"); response.stubs(:success?).returns(true)
+    response.stubs(:parsed_response).returns({ "project" => {
+      "id" => 777, "name" => "Q", "code" => "QUAL-1", "client_id" => 42, "tags" => ["450p/h","300p/h"],
+    } })
+    Stacks::Forecast.expects(:put).once.with do |path, opts|
+      path == "/projects/777" && JSON.parse(opts[:body])["project"]["tags"] == ["450p/h","300p/h"]
+    end.returns(response)
+
+    fc.update_project(777, tags: ["450p/h", "300p/h"])
+    assert_equal ["450p/h","300p/h"], ForecastProject.find_by(forecast_id: 777).tags
+  end
+
   test "delete_assignment DELETEs by id and treats 404 as already-gone" do
     fc = build_forecast_client
 
