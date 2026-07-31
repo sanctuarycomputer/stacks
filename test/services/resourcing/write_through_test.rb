@@ -439,6 +439,37 @@ class Resourcing::WriteThroughTest < ActiveSupport::TestCase
     assert_equal [:noop], results.map(&:status)
   end
 
+  test "adopt_into: resolved person differs from the live assignment's personId → all segments conflict, no writes" do
+    tr = tracker
+    c = contributor_for(11) # resolves to runn person 11 ("Bob")
+    snapshot = human(9001, Date.new(2030, 1, 1), Date.new(2030, 12, 31), person: 10) # live assignment belongs to person 10 ("Alice")
+    r1 = row(tr, Date.new(2030, 1, 1), Date.new(2030, 8, 31), contributor: c, key: "seg:1")
+    r2 = row(tr, Date.new(2030, 10, 1), Date.new(2030, 12, 31), contributor: c, key: "seg:2")
+    runn = mock("runn")
+    runn.stubs(:get_assignments).returns([snapshot])
+    runn.stubs(:get_people).returns(people_stub(11))
+    runn.expects(:create_assignment).never
+    runn.expects(:delete_assignment).never
+    results = service(runn).adopt_into(rows: [r1, r2], adopt_expected: snapshot)
+    assert_equal [:conflict, :conflict], results.map(&:status)
+  end
+
+  test "adopt_into: mixed contributors across segments → all conflict, no writes" do
+    tr = tracker
+    c1 = contributor_for(10)
+    c2 = contributor_for(11)
+    snapshot = human(9001, Date.new(2030, 1, 1), Date.new(2030, 12, 31), person: 10)
+    r1 = row(tr, Date.new(2030, 1, 1), Date.new(2030, 8, 31), contributor: c1, key: "seg:1")
+    r2 = row(tr, Date.new(2030, 10, 1), Date.new(2030, 12, 31), contributor: c2, key: "seg:2")
+    runn = mock("runn")
+    runn.stubs(:get_assignments).returns([snapshot])
+    runn.stubs(:get_people).returns(people_stub(10)) # resolver only resolves fresh.first's contributor (c1 → person 10)
+    runn.expects(:create_assignment).never
+    runn.expects(:delete_assignment).never
+    results = service(runn).adopt_into(rows: [r1, r2], adopt_expected: snapshot)
+    assert_equal [:conflict, :conflict], results.map(&:status)
+  end
+
   test "adopt_into preview: computes the delta for every segment but writes nothing" do
     tr = tracker
     c = contributor_for(10)

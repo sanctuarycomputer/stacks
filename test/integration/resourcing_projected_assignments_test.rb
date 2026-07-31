@@ -308,6 +308,32 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
     assert_nil ProjectedAssignment.find_by(source_key: "adopt:bad:2")
   end
 
+  test "POST adopt without adopt_expected returns 422 and writes nothing" do
+    Stacks::Runn.any_instance.expects(:create_assignment).never
+    Stacks::Runn.any_instance.expects(:delete_assignment).never
+    segments = [
+      body(start_date: "2030-01-01", end_date: "2030-08-31").merge(source_key: "adopt:noexp:1"),
+    ]
+    post "/api/v1/projected_assignments/adopt",
+      headers: auth_headers, params: { segments: segments }.to_json
+    assert_response :unprocessable_entity
+    json = JSON.parse(response.body)
+    assert_equal "error", json["status"]
+    assert_nil ProjectedAssignment.find_by(source_key: "adopt:noexp:1")
+  end
+
+  test "POST adopt with empty segments returns 422 and writes nothing" do
+    snapshot = { "id" => 9001, "personId" => 10, "projectId" => 91_100, "roleId" => 7,
+      "startDate" => "2030-01-01", "endDate" => "2030-12-31", "minutesPerDay" => 480, "note" => "hand-authored" }
+    Stacks::Runn.any_instance.expects(:create_assignment).never
+    Stacks::Runn.any_instance.expects(:delete_assignment).never
+    post "/api/v1/projected_assignments/adopt",
+      headers: auth_headers, params: { adopt_expected: snapshot, segments: [] }.to_json
+    assert_response :unprocessable_entity
+    json = JSON.parse(response.body)
+    assert_equal "error", json["status"]
+  end
+
   test "POST batch marks remaining items deferred when WriteGuard cap is hit" do
     store = ActiveSupport::Cache::MemoryStore.new
     Rails.stubs(:cache).returns(store)

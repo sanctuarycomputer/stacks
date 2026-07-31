@@ -214,7 +214,9 @@ module Resourcing
       if live.nil? ||                                          # target gone → human already changed it
          live["note"].to_s.include?("[stacksbot:") ||          # already owned — never re-adopt
          !same_state?(live, adopt_expected) ||                 # target moved since the snapshot
-         fresh.any? { |r| r.runn_project_id.to_i != live["projectId"].to_i } # never split a human across projects
+         fresh.any? { |r| r.runn_project_id.to_i != live["projectId"].to_i } || # never split a human across projects
+         runn_person_id.to_i != live["personId"].to_i ||        # resolved person ≠ the human being replaced
+         fresh.any? { |r| r.contributor_id != fresh.first.contributor_id } # mixed contributors in one adopt group
         return fresh.each_with_object({}) { |r, h| h[r.source_key] = conflict(live) }
       end
 

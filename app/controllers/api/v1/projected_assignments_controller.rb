@@ -57,7 +57,13 @@ class Api::V1::ProjectedAssignmentsController < ApiController
   # any invalid segment aborts the entire request with no side effects.
   def adopt
     adopt_expected = params[:adopt_expected]&.permit!&.to_h
-    rows = Array(params[:segments]).map do |seg|
+    segments = Array(params[:segments])
+    if adopt_expected.blank? || segments.blank?
+      return render json: { status: "error", error: "adopt requires adopt_expected and at least one segment" },
+        status: :unprocessable_entity
+    end
+
+    rows = segments.map do |seg|
       permitted = seg.permit(:source_key, *ATTRS)
       r = ProjectedAssignment.find_or_initialize_by(source_key: permitted[:source_key])
       r.assign_attributes(permitted.except(:source_key).to_h.symbolize_keys)
