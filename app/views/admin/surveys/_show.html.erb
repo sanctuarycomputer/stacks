@@ -24,6 +24,9 @@
     <div class="dashboard-module">
       <div class="module-body factoid-parent">
         <p>🍃 <strong>Note!</strong> You aren't required to respond to this survey.</p>
+        <% if resource.status == :open && survey_responder.nil? %>
+          <%= link_to "Respond anyway →", new_admin_survey_response_path(survey_id: resource.id) %>
+        <% end %>
       </div>
     </div>
   </div>
