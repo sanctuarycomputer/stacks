@@ -23,6 +23,7 @@ module Mcp
       Mcp::EnsureWorkstreamTool,
       Mcp::CreateRecurringAssignmentTool,
       Mcp::RemoveWorkstreamRateTool,
+      Mcp::SetProjectTrackerWorkCompletedAtTool,
     ].freeze
 
     def self.build

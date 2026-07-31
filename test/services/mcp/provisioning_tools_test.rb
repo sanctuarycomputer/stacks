@@ -353,4 +353,22 @@ class Mcp::ProvisioningToolsTest < ActiveSupport::TestCase
     resp = Mcp::RemoveWorkstreamRateTool.call(workstream_id: 999999, rate: "450p/h", server_context: {})
     assert_match(/not found/i, payload(resp)["error"])
   end
+
+  # ---- set_project_tracker_work_completed_at ------------------------------
+  test "work_completed_at defaults to today when omitted, and unmarks on null" do
+    tracker = ProjectTracker.new(name: "Done Co").tap { |t| t.save!(validate: false) }
+    mark = Mcp::SetProjectTrackerWorkCompletedAtTool.call(project_tracker_id: tracker.id, server_context: {})
+    assert_equal true, payload(mark)["after"]["completed"]
+    assert_equal Date.today.to_s, tracker.reload.work_completed_at.to_date.to_s
+
+    unmark = Mcp::SetProjectTrackerWorkCompletedAtTool.call(project_tracker_id: tracker.id, completed_at: nil, server_context: {})
+    assert_equal false, payload(unmark)["after"]["completed"]
+    assert_nil tracker.reload.work_completed_at
+  end
+
+  test "work_completed_at accepts an explicit date" do
+    tracker = ProjectTracker.new(name: "Back Co").tap { |t| t.save!(validate: false) }
+    Mcp::SetProjectTrackerWorkCompletedAtTool.call(project_tracker_id: tracker.id, completed_at: "2026-06-30", server_context: {})
+    assert_equal "2026-06-30", tracker.reload.work_completed_at.to_date.to_s
+  end
 end

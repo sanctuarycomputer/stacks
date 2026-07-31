@@ -139,6 +139,15 @@ class ProjectTracker < ApplicationRecord
     self
   end
 
+  def mark_work_completed!(at:)
+    # validate: false — work_completed_at has no validations of its own, and this action must
+    # not be blocked by unrelated model validations (e.g. has_msa_and_sow_links) on trackers
+    # that haven't had their MSA/SOW links set up yet.
+    self.work_completed_at = at
+    save!(validate: false)
+    self
+  end
+
   private def upsert_link!(type, label, url)
     link = project_tracker_links.find { |l| l.link_type == type.to_s } ||
            project_tracker_links.build(name: label, link_type: type)
