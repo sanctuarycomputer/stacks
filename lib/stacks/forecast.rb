@@ -115,6 +115,58 @@ class Stacks::Forecast
     response.parsed_response["assignment"]
   end
 
+  def create_client(name:)
+    body = { client: { name: name } }
+    response = self.class.post("/clients", headers: write_headers, body: JSON.dump(body))
+    raise "Forecast create_client failed: #{response.code} #{response.body}" unless response.success?
+    client = response.parsed_response["client"]
+    upsert_client_locally!(client)
+    client
+  end
+
+  def find_or_create_client!(name)
+    existing = ForecastClient.where("lower(name) = ?", name.to_s.strip.downcase).first
+    return existing if existing
+    created = create_client(name: name)
+    ForecastClient.find_by(forecast_id: created["id"])
+  end
+
+  def create_project(client_id:, name:, code:, tags: [], notes: "")
+    body = { project: { client_id: client_id, name: name, code: code, tags: tags, notes: notes.to_s } }
+    response = self.class.post("/projects", headers: write_headers, body: JSON.dump(body))
+    raise "Forecast create_project failed: #{response.code} #{response.body}" unless response.success?
+    project = response.parsed_response["project"]
+    upsert_project_locally!(project)
+    project
+  end
+
+  def update_project(forecast_id, attrs)
+    body = { project: attrs }
+    response = self.class.put("/projects/#{forecast_id}", headers: write_headers, body: JSON.dump(body))
+    raise "Forecast update_project failed: #{response.code} #{response.body}" unless response.success?
+    project = response.parsed_response["project"]
+    upsert_project_locally!(project)
+    project
+  end
+
+  def self.rate_tag(rate)
+    n = rate.to_s.delete("$").to_f            # "$450p/h" -> 450.0, 99.75 -> 99.75
+    s = Kernel.format("%g", n)                  # 450.0 -> "450", 99.75 -> "99.75"
+    "#{s}p/h"
+  end
+
+  def add_project_rate!(forecast_id, rate)
+    tag = self.class.rate_tag(rate)
+    current = local_tags(forecast_id)
+    return refetchable_project(forecast_id) if current.include?(tag)
+    update_project(forecast_id, tags: current + [tag])
+  end
+
+  def remove_project_rate!(forecast_id, rate)
+    tag = self.class.rate_tag(rate)
+    update_project(forecast_id, tags: local_tags(forecast_id) - [tag])
+  end
+
   def delete_assignment(forecast_id)
     response = self.class.delete("/assignments/#{forecast_id}", headers: write_headers)
     return true if response.success?
@@ -126,6 +178,36 @@ class Stacks::Forecast
 
   def write_headers
     @headers.merge("Content-Type": "application/json")
+  end
+
+  # Reads current rate tags from the LOCAL mirror (fast, and kept fresh by our own
+  # writes). Tradeoff: a rate added directly in Forecast within the ~10-min sync gap
+  # won't be seen here, so add/remove_project_rate!'s full-tags PUT could drop it.
+  # Acceptable for now since this API is the normal path for rate changes.
+  def local_tags(forecast_id)
+    fp = ForecastProject.find_by(forecast_id: forecast_id)
+    raise "Unknown Forecast project #{forecast_id}" if fp.nil?
+    Array(fp.tags)
+  end
+
+  def refetchable_project(forecast_id)
+    ForecastProject.find_by(forecast_id: forecast_id).data || {}
+  end
+
+  def upsert_client_locally!(c)
+    ForecastClient.upsert_all([{
+      forecast_id: c["id"], name: c["name"], harvest_id: c["harvest_id"],
+      archived: c["archived"], updated_at: c["updated_at"], updated_by_id: c["updated_by_id"], data: c,
+    }], unique_by: :forecast_id)
+  end
+
+  def upsert_project_locally!(c)
+    ForecastProject.upsert_all([{
+      forecast_id: c["id"], name: c["name"], code: c["code"], notes: c["notes"],
+      start_date: c["start_date"], end_date: c["end_date"], harvest_id: c["harvest_id"],
+      archived: c["archived"], client_id: c["client_id"], tags: c["tags"],
+      updated_at: c["updated_at"], updated_by_id: c["updated_by_id"], data: c,
+    }], unique_by: :forecast_id)
   end
 
   # Forecast re-sends every record that overlaps each sync window, and sync_all_assignments!

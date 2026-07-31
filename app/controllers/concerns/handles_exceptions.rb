@@ -20,6 +20,8 @@ module HandlesExceptions
       handle_for_json(error)
     when ActionController::InvalidAuthenticityToken
       handle_for_json(Stacks::Errors::Unauthorized.new('Invalid Authenticity Token'))
+    when ActiveRecord::RecordNotFound
+      handle_for_json(Stacks::Errors::NotFound.new('Not found'))
     else
       handle_for_json(Stacks::Errors::Unexpected.new('Unhandled exception', exception))
     end

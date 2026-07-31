@@ -83,6 +83,52 @@ class ProjectTracker < ApplicationRecord
     project_capsule.present? && project_capsule.complete?
   end
 
+  def self.provision!(name:, msa_url: nil, sow_url: nil, budget_low_end: nil, budget_high_end: nil)
+    warnings = []
+    # Array#<< returns the (truthy) array, so `&&` short-circuits into the placeholder URL
+    # while the warning is recorded as a side effect of building the left-hand side.
+    msa = msa_url.presence || (warnings << "MSA link is a placeholder — replace it in Forecast/admin." && "https://todo.example.com/msa")
+    sow = sow_url.presence || (warnings << "SOW link is a placeholder — replace it in Forecast/admin." && "https://todo.example.com/sow")
+
+    tracker = transaction do
+      pt = new(name: name, budget_low_end: budget_low_end, budget_high_end: budget_high_end)
+      pt.project_tracker_links.build(name: "MSA", url: msa, link_type: :msa)
+      pt.project_tracker_links.build(name: "SOW", url: sow, link_type: :sow)
+      pt.save!
+      pt
+    end
+    [tracker, warnings]
+  end
+
+  def derived_client
+    forecast_projects.first&.forecast_client
+  end
+
+  # Adds a workstream (a rate-bearing schedulable strip) to this tracker. Resolves the
+  # client from the tracker's existing workstreams, else find-or-creates it by name (the
+  # first workstream establishes the tracker's client). Creates the underlying Forecast
+  # project (outside a txn, per the create-external-then-link convention) and links it.
+  def add_workstream!(name:, code:, rate: nil, client_name: nil, forecast_client: Stacks::Forecast.new)
+    # Code guards first — they need no client, and must run before any external call
+    # so a rejected workstream can't orphan a Forecast client/project.
+    errors.clear
+    errors.add(:base, "A workstream Project Code is required.") if code.blank?
+    if code.present?
+      taken = ForecastProject.forecast_codes_already_associated_to_project_tracker(id)
+      errors.add(:base, "Project Code #{code} is already used by another Project Tracker.") if taken.include?(code)
+    end
+    raise ActiveRecord::RecordInvalid.new(self) if errors.any?
+
+    client = derived_client
+    client ||= forecast_client.find_or_create_client!(client_name) if client_name.present?
+    errors.add(:base, "A client is required for the first workstream.") if client.nil?
+    raise ActiveRecord::RecordInvalid.new(self) if errors.any?
+
+    tags = rate.present? ? [Stacks::Forecast.rate_tag(rate)] : []
+    project = forecast_client.create_project(client_id: client.forecast_id, name: name, code: code, tags: tags)
+    transaction { project_tracker_forecast_projects.create!(forecast_project_id: project["id"]) }
+  end
+
   def self.capsule_pending
     ProjectTracker.where.not(work_completed_at: nil).select do |pt|
       pt.work_status == :capsule_pending
