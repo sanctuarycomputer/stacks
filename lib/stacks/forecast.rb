@@ -164,6 +164,10 @@ class Stacks::Forecast
     @headers.merge("Content-Type": "application/json")
   end
 
+  # Reads current rate tags from the LOCAL mirror (fast, and kept fresh by our own
+  # writes). Tradeoff: a rate added directly in Forecast within the ~10-min sync gap
+  # won't be seen here, so add/remove_project_rate!'s full-tags PUT could drop it.
+  # Acceptable for now since this API is the normal path for rate changes.
   def local_tags(forecast_id)
     fp = ForecastProject.find_by(forecast_id: forecast_id)
     raise "Unknown Forecast project #{forecast_id}" if fp.nil?

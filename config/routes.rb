@@ -20,7 +20,7 @@ Rails.application.routes.draw do
     match '/mcp/write', to: 'mcp_write#handle', via: [:post, :get, :delete]
     resources :forecast_projects, only: [:create]
     post   "forecast_projects/:forecast_id/rates",       to: "forecast_projects#add_rate"
-    delete "forecast_projects/:forecast_id/rates/:rate", to: "forecast_projects#remove_rate"
+    delete "forecast_projects/:forecast_id/rates", to: "forecast_projects#remove_rate"
     resources :project_trackers, only: [:create]
     resources :recurring_assignments, only: [:create]
     get "forecast_clients", to: "forecast_clients#index"

@@ -30,7 +30,14 @@ class Api::ForecastProjectsTest < ActionDispatch::IntegrationTest
   test "remove_rate delegates to remove_project_rate!" do
     fake = mock("forecast"); fake.expects(:remove_project_rate!).with(777, "450").returns({ "id" => 777, "tags" => [] })
     Stacks::Forecast.stubs(:new).returns(fake)
-    delete "/api/forecast_projects/777/rates/450", headers: auth
+    delete "/api/forecast_projects/777/rates", params: { rate: "450" }.to_json, headers: auth
+    assert_response :success
+  end
+
+  test "remove_rate handles decimal rates (no format truncation)" do
+    fake = mock("forecast"); fake.expects(:remove_project_rate!).with(777, "99.75").returns({ "id" => 777, "tags" => [] })
+    Stacks::Forecast.stubs(:new).returns(fake)
+    delete "/api/forecast_projects/777/rates", params: { rate: "99.75" }.to_json, headers: auth
     assert_response :success
   end
 end

@@ -35,8 +35,13 @@ class Api::ForecastProjectsController < ApiController
   end
 
   def render_error(e)
-    Rails.logger.warn("[Api::ForecastProjects] #{e.class}: #{e.message}")
-    Sentry.capture_exception(e) if defined?(Sentry)
-    render json: { error: e.message }, status: :unprocessable_entity
+    case e
+    when ActionController::ParameterMissing, ArgumentError, ActiveRecord::RecordInvalid
+      render json: { error: e.message }, status: :unprocessable_entity
+    else
+      Rails.logger.warn("[Api::ForecastProjects] #{e.class}: #{e.message}")
+      Sentry.capture_exception(e) if defined?(Sentry)
+      render json: { error: "Provisioning call failed; the error was logged." }, status: :unprocessable_entity
+    end
   end
 end
