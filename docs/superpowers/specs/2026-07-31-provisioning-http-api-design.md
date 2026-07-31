@@ -1,160 +1,162 @@
-# Provisioning HTTP API — Design
+# Provisioning HTTP API — Design (generic, Forecast-hidden)
 
-**Date:** 2026-07-31
-**Status:** Approved direction (autonomous build; flagged decisions surfaced at PR review)
-**Scope:** Phase 1 = HTTP API. Phase 2 (separate PR) = MCP tools wrapping the same code.
+**Date:** 2026-07-31 (revised after PR #158 review)
+**Status:** Approved direction (autonomous build; reworks the branch in place)
+**Scope:** Phase 1 = HTTP API. Phase 2 (later) = MCP tools wrapping the same code.
 
 ## Problem
 
-We want an agent to stand up a project end-to-end from a one-line instruction, e.g.
-*"Ensure the Qualitate project has a $450p/h forecast project tracker, and set up a weekly
-recurring assignment for hugh@sanctuary.computer on it."* Today none of this is programmable:
-ProjectTrackers are ActiveAdmin-only, Forecast projects/clients are read-only in Stacks, and
-rates live as Forecast tags with no write path.
+An agent should stand up a project end-to-end from a one-line instruction, e.g. *"Ensure the
+Qualitate project has a $450p/h tracker, and set up a weekly recurring assignment for
+hugh@sanctuary.computer."* Today none of this is programmable, and — critically — **the API must
+NOT expose Forecast concepts.** Forecast may be swapped for a different hour-tracking tool (or an
+in-house one), so the surface speaks generic Stacks-native terms; Forecast is a hidden
+implementation detail translated behind the controllers.
 
-The existing MCP **write** server is deliberately scoped to the projection plane ("rates and
-money have no tools, so no composition can reach them"). Provisioning crosses that boundary, so
-rather than erode it we give provisioning its **own HTTP API surface**. MCP tools (phase 2) will
-wrap the same service methods.
+## Vocabulary (API surface — Forecast never appears)
+
+| API concept | Identity exposed | Internally (hidden) |
+|---|---|---|
+| **Contributor** (a person) | `contributor.id` (native) | `Contributor` → `forecast_person_id` (= ForecastPerson `forecast_id`) |
+| **Client** (a customer) | referenced by **name** | `ForecastClient` (find-or-create by name) |
+| **Project Tracker** (an engagement) | `project_tracker.id` (native) | `ProjectTracker` (native model; no client column — derived) |
+| **Workstream** (a rate-bearing schedulable strip in a tracker) | `ProjectTrackerForecastProject.id` (native join id) | a `ForecastProject` under the tracker's client, attached via the join; carries the rate tag(s) |
+| **Rate** | a number (e.g. `450`) | a `"450p/h"` tag on the workstream's ForecastProject (multiple allowed) |
+| **Recurring Assignment** | `recurring_assignment.id` | `RecurringAssignment` (keeps `forecast_person_id`/`forecast_project_id` internally) |
+
+**Why "workstream" (not "role"):** `role` is already overloaded 4 ways — Runn's global rate-card
+job title (orthogonal to projects), Stacks project-lead types, `ForecastPerson.roles` studio tags,
+and `UnresolvableRole`/`roleId` in the adjacent projection write-path. "Workstream" collides with
+none.
 
 ## Principles
 
-- **Pure CRUD.** Endpoints are thin resource creates/reads. The "ensure / find-or-create"
-  intelligence lives in the *calling agent* (read-then-create), not in clever server logic.
-- **Multiple rates per project are normal.** Rate operations *add/remove* a single `…p/h` tag and
-  never clobber the others. A project may carry `["450p/h", "300p/h"]`.
-- **Immediate local consistency.** Any Forecast write reflects into the local mirror
-  (`ForecastProject`) in the same request, so a subsequent read is correct without waiting for the
-  ~10-minute `sync_all!`.
-- **Same auth as the MCP surface.** `X-Api-Key` checked against `config[:stacks][:private_api_key]`
-  (constant-time), via the existing `ApiController#check_private_api_key!`.
+- **Forecast is hidden.** No `forecast_*` in any route, param, or response. Controllers translate
+  generic ids → Forecast ids at a thin seam, following the existing precedent
+  (`Api::V1::ProjectedAssignmentsController` speaks `contributor_id`/`project_tracker_id`;
+  `Resourcing::RunnPersonResolver` is the documented "swap Runn here" seam).
+- **Internal models unchanged.** `RecurringAssignment` still stores Forecast ids; genericization is
+  purely a surface remap (`contributor.id → contributor.forecast_person_id`, trivially the same
+  value; `workstream_id → join.forecast_project_id`). No model/column renames in phase 1.
+- **Pure CRUD; agent orchestrates.** Endpoints are thin creates/reads; "ensure/find-or-create"
+  lives in the calling agent (read-then-create). The one exception is **client find-or-create**,
+  which happens under the hood on first-workstream (below).
+- **Multiple rates per workstream.** Rate ops add/remove ONE `…p/h` tag, never clobber others.
+- **Immediate local consistency.** Every Forecast write upserts the local mirror in-request.
+- **Auth:** `X-Api-Key` via the existing `ApiController#check_private_api_key!` (403 on failure).
 
-## Architecture
+## Error handling (fix, not reinvent)
 
+`ApiController` already has global handling via `HandlesExceptions#handle_for_json`
+(`rescue_from ::StandardError`): `RecordInvalid`→422-with-details, `ParameterMissing`→422. **Remove
+all bespoke controller `rescue`/`render_error` blocks** and let exceptions propagate.
+
+**Latent bug to fix:** the handler's `else` branch references `Stacks::Errors::Unexpected`, which is
+**not defined anywhere** (confirmed at boot) — so any genuinely-unexpected error in any API
+controller currently raises `NameError` inside the handler. Define it in `lib/stacks/errors.rb`:
+
+```ruby
+class Unexpected < Stacks::Errors::Base
+  def initialize(detail, exception = nil)
+    @detail = detail
+    Sentry.capture_exception(exception) if exception && defined?(Sentry)
+    Rails.logger.warn("[Stacks::Errors::Unexpected] #{exception&.class}: #{exception&.message}")
+  end
+  def title; 'Unexpected Error'; end
+  def detail; @detail; end            # generic — never echoes the underlying exception message
+  def source; nil; end
+  def status; :internal_server_error; end
+end
 ```
-Api::* controllers (thin, X-Api-Key)          ← phase 1 (this PR)
-        │  call
-        ▼
-Stacks::Forecast (new write methods + mirror)  +  models (ProjectTracker, RecurringAssignment, …)
-        ▲  call
-Mcp::* provisioning tools                       ← phase 2 (next PR), same code
-```
 
-Controllers live under the existing `namespace :api` (`config/routes.rb:16`) and inherit
-`ApiController`, adding `before_action :check_private_api_key!`. No new base infra.
+This resolves the info-leak finding globally (a failed Forecast write → generic 500, logged/Sentry,
+no upstream body leaked) AND fixes a pre-existing app-wide bug.
+
+## Client find-or-create (the one bit of server-side "ensure")
+
+A ProjectTracker is conceptually one client, derived from its workstreams'
+ForecastProject → `forecast_client`. So:
+
+- On **first** workstream: resolve the client by name from the local mirror; if absent, create it in
+  Forecast (`create_client`) + mirror. Then create the workstream's ForecastProject under it.
+- On **subsequent** workstreams: use the tracker's existing client (from any current workstream);
+  the `client` param is optional and, if given, should match (else a warning). The tracker never
+  stores a `client_id` — no migration, no new invariant.
 
 ## Forecast client additions (`lib/stacks/forecast.rb`)
 
-Currently only `create_assignment`/`delete_assignment` exist. Add (same `write_headers` +
-`{ resource: {...} }` envelope pattern, verified live):
+Already have: `create_project`, `update_project`, `add_project_rate!`, `remove_project_rate!`,
+`rate_tag`, mirror upsert. **Add:**
+- `create_client(name:)` → `POST /clients` (`{ client: { name: } }`) + upsert local `ForecastClient`
+  mirror (mapping per `sync_clients!`). Returns the parsed client.
+- `find_or_create_client!(name)` (can live in the provisioning seam) → local `ForecastClient` by
+  case-insensitive name, else `create_client`.
 
-- `create_project(client_id:, name:, code:, tags: [], notes: "")` → `POST /projects`, returns the
-  parsed `"project"`. Then `upsert_project_locally!` (below).
-- `update_project(forecast_id, attrs)` → `PUT /projects/:id` (partial), returns parsed `"project"`.
-  Then `upsert_project_locally!`.
-- `upsert_project_locally!(api_project)` (private) — maps the API project hash into a local
-  `ForecastProject` row and `upsert_all(unique_by: :forecast_id)`, mirroring the column mapping in
-  `sync_projects!` (`forecast_id`, `name`, `code`, `notes`, `start_date`, `end_date`, `harvest_id`,
-  `archived`, `client_id`, `tags`, `updated_at`, `updated_by_id`, `data`). This is what makes the
-  new project/rate readable immediately.
-
-Clients are **not** creatable in phase 1 — the flow assumes the Forecast client (e.g. "Qualitate")
-already exists (resolvable by name). (Flagged: no create-client.)
-
-## Rates (Forecast tags — supports multiples)
-
-- Normalize a numeric rate to a bare tag: `450 → "450p/h"`, `99.75 → "99.75p/h"` (strip a trailing
-  `.0`; no `$`). A `"$450p/h"` input is coerced to `"450p/h"`.
-- **Add rate:** read the project's current `tags`, append the normalized tag iff absent, `PUT` the
-  full tags array, reflect locally. Idempotent; never removes other rates.
-- **Remove rate:** filter the tag out, `PUT`, reflect locally.
-- Rate presence/parse reuses the existing convention (`ForecastProject#hourly_rate` reads
-  `tags` ending in `"p/h"`).
-
-## HTTP Endpoints
-
-All under `/api`, `X-Api-Key` required, JSON in/out. Errors return a JSON `{ "error": "…" }` body
-with an appropriate 4xx (validation/not-found) or 401 (auth). Success returns the created/looked-up
-resource(s) as JSON, including `forecast_id`s the agent needs for the next call.
+## HTTP Endpoints (all `/api`, `X-Api-Key`)
 
 ### Reads (resolvers)
+- `GET /api/contributors?email=` → `[{ id, email, name }]` (Contributor native id; email via
+  `forecast_person`, joined — case-insensitive).
+- `GET /api/project_trackers?client=<name>` (and `?name=<tracker name>`) → `[{ id, name, client,
+  workstreams: [{ id, name, code, rates: [..] }] }]`. Lets the agent check what exists.
 
-- `GET /api/forecast_clients?name=Qualitate` → matching clients `[{forecast_id, name}]`
-  (case-insensitive, trimmed — mirrors the Runn action's name match).
-- `GET /api/forecast_clients/:forecast_id/forecast_projects` → the client's projects, each with
-  `{forecast_id, name, code, rates: [450.0, …], hourly_rate, project_tracker_id|null, archived}`.
-- `GET /api/forecast_people?email=hugh@sanctuary.computer` → `[{forecast_id, email, name}]`.
+### Writes
+- `POST /api/project_trackers` — `{ name, msa_url?, sow_url?, budget_low_end?, budget_high_end? }`
+  → `{ id, name, warnings }`. Creates the tracker + MSA/SOW links (passed in, or placeholder +
+  warning when omitted). No client, no workstreams yet.
+- `POST /api/project_trackers/:id/workstreams` — `{ name, code, rate?, client? }`
+  → `{ id, name, code, rates, client, project_tracker_id }`. Resolves the tracker's client
+  (existing) or find-or-creates by `client` name (first workstream); creates a ForecastProject
+  under that client with `code` + the rate tag(s); attaches it via the join; returns the **join
+  row id** as the workstream `id`.
+- `POST /api/project_trackers/:tracker_id/workstreams/:id/rates` — `{ rate }` → add rate.
+  `DELETE …/workstreams/:id/rates?rate=450` → remove rate. Returns the workstream with `rates`.
+  (Rate on the request body/query — never a path segment — so decimals like `99.75` are safe.)
+- `POST /api/recurring_assignments` — `{ contributor_id, workstream_id, allocation_hours?,
+  weekdays?, starts_on, ends_on? }`. Translates `contributor_id → contributor.forecast_person_id`
+  and `workstream_id → join.forecast_project_id`, creates the `RecurringAssignment`. Defaults:
+  8h/day, Mon–Fri, start today. Returns `{ id, contributor_id, workstream_id, allocation_hours,
+  weekdays, starts_on, ends_on }` (no forecast ids in the response).
 
-### Writes (CRUD)
+## The composed one-liner (agent-side)
 
-- `POST /api/forecast_projects`
-  Body: `{ client_id, name, code, rates: [450], notes? }`. Creates a Forecast project under the
-  client, tags = the rate tags, reflects locally. Requires `code` (needed for tracker attachment;
-  the caller supplies it — see flagged decision on generation). Returns the project.
-- `POST /api/forecast_projects/:forecast_id/rates`  Body: `{ rate: 450 }` → add rate.
-  `DELETE /api/forecast_projects/:forecast_id/rates/:rate` → remove rate. Both return the updated
-  project with its full `rates`.
-- `POST /api/project_trackers`
-  Body: `{ name, budget_low_end?, budget_high_end?, msa_url, sow_url, forecast_project_ids: [id,…] }`.
-  Creates the tracker, builds an `msa` and a `sow` `ProjectTrackerLink` (names default "MSA"/"SOW",
-  urls validated `http|https`), and attaches each forecast project via
-  `project_tracker_forecast_projects` (join keyed on `forecast_id`). Enforces the model's existing
-  validations (name present, MSA+SOW present, each attached project has a non-blank `code`, no code
-  collision with another tracker). Returns the tracker with attached project ids + link ids.
-  - `msa_url`/`sow_url` are accepted inputs (per decision). If **omitted**, fall back to a
-    placeholder link (`https://TODO.example.com/msa`) and include a `"warnings": ["MSA link is a
-    placeholder — replace it"]` array in the response, so the one-liner still succeeds but the gap
-    is surfaced. (Flagged.)
-- `POST /api/recurring_assignments`
-  Body: `{ forecast_person_id, forecast_project_id, allocation_hours?, weekdays?, starts_on, ends_on? }`.
-  Plain CRUD over the `RecurringAssignment` model shipped in PR #157. Defaults: `allocation_hours`
-  → 8 (→ 28 800 s/day), `weekdays` → `[1,2,3,4,5]` (Mon–Fri), `starts_on` → today if omitted.
-  Returns the created rule.
-
-## The composed "ensure" flow (done by the agent, not the server)
-
-1. `GET /api/forecast_clients?name=Qualitate` → client id.
-2. `GET …/forecast_projects` → look for one whose `rates` include 450.
-3. If none: `POST /api/forecast_projects` `{client_id, name, code, rates:[450]}`. If a project exists
-   but lacks the rate: `POST …/:id/rates {rate:450}`.
-4. `POST /api/project_trackers` `{name, msa_url, sow_url, forecast_project_ids:[fp]}`.
-5. `GET /api/forecast_people?email=hugh@…` → person id;
-   `POST /api/recurring_assignments {forecast_person_id, forecast_project_id, allocation_hours:8, weekdays:[1..5]}`.
+1. `GET /api/contributors?email=hugh@…` → contributor id.
+2. `GET /api/project_trackers?client=Qualitate` → existing tracker? If none, `POST
+   /api/project_trackers { name: "Qualitate", … }` (placeholder MSA/SOW + warning).
+3. Does a workstream already carry rate 450? If not, `POST …/:id/workstreams { name, code, rate:
+   450, client: "Qualitate" }` (find-or-creates the Qualitate client under the hood).
+4. `POST /api/recurring_assignments { contributor_id, workstream_id, allocation_hours: 8 }`
+   (weekdays default Mon–Fri).
 
 ## Errors & safety
 
-- Non-2xx from Forecast → surface a clean `{error}` (log + Sentry internally), never leak bodies.
-- Forecast writes happen **outside** the DB transaction; local mirror/link writes happen inside one
-  (the "Create Runn Project" pattern), so a failed API call can't leave a dangling local row.
-- Reuse `ApiController`'s `rescue_from StandardError` / `HandlesExceptions` for uniform error JSON.
+- Forecast writes happen **outside** the DB transaction; local mirror/link/join writes inside one.
+- All error rendering via the global handler (generic 500 for unexpected/upstream failures, 422 for
+  validation) — no per-controller rescues, no leaked upstream bodies.
 
-## Testing (Minitest + Mocha; controller/integration tests)
+## Testing (Minitest + Mocha)
 
-- **`Stacks::Forecast` writes:** stub `Stacks::Forecast.post/put` (per the assignment write tests);
-  assert path + `{project:{…}}` envelope + local upsert.
-- **Rate add/remove:** starting tags `["300p/h"]`, add 450 → `["300p/h","450p/h"]` (idempotent on
-  repeat); remove 450 → `["300p/h"]`.
-- **Endpoints (request/integration tests):** auth (missing/wrong key → 401); create project; add
-  rate; create tracker (with links + attachment; and the placeholder-warning path); create recurring
-  assignment (defaults applied); resolvers. Stub the Forecast HTTP layer; assert on JSON + DB state.
-- Follow existing `test/integration/mcp_write_endpoint_test.rb` for the auth/JSON-RPC-adjacent shape
-  and `test/controllers`/`test/integration` conventions.
+- `Stacks::Forecast#create_client` (+ mirror); the seam's `find_or_create_client!`.
+- Workstream create: first (find-or-creates client, creates project+join, sets rate) and subsequent
+  (reuses tracker's client); returns join id; rejects a code-less project via the tracker's existing
+  validations.
+- Recurring assignment: `contributor_id`/`workstream_id` translate correctly; defaults; response has
+  no forecast ids.
+- Resolvers: contributor by email; trackers by client name with nested workstreams+rates.
+- Error handling: define-and-render `Unexpected` (generic body, 500); a forced upstream failure
+  returns a generic message, not the Forecast body; RecordInvalid → 422 with details.
+- Auth 403 on every endpoint.
 
-## Out of scope (phase 2, next PR)
-
-- **MCP tools** — one thin `Mcp::*` wrapper per write endpoint, on a provisioning grouping, so the
-  projection write-server stays pure. Same service methods, `{before:, after:}` envelope,
-  `WriteValidation` + a guard.
+## Out of scope (phase 2)
+- MCP tools — thin wrappers over the same controllers/seam.
 
 ## Flagged decisions (for PR review)
-
-1. **HTTP-first; MCP tools deferred to phase 2** (per "start with HTTP").
-2. **No create-client** — the Forecast client must already exist; we resolve it by name.
-3. **`code` is a caller-supplied param** on project creation (required for tracker attach). If you'd
-   rather auto-generate per a convention (e.g. `G3D-…`), say so — I didn't find an existing code
-   generator.
-4. **Rates are add/remove, multi-rate-safe** — never "set/replace all."
-5. **MSA/SOW passed in; placeholder + warning fallback** when omitted (keeps the one-liner working
-   while surfacing the gap).
-6. **Recurring-assignment defaults:** 8h/day, Mon–Fri, start today when unspecified.
-7. **Immediate local mirror upsert** on every Forecast write (no 10-min sync wait).
+1. **Forecast fully hidden**; generic surface (contributors/project_trackers/workstreams/rates/
+   recurring_assignments); translation at a thin seam, internal models keep Forecast ids.
+2. **"workstream"** for the rate strip (identity = native join id).
+3. **Client find-or-create on first workstream**; tracker stays client-less (derived), no migration.
+4. **Rates add/remove, multi-rate-safe**; rate off the path (decimal-safe).
+5. **MSA/SOW passed in; placeholder + warning fallback** when omitted.
+6. **Recurring defaults:** 8h/day, Mon–Fri, today.
+7. **Error handling via the global `HandlesExceptions`** + a newly-defined `Stacks::Errors::Unexpected`
+   (fixes a latent app-wide `NameError`); no per-controller rescues.
