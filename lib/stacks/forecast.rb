@@ -1,6 +1,6 @@
 class Stacks::Forecast
   include HTTParty
-  base_uri 'api.forecastapp.com'
+  base_uri 'https://api.forecastapp.com'
 
   def initialize()
     @headers = {
