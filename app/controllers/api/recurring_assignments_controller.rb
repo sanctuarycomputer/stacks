@@ -15,14 +15,6 @@ class Api::RecurringAssignmentsController < ApiController
     ra.allocation_in_hours = params[:allocation_hours].presence || 8
     ra.save!
     render json: recurring_json(ra)
-  rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.message }, status: :unprocessable_entity
-  rescue ActionController::ParameterMissing, ArgumentError => e
-    render json: { error: e.message }, status: :unprocessable_entity
-  rescue => e
-    Rails.logger.warn("[Api::RecurringAssignments] #{e.class}: #{e.message}")
-    Sentry.capture_exception(e) if defined?(Sentry)
-    render json: { error: "Provisioning call failed; the error was logged." }, status: :unprocessable_entity
   end
 
   private

@@ -9,22 +9,16 @@ class Api::ForecastProjectsController < ApiController
       code: params.require(:code), tags: tags, notes: params[:notes].to_s,
     )
     render json: project_json(project)
-  rescue => e
-    render_error(e)
   end
 
   def add_rate
     project = Stacks::Forecast.new.add_project_rate!(params[:forecast_id].to_i, params.require(:rate))
     render json: project_json(project)
-  rescue => e
-    render_error(e)
   end
 
   def remove_rate
     project = Stacks::Forecast.new.remove_project_rate!(params[:forecast_id].to_i, params[:rate])
     render json: project_json(project)
-  rescue => e
-    render_error(e)
   end
 
   private
@@ -32,16 +26,5 @@ class Api::ForecastProjectsController < ApiController
   def project_json(p)
     { forecast_id: p["id"], name: p["name"], code: p["code"], client_id: p["client_id"],
       tags: p["tags"], rates: Array(p["tags"]).select { |t| t.to_s.end_with?("p/h") }.map(&:to_f) }
-  end
-
-  def render_error(e)
-    case e
-    when ActionController::ParameterMissing, ArgumentError, ActiveRecord::RecordInvalid
-      render json: { error: e.message }, status: :unprocessable_entity
-    else
-      Rails.logger.warn("[Api::ForecastProjects] #{e.class}: #{e.message}")
-      Sentry.capture_exception(e) if defined?(Sentry)
-      render json: { error: "Provisioning call failed; the error was logged." }, status: :unprocessable_entity
-    end
   end
 end
