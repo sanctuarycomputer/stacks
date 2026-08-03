@@ -30,16 +30,25 @@ namespace :stacks do
       # Step 1: proactively refresh every enterprise's QBO token so
       # downstream steps aren't racing the 10-minute staleness gate or
       # surprise-401-ing mid-job. Per-enterprise failures are isolated and
-      # only logged — downstream steps continue regardless (a stale token
-      # will surface as an AuthorizationFailure inside sync_all! /
-      # generate_snapshot!, which are already isolated per-enterprise).
+      # only logged — downstream steps continue regardless (a dead token
+      # surfaces again inside sync_all! / generate_snapshot!, which isolate
+      # per-account/per-enterprise below).
       refresh_results = QboTokens::RefreshAll.call
       failed_refreshes = refresh_results.reject(&:ok?)
       if failed_refreshes.any?
         Rails.logger.warn("[stacks:daily_enterprise_tasks] #{failed_refreshes.size}/#{refresh_results.size} QBO token refreshes failed: #{failed_refreshes.map { |r| "enterprise=#{r.qbo_account.enterprise_id}" }.join(', ')}")
       end
 
-      Parallel.map(QboAccount.all, in_threads: 2) { |e| e.sync_all! }
+      # Per-account errors are isolated: a revoked token on one realm (e.g.
+      # an enterprise temporarily locked out of QBO) must not abort the run
+      # before OpenScheduledCycles — payroll for every other enterprise
+      # depends on this task reaching that step.
+      Parallel.map(QboAccount.all, in_threads: 2) do |qa|
+        qa.sync_all!
+      rescue => e
+        Rails.logger.error("[stacks:daily_enterprise_tasks] sync_all! failed for qbo_account=#{qa.id} (#{qa.enterprise&.name}): #{e.class}: #{e.message}")
+        Sentry.capture_exception(e) if defined?(Sentry)
+      end
 
       # Sync vendors per-account so the Contributor-edit dropdown can offer
       # mappings across every enterprise's QBO realm. sync_all! above only
@@ -53,7 +62,15 @@ namespace :stacks do
         Sentry.capture_exception(e) if defined?(Sentry)
       end
 
-      Parallel.map(Enterprise.all, in_threads: 2) { |e| e.generate_snapshot! }
+      # Snapshots reach QBO live too (Stacks::Period#report →
+      # QboProfitAndLossReport.find_or_fetch_for_range fetches uncached
+      # periods), so the same per-enterprise isolation applies.
+      Parallel.map(Enterprise.all, in_threads: 2) do |e|
+        e.generate_snapshot!
+      rescue => err
+        Rails.logger.error("[stacks:daily_enterprise_tasks] generate_snapshot! failed for enterprise=#{e.id} (#{e.name}): #{err.class}: #{err.message}")
+        Sentry.capture_exception(err) if defined?(Sentry)
+      end
 
       # Backfill any missing Contributor rows for active ForecastPersons
       # FIRST — Contributor.after_create cascades into Ledger.ensure_for_contributor!,
