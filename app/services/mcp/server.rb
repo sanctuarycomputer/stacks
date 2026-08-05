@@ -34,6 +34,7 @@ module Mcp
       Mcp::ListPayableBillsTool,
       Mcp::GetPersonMetricsTool,
       Mcp::GetQuarterlyReportTool,
+      Mcp::GetCapacityTool,
     ].freeze
 
     def self.build
