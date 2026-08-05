@@ -43,6 +43,8 @@ class Mcp::EnterpriseHealthToolTest < ActiveSupport::TestCase
     assert_equal 'month', payload['gradation']
     assert_equal 'All', payload['vertical']
     assert_equal 'cash', payload['accounting_method']
+    assert_equal 'operating', payload['margin_basis'],
+      'All-vertical net/margin are operating figures (rev - cogs - exp), not QBO Net Income'
     assert_includes payload['available_verticals'], 'All'
 
     june = payload['periods'].last
@@ -80,6 +82,16 @@ class Mcp::EnterpriseHealthToolTest < ActiveSupport::TestCase
     err = mcp_payload(Mcp::GetEnterpriseHealthTool.call(entity: 'Index Space, LLC', vertical: 'ZZ', server_context: {}))
     assert_includes err['error'], "Unknown vertical 'ZZ'"
     assert_includes err['error'], 'All'
+  end
+
+  test 'vertical validation reads the snapshot only — never the live discover_verticals P&L union' do
+    ent = enterprise!
+    QboAccount.create!(enterprise: ent, client_id: 'c', client_secret: 's', realm_id: "r#{SecureRandom.hex(3)}")
+    Enterprise.any_instance.expects(:discover_verticals).never
+
+    payload = mcp_payload(Mcp::GetEnterpriseHealthTool.call(entity: 'Index Space, LLC', server_context: {}))
+    assert_equal ['All'], payload['available_verticals'],
+      'available_verticals come from the snapshot entries themselves'
   end
 
   test 'invalid gradation and accounting_method error listing valid values' do

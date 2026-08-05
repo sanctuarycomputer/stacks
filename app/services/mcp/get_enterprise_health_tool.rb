@@ -3,7 +3,10 @@ module Mcp
     tool_name 'get_enterprise_health'
     description 'Per-legal-entity financial health from the nightly Enterprise snapshot ' \
                 '(QBO P&L cache): revenue/cogs/expenses/net revenue/margin per period, ' \
-                'per business vertical. Figures are as of the nightly sync.'
+                'per business vertical. Figures are as of the nightly sync. For the All ' \
+                'vertical, net_revenue and profit_margin are operating figures (revenue - ' \
+                'COGS - expenses) that exclude below-the-line Other Income/Expense, so ' \
+                "they may differ from QBO's Net Income."
     GRADATIONS = Studio::SNAPSHOT_GRADATIONS.map(&:to_s).freeze
     ACCOUNTING_METHODS = %w[cash accrual].freeze
 
@@ -39,13 +42,13 @@ module Mcp
         return Responses.error("Enterprise '#{ent.name}' has no generated snapshot for gradation '#{gradation}' yet.")
       end
 
-      # Verticals present anywhere in this gradation's snapshot, plus any
-      # discoverable from the cached P&L rows (an enterprise without a
-      # qbo_account simply has none beyond All).
+      # Verticals present anywhere in this gradation's snapshot — the
+      # snapshot is the source of truth here; the live discover_verticals
+      # P&L-row union is deliberately NOT consulted per request (a vertical
+      # absent from the snapshot has no data to serve anyway).
       available_verticals = (
         ['All'] +
-        entries.flat_map { |e| e.is_a?(Hash) && e['verticals'].is_a?(Hash) ? e['verticals'].keys : [] } +
-        (ent.qbo_account ? ent.discover_verticals : [])
+        entries.flat_map { |e| e.is_a?(Hash) && e['verticals'].is_a?(Hash) ? e['verticals'].keys : [] }
       ).uniq
       unless available_verticals.include?(vertical)
         return Responses.error("Unknown vertical '#{vertical}'. Valid verticals: #{available_verticals.join(', ')}")
@@ -82,6 +85,10 @@ module Mcp
         gradation: gradation,
         vertical: vertical,
         accounting_method: method,
+        # Operating basis: net = revenue - cogs - expenses. QBO's canonical
+        # "Net Income" additionally includes below-the-line Other
+        # Income/Expense rows, which the snapshot datapoints don't carry.
+        margin_basis: 'operating',
         available_verticals: available_verticals,
         periods: rows,
       }
