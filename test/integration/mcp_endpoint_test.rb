@@ -204,6 +204,74 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     assert payload.key?("studios")
   end
 
+  test "tools/call round-trip for get_enterprise_health surfaces tool errors through the endpoint" do
+    payload = call_tool("get_enterprise_health", { "entity" => "Nope Inc" })
+    assert_includes payload["error"], "Unknown entity 'Nope Inc'"
+    assert_includes payload["error"], "Sanctuary Computer Inc"
+  end
+
+  test "tools/call round-trip for get_capacity returns per-person rows from the persisted reports" do
+    fp = ForecastPerson.create!(forecast_id: 88_100_001, email: "cap@sanctuary.computer",
+                                first_name: "Cap", last_name: "Acity", archived: false, data: {})
+    ForecastPersonUtilizationReport.create!(
+      forecast_person: fp, starts_at: Date.new(2026, 6, 1), ends_at: Date.new(2026, 6, 30),
+      period_gradation: "month",
+      expected_hours_sold: 100.0, expected_hours_unsold: 20.0,
+      actual_hours_sold: 80.0, actual_hours_internal: 5.0, actual_hours_time_off: 8.0,
+      actual_hours_sold_by_rate: { "175.0" => 80.0 }, utilization_rate: 80.0
+    )
+
+    payload = call_tool("get_capacity", { "gradation" => "month" })
+
+    assert_equal "month", payload["gradation"]
+    row = payload["people"].find { |p| p["email"] == "cap@sanctuary.computer" }
+    assert row.present?, "expected the seeded person in: #{payload['people'].inspect}"
+    assert_equal 100.0, row["sellable"]
+    assert_equal 80.0, row["sold"]
+    assert_equal 20.0, row["benched"]
+    assert_equal 20.0, row["non_sellable"]
+    assert payload.key?("unfilled_placeholders")
+  end
+
+  test "tools/call round-trip for list_payable_bills labels every entity" do
+    payload = call_tool("list_payable_bills")
+
+    assert_match(/\A\d{4}-\d{2}-\d{2}\z/, payload["as_of"])
+    assert_equal Enterprise.order(:name).pluck(:name), payload["entities"].map { |e| e["entity"] }
+    payload["entities"].each do |ent|
+      assert ent.key?("bills")
+      assert ent.key?("total_outstanding")
+      assert ent.key?("skipped_count")
+      assert_equal false, ent["truncated"]
+    end
+  end
+
+  test "tools/call round-trip for get_project_burnup returns the snapshot-backed payload" do
+    tracker = ProjectTracker.new(name: "Endpoint Burnup Tracker")
+    tracker.save!(validate: false)
+    tracker.update_column(:snapshot, {
+      "generated_at" => "2026-08-01T02:00:00+00:00",
+      "spend" => [{ "x" => "2026-06-01", "y" => 1000.0 }],
+      "cost" => [{ "x" => "2026-06-30", "y" => 400.0 }],
+      "hours" => [{ "x" => "2026-06-01", "y" => 10.0 }],
+      "cost_total" => 400.0,
+      "invoiced_income_total" => 800.0,
+      "invoiced_with_running_spend_total" => 1000.0,
+      "first_forecast_assignment_start_date" => "2026-06-01",
+      "last_forecast_assignment_end_date" => "2026-06-03",
+    })
+
+    payload = call_tool("get_project_burnup", { "tracker" => tracker.id.to_s })
+
+    assert_equal "Endpoint Burnup Tracker", payload["tracker"]
+    assert_equal tracker.id, payload["id"]
+    assert_equal [{ "x" => "2026-06-01", "y" => 0 }], payload.dig("series", "income")
+    assert_equal 1000.0, payload.dig("totals", "total_spend")
+    assert_equal 800.0, payload.dig("totals", "invoiced")
+    assert_equal "no_budget", payload["status"]
+    assert_equal 0, payload["skipped_invoices"]
+  end
+
   test "POST returns 403 when MCP API key is not configured" do
     Stacks::Utils.stub(:config, { stacks: { private_api_key: '' } }) do
       post "/api/mcp",
