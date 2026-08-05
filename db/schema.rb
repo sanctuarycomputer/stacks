@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_07_30_000002) do
+ActiveRecord::Schema.define(version: 2026_08_04_000001) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -833,6 +833,22 @@ ActiveRecord::Schema.define(version: 2026_07_30_000002) do
     t.index ["review_id"], name: "index_peer_reviews_on_review_id"
   end
 
+  create_table "permission_grants", force: :cascade do |t|
+    t.bigint "admin_user_id", null: false
+    t.string "permission", null: false
+    t.string "subject_type"
+    t.bigint "subject_id"
+    t.bigint "granted_by_id"
+    t.text "notes"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id", "permission", "subject_type", "subject_id"], name: "index_permission_grants_unique_scoped", unique: true, where: "(subject_id IS NOT NULL)"
+    t.index ["admin_user_id", "permission"], name: "index_permission_grants_unique_global", unique: true, where: "((subject_type IS NULL) AND (subject_id IS NULL))"
+    t.index ["admin_user_id"], name: "index_permission_grants_on_admin_user_id"
+    t.index ["granted_by_id"], name: "index_permission_grants_on_granted_by_id"
+    t.index ["subject_type", "subject_id"], name: "index_permission_grants_on_subject_type_and_subject_id"
+  end
+
   create_table "periodic_reports", force: :cascade do |t|
     t.integer "period_gradation", default: 0, null: false
     t.date "period_starts_at", null: false
@@ -1473,6 +1489,8 @@ ActiveRecord::Schema.define(version: 2026_07_30_000002) do
   add_foreign_key "pay_stubs", "pay_cycles"
   add_foreign_key "peer_reviews", "admin_users"
   add_foreign_key "peer_reviews", "reviews"
+  add_foreign_key "permission_grants", "admin_users"
+  add_foreign_key "permission_grants", "admin_users", column: "granted_by_id"
   add_foreign_key "periodic_reports", "notifications"
   add_foreign_key "pre_profit_share_purchases", "admin_users"
   add_foreign_key "profit_share_payments", "admin_users"
