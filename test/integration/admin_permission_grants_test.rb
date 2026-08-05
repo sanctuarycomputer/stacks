@@ -97,4 +97,26 @@ class AdminPermissionGrantsTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Permission Grants"
     assert_includes response.body, "Q3 cohort"
   end
+
+  test "a project-scoped grantee cannot see company-wide invoicing aggregates on the invoice passes index" do
+    pt = make_project_tracker("Training Project")
+    PermissionGrant.create!(admin_user: @trainee, permission: "lead", subject: pt, granted_by: @admin)
+    InvoicePass.create!(start_of_month: Date.today.beginning_of_month)
+
+    sign_in @trainee
+    get admin_invoice_passes_path
+    assert_response :success
+    refute_includes response.body, "Outstanding"
+    refute_includes response.body, "Surplus"
+  end
+
+  test "an admin can see company-wide invoicing aggregates on the invoice passes index" do
+    InvoicePass.create!(start_of_month: Date.today.beginning_of_month)
+
+    sign_in @admin
+    get admin_invoice_passes_path
+    assert_response :success
+    assert_includes response.body, "Outstanding"
+    assert_includes response.body, "Surplus"
+  end
 end

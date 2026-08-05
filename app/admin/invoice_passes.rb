@@ -58,34 +58,41 @@ ActiveAdmin.register InvoicePass do
 
   index download_links: false, title: "Monthly Invoicing" do
     column :start_of_month
-    column :value do |resource|
-      number_to_currency(resource.value)
-    end
-    column :outstanding do |resource|
-      number_to_currency(resource.balance)
-    end
-    column :surplus do |resource|
-      number_to_currency(resource.surplus)
-    end
-    column :invoicing_statuses do |resource|
-      div do
-        if resource.statuses == :missing_hours
-          span("Missing hours", class: "pill missing_hours")
-        else
-          resource.statuses.each do |status, count|
-            span("#{count}x #{status.to_s.humanize}", class: "pill #{status}")
+
+    # Aggregate financials/statuses expose company-wide revenue data.
+    # Project-scoped grantees only get :read on InvoicePass so they can
+    # navigate to their own invoice trackers — they don't get to see
+    # everyone else's numbers, so gate these columns to admins/leads.
+    if current_admin_user.is_admin? || current_admin_user.can_act_as_lead?
+      column :value do |resource|
+        number_to_currency(resource.value)
+      end
+      column :outstanding do |resource|
+        number_to_currency(resource.balance)
+      end
+      column :surplus do |resource|
+        number_to_currency(resource.surplus)
+      end
+      column :invoicing_statuses do |resource|
+        div do
+          if resource.statuses == :missing_hours
+            span("Missing hours", class: "pill missing_hours")
+          else
+            resource.statuses.each do |status, count|
+              span("#{count}x #{status.to_s.humanize}", class: "pill #{status}")
+            end
           end
         end
       end
-    end
 
-    column :payout_statuses do |resource|
-      div do
-        if resource.payout_statuses == :missing_hours
-          span("Missing hours", class: "pill missing_hours")
-        else
-          resource.payout_statuses.each do |status, count|
-            span("#{count}x #{status.to_s.humanize}", class: "pill #{status}")
+      column :payout_statuses do |resource|
+        div do
+          if resource.payout_statuses == :missing_hours
+            span("Missing hours", class: "pill missing_hours")
+          else
+            resource.payout_statuses.each do |status, count|
+              span("#{count}x #{status.to_s.humanize}", class: "pill #{status}")
+            end
           end
         end
       end
@@ -98,14 +105,22 @@ ActiveAdmin.register InvoicePass do
 
   show title: :invoice_month do
 
-    hours_report = Stacks::Automator.discover_people_missing_hours_for_month(
-      [],
-      resource.start_of_month,
-    ).map do |d|
-      {
-        forecast_person: d[:forecast_data],
-        missing_allocation: d[:missing_allocation]
-      }
+    # Same company-wide exposure concern as the index aggregates: the
+    # missing-hours report lists every contributor's name + missing
+    # allocation, not just those tied to the viewer's scoped projects.
+    # Scoped grantees get an empty report — the partial no-ops on empty.
+    hours_report = if current_admin_user.is_admin? || current_admin_user.can_act_as_lead?
+      Stacks::Automator.discover_people_missing_hours_for_month(
+        [],
+        resource.start_of_month,
+      ).map do |d|
+        {
+          forecast_person: d[:forecast_data],
+          missing_allocation: d[:missing_allocation]
+        }
+      end
+    else
+      []
     end
 
     render 'invoice_pass', { invoice_pass: invoice_pass, hours_report: hours_report }
