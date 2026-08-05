@@ -126,6 +126,62 @@ class Mcp::MembershipStatsToolTest < ActiveSupport::TestCase
     refute_includes raw, 'Secret'
   end
 
+  test 'a stale-sync ACTIVE plan past its end_timestamp is out of the counts but still in plan_mix' do
+    # Optix status can lag reality. Weekly counts and total_paying_members are
+    # timestamp-derived, so an ACTIVE-status plan whose end_timestamp already
+    # passed drops out of both; plan_mix is status-derived, so it stays.
+    user!('u-stale')
+    plan!('u-stale', @patron_tpl, started: Date.new(2026, 1, 1), ended: Date.new(2026, 7, 1))
+
+    payload = mcp_payload(Mcp::GetMembershipStatsTool.call(server_context: {}))
+    annex = payload['locations'].find { |l| l['location'] == 'Annex' }
+
+    assert_equal 0, payload['total_paying_members']
+    assert_equal 0, annex['weekly_counts'].last['total']
+    assert_equal 0, annex['paying_members']
+    assert_equal [{ 'plan_type' => 'Patron Membership', 'count' => 1 }], annex['plan_mix'],
+      'the status-derived plan mix still lists the stale ACTIVE plan'
+  end
+
+  test 'an in_all_locations plan counts at every location, so per-location sums exceed the distinct total' do
+    user!('u-roamer')
+    plan!('u-roamer', @roamer_tpl, started: Date.new(2026, 5, 1))
+
+    payload = mcp_payload(Mcp::GetMembershipStatsTool.call(server_context: {}))
+    annex = payload['locations'].find { |l| l['location'] == 'Annex' }
+    brooklyn = payload['locations'].find { |l| l['location'] == 'Brooklyn' }
+
+    [annex, brooklyn].each do |loc|
+      assert_equal [{ 'plan_type' => 'Roamer', 'count' => 1 }], loc['plan_mix'],
+        "#{loc['location']} plan_mix must fold the all-locations plan in"
+      assert_equal 1, loc['weekly_counts'].last['total'],
+        "#{loc['location']} weekly counts must include the all-locations member"
+      assert_equal 1, loc['paying_members']
+    end
+
+    assert_equal 1, payload['total_paying_members'], 'org-wide the member is distinct-counted once'
+    per_location_sum = payload['locations'].sum { |l| l['paying_members'] }
+    assert_operator per_location_sum, :>, payload['total_paying_members'],
+      'per-location sums exceed the org-wide distinct total by construction'
+  end
+
+  test 'an ACTIVE plan canceled mid-window drops from weeks after the cancel, plan_mix keeps it' do
+    user!('u-cancel')
+    plan!('u-cancel', @patron_tpl, started: Date.new(2026, 1, 1), canceled: Date.new(2026, 7, 15))
+
+    payload = mcp_payload(Mcp::GetMembershipStatsTool.call(server_context: {}))
+    annex = payload['locations'].find { |l| l['location'] == 'Annex' }
+    by_week = annex['weekly_counts'].to_h { |w| [w['week_end'], w['total']] }
+
+    assert_equal 1, by_week['2026-07-12'], 'still a member the week before the cancel'
+    assert_equal 0, by_week['2026-07-19'], 'gone from the first week ending after the cancel'
+    assert_equal 0, by_week['2026-08-09']
+    assert_equal 0, annex['paying_members']
+    assert_equal 0, payload['total_paying_members']
+    assert_equal [{ 'plan_type' => 'Patron Membership', 'count' => 1 }], annex['plan_mix'],
+      'the status-derived plan mix still lists the canceled-but-ACTIVE plan'
+  end
+
   test 'growth_4w_pct is nil when there is no 4-weeks-ago baseline' do
     user!('u-new')
     plan!('u-new', @patron_tpl, started: Date.new(2026, 8, 3))
