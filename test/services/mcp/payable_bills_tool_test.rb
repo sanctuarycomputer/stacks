@@ -23,10 +23,10 @@ class Mcp::PayableBillsToolTest < ActiveSupport::TestCase
     QboBill.create!(qbo_account: account, qbo_id: qbo_id, qbo_vendor_id: vendor_qbo_id, data: data)
   end
 
-  test 'lists bills per entity with vendor, totals, paid state and outstanding sum' do
+  test 'lists unpaid bills per entity with vendor, totals and outstanding sum; paid bills are opt-in' do
     vendor!(qbo_id: 'v-1', name: 'Acme Hosting')
     # Same vendor qbo_id in ANOTHER realm with a different name — the
-    # realm-scoped #vendor helper must not leak it across accounts.
+    # realm-scoped batch lookup must not leak it across accounts.
     vendor!(qbo_id: 'v-1', name: 'Wrong Realm Vendor', account: @other_account)
 
     bill!(qbo_id: 'b-1', vendor_qbo_id: 'v-1', data: {
@@ -41,6 +41,10 @@ class Mcp::PayableBillsToolTest < ActiveSupport::TestCase
     # Unsynced mirror row (empty data jsonb): skipped, counted, NOT read live.
     bill!(qbo_id: 'b-4', vendor_qbo_id: 'v-1', data: {})
 
+    # Vendors resolve via ONE batched realm-scoped query per entity, never
+    # the per-bill QboBill#vendor lookup.
+    QboBill.any_instance.expects(:vendor).never
+
     payload = mcp_payload(Mcp::ListPayableBillsTool.call(entity: @sanctuary.name, server_context: {}))
 
     assert_equal @today.iso8601, payload['as_of']
@@ -48,8 +52,9 @@ class Mcp::PayableBillsToolTest < ActiveSupport::TestCase
     ent = payload['entities'].first
     assert_equal 'Sanctuary Computer Inc', ent['entity']
     assert_equal 1, ent['skipped_count']
-    assert_equal %w[B-3 B-1 B-2], ent['bills'].map { |b| b['doc_number'] },
-      'sorted by due date, bills without a due date last'
+    assert_equal false, ent['truncated']
+    assert_equal %w[B-1 B-2], ent['bills'].map { |b| b['doc_number'] },
+      'unpaid only by default, sorted by due date with no-due-date bills last'
 
     b1 = ent['bills'].find { |b| b['doc_number'] == 'B-1' }
     assert_equal 'Acme Hosting', b1['vendor']
@@ -63,10 +68,31 @@ class Mcp::PayableBillsToolTest < ActiveSupport::TestCase
     assert_equal 100.0, b2['total'], "falls back to the 'total' key"
     refute b2.key?('due_date'), 'due_date only appears when the synced data has one'
 
-    b3 = ent['bills'].find { |b| b['doc_number'] == 'B-3' }
-    assert_equal true, b3['paid']
-
     assert_equal 600.0, ent['total_outstanding'], 'unpaid remaining balances only (500 + 100)'
+
+    with_paid = mcp_payload(Mcp::ListPayableBillsTool.call(entity: @sanctuary.name, include_paid: true, server_context: {}))
+    ent = with_paid['entities'].first
+    assert_equal %w[B-3 B-1 B-2], ent['bills'].map { |b| b['doc_number'] },
+      'include_paid: true restores settled bills'
+    assert_equal true, ent['bills'].find { |b| b['doc_number'] == 'B-3' }['paid']
+    assert_equal 600.0, ent['total_outstanding'], 'paid bills never add to the outstanding sum'
+  end
+
+  test 'caps at 500 bills per entity with a truncated flag; total_outstanding still sums every unpaid bill' do
+    QboBill.insert_all(
+      (1..505).map do |i|
+        { qbo_id: "cap-#{i}", qbo_vendor_id: 'v-cap', qbo_account_id: @account.id,
+          data: { 'doc_number' => format('CAP-%03d', i), 'total_amt' => 10.0, 'balance' => 10.0 } }
+      end,
+      unique_by: %i[qbo_account_id qbo_id]
+    )
+
+    payload = mcp_payload(Mcp::ListPayableBillsTool.call(entity: @sanctuary.name, server_context: {}))
+    ent = payload['entities'].first
+
+    assert_equal 500, ent['bills'].length
+    assert_equal true, ent['truncated']
+    assert_equal 5050.0, ent['total_outstanding'], 'the outstanding sum covers the truncated tail too'
   end
 
   test 'defaults to every enterprise, each labeled, including ones with no bills' do
