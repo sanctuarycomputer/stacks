@@ -1,6 +1,12 @@
 require 'test_helper'
 
 class Mcp::ExecutiveDashboardToolTest < ActiveSupport::TestCase
+  include ActiveSupport::Testing::TimeHelpers
+
+  setup do
+    travel_to Time.zone.parse('2026-08-04 12:00:00')
+  end
+
   def okr(value:, target: 30, tolerance: 5, health: 'healthy', unit: 'percentage', surplus: 1.5, hint: 'a hint')
     { 'value' => value, 'target' => target, 'tolerance' => tolerance,
       'health' => health, 'unit' => unit, 'surplus' => surplus, 'hint' => hint }
@@ -144,6 +150,7 @@ class Mcp::ExecutiveDashboardToolTest < ActiveSupport::TestCase
     money = payload['money']
     assert_equal 95_000.0, money['net_cash'], 'Bank + CC with Liabilities negated'
     assert_equal 150.0, money['avg_burn_3mo']
+    assert_equal 3, money['months_used'], 'all three trailing months were cached'
     assert_equal (95_000.0 / 150.0).round(2), money['runway_months']
     assert_equal false, money['degraded']
     assert_equal [
@@ -171,13 +178,30 @@ class Mcp::ExecutiveDashboardToolTest < ActiveSupport::TestCase
 
     money = mcp_payload(Mcp::GetExecutiveDashboardTool.call(include_money: true, server_context: {}))['money']
     assert_equal 200.0, money['avg_burn_3mo'], 'average over the cached months only (H1: never live-fetch missing ones)'
+    assert_equal 2, money['months_used'], 'degraded averages must be visible: only 2 of 3 months were cached'
     assert_equal false, money['degraded']
 
     QboProfitAndLossReport.delete_all
     money = mcp_payload(Mcp::GetExecutiveDashboardTool.call(include_money: true, server_context: {}))['money']
     assert_equal 0.0, money['avg_burn_3mo']
+    assert_equal 0, money['months_used']
     assert_nil money['runway_months']
     assert_equal false, money['degraded']
+  end
+
+  test "the money cache key is tool-owned ('mcp/dashboard/money'), never the admin page's" do
+    seed_dashboard_studios!
+    # The tool computes a DIFFERENT burn than the admin page (cache-only vs
+    # fetch-on-miss), so it must never read from or poison the admin's key.
+    cached = { account_rows: [], net_cash: 5.0, average_burn_rate: 1.0, months_used: 3,
+               aggregated_new_deal_balance: { balance: 0.0, unsettled: 0.0 } }
+    Rails.cache.expects(:fetch)
+      .with(['mcp/dashboard/money', 'cash', Date.current], expires_in: 24.hours)
+      .returns(cached)
+
+    money = mcp_payload(Mcp::GetExecutiveDashboardTool.call(include_money: true, server_context: {}))['money']
+    assert_equal 5.0, money['net_cash']
+    assert_equal 3, money['months_used']
   end
 
   test 'a QBO failure degrades the money block to zeros with degraded: true, leaving tiles intact' do
@@ -189,6 +213,7 @@ class Mcp::ExecutiveDashboardToolTest < ActiveSupport::TestCase
     assert_equal true, money['degraded']
     assert_equal 0.0, money['net_cash']
     assert_equal 0.0, money['avg_burn_3mo']
+    assert_equal 0, money['months_used']
     assert_nil money['runway_months']
     assert_equal [], money['accounts']
     assert_equal({ 'balance' => 0.0, 'unsettled' => 0.0 }, money['new_deal'])
