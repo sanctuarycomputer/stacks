@@ -24,13 +24,13 @@ class QboProfitAndLossReport < ApplicationRecord
     if vertical == :All
       dataset =
         {
-          revenue: find_rows(accounting_method, "Total Income"),
-          cogs: find_rows(accounting_method, "Total Cost of Goods Sold"),
-          expenses: find_rows(accounting_method, "Total Expenses"),
-          net_revenue: find_rows(accounting_method, "Net Income"),
+          revenue: find_rows(accounting_method, ["Total Income"]),
+          cogs: find_rows(accounting_method, ["Total Cost of Goods Sold"]),
+          expenses: find_rows(accounting_method, ["Total Expenses"]),
+          net_revenue: find_rows(accounting_method, ["Net Income"]),
           profit_margin: 0
         }
-      ((dataset[:net_revenue] / dataset[:revenue]) * 100) if dataset[:revenue] > 0
+      dataset[:profit_margin] = ((dataset[:net_revenue] / dataset[:revenue]) * 100) if dataset[:revenue] > 0
       return dataset
     end
 
@@ -61,7 +61,7 @@ class QboProfitAndLossReport < ApplicationRecord
       end
 
       dataset[:net_revenue] = dataset[:revenue] - dataset[:cogs] - dataset[:expenses]
-    ((dataset[:net_revenue] / dataset[:revenue]) * 100) if dataset[:revenue] > 0
+    dataset[:profit_margin] = ((dataset[:net_revenue] / dataset[:revenue]) * 100) if dataset[:revenue] > 0
     dataset
   end
 
