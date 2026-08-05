@@ -122,6 +122,23 @@ class Mcp::InvoicePassesToolTest < ActiveSupport::TestCase
     assert_equal({ 'unpaid' => 1 }, one['status_mix'])
   end
 
+  test 'a tracker with an invoice but no blueprint reports status impossible, total still counted' do
+    # Mirrors InvoiceTracker#status precedence: qbo_invoice present +
+    # blueprint.nil? => :impossible, never the invoice's own status. The
+    # total still counts (parity with InvoicePass#value, which sums every
+    # linked invoice regardless of blueprint).
+    invoice!('inv-impossible', { 'total' => 400.0, 'balance' => 0.0, 'email_status' => 'EmailSent', 'due_date' => '2026-08-15' })
+    tracker!(@july, @client, qbo_invoice_id: 'inv-impossible', blueprint: nil)
+
+    sanct = mcp_payload(Mcp::GetInvoicePassesTool.call(server_context: {}))['passes']
+      .find { |p| p['month'] == '2026-07-01' }['entities']
+      .find { |e| e['entity'] == 'Sanctuary Computer Inc' }
+
+    assert_equal 400.0, sanct['invoiced_total']
+    assert_equal 1, sanct['invoice_count']
+    assert_equal({ 'impossible' => 1 }, sanct['status_mix'])
+  end
+
   test 'a sent invoice with malformed stored data still counts its total, as status unknown' do
     # EmailSent with no due_date: QboInvoice#status raises on Date.parse.
     invoice!('inv-weird', { 'total' => 100.0, 'balance' => 100.0, 'email_status' => 'EmailSent' })

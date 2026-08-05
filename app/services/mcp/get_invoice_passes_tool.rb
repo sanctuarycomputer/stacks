@@ -89,14 +89,21 @@ module Mcp
 
         invoiced_total += invoice.read_attribute(:data)['total'].to_f
         invoice_count += 1
-        # Stored data is present, so #status reads the stored jsonb (no lazy
-        # sync). It can still raise on malformed rows (e.g. EmailSent with no
+        # InvoiceTracker#status precedence: an invoice with no blueprint is
+        # :impossible, never the invoice's own status. Otherwise stored data
+        # is present, so #status reads the stored jsonb (no lazy sync). It
+        # can still raise on malformed rows (e.g. EmailSent with no
         # due_date): count those as unknown rather than dropping their total.
-        status = begin
-          invoice.status.to_s
-        rescue StandardError
-          'unknown'
-        end
+        status =
+          if tracker.blueprint.nil?
+            'impossible'
+          else
+            begin
+              invoice.status.to_s
+            rescue StandardError
+              'unknown'
+            end
+          end
         status_mix[status] += 1
       rescue StandardError => e
         Rails.logger.warn("[Mcp::GetInvoicePassesTool] skipping tracker id=#{tracker.id}: #{e.class}: #{e.message}")
