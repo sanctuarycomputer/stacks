@@ -23,6 +23,7 @@ module Mcp
       Mcp::GetStudioHealthTool,
       Mcp::GetEnterpriseHealthTool,
       Mcp::GetExecutiveDashboardTool,
+      Mcp::GetOkrGridTool,
       Mcp::GetResourcingProjectionsTool,
       Mcp::FindContributorTool,
       Mcp::ListProjectTrackersTool,
