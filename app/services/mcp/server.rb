@@ -24,6 +24,7 @@ module Mcp
       Mcp::GetEnterpriseHealthTool,
       Mcp::GetExecutiveDashboardTool,
       Mcp::GetOkrGridTool,
+      Mcp::ExploreOkrTool,
       Mcp::GetResourcingProjectionsTool,
       Mcp::FindContributorTool,
       Mcp::ListProjectTrackersTool,
