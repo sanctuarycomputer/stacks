@@ -10,6 +10,11 @@ class Stacks::ClientRevenue
 
   attr_reader :skipped_tracker_count
 
+  # The raw Row(client, month, amount) set, oldest data first by construction
+  # order. Exposed for read-only consumers (e.g. the MCP client-revenue tool)
+  # so they reuse this math instead of rebuilding it.
+  attr_reader :rows
+
   def initialize(studio, preloaded_studios = Studio.all, trackers = nil)
     @studio = studio
     @preloaded_studios = preloaded_studios

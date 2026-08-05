@@ -37,6 +37,7 @@ module Mcp
       Mcp::GetCapacityTool,
       Mcp::GetMembershipStatsTool,
       Mcp::GetInvoicePassesTool,
+      Mcp::GetClientRevenueTool,
     ].freeze
 
     def self.build
