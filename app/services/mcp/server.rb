@@ -29,6 +29,7 @@ module Mcp
       Mcp::FindContributorTool,
       Mcp::ListProjectTrackersTool,
       Mcp::GetProjectBurnupTool,
+      Mcp::GetProjectCostBreakdownTool,
     ].freeze
 
     def self.build
