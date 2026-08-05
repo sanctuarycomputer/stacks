@@ -57,7 +57,7 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     assert body.key?("result"), "Expected JSON-RPC result key, got: #{body.inspect}"
     tool_names = body["result"]["tools"].map { |t| t["name"] }
     assert_includes tool_names, "search", "Expected 'search' tool in: #{tool_names.inspect}"
-    assert_equal %w[explore_okr find_contributor get_ar_aging get_capacity get_document get_enterprise_health get_executive_dashboard get_okr_grid get_person_metrics get_project_burnup get_project_contributors get_project_cost_breakdown get_quarterly_report get_resourcing_projections get_studio_health list_documents list_open_admin_tasks list_overdue_invoices list_payable_bills list_project_trackers list_projects_at_risk list_sources search], tool_names.sort,
+    assert_equal %w[explore_okr find_contributor get_ar_aging get_capacity get_client_revenue get_document get_enterprise_health get_executive_dashboard get_invoice_passes get_membership_stats get_okr_grid get_person_metrics get_project_burnup get_project_contributors get_project_cost_breakdown get_quarterly_report get_resourcing_projections get_studio_health list_documents list_open_admin_tasks list_overdue_invoices list_payable_bills list_project_trackers list_projects_at_risk list_sources search], tool_names.sort,
       "Expected all registered tools, got: #{tool_names.inspect}"
   end
 
@@ -328,6 +328,75 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     Stacks::Runn.any_instance.stubs(:get_assignments).returns([])
     payload = call_tool("get_resourcing_projections")
     assert_equal true, payload["degraded"]
+  end
+
+  test "tools/call round-trip for get_membership_stats returns counts with no member PII" do
+    travel_to Time.zone.parse("2026-08-04 12:00:00")
+    org = OptixOrganization.create!(name: "Endpoint Org", synced_at: Time.zone.now)
+    loc = OptixLocation.create!(optix_id: "ep-loc", optix_organization: org, name: "Annex")
+    tpl = OptixPlanTemplate.create!(optix_id: "ep-tpl", optix_organization: org, name: "Patron Membership")
+    OptixPlanTemplateLocation.create!(optix_plan_template_id: tpl.optix_id, optix_location_id: loc.optix_id)
+    OptixUser.create!(optix_id: "ep-user", optix_organization: org, email: "member@example.com", name: "Member")
+    OptixAccountPlan.create!(optix_id: "ep-plan", optix_organization: org,
+      optix_plan_template_id: tpl.optix_id, access_usage_user_optix_id: "ep-user",
+      status: "ACTIVE", start_timestamp: 10.weeks.ago.to_i)
+
+    payload = call_tool("get_membership_stats", { "weeks" => 6 })
+
+    assert_equal "Endpoint Org", payload["organization"]
+    assert_equal 1, payload["total_paying_members"]
+    annex = payload["locations"].find { |l| l["location"] == "Annex" }
+    assert_equal 1, annex["paying_members"]
+    assert_equal 1, annex["patron_members"]
+    assert_equal 6, annex["weekly_counts"].length
+    assert_equal [{ "plan_type" => "Patron Membership", "count" => 1 }], annex["plan_mix"]
+    refute_includes response.body, "member@example.com", "no member PII may cross the endpoint"
+    refute_includes response.body, "ep-user"
+  end
+
+  test "tools/call round-trip for get_invoice_passes attributes entities from stored data" do
+    travel_to Time.zone.parse("2026-08-04 12:00:00")
+    pass = InvoicePass.create!(start_of_month: Date.new(2026, 7, 1))
+    client = ForecastClient.create!(forecast_id: 88_200_001, name: "Endpoint Client")
+    qa = Enterprise.find(enterprises(:sanctuary).id).qbo_account
+    QboInvoice.create!(qbo_account: qa, qbo_id: "ep-inv",
+      data: { "total" => 1200.0, "balance" => 0.0, "email_status" => "EmailSent", "due_date" => "2026-08-15" })
+    InvoiceTracker.create!(invoice_pass: pass, forecast_client_id: client.forecast_id,
+      qbo_account: qa, qbo_invoice_id: "ep-inv", blueprint: { "lines" => {} })
+
+    payload = call_tool("get_invoice_passes", { "months_back" => 3 })
+
+    assert_equal ["2026-07-01"], payload["passes"].map { |p| p["month"] }
+    entity = payload["passes"].first["entities"].first
+    assert_equal "Sanctuary Computer Inc", entity["entity"]
+    assert_equal 1200.0, entity["invoiced_total"]
+    assert_equal({ "paid" => 1 }, entity["status_mix"])
+    assert_equal [{ "month" => "2026-06-01", "total_invoiced" => 0.0 },
+                  { "month" => "2026-07-01", "total_invoiced" => 1200.0 },
+                  { "month" => "2026-08-01", "total_invoiced" => 0.0 }], payload["mom"],
+      "mom zero-fills pass-less months across the window"
+  end
+
+  test "tools/call round-trip for get_client_revenue returns client x month rows" do
+    travel_to Time.zone.parse("2026-08-04 12:00:00")
+    make_studio!
+    pass = InvoicePass.create!(start_of_month: Date.new(2026, 7, 1))
+    client = ForecastClient.create!(forecast_id: 88_300_001, name: "Endpoint Revenue Client")
+    qa = Enterprise.find(enterprises(:sanctuary).id).qbo_account
+    QboInvoice.create!(qbo_account: qa, qbo_id: "ep-rev",
+      data: { "total" => 4000.0, "balance" => 0.0, "email_status" => "EmailSent", "due_date" => "2026-08-15" })
+    InvoiceTracker.create!(invoice_pass: pass, forecast_client_id: client.forecast_id,
+      qbo_account: qa, qbo_invoice_id: "ep-rev", blueprint: { "lines" => {} })
+
+    payload = call_tool("get_client_revenue", { "months_back" => 2 })
+
+    assert_equal "garden3d", payload["studio"]
+    row = payload["clients"].find { |c| c["client"] == "Endpoint Revenue Client" }
+    assert_equal 4000.0, row["total"]
+    assert_equal [{ "month" => "2026-07-01", "amount" => 4000.0 }, { "month" => "2026-08-01", "amount" => 0.0 }],
+      row["monthly"]
+    assert_equal 4000.0, payload["total_revenue"]
+    assert_equal 0, payload["skipped_tracker_count"]
   end
 
   test "find_contributor is exposed on the read surface and returns matches" do
