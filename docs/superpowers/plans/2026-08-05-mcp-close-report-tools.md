@@ -28,9 +28,9 @@ Sketch: `{months_back (clamp 1..24, default 6), passes: [{month, completed_at?, 
 Sketch: `{months_back (clamp 1..24, default 6), scope note (external clients, countable revenue per Stacks::ClientRevenue), clients: [{client, monthly: [{month, amount}], total, share_of_total_pct}] sorted by total desc, top param (clamp 1..50, default 15), skipped_tracker_count, mom_totals: [{month, total}]}` + optional `studio` param using the studio-share path. Reuse `Stacks::ClientRevenue` (one instance per call — heed its un-memoized/thread-safety comment); never rebuild the math. TDD; commit.
 
 ### Task 4: Wrap
-- [ ] Endpoint array = 26 sorted names + one `tools/call` round-trip per new tool.
-- [ ] Full `test/services/mcp` + endpoint + touched model tests green; run `bin/rails test` full suite once, report pre-existing failures without fixing.
-- [ ] Commit; do NOT push.
+- [x] Endpoint array = 26 sorted names + one `tools/call` round-trip per new tool.
+- [x] Full `test/services/mcp` + endpoint + touched model tests green; run `bin/rails test` full suite once, report pre-existing failures without fixing.
+- [x] Commit; do NOT push.
 
 ## Self-review notes
 Scope covers exactly the three audited gaps; budgets/projections (Google Sheets) deliberately out of scope — noted in the stacksbot-side report. The stacksbot wiring (stacks-bi contract extension + monthly transition keys) happens after merge+deploy, not in this repo.
