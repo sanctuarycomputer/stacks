@@ -7,7 +7,9 @@ module Mcp
                 'the admin Project Cost Explorer shows it: per person per month — salary ' \
                 'pro-rata for assigned full-timers, plus contributor payouts attributable to ' \
                 'this tracker. Person-level amounts are deliberate (transparency policy). ' \
-                'Computed live from assignments and payouts.'
+                'Computed live from assignments and payouts. EXPENSIVE (per-day queries ' \
+                "over the tracker's whole assignment history): call sparingly, one tracker " \
+                'at a time.'
     input_schema(
       properties: {
         tracker: { type: 'string', description: 'ProjectTracker id or exact name (case-insensitive). Required.' },
