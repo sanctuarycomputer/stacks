@@ -47,12 +47,14 @@ class Mcp::ProjectBurnupToolTest < ActiveSupport::TestCase
     assert_equal tracker.external_link, payload['url']
     assert_equal({ 'low' => 2000.0, 'high' => 2500.0 }, payload['budget'])
 
-    # Snapshot series pass through verbatim; income comes from #income_series
-    # (no invoices here, so just the seed point at the first assignment date).
+    # Snapshot series pass through verbatim; income comes from
+    # ProjectTrackers::IncomeSeries (no invoices here, so just the seed point
+    # at the first assignment date, and nothing skipped).
     assert_equal SNAPSHOT['spend'], payload['series']['spend']
     assert_equal SNAPSHOT['cost'], payload['series']['cost']
     assert_equal SNAPSHOT['hours'], payload['series']['hours']
     assert_equal [{ 'x' => '2026-06-01', 'y' => 0 }], payload['series']['income']
+    assert_equal 0, payload['skipped_invoices']
 
     totals = payload['totals']
     assert_equal 2500.0, totals['invoiced']

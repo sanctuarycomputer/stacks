@@ -29,6 +29,7 @@ module Mcp
       at_budget_overage = budget_low ? [spend - budget_low, 0].max : 0
       over_budget_overage = budget_high ? [spend - budget_high, 0].max : 0
       invoiced = t.income
+      income_series = ProjectTrackers::IncomeSeries.call(t)
 
       Responses.ok({
         tracker: t.name,
@@ -36,7 +37,7 @@ module Mcp
         url: t.external_link,
         budget: { low: budget_low, high: budget_high },
         series: {
-          income: t.income_series[:income],
+          income: income_series[:income],
           spend: Array(t.snapshot['spend']),
           cost: Array(t.snapshot['cost']),
           hours: Array(t.snapshot['hours']),
@@ -55,6 +56,9 @@ module Mcp
           over_budget: over_budget_overage.to_f.round(2),
         },
         completion: completion_block(t, spend, budget_low, budget_high, at_budget_overage, over_budget_overage),
+        # Invoice mirrors whose stored QBO data is blank are excluded from the
+        # income series (never lazily synced) — this counts them.
+        skipped_invoices: income_series[:skipped_invoices],
         status: t.status,
         work_status: t.work_status,
         considered_successful: t.considered_successful?,

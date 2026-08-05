@@ -320,10 +320,12 @@ ActiveAdmin.register ProjectTracker do
     end_date =
       resource.last_recorded_assignment_end_date&.iso8601 || DateTime.now.iso8601
 
-    # Assembled by the model (shared with Mcp::GetProjectBurnupTool) — the
+    # Assembled by the service (shared with Mcp::GetProjectBurnupTool) — the
     # seed point uses the same first-assignment-date fallback as start_date
     # above, so the chart's x-axis min and the series origin still agree.
-    income_data = resource.income_series
+    # (:skipped_invoices — unsynced QBO invoice mirrors — is intentionally
+    # ignored here; the chart simply omits them.)
+    income_data = ProjectTrackers::IncomeSeries.call(resource)
 
     latest_timestamp =
       income_data[:income].reduce(end_date) do |acc, datapoint|

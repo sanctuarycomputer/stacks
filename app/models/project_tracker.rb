@@ -678,7 +678,9 @@ class ProjectTracker < ApplicationRecord
 
   def invoice_trackers
     # TODO: Speed me up, I'm naive
-    InvoiceTracker
+    # Memoized: this is a full-table scan, and single requests (e.g. the MCP
+    # burn-up tool: income series + lifetime_commissions_paid) read it twice.
+    @invoice_trackers ||= InvoiceTracker
       .includes(:invoice_pass, :qbo_invoice)
       .all
       .select{|it| (it.forecast_project_ids & forecast_projects.map(&:forecast_id)).any?}
@@ -918,57 +920,5 @@ class ProjectTracker < ApplicationRecord
 
   def income
     snapshot["invoiced_income_total"].to_f
-  end
-
-  # The cumulative invoiced-income series for the budget burn-up chart —
-  # extracted verbatim from the admin show page so /admin/project_trackers
-  # and the MCP burn-up tool share one source of truth. Generated + adhoc
-  # invoice trackers with a synced QBO invoice, ordered by the invoice's
-  # due_date (falling back to the tracker row's created_at), seeded with a
-  # zero point at the first recorded assignment date. InvoiceTrackers are
-  # client-level, so only line items attributable to this tracker's
-  # forecast projects count; adhoc invoices belong to this tracker
-  # outright, so their whole total counts.
-  #
-  # Returns { income: [{ x:, y: }, ...], income_total: Float }.
-  def income_series
-    seed_date = first_recorded_assignment_start_date&.iso8601 || DateTime.now.iso8601
-
-    [
-      *invoice_trackers,
-      *adhoc_invoice_trackers
-    ].reject { |i| i.qbo_invoice.nil? }
-     .sort do |a, b|
-        ((a.qbo_invoice.try(:data) || {}).dig("due_date") || a.created_at.to_date.iso8601) <=>
-        ((b.qbo_invoice.try(:data) || {}).dig("due_date") || b.created_at.to_date.iso8601)
-     end
-     .reduce({
-       income: [{
-         x: seed_date,
-         y: 0
-       }],
-       income_total: 0
-     }) do |acc, it|
-       if it.is_a?(InvoiceTracker)
-         acc[:income].push({
-           x: (
-             (it.qbo_invoice.try(:data) || {}).dig("due_date") ||
-             it.created_at.to_date.iso8601
-           ),
-           y: acc[:income_total] += (it.qbo_line_items_relating_to_forecast_projects(
-             forecast_projects
-           ).map{|qbo_li| qbo_li.dig("amount").to_f}.reduce(&:+) || 0)
-         })
-       else
-         acc[:income].push({
-           x: (
-             (it.qbo_invoice.try(:data) || {}).dig("due_date") ||
-             it.created_at.to_date.iso8601
-           ),
-           y: acc[:income_total] += it.qbo_invoice.try(:total).to_f
-         })
-       end
-       acc
-     end
   end
 end
