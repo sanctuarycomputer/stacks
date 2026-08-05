@@ -167,7 +167,10 @@ plus `test/models/permission_grant_test.rb`:
    they see everything a real lead sees (not just trackers). That is what "similar to
    the current permission" was taken to mean.
 3. **Scoped grants also allow `:read` on `InvoicePass`** so scoped users can navigate
-   to their invoice trackers; the pass show page hides other clients' tracker rows.
+   to their invoice trackers. The final review found the InvoicePass index rendered
+   company-wide monthly aggregates (value / outstanding / surplus / status counts) and
+   the show page a company-wide missing-hours report; both are now gated behind
+   `is_admin? || can_act_as_lead?`, leaving only month navigation for scoped users.
 4. **Polymorphic subject** rather than a bare `project_tracker_id` FK, so future
    scopes (Studio, Enterprise) need no migration.
 5. **No expiry column.** Training grants are revoked manually; add `expires_at` later
