@@ -22,6 +22,7 @@ module Mcp
       Mcp::ListProjectsAtRiskTool,
       Mcp::GetStudioHealthTool,
       Mcp::GetEnterpriseHealthTool,
+      Mcp::GetExecutiveDashboardTool,
       Mcp::GetResourcingProjectionsTool,
       Mcp::FindContributorTool,
       Mcp::ListProjectTrackersTool,
