@@ -57,7 +57,7 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     assert body.key?("result"), "Expected JSON-RPC result key, got: #{body.inspect}"
     tool_names = body["result"]["tools"].map { |t| t["name"] }
     assert_includes tool_names, "search", "Expected 'search' tool in: #{tool_names.inspect}"
-    assert_equal %w[explore_okr find_contributor get_ar_aging get_capacity get_document get_enterprise_health get_executive_dashboard get_membership_stats get_okr_grid get_person_metrics get_project_burnup get_project_contributors get_project_cost_breakdown get_quarterly_report get_resourcing_projections get_studio_health list_documents list_open_admin_tasks list_overdue_invoices list_payable_bills list_project_trackers list_projects_at_risk list_sources search], tool_names.sort,
+    assert_equal %w[explore_okr find_contributor get_ar_aging get_capacity get_document get_enterprise_health get_executive_dashboard get_invoice_passes get_membership_stats get_okr_grid get_person_metrics get_project_burnup get_project_contributors get_project_cost_breakdown get_quarterly_report get_resourcing_projections get_studio_health list_documents list_open_admin_tasks list_overdue_invoices list_payable_bills list_project_trackers list_projects_at_risk list_sources search], tool_names.sort,
       "Expected all registered tools, got: #{tool_names.inspect}"
   end
 
