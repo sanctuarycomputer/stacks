@@ -162,6 +162,37 @@ class Mcp::InvoicePassesToolTest < ActiveSupport::TestCase
     assert_equal true, july['missing_hours']
   end
 
+  test 'a completed pass whose latest reminder pass is empty is not missing hours' do
+    # The production-common completed-pass shape: Automator writes a reminder
+    # pass on EVERY run (lib/stacks/automator.rb), so completed passes carry
+    # reminder_passes whose latest value is {} (nobody left to remind).
+    @june.update!(data: { 'reminder_passes' => {
+      '2026-06-25T09:00:00+00:00' => { 'someone@example.com' => { 'missing_allocation' => 8 } },
+      '2026-07-01T09:00:00+00:00' => {},
+    } })
+
+    june = mcp_payload(Mcp::GetInvoicePassesTool.call(server_context: {}))['passes']
+      .find { |p| p['month'] == '2026-06-01' }
+    assert_equal false, june['missing_hours'],
+      'an empty latest reminder pass means everyone recorded hours'
+  end
+
+  test 'a voided invoice still counts in invoiced_total and appears as voided in the status mix' do
+    # Parity with the admin value column (InvoicePass#value counts every
+    # linked invoice); the status mix is where voided is separated out.
+    invoice!('inv-void', { 'total' => 800.0, 'balance' => 0.0, 'email_status' => 'NotSet',
+                           'private_note' => 'Voided by accountant' })
+    tracker!(@july, @client, qbo_invoice_id: 'inv-void', blueprint: { 'lines' => {} })
+
+    sanct = mcp_payload(Mcp::GetInvoicePassesTool.call(server_context: {}))['passes']
+      .find { |p| p['month'] == '2026-07-01' }['entities']
+      .find { |e| e['entity'] == 'Sanctuary Computer Inc' }
+
+    assert_equal 800.0, sanct['invoiced_total'], 'voided totals still count (admin value parity)'
+    assert_equal 1, sanct['invoice_count']
+    assert_equal({ 'voided' => 1 }, sanct['status_mix'])
+  end
+
   test 'months_back clamps to 1..24 and windows the passes' do
     seed_july!
 
