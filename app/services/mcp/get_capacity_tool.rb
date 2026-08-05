@@ -2,11 +2,13 @@ module Mcp
   class GetCapacityTool < MCP::Tool
     tool_name 'get_capacity'
     description 'Resourcing capacity from the nightly utilization reports: each active ' \
-                "person's sellable / benched (expected-unsold) / billable-by-rate / internal " \
-                '/ time-off hours for the most recent completed period, plus unfilled ' \
-                'placeholder assignments (scheduled seats with no person yet). Reads the ' \
-                'persisted mirrors only — never calls Forecast live. Resourcing data (who is ' \
-                'free to staff), NOT compensation or HR content.'
+                "person's sellable / sold / benched (sellable minus sold, floored at 0) / " \
+                'non_sellable (structurally non-sellable time from expected utilization — ' \
+                'NOT bench) / billable-by-rate / internal / time-off hours for the most ' \
+                'recent completed period, plus unfilled placeholder assignments (scheduled ' \
+                'seats with no person yet, with lifetime and still-remaining hours). Reads ' \
+                'the persisted mirrors only — never calls Forecast live. Resourcing data ' \
+                '(who is free to staff), NOT compensation or HR content.'
     GRADATIONS = ForecastPersonUtilizationReport.period_gradations.keys.freeze
 
     input_schema(
@@ -35,12 +37,22 @@ module Mcp
       rows = records.filter_map do |r|
         fp = r.forecast_person
         name = [fp.first_name, fp.last_name].compact.join(' ').strip
+        sellable = r.expected_hours_sold.to_f
+        # Legacy rows can carry a non-hash sold-by-rate shape; treat as no
+        # recorded sold hours rather than crashing the whole payload.
+        by_rate = r.actual_hours_sold_by_rate.is_a?(Hash) ? r.actual_hours_sold_by_rate : {}
+        sold = by_rate.values.sum { |v| v.to_f }
         {
           name: name.presence || fp.email,
           email: fp.email,
-          sellable: r.expected_hours_sold.to_f,
-          benched: r.expected_hours_unsold.to_f,
-          billable_by_rate: (r.actual_hours_sold_by_rate || {}).transform_values(&:to_f),
+          sellable: sellable,
+          sold: sold.round(2),
+          # Bench is sellable time that went unsold — NOT expected_hours_unsold,
+          # which is structurally non-sellable time (expected-utilization
+          # remainder) and is surfaced separately as non_sellable.
+          benched: [sellable - sold, 0].max.round(2),
+          non_sellable: r.expected_hours_unsold.to_f,
+          billable_by_rate: by_rate.transform_values(&:to_f),
           internal: r.actual_hours_internal.to_f,
           time_off: r.actual_hours_time_off.to_f,
         }
@@ -81,7 +93,8 @@ module Mcp
           next nil if project.nil? || project.archived
           {
             project: project.name,
-            hours: fa.allocation_in_hours.to_f.round(2),
+            lifetime_hours: fa.allocation_in_hours.to_f.round(2),
+            remaining_hours: fa.allocation_during_range_in_hours(Date.today, fa.end_date).to_f.round(2),
             start_date: fa.start_date.iso8601,
             end_date: fa.end_date.iso8601,
           }

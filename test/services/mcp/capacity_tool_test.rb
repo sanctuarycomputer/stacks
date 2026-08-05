@@ -58,15 +58,51 @@ class Mcp::CapacityToolTest < ActiveSupport::TestCase
     ada_row = payload['people'].first
     assert_equal 'Ada Lovelace', ada_row['name']
     assert_equal 120.0, ada_row['sellable']
-    assert_equal 0.0, ada_row['benched']
+    assert_equal 100.0, ada_row['sold'], 'sold = sum of the by-rate hours'
+    assert_equal 20.0, ada_row['benched'], 'benched = sellable minus sold'
+    assert_equal 0.0, ada_row['non_sellable']
     assert_equal({ '175.0' => 80.0, '150.0' => 20.0 }, ada_row['billable_by_rate'])
     assert_equal 10.0, ada_row['internal']
     assert_equal 8.0, ada_row['time_off']
 
     ben_row = payload['people'].last
     assert_equal 'ben@sanctuary.computer', ben_row['name'], 'name falls back to email'
-    assert_equal 60.0, ben_row['benched']
-    assert_equal 60.0, payload['benched_total']
+    assert_equal 30.0, ben_row['sold']
+    assert_equal 10.0, ben_row['benched'], 'expected-unsold time is NOT bench'
+    assert_equal 60.0, ben_row['non_sellable'], 'structurally non-sellable time is its own bucket'
+    assert_equal 30.0, payload['benched_total'], '20 (ada) + 10 (ben)'
+  end
+
+  test 'a fully-booked person is not benched even with non-sellable time, and overbooked floors at 0' do
+    cal = person!(email: 'cal@sanctuary.computer')
+    dee = person!(email: 'dee@sanctuary.computer')
+    # cal: sellable fully sold, but 40h of structurally non-sellable time —
+    # the old payload wrongly called that 40h "benched".
+    util!(person: cal, sellable: 80.0, unsold: 40.0, by_rate: { '175.0' => 80.0 })
+    # dee: overbooked (sold > sellable) must floor at 0, not go negative.
+    util!(person: dee, sellable: 50.0, unsold: 0.0, by_rate: { '175.0' => 60.0 })
+
+    payload = mcp_payload(Mcp::GetCapacityTool.call(server_context: {}))
+
+    cal_row = payload['people'].find { |p| p['email'] == 'cal@sanctuary.computer' }
+    assert_equal 0.0, cal_row['benched']
+    assert_equal 40.0, cal_row['non_sellable']
+    dee_row = payload['people'].find { |p| p['email'] == 'dee@sanctuary.computer' }
+    assert_equal 0.0, dee_row['benched']
+    assert_equal 0.0, payload['benched_total']
+  end
+
+  test 'a legacy non-hash sold-by-rate shape counts as zero sold instead of crashing' do
+    eve = person!(email: 'eve@sanctuary.computer')
+    report = util!(person: eve, sellable: 30.0, unsold: 5.0, by_rate: { '175.0' => 10.0 })
+    report.update_column(:actual_hours_sold_by_rate, [])
+
+    payload = mcp_payload(Mcp::GetCapacityTool.call(server_context: {}))
+
+    row = payload['people'].first
+    assert_equal 0.0, row['sold']
+    assert_equal 30.0, row['benched']
+    assert_equal({}, row['billable_by_rate'])
   end
 
   test 'uses the most recent persisted period for the gradation and excludes archived people' do
@@ -88,8 +124,10 @@ class Mcp::CapacityToolTest < ActiveSupport::TestCase
     live = project!(name: 'Client Work')
     dead = project!(name: 'Dead Project', archived: true)
 
-    # 3 days x 4h/day = 12 unfilled hours, still open
-    placeholder_assignment!(project: live, start_date: Date.new(2026, 7, 20), end_date: Date.new(2026, 7, 22))
+    # 13 days x 4h/day = 52 lifetime hours; started 2026-07-10, so with
+    # "today" pinned to 2026-07-15 only 7/15..7/22 (8 days x 4h = 32h)
+    # remains unfilled.
+    placeholder_assignment!(project: live, start_date: Date.new(2026, 7, 10), end_date: Date.new(2026, 7, 22))
     # already ended -> not "unfilled" anymore
     placeholder_assignment!(project: live, start_date: Date.new(2026, 6, 1), end_date: Date.new(2026, 6, 5))
     # archived project -> skipped
@@ -104,8 +142,9 @@ class Mcp::CapacityToolTest < ActiveSupport::TestCase
     assert_equal 1, payload['unfilled_placeholders'].length
     ph = payload['unfilled_placeholders'].first
     assert_equal 'Client Work', ph['project']
-    assert_equal 12.0, ph['hours']
-    assert_equal '2026-07-20', ph['start_date']
+    assert_equal 52.0, ph['lifetime_hours']
+    assert_equal 32.0, ph['remaining_hours'], 'only the still-unfilled tail from today counts'
+    assert_equal '2026-07-10', ph['start_date']
     assert_equal '2026-07-22', ph['end_date']
   end
 
