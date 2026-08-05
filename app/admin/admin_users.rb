@@ -30,6 +30,14 @@ ActiveAdmin.register AdminUser do
       :purchased_at,
       :_edit,
       :_destroy
+    ],
+    permission_grants_attributes: [
+      :id,
+      :permission,
+      :subject_id,
+      :notes,
+      :granted_by_id,
+      :_destroy
     ]
   menu label: "Everybody", parent: "Team", priority: 1
   actions :index, :show, :edit, :update
@@ -73,11 +81,19 @@ ActiveAdmin.register AdminUser do
   end
 
   member_action :demote_admin_user, method: :post do
+    unless current_admin_user.is_admin?
+      redirect_to admin_admin_user_path(resource), alert: "Only admins can do that."
+      return
+    end
     resource.update!(roles: [])
     redirect_to admin_admin_user_path(resource), notice: "Success!"
   end
 
   member_action :promote_admin_user, method: :post do
+    unless current_admin_user.is_admin?
+      redirect_to admin_admin_user_path(resource), alert: "Only admins can do that."
+      return
+    end
     resource.update!(roles: ["admin"])
     redirect_to admin_admin_user_path(resource), notice: "Success!"
   end
@@ -96,6 +112,24 @@ ActiveAdmin.register AdminUser do
           snapshot_row = g3d&.snapshot&.dig("month")&.find { |g| g["label"] == period_label }
           snapshot_row ? snapshot_row["utilization"].to_h : {}
         end
+    end
+
+    # Permission grants are admin-managed only. The form hides them from
+    # non-admins, but leads pass the authorization adapter for AdminUser
+    # updates, so strip the params server-side too. New grants get
+    # granted_by stamped from the acting admin, never from the client.
+    def update
+      attrs = params.dig(:admin_user, :permission_grants_attributes)
+      if attrs.present?
+        if current_admin_user.is_admin?
+          attrs.each do |_key, grant_attrs|
+            grant_attrs[:granted_by_id] = current_admin_user.id if grant_attrs[:id].blank?
+          end
+        else
+          params[:admin_user].delete(:permission_grants_attributes)
+        end
+      end
+      super
     end
   end
 
@@ -198,6 +232,17 @@ JS
           a.input :amount
           a.input :note
           a.input :purchased_at
+        end
+
+        f.has_many :permission_grants, heading: "Permission Grants", allow_destroy: true do |a|
+          a.input :permission, as: :select, collection: PermissionGrant::PERMISSIONS, include_blank: false
+          a.input :subject_id,
+            as: :select,
+            collection: ProjectTracker.order(:name).pluck(:name, :id),
+            include_blank: "All projects",
+            label: "Scope to project",
+            hint: "Leave blank for lead-level access to everything (same as someone who has led a project — for leads-in-training). Pick a project to limit them to read-only access to that project's tracker and invoices."
+          a.input :notes, hint: "Why this grant exists, e.g. 'Account Lead training, Q3 cohort'."
         end
       end
     end
