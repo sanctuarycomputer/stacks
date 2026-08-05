@@ -102,6 +102,27 @@ class AdminAuthorizationTest < ActiveSupport::TestCase
     assert_equal [it_mine.id], auth_for(user).scope_collection(InvoiceTracker.all).pluck(:id)
   end
 
+  test "scope_collection filters a bare model Class (ActiveAdmin's end_of_association_chain) to granted projects" do
+    user = make_user("scoped5@sanctuary.computer")
+    pt_mine = make_project_tracker("Mine")
+    make_project_tracker("Other")
+    PermissionGrant.create!(admin_user: user, permission: "lead", subject: pt_mine)
+
+    # Top-level resources without a scoped_collection override hand
+    # ActiveAdmin (and thus scope_collection) the bare model Class, not a
+    # Relation. Must not raise NoMethodError on #klass.
+    assert_equal [pt_mine.id], auth_for(user).scope_collection(ProjectTracker).pluck(:id)
+  end
+
+  test "scope_collection leaves a bare unrelated model Class unchanged" do
+    user = make_user("scoped6@sanctuary.computer")
+    pt_mine = make_project_tracker("Mine")
+    PermissionGrant.create!(admin_user: user, permission: "lead", subject: pt_mine)
+
+    result = auth_for(user).scope_collection(Ledger)
+    assert_equal Ledger, result
+  end
+
   test "scope_collection leaves collections untouched for admins, leads, and unrelated classes" do
     admin = make_user("adm@sanctuary.computer")
     admin.update!(roles: ["admin"])

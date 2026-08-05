@@ -22,7 +22,16 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
     scoped_ids = user.lead_scoped_project_tracker_ids
     return collection if scoped_ids.empty?
 
-    case collection.klass.name
+    # ActiveAdmin calls scope_collection with whatever scoped_collection
+    # returns. Resources that override scoped_collection (e.g. InvoicePass)
+    # hand us an ActiveRecord::Relation, but top-level resources fall back to
+    # InheritedResources' end_of_association_chain, which for a bare model
+    # (no association scoping applied yet) is the model Class itself — and a
+    # Class doesn't respond to #klass. Resolve to the actual model class
+    # either way rather than assuming a Relation.
+    model = collection.respond_to?(:klass) ? collection.klass : collection
+
+    case model.name
     when "ProjectTracker"
       collection.where(id: scoped_ids)
     when "InvoiceTracker"

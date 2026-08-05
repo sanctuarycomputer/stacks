@@ -119,4 +119,20 @@ class AdminPermissionGrantsTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Outstanding"
     assert_includes response.body, "Surplus"
   end
+
+  test "a project-scoped grantee hitting an index with no scoped_collection override does not 500" do
+    pt = make_project_tracker("Training Project")
+    PermissionGrant.create!(admin_user: @trainee, permission: "lead", subject: pt, granted_by: @admin)
+
+    # /admin/ledgers has no scoped_collection override, so ActiveAdmin hands
+    # scope_collection the bare Ledger class (via InheritedResources'
+    # end_of_association_chain) rather than a Relation. The trainee isn't
+    # authorized to read Ledger at all, so the expected outcome is a clean
+    # access-denied redirect — not a NoMethodError on Class#klass.
+    sign_in @trainee
+    get admin_ledgers_path
+    assert_response :redirect
+    assert_redirected_to admin_root_path
+    assert_equal "You are not authorized to perform this action.", flash[:error]
+  end
 end
