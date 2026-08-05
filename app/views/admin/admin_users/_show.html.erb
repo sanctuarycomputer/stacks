@@ -87,3 +87,33 @@
     </div>
   </div>
 </div>
+
+<% if current_admin_user.is_admin? && resource.permission_grants.any? %>
+  <div class="panel">
+    <h3>Permission Grants</h3>
+    <div class="panel_contents">
+      <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+        <thead>
+          <tr>
+            <th class="col">Permission</th>
+            <th class="col">Scope</th>
+            <th class="col">Granted By</th>
+            <th class="col">Notes</th>
+            <th class="col">Granted At</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% resource.permission_grants.each do |grant| %>
+            <tr>
+              <td class="col"><%= grant.permission.humanize %></td>
+              <td class="col"><%= grant.global? ? "All projects" : (grant.subject.respond_to?(:name) ? grant.subject.name : "#{grant.subject_type} ##{grant.subject_id}") %></td>
+              <td class="col"><%= grant.granted_by&.email %></td>
+              <td class="col"><%= grant.notes %></td>
+              <td class="col"><%= grant.created_at.to_date %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+<% end %>
