@@ -33,6 +33,7 @@ module Mcp
       Mcp::GetProjectContributorsTool,
       Mcp::ListPayableBillsTool,
       Mcp::GetPersonMetricsTool,
+      Mcp::GetQuarterlyReportTool,
     ].freeze
 
     def self.build
