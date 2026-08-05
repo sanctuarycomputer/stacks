@@ -119,6 +119,51 @@ class Mcp::ProjectBurnupToolTest < ActiveSupport::TestCase
     assert_nil completion['months_left']
   end
 
+  test 'a single-point budget (low == high) mirrors the admin: reference is the high end' do
+    tracker!(budget_low: 5000, budget_high: 5000)
+    ProjectTracker.any_instance.stubs(:trailing_7_days_value).returns(350.0)
+    ProjectTracker.any_instance.stubs(:trailing_30_days_value).returns(1000.0)
+
+    completion = mcp_payload(Mcp::GetProjectBurnupTool.call(tracker: 'Burnup Test Tracker', server_context: {}))['completion']
+
+    assert_equal ((5000 - 3000) / 350.0).round(1), completion['weeks_left']
+    assert_equal 'budget_high_end', completion['budget_reference'],
+      'when budget_low == budget_high the admin labels the band its high end'
+  end
+
+  # Legacy rows can carry exactly one budget end (they predate the
+  # both-or-neither validation); ProjectTracker#status nil-compares on them,
+  # so the tool must emit 'partial_budget' without calling the model.
+  test 'a tracker with only a low budget end reports partial_budget instead of crashing' do
+    tracker = tracker!
+    tracker.update_column(:budget_low_end, 2000) # bypass validation like legacy data
+    ProjectTracker.any_instance.expects(:status).never
+    ProjectTracker.any_instance.stubs(:trailing_7_days_value).returns(350.0)
+    ProjectTracker.any_instance.stubs(:trailing_30_days_value).returns(1000.0)
+
+    payload = mcp_payload(Mcp::GetProjectBurnupTool.call(tracker: tracker.id.to_s, server_context: {}))
+
+    assert_equal 'partial_budget', payload['status']
+    assert_equal({ 'low' => 2000.0, 'high' => nil }, payload['budget'])
+    # spend (3000) is past the low end but there is no high end to reference:
+    # no time estimate, and no nil-arithmetic crash.
+    assert_equal 1000.0, payload.dig('overage', 'at_budget')
+    assert_nil payload.dig('completion', 'weeks_left')
+    assert_nil payload.dig('completion', 'budget_reference')
+  end
+
+  test 'a tracker with only a high budget end reports partial_budget instead of crashing' do
+    tracker = tracker!
+    tracker.update_column(:budget_high_end, 2500) # bypass validation like legacy data
+    ProjectTracker.any_instance.expects(:status).never
+
+    payload = mcp_payload(Mcp::GetProjectBurnupTool.call(tracker: tracker.id.to_s, server_context: {}))
+
+    assert_equal 'partial_budget', payload['status']
+    assert_equal({ 'low' => nil, 'high' => 2500.0 }, payload['budget'])
+    assert_equal 500.0, payload.dig('overage', 'over_budget')
+  end
+
   test 'unknown tracker and snapshotless tracker return errors' do
     err = mcp_payload(Mcp::GetProjectBurnupTool.call(tracker: 'nope', server_context: {}))
     assert_includes err['error'], "Unknown tracker 'nope'"

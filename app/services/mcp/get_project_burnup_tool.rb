@@ -59,7 +59,10 @@ module Mcp
         # Invoice mirrors whose stored QBO data is blank are excluded from the
         # income series (never lazily synced) — this counts them.
         skipped_invoices: income_series[:skipped_invoices],
-        status: t.status,
+        # Legacy rows may carry exactly one budget end (they predate the
+        # both-or-neither validation); ProjectTracker#status nil-compares on
+        # them, so emit 'partial_budget' defensively without calling it.
+        status: (budget_low.nil? ^ budget_high.nil?) ? 'partial_budget' : t.status,
         work_status: t.work_status,
         considered_successful: t.considered_successful?,
         generated_at: t.snapshot['generated_at'],
@@ -90,8 +93,12 @@ module Mcp
 
       remaining, reference =
         if at_budget_overage.zero?
-          [budget_low - spend, 'budget_low_end']
-        elsif over_budget_overage.positive?
+          # A single-point budget (low == high) is labeled by its high end,
+          # as the admin page does.
+          [budget_low - spend, budget_low == budget_high ? 'budget_high_end' : 'budget_low_end']
+        elsif over_budget_overage.positive? || budget_high.nil?
+          # Overbudget — or a legacy one-sided budget with no high end to
+          # reference — gets an overage (in the payload above), no estimate.
           [nil, nil]
         else
           [budget_high - spend, 'budget_high_end']
