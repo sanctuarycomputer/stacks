@@ -105,9 +105,10 @@ gate falls through:
    filter that resolves granted projects → `ProjectTrackerForecastProject` →
    forecast_project ids → `EXISTS (SELECT 1 FROM jsonb_each(blueprint->'lines') l
    WHERE (l.value->>'forecast_project')::bigint IN (...))`. `InvoicePass` is not
-   row-filtered (it's just a monthly container); its show page must render only
-   trackers the viewer is authorized to read (guard the tracker table rows with
-   `authorized?(:read, tracker)` in `app/admin/invoice_passes.rb`).
+   row-filtered (it's just a monthly container). Its show partial renders only
+   error tables — trackers are listed on the nested InvoiceTracker index
+   (`admin_invoice_pass_invoice_trackers_path`), which `scope_collection`
+   filters, so no view changes are needed there.
 4. Keep the existing `Dashboard` page allowance (already present for everyone).
 
 ### Admin UI (`app/admin/admin_users.rb`)
