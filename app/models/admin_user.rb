@@ -548,6 +548,9 @@ class AdminUser < ApplicationRecord
   has_many :enterprise_admins, dependent: :destroy
   has_many :administered_enterprises, through: :enterprise_admins, source: :enterprise
 
+  has_many :permission_grants, dependent: :destroy
+  accepts_nested_attributes_for :permission_grants, allow_destroy: true
+
   def admin_of?(enterprise)
     return false if enterprise.nil?
     is_admin? || enterprise_admins.exists?(enterprise_id: enterprise.id)
@@ -555,6 +558,18 @@ class AdminUser < ApplicationRecord
 
   def has_led_projects?
     return AccountLeadPeriod.where(admin_user_id: self.id).any? || ProjectLeadPeriod.where(admin_user_id: self.id).any?
+  end
+
+  # Lead-level ActiveAdmin access: either they've actually held a lead
+  # period, or an admin granted them global "lead" permission (a
+  # lead-in-training). Scoped grants deliberately don't count here.
+  def can_act_as_lead?
+    has_led_projects? || permission_grants.global.for_permission("lead").any?
+  end
+
+  # ProjectTracker ids this user may read via project-scoped "lead" grants.
+  def lead_scoped_project_tracker_ids
+    permission_grants.for_permission("lead").where(subject_type: "ProjectTracker").pluck(:subject_id)
   end
 
   def is_on_old_deal?

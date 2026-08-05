@@ -59,6 +59,8 @@ class ProjectTracker < ApplicationRecord
   accepts_nested_attributes_for :project_lead_periods, allow_destroy: true
   has_many :project_leads, through: :project_lead_periods, source: :admin_user
 
+  has_many :permission_grants, as: :subject, dependent: :destroy
+
   scope :complete, -> {
     where.not(work_completed_at: nil)
       .includes(:project_capsule).where(

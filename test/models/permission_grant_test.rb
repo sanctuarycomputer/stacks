@@ -5,6 +5,12 @@ class PermissionGrantTest < ActiveSupport::TestCase
     AdminUser.create!(email: email, password: "password12345")
   end
 
+  def make_project_tracker(name)
+    pt = ProjectTracker.new(name: name)
+    pt.save!(validate: false)
+    pt
+  end
+
   test "a global lead grant is valid and global?" do
     user = make_user("trainee@sanctuary.computer")
     granter = make_user("granter@sanctuary.computer")
@@ -22,7 +28,7 @@ class PermissionGrantTest < ActiveSupport::TestCase
 
   test "subject_type defaults to ProjectTracker when only subject_id is set" do
     user = make_user("trainee@sanctuary.computer")
-    pt = ProjectTracker.create!(name: "Some Project")
+    pt = make_project_tracker("Some Project")
     grant = PermissionGrant.create!(admin_user: user, permission: "lead", subject_id: pt.id)
     assert_equal "ProjectTracker", grant.subject_type
     assert_equal pt, grant.subject
@@ -35,7 +41,7 @@ class PermissionGrantTest < ActiveSupport::TestCase
     dup = PermissionGrant.new(admin_user: user, permission: "lead")
     refute dup.valid?
 
-    pt = ProjectTracker.create!(name: "Some Project")
+    pt = make_project_tracker("Some Project")
     PermissionGrant.create!(admin_user: user, permission: "lead", subject: pt)
     scoped_dup = PermissionGrant.new(admin_user: user, permission: "lead", subject: pt)
     refute scoped_dup.valid?
