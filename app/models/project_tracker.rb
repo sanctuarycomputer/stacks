@@ -678,7 +678,9 @@ class ProjectTracker < ApplicationRecord
 
   def invoice_trackers
     # TODO: Speed me up, I'm naive
-    InvoiceTracker
+    # Memoized: this is a full-table scan, and single requests (e.g. the MCP
+    # burn-up tool: income series + lifetime_commissions_paid) read it twice.
+    @invoice_trackers ||= InvoiceTracker
       .includes(:invoice_pass, :qbo_invoice)
       .all
       .select{|it| (it.forecast_project_ids & forecast_projects.map(&:forecast_id)).any?}

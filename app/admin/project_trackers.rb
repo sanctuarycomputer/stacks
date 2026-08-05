@@ -320,42 +320,12 @@ ActiveAdmin.register ProjectTracker do
     end_date =
       resource.last_recorded_assignment_end_date&.iso8601 || DateTime.now.iso8601
 
-    income_data = [
-      *resource.invoice_trackers,
-      *resource.adhoc_invoice_trackers
-    ].reject{|i| i.qbo_invoice.nil?}
-     .sort do |a, b|
-        ((a.qbo_invoice.try(:data) || {}).dig("due_date") || a.created_at.to_date.iso8601) <=>
-        ((b.qbo_invoice.try(:data) || {}).dig("due_date") || b.created_at.to_date.iso8601)
-     end
-     .reduce({
-       income: [{
-         x: start_date,
-         y: 0
-       }],
-       income_total: 0
-     }) do |acc, it|
-       if it.is_a?(InvoiceTracker)
-         acc[:income].push({
-           x: (
-             (it.qbo_invoice.try(:data) || {}).dig("due_date") ||
-             it.created_at.to_date.iso8601
-           ),
-           y: acc[:income_total] += (it.qbo_line_items_relating_to_forecast_projects(
-             resource.forecast_projects
-           ).map{|qbo_li| qbo_li.dig("amount").to_f}.reduce(&:+) || 0)
-         })
-       else
-         acc[:income].push({
-           x: (
-             (it.qbo_invoice.try(:data) || {}).dig("due_date") ||
-             it.created_at.to_date.iso8601
-           ),
-           y: acc[:income_total] += it.qbo_invoice.try(:total).to_f
-         })
-       end
-       acc
-     end
+    # Assembled by the service (shared with Mcp::GetProjectBurnupTool) — the
+    # seed point uses the same first-assignment-date fallback as start_date
+    # above, so the chart's x-axis min and the series origin still agree.
+    # (:skipped_invoices — unsynced QBO invoice mirrors — is intentionally
+    # ignored here; the chart simply omits them.)
+    income_data = ProjectTrackers::IncomeSeries.call(resource)
 
     latest_timestamp =
       income_data[:income].reduce(end_date) do |acc, datapoint|

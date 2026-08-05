@@ -189,4 +189,7 @@ class ProjectTrackerTest < ActiveSupport::TestCase
     assert_in_delta 370.5, dev_cost, 0.001
     assert_in_delta payout.amount, design_cost + dev_cost, 0.001
   end
+
+  # The income-series assembly lives in ProjectTrackers::IncomeSeries
+  # (tested in test/services/project_trackers/income_series_test.rb).
 end

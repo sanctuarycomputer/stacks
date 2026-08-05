@@ -349,7 +349,7 @@ class Studio < ApplicationRecord
     return periods.index_with { [] } if all_fp_ids.empty?
 
     trackers_by_fp_id = ProjectTrackerForecastProject
-      .includes(:project_tracker)
+      .includes(project_tracker: :project_capsule)
       .where(forecast_project_id: all_fp_ids)
       .group_by(&:forecast_project_id)
       .transform_values { |ptfps| ptfps.map(&:project_tracker).uniq }

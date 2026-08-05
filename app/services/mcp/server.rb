@@ -21,9 +21,20 @@ module Mcp
       Mcp::ListOpenAdminTasksTool,
       Mcp::ListProjectsAtRiskTool,
       Mcp::GetStudioHealthTool,
+      Mcp::GetEnterpriseHealthTool,
+      Mcp::GetExecutiveDashboardTool,
+      Mcp::GetOkrGridTool,
+      Mcp::ExploreOkrTool,
       Mcp::GetResourcingProjectionsTool,
       Mcp::FindContributorTool,
       Mcp::ListProjectTrackersTool,
+      Mcp::GetProjectBurnupTool,
+      Mcp::GetProjectCostBreakdownTool,
+      Mcp::GetProjectContributorsTool,
+      Mcp::ListPayableBillsTool,
+      Mcp::GetPersonMetricsTool,
+      Mcp::GetQuarterlyReportTool,
+      Mcp::GetCapacityTool,
     ].freeze
 
     def self.build
