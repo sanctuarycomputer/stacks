@@ -98,6 +98,30 @@ class Mcp::ClientRevenueToolTest < ActiveSupport::TestCase
     )
   end
 
+  test 'cross-account qbo_id collisions resolve each tracker to its own account invoice' do
+    # qbo_id is only composite-unique with qbo_account_id. A qbo_id-only
+    # preload in Stacks::ClientRevenue.all_trackers would hand one account's
+    # invoice to BOTH trackers (this also protects the nightly snapshot).
+    one_qa = QboAccount.create!(enterprise: enterprises(:one), client_id: 'c',
+                                client_secret: 's', realm_id: "r-#{SecureRandom.hex(4)}")
+    QboInvoice.create!(qbo_account: @qa, qbo_id: 'cr-dup',
+                       data: { 'total' => 999.0, 'email_status' => 'EmailSent', 'balance' => 0.0, 'due_date' => '2026-08-15' })
+    QboInvoice.create!(qbo_account: one_qa, qbo_id: 'cr-dup',
+                       data: { 'total' => 100.0, 'email_status' => 'EmailSent', 'balance' => 0.0, 'due_date' => '2026-08-15' })
+    InvoiceTracker.create!(invoice_pass: @july, forecast_client_id: @reactor.forecast_id,
+                           qbo_account: @qa, qbo_invoice_id: 'cr-dup', blueprint: { 'lines' => {} })
+    InvoiceTracker.create!(invoice_pass: @july, forecast_client_id: @replit.forecast_id,
+                           qbo_account: one_qa, qbo_invoice_id: 'cr-dup', blueprint: { 'lines' => {} })
+
+    payload = mcp_payload(Mcp::GetClientRevenueTool.call(server_context: {}))
+
+    reactor = payload['clients'].find { |c| c['client'] == 'Reactor' }
+    replit = payload['clients'].find { |c| c['client'] == 'Replit' }
+    assert_equal 999.0, reactor['total']
+    assert_equal 100.0, replit['total'], "Replit must report its own account's invoice total"
+    assert_equal 1099.0, payload['total_revenue']
+  end
+
   test 'top clamps 1..50 and trims the client list without changing the window totals' do
     seed!
 

@@ -26,10 +26,15 @@ module Mcp
       months_back = months_back.to_i.clamp(MIN_MONTHS_BACK, MAX_MONTHS_BACK)
       window_start = Date.today.beginning_of_month - (months_back - 1).months
 
+      # NEVER preload :qbo_invoice here — the AR association matches on
+      # qbo_id alone, and qbo_id is only composite-unique with
+      # qbo_account_id. A preloaded wrong-account invoice would win inside
+      # HasQboInvoiceViaCompositeKey#qbo_invoice; unloaded, the concern does
+      # the correct (qbo_account_id, qbo_id) lookup.
       passes = InvoicePass
         .where('start_of_month >= ?', window_start)
         .order(:start_of_month)
-        .includes(invoice_trackers: [:qbo_invoice, { qbo_account: :enterprise }])
+        .includes(invoice_trackers: { qbo_account: :enterprise })
         .map { |pass| pass_block(pass) }
 
       Responses.ok({

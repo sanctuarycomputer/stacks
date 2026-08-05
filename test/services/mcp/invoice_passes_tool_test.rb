@@ -101,6 +101,27 @@ class Mcp::InvoicePassesToolTest < ActiveSupport::TestCase
     )
   end
 
+  test 'the same qbo_id in two qbo_accounts resolves each tracker to its own account invoice' do
+    # qbo_id is only composite-unique with qbo_account_id (Deel-style ID
+    # collision). A qbo_id-only preload would hand one account's invoice to
+    # BOTH trackers; each entity must report its own account's total.
+    invoice!('inv-dup', { 'total' => 999.0, 'balance' => 0.0, 'email_status' => 'EmailSent', 'due_date' => '2026-08-15' })
+    invoice!('inv-dup', { 'total' => 100.0, 'balance' => 100.0, 'email_status' => 'EmailSent', 'due_date' => '2026-09-01' }, account: @one_qa)
+    tracker!(@july, @client, qbo_invoice_id: 'inv-dup', blueprint: { 'lines' => {} })
+    tracker!(@july, @client_b, qbo_invoice_id: 'inv-dup', account: @one_qa, blueprint: { 'lines' => {} })
+
+    july = mcp_payload(Mcp::GetInvoicePassesTool.call(server_context: {}))['passes']
+      .find { |p| p['month'] == '2026-07-01' }
+
+    sanct = july['entities'].find { |e| e['entity'] == 'Sanctuary Computer Inc' }
+    assert_equal 999.0, sanct['invoiced_total']
+    assert_equal({ 'paid' => 1 }, sanct['status_mix'])
+
+    one = july['entities'].find { |e| e['entity'] == 'One LLC' }
+    assert_equal 100.0, one['invoiced_total'], "One LLC must report its own invoice, not sanctuary's"
+    assert_equal({ 'unpaid' => 1 }, one['status_mix'])
+  end
+
   test 'a sent invoice with malformed stored data still counts its total, as status unknown' do
     # EmailSent with no due_date: QboInvoice#status raises on Date.parse.
     invoice!('inv-weird', { 'total' => 100.0, 'balance' => 100.0, 'email_status' => 'EmailSent' })

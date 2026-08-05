@@ -23,9 +23,15 @@ class Stacks::ClientRevenue
     @rows = build_rows
   end
 
+  # NEVER preload :qbo_invoice here — the AR association matches on qbo_id
+  # alone, and qbo_id is only composite-unique with qbo_account_id. A
+  # preloaded wrong-account invoice would win inside
+  # HasQboInvoiceViaCompositeKey#qbo_invoice (cross-account collisions would
+  # corrupt revenue rows and the nightly snapshot); unloaded, the concern
+  # does the correct (qbo_account_id, qbo_id) lookup.
   def self.all_trackers
     InvoiceTracker
-      .includes(:invoice_pass, :qbo_invoice, forecast_client: :enterprise_forecast_client)
+      .includes(:invoice_pass, forecast_client: :enterprise_forecast_client)
       .to_a
   end
 
