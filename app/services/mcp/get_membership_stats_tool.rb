@@ -1,15 +1,19 @@
 module Mcp
   class GetMembershipStatsTool < MCP::Tool
     tool_name 'get_membership_stats'
-    description 'Coworking membership stats from the synced Optix mirror, as the admin ' \
-                'organization report shows them: per-location trailing weekly paying-member ' \
-                'counts split Patron / Non-Patron (derived from plan start/end/cancel ' \
-                'timestamps, so weekly history is computed, not stored), the current plan mix ' \
-                'per location (ACTIVE/IN_TRIAL plans by plan-template name), 4-week growth, ' \
-                'and the org-wide distinct paying-member total. COUNTS AND PLAN NAMES ONLY — ' \
-                'never member names, emails, or ids. Members on an all-locations plan count ' \
-                'at every location, so per-location totals can sum past the org-wide distinct ' \
-                'total. Figures are as of the last Optix sync (see synced_at).'
+    description 'Coworking membership stats from the synced Optix mirror: per-location ' \
+                'trailing weekly paying-member counts split Patron / Non-Patron (derived from ' \
+                'plan start/end/cancel timestamps, so weekly history is computed, not stored), ' \
+                'the current plan mix per location (ACTIVE/IN_TRIAL plans by plan-template ' \
+                'name), 4-week growth, and the org-wide distinct paying-member total. ' \
+                'plan_mix folds all-locations plans into EVERY location\'s mix — the admin ' \
+                'tier panel buckets those separately. total_paying_members is ' \
+                'timestamp-derived at call time, so it differs from the admin\'s status-based ' \
+                'Active Members figure (which also counts UPCOMING plans) and from the weekly ' \
+                'rows, which count at each Sunday end-of-day. Members on an all-locations ' \
+                'plan count at every location, so per-location totals can sum past the ' \
+                'org-wide distinct total. COUNTS AND PLAN NAMES ONLY — never member names, ' \
+                'emails, or ids. Figures are as of the last Optix sync (see synced_at).'
 
     MIN_WEEKS = 4
     MAX_WEEKS = 26

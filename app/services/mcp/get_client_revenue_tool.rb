@@ -5,12 +5,18 @@ module Mcp
                 'report narrates: client x month amounts (zero-filled across the window), ' \
                 'window totals, share-of-total percentages, and a month-over-month total ' \
                 'series. Scope: EXTERNAL clients only; countable revenue = invoice trackers ' \
-                'with a linked, non-voided synced QBO invoice (June 2021 onward). The default ' \
-                'garden3d view counts full invoice totals; passing a sub-studio takes its ' \
-                'pro-rata share via blueprint person lines (trackers without usable lines are ' \
-                'omitted from sub-studio numbers). Months follow each invoice pass, not ' \
-                'payment dates. Reads stored invoice data only; blank mirrors are skipped ' \
-                'and counted in skipped_tracker_count (an all-time count, not window-scoped).'
+                'with a linked, non-voided synced QBO invoice; the requested window governs ' \
+                'which months appear (no fixed historical cutoff). Rows group by client NAME, ' \
+                'so duplicate-named ForecastClients merge into one row — the concentration ' \
+                'OKR datapoint groups by client record and can differ. The default garden3d ' \
+                'view counts full invoice totals; passing a sub-studio takes its pro-rata ' \
+                'share via blueprint person lines (trackers without usable lines are omitted ' \
+                'from sub-studio numbers). Months follow each invoice pass, not payment ' \
+                'dates. Reads stored invoice data only; blank mirrors are skipped and counted ' \
+                'in skipped_tracker_count (an all-time count, not window-scoped). Trackers ' \
+                'whose stored invoice data is malformed (e.g. sent with no due_date) are ' \
+                'likewise skipped and counted — get_invoice_passes buckets the same row as ' \
+                'status unknown and still counts its total.'
 
     SCOPE_NOTE = 'External clients only; countable revenue = invoice trackers with a linked, ' \
                  'non-voided synced QBO invoice, attributed to the month of their invoice pass. ' \

@@ -169,6 +169,25 @@ class Mcp::ClientRevenueToolTest < ActiveSupport::TestCase
     assert_equal 1000.0, payload['total_revenue']
   end
 
+  test 'a sent invoice with malformed stored data is skipped and counted, dropping its revenue' do
+    # EmailSent with no due_date: QboInvoice#status raises inside
+    # ClientRevenue's voided check, so the tracker is skipped + counted.
+    # DIVERGES from get_invoice_passes, which buckets the same row as status
+    # `unknown` and still counts its total.
+    weird = ForecastClient.create!(forecast_id: 9205, name: 'Weird Data Client')
+    QboInvoice.create!(qbo_account: @qa, qbo_id: 'cr-weird',
+                       data: { 'total' => 100.0, 'balance' => 100.0, 'email_status' => 'EmailSent' })
+    InvoiceTracker.create!(invoice_pass: @july, forecast_client_id: weird.forecast_id,
+                           qbo_account: @qa, qbo_invoice_id: 'cr-weird', blueprint: { 'lines' => {} })
+
+    payload = mcp_payload(Mcp::GetClientRevenueTool.call(server_context: {}))
+
+    refute payload['clients'].any? { |c| c['client'] == 'Weird Data Client' },
+      'the malformed tracker contributes no revenue row'
+    assert_equal 0.0, payload['total_revenue']
+    assert_equal 1, payload['skipped_tracker_count']
+  end
+
   test 'unknown studio errors listing the valid studios' do
     err = mcp_payload(Mcp::GetClientRevenueTool.call(studio: 'nope', server_context: {}))
     assert_includes err['error'], "Unknown studio 'nope'"
