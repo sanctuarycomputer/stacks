@@ -1,6 +1,6 @@
 # Stacks → Business Intelligence over MCP — Full Assessment
 
-- **Date:** 2026-08-05 · **Status:** Research complete (4 parallel codebase sweeps, 2026-08-05); tool design proposed, awaiting Hugh's calls on 3 open decisions
+- **Date:** 2026-08-05 · **Status:** Implemented — Tier 1 (all 11 tools + defect fixes D1/D2) landed on `feat/mcp-bi-tools`; D3/D4/D5 (latent `key_datapoints_for_period` arity bug, producer-less OKR datapoint enums, dead first `profitability_data` assignment) deliberately deferred as follow-ups. Tier 2 (balance-sheet sync) remains a separate plan.
 - **Method:** mapped every ActiveAdmin surface an admin actually uses, the financial/OKR/tracker data layers behind them, and the existing MCP registry — then designed tools that mirror the admin experience rather than inventing report primitives. (This supersedes the `get_pnl`/`get_kpis`/`get_chart_of_accounts` guesses added to ROADMAP P1a on 2026-08-04 — see §6.)
 - **Destination:** implementation happens in the `stacks` repo (pattern: `app/services/mcp/<name>_tool.rb` + registry append, per `SPEC — Stacks MCP upgrades`); then a `stacks-bi` source + observe hooks land in Stacksbot (§8).
 
