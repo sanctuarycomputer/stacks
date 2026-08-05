@@ -6,7 +6,7 @@
   <%= resource.in_sync? ? "Reconciled" : "Unreconciled" %>
 </p>
 
-<% if current_admin_user.has_led_projects? %>
+<% if current_admin_user.can_act_as_lead? %>
   <%= link_to "Invoice Tracker", admin_invoice_pass_invoice_tracker_path(resource.invoice_tracker.invoice_pass, resource.invoice_tracker), class: "nag", style: "margin-right: 6px;" %>
 <% end %>
 
