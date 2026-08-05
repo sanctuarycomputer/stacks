@@ -35,6 +35,7 @@ module Mcp
       Mcp::GetPersonMetricsTool,
       Mcp::GetQuarterlyReportTool,
       Mcp::GetCapacityTool,
+      Mcp::GetMembershipStatsTool,
     ].freeze
 
     def self.build

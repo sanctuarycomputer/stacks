@@ -14,9 +14,9 @@
 - Cache/synced-data only (H1). If any Optix read path lazily fetches, guard it the way `IncomeSeries` guards `QboInvoice` (stored attributes only, skip + count).
 
 ### Task 0: Research + payload finalization + env gate
-- [ ] `bin/rails test test/services/mcp/tools_test.rb` runs green (env gate; `db:test:prepare` if needed).
-- [ ] Read and note (file:line): the Optix models (`app/models/optix_*.rb`) + admin surfaces (`app/admin/optix_*.rb`) — how paying-member counts per location are derived (the `/admin/optix_organizations/:id` weekly-count report the controller references), how "paying" is distinguished, how plans map Patron/Non-Patron, how/when the Optix sync runs; `app/models/invoice_pass.rb` + `app/admin/invoice_passes.rb` — pass→trackers→qbo totals, month semantics, per-entity attribution; `lib/stacks/client_revenue.rb` — the Row(client, month, amount) construction, studio-share, external-client scoping, the skipped-tracker counting.
-- [ ] Finalize the three payload shapes within the sketches below, adjusting to model reality (document deviations in commit bodies).
+- [x] `bin/rails test test/services/mcp/tools_test.rb` runs green (env gate; `db:test:prepare` if needed).
+- [x] Read and note (file:line): the Optix models (`app/models/optix_*.rb`) + admin surfaces (`app/admin/optix_*.rb`) — how paying-member counts per location are derived (the `/admin/optix_organizations/:id` weekly-count report the controller references), how "paying" is distinguished, how plans map Patron/Non-Patron, how/when the Optix sync runs; `app/models/invoice_pass.rb` + `app/admin/invoice_passes.rb` — pass→trackers→qbo totals, month semantics, per-entity attribution; `lib/stacks/client_revenue.rb` — the Row(client, month, amount) construction, studio-share, external-client scoping, the skipped-tracker counting.
+- [x] Finalize the three payload shapes within the sketches below, adjusting to model reality (document deviations in commit bodies).
 
 ### Task 1: `get_membership_stats`
 Sketch: `{as_of, locations: [{location, paying_members, weekly_counts: [{week, count}] (trailing N weeks, clamp 4..26, default 13), plan_mix: [{plan_type, count}], growth_4w_pct}], total_paying_members}`. Mirror the admin org report's counting logic exactly (it is the controller's reference surface — "paying members only"). Counts only, no PII. TDD; registry + sorted endpoint-array; commit.
