@@ -371,7 +371,10 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     assert_equal "Sanctuary Computer Inc", entity["entity"]
     assert_equal 1200.0, entity["invoiced_total"]
     assert_equal({ "paid" => 1 }, entity["status_mix"])
-    assert_equal [{ "month" => "2026-07-01", "total_invoiced" => 1200.0 }], payload["mom"]
+    assert_equal [{ "month" => "2026-06-01", "total_invoiced" => 0.0 },
+                  { "month" => "2026-07-01", "total_invoiced" => 1200.0 },
+                  { "month" => "2026-08-01", "total_invoiced" => 0.0 }], payload["mom"],
+      "mom zero-fills pass-less months across the window"
   end
 
   test "tools/call round-trip for get_client_revenue returns client x month rows" do

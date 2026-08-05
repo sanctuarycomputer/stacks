@@ -24,7 +24,8 @@ module Mcp
 
     def self.call(months_back: DEFAULT_MONTHS_BACK, server_context:)
       months_back = months_back.to_i.clamp(MIN_MONTHS_BACK, MAX_MONTHS_BACK)
-      window_start = Date.today.beginning_of_month - (months_back - 1).months
+      current_month = Date.today.beginning_of_month
+      window_start = current_month - (months_back - 1).months
 
       # NEVER preload :qbo_invoice here — the AR association matches on
       # qbo_id alone, and qbo_id is only composite-unique with
@@ -32,16 +33,23 @@ module Mcp
       # HasQboInvoiceViaCompositeKey#qbo_invoice; unloaded, the concern does
       # the correct (qbo_account_id, qbo_id) lookup.
       passes = InvoicePass
-        .where('start_of_month >= ?', window_start)
+        .where(start_of_month: window_start..current_month)
         .order(:start_of_month)
         .includes(invoice_trackers: { qbo_account: :enterprise })
         .map { |pass| pass_block(pass) }
+
+      # Zero-fill the MoM series across the whole window (consistent with
+      # get_client_revenue): months without a pass read as 0, and the series
+      # never runs past the current month.
+      totals_by_month = passes.group_by { |p| p[:month] }
+        .transform_values { |ps| ps.sum { |p| p[:total_invoiced] } }
+      months = (0...months_back).map { |i| (window_start + i.months).iso8601 }
 
       Responses.ok({
         as_of: Date.today.iso8601,
         months_back: months_back,
         passes: passes,
-        mom: passes.map { |p| { month: p[:month], total_invoiced: p[:total_invoiced] } },
+        mom: months.map { |m| { month: m, total_invoiced: (totals_by_month[m] || 0.0).round(2) } },
       })
     rescue StandardError => e
       Rails.logger.warn("[Mcp::GetInvoicePassesTool] #{e.class}: #{e.message}")

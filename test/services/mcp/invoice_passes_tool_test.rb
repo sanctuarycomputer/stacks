@@ -95,10 +95,30 @@ class Mcp::InvoicePassesToolTest < ActiveSupport::TestCase
     assert_equal 0, one['skipped_invoices']
 
     assert_equal(
-      [{ 'month' => '2026-06-01', 'total_invoiced' => 2000.0 },
-       { 'month' => '2026-07-01', 'total_invoiced' => 1750.0 }],
-      payload['mom']
+      [{ 'month' => '2026-03-01', 'total_invoiced' => 0.0 },
+       { 'month' => '2026-04-01', 'total_invoiced' => 0.0 },
+       { 'month' => '2026-05-01', 'total_invoiced' => 0.0 },
+       { 'month' => '2026-06-01', 'total_invoiced' => 2000.0 },
+       { 'month' => '2026-07-01', 'total_invoiced' => 1750.0 },
+       { 'month' => '2026-08-01', 'total_invoiced' => 0.0 }],
+      payload['mom'], 'zero-filled across the whole window, oldest first'
     )
+  end
+
+  test 'future passes are excluded from passes and the mom series' do
+    seed_july!
+    future = InvoicePass.create!(start_of_month: Date.new(2026, 9, 1))
+    invoice!('inv-future', { 'total' => 5555.0, 'balance' => 0.0, 'email_status' => 'EmailSent', 'due_date' => '2026-10-15' })
+    tracker!(future, @client, qbo_invoice_id: 'inv-future', blueprint: { 'lines' => {} })
+
+    payload = mcp_payload(Mcp::GetInvoicePassesTool.call(server_context: {}))
+
+    assert_equal %w[2026-06-01 2026-07-01], payload['passes'].map { |p| p['month'] },
+      'a pass dated after the current month never appears'
+    assert_equal %w[2026-03-01 2026-04-01 2026-05-01 2026-06-01 2026-07-01 2026-08-01],
+      payload['mom'].map { |m| m['month'] },
+      'the mom series stops at the current month'
+    refute payload['mom'].any? { |m| m['total_invoiced'] == 5555.0 }
   end
 
   test 'the same qbo_id in two qbo_accounts resolves each tracker to its own account invoice' do
@@ -200,9 +220,12 @@ class Mcp::InvoicePassesToolTest < ActiveSupport::TestCase
     assert_equal 24, payload['months_back']
     assert_equal %w[2026-06-01 2026-07-01], payload['passes'].map { |p| p['month'] },
       'even the widest window excludes the 2023 pass'
+    assert_equal 24, payload['mom'].length, 'mom zero-fills every month of the window'
 
     payload = mcp_payload(Mcp::GetInvoicePassesTool.call(months_back: 0, server_context: {}))
     assert_equal 1, payload['months_back']
     assert_equal [], payload['passes'], 'no pass exists for the current month'
+    assert_equal [{ 'month' => '2026-08-01', 'total_invoiced' => 0.0 }], payload['mom'],
+      'a pass-less current month still gets a zero mom row'
   end
 end
