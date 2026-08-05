@@ -233,7 +233,14 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     tr = ProjectTracker.new(name: "T", runn_project_id: 91_100)
     tr.save(validate: false)
     fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "ada@x.com", data: {})
-    contributor = Contributor.create!(forecast_person: fp)
+    # ForecastPerson's after_create already made this person's Contributor. Creating
+    # another here would leave two rows sharing one email, and the tool resolves
+    # contributor_id_by_email last-write-wins over a scope ordered by email alone —
+    # so the winner between duplicates is arbitrary and the assertion below flaps.
+    contributor = fp.contributor
+    assert_equal 1,
+      Contributor.unscoped.joins(:forecast_person).where(forecast_people: { email: "ada@x.com" }).count,
+      "exactly one contributor must resolve to this email, or contributor_id is ambiguous"
     ProjectedAssignment.create!(source_key: "world:1", project_tracker: tr, contributor: contributor,
       start_date: (today + 1), end_date: (today + 20), minutes_per_day: 480,
       runn_assignment_id: 2, managed_by: "detector")
