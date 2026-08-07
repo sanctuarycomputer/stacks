@@ -21,6 +21,14 @@ class PeriodicReport < ApplicationRecord
   # Query param + `scope_studio_from_param` keys for quarterly report studio tabs (single source of truth).
   STUDIO_TAB_KEYS = %w[g3d xxix sanctu].freeze
 
+  # Profit share eligibility ruleset (Q2 2026 onward): elevated service is
+  # derived only from work attributed to these enterprises (hours on their
+  # billed clients, income on their ledgers), and only contributors with a
+  # company email address participate. Historical tenure (psu) intentionally
+  # stays network-wide — past quarters were earned under the old rules.
+  PROFIT_SHARE_ENTERPRISE_NAMES = [Enterprise::SANCTUARY_NAME, Enterprise::GARDEN3D_NAME].freeze
+  PROFIT_SHARE_EMAIL_DOMAINS = %w[sanctuary.computer xxix.co].freeze
+
   def self.create_for_period(period = Stacks::Period.new("Q4, 2025", Date.today.last_quarter.beginning_of_quarter, Date.today.last_quarter.end_of_quarter, :quarter))
     create!(
       period_gradation: period.gradation,
@@ -161,15 +169,64 @@ class PeriodicReport < ApplicationRecord
     @_us_cost_of_living_data ||= PeriodicReport.parsed_numbeo_cost_of_living_indices_by_country["United States"]
   end
 
+  def self.eligible_profit_share_email?(email)
+    PROFIT_SHARE_EMAIL_DOMAINS.include?(email.to_s.split("@").last.to_s.downcase)
+  end
+
+  def profit_share_enterprise_ids
+    @_profit_share_enterprise_ids ||= Enterprise.where(name: PROFIT_SHARE_ENTERPRISE_NAMES).pluck(:id)
+  end
+
+  # Per-month elevated service derived ONLY from profit-share enterprises, in
+  # contrast to Contributor#all_items_grouped_by_month's network-wide flag:
+  # hours count when the assignment's client bills through an in-scope
+  # enterprise, income when the payout/trueup sits on an in-scope ledger.
+  # `by_month` is the contributor's ledger walk (so items aren't re-queried);
+  # returns { Stacks::Period(month) => Boolean } for this report's quarter.
+  def profit_share_elevated_service_by_month(contributor, by_month)
+    scope_ids = profit_share_enterprise_ids
+    scoped_assignments = contributor.forecast_person.forecast_assignments
+      .includes(forecast_project: :forecast_client)
+      .where("end_date >= ? AND start_date <= ?", period.starts_at, period.ends_at)
+      .select do |fa|
+        forecast_client = fa.forecast_project&.forecast_client
+        # Clientless projects (e.g. Time Off) follow ForecastClient#billing_enterprise's
+        # unmapped-client default of Sanctuary.
+        enterprise = forecast_client ? forecast_client.billing_enterprise : Enterprise.sanctuary
+        scope_ids.include?(enterprise.id)
+      end
+
+    by_month.reduce({}) do |acc, (month, metadata)|
+      next acc unless month.starts_at >= period.starts_at && month.ends_at <= period.ends_at
+
+      hours = contributor.forecast_person.recorded_allocation_during_range_in_hours_from_assignments(
+        scoped_assignments, month.starts_at, month.ends_at
+      )
+      income = metadata[:items].reduce(0) do |sum, item|
+        if (item.is_a?(ContributorPayout) || item.is_a?(Trueup)) && scope_ids.include?(item.ledger.enterprise_id)
+          sum + item.amount
+        else
+          sum
+        end
+      end
+      acc[month] = Contributor.elevated_service?(total_hours: hours, total_income: income)
+      acc
+    end
+  end
+
   def tentative_profit_shares_by_contributor
     @_tentative_profit_shares_by_contributor ||= contributors.reduce({}) do |acc, contributor|
+      next acc unless PeriodicReport.eligible_profit_share_email?(contributor.forecast_person.email)
+
       ledger = contributor.all_items_grouped_by_month(false, nil, period.ends_at + 1.day)
+      scoped_elevated = profit_share_elevated_service_by_month(contributor, ledger[:by_month])
 
       attendance = ledger[:by_month].select{|p| p.starts_at >= period.starts_at && p.ends_at <= period.ends_at }.reduce({}) do |agg, tuple|
-        period, metadata = tuple
+        month, metadata = tuple
         m = metadata.dup
         m.delete(:items)
-        agg[period.label] = m
+        m[:elevated_service] = scoped_elevated[month]
+        agg[month.label] = m
         agg
       end
       elevated_service_months = attendance.values.select{|v| v[:elevated_service]}.count
