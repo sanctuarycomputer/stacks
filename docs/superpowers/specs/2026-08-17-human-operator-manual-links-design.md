@@ -26,7 +26,7 @@ Both tasks are owned by the admin user themselves.
   (data source `60e5531e-4b73-4431-91a6-e4ea54eef4b4`).
 - Relevant properties: `Email` (email), `Pigment.is Superpowers PDF` (file),
   `Inactive` (checkbox), `Name` (title), `Who` (person).
-- Join key: manual `Email` property ↔ `AdminUser.email`, case-insensitive.
+- Join key: manual `Email` property OR any `Who` person email ↔ `AdminUser.email`, case-insensitive.
 
 ## Architecture
 
@@ -50,7 +50,8 @@ New file `lib/stacks/notion/human_operating_manual.rb`, subclass of
 `Stacks::Notion::Base` (mirrors `Stacks::Notion::Lead`):
 
 - `self.all` — wraps `NotionPage.human_operating_manual`
-- `email` — the "Email" property value (String or nil)
+- `emails` — all candidate owner emails: the "Email" property plus every person in the "Who" people property, downcased and deduped (empty array when neither is set)
+- `email` — first resolvable email from `emails` (nil when none)
 - `superpowers_pdf?` — true when the "Pigment.is Superpowers PDF" file
   property contains at least one file
 - `notion_link` — external URL to the Notion page
@@ -69,8 +70,9 @@ top of `lib/stacks/task_builder.rb`.
 
 Algorithm:
 
-1. Load all manuals once via the wrapper; group by downcased `email`.
-   Manuals with a blank email are ignored.
+1. Load all manuals once via the wrapper; build a lookup keyed by every
+   candidate email from `emails` (Email property + Who person emails).
+   Manuals with no resolvable email (blank Email and empty Who) are ignored.
 2. For each `AdminUser.not_ignored` where `user.active?`:
    - No manual matches → `task(subject: user, type:
      :missing_human_operating_manual, owners: [user])`

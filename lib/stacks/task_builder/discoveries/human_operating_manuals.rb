@@ -12,12 +12,13 @@ module Stacks
           # falsely nag every active admin, so stay silent until data arrives.
           return [] if NotionPage.human_operating_manual.none?
 
-          manuals_by_email = Stacks::Notion::HumanOperatingManual.all
-            .select { |m| m.email.present? }
-            .group_by(&:email)
+          manuals_by_email = Hash.new { |h, k| h[k] = [] }
+          Stacks::Notion::HumanOperatingManual.all.each do |manual|
+            manual.emails.each { |e| manuals_by_email[e] << manual }
+          end
 
           AdminUser.active.not_ignored.distinct.flat_map do |user|
-            manuals = manuals_by_email[user.email.downcase] || []
+            manuals = manuals_by_email[user.email.downcase]
             if manuals.empty?
               [task(subject: user, type: :missing_human_operating_manual, owners: [user])]
             elsif manuals.none?(&:superpowers_pdf?)

@@ -15,6 +15,10 @@ class StacksTaskBuilderDiscoveriesHumanOperatingManualsTest < ActiveSupport::Tes
     { "type" => "email", "email" => value }
   end
 
+  def who_prop(value)
+    { "type" => "people", "people" => [{ "person" => { "email" => value } }] }
+  end
+
   def files_prop(files)
     { "type" => "files", "files" => files }
   end
@@ -67,13 +71,33 @@ class StacksTaskBuilderDiscoveriesHumanOperatingManualsTest < ActiveSupport::Tes
     assert_empty tasks
   end
 
-  test "manuals with a blank Email property are ignored" do
+  test "manuals with no resolvable email (blank Email and empty Who) are ignored" do
     admin = build_admin!
     tasks = discover([manual_page("Email" => email_prop(nil))])
 
     task = tasks.find { |t| t.type == :missing_human_operating_manual }
     assert task
     assert_equal admin, task.subject
+  end
+
+  test "active admin with a Who-only manual (blank Email) and PDF gets no tasks" do
+    admin = build_admin!
+    tasks = discover([manual_page(
+      "Who" => who_prop(admin.email.upcase),
+      "Pigment.is Superpowers PDF" => files_prop([{ "name" => "superpowers.pdf" }])
+    )])
+
+    assert_empty tasks
+  end
+
+  test "active admin with a Who-only manual (blank Email) but no PDF gets missing_superpowers_pdf" do
+    admin = build_admin!
+    tasks = discover([manual_page("Who" => who_prop(admin.email.upcase))])
+
+    task = tasks.find { |t| t.type == :missing_superpowers_pdf }
+    assert task, "expected a missing_superpowers_pdf task"
+    assert_equal [admin], task.owners
+    refute tasks.any? { |t| t.type == :missing_human_operating_manual && t.subject == admin }
   end
 
   test "ignored admins are skipped" do

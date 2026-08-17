@@ -9,10 +9,22 @@ class Stacks::Notion::HumanOperatingManual < Stacks::Notion::Base
     end
   end
 
-  # Downcased "Email" property — the join key to AdminUser.email. Nil when unset.
+  # Downcased candidate emails for the manual's owner: the "Email" property
+  # plus every person in the "Who" people property. Real manuals frequently
+  # have only one or the other filled in.
+  def emails
+    out = []
+    email_prop = get_prop_value("Email")
+    out << email_prop if email_prop.is_a?(String)
+    who = get_prop_value("Who")
+    people = who.is_a?(Array) ? who : []
+    out.concat(people.map { |p| p.dig("person", "email") }.compact)
+    out.map(&:downcase).uniq
+  end
+
+  # First resolvable email — used as the display fallback.
   def email
-    value = get_prop_value("Email")
-    value.is_a?(String) ? value.downcase : nil
+    emails.first
   end
 
   # True when the "Pigment.is Superpowers PDF" file property holds ≥1 file.
