@@ -99,4 +99,35 @@ class StacksTaskBuilderDiscoveriesHumanOperatingManualsTest < ActiveSupport::Tes
 
     assert_empty tasks
   end
+
+  test "both task types have explicit humanized labels" do
+    assert_equal "Admin user needs a Human Operating Manual",
+      StacksTask::HUMANIZED_TYPES[:missing_human_operating_manual]
+    assert_equal "Human Operating Manual needs a Pigment.is Superpowers PDF",
+      StacksTask::HUMANIZED_TYPES[:missing_superpowers_pdf]
+  end
+
+  test "a missing_superpowers_pdf task links externally to the Notion manual" do
+    admin = build_admin!
+    page = manual_page("Email" => email_prop(admin.email))
+    page.notion_id = "abc123def456"
+    tasks = discover([page])
+
+    task = tasks.find { |t| t.type == :missing_superpowers_pdf }
+    assert_equal "human_operating_manuals", task.subject_class_key
+    assert_equal "https://www.notion.so/garden3d/abc123def456", task.subject_url
+    assert task.subject_url_external?
+  end
+
+  test "a missing_superpowers_pdf task displays the manual's title, falling back to email" do
+    admin = build_admin!
+    titled = manual_page("Email" => email_prop(admin.email))
+    titled.page_title = "Hugh's Manual"
+    tasks = discover([titled])
+    assert_equal "Hugh's Manual", tasks.find { |t| t.type == :missing_superpowers_pdf }.subject_display_name
+
+    untitled = manual_page("Email" => email_prop(admin.email))
+    tasks = discover([untitled])
+    assert_equal admin.email.downcase, tasks.find { |t| t.type == :missing_superpowers_pdf }.subject_display_name
+  end
 end

@@ -108,7 +108,7 @@ module Stacks
 
     def subject_id_for(subject)
       case subject
-      when Stacks::Notion::Lead then subject.notion_page.id
+      when Stacks::Notion::Lead, Stacks::Notion::HumanOperatingManual then subject.notion_page.id
       else subject.id
       end
     end
@@ -156,6 +156,8 @@ module Stacks
             # Lead is a wrapper around NotionPage; load the underlying pages
             # and re-wrap. Index by NotionPage.id so descriptor lookup matches.
             NotionPage.where(id: ids).index_by(&:id).transform_values(&:as_lead)
+          elsif klass == Stacks::Notion::HumanOperatingManual
+            NotionPage.where(id: ids).index_by(&:id).transform_values(&:as_human_operating_manual)
           else
             # Use the model's declared primary_key so this works for models
             # with non-default PKs (ForecastProject uses forecast_id, etc.).
