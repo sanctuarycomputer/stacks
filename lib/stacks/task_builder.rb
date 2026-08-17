@@ -6,6 +6,7 @@ require_relative "task_builder/discoveries/forecast_assignments"
 require_relative "task_builder/discoveries/admin_users"
 require_relative "task_builder/discoveries/reimbursements"
 require_relative "task_builder/discoveries/notion_leads"
+require_relative "task_builder/discoveries/human_operating_manuals"
 require_relative "task_builder/discoveries/surveys"
 require_relative "task_builder/discoveries/pay_cycles"
 require_relative "task_builder/discoveries/missing_qbo_vendors"
@@ -48,6 +49,7 @@ module Stacks
       Discoveries::AdminUsers,
       Discoveries::Reimbursements,
       Discoveries::NotionLeads,
+      Discoveries::HumanOperatingManuals,
       Discoveries::Surveys,
       Discoveries::PayCycles,
       Discoveries::MissingQboVendors,
