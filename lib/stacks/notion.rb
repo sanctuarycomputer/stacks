@@ -6,7 +6,8 @@ class Stacks::Notion
   base_uri 'https://api.notion.com/v1'
 
   DATABASE_IDS = {
-    LEADS: "4d9b46b8bad542509f144347db37964d"
+    LEADS: "4d9b46b8bad542509f144347db37964d",
+    HUMAN_OPERATING_MANUALS: "5d59dcd95bfb458a9747ce7d6ce9e009"
   }
 
   def initialize()
