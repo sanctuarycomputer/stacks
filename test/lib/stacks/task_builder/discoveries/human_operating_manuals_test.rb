@@ -26,7 +26,7 @@ class StacksTaskBuilderDiscoveriesHumanOperatingManualsTest < ActiveSupport::Tes
 
   test "an active admin with no matching manual gets a missing_human_operating_manual task they own" do
     admin = build_admin!
-    tasks = discover([])
+    tasks = discover([manual_page("Email" => email_prop("someone.else@sanctuary.computer"))])
 
     task = tasks.find { |t| t.type == :missing_human_operating_manual }
     assert task, "expected a missing_human_operating_manual task"
@@ -79,11 +79,16 @@ class StacksTaskBuilderDiscoveriesHumanOperatingManualsTest < ActiveSupport::Tes
   test "ignored admins are skipped" do
     admin = build_admin!
     admin.update!(ignore: true)
-    assert_empty discover([])
+    assert_empty discover([manual_page("Email" => email_prop("someone.else@sanctuary.computer"))])
   end
 
   test "inactive admins are skipped" do
     build_admin!(ended_at: Date.today - 1)
+    assert_empty discover([manual_page("Email" => email_prop("someone.else@sanctuary.computer"))])
+  end
+
+  test "when the manual database has never been synced, no tasks are emitted" do
+    build_admin!
     assert_empty discover([])
   end
 

@@ -6,6 +6,12 @@ module Stacks
       # Both task types are personal — owned by the admin themselves.
       class HumanOperatingManuals < Base
         def tasks
+          # An entirely-empty scope means the database has never been synced
+          # (the real Notion database is populated) — e.g. freshly deployed
+          # before the first stacks:sync_notion run. Emitting tasks then would
+          # falsely nag every active admin, so stay silent until data arrives.
+          return [] if NotionPage.human_operating_manual.none?
+
           manuals_by_email = Stacks::Notion::HumanOperatingManual.all
             .select { |m| m.email.present? }
             .group_by(&:email)
