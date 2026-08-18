@@ -76,6 +76,14 @@ module Stacks
       cached_descriptors.length
     end
 
+    # Pending-task count for one AdminUser. Descriptor filtering only — no
+    # subject hydration — so callers can annotate lists of people cheaply
+    # (e.g. the payable-bills page header pills).
+    def task_count_for(admin_user)
+      return 0 unless admin_user&.id
+      cached_descriptors.count { |d| d[:owner_ids].include?(admin_user.id) }
+    end
+
     def refresh!
       Rails.cache.delete(CACHE_KEY)
       cached_descriptors

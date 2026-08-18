@@ -140,6 +140,12 @@ ledger_item_path = ->(li) {
           </h2>
         </div>
         <div id="titlebar_right">
+          <% pending = @pending_task_counts_by_contributor[contributor] %>
+          <% if pending && pending[:count] > 0 %>
+            <%= link_to admin_admin_user_path(pending[:admin_user]), style: "margin-right: 4px;" do %>
+              <span class="pill at_risk"><%= pluralize(pending[:count], "pending task") %></span>
+            <% end %>
+          <% end %>
           <span class="pill complete">
             <%= number_to_currency(contributor_rows.sum(&:amount)) %>
             <span class="split"><%= contributor_rows.size %> ledger item<%= "s" if contributor_rows.size != 1 %></span>
