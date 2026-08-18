@@ -42,6 +42,16 @@ ActiveAdmin.register_page "Money" do
     @unsettled_total = accounts_in_scope.sum { |qa| @summary_by_account[qa].unsettled_total }
     @unsettled_count = accounts_in_scope.sum { |qa| @summary_by_account[qa].unsettled_count }
 
+    # Pending-task pill per payables group — one TaskBuilder instance so the
+    # cached descriptors are shared across every contributor's count.
+    task_builder = Stacks::TaskBuilder.new
+    @pending_task_counts_by_contributor =
+      @rows.map(&:contributor).compact.uniq.each_with_object({}) do |contributor, acc|
+        admin_user = contributor.forecast_person&.admin_user
+        next unless admin_user
+        acc[contributor] = { admin_user: admin_user, count: task_builder.task_count_for(admin_user) }
+      end
+
     render "admin/money/payable_qbo_bills"
   end
 

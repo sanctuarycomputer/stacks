@@ -12,6 +12,17 @@ class NotionPage < ApplicationRecord
     Stacks::Notion::Lead.new(self)
   end
 
+  scope :human_operating_manual, -> {
+    where(
+      notion_parent_type: "database_id",
+      notion_parent_id: Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:HUMAN_OPERATING_MANUALS])
+    )
+  }
+
+  def as_human_operating_manual
+    Stacks::Notion::HumanOperatingManual.new(self)
+  end
+
   def notion_link
     "https://www.notion.so/garden3d/#{notion_id.gsub('-', '')}"
   end

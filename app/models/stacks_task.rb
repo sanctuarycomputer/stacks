@@ -29,6 +29,10 @@ class StacksTask
     no_full_time_periods_set: "Admin user needs full-time periods set",
     missing_skill_tree: "Admin user needs skill tree set",
 
+    # Human Operating Manual issues
+    missing_human_operating_manual: "Admin user needs a Human Operating Manual",
+    missing_superpowers_pdf: "Human Operating Manual needs a Pigment.is Superpowers PDF",
+
     # Reimbursement issues
     pending_acceptance: "Reimbursement needs acceptance",
 
@@ -81,6 +85,7 @@ class StacksTask
   def subject_class_key
     case subject
     when Stacks::Notion::Lead then "notion_leads"
+    when Stacks::Notion::HumanOperatingManual then "human_operating_manuals"
     else subject.class.name.demodulize.underscore.pluralize
     end
   end
@@ -112,6 +117,8 @@ class StacksTask
       pt_name = subject.try(:project_capsule).try(:project_tracker).try(:name)
       pt_name.present? ? "#{pt_name} (satisfaction survey)" : "Project Satisfaction Survey ##{subject.id}"
     when Stacks::Notion::Lead then subject.try(:page_title).presence || "Notion Lead"
+    when Stacks::Notion::HumanOperatingManual
+      subject.try(:page_title).presence || subject.email || "Human Operating Manual"
     when PayCycle then "#{subject.enterprise.name} — #{subject.starts_at.to_s(:long)} to #{subject.ends_at.to_s(:long)}"
     when Ledger then "#{subject.contributor.forecast_person&.email || "Contributor ##{subject.contributor_id}"} on #{subject.enterprise.name}"
     when RecurringLedgerAdjustment
@@ -143,11 +150,17 @@ class StacksTask
     when ForecastProject then subject.try(:link)
     when ForecastPerson then subject.try(:external_link)
     when ForecastAssignment then subject.try(:external_link)
-    when AdminUser then helpers.admin_admin_user_path(subject)
+    when AdminUser
+      if type == :missing_human_operating_manual
+        Stacks::Notion::HumanOperatingManual::SETUP_GUIDE_URL
+      else
+        helpers.admin_admin_user_path(subject)
+      end
     when Reimbursement then helpers.admin_ledger_reimbursement_path(subject.ledger, subject)
     when Survey then helpers.admin_survey_path(subject)
     when ProjectSatisfactionSurvey then helpers.admin_project_satisfaction_survey_path(subject)
     when Stacks::Notion::Lead then subject.try(:notion_link) || subject.try(:external_link)
+    when Stacks::Notion::HumanOperatingManual then Stacks::Notion::HumanOperatingManual::ASSESSMENT_GUIDE_URL
     when PayCycle then helpers.admin_enterprise_pay_cycle_path(subject.enterprise, subject)
     when Ledger
       if type == :legacy_ledger_needs_qbo_migration
@@ -161,8 +174,9 @@ class StacksTask
   end
 
   def subject_url_external?
+    return true if type == :missing_human_operating_manual
     case subject
-    when ForecastProject, ForecastPerson, ForecastAssignment, Stacks::Notion::Lead then true
+    when ForecastProject, ForecastPerson, ForecastAssignment, Stacks::Notion::Lead, Stacks::Notion::HumanOperatingManual then true
     else false
     end
   end

@@ -401,6 +401,9 @@ namespace :stacks do
       notion = Stacks::Notion.new
       Parallel.map(Stacks::Notion::DATABASE_IDS.values, in_threads: 3) do |db_id|
         notion.sync_database(db_id)
+      rescue => e
+        Rails.logger.error("Notion sync failed for database #{db_id}: #{e.class}: #{e.message}")
+        Sentry.capture_exception(e) if defined?(Sentry)
       end
     rescue => e
       system_task.mark_as_error(e)
