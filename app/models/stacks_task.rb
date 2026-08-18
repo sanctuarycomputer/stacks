@@ -150,12 +150,17 @@ class StacksTask
     when ForecastProject then subject.try(:link)
     when ForecastPerson then subject.try(:external_link)
     when ForecastAssignment then subject.try(:external_link)
-    when AdminUser then helpers.admin_admin_user_path(subject)
+    when AdminUser
+      if type == :missing_human_operating_manual
+        Stacks::Notion::HumanOperatingManual::SETUP_GUIDE_URL
+      else
+        helpers.admin_admin_user_path(subject)
+      end
     when Reimbursement then helpers.admin_ledger_reimbursement_path(subject.ledger, subject)
     when Survey then helpers.admin_survey_path(subject)
     when ProjectSatisfactionSurvey then helpers.admin_project_satisfaction_survey_path(subject)
     when Stacks::Notion::Lead then subject.try(:notion_link) || subject.try(:external_link)
-    when Stacks::Notion::HumanOperatingManual then subject.notion_link
+    when Stacks::Notion::HumanOperatingManual then Stacks::Notion::HumanOperatingManual::ASSESSMENT_GUIDE_URL
     when PayCycle then helpers.admin_enterprise_pay_cycle_path(subject.enterprise, subject)
     when Ledger
       if type == :legacy_ledger_needs_qbo_migration
@@ -169,6 +174,7 @@ class StacksTask
   end
 
   def subject_url_external?
+    return true if type == :missing_human_operating_manual
     case subject
     when ForecastProject, ForecastPerson, ForecastAssignment, Stacks::Notion::Lead, Stacks::Notion::HumanOperatingManual then true
     else false

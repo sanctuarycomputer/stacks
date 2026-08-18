@@ -136,15 +136,23 @@ class StacksTaskBuilderDiscoveriesHumanOperatingManualsTest < ActiveSupport::Tes
       StacksTask::HUMANIZED_TYPES[:missing_superpowers_pdf]
   end
 
-  test "a missing_superpowers_pdf task links externally to the Notion manual" do
+  test "a missing_superpowers_pdf task links externally to the assessment guide" do
     admin = build_admin!
     page = manual_page("Email" => email_prop(admin.email))
-    page.notion_id = "abc123def456"
     tasks = discover([page])
 
     task = tasks.find { |t| t.type == :missing_superpowers_pdf }
     assert_equal "human_operating_manuals", task.subject_class_key
-    assert_equal "https://www.notion.so/garden3d/abc123def456", task.subject_url
+    assert_equal Stacks::Notion::HumanOperatingManual::ASSESSMENT_GUIDE_URL, task.subject_url
+    assert task.subject_url_external?
+  end
+
+  test "a missing_human_operating_manual task links externally to the setup guide" do
+    admin = build_admin!
+    tasks = discover([manual_page("Email" => email_prop("someone.else@sanctuary.computer"))])
+
+    task = tasks.find { |t| t.type == :missing_human_operating_manual }
+    assert_equal Stacks::Notion::HumanOperatingManual::SETUP_GUIDE_URL, task.subject_url
     assert task.subject_url_external?
   end
 

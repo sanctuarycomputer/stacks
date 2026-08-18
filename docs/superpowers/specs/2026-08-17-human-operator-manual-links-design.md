@@ -100,7 +100,9 @@ Rules:
 - `subject_class_key`: `Stacks::Notion::HumanOperatingManual` →
   `"human_operating_manuals"`
 - `subject_display_name`: page title, falling back to the manual's email
-- `subject_url`: the manual's `notion_link`; `subject_url_external?` → true
+- `subject_url`: `:missing_human_operating_manual` → the "How to setup your
+  Human Operator Manual" Notion guide; `:missing_superpowers_pdf` → the "How to
+  do your Pigment.is Superpowers Assessment" Notion guide; both external (↗)
 
 `lib/stacks/task_builder.rb`:
 
