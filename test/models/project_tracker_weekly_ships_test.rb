@@ -53,6 +53,21 @@ class ProjectTrackerWeeklyShipsTest < ActiveSupport::TestCase
     assert_equal :overdue, ProjectTracker.ship_staleness(make_ship(pt, sent_at: Time.zone.parse("2026-07-18 12:00:00")), anchor: anchor)
   end
 
+  test "internal_client? is true only when all forecast projects bill our own companies" do
+    pt = ProjectTracker.new(name: "X").tap { |t| t.save!(validate: false) }
+
+    pt.stubs(:forecast_projects).returns([stub(is_internal?: true), stub(is_internal?: true)])
+    assert pt.internal_client?
+
+    pt.unstub(:forecast_projects)
+    pt.stubs(:forecast_projects).returns([stub(is_internal?: true), stub(is_internal?: false)])
+    refute pt.internal_client?
+
+    pt.unstub(:forecast_projects)
+    pt.stubs(:forecast_projects).returns([])
+    refute pt.internal_client?, "trackers with no forecast projects are not assumed internal"
+  end
+
   test "last_recorded_forecast_date reads the snapshot, capped at today" do
     travel_to(Time.zone.parse("2026-08-18 12:00:00")) do
       pt = ProjectTracker.new(name: "X").tap { |t| t.save!(validate: false) }

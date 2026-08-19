@@ -76,7 +76,7 @@ ActiveAdmin.register ProjectTracker do
     def scoped_collection
       super.includes(
         :runn_project,
-        :forecast_projects,
+        { forecast_projects: :forecast_client },
         { project_capsule: :project_satisfaction_survey },
         { project_tracker_forecast_projects: :forecast_project },
         { adhoc_invoice_trackers: :qbo_invoice },
@@ -201,13 +201,20 @@ ActiveAdmin.register ProjectTracker do
       ship = last_weekly_ships_by_tracker_id[pt.id]
       staleness = ProjectTracker.ship_staleness(ship, anchor: pt.last_recorded_forecast_date)
       if ship.nil?
-        span "No ships yet", class: "pill", style: "background-color: #1a1a1a; color: #fff;"
+        if pt.internal_client?
+          # Our own companies don't send client-facing weekly ships.
+          span "—", style: "opacity: 0.4;"
+        else
+          span "No ships yet", class: "pill", style: "background-color: #1a1a1a; color: #fff;"
+        end
       else
         pill_class =
           case staleness
           when :overdue then "pill error"
           when :stale then "pill at_risk"
-          else "pill complete"
+          # NOT "pill complete" — .complete is re-declared purple later in the
+          # stylesheet cascade; .exceptional is the stable green.
+          else "pill exceptional"
           end
         label = "#{time_ago_in_words(ship.sent_at)} ago by #{(ship.sent_by_name || ship.sent_by_email).to_s.split(" ").first} ↗"
         url = ship.document&.google_groups_permalink

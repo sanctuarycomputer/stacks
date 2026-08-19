@@ -108,6 +108,13 @@ class ProjectTracker < ApplicationRecord
     [d, Time.zone.today].compact.min
   end
 
+  # True when every Forecast project on this tracker bills one of our own
+  # companies — internal work isn't expected to send weekly ships.
+  def internal_client?
+    fps = forecast_projects.to_a
+    fps.any? && fps.all?(&:is_internal?)
+  end
+
   def capsule_complete?
     project_capsule.present? && project_capsule.complete?
   end
