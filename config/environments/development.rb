@@ -75,4 +75,12 @@ Rails.application.configure do
   # "restart after every ruby change" annoyance). Without it, requests just
   # queue behind the reload and recover on their own.
   config.middleware.delete(Rack::Timeout)
+
+  # ...and the interlock itself can genuinely deadlock (verified via a puma
+  # SIGINFO thread dump parked in ShareLock#wait_for) when the browser's
+  # parallel requests collide with a post-edit reload in an app this large.
+  # Serializing dev requests via Rack::Lock makes the interlock uncontended,
+  # eliminating the deadlock class entirely. One-request-at-a-time is a fine
+  # trade locally.
+  config.allow_concurrency = false
 end
