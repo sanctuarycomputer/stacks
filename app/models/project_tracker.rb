@@ -20,6 +20,7 @@ class ProjectTracker < ApplicationRecord
     if: :validate_budgets?
 
   has_one :project_capsule, dependent: :delete
+  has_many :weekly_ships, dependent: :destroy
   has_many :project_tracker_links, dependent: :delete_all
   accepts_nested_attributes_for :project_tracker_links, allow_destroy: true
 

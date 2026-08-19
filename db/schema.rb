@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_08_04_000001) do
+ActiveRecord::Schema.define(version: 2026_08_19_002741) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -1264,6 +1264,17 @@ ActiveRecord::Schema.define(version: 2026_08_04_000001) do
     t.index ["trait_id"], name: "index_scores_on_trait_id"
   end
 
+  create_table "ship_scans", force: :cascade do |t|
+    t.bigint "document_id", null: false
+    t.integer "outcome", null: false
+    t.string "scanned_content_hash"
+    t.datetime "scanned_at", null: false
+    t.boolean "human_locked", default: false, null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["document_id"], name: "index_ship_scans_on_document_id", unique: true
+  end
+
   create_table "source_syncs", force: :cascade do |t|
     t.string "source", null: false
     t.jsonb "cursor", default: {}, null: false
@@ -1408,6 +1419,23 @@ ActiveRecord::Schema.define(version: 2026_08_04_000001) do
     t.index ["qbo_bill_id"], name: "index_trueups_on_qbo_bill_id"
   end
 
+  create_table "weekly_ships", force: :cascade do |t|
+    t.bigint "document_id", null: false
+    t.bigint "project_tracker_id", null: false
+    t.datetime "sent_at", null: false
+    t.string "sent_by_email"
+    t.string "sent_by_name"
+    t.integer "matched_by", null: false
+    t.float "confidence"
+    t.text "rationale"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["document_id", "project_tracker_id"], name: "index_weekly_ships_on_document_id_and_project_tracker_id", unique: true
+    t.index ["document_id"], name: "index_weekly_ships_on_document_id"
+    t.index ["project_tracker_id", "sent_at"], name: "index_weekly_ships_on_project_tracker_id_and_sent_at"
+    t.index ["project_tracker_id"], name: "index_weekly_ships_on_project_tracker_id"
+  end
+
   create_table "workspaces", force: :cascade do |t|
     t.string "reviewable_type", null: false
     t.bigint "reviewable_id", null: false
@@ -1534,6 +1562,7 @@ ActiveRecord::Schema.define(version: 2026_08_04_000001) do
   add_foreign_key "score_trees", "workspaces"
   add_foreign_key "scores", "score_trees"
   add_foreign_key "scores", "traits"
+  add_foreign_key "ship_scans", "documents"
   add_foreign_key "source_syncs", "system_tasks"
   add_foreign_key "studio_memberships", "admin_users"
   add_foreign_key "studio_memberships", "studios"
@@ -1552,4 +1581,6 @@ ActiveRecord::Schema.define(version: 2026_08_04_000001) do
   add_foreign_key "traits", "trees"
   add_foreign_key "trueups", "invoice_passes"
   add_foreign_key "trueups", "ledgers"
+  add_foreign_key "weekly_ships", "documents"
+  add_foreign_key "weekly_ships", "project_trackers"
 end
