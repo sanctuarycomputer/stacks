@@ -3,6 +3,12 @@ ActiveAdmin.register WeeklyShip do
 
   permit_params :document_id, :project_tracker_id, :sent_at
 
+  controller do
+    def scoped_collection
+      super.includes(:document, :project_tracker)
+    end
+  end
+
   filter :project_tracker
   filter :matched_by, as: :select, collection: WeeklyShip.matched_bies.keys
   filter :sent_at
