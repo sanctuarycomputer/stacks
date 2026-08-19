@@ -86,17 +86,26 @@ class ProjectTracker < ApplicationRecord
     weekly_ships.order(sent_at: :desc).first
   end
 
-  # Staleness for the "Last Ship" index pill. Weekly cadence: fresh ≤7d elapsed,
-  # stale (orange) >7d, overdue (red) >14d or never shipped.
-  # Both sides use Time.zone.today so the subtraction is zone-consistent and
-  # a ship sent exactly 7 days ago (a perfectly on-time weekly cadence) stays :fresh.
-  def self.ship_staleness(ship)
+  # Staleness for the "Last Ship" index pill, anchored to the project's last
+  # recorded Forecast hour rather than the calendar — a paused project whose
+  # ships kept pace with its work stays green instead of rotting to red.
+  # Gap between the anchor and the last ship: ≤10d fresh (green), >10d stale
+  # (orange), >30d overdue (red); no ship ever → :never (black).
+  def self.ship_staleness(ship, anchor:)
     return :never if ship.nil?
-    days = (Time.zone.today - ship.sent_at.to_date).to_i
-    if days > 14 then :overdue
-    elsif days > 7 then :stale
+    days = (anchor - ship.sent_at.to_date).to_i
+    if days > 30 then :overdue
+    elsif days > 10 then :stale
     else :fresh
     end
+  end
+
+  # The anchor for ship staleness: the last Forecast assignment date from the
+  # snapshot, capped at today (future-dated allocations haven't recorded hours
+  # yet). Falls back to today when the snapshot hasn't been generated.
+  def last_recorded_forecast_date
+    d = date_from_snapshot_key("last_forecast_assignment_end_date")
+    [d, Time.zone.today].compact.min
   end
 
   def capsule_complete?

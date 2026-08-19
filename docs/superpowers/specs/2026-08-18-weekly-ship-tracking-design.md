@@ -156,11 +156,18 @@ matching and the index column, so the two can never disagree.
 - "Last Ship" column on the in-progress and dormant scopes (not complete).
 - Content: external link (↗, new tab) to the ship's Google Groups
   permalink, reading `<time_ago> ago by <first name or email>`.
-- Staleness, from the tracker's latest `weekly_ships.sent_at`:
-  - **in_progress scope:** ≤7 days neutral; >7 days `pill at_risk`
-    (orange); >14 days or never `pill error` (red, "No ships yet").
-  - **dormant scope:** always neutral/muted — a dormant tracker red
-    forever is noise, not signal.
+- Staleness (rev 3, per Hugh 2026-08-18): the gap between the tracker's
+  latest `weekly_ships.sent_at` and its **last recorded Forecast hour**
+  (`snapshot["last_forecast_assignment_end_date"]`, capped at today; falls
+  back to today when no snapshot). Anchoring to Forecast activity means
+  paused/dormant projects whose ships kept pace with their work stay green —
+  no scope-based muting needed.
+  - gap ≤10 days → green (`pill complete`)
+  - gap >10 days → orange (`pill at_risk`)
+  - gap >30 days → red (`pill error`)
+  - no ship ever → black pill, "No ships yet"
+  - complete scope → muted "—"
+- Column position: right of Work Status, left of Forecast Projects.
 - Model support: `ProjectTracker#last_weekly_ship` plus a bulk
   latest-per-tracker loader invoked from the project_trackers admin
   controller path (NOT inside `preload_for_render` — its other three

@@ -189,6 +189,36 @@ ActiveAdmin.register ProjectTracker do
     column :work_status do |resource|
       span(resource.work_status.to_s.humanize.capitalize, class: "pill #{resource.work_status}")
     end
+
+    column "Last Ship" do |pt|
+      # Completed projects aren't expected to ship — show a muted dash.
+      if params[:scope] == "complete"
+        span "—", style: "opacity: 0.4;"
+        next
+      end
+      # Anchored to the project's last recorded Forecast hour, not the
+      # calendar — a paused project whose ships kept pace stays green.
+      ship = last_weekly_ships_by_tracker_id[pt.id]
+      staleness = ProjectTracker.ship_staleness(ship, anchor: pt.last_recorded_forecast_date)
+      if ship.nil?
+        span "No ships yet", class: "pill", style: "background-color: #1a1a1a; color: #fff;"
+      else
+        pill_class =
+          case staleness
+          when :overdue then "pill error"
+          when :stale then "pill at_risk"
+          else "pill complete"
+          end
+        label = "#{time_ago_in_words(ship.sent_at)} ago by #{(ship.sent_by_name || ship.sent_by_email).to_s.split(" ").first} ↗"
+        url = ship.document&.google_groups_permalink
+        if url
+          link_to(url, target: "_blank", rel: "noopener") { span label, class: pill_class }
+        else
+          span label, class: pill_class
+        end
+      end
+    end
+
     column :forecast_projects do |resource|
       if resource.forecast_projects.any?
         div(
@@ -221,38 +251,6 @@ ActiveAdmin.register ProjectTracker do
         a("#{resource.runn_project.name} ↗", { href: resource.runn_project.link, target: "_blank", class: "block", style: "white-space:nowrap" })
       else
         span("No Runn.io Project Connected", class: "pill error")
-      end
-    end
-
-    column "Last Ship" do |pt|
-      # Completed projects aren't expected to ship — show a muted dash.
-      if params[:scope] == "complete"
-        span "—", style: "opacity: 0.4;"
-        next
-      end
-      ship = last_weekly_ships_by_tracker_id[pt.id]
-      staleness = ProjectTracker.ship_staleness(ship)
-      dormant_scope = params[:scope] == "dormant"
-      if ship.nil?
-        if dormant_scope
-          span "No ships yet", style: "opacity: 0.5;"
-        else
-          span "No ships yet", class: "pill error"
-        end
-      else
-        pill_class =
-          if dormant_scope then "pill"
-          elsif staleness == :overdue then "pill error"
-          elsif staleness == :stale then "pill at_risk"
-          else "pill"
-          end
-        label = "#{time_ago_in_words(ship.sent_at)} ago by #{(ship.sent_by_name || ship.sent_by_email).to_s.split(" ").first} ↗"
-        url = ship.document&.google_groups_permalink
-        if url
-          link_to(url, target: "_blank", rel: "noopener") { span label, class: pill_class }
-        else
-          span label, class: pill_class
-        end
       end
     end
 

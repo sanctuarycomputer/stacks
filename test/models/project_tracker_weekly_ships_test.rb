@@ -37,18 +37,36 @@ class ProjectTrackerWeeklyShipsTest < ActiveSupport::TestCase
     assert_nil map[c.id]
   end
 
-  test "ship_staleness classifies by 7/14 day boundaries" do
+  test "ship_staleness classifies by 10/30-day gaps from the forecast anchor" do
+    pt = ProjectTracker.new(name: "X").tap { |t| t.save!(validate: false) }
+    anchor = Date.new(2026, 8, 18)
+    assert_equal :never, ProjectTracker.ship_staleness(nil, anchor: anchor)
+    # 10 days before the anchor: exactly on the tolerance — :fresh
+    assert_equal :fresh, ProjectTracker.ship_staleness(make_ship(pt, sent_at: Time.zone.parse("2026-08-08 12:00:00")), anchor: anchor)
+    # ship AFTER the anchor (shipped since the last recorded hour) — :fresh
+    assert_equal :fresh, ProjectTracker.ship_staleness(make_ship(pt, sent_at: Time.zone.parse("2026-08-20 12:00:00")), anchor: anchor)
+    # 11 days: just past tolerance — :stale
+    assert_equal :stale, ProjectTracker.ship_staleness(make_ship(pt, sent_at: Time.zone.parse("2026-08-07 12:00:00")), anchor: anchor)
+    # 30 days: still stale, not yet overdue
+    assert_equal :stale, ProjectTracker.ship_staleness(make_ship(pt, sent_at: Time.zone.parse("2026-07-19 12:00:00")), anchor: anchor)
+    # 31 days: overdue
+    assert_equal :overdue, ProjectTracker.ship_staleness(make_ship(pt, sent_at: Time.zone.parse("2026-07-18 12:00:00")), anchor: anchor)
+  end
+
+  test "last_recorded_forecast_date reads the snapshot, capped at today" do
     travel_to(Time.zone.parse("2026-08-18 12:00:00")) do
       pt = ProjectTracker.new(name: "X").tap { |t| t.save!(validate: false) }
-      assert_equal :never, ProjectTracker.ship_staleness(nil)
-      # 7 days ago: exactly on the weekly boundary — must be :fresh (not stale)
-      assert_equal :fresh,  ProjectTracker.ship_staleness(make_ship(pt, sent_at: Time.zone.parse("2026-08-11 12:00:00")))
-      # 8 days ago: just past the weekly threshold — :stale
-      assert_equal :stale,  ProjectTracker.ship_staleness(make_ship(pt, sent_at: Time.zone.parse("2026-08-10 12:00:00")))
-      # 14 days ago: still stale, not yet overdue
-      assert_equal :stale,  ProjectTracker.ship_staleness(make_ship(pt, sent_at: Time.zone.parse("2026-08-04 12:00:00")))
-      # 15 days ago: past the overdue threshold
-      assert_equal :overdue, ProjectTracker.ship_staleness(make_ship(pt, sent_at: Time.zone.parse("2026-08-03 12:00:00")))
+
+      pt.snapshot = { "last_forecast_assignment_end_date" => "2026-07-16" }
+      assert_equal Date.new(2026, 7, 16), pt.last_recorded_forecast_date
+
+      # Future-dated allocations can't have recorded hours yet — cap at today.
+      pt.snapshot = { "last_forecast_assignment_end_date" => "2026-09-30" }
+      assert_equal Date.new(2026, 8, 18), pt.last_recorded_forecast_date
+
+      # No snapshot → fall back to today (degrades to calendar staleness).
+      pt.snapshot = {}
+      assert_equal Date.new(2026, 8, 18), pt.last_recorded_forecast_date
     end
   end
 end
