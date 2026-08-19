@@ -219,7 +219,11 @@ ActiveAdmin.register ProjectTracker do
         label = "#{time_ago_in_words(ship.sent_at)} ago by #{(ship.sent_by_name || ship.sent_by_email).to_s.split(" ").first} ↗"
         url = ship.document&.google_groups_permalink
         if url
-          link_to(url, target: "_blank", rel: "noopener") { span label, class: pill_class }
+          # Arbre `a`, not block-form link_to — Rails' capture doesn't see
+          # Arbre elements, which renders the pill OUTSIDE an empty anchor.
+          a(href: url, target: "_blank", rel: "noopener", style: "text-decoration: none;") do
+            span label, class: pill_class
+          end
         else
           span label, class: pill_class
         end
