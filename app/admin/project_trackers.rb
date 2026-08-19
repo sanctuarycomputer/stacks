@@ -447,6 +447,23 @@ ActiveAdmin.register ProjectTracker do
     render(partial: 'show', locals: {
       burnup_data: burnup_data
     })
+
+    panel "Weekly Ships" do
+      ships = resource.weekly_ships.includes(:document).order(sent_at: :desc).limit(20)
+      if ships.any?
+        table_for ships do
+          column("Sent") { |ws| "#{time_ago_in_words(ws.sent_at)} ago" }
+          column("Subject") { |ws| ws.document.title }
+          column("Sender") { |ws| ws.sent_by_name || ws.sent_by_email }
+          column("") do |ws|
+            url = ws.document.google_groups_permalink
+            link_to("Open ↗", url, target: "_blank", rel: "noopener") if url
+          end
+        end
+      else
+        para em("No weekly ships linked yet.")
+      end
+    end
   end
 
   form do |f|
