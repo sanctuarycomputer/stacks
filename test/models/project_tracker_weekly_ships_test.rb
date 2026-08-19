@@ -38,10 +38,17 @@ class ProjectTrackerWeeklyShipsTest < ActiveSupport::TestCase
   end
 
   test "ship_staleness classifies by 7/14 day boundaries" do
-    pt = ProjectTracker.new(name: "X").tap { |t| t.save!(validate: false) }
-    assert_equal :never, ProjectTracker.ship_staleness(nil)
-    assert_equal :fresh, ProjectTracker.ship_staleness(make_ship(pt, sent_at: 3.days.ago))
-    assert_equal :stale, ProjectTracker.ship_staleness(make_ship(pt, sent_at: 8.days.ago))
-    assert_equal :overdue, ProjectTracker.ship_staleness(make_ship(pt, sent_at: 15.days.ago))
+    travel_to(Time.zone.parse("2026-08-18 12:00:00")) do
+      pt = ProjectTracker.new(name: "X").tap { |t| t.save!(validate: false) }
+      assert_equal :never, ProjectTracker.ship_staleness(nil)
+      # 7 days ago: exactly on the weekly boundary — must be :fresh (not stale)
+      assert_equal :fresh,  ProjectTracker.ship_staleness(make_ship(pt, sent_at: Time.zone.parse("2026-08-11 12:00:00")))
+      # 8 days ago: just past the weekly threshold — :stale
+      assert_equal :stale,  ProjectTracker.ship_staleness(make_ship(pt, sent_at: Time.zone.parse("2026-08-10 12:00:00")))
+      # 14 days ago: still stale, not yet overdue
+      assert_equal :stale,  ProjectTracker.ship_staleness(make_ship(pt, sent_at: Time.zone.parse("2026-08-04 12:00:00")))
+      # 15 days ago: past the overdue threshold
+      assert_equal :overdue, ProjectTracker.ship_staleness(make_ship(pt, sent_at: Time.zone.parse("2026-08-03 12:00:00")))
+    end
   end
 end

@@ -86,15 +86,15 @@ class ProjectTracker < ApplicationRecord
     weekly_ships.order(sent_at: :desc).first
   end
 
-  # Staleness for the "Last Ship" index pill. Weekly cadence: fresh <7d elapsed,
-  # stale (orange) ≥7d, overdue (red) ≥14d or never shipped.
-  # NOTE: days is calendar-date subtraction (Date.today - sent_at.to_date), so
-  # a ship created with 8.days.ago yields days=7 due to date rounding.
+  # Staleness for the "Last Ship" index pill. Weekly cadence: fresh ≤7d elapsed,
+  # stale (orange) >7d, overdue (red) >14d or never shipped.
+  # Both sides use Time.zone.today so the subtraction is zone-consistent and
+  # a ship sent exactly 7 days ago (a perfectly on-time weekly cadence) stays :fresh.
   def self.ship_staleness(ship)
     return :never if ship.nil?
-    days = (Date.today - ship.sent_at.to_date).to_i
-    if days >= 14 then :overdue
-    elsif days >= 7 then :stale
+    days = (Time.zone.today - ship.sent_at.to_date).to_i
+    if days > 14 then :overdue
+    elsif days > 7 then :stale
     else :fresh
     end
   end
