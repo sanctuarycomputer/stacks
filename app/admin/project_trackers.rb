@@ -85,6 +85,15 @@ ActiveAdmin.register ProjectTracker do
       )
     end
 
+    # Arbre column blocks don't see controller ivars (a bare @ivar reads the
+    # Arbre component's own, nil ivar) — but they DO delegate method calls to
+    # the controller's helpers. Expose the ship map as a helper method, same
+    # pattern as admin_users.rb#last_month_utilization_by_email.
+    helper_method :last_weekly_ships_by_tracker_id
+    def last_weekly_ships_by_tracker_id
+      @last_ships_by_tracker_id || {}
+    end
+
     def collection
       c = super
       if action_name == "index" && !@_preloaded_for_render
@@ -221,7 +230,7 @@ ActiveAdmin.register ProjectTracker do
         span "—", style: "opacity: 0.4;"
         next
       end
-      ship = (@last_ships_by_tracker_id || {})[pt.id]
+      ship = last_weekly_ships_by_tracker_id[pt.id]
       staleness = ProjectTracker.ship_staleness(ship)
       dormant_scope = params[:scope] == "dormant"
       if ship.nil?
