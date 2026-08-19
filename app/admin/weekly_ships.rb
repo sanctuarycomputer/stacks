@@ -1,11 +1,24 @@
 ActiveAdmin.register WeeklyShip do
-  menu label: "Weekly Ships", parent: "project_trackers"
+  # Menu-less: the unified per-email page (app/admin/ship_scans.rb, labeled
+  # "Weekly Ships") is the entry point; this resource provides the link-level
+  # CRUD (new/edit/destroy/show) reached from there.
+  menu false
 
   permit_params :document_id, :project_tracker_id, :sent_at
 
   controller do
     def scoped_collection
       super.includes(:document, :project_tracker)
+    end
+
+    # After link-level writes, land back on the unified Weekly Ships page
+    # rather than this menu-less resource.
+    def smart_resource_url
+      admin_ship_scans_path
+    end
+
+    def smart_collection_url
+      admin_ship_scans_path
     end
   end
 
