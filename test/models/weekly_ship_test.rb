@@ -60,4 +60,24 @@ class WeeklyShipTest < ActiveSupport::TestCase
       WeeklyShip.create!(document: doc, project_tracker: tracker, sent_at: Time.zone.now, matched_by: :human)
     end
   end
+
+  test "human UPDATE of a sweep-created ship locks the scan and links it" do
+    doc = make_document
+    tracker = make_tracker
+    # Create via sweep (no scan written, no human lock)
+    ship = WeeklyShip.new(document: doc, project_tracker: tracker,
+                          sent_at: Time.zone.now, matched_by: :llm)
+    ship.via_sweep = true
+    ship.save!
+    assert_nil ShipScan.find_by(document: doc), "sweep create must not write a scan"
+
+    # Reload a fresh instance (no via_sweep set) and do a human update
+    fresh_ship = WeeklyShip.find(ship.id)
+    fresh_ship.update!(sent_by_email: "x@y.com")
+
+    scan = ShipScan.find_by(document: doc)
+    assert scan, "scan must exist after human update"
+    assert scan.human_locked?, "scan must be human-locked"
+    assert scan.linked?, "scan outcome must be linked"
+  end
 end

@@ -1,5 +1,5 @@
 ActiveAdmin.register WeeklyShip do
-  menu label: "Weekly Ships", parent: "Projects", if: -> { true }
+  menu label: "Weekly Ships", parent: "project_trackers"
 
   permit_params :document_id, :project_tracker_id, :sent_at
 
@@ -45,9 +45,22 @@ ActiveAdmin.register WeeklyShip do
   end
 
   form do |f|
+    # Build base collection: newest 200 corpus-eligible ships_group documents.
+    base = Document.ships_group.corpus_eligible.order(occurred_at: :desc).limit(200)
+    # Always include the pre-selected doc (from params) and the current record's doc,
+    # even if they've aged out of the newest-200 window.
+    pinned_ids = [params[:document_id], f.object.document_id].compact.map(&:to_i).uniq
+    pinned_docs = pinned_ids.any? ? Document.where(id: pinned_ids) : Document.none
+    doc_collection = (base.to_a + pinned_docs.to_a).uniq(&:id)
+                       .sort_by { |d| d.occurred_at || Time.zone.at(0) }
+                       .reverse
+                       .map { |d| [d.title, d.id] }
+    selected_doc_id = (params[:document_id] || f.object.document_id).presence
+
     f.inputs do
       f.input :document, as: :select,
-        collection: Document.ships_group.order(occurred_at: :desc).limit(200).map { |d| [d.title, d.id] }
+        collection: doc_collection,
+        selected: selected_doc_id
       f.input :project_tracker, as: :select,
         collection: ProjectTracker.where(work_completed_at: nil).order(:name).pluck(:name, :id)
       f.input :sent_at

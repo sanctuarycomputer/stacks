@@ -127,4 +127,34 @@ class StacksWeeklyShipsSweepTest < ActiveSupport::TestCase
     Stacks::WeeklyShips::Sweep.run!
     assert captured.index("Copilot Money Homepage") < captured.index("Zzz Unrelated")
   end
+
+  test "ETL-excluded ships@ documents are never scanned" do
+    doc = make_ship_doc
+    doc.update_column(:excluded, Document.excludeds[:auto_excluded])
+    Stacks::AI.expects(:extract).never
+    Stacks::WeeklyShips::Sweep.run!
+    assert_nil ShipScan.find_by(document: doc)
+  end
+
+  test "nil occurred_at counts as errored without writing a scan row" do
+    doc = make_ship_doc
+    doc.update_column(:occurred_at, nil)
+    Stacks::AI.expects(:extract).never
+    stats = Stacks::WeeklyShips::Sweep.run!
+    assert_equal 0, ShipScan.count
+    assert_equal 1, stats[:errored]
+  end
+
+  test "ActiveRecord error on a doc is caught and does not abort remaining docs" do
+    # Two docs; the first AI call raises an AR error, the second succeeds.
+    # Both docs must be attempted (error on one never aborts the run).
+    make_ship_doc(title: "[Copilot Money] Weekly Ship A")
+    make_ship_doc(title: "[Copilot Money] Weekly Ship B")
+    Stacks::AI.stubs(:extract)
+      .raises(ActiveRecord::StatementInvalid, "simulated db error")
+      .then.returns(ai_result(tracker_ids: [@tracker.id]))
+    stats = Stacks::WeeklyShips::Sweep.run!
+    assert_equal 1, stats[:errored], "first doc should count as errored"
+    assert_equal 1, stats[:linked], "second doc should still be processed and linked"
+  end
 end

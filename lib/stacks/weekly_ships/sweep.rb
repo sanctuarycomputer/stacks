@@ -62,7 +62,7 @@ module Stacks
       private
 
       def candidates
-        Document.ships_group
+        Document.ships_group.corpus_eligible
           .joins("LEFT JOIN ship_scans ON ship_scans.document_id = documents.id")
           .where("ship_scans.id IS NULL OR (ship_scans.human_locked = FALSE AND documents.content_hash IS DISTINCT FROM ship_scans.scanned_content_hash)")
       end
@@ -75,6 +75,12 @@ module Stacks
       end
 
       def process(doc, trackers, stats)
+        if doc.occurred_at.nil?
+          Rails.logger.warn("[weekly_ships] doc=#{doc.id} has nil occurred_at — skipping (data bug)")
+          stats[:errored] += 1
+          return
+        end
+
         stats[:scanned] += 1
         if doc.occurred_at < BACKFILL_WINDOW.ago
           record_scan!(doc, :out_of_scope)
@@ -99,7 +105,7 @@ module Stacks
           record_scan!(doc, :no_match)
           stats[:no_match] += 1
         end
-      rescue Stacks::AI::Error => e
+      rescue Stacks::AI::Error, ActiveRecord::ActiveRecordError => e
         # No scan row → retried next night.
         Rails.logger.error("[weekly_ships] doc=#{doc.id} failed: #{e.message}")
         stats[:errored] += 1
