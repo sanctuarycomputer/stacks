@@ -14,6 +14,14 @@ class WeeklyShip < ApplicationRecord
   # Set by the sweep so pipeline writes skip the human-lock callbacks.
   attr_accessor :via_sweep
 
+  # {tracker_id => newest WeeklyShip} for the given ids, one query.
+  def self.latest_by_tracker(tracker_ids)
+    where(project_tracker_id: tracker_ids)
+      .order(:project_tracker_id, sent_at: :desc)
+      .group_by(&:project_tracker_id)
+      .transform_values(&:first)
+  end
+
   before_validation { self.matched_by ||= :human unless via_sweep }
 
   after_save    :human_lock_scan!, unless: :via_sweep

@@ -90,6 +90,7 @@ ActiveAdmin.register ProjectTracker do
       if action_name == "index" && !@_preloaded_for_render
         arr = c.to_a
         ProjectTracker.preload_for_render(arr)
+        @last_ships_by_tracker_id = WeeklyShip.includes(:document).latest_by_tracker(arr.map(&:id))
         @_preloaded_for_render = true
         # Group by account lead on the Active and Dormant tabs (and on the
         # default unfiltered view). Within each lead, fall back to the
@@ -211,6 +212,33 @@ ActiveAdmin.register ProjectTracker do
         a("#{resource.runn_project.name} ↗", { href: resource.runn_project.link, target: "_blank", class: "block", style: "white-space:nowrap" })
       else
         span("No Runn.io Project Connected", class: "pill error")
+      end
+    end
+
+    column "Last Ship" do |pt|
+      ship = (@last_ships_by_tracker_id || {})[pt.id]
+      staleness = ProjectTracker.ship_staleness(ship)
+      dormant_scope = params[:scope] == "dormant"
+      if ship.nil?
+        if dormant_scope
+          span "No ships yet", style: "opacity: 0.5;"
+        else
+          span "No ships yet", class: "pill error"
+        end
+      else
+        pill_class =
+          if dormant_scope then "pill"
+          elsif staleness == :overdue then "pill error"
+          elsif staleness == :stale then "pill at_risk"
+          else "pill"
+          end
+        label = "#{time_ago_in_words(ship.sent_at)} ago by #{(ship.sent_by_name || ship.sent_by_email).to_s.split(" ").first} ↗"
+        url = ship.document&.google_groups_permalink
+        if url
+          link_to(url, target: "_blank", rel: "noopener") { span label, class: pill_class }
+        else
+          span label, class: pill_class
+        end
       end
     end
 
