@@ -67,4 +67,12 @@ Rails.application.configure do
   # Use an evented file watcher to asynchronously detect changes in source code,
   # routes, locales, etc. This feature depends on the listen gem.
   config.file_watcher = ActiveSupport::EventedFileUpdateChecker
+
+  # rack-timeout is a Heroku safety net, but locally its mid-request
+  # Thread#raise fires while a post-edit code reload holds the autoload
+  # interlock; a thread killed inside that lock poisons it, and every request
+  # afterwards hangs until the server is restarted (the long-standing
+  # "restart after every ruby change" annoyance). Without it, requests just
+  # queue behind the reload and recover on their own.
+  config.middleware.delete(Rack::Timeout)
 end
