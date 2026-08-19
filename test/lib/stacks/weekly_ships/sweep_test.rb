@@ -128,6 +128,18 @@ class StacksWeeklyShipsSweepTest < ActiveSupport::TestCase
     assert captured.index("Copilot Money Homepage") < captured.index("Zzz Unrelated")
   end
 
+  test "a distinctive client token ranks a tracker without full-name containment" do
+    harvey = ProjectTracker.new(name: "Harvey Staff Augmentation").tap { |t| t.save!(validate: false) }
+    ProjectTracker.new(name: "Zzz Unrelated").tap { |t| t.save!(validate: false) }
+    make_ship_doc(title: "[Sanctuary / Harvey.ai] Weekly Ship - 8/14/26")
+    captured = nil
+    Stacks::AI.stubs(:extract).with { |kw| captured = kw[:prompt]; true }
+      .returns(ai_result(tracker_ids: [harvey.id]))
+    Stacks::WeeklyShips::Sweep.run!
+    assert captured.index("Harvey Staff Augmentation") < captured.index("Zzz Unrelated"),
+      "token overlap (harvey) should outrank non-matching trackers"
+  end
+
   test "ETL-excluded ships@ documents are never scanned" do
     doc = make_ship_doc
     doc.update_column(:excluded, Document.excludeds[:auto_excluded])

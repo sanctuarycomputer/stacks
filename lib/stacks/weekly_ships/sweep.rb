@@ -33,6 +33,12 @@ module Stacks
         - Studio brand names (Sanctuary Computer, XXIX, Manhattan Hydraulics, Index,
           Garden3D) appear in subjects as the SENDER's studio, not the project —
           never match on them alone.
+        - Client names in subjects rarely match tracker names verbatim. A shared
+          DISTINCTIVE token is strong evidence: "[Sanctuary / Harvey.ai]" matches a
+          tracker named "Harvey Staff Augmentation" because "Harvey" is the client;
+          "Acme.com Weekly Ship" matches "Acme Phase 2". Match on the client
+          identity, not the exact string — decline only when the email is clearly
+          about a DIFFERENT engagement than every candidate.
         - An email may cover several projects, or none of the candidates.
         - not_a_ship is true for emails that are not weekly ship reports at all.
         - Only include tracker ids you are genuinely confident about; confidence is
@@ -143,12 +149,30 @@ module Stacks
         [name || contact&.name, contact&.email]
       end
 
+      # Generic words that appear in many tracker names and would false-rank
+      # ("Acme Website Phase 2" must not rank for every "…website…" subject).
+      GENERIC_TOKENS = %w[weekly ship website phase design build development
+                          maintenance ongoing staff augmentation project
+                          retainer support discovery sprint].freeze
+
       def prompt_for(doc, trackers)
         subject = doc.title.to_s
         normalized_subject = normalize(subject)
+        subject_tokens = normalized_subject.split(" ").to_set
         ranked = trackers.sort_by do |t|
-          hit = t[:normalized].any? { |n| n.present? && !OWN_BRANDS.include?(n) && normalized_subject.include?(n) }
-          hit ? 0 : 1
+          # Rank 0: a full candidate name appears in the subject.
+          # Rank 1: a distinctive token from a candidate name does ("harvey"
+          #         from "Harvey Staff Augmentation" hits "[Sanctuary /
+          #         Harvey.ai] Weekly Ship" — subjects rarely carry full
+          #         tracker names, so token overlap is the workhorse signal).
+          full_hit = t[:normalized].any? { |n| n.present? && !OWN_BRANDS.include?(n) && normalized_subject.include?(n) }
+          token_hit = t[:normalized].any? do |n|
+            n.split(" ").any? do |tok|
+              tok.length >= 4 && !GENERIC_TOKENS.include?(tok) &&
+                !OWN_BRANDS.include?(tok) && subject_tokens.include?(tok)
+            end
+          end
+          full_hit ? 0 : (token_hit ? 1 : 2)
         end
         body = doc.chunks.order(:position).limit(5).pluck(:content).join("\n")[0, BODY_CHARS]
         sender_name, sender_email = sender_for(doc)
