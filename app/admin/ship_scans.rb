@@ -17,6 +17,10 @@ ActiveAdmin.register ShipScan do
   scope("Needs Review", default: true) { |s| s.no_match.where(human_locked: false) }
   scope("Linked") { |s| s.linked }
   scope("Not a Ship") { |s| s.not_a_ship }
+  # Older than the 90-day backfill window — recorded but never LLM-classified
+  # (their projects are mostly long-completed). Kept visible so the scope
+  # counts add up to All.
+  scope("Out of Scope (>90d)") { |s| s.out_of_scope }
   scope :all
 
   filter :outcome, as: :select, collection: ShipScan.outcomes
