@@ -28,6 +28,7 @@ class Stacks::AI::Providers::Anthropic
       )
 
       parsed = response.parsed_response
+      raise Stacks::AI::Error, "Non-JSON response body" unless parsed.is_a?(Hash)
       raise Stacks::AI::Error, "Response truncated (stop_reason=max_tokens)" if parsed["stop_reason"] == "max_tokens"
 
       text = parsed.dig("content", 0, "text")

@@ -12,7 +12,7 @@ ActiveAdmin.register ShipScan do
   scope("Needs Review", default: true) { |s| s.no_match.where(human_locked: false) }
   scope :all
 
-  filter :outcome, as: :select, collection: ShipScan.outcomes.keys
+  filter :outcome, as: :select, collection: ShipScan.outcomes
   filter :human_locked
   filter :scanned_at
 

@@ -10,7 +10,7 @@ ActiveAdmin.register WeeklyShip do
   end
 
   filter :project_tracker
-  filter :matched_by, as: :select, collection: WeeklyShip.matched_bies.keys
+  filter :matched_by, as: :select, collection: WeeklyShip.matched_bies
   filter :sent_at
 
   index do
@@ -50,7 +50,7 @@ ActiveAdmin.register WeeklyShip do
     # Always include the pre-selected doc (from params) and the current record's doc,
     # even if they've aged out of the newest-200 window.
     pinned_ids = [params[:document_id], f.object.document_id].compact.map(&:to_i).uniq
-    pinned_docs = pinned_ids.any? ? Document.where(id: pinned_ids) : Document.none
+    pinned_docs = pinned_ids.any? ? Document.ships_group.corpus_eligible.where(id: pinned_ids) : Document.none
     doc_collection = (base.to_a + pinned_docs.to_a).uniq(&:id)
                        .sort_by { |d| d.occurred_at || Time.zone.at(0) }
                        .reverse

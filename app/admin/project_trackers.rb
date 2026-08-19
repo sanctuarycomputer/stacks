@@ -216,6 +216,11 @@ ActiveAdmin.register ProjectTracker do
     end
 
     column "Last Ship" do |pt|
+      # Completed projects aren't expected to ship — show a muted dash.
+      if params[:scope] == "complete"
+        span "—", style: "opacity: 0.4;"
+        next
+      end
       ship = (@last_ships_by_tracker_id || {})[pt.id]
       staleness = ProjectTracker.ship_staleness(ship)
       dormant_scope = params[:scope] == "dormant"

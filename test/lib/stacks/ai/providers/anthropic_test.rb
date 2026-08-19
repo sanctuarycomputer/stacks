@@ -83,6 +83,14 @@ class StacksAIProvidersAnthropicTest < ActiveSupport::TestCase
     end
   end
 
+  test "200 with non-Hash body (e.g. proxy HTML) raises Stacks::AI::Error" do
+    Stacks::AI::Providers::Anthropic.stubs(:post)
+      .returns(fake_response(code: 200, body: "<html>Bad Gateway</html>"))
+    assert_raises(Stacks::AI::Error) do
+      Stacks::AI::Providers::Anthropic.extract(system: "s", prompt: "p", schema: SCHEMA, tier: :fast)
+    end
+  end
+
   test "configured? false without a key; extract raises" do
     Stacks::Utils.stubs(:config).returns({})
     refute Stacks::AI::Providers::Anthropic.configured?
