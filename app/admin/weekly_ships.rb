@@ -1,0 +1,89 @@
+ActiveAdmin.register WeeklyShip do
+  # Menu-less: the unified per-email page (app/admin/ship_scans.rb, labeled
+  # "Weekly Ships") is the entry point; this resource provides the link-level
+  # CRUD (new/edit/destroy/show) reached from there.
+  menu false
+
+  permit_params :document_id, :project_tracker_id, :sent_at
+
+  controller do
+    def scoped_collection
+      super.includes(:document, :project_tracker)
+    end
+
+    # After link-level writes, land back on the unified Weekly Ships page
+    # rather than this menu-less resource.
+    def smart_resource_url
+      admin_ship_scans_path
+    end
+
+    def smart_collection_url
+      admin_ship_scans_path
+    end
+  end
+
+  filter :project_tracker
+  filter :matched_by, as: :select, collection: WeeklyShip.matched_bies
+  filter :sent_at
+
+  index do
+    selectable_column
+    column("Subject") { |ws| ws.document.title }
+    column("Sender") { |ws| ws.sent_by_name || ws.sent_by_email }
+    column :sent_at
+    column :project_tracker
+    column("Matched By") { |ws| span ws.matched_by, class: "pill" }
+    column :confidence
+    column("Google Groups") do |ws|
+      url = ws.document.google_groups_permalink
+      link_to("Open ↗", url, target: "_blank", rel: "noopener") if url
+    end
+    actions
+  end
+
+  show do
+    attributes_table do
+      row("Subject") { |ws| ws.document.title }
+      row(:project_tracker)
+      row("Sender") { |ws| "#{ws.sent_by_name} <#{ws.sent_by_email}>" }
+      row(:sent_at)
+      row(:matched_by)
+      row(:confidence)
+      row(:rationale)
+      row("Google Groups") do |ws|
+        url = ws.document.google_groups_permalink
+        link_to("Open in Google Groups ↗", url, target: "_blank", rel: "noopener") if url
+      end
+    end
+  end
+
+  form do |f|
+    # Build base collection: newest 200 corpus-eligible ships_group documents.
+    base = Document.ships_group.corpus_eligible.order(occurred_at: :desc).limit(200)
+    # Always include the pre-selected doc (from params) and the current record's doc,
+    # even if they've aged out of the newest-200 window.
+    pinned_ids = [params[:document_id], f.object.document_id].compact.map(&:to_i).uniq
+    pinned_docs = pinned_ids.any? ? Document.ships_group.corpus_eligible.where(id: pinned_ids) : Document.none
+    doc_collection = (base.to_a + pinned_docs.to_a).uniq(&:id)
+                       .sort_by { |d| d.occurred_at || Time.zone.at(0) }
+                       .reverse
+                       .map { |d| [d.title, d.id] }
+    selected_doc_id = (params[:document_id] || f.object.document_id).presence
+
+    f.inputs do
+      f.input :document, as: :select,
+        collection: doc_collection,
+        selected: selected_doc_id
+      f.input :project_tracker, as: :select,
+        collection: ProjectTracker.where(work_completed_at: nil).order(:name).pluck(:name, :id)
+      f.input :sent_at
+    end
+    f.actions
+  end
+
+  # Human creates via this form get sent_at defaulted from the document and
+  # matched_by :human via the model callback chain.
+  before_save do |ship|
+    ship.sent_at ||= ship.document&.occurred_at
+  end
+end

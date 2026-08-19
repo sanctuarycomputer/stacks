@@ -20,6 +20,7 @@ class ProjectTracker < ApplicationRecord
     if: :validate_budgets?
 
   has_one :project_capsule, dependent: :delete
+  has_many :weekly_ships, dependent: :destroy
   has_many :project_tracker_links, dependent: :delete_all
   accepts_nested_attributes_for :project_tracker_links, allow_destroy: true
 
@@ -80,6 +81,39 @@ class ProjectTracker < ApplicationRecord
       .where("(snapshot->>'last_forecast_assignment_end_date') IS NOT NULL")
       .where("(snapshot->>'last_forecast_assignment_end_date')::date < ?", threshold)
   }
+
+  def last_weekly_ship
+    weekly_ships.order(sent_at: :desc).first
+  end
+
+  # Staleness for the "Last Ship" index pill, anchored to the project's last
+  # recorded Forecast hour rather than the calendar — a paused project whose
+  # ships kept pace with its work stays green instead of rotting to red.
+  # Gap between the anchor and the last ship: ≤10d fresh (green), >10d stale
+  # (orange), >30d overdue (red); no ship ever → :never (black).
+  def self.ship_staleness(ship, anchor:)
+    return :never if ship.nil?
+    days = (anchor - ship.sent_at.to_date).to_i
+    if days > 30 then :overdue
+    elsif days > 10 then :stale
+    else :fresh
+    end
+  end
+
+  # The anchor for ship staleness: the last Forecast assignment date from the
+  # snapshot, capped at today (future-dated allocations haven't recorded hours
+  # yet). Falls back to today when the snapshot hasn't been generated.
+  def last_recorded_forecast_date
+    d = date_from_snapshot_key("last_forecast_assignment_end_date")
+    [d, Time.zone.today].compact.min
+  end
+
+  # True when every Forecast project on this tracker bills one of our own
+  # companies — internal work isn't expected to send weekly ships.
+  def internal_client?
+    fps = forecast_projects.to_a
+    fps.any? && fps.all?(&:is_internal?)
+  end
 
   def capsule_complete?
     project_capsule.present? && project_capsule.complete?
