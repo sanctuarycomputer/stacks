@@ -30,7 +30,10 @@ class InvoiceTracker < ApplicationRecord
   end
 
   def blueprint_diff
-    diff_base = blueprint.try(:clone) || {
+    # deep_dup: a shallow clone shares the inner line hashes with the
+    # blueprint attribute, so the [was, now] rewrites below would corrupt
+    # the model's own blueprint and crash any second diff in the request.
+    diff_base = blueprint.try(:deep_dup) || {
       "generated_at" => DateTime.now.to_s,
       "lines" => {}
     }
