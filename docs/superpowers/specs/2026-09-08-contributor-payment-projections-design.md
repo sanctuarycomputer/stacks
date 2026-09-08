@@ -133,16 +133,17 @@ end
 
 #### 1.4 `InvoiceTracker#make_contributor_payouts!`
 
-At each of the three literals inside the per-line loop, read
-`rules = pt.billing_rules` once per line and use
-`rules.account_lead_share`, `rules.project_lead_share`, and
-`1 - rules.treasury_share - (al ? rules.account_lead_share : 0) - (pl ? rules.project_lead_share : 0)`
-(which equals `rules.ic_ceiling` when both leads are present). The
-description lines render the percentage from the rule
-(`"#{(share * 100).round(2)}%"`) instead of the literal `8%` / `5%`.
+Inside the per-line loop, read `rules = pt.billing_rules` once per line and
+replace every literal with the rule. The full inventory (line numbers as of
+this spec): `0.08` at `:449`, `0.05` at `:467`, both inside `ic_share` at
+`:505`, and the description strings `8%` (`:454-455`) and `5%`
+(`:472-473`), rendered as `"#{(share * 100).round(2)}%"`. `ic_share` becomes
+`1 - rules.treasury_share - (al ? rules.account_lead_share : 0) - (pl ? rules.project_lead_share : 0)`,
+which equals `rules.ic_ceiling` when both leads are present.
 
-In the surplus block, `lead_share = (c[:surplus] * rules.surplus_lead_share).round(2)`
-where `rules = c[:project_tracker].billing_rules`.
+In the surplus block, `rules = c[:project_tracker].billing_rules`,
+`lead_share = (c[:surplus] * rules.surplus_lead_share).round(2)`, and the
+two `15%` description strings (`:592`, `:614`) render from the rule.
 
 #### 1.5 `ContributorPayout#calculate_surplus`
 
@@ -160,11 +161,17 @@ method; hoist that lookup above the surplus math.
 
 #### 1.6 Admin (`app/admin/project_trackers.rb`)
 
-- `permit_params` gains `:billing_model` and drops `:company_treasury_split`
-  (the column no longer exists); the admin-only form block replaces
-  the `company_treasury_split` input with
+- `permit_params` (`app/admin/project_trackers.rb:13-40`) gains
+  `:billing_model`. Note it never contained `:company_treasury_split`, which
+  is why the existing input at `:501` was silently unpermitted and every
+  tracker still reads 0.30. Adding the new symbol to `permit_params` is a
+  required, explicit step, otherwise the select will be dropped the same
+  way. The admin-only form block replaces the `company_treasury_split`
+  input with
   `f.input :billing_model, as: :select, collection: Stacks::BillingModel::ALL.keys, include_blank: false, hint: "Which payout split rules apply to this project. new_deal_v2 is the 2026 rate card (33% treasury / 54% IC ceiling)."`.
-- Show page: a `row :billing_model` in the attributes table, rendering as
+- Show page: the tracker `show` renders a custom partial
+  (`app/views/admin/project_trackers/_show.html.erb`); add a "Billing Model"
+  row next to the existing "Profit Margin" row (around `:160`), rendering as
   `"new_deal_v2 — 33% treasury, 54% IC ceiling"`.
 - `app/admin/invoice_trackers.rb` is untouched (its own
   `company_treasury_split` column stays; see Out of scope).
@@ -190,8 +197,9 @@ method; hoist that lookup above the surplus math.
   Forecast sync's `upsert_changed!` approach.
 - `sync_all!` takes a non-blocking Postgres advisory lock (its own key) and
   skips with a warning if another sync holds it.
-- `System.instance.runn_synced_at` is set to `Time.current` only after all
-  four syncs succeed in one run.
+- `System`'s `runn_synced_at` setting is set to `Time.current` only after
+  all four syncs succeed in one run (written through `System.first`, since
+  `System.instance` is process-memoized; see 3.3).
 
 ### Architecture
 
@@ -344,8 +352,9 @@ end
 ```
 
 - `sync_projects!` keeps its shape but (a) maps `c["updatedAt"]` (fixing the
-  `"UpdatedAt"` typo that made the column always nil) and (b) goes through
-  `upsert_changed!`.
+  `"UpdatedAt"` typo that made the column always nil — all 205 rows are nil
+  today, so the first run after deploy rewrites every project once, then
+  settles) and (b) goes through `upsert_changed!`.
 - `sync_people!`, `sync_roles!`, `sync_assignments!` each call the existing
   `get_*` reader, map to rows (Runn's camelCase → columns above, raw payload
   in `data`, `createdAt`/`updatedAt` → `created_at`/`updated_at`), and
@@ -382,45 +391,78 @@ produce a list of projected lines and totals. A line has:
 | `amount`      | rounded to cents |
 | `description` | same phrasing as today's blueprint lines, e.g. `"- 12.0 hrs * $195.00 p/h * 54.0% = $1,263.60"` |
 | `tentative`   | true when the Runn project is unconfirmed |
+| `rate_mismatch` | true when no workstream on the tracker matched the Runn role's rate (see resolve step 3) |
 
-Pricing, per plannable `RunnAssignment` overlapping the horizon:
+The real payout builder prices one invoice line per (person, Forecast
+project) with the month's summed hours, and rounds each split once per line.
+The projection does the same: assignments are first **resolved** to a
+(contributor, tracker, Forecast project, month) key with summed hours, and
+then each key is **priced** once. Pricing per Runn assignment would round
+twice and compute surplus twice for a person with two assignments on one
+project.
 
-1. **Person.** Runn person → contributor by lowercased email. Placeholder
-   assignments and unmatched people are skipped and counted under
-   `skipped[:unmapped_person]`.
+**Resolve**, per plannable `RunnAssignment` overlapping the horizon:
+
+1. **Person.** Runn person → contributor by lowercased email, through a
+   single `{ email => Contributor }` index. Where two Forecast people share
+   an email (two exist in production), the one with an `admin_user` wins,
+   then the unarchived one. Placeholder assignments and unmatched people are
+   skipped and counted under `skipped[:unmapped_person]`.
 2. **Tracker.** Runn project → `ProjectTracker` by `runn_project_id`.
    Archived or template Runn projects are skipped silently. Live projects
    with no tracker are skipped and counted under `skipped[:unmapped_project]`
-   with the project name.
-3. **Forecast project and client.** Among the tracker's forecast projects,
-   pick the one whose `hourly_rate` equals the Runn role's `standard_rate`;
-   otherwise the first unarchived one; otherwise the first. If the tracker
-   has none, the line is priced with the bill rate and no override, routed
-   to `Enterprise.sanctuary`, and counted under `skipped[:no_forecast_project]`
-   (it is still included, so the count is informational).
+   with the project name. Assignments with `is_billable = false` are skipped
+   and counted under `skipped[:non_billable]` — they would never reach an
+   invoice or pay stub.
+3. **Forecast project (workstream).** Among the tracker's forecast projects,
+   pick the one whose `hourly_rate` equals the Runn role's `standard_rate`.
+   If none matches, pick the first unarchived one (then the first of any)
+   and count the assignment under `skipped[:role_rate_mismatch]` — the line
+   is still emitted, flagged `rate_mismatch: true`, because 89 of 199
+   trackers have workstreams at differing rates and a human-picked Runn role
+   ("Developer") can legitimately differ from the workstream tag. If the
+   tracker has no forecast projects at all, the assignment is skipped and
+   counted under `skipped[:no_forecast_project]`; without a workstream there
+   is no client, enterprise, or rate to price against.
+4. **Hours.** `assignment.hours_between(month_start, month_end)` clipped to
+   the horizon, summed into the key.
+
+**Price**, per (contributor, tracker, forecast project, month) key:
+
+5. **Rates.** Bill rate = `forecast_project.hourly_rate`, exactly as
+   `make_invoice!` sets `unit_price` (`invoice_tracker.rb:251`). The Runn
+   role's `standard_rate` is only the workstream-selection key in step 3 and
+   never a price. Override = `forecast_project.hourly_rate_override_for_email_address(email)`
+   on the chosen workstream only, as the builder does.
    The client is `forecast_project.forecast_client`.
-4. **Rates.** Bill rate = the Runn role's `standard_rate` (falls back to the
-   forecast project's `hourly_rate`, then `System.instance.default_hourly_rate`
-   when the role is missing). Override = the per-email note override on the
-   chosen forecast project; if none there, the first override found on any
-   of the tracker's other forecast projects for that email.
-5. **Hours.** `assignment.hours_between(month_start, month_end)` clipped to
-   the horizon.
-6. **Internal client** (`forecast_client.is_internal?`): one `pay_stub` line
-   of `hours × (override || bill rate)` on the ledger for
-   `forecast_client.enterprise`, no splits, no commissions. Salaried gate
-   applies (7).
+6. **Internal client** (`forecast_client.is_internal?`): mirrors
+   `PayCycles::GenerateStubs`, the path that actually pays internal hours.
+   One `pay_stub` line of `hours × (override || bill rate)` on the ledger for
+   `forecast_client.enterprise`, no splits, no commissions. `GenerateStubs`
+   raises `MissingRateError` when the workstream has no explicit `p/h` tag
+   and no override (`generate_stubs.rb:92-109`); the projection instead
+   skips that key and counts it under `skipped[:no_explicit_rate]` rather
+   than pricing at the 175 default. Salaried gate applies (7).
 7. **External client:** on the ledger for `forecast_client.billing_enterprise`:
    - `working_amount = hours × bill_rate`.
    - **Commissions:** for each of the tracker's `commissions`, a `commission`
      line on the commission's contributor's ledger. `PerHourCommission`:
-     `hours × rate`; `PercentageCommission`: `working_amount × rate`.
-     `working_amount -= commission_total`.
-   - **Leads** for the month: `account_lead_for_month` / `project_lead_for_month`
-     reimplemented locally as "a lead period whose `period_started_at` is on
-     or before the month end and whose `ended_at` is nil or on/after the
-     month start". (The `ActsAsPeriod#period_ended_at` default of
-     `Date.today` makes the existing helpers return nil for future months.)
+     `hours × rate`; `PercentageCommission`: `working_amount × rate` on the
+     gross amount, before any other deduction. `working_amount -= commission_total`.
+   - **Leads** for the month. Both lead-period models override the
+     `ActsAsPeriod` defaults: `period_started_at` is
+     `started_at || project_tracker.first_recorded_assignment_start_date || Date.today`
+     and `period_ended_at` is `ended_at || last_recorded_assignment_end_date || Date.today`
+     (`account_lead_period.rb:23-29`, `project_lead_period.rb:19-25`). In
+     production 91 of 125 account-lead periods and 90 of 123 project-lead
+     periods have a nil `started_at`, so `period_started_at` must be used,
+     and the existing `account_lead_for_month` returns nil for any future
+     month (and for some current ones) because `period_ended_at` caps at the
+     last recorded assignment. The projection's rule is:
+     `p.period_started_at <= month.ends_at && (p.ended_at.nil? || p.ended_at >= month.starts_at)`
+     — a lead period with no explicit end is treated as continuing. This is
+     a deliberate divergence from `account_lead_for_month` and is the reason
+     the helper is local to the engine.
    - `rules = tracker.billing_rules`. Account Lead line
      `working_amount × rules.account_lead_share`; Project Lead line
      `working_amount × rules.project_lead_share`, each on the lead's own
@@ -431,11 +473,14 @@ Pricing, per plannable `RunnAssignment` overlapping the horizon:
      `surplus = max(0, (margin − rules.surplus_threshold) × working_amount)`.
      If > 0 and the lead exists, `account_lead_surplus` / `project_lead_surplus`
      lines of `surplus × rules.surplus_lead_share` on each lead's ledger.
-   - **Salaried gate:** any payee whose admin user has a full-time period
-     covering the month end that is not `variable_hours` is dropped from
-     output (their line is not emitted). Payees with no admin user or no
-     full-time periods pass. The lead's presence still reduces the IC share
-     regardless. This is the rule at `invoice_tracker.rb:532` and `:595`.
+   - **Salaried gate:** a payee is dropped (line not emitted) only when
+     `admin_user.full_time_period_at(month.ends_at)` returns a period that
+     is not `variable_hours`. Payees with no admin user, no full-time
+     periods, or no period covering that date (an ex-employee, 63 such
+     users exist) all pass — this matches `GenerateStubs#salaried_skip?`
+     (`generate_stubs.rb:57-64`) and the intent of `invoice_tracker.rb:532`
+     / `:595` / `:617`. The lead's presence still reduces the IC share
+     regardless of whether the lead is paid.
    - Zero-amount lines are not emitted (`next if amount == 0`, as the
      payout builder does) — this is how a `0p/h` override removes Principal
      hours.
@@ -449,7 +494,7 @@ Pricing, per plannable `RunnAssignment` overlapping the horizon:
 Totals per ledger-month: `amount` sum, plus `confirmed_amount` and
 `tentative_amount`. Per contributor: sum over its ledgers. Per enterprise
 per month: sum over ledgers of that enterprise. Global: `skipped` counts and
-`as_of` (`System.instance.runn_synced_at`).
+`as_of` (`ContributorProjections.runn_synced_at`, see 3.3).
 
 ### Architecture
 
@@ -467,12 +512,13 @@ Horizon = Struct.new(:starts_at, :ends_at, :months) do
 end
 ```
 
-Months are `Stacks::Period` instances so the contributor page can key on
-them exactly like `all_items_grouped_by_month` does. Two periods are equal
-when their `starts_at` match; add `==`/`eql?`/`hash` on `Stacks::Period`
-based on `[starts_at, ends_at]` so hash lookups across the two sources work
-(today `Period` has no equality, so identical months from two builders are
-distinct keys).
+Months are `Stacks::Period` instances for display symmetry with
+`all_items_grouped_by_month`, but `Stacks::Period` has no value equality
+and adding one would make a `:quarter` and a `:trailing_3_months` period
+with the same dates collide inside `Stacks::Period.all`. So every
+month-keyed hash the engine returns is keyed by `period.starts_at` (a
+`Date`), and the contributor view looks up `projected_by_month[period.starts_at]`.
+`Stacks::Period` is not modified.
 
 #### 3.2 `ContributorProjections::Build` (`app/services/contributor_projections/build.rb`)
 
@@ -480,7 +526,8 @@ distinct keys).
 module ContributorProjections
   # Ids, not AR objects, so a Result marshals small into Rails.cache (3.3).
   Line = Struct.new(:kind, :ledger_id, :enterprise_id, :contributor_id, :project_tracker_id, :project_tracker_name,
-                    :hours, :rate, :amount, :description, :tentative, :month, keyword_init: true)
+                    :hours, :rate, :amount, :description, :tentative, :rate_mismatch, :month, keyword_init: true)
+  # :month is the Period's starts_at Date (see 3.1).
   Result = Struct.new(:horizon, :lines, :skipped, :as_of, keyword_init: true) do
     def by_ledger_month                                  # { ledger_id => { Period => [Line] } }
     def by_contributor_month(contributor, ledger: nil)   # { Period => { lines:, amount:, confirmed_amount:, tentative_amount:, hours: } }, optionally one ledger
@@ -495,52 +542,79 @@ module ContributorProjections
 
 Steps inside `call`:
 
-1. Load once: `RunnAssignment.plannable.overlapping(horizon.starts_at, horizon.ends_at).includes(:runn_project, :runn_role, :runn_person)`;
-   `ProjectTracker.where(runn_project_id: project_ids).includes(:forecast_projects => :forecast_client, :account_lead_periods => :admin_user, :project_lead_periods => :admin_user, :commissions => {contributor: :forecast_person})`;
-   `Contributor.includes(forecast_person: {admin_user: :full_time_periods})` indexed by lowercased email;
-   `Ledger.includes(:enterprise)` indexed by `[enterprise_id, contributor_id]`;
-   `RecurringLedgerAdjustment.active.includes(ledger: :enterprise)`.
+1. Load once:
+   - `RunnAssignment.plannable.overlapping(horizon.starts_at, horizon.ends_at).includes(:runn_project, :runn_role, :runn_person)`;
+   - `ProjectTracker.where(runn_project_id: project_ids).includes(forecast_projects: { forecast_client: :enterprise }, account_lead_periods: { admin_user: :full_time_periods }, project_lead_periods: { admin_user: :full_time_periods }, commissions: { contributor: { forecast_person: { admin_user: :full_time_periods } } })`
+     — `forecast_client.enterprise` is a `has_one through:` and both
+     `is_internal?` and `billing_enterprise` hit that join; lead and
+     commission admin users need `full_time_periods` for the salaried gate;
+   - `Contributor.includes(forecast_person: { admin_user: :full_time_periods })`
+     indexed by lowercased email with the tie-break from step 1;
+   - `Ledger.includes(:enterprise)` indexed by `[enterprise_id, contributor_id]`;
+   - `RecurringLedgerAdjustment.active.includes(ledger: :enterprise)`.
    When `contributor:` is given, assignments are still loaded for all people
    (a lead or commission recipient earns from other people's hours), but
    only lines whose ledger belongs to that contributor are kept.
-2. For each assignment × month, apply the pricing rules above, appending
-   `Line`s. Ledger lookup: `find_or_create_for` is **not** called; a
-   missing ledger (contributor created after the enterprise) resolves via
-   `Ledger.ensure_for_contributor!` semantics — in practice both
-   `after_create` hooks guarantee the row exists, so a miss is counted under
-   `skipped[:no_ledger]` and the line dropped.
-3. Recurring adjustments (rule 8).
-4. Return `Result`.
+2. **Resolve** every assignment × month into the
+   `(contributor, tracker, forecast_project, month) => hours` map, recording
+   skips.
+3. **Price** each key with `price_key(...)`, a private method returning an
+   array of `Line`s that is unit-tested directly. Ledger lookup: a missing
+   ledger (both `after_create` hooks normally guarantee the row) is counted
+   under `skipped[:no_ledger]` and the line dropped; `find_or_create_for`
+   is never called.
+4. Recurring adjustments (rule 8).
+5. Return `Result`.
 
-No writes, no HTTP. Pure functions over loaded rows; the pricing of one
-assignment-month is a private method `price_client_line(...)` that returns
-an array of `Line`s and is unit-tested directly.
+No writes, no HTTP. Everything is a pure function over the loaded rows.
 
-Lead resolution helper (private):
+Lead resolution helper (private) — see rule 7 for why `period_started_at`
+and a nil-means-open `ended_at`:
 
 ```ruby
 def lead_for_month(periods, month)
-  periods.find { |p| p.started_at <= month.ends_at && (p.ended_at.nil? || p.ended_at >= month.starts_at) }&.admin_user
+  periods.find { |p| p.period_started_at <= month.ends_at && (p.ended_at.nil? || p.ended_at >= month.starts_at) }&.admin_user
 end
 ```
 
-Salaried gate helper:
+Salaried gate helper — `ftp.nil?` passes, matching `GenerateStubs#salaried_skip?`:
 
 ```ruby
-def variable_hours_on?(admin_user, date)
-  return true if admin_user.nil? || admin_user.full_time_periods.empty?
-  admin_user.full_time_period_at(date)&.variable_hours?
+def paid_on_ledger?(admin_user, date)
+  return true if admin_user.nil?
+  ftp = admin_user.full_time_period_at(date)
+  ftp.nil? || ftp.variable_hours?
 end
 ```
 
 `full_time_period_at` already projects an open period forward.
 
+Dates: the engine uses `Date.today` throughout, as the rest of the codebase
+does (`config.time_zone` is unset, so it equals `Date.current`).
+
+Weekday semantics: the engine counts Monday to Friday, which is Runn's own
+model for `minutesPerDay` and matches `get_resourcing_projections`. Forecast
+counts weekends for non-time-off allocations, so hours logged on a weekend
+in Forecast will exceed the projection for that month. Documented, not
+corrected.
+
 #### 3.3 Caching
 
 `ContributorProjections::Build.cached_all` wraps `call` with
-`Rails.cache.fetch(["contributor_projections", Date.current, System.instance.runn_synced_at&.to_i], expires_in: 1.hour)`.
+`Rails.cache.fetch(["contributor_projections", Date.today, runn_synced_at&.to_i], expires_in: 1.hour)`.
 Only the payables page uses it. The contributor page calls `call(contributor:)`
 directly; one contributor's slice is cheap.
+
+`runn_synced_at` is read as `System.first&.runn_synced_at`, **not**
+`System.instance`: `System.instance` memoizes in a class variable for the
+life of the process (`system.rb:20-22`), so a web worker would never see a
+newer sync time, the stale pill would lie, and the cache key would never
+rotate. A `ContributorProjections.runn_synced_at` helper does the read and
+both surfaces use it.
+
+Production's `Rails.cache` is `:memory_store` (per dyno), so the cache is a
+per-process convenience, not shared state; that is fine for a one-hour TTL
+on a page with a handful of viewers.
 
 `Result` is cache-safe because `Line` carries ids and names only. The
 views resolve contributors through `Result#contributors`, a `{ id => Contributor }`
@@ -556,23 +630,25 @@ projection = ContributorProjections::Build.call(contributor: resource)
 horizon = projection.horizon
 items_result =
   if view_mode == :all
-    resource.all_items_grouped_by_month(true, nil, horizon.ends_at + 1.month)
+    resource.all_items_grouped_by_month(min_ends_at: horizon.ends_at + 1.month)
   else
-    current_ledger.items_grouped_by_month(nil, horizon.ends_at + 1.month)
+    current_ledger.items_grouped_by_month(min_ends_at: horizon.ends_at + 1.month)
   end
 projected_by_month =
   view_mode == :all ? projection.by_contributor_month(resource)
                     : projection.by_contributor_month(resource, ledger: current_ledger)
 ```
 
-Passing `ends_at + 1.month` is required because `Stacks::Period.for_gradation`
-stops one month short of `through`. Because the override replaces the
-computed default (max item date + 2 months), guard it:
-`[default_end, horizon.ends_at + 1.month].max` — implement by letting both
-grouping methods accept the override as a *floor* (`ledger_ends_at = [computed, override].max`
-when given) rather than a replacement. Update the two call sites in the
-methods accordingly; no other callers pass an end override today (verify
-with grep during implementation).
+`+ 1.month` is required because `Stacks::Period.for_gradation(:month, from, through)`
+yields months strictly before `through.last_month.end_of_month` (verified:
+through Dec 31 → last period November; through Jan 31 → December).
+
+Both grouping methods gain a new keyword `min_ends_at: nil`, applied as a
+floor **after** the existing default/override logic:
+`ledger_ends_at = [ledger_ends_at, min_ends_at].max if min_ends_at`. The
+existing positional `override_ledger_ends_at` keeps its replace semantics
+because `PeriodicReport` (`periodic_report.rb:221`) passes it as a cap
+(`period.ends_at + 1.day`), and that caller must not change.
 
 Add locals `projected_by_month:` and `projection_as_of:` to the partial.
 
@@ -584,7 +660,7 @@ Add locals `projected_by_month:` and `projection_as_of:` to the partial.
   than 2 days, render `<span class="pill at_risk">Runn sync stale</span>`
   after the amount.
 - Month header pill (`view_mode == :all` branch): when
-  `projected_by_month[period]` exists and its amount > 0, append
+  `projected_by_month[period.starts_at]` exists and its amount > 0, append
   `· projected <amount>` inside the `split` span, and use its `hours` for the
   hours figure when the period is at or after the current month.
 - Items table: after the real items for a month, render one `<tr>` per
@@ -690,7 +766,17 @@ builders such as `make_forecast_project!`, `make_project_tracker!`,
     `commission` line on the recipient's ledger;
   - internal client: single `pay_stub` line on the enterprise ledger;
   - salaried lead: no lead line, IC share still reduced;
-  - open-ended lead period resolves in a future month;
+  - ex-employee payee (full-time periods exist, none covers the month) is
+    paid;
+  - open-ended lead period with nil `started_at` resolves in a future month
+    via `period_started_at`; a lead period with an explicit `ended_at` in
+    the past does not;
+  - two Runn assignments for one person on one workstream in one month are
+    priced once with summed hours (no double rounding, one surplus);
+  - Runn role rate matching no workstream: first unarchived workstream is
+    used, line flagged `rate_mismatch`, skip counted;
+  - non-billable assignment skipped; internal workstream with no explicit
+    rate skipped under `no_explicit_rate`;
   - assignment spanning two months and the horizon edge: hours split
     correctly; weekends excluded; `is_non_working_day` counts all days;
   - tentative project flags lines;
@@ -700,7 +786,9 @@ builders such as `make_forecast_project!`, `make_project_tracker!`,
   - `contributor:` filter keeps only that contributor's ledger lines,
     including lead lines earned from other people's hours;
   - `Result#by_enterprise_month` and `#by_contributor_totals` sums.
-- `test/lib/stacks/period_test.rb`: equality and hash semantics.
+- `test/models/contributor_test.rb` and `test/models/ledger_test.rb`:
+  `min_ends_at:` extends the month range when later than the default and
+  is ignored when earlier; the positional override still replaces.
 - View tests: the repo has no admin-page test precedent, so the two ERB
   changes are covered by a controller-less render check only where cheap:
   a `test/services/contributor_projections/result_test.rb` for the
