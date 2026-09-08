@@ -344,7 +344,7 @@ def sync_all!
     sync_roles!
     seen = sync_assignments!
     prune_assignments_not_in!(seen)
-    System.instance.update!(runn_synced_at: Time.current)
+    System.first.update!(runn_synced_at: Time.current)  # not System.instance — see 3.3
   ensure
     ActiveRecord::Base.connection.select_value("SELECT pg_advisory_unlock(#{SYNC_ALL_ADVISORY_LOCK_KEY})")
   end
@@ -386,7 +386,7 @@ produce a list of projected lines and totals. A line has:
 |---------------|---------|
 | `kind`        | one of `individual_contributor`, `account_lead`, `project_lead`, `account_lead_surplus`, `project_lead_surplus`, `commission`, `pay_stub`, `recurring_adjustment` |
 | `project_tracker` | the tracker (nil for `recurring_adjustment`) |
-| `hours`       | hours in the month for that assignment (nil for surplus, commission-percentage, adjustment) |
+| `hours`       | hours in the month for that (contributor, tracker, workstream) key (nil for surplus, commission-percentage, adjustment) |
 | `rate`        | the rate applied (bill rate, override rate, or commission rate) |
 | `amount`      | rounded to cents |
 | `description` | same phrasing as today's blueprint lines, e.g. `"- 12.0 hrs * $195.00 p/h * 54.0% = $1,263.60"` |
@@ -408,8 +408,13 @@ project.
    an email (two exist in production), the one with an `admin_user` wins,
    then the unarchived one. Placeholder assignments and unmatched people are
    skipped and counted under `skipped[:unmapped_person]`.
-2. **Tracker.** Runn project → `ProjectTracker` by `runn_project_id`.
-   Archived or template Runn projects are skipped silently. Live projects
+2. **Tracker.** Runn project → `ProjectTracker` by `runn_project_id`
+   (unique index, so at most one). The real builder keys lines by
+   (person, forecast project) and raises when a forecast project belongs to
+   more than one tracker; there is no DB uniqueness on that join, so if the
+   chosen workstream in step 3 is also linked to a second tracker, the key
+   is skipped and counted under `skipped[:ambiguous_tracker]` rather than
+   priced twice. Archived or template Runn projects are skipped silently. Live projects
    with no tracker are skipped and counted under `skipped[:unmapped_project]`
    with the project name. Assignments with `is_billable = false` are skipped
    and counted under `skipped[:non_billable]` — they would never reach an
@@ -529,10 +534,11 @@ module ContributorProjections
                     :hours, :rate, :amount, :description, :tentative, :rate_mismatch, :month, keyword_init: true)
   # :month is the Period's starts_at Date (see 3.1).
   Result = Struct.new(:horizon, :lines, :skipped, :as_of, keyword_init: true) do
-    def by_ledger_month                                  # { ledger_id => { Period => [Line] } }
-    def by_contributor_month(contributor, ledger: nil)   # { Period => { lines:, amount:, confirmed_amount:, tentative_amount:, hours: } }, optionally one ledger
-    def by_enterprise_month                              # { enterprise_id => { Period => { amount:, confirmed_amount:, tentative_amount: } } }
-    def by_contributor_totals(enterprise_id: nil)        # { contributor_id => { Period => { amount:, tentative_amount: } } } for the roll-up table
+    # Every month key below is a Date — the Period's starts_at — never a Period (see 3.1).
+    def by_ledger_month                                  # { ledger_id => { Date => [Line] } }
+    def by_contributor_month(contributor, ledger: nil)   # { Date => { lines:, amount:, confirmed_amount:, tentative_amount:, hours: } }, optionally one ledger
+    def by_enterprise_month                              # { enterprise_id => { Date => { amount:, confirmed_amount:, tentative_amount: } } }
+    def by_contributor_totals(enterprise_id: nil)        # { contributor_id => { Date => { amount:, tentative_amount: } } } for the roll-up table
     def contributors                                     # preloaded Contributor index for the views, keyed by id
   end
 
@@ -704,9 +710,10 @@ existing summary card:
   Stale (> 2 days or nil) → `<span class="pill at_risk">Runn sync stale</span>`
   prefix.
 - A `<details>` block "By contributor" containing a table: contributor name
-  (linked to `admin_contributor_path`), one column per horizon month, and a
-  total column; rows sorted by total descending; scoped to the same
-  enterprise filter. Tentative amounts are shown in the same cell as a muted
+  (linked to `admin_contributor_path`), one column per horizon month
+  (iterating `@projection.horizon.months`, indexing the totals hash by
+  `month.starts_at`), and a total column; rows sorted by total descending;
+  scoped to the same enterprise filter. Tentative amounts are shown in the same cell as a muted
   `(+$x tentative)` suffix.
 
 The pill vocabulary matches the rest of the page (`pill at_risk`).
