@@ -70,7 +70,7 @@
               something once the month has been invoiced. %>
           <span class="pill projected">
             Projected
-            <span class="split"><strong><%= projected[:hours] % 1 == 0 ? projected[:hours].to_i : projected[:hours].round(1) %>hrs, </strong><span><%= number_to_currency(projected[:amount], precision: 0) %></span></span>
+            <span class="split"><% if projected[:hours] > 0 %><strong><%= projected[:hours] % 1 == 0 ? projected[:hours].to_i : projected[:hours].round(1) %>hrs, </strong><% end %><span><%= number_to_currency(projected[:amount], precision: 0) %></span></span>
           </span>
         <% else %>
           <span class="pill <%= metadata[:elevated_service] ? 'misc' : '' %>">
@@ -97,12 +97,14 @@
       <div class="dashboard-module">
         <div class="module-body factoid-parent">
           <p style="margin-bottom: 6px;">
-            🔭 <strong>Projection only.</strong>
-            <% if utilization_pct %>
-              Resourced at <strong><%= utilization_pct %>%</strong> for <%= period.starts_at.strftime("%B") %>
+            🔭 <strong>Projected.</strong>
+            <% if utilization_pct && projected[:allocated_hours] > 0 %>
+              Resourced at <strong><%= utilization_pct %>%</strong> for <%= period.starts_at.strftime("%B") %> across all projects
               (<%= projected[:allocated_hours] % 1 == 0 ? projected[:allocated_hours].to_i : projected[:allocated_hours].round(1) %> of <%= projected[:capacity_hours] %> hrs; 100% = 40 hrs/week).
+            <% else %>
+              No personal Runn allocation for <%= period.starts_at.strftime("%B") %>; the projected figures are lead, commission, or adjustment shares rather than hours worked.
             <% end %>
-            These figures come solely from what is recorded in Runn.io and will move as the plan there changes.
+            The projected rows below come solely from what is recorded in Runn.io and will move as the plan there changes.
           </p>
           <%= link_to "Adjust resourcing in Runn ↗", runn_link, target: "_blank", rel: "noopener" %>
         </div>

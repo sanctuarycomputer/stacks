@@ -324,10 +324,14 @@ ActiveAdmin.register Contributor do
     pending_tasks = admin&.pending_tasks || []
 
     # Deep link for the projection notice: this person's page in Runn, or the
-    # planner when the mirror has nobody with their email.
-    runn_email = resource.forecast_person&.email.to_s.strip.downcase
-    runn_person = runn_email.present? ? RunnPerson.active.where("lower(email) = ?", runn_email).first : nil
-    runn_link = runn_person&.link || RunnPerson::PLANNER_URL
+    # planner when the mirror has nobody with their email. Only looked up when
+    # a notice will actually render.
+    runn_link = RunnPerson::PLANNER_URL
+    if projected_by_month.values.any? { |s| s[:lines].any? }
+      runn_email = resource.forecast_person&.email.to_s.strip.downcase
+      runn_person = runn_email.present? ? RunnPerson.where("lower(email) = ?", runn_email).order(:is_archived).first : nil
+      runn_link = runn_person&.link || RunnPerson::PLANNER_URL
+    end
 
     render(partial: "show", locals: {
       contributor: resource,

@@ -105,12 +105,34 @@ class Stacks::TaskBuilder::Discoveries::RunnMirrorTest < ActiveSupport::TestCase
     assert_nil tasks.find { |x| x.subject == known }
   end
 
-  test "placeholder assignments never produce a person task" do
-    rp = runn_project!
-    tracker!(rp)
+  test "placeholder assignments never produce a task of any kind" do
     seat = runn_person!("")
-    assign!(seat, rp, runn_role!(200), placeholder: true)
-    assert_nil discover.find { |x| x.subject == seat }
+    role = runn_role!(999)
+    unlinked = runn_project!(name: "Seats only")
+    assign!(seat, unlinked, role, placeholder: true)
+    mismatched_pt = tracker!(runn_project!, rate: 200)
+    assign!(seat, RunnProject.find(mismatched_pt.runn_project_id), role, placeholder: true)
+
+    subjects = discover.map(&:subject)
+    assert_not_includes subjects, seat
+    assert_not_includes subjects, unlinked
+    assert_not_includes subjects, mismatched_pt
+  end
+
+  test "assignments outside the projection horizon do not raise tasks" do
+    horizon_end = ContributorProjections::Horizon.current.ends_at
+    later = runn_project!(name: "Next year")
+    assign!(runn_person!("later#{@seq}@example.com"), later, runn_role!(200), from: horizon_end + 1, to: horizon_end + 5)
+    assert_nil discover.find { |x| x.subject == later }
+  end
+
+  test "a non-billable assignment does not raise a rate-mismatch task" do
+    rp = runn_project!
+    pt = tracker!(rp, rate: 200)
+    person = runn_person!("nb#{@seq}@example.com")
+    a = assign!(person, rp, runn_role!(999))
+    a.update!(is_billable: false)
+    assert_nil discover.find { |x| x.subject == pt }
   end
 
   # --- rate mismatches -----------------------------------------------------

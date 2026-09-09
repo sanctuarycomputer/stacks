@@ -125,17 +125,18 @@ module ContributorProjections
           next
         end
 
-        # The person's total Runn allocation this month — billable or not,
-        # mapped to a tracker or not. This is the "how resourced are they"
-        # figure the contributor page shows, deliberately independent of what
-        # gets priced below.
+        rp = a.runn_project
+        next if rp.nil? || rp.is_archived || rp.is_template
+
+        # The person's total Runn allocation this month on live projects —
+        # billable or not, mapped to a tracker or not. This is the "how
+        # resourced are they" figure the contributor page shows, deliberately
+        # independent of what gets priced below. Archived/template projects
+        # are excluded above: hours planned there are not real resourcing.
         @horizon.months.each do |month|
           hours = a.hours_between(month.starts_at, month.ends_at)
           @allocated[[contributor.id, month.starts_at]] += hours if hours > 0
         end
-
-        rp = a.runn_project
-        next if rp.nil? || rp.is_archived || rp.is_template
 
         tracker = @trackers_by_runn_id[a.project_id]
         if tracker.nil?
