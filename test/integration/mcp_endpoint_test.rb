@@ -436,6 +436,7 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     assert_equal [survey.id], rows.map { |r| r["id"] }
     assert_equal "project", rows.first["kind"]
     assert_equal 3, rows.first["response_count"]
+    refute_includes response.body, responder.email
 
     payload = call_tool("get_survey_results", { kind: "project", id: survey.id })
     assert_equal "closed", payload["status"]

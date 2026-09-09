@@ -244,4 +244,15 @@ class McpSurveyPresenterTest < ActiveSupport::TestCase
     selects = statements.grep(/\ASELECT/i)
     assert_operator selects.size, :<=, 15, "expected a bounded query count, got #{selects.size}:\n#{selects.join("\n")}"
   end
+
+  test "list breaks sort ties deterministically by id so offset paging is stable" do
+    a = build_studio_survey!(title: "A", closed: false, opens_at: Date.new(2026, 7, 15), studio_name: "TieA")
+    b = build_studio_survey!(title: "B", closed: false, opens_at: Date.new(2026, 7, 15), studio_name: "TieB")
+    c = build_studio_survey!(title: "C", closed: false, opens_at: Date.new(2026, 7, 15), studio_name: "TieC")
+
+    expected = [c, b, a].map(&:id)
+    5.times { assert_equal expected, Mcp::SurveyPresenter.list.map(&:id) }
+    assert_equal expected.first(2), Mcp::SurveyPresenter.list(limit: 2).map(&:id)
+    assert_equal expected.last(1), Mcp::SurveyPresenter.list(limit: 2, offset: 2).map(&:id)
+  end
 end

@@ -17,8 +17,8 @@ module Mcp
       properties: {
         kind: { type: 'string', description: "Optional: #{SurveyPresenter::KINDS.join(' | ')}. Default both." },
         status: { type: 'string', description: "Optional: #{SurveyPresenter::STATUSES.join(' | ')}. Default both (drafts are never listed)." },
-        closed_after: { type: 'string', description: 'ISO8601 lower bound on closed_at (inclusive). Implies status closed.' },
-        closed_before: { type: 'string', description: 'ISO8601 upper bound on closed_at (inclusive). Implies status closed.' },
+        closed_after: { type: 'string', description: 'ISO8601 lower bound on closed_at (inclusive; a date-only value means the start of that day). Implies status closed.' },
+        closed_before: { type: 'string', description: 'ISO8601 upper bound on closed_at (inclusive of the exact instant; a date-only value means the START of that day, so pass a full timestamp or the next day to include a whole day). Implies status closed.' },
         limit: { type: 'integer', description: "Rows per page (default #{DEFAULT_LIMIT}, clamped #{MIN_LIMIT}..#{MAX_LIMIT})." },
         offset: { type: 'integer', description: 'Rows to skip after sorting, for pagination (default 0).' },
       },

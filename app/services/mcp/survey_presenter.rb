@@ -35,12 +35,13 @@ module Mcp
 
     # kind: 'studio' | 'project' | nil (both); status: 'open' | 'closed' | nil (both);
     # closed_range: Range on closed_at (implies closed). Drafts are never returned.
-    # Sorted newest first by (closed_at || opened_at); offset/limit applied after sorting.
+    # Sorted newest first by (closed_at || opened_at), then by highest id, so offset/limit
+    # pagination is stable even when two rows tie on sort_time (e.g. same-day opened_at).
     def self.list(kind: nil, status: nil, closed_range: nil, limit: 50, offset: 0)
       status = 'closed' if status.nil? && closed_range
       kinds = kind ? [kind] : KINDS
       rows = kinds.flat_map { |k| rows_for(k, status, closed_range) }
-      rows.sort_by { |p| -p.sort_time.to_f }.drop(offset).first(limit)
+      rows.sort_by { |p| [-p.sort_time.to_f, -p.id] }.drop(offset).first(limit)
     end
 
     # One preload + one grouped count + one grouped score query per kind (no N+1).
