@@ -33,10 +33,27 @@
         <%= number_to_currency(balance[:unsettled]) %>
       </td>
     </tr>
+    <% projected_total = projected_by_month.values.sum { |m| m[:amount] } %>
+    <tr class="even">
+      <td class="col">
+        <strong>Projected</strong> <span style="opacity: 0.6;">(next <%= projection_months %> months)</span>
+      </td>
+      <td class="col text-right">
+        <%= number_to_currency(projected_total) %>
+        <% if ContributorProjections.stale?(projection_as_of) %>
+          <span class="pill at_risk" style="margin-left: 6px;">Runn sync stale</span>
+        <% else %>
+          <span style="opacity: 0.6;">as of <%= time_ago_in_words(projection_as_of) %> ago</span>
+        <% end %>
+      </td>
+    </tr>
   </tbody>
 </table>
 
 <% new_deal_ledger_items[:by_month].each do |period, metadata| %>
+  <% projected = projected_by_month[period.starts_at] %>
+  <%# by_contributor_month returns a summary for EVERY horizon month, so test for lines, not presence %>
+  <% projected_month = projected.present? && projected[:lines].any? && period.starts_at >= Date.today.beginning_of_month %>
   <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
     <div id="titlebar_left">
       <h2 id="page_title"><%= period.starts_at.strftime("%B %Y") %></h2>
@@ -49,7 +66,10 @@
             <% if metadata[:fulltime] %>
               Fulltime
             <% else %>
-              <strong><%= metadata[:total_hours] %>hrs, </strong><span><%= number_to_currency(metadata[:total_income]) %><%= metadata[:partial_salary] > 0 ? " + #{number_to_currency(metadata[:partial_salary])} partial salary" : "" %></span>
+              <strong><%= projected_month ? projected[:hours] : metadata[:total_hours] %>hrs, </strong><span><%= number_to_currency(metadata[:total_income]) %><%= metadata[:partial_salary] > 0 ? " + #{number_to_currency(metadata[:partial_salary])} partial salary" : "" %></span>
+              <% if projected_month && projected[:amount] != 0 %>
+                <span> · projected <%= number_to_currency(projected[:amount]) %></span>
+              <% end %>
             <% end %>
           </span>
         </span>
@@ -290,6 +310,34 @@
               <% end %>
             </td>
           </tr>
+        <% end %>
+        <% if projected_month %>
+          <% projected[:lines].each_with_index do |line, pindex| %>
+            <tr class="<%= (metadata[:items].size + pindex).even? ? "even" : "odd" %>" style="font-style: italic; opacity: 0.85;">
+              <td class="col"><%= period.starts_at.strftime("%B %Y") %></td>
+              <td class="col">
+                <span class="pill projected">Projected</span>
+                <% if line.tentative %>
+                  <span class="pill tentative" style="margin-left: 4px;">Tentative</span>
+                <% end %>
+                <% if line.rate_mismatch %>
+                  <span class="pill at_risk" style="margin-left: 4px;" title="The Runn role's rate matched no workstream on this tracker; priced at the first workstream's rate.">Rate?</span>
+                <% end %>
+              </td>
+              <td class="col">
+                <% if line.project_tracker_id %>
+                  <%= link_to "#{line.project_tracker_name} ↗", admin_project_tracker_path(line.project_tracker_id) %>
+                <% else %>
+                  <%= line.project_tracker_name %>
+                <% end %>
+                <span style="opacity: 0.6;"><%= line.kind.to_s.humanize %></span>
+              </td>
+              <td class="col">
+                <%= line.amount.negative? ? "-" : "+" %> <%= number_to_currency(line.amount.abs) %>
+              </td>
+              <td class="col text-right"><code style="font-style: normal;"><%= line.description %></code></td>
+            </tr>
+          <% end %>
         <% end %>
       </tbody>
     </table>

@@ -275,11 +275,34 @@ ActiveAdmin.register Contributor do
       view_mode = :ledger if current_ledger
     end
 
+    # Projected earnings from the Runn mirror. A failure here must not take
+    # the ledger down with it — render the real items and an empty projection.
+    projection =
+      begin
+        ContributorProjections::Build.call(contributor: resource)
+      rescue => e
+        Rails.logger.error("[admin contributors] projection failed for contributor ##{resource.id}: #{e.class}: #{e.message}")
+        Sentry.capture_exception(e) if defined?(Sentry)
+        nil
+      end
+    horizon = projection&.horizon || ContributorProjections::Horizon.current
+    # for_gradation stops one month short of `through`, hence + 1.month.
+    floor = horizon.ends_at + 1.month
+
     items_result =
       if view_mode == :all
-        resource.all_items_grouped_by_month
+        resource.all_items_grouped_by_month(min_ends_at: floor)
       else
-        current_ledger.items_grouped_by_month
+        current_ledger.items_grouped_by_month(min_ends_at: floor)
+      end
+
+    projected_by_month =
+      if projection.nil?
+        {}
+      elsif view_mode == :ledger && current_ledger
+        projection.by_contributor_month(resource, ledger: current_ledger)
+      else
+        projection.by_contributor_month(resource)
       end
 
     # Balance/Unsettled summary card scopes to the current view:
@@ -305,6 +328,9 @@ ActiveAdmin.register Contributor do
       view_mode: view_mode,
       ledgers: ledgers,
       current_ledger: current_ledger,
+      projected_by_month: projected_by_month,
+      projection_as_of: projection&.as_of,
+      projection_months: horizon.months.size,
     })
   end
 end
