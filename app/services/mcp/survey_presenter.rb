@@ -33,6 +33,31 @@ module Mcp
       record && new(kind, record)
     end
 
+    # kind: 'studio' | 'project' | nil (both); status: 'open' | 'closed' | nil (both);
+    # closed_range: Range on closed_at (implies closed). Drafts are never returned.
+    # Sorted newest first by (closed_at || opened_at); offset/limit applied after sorting.
+    def self.list(kind: nil, status: nil, closed_range: nil, limit: 50, offset: 0)
+      status = 'closed' if status.nil? && closed_range
+      kinds = kind ? [kind] : KINDS
+      rows = kinds.flat_map { |k| rows_for(k, status, closed_range) }
+      rows.sort_by { |p| -p.sort_time.to_f }.drop(offset).first(limit)
+    end
+
+    # One preload + one grouped count + one grouped score query per kind (no N+1).
+    def self.rows_for(kind, status, closed_range)
+      klass = adapter_class(kind)
+      scope = klass.visible_scope(status)
+      scope = scope.where(closed_at: closed_range) if closed_range
+      records = klass.preload(scope).to_a
+      ids = records.map(&:id)
+      counts = klass.response_counts(ids)
+      scores = klass.overall_scores(ids)
+      records.map do |record|
+        new(kind, record, response_count: counts.fetch(record.id, 0),
+                          overall_score: scores[record.id], overall_score_known: true)
+      end
+    end
+
     # Enum values arrive as names from pluck (Rails casts enum columns), but an unmapped
     # stored 0 comes back nil, and a raw integer is possible on older adapters — normalize
     # to the enum name or nil. Both families share the same mapping.
@@ -68,6 +93,11 @@ module Mcp
 
     def status
       closed? ? 'closed' : 'open'
+    end
+
+    # Normalized to Time: opened_at is a Date, closed_at a TimeWithZone.
+    def sort_time
+      adapter.record.closed_at || adapter.opened_at.in_time_zone
     end
 
     def response_count

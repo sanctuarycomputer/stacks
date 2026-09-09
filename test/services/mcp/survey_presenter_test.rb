@@ -189,4 +189,59 @@ class McpSurveyPresenterTest < ActiveSupport::TestCase
     refute_includes json, "very-distinctive-responder"
     refute_includes json, "@sanctuary.computer"
   end
+
+  # ----- list -----
+
+  test "list merges both kinds newest first and excludes drafts" do
+    older = build_studio_survey!(title: "Older", answers: [{ sentiment: :agree }])
+    older.update!(closed_at: Time.zone.parse("2026-05-01 12:00:00"))
+    newer = build_project_survey!(title: "Newer", answers: [{ sentiment: :agree }]) # closed 2026-07-01
+    open_survey = build_studio_survey!(title: "Open", closed: false, opens_at: Date.new(2026, 7, 15))
+    Survey.create!(title: "Draft", description: "d", opens_at: Date.new(2026, 9, 1))
+
+    rows = Mcp::SurveyPresenter.list
+    assert_equal ["Open", "Newer", "Older"], rows.map { |p| p.summary[:title] }
+    assert_equal 1, rows[1].summary[:response_count]
+    assert_in_delta 3.75, rows[1].summary[:overall_score], 0.01
+  end
+
+  test "list filters by kind and status" do
+    build_studio_survey!(title: "Studio closed", answers: [{ sentiment: :agree }])
+    build_studio_survey!(title: "Studio open", closed: false, opens_at: Date.new(2026, 7, 15))
+    build_project_survey!(title: "Project closed")
+
+    assert_equal ["Studio open", "Studio closed"], Mcp::SurveyPresenter.list(kind: "studio").map { |p| p.summary[:title] }
+    assert_equal ["Project closed"], Mcp::SurveyPresenter.list(kind: "project").map { |p| p.summary[:title] }
+    assert_equal ["Studio open"], Mcp::SurveyPresenter.list(status: "open").map { |p| p.summary[:title] }
+    assert_equal ["Studio closed", "Project closed"].sort,
+                 Mcp::SurveyPresenter.list(status: "closed").map { |p| p.summary[:title] }.sort
+  end
+
+  test "list applies a closed range (both bounds) and implies closed" do
+    early = build_studio_survey!(title: "Early", answers: [])
+    early.update!(closed_at: Time.zone.parse("2026-03-01 12:00:00"))
+    build_studio_survey!(title: "Mid", answers: []) # 2026-07-01
+    build_studio_survey!(title: "Open", closed: false, opens_at: Date.new(2026, 7, 15))
+
+    range = Time.zone.parse("2026-06-01")..Time.zone.parse("2026-08-01")
+    assert_equal ["Mid"], Mcp::SurveyPresenter.list(closed_range: range).map { |p| p.summary[:title] }
+    after_only = (Time.zone.parse("2026-06-01")..)
+    assert_equal ["Mid"], Mcp::SurveyPresenter.list(closed_range: after_only).map { |p| p.summary[:title] }
+  end
+
+  test "list paginates with offset and limit" do
+    3.times { |i| build_project_survey!(title: "P#{i}") }
+    page = Mcp::SurveyPresenter.list(limit: 2, offset: 2)
+    assert_equal 1, page.size
+    assert_equal 2, Mcp::SurveyPresenter.list(limit: 2).size
+  end
+
+  test "list stays at a bounded query count" do
+    5.times { |i| build_project_survey!(title: "P#{i}", answers: [{ sentiment: :agree }]) }
+    5.times { |i| build_studio_survey!(title: "S#{i}", studio_name: "St#{i}", answers: [{ sentiment: :agree }]) }
+
+    statements = sql_statements { Mcp::SurveyPresenter.list.each(&:summary) }
+    selects = statements.grep(/\ASELECT/i)
+    assert_operator selects.size, :<=, 15, "expected a bounded query count, got #{selects.size}:\n#{selects.join("\n")}"
+  end
 end
