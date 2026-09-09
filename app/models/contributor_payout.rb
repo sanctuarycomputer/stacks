@@ -228,12 +228,7 @@ class ContributorPayout < ApplicationRecord
       project_tracker = project_trackers.find{|pt| pt.forecast_project_ids.include?(blueprint_metadata.dig("forecast_project"))}
       rules = project_tracker&.billing_rules || default_rules
 
-      surplus = 0
-      if working_amount > 0
-        profit_margin = (working_amount - amount_paid) / working_amount
-        surplus = ((profit_margin - rules.surplus_threshold) * working_amount).round(2).to_f
-        surplus = 0 if surplus <= 0
-      end
+      surplus = rules.surplus_for(working_amount: working_amount, ic_amount: amount_paid)
 
       {
         project_tracker: project_tracker,

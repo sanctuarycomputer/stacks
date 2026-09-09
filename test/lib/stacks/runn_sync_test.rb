@@ -125,7 +125,7 @@ class Stacks::RunnSyncTest < ActiveSupport::TestCase
     r = stub_reads(runn, people: [person(1)], roles: [role(100)], assignments: [assignment(5009)], projects: [project(10)])
     RunnAssignment.create!(runn_id: 5010, person_id: 1, project_id: 10, role_id: 100, start_date: Date.new(2026, 9, 1), end_date: Date.new(2026, 9, 2), minutes_per_day: 60)
 
-    r.sync_all!
+    assert_equal true, r.sync_all!
 
     assert RunnPerson.exists?(1)
     assert RunnRole.exists?(100)
@@ -161,6 +161,6 @@ class Stacks::RunnSyncTest < ActiveSupport::TestCase
     r = stub_reads(runn)
     ActiveRecord::Base.connection.stubs(:select_value).with("SELECT pg_try_advisory_lock(#{Stacks::Runn::SYNC_ALL_ADVISORY_LOCK_KEY})").returns(false)
     r.expects(:sync_projects!).never
-    r.sync_all!
+    assert_equal false, r.sync_all!, "the rake task tells a lock skip from a real run by this return"
   end
 end

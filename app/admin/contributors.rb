@@ -277,12 +277,16 @@ ActiveAdmin.register Contributor do
 
     # Projected earnings from the Runn mirror. A failure here must not take
     # the ledger down with it — render the real items and an empty projection.
+    # Tracked separately from `projection.nil?` so the view can say "this
+    # blew up" rather than mislabelling it as a stale Runn sync.
+    projection_error = false
     projection =
       begin
         ContributorProjections::Build.call(contributor: resource)
       rescue => e
         Rails.logger.error("[admin contributors] projection failed for contributor ##{resource.id}: #{e.class}: #{e.message}")
         Sentry.capture_exception(e) if defined?(Sentry)
+        projection_error = true
         nil
       end
     horizon = projection&.horizon || ContributorProjections::Horizon.current
@@ -331,6 +335,7 @@ ActiveAdmin.register Contributor do
       projected_by_month: projected_by_month,
       projection_as_of: projection&.as_of,
       projection_months: horizon.months.size,
+      projection_error: projection_error,
     })
   end
 end

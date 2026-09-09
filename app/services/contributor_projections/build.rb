@@ -23,6 +23,10 @@ module ContributorProjections
       @only_contributor_id = contributor&.id
       @lines = []
       @skipped = Hash.new { |h, k| h[k] = [] }
+      # no_forecast_client is a property of the workstream, not of the people
+      # assigned to it — count it once per workstream instead of once per
+      # (contributor, month) key that happens to land on it.
+      @no_forecast_client_counted = Set.new
     end
 
     # skipped / skipped_details are always global across every assignment,
@@ -106,7 +110,10 @@ module ContributorProjections
 
       @assignments.each do |a|
         if a.is_placeholder
-          skip!(:unmapped_person, "placeholder assignment #{a.runn_id}")
+          # A placeholder is an unfilled seat in the plan, not a person we
+          # failed to map — its own reason so the notice doesn't read as a
+          # data problem to go and fix.
+          skip!(:placeholder, "placeholder assignment #{a.runn_id}")
           next
         end
         contributor = @contributors_by_email[a.runn_person&.email.to_s.strip.downcase]
@@ -128,7 +135,7 @@ module ContributorProjections
           next
         end
 
-        workstream, mismatch_detail = workstream_for(tracker, a)
+        workstream, mismatch_detail = workstream_for(tracker, a, contributor.forecast_person.email)
         if workstream.nil?
           skip!(:no_forecast_project, tracker.name)
           next
@@ -157,19 +164,28 @@ module ContributorProjections
     end
 
     # The Runn role's standard_rate is only a selector: pick the workstream
-    # whose p/h tag equals it. It is never used as a price. Returns
+    # whose p/h tag equals it. It is never used as a price. A tracker can
+    # carry several workstreams at the SAME rate (e.g. three $175 streams for
+    # different disciplines), and price_key reads this person's per-email rate
+    # override only from the workstream returned here — so among rate-matching
+    # workstreams, prefer the one that actually carries an override for this
+    # email. Taking the first rate match blindly silently drops the override
+    # and prices the contributor off a sibling stream. Returns
     # [workstream, mismatch_detail]: mismatch_detail is nil on a clean match,
     # or the skip! detail string when the role's rate matched no workstream.
     # Does NOT call skip! itself — the caller only does that once it has also
     # ruled out ambiguous_tracker for this workstream, so skip counts stay
     # one-reason-per-problem instead of double-counting the same assignment.
-    def workstream_for(tracker, assignment)
+    def workstream_for(tracker, assignment, email)
       workstreams = tracker.forecast_projects.to_a
       return [nil, nil] if workstreams.empty?
 
       rate = assignment.runn_role&.standard_rate
-      match = rate.nil? ? nil : workstreams.find { |ws| ws.hourly_rate.to_f == rate.to_f }
-      return [match, nil] if match
+      matches = rate.nil? ? [] : workstreams.select { |ws| ws.hourly_rate.to_f == rate.to_f }
+      if matches.any?
+        override_match = matches.find { |ws| !ws.hourly_rate_override_for_email_address(email.to_s).nil? }
+        return [override_match || matches.first, nil]
+      end
 
       detail = "#{tracker.name}: Runn role rate #{rate.inspect} matches no workstream"
       [workstreams.find { |ws| !ws.archived } || workstreams.first, detail]
@@ -183,8 +199,10 @@ module ContributorProjections
       if client.nil?
         # Distinct from resolve's no_forecast_project (tracker has no
         # workstream at all): here the workstream exists but has no Forecast
-        # client, so the two skip reasons are not conflated.
-        skip!(:no_forecast_client, ws.name)
+        # client, so the two skip reasons are not conflated. Counted once per
+        # workstream: every contributor-month keyed to it hits the same single
+        # data problem, and counting per key would inflate it arbitrarily.
+        skip!(:no_forecast_client, ws.name) if @no_forecast_client_counted.add?(ws.forecast_id)
         return
       end
 
@@ -284,20 +302,22 @@ module ContributorProjections
         ic_rate = override.to_f
         ic_description = "- #{fmt(hours)} hrs * #{n2c(override)} p/h = #{n2c(ic_amount)}"
       end
-      emit(key.contributor, enterprise, month_end, base.merge(
+      ic_line = emit(key.contributor, enterprise, month_end, base.merge(
         kind: :individual_contributor, hours: hours, rate: ic_rate, amount: ic_amount, description: ic_description,
       ))
 
-      # The real builder only computes surplus from persisted IC entries, and
-      # a zero IC amount never persists — so no surplus when the IC line is 0.
-      # This is a deliberate difference from the real builder's per-payee
-      # zero check: there, an IC with a 0p/h override who is also a lead on
-      # the same tracker can get a persisted zero IC entry and a phantom
-      # surplus computed against it — that is a bug in the real behavior,
-      # not a rule this projection should reproduce.
-      return unless ic_amount > 0 && working_amount > 0
-      margin = (working_amount - ic_amount) / working_amount
-      surplus = ((margin - rules.surplus_threshold) * working_amount).round(2).to_f
+      # The real builder only computes surplus from PERSISTED IC entries, so
+      # gate on emit having actually appended the IC line rather than on the
+      # local ic_amount: a zero amount, a salaried IC, or a missing ledger all
+      # drop the line, and none of them may leave the leads holding surplus
+      # for pay the IC never receives. (The zero-amount case is also a
+      # deliberate difference from the real builder's per-payee zero check:
+      # there, an IC with a 0p/h override who is also a lead on the same
+      # tracker can get a persisted zero IC entry and a phantom surplus
+      # computed against it — a bug in the real behavior, not a rule this
+      # projection should reproduce.)
+      return if ic_line.nil?
+      surplus = rules.surplus_for(working_amount: working_amount, ic_amount: ic_amount)
       return unless surplus > 0
       lead_share = (surplus * rules.surplus_lead_share).round(2).to_f
       surplus_description = "- #{n2c(surplus)} surplus * #{pct(rules.surplus_lead_share)} = #{n2c(lead_share)}"
@@ -349,17 +369,27 @@ module ContributorProjections
       ftp.nil? || ftp.variable_hours?
     end
 
+    # Returns the appended Line, or nil when the payee was dropped. Callers
+    # that derive a second line from a first one (surplus off the IC line)
+    # MUST gate on the return value, not on the amount they passed in.
     def emit(contributor, enterprise, month_end, attrs)
-      return if contributor.nil? || enterprise.nil?
-      return if attrs[:amount].to_f == 0
-      return unless paid_on_ledger?(contributor.forecast_person&.admin_user, month_end)
+      if contributor.nil? || enterprise.nil?
+        # A commission recipient with no contributor, or a Forecast client
+        # with no billing enterprise: the money has nowhere to land.
+        skip!(:no_payee, "#{attrs[:kind]} on #{attrs[:project_tracker_name]}")
+        return nil
+      end
+      return nil if attrs[:amount].to_f == 0
+      return nil unless paid_on_ledger?(contributor.forecast_person&.admin_user, month_end)
 
       ledger = @ledgers[[enterprise.id, contributor.id]]
       if ledger.nil?
         skip!(:no_ledger, "#{contributor.display_name} / #{enterprise.name}")
-        return
+        return nil
       end
-      @lines << Line.new(attrs.merge(ledger_id: ledger.id, enterprise_id: enterprise.id, contributor_id: contributor.id))
+      line = Line.new(attrs.merge(ledger_id: ledger.id, enterprise_id: enterprise.id, contributor_id: contributor.id))
+      @lines << line
+      line
     end
 
     # ------------------------------------------------- recurring adjustments

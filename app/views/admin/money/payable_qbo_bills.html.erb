@@ -157,10 +157,13 @@ ledger_item_path = ->(li) {
           <span class="pill at_risk" style="margin-right: 6px;">Runn sync stale</span>
         <% end %>
         Projected from Runn as of <%= @projection.as_of ? "#{time_ago_in_words(@projection.as_of)} ago" : "never" %>
+        <%# The counters are per-ASSIGNMENT; the parenthetical counts distinct
+            ENTITIES (projects, people, mismatching trackers) so "12 skipped
+            (on 2 unmapped projects)" reads as two things to fix, not twelve. %>
         · <%= @projection.skipped_total %> assignment<%= "s" if @projection.skipped_total != 1 %> skipped
-        (<%= @projection.skipped.fetch(:unmapped_person, 0) %> unmapped people,
-         <%= @projection.skipped.fetch(:unmapped_project, 0) %> unmapped projects,
-         <%= @projection.skipped.fetch(:role_rate_mismatch, 0) %> rate mismatches)
+        (on <%= @projection.skipped_details[:unmapped_project]&.uniq&.size.to_i %> unmapped projects,
+         for <%= @projection.skipped_details[:unmapped_person]&.uniq&.size.to_i %> unmapped people,
+         <%= @projection.skipped_details[:role_rate_mismatch]&.uniq&.size.to_i %> rate mismatches)
       </p>
 
       <% by_contributor = @projection.by_contributor_totals(enterprise_id: @projection_enterprise_id) %>
@@ -194,11 +197,42 @@ ledger_item_path = ->(li) {
                     <td class="col text-right">
                       <%= number_to_currency(m[:amount]) %>
                       <% if m[:tentative_amount] != 0 %>
-                        <span style="opacity: 0.6; font-size: 12px;">(<%= number_to_currency(m[:tentative_amount]) %> tentative)</span>
+                        <%# The tentative figure is already INSIDE m[:amount]; the
+                            "+" says it is a component of that number, not an extra. %>
+                        <span style="opacity: 0.6; font-size: 12px;">(+<%= number_to_currency(m[:tentative_amount]) %> tentative)</span>
                       <% end %>
                     </td>
                   <% end %>
                   <td class="col text-right"><strong><%= number_to_currency(total) %></strong></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </details>
+      <% end %>
+
+      <%# The one-line notice above names only the three reasons worth chasing.
+          Every OTHER reason (non-billable, ambiguous tracker, missing ledger,
+          a broken recurring adjustment…) is still folded into the skipped
+          total, so list them all here — otherwise the total never reconciles
+          against anything visible. %>
+      <% if @projection.skipped.any? %>
+        <details style="margin-top: 12px;">
+          <summary style="cursor: pointer;">Skipped assignments (<%= @projection.skipped_total %>)</summary>
+          <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-top: 8px;">
+            <thead>
+              <tr>
+                <th class="col">Reason</th>
+                <th class="col text-right">Assignments</th>
+                <th class="col">Examples</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% @projection.skipped.sort_by { |_reason, count| -count }.each_with_index do |(reason, count), i| %>
+                <tr class="<%= i.even? ? "even" : "odd" %>">
+                  <td class="col"><%= reason.to_s.humanize %></td>
+                  <td class="col text-right"><%= count %></td>
+                  <td class="col" style="opacity: 0.7;"><%= (@projection.skipped_details[reason] || []).uniq.first(5).join(", ") %></td>
                 </tr>
               <% end %>
             </tbody>

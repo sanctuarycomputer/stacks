@@ -79,6 +79,45 @@ class InvoiceTrackerPayoutsTest < ActiveSupport::TestCase
     assert_in_delta 100.0, amount_for(it, @pl), 0.01
   end
 
+  test "a new_deal_v2 tracker pays lead surplus as Floats when the IC is below the ceiling" do
+    build_tracker("new_deal_v2")
+    @project.update!(notes: "#{@ic.email}:80p/h")
+    it = build_invoice_tracker
+    it.make_contributor_payouts!(@creator)
+
+    # working 2000, IC 10 hrs * $80 = 800 → margin 0.60; surplus = (0.60 - 0.46) * 2000 = 280
+    assert_in_delta 800.0, amount_for(it, @ic), 0.01
+    lead_share = 42.0   # 280 * 0.15
+
+    { @al => "AccountLeadSurplus", @pl => "ProjectLeadSurplus" }.each do |person, role|
+      cp = it.contributor_payouts.reload.find { |c| c.contributor.forecast_person == person }
+      entry = cp.blueprint[role]&.first
+      assert entry.present?, "expected a #{role} entry for #{person.email}"
+      # A BigDecimal here would round-trip through jsonb as the string "0.42e2".
+      assert_kind_of Float, entry["amount"]
+      assert_in_delta lead_share, entry["amount"], 0.001
+    end
+
+    assert_in_delta 160.0 + lead_share, amount_for(it, @al), 0.01
+    assert_in_delta 100.0 + lead_share, amount_for(it, @pl), 0.01
+  end
+
+  test "a PercentageCommission on a new_deal_v2 tracker comes off the top" do
+    pt = build_tracker("new_deal_v2")
+    recipient_admin = AdminUser.create!(email: "comm-split@example.com", password: "password123", password_confirmation: "password123")
+    recipient = ForecastPerson.create!(forecast_id: 700_004, email: recipient_admin.email, data: {})
+    PercentageCommission.create!(project_tracker: pt, contributor: recipient.contributor, rate: 0.10)
+
+    it = build_invoice_tracker
+    it.make_contributor_payouts!(@creator)
+
+    assert_in_delta 200.0, amount_for(it, recipient), 0.01   # 2000 * 0.10
+    # working = 2000 - 200 = 1800
+    assert_in_delta 144.0, amount_for(it, @al), 0.01         # 1800 * 0.08
+    assert_in_delta 90.0, amount_for(it, @pl), 0.01          # 1800 * 0.05
+    assert_in_delta 972.0, amount_for(it, @ic), 0.01         # 1800 * 0.54 — exactly the ceiling, so no surplus
+  end
+
   test "description lines render the model's lead percentages" do
     build_tracker("new_deal_v2")
     it = build_invoice_tracker

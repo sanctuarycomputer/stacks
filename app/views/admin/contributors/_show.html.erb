@@ -40,7 +40,11 @@
       </td>
       <td class="col text-right">
         <%= number_to_currency(projected_total) %>
-        <% if ContributorProjections.stale?(projection_as_of) %>
+        <%# A raised projection and a stale-but-valid one both leave as_of nil-ish;
+            without this branch the exception case reads as merely "sync stale". %>
+        <% if projection_error %>
+          <span class="pill error" style="margin-left: 6px;">Projection unavailable</span>
+        <% elsif ContributorProjections.stale?(projection_as_of) %>
           <span class="pill at_risk" style="margin-left: 6px;">Runn sync stale</span>
         <% else %>
           <span style="opacity: 0.6;">as of <%= time_ago_in_words(projection_as_of) %> ago</span>
@@ -66,9 +70,12 @@
             <% if metadata[:fulltime] %>
               Fulltime
             <% else %>
-              <strong><%= projected_month ? projected[:hours] : metadata[:total_hours] %>hrs, </strong><span><%= number_to_currency(metadata[:total_income]) %><%= metadata[:partial_salary] > 0 ? " + #{number_to_currency(metadata[:partial_salary])} partial salary" : "" %></span>
+              <%# The leading figure is ALWAYS the real, recorded hours — swapping
+                  in projected hours here hid whatever the month actually logged.
+                  Projected hours and dollars are appended alongside instead. %>
+              <strong><%= metadata[:total_hours] %>hrs, </strong><span><%= number_to_currency(metadata[:total_income]) %><%= metadata[:partial_salary] > 0 ? " + #{number_to_currency(metadata[:partial_salary])} partial salary" : "" %></span>
               <% if projected_month && projected[:amount] != 0 %>
-                <span> · projected <%= number_to_currency(projected[:amount]) %></span>
+                <span> · projected <%= projected[:hours] %>hrs, <%= number_to_currency(projected[:amount]) %></span>
               <% end %>
             <% end %>
           </span>

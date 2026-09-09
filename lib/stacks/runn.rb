@@ -49,13 +49,18 @@ class Stacks::Runn
   # non-blocking advisory lock so the scheduler and daily_tasks can't run
   # two syncs at once. runn_synced_at is stamped only when every table
   # succeeded; a failure part-way leaves the earlier tables refreshed.
+  #
+  # Returns true when a full sync ran, false when it was skipped because
+  # another sync already holds the advisory lock. Callers that report on the
+  # run (the rake task) need to tell "skipped" apart from "did the work" —
+  # a bare nil could not carry that.
   def sync_all!
     acquired = ActiveRecord::Base.connection.select_value(
       "SELECT pg_try_advisory_lock(#{SYNC_ALL_ADVISORY_LOCK_KEY})"
     )
     unless acquired
       Rails.logger.warn("Stacks::Runn#sync_all! skipped — another sync is already running")
-      return
+      return false
     end
 
     begin
@@ -67,6 +72,7 @@ class Stacks::Runn
       # System.first, not System.instance: instance is memoized per process and
       # the web workers must see a fresh stamp for the stale-sync pill.
       (System.first || System.create!(settings: {})).update!(runn_synced_at: Time.current)
+      true
     ensure
       ActiveRecord::Base.connection.select_value(
         "SELECT pg_advisory_unlock(#{SYNC_ALL_ADVISORY_LOCK_KEY})"

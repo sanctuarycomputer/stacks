@@ -323,6 +323,51 @@ class ContributorProjections::BuildTest < ActiveSupport::TestCase
     assert_in_delta 4000.0, ic.amount, 0.01
   end
 
+  test "same-rate workstreams: the one carrying this contributor's override is chosen" do
+    ic = person!("ic-#{@seq}@example.com")
+    client = client!
+    first = workstream!(client, rate: 175)
+    second = workstream!(client, rate: 175, notes: "#{ic.email}:90p/h")
+    pt = tracker!([first, second])
+    assign!(runn_person!(ic.email), pt, runn_role!(175))
+    r = build
+    line = lines_for(r, ic, kind: :individual_contributor).first
+    assert_equal 90.0, line.rate, "override must come from the same-rate workstream that carries it"
+    assert_in_delta 3600.0, line.amount, 0.01   # 40 * 90
+    assert_not line.rate_mismatch
+  end
+
+  test "a different email's override on a same-rate workstream does not change the first-match choice" do
+    ic = person!("ic-#{@seq}@example.com")
+    client = client!
+    first = workstream!(client, rate: 175)
+    second = workstream!(client, rate: 175, notes: "someone-else-#{@seq}@example.com:90p/h")
+    pt = tracker!([first, second])
+    assign!(runn_person!(ic.email), pt, runn_role!(175))
+    r = build
+    line = lines_for(r, ic, kind: :individual_contributor).first
+    assert_equal 175.0, line.rate
+    assert_in_delta 4900.0, line.amount, 0.01   # 40 * 175 * 0.70, no leads
+    assert_not line.rate_mismatch
+  end
+
+  test "a salaried IC with a below-ceiling override yields no surplus for the leads" do
+    ic = person!("ic-#{@seq}@example.com", ftp: :five_day)
+    al = person!("al-#{@seq}@example.com", admin: true)
+    pl = person!("pl-#{@seq}@example.com", admin: true)
+    client = client!
+    ws = workstream!(client, rate: 200, notes: "#{ic.email}:80p/h")
+    pt = tracker!([ws], model: "new_deal_v2")
+    lead!(AccountLeadPeriod, pt, al.admin_user, started_at: Date.new(2026, 8, 1))
+    lead!(ProjectLeadPeriod, pt, pl.admin_user, started_at: Date.new(2026, 8, 1))
+    assign!(runn_person!(ic.email), pt, runn_role!(200))
+    r = build
+    assert_empty lines_for(r, ic), "a salaried IC is never paid on the ledger"
+    assert_empty r.lines.select { |l| l.kind.to_s.end_with?("surplus") },
+                 "no surplus off an IC line that was never emitted"
+    assert_in_delta 640.0, amount_for(r, al, kind: :account_lead), 0.01
+  end
+
   test "unmapped person, placeholder, unmapped project, non-billable, archived project, no workstream are skipped" do
     client = client!
     ws = workstream!(client, rate: 200)
@@ -332,7 +377,7 @@ class ContributorProjections::BuildTest < ActiveSupport::TestCase
     assign!(stranger, pt, role)                                             # unmapped_person
     ic = person!("ic-#{@seq}@example.com")
     rp_ic = runn_person!(ic.email)
-    assign!(rp_ic, pt, role, placeholder: true)                             # unmapped_person (placeholder)
+    assign!(rp_ic, pt, role, placeholder: true)                             # placeholder
     assign!(rp_ic, pt, role, billable: false)                               # non_billable
     orphan_rp = RunnProject.create!(runn_id: nid, name: "Orphan", is_confirmed: true, is_archived: false, is_template: false)
     RunnAssignment.create!(runn_id: nid, person_id: rp_ic.runn_id, project_id: orphan_rp.runn_id, role_id: role.runn_id,
@@ -344,7 +389,8 @@ class ContributorProjections::BuildTest < ActiveSupport::TestCase
 
     r = build
     assert_empty r.lines
-    assert_equal 2, r.skipped[:unmapped_person]
+    assert_equal 1, r.skipped[:unmapped_person]
+    assert_equal 1, r.skipped[:placeholder], "an unfilled seat is not an unmapped person"
     assert_equal 1, r.skipped[:non_billable]
     assert_equal 1, r.skipped[:unmapped_project]
     assert_equal 1, r.skipped[:no_forecast_project]

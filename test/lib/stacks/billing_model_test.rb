@@ -26,6 +26,24 @@ class StacksBillingModelTest < ActiveSupport::TestCase
     assert_equal BigDecimal("0.67"), rules.ic_share(account_lead: false, project_lead: false)
   end
 
+  test "surplus_for is zero when the IC is paid exactly the model's ceiling" do
+    rules = Stacks::BillingModel.for("new_deal_v1")
+    assert_equal 0.0, rules.surplus_for(working_amount: 1000.0, ic_amount: 570.0)
+  end
+
+  test "surplus_for returns the margin above the threshold as a Float" do
+    surplus = Stacks::BillingModel.for("new_deal_v2").surplus_for(working_amount: 1000.0, ic_amount: 400.0)
+    assert_in_delta 140.0, surplus, 0.001   # (0.60 - 0.46) * 1000
+    assert_kind_of Float, surplus, "surplus lands in a jsonb blueprint; a BigDecimal would serialize as a string"
+  end
+
+  test "surplus_for is zero when either amount is not positive" do
+    rules = Stacks::BillingModel.for("new_deal_v2")
+    assert_equal 0.0, rules.surplus_for(working_amount: 0.0, ic_amount: 400.0)
+    assert_equal 0.0, rules.surplus_for(working_amount: -100.0, ic_amount: 400.0)
+    assert_equal 0.0, rules.surplus_for(working_amount: 1000.0, ic_amount: 0.0)
+  end
+
   test "for raises on an unknown model" do
     assert_raises(ArgumentError) { Stacks::BillingModel.for("old_deal") }
     assert_raises(ArgumentError) { Stacks::BillingModel.for(nil) }

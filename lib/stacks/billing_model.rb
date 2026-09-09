@@ -26,6 +26,26 @@ module Stacks::BillingModel
       1 - treasury_share - (account_lead ? account_lead_share : 0) - (project_lead ? project_lead_share : 0)
     end
 
+    # The surplus a single line generates, in dollars: the slice of the line's
+    # profit margin that sits above this model's threshold. The one place the
+    # formula lives — both the real payout builder (ContributorPayout#
+    # calculate_surplus) and the projection (ContributorProjections::Build)
+    # price surplus through it, so they cannot drift apart.
+    #
+    # Returns a Float: shares are BigDecimal, but surplus amounts land in a
+    # jsonb blueprint, where a BigDecimal would serialize as the string
+    # "0.42e2" rather than a number. Zero unless BOTH amounts are positive —
+    # there is no surplus on an unbilled line, and none on a line the IC was
+    # never actually paid for.
+    def surplus_for(working_amount:, ic_amount:)
+      working = working_amount.to_f
+      ic = ic_amount.to_f
+      return 0.0 unless working > 0 && ic > 0
+
+      margin = (working - ic) / working
+      [((margin - surplus_threshold) * working).round(2), 0.0].max.to_f
+    end
+
     def label
       "#{name} — #{(treasury_share * 100).to_i}% treasury, #{(ic_ceiling * 100).to_i}% IC ceiling"
     end
