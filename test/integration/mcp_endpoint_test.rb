@@ -2,6 +2,7 @@ require 'test_helper'
 
 class McpEndpointTest < ActionDispatch::IntegrationTest
   include ActiveSupport::Testing::TimeHelpers
+  include SurveyFixtures
 
   TOOLS_LIST_REQUEST = {
     jsonrpc: "2.0",
@@ -57,7 +58,7 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     assert body.key?("result"), "Expected JSON-RPC result key, got: #{body.inspect}"
     tool_names = body["result"]["tools"].map { |t| t["name"] }
     assert_includes tool_names, "search", "Expected 'search' tool in: #{tool_names.inspect}"
-    assert_equal %w[explore_okr find_contributor get_ar_aging get_capacity get_client_revenue get_document get_enterprise_health get_executive_dashboard get_invoice_passes get_membership_stats get_okr_grid get_person_metrics get_project_burnup get_project_contributors get_project_cost_breakdown get_quarterly_report get_resourcing_projections get_studio_health list_documents list_open_admin_tasks list_overdue_invoices list_payable_bills list_project_trackers list_projects_at_risk list_sources search], tool_names.sort,
+    assert_equal %w[explore_okr find_contributor get_ar_aging get_capacity get_client_revenue get_document get_enterprise_health get_executive_dashboard get_invoice_passes get_membership_stats get_okr_grid get_person_metrics get_project_burnup get_project_contributors get_project_cost_breakdown get_quarterly_report get_resourcing_projections get_studio_health get_survey_results list_documents list_open_admin_tasks list_overdue_invoices list_payable_bills list_project_trackers list_projects_at_risk list_sources list_surveys search], tool_names.sort,
       "Expected all registered tools, got: #{tool_names.inspect}"
   end
 
@@ -419,5 +420,28 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
 
     result = call_tool("find_contributor", { "email" => "hugh@sanctuary.computer" })
     assert_equal "hugh@sanctuary.computer", result.first["email"]
+  end
+
+  test "tools/call round-trip for list_surveys and get_survey_results" do
+    travel_to Time.zone.parse(SurveyFixtures::FROZEN_NOW)
+    survey = build_project_survey!(answers: [
+      { sentiment: :agree, context: "tight", free_text: "more discovery" },
+      { sentiment: :agree, context: "fine", free_text: "keep retros" },
+      { sentiment: :neutral, context: nil, free_text: "clearer scope" },
+    ])
+    responder = build_admin!(email_prefix: "survey-responder")
+    ProjectSatisfactionSurveyResponder.create!(project_satisfaction_survey: survey, admin_user: responder)
+
+    rows = call_tool("list_surveys", { status: "closed", closed_after: "2026-06-01" })
+    assert_equal [survey.id], rows.map { |r| r["id"] }
+    assert_equal "project", rows.first["kind"]
+    assert_equal 3, rows.first["response_count"]
+    refute_includes response.body, responder.email
+
+    payload = call_tool("get_survey_results", { kind: "project", id: survey.id })
+    assert_equal "closed", payload["status"]
+    assert_equal ["clearer scope", "keep retros", "more discovery"], payload["free_text_questions"].first["responses"]
+    refute_includes response.body, responder.email
+    refute_includes response.body, "survey-responder"
   end
 end
