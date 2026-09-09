@@ -11,6 +11,7 @@ ActiveAdmin.register ProjectTracker do
   scope :complete
 
   permit_params :name,
+    :billing_model,
     :budget_low_end,
     :budget_high_end,
     :target_profit_margin,
@@ -498,7 +499,11 @@ ActiveAdmin.register ProjectTracker do
       f.input :budget_high_end
 
       if current_admin_user.is_admin?
-        f.input :company_treasury_split, hint: "The percentage of the project's profit that will be allocated to the company treasury. This is used to calculate the project's profit margin."
+        f.input :billing_model,
+          as: :select,
+          collection: Stacks::BillingModel.names.map { |n| [Stacks::BillingModel.for(n).label, n] },
+          include_blank: false,
+          hint: "Which payout split rules apply to this project's client work. new_deal_v2 is the 2026 rate card (33% treasury / 54% IC ceiling). Existing projects stay on new_deal_v1 until they wrap."
         f.input :target_profit_margin, hint: "The target profit margin for the project. This is used to calculate the project's profit margin."
         f.input :target_free_hours_percent, hint: "The target free hours percent for the project. This is used to calculate the project's free hours ratio."
       end
