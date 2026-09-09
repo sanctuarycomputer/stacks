@@ -94,11 +94,6 @@ Append to `test/models/survey_test.rb` (inside the class, before the final `end`
   end
 ```
 
-If `Contributor.elevated_service_admin_user_ids` raises because the ForecastPerson from
-`make_admin_user!` has no Contributor row, add
-`Contributor.create!(forecast_person: core.forecast_person)` right after each `make_admin_user!`
-call in these tests (and note it for the presenter tests in Task 3, which use the same builder).
-
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `bin/rails test test/models/survey_test.rb`
@@ -188,8 +183,8 @@ Claude-Session: https://claude.ai/code/session_01SEDsb6YT6nSdDfjoNMKrnE"
 
 - [ ] **Step 1: Check how test support files load**
 
-Run: `grep -n "support" test/test_helper.rb`
-If it prints nothing, add this line to `test/test_helper.rb` directly after `require "rails/test_help"`:
+`test/support/` does not exist yet and `test/test_helper.rb` does not require it (verified). Add
+this line to `test/test_helper.rb` directly after `require "rails/test_help"`:
 
 ```ruby
 Dir[Rails.root.join("test/support/**/*.rb")].sort.each { |f| require f }
@@ -362,7 +357,7 @@ module Mcp
         case status
         when 'open' then Survey.open
         when 'closed' then Survey.closed
-        else Survey.where('closed_at IS NOT NULL OR opens_at <= ?', Date.today)
+        else Survey.where('closed_at IS NOT NULL OR opens_at <= ?', Time.zone.today)
         end
       end
 
@@ -666,7 +661,6 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01SEDsb6YT6nSdDfjoNMKrnE"
 ```
 
-(Only add `test/test_helper.rb` if Step 1 changed it.)
 
 ---
 
@@ -695,7 +689,7 @@ Append inside `McpSurveyPresenterTest` (before the final `end`):
     r = Mcp::SurveyPresenter.find(kind: "studio", id: survey.id).results
 
     assert_equal "How is it going?", r[:description]
-    assert_equal false, r[:small_sample]
+    assert_equal true, r[:small_sample] # 3 responses < 5
     assert_nil r[:free_text_withheld]
     q = r[:questions].first
     assert_equal "I feel supported", q[:prompt]
@@ -719,7 +713,9 @@ Append inside `McpSurveyPresenterTest` (before the final `end`):
     ProjectLeadPeriod.create!(project_tracker: tracker, admin_user: build_admin!(email_prefix: "third"), started_at: Date.new(2026, 1, 1))
     ProjectLeadPeriod.create!(project_tracker: tracker, admin_user: build_admin!(email_prefix: "fourth"), started_at: Date.new(2026, 1, 1))
 
-    r = Mcp::SurveyPresenter.find(kind: "project", id: survey.id).results
+    r = nil
+    statements = sql_statements { r = Mcp::SurveyPresenter.find(kind: "project", id: survey.id).results }
+    assert_empty statements.grep(/survey_responders/), "responder tables must never be queried"
 
     assert_equal 4, r[:expected_response_count]
     assert_in_delta 0.75, r[:response_rate], 0.001
@@ -780,7 +776,8 @@ Append inside `McpSurveyPresenterTest` (before the final `end`):
 
   test "an invalid stored sentiment of 0 is excluded from averages and distributions" do
     survey = build_studio_survey!(answers: [{ sentiment: :agree }, { sentiment: :agree }, { sentiment: :agree }])
-    SurveyQuestionResponse.where(survey_response: survey.survey_responses.first).update_all(sentiment: 0)
+    # update_column bypasses the enum cast (update_all(sentiment: 0) raises ArgumentError).
+    survey.survey_responses.first.survey_question_responses.first.update_column(:sentiment, 0)
 
     q = Mcp::SurveyPresenter.find(kind: "studio", id: survey.id).results[:questions].first
     assert_equal 2, q[:response_count]
@@ -804,19 +801,17 @@ Append inside `McpSurveyPresenterTest` (before the final `end`):
   test "payloads never contain a responder's name or email" do
     survey = build_studio_survey!(answers: Array.new(3) { { sentiment: :agree, context: "fine", free_text: "fine" } })
     responder = AdminUser.create!(email: "very-distinctive-responder@sanctuary.computer",
-                                  password: "password12345", password_confirmation: "password12345",
-                                  first_name: "Zelda", last_name: "Distinctive")
+                                  password: "password12345", password_confirmation: "password12345")
     SurveyResponder.create!(survey: survey, admin_user: responder)
 
     p = Mcp::SurveyPresenter.find(kind: "studio", id: survey.id)
     json = [p.summary, p.results].to_json
     refute_includes json, "very-distinctive-responder"
-    refute_includes json, "Zelda"
-    refute_includes json, "Distinctive"
+    refute_includes json, "@sanctuary.computer"
   end
 ```
 
-If `AdminUser` has no `first_name`/`last_name` columns (check with `grep -n 'create_table "admin_users"' -A 40 db/schema.rb | grep name`), drop those two attributes and the `Zelda`/`Distinctive` assertions.
+(`AdminUser` has no name columns — `AdminUser#name` returns the email — so the email is the only identity to guard.)
 
 - [ ] **Step 2: Run to verify they fail**
 
@@ -942,7 +937,7 @@ Append inside `McpSurveyPresenterTest`:
 
     range = Time.zone.parse("2026-06-01")..Time.zone.parse("2026-08-01")
     assert_equal ["Mid"], Mcp::SurveyPresenter.list(closed_range: range).map { |p| p.summary[:title] }
-    after_only = Time.zone.parse("2026-06-01")..
+    after_only = (Time.zone.parse("2026-06-01")..)
     assert_equal ["Mid"], Mcp::SurveyPresenter.list(closed_range: after_only).map { |p| p.summary[:title] }
   end
 
@@ -1082,6 +1077,8 @@ class McpListSurveysToolTest < ActiveSupport::TestCase
     assert_equal 1, mcp_payload(Mcp::ListSurveysTool.call(limit: 0, server_context: {})).size
     assert_equal 3, mcp_payload(Mcp::ListSurveysTool.call(limit: 999, server_context: {})).size
     assert_equal 3, mcp_payload(Mcp::ListSurveysTool.call(offset: -5, server_context: {})).size
+    assert_equal 200, Mcp::ListSurveysTool::MAX_LIMIT
+    assert_equal 1, Mcp::ListSurveysTool::MIN_LIMIT
   end
 
   test "declares itself read-only" do
