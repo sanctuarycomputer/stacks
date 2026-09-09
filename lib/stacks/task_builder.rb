@@ -12,6 +12,7 @@ require_relative "task_builder/discoveries/pay_cycles"
 require_relative "task_builder/discoveries/missing_qbo_vendors"
 require_relative "task_builder/discoveries/legacy_ledgers_pending_qbo_migration"
 require_relative "task_builder/discoveries/auto_paused_recurring_ledger_adjustments"
+require_relative "task_builder/discoveries/runn_mirror"
 
 module Stacks
   # Single source of truth for "what needs attention right now" across the system.
@@ -55,6 +56,7 @@ module Stacks
       Discoveries::MissingQboVendors,
       Discoveries::LegacyLedgersPendingQboMigration,
       Discoveries::AutoPausedRecurringLedgerAdjustments,
+      Discoveries::RunnMirror,
     ].freeze
 
     # Returns Array<StacksTask> — every open task system-wide.

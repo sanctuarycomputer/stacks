@@ -374,7 +374,7 @@ class Contributor < ApplicationRecord
   # concept — a contributor's total contribution across the company that month — so it
   # lives here, not on Ledger. Per-enterprise views should use Ledger#items_grouped_by_month
   # instead, which omits elevated_service / total_hours / partial_salary / fulltime.
-  def all_items_grouped_by_month(include_salary = true, override_ledger_starts_at = nil, override_ledger_ends_at = nil)
+  def all_items_grouped_by_month(include_salary = true, override_ledger_starts_at = nil, override_ledger_ends_at = nil, min_ends_at: nil)
     preloaded_contributor_payouts = contributor_payouts_with_deleted
     preloaded_reimbursements = reimbursements_with_deleted
     preloaded_trueups = trueups_with_deleted
@@ -413,6 +413,11 @@ class Contributor < ApplicationRecord
         acc
       end + 2.months
     end
+
+    # A floor, not a replacement: the contributor page needs the projection
+    # horizon rendered even when no real item is dated that far out, while
+    # PeriodicReport keeps passing the positional override as a cap.
+    ledger_ends_at = [ledger_ends_at.to_date, min_ends_at.to_date].max if min_ends_at.present?
 
     if override_ledger_starts_at.present?
       ledger_starts_at = override_ledger_starts_at

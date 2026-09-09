@@ -125,7 +125,7 @@ class Ledger < ApplicationRecord
   # Per-ledger by-month grouping for display. Includes soft-deleted rows so the contributor
   # admin show page can render strikethrough lines. No elevated_service / total_hours /
   # partial_salary / fulltime — those are cross-enterprise concepts and live on Contributor.
-  def items_grouped_by_month(override_starts_at = nil, override_ends_at = nil)
+  def items_grouped_by_month(override_starts_at = nil, override_ends_at = nil, min_ends_at: nil)
     all_items = all_items_with_deleted
 
     ledger_ends_at =
@@ -134,6 +134,7 @@ class Ledger < ApplicationRecord
       else
         (all_items.map(&:effective_on_for_display).compact.max || Date.today) + 2.months
       end
+    ledger_ends_at = [ledger_ends_at.to_date, min_ends_at.to_date].max if min_ends_at.present?
 
     ledger_starts_at = override_starts_at || Stacks::System.singleton_class::NEW_DEAL_START_AT
 

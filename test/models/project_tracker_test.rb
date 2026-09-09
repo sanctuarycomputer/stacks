@@ -192,4 +192,27 @@ class ProjectTrackerTest < ActiveSupport::TestCase
 
   # The income-series assembly lives in ProjectTrackers::IncomeSeries
   # (tested in test/services/project_trackers/income_series_test.rb).
+
+  test "billing_model defaults to new_deal_v1" do
+    pt = ProjectTracker.new(name: "Default model")
+    pt.save!(validate: false)
+    assert_equal "new_deal_v1", pt.reload.billing_model
+    assert pt.new_deal_v1?
+  end
+
+  test "billing_rules and company_treasury_split derive from the model" do
+    pt = ProjectTracker.new(name: "V2 model", billing_model: "new_deal_v2")
+    pt.save!(validate: false)
+    assert_equal Stacks::BillingModel.for("new_deal_v2"), pt.billing_rules
+    assert_equal BigDecimal("0.33"), pt.company_treasury_split
+    assert_equal BigDecimal("0.30"), ProjectTracker.new(name: "V1").company_treasury_split
+  end
+
+  test "billing_model rejects unknown values" do
+    assert_raises(ArgumentError) { ProjectTracker.new(name: "Bad", billing_model: "old_deal") }
+  end
+
+  test "company_treasury_split is no longer a column" do
+    assert_not ProjectTracker.column_names.include?("company_treasury_split")
+  end
 end

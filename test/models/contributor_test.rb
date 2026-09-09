@@ -470,3 +470,23 @@ class ContributorElevatedServiceAdminUserIdsTest < ActiveSupport::TestCase
     assert_not_includes ids, au.id
   end
 end
+
+class ContributorGroupingFloorTest < ActiveSupport::TestCase
+  setup do
+    Thread.current[:sanctuary_enterprise] = nil
+    fp = ForecastPerson.create!(forecast_id: 995_001, email: "floor@example.com", data: {})
+    @contributor = fp.contributor
+  end
+
+  test "all_items_grouped_by_month min_ends_at extends the range" do
+    far = Date.today + 8.months
+    months = @contributor.all_items_grouped_by_month(min_ends_at: far)[:by_month].keys
+    assert_equal (far.beginning_of_month >> -1), months.first.starts_at
+  end
+
+  test "all_items_grouped_by_month positional override still caps the range" do
+    cap = Date.today.beginning_of_month + 1.day
+    months = @contributor.all_items_grouped_by_month(false, nil, cap)[:by_month].keys
+    assert months.first.starts_at < Date.today.beginning_of_month
+  end
+end

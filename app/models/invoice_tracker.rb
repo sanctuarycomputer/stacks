@@ -396,6 +396,7 @@ class InvoiceTracker < ApplicationRecord
           raise "No project trackers found for forecast project #{metadata["forecast_project"]}"
         end
         pt = ptfps.first.project_tracker
+        rules = pt.billing_rules
 
         working_amount = line_item["amount"].to_f
         working_hours = metadata["quantity"].to_f
@@ -452,13 +453,13 @@ class InvoiceTracker < ApplicationRecord
             }
           }
 
-          amount = (working_amount * 0.08).round(2)
+          amount = (working_amount * rules.account_lead_share).round(2).to_f
           payouts[account_lead][:blueprint][:AccountLead] << {
             blueprint_metadata: ContributorPayout.slim_metadata(metadata),
             amount: amount,
             description_line: commission_total > 0 ?
-              "- (#{working_hours} hrs * #{n2c(working_rate)} p/h) - #{n2c(commission_total)} commission = #{n2c(working_amount)} * 8% = #{n2c(amount)}" :
-              "- #{working_hours} hrs * #{n2c(working_rate)} p/h * 8% = #{n2c(amount)}",
+              "- (#{working_hours} hrs * #{n2c(working_rate)} p/h) - #{n2c(commission_total)} commission = #{n2c(working_amount)} * #{(rules.account_lead_share * 100).round(2)}% = #{n2c(amount)}" :
+              "- #{working_hours} hrs * #{n2c(working_rate)} p/h * #{(rules.account_lead_share * 100).round(2)}% = #{n2c(amount)}",
           }
         end
 
@@ -472,13 +473,13 @@ class InvoiceTracker < ApplicationRecord
               Commission: [],
             }
           }
-          amount = (working_amount * 0.05).round(2)
+          amount = (working_amount * rules.project_lead_share).round(2).to_f
           payouts[project_lead][:blueprint][:ProjectLead] << {
             blueprint_metadata: ContributorPayout.slim_metadata(metadata),
             amount: amount,
             description_line: commission_total > 0 ?
-              "- (#{working_hours} hrs * #{n2c(working_rate)} p/h) - #{n2c(commission_total)} commission = #{n2c(working_amount)} * 5% = #{n2c(amount)}" :
-              "- #{working_hours} hrs * #{n2c(working_rate)} p/h * 5% = #{n2c(amount)}",
+              "- (#{working_hours} hrs * #{n2c(working_rate)} p/h) - #{n2c(commission_total)} commission = #{n2c(working_amount)} * #{(rules.project_lead_share * 100).round(2)}% = #{n2c(amount)}" :
+              "- #{working_hours} hrs * #{n2c(working_rate)} p/h * #{(rules.project_lead_share * 100).round(2)}% = #{n2c(amount)}",
           }
         end
 
@@ -502,13 +503,9 @@ class InvoiceTracker < ApplicationRecord
               description_line: "- #{working_hours} hrs * #{n2c(hourly_rate_of_pay_override)} p/h = #{n2c(amount)}",
             }
           else
-            ic_share = 1 - pt.company_treasury_split - (account_lead.present? ? 0.08 : 0) - (project_lead.present? ? 0.05 : 0)
-            # company_treasury_split is a BigDecimal column, so ic_share (and thus
-            # working_amount * ic_share) is a BigDecimal — which serializes into the
-            # jsonb blueprint as a STRING ("0.0"), unlike the AL/PL lines above that
-            # use Float literals. A string amount then blows up numeric sums like
-            # ContributorPayout#as_individual_contributor. Coerce to Float so every
-            # blueprint amount is stored as a number.
+            ic_share = rules.ic_share(account_lead: account_lead.present?, project_lead: project_lead.present?)
+            # ic_share is a BigDecimal (the rules are BigDecimal), so coerce the
+            # product to Float before it lands in the jsonb blueprint.
             amount = (working_amount * ic_share).round(2).to_f
             payouts[individual_contributor][:blueprint][:IndividualContributor] << {
               blueprint_metadata: ContributorPayout.slim_metadata(metadata),
@@ -588,7 +585,9 @@ class InvoiceTracker < ApplicationRecord
       chunks.each do |c|
         next unless c[:project_tracker].present?
 
-        lead_share = (c[:surplus] * 0.15).round(2)
+        rules = c[:project_tracker].billing_rules
+        lead_share = (c[:surplus] * rules.surplus_lead_share).round(2).to_f
+        lead_pct = "#{(rules.surplus_lead_share * 100).round(2)}%"
 
         # Share to Account Lead
         account_lead = c[:project_tracker].account_lead_for_month(invoice_pass.start_of_month)
@@ -601,7 +600,7 @@ class InvoiceTracker < ApplicationRecord
           new_blueprint["AccountLeadSurplus"] ||= []
           new_blueprint["AccountLeadSurplus"] << {
             amount: lead_share,
-            description_line: "- #{n2c(c[:surplus])} * 15% = #{n2c(lead_share)} (`#{c[:qbo_line_item].dig("description")}` generated #{n2c(c[:surplus])} surplus revenue, 15% of which is shared with the Account Lead)",
+            description_line: "- #{n2c(c[:surplus])} * #{lead_pct} = #{n2c(lead_share)} (`#{c[:qbo_line_item].dig("description")}` generated #{n2c(c[:surplus])} surplus revenue, #{lead_pct} of which is shared with the Account Lead)",
             blueprint_metadata: ContributorPayout.slim_metadata(c[:blueprint_metadata]),
           }
 
@@ -623,7 +622,7 @@ class InvoiceTracker < ApplicationRecord
           new_blueprint["ProjectLeadSurplus"] ||= []
           new_blueprint["ProjectLeadSurplus"] << {
             amount: lead_share,
-            description_line: "- #{n2c(c[:surplus])} * 15% = #{n2c(lead_share)} (`#{c[:qbo_line_item].dig("description")})` generated #{n2c(c[:surplus])} surplus revenue, 15% of which is shared with the Project Lead)",
+            description_line: "- #{n2c(c[:surplus])} * #{lead_pct} = #{n2c(lead_share)} (`#{c[:qbo_line_item].dig("description")})` generated #{n2c(c[:surplus])} surplus revenue, #{lead_pct} of which is shared with the Project Lead)",
             blueprint_metadata: ContributorPayout.slim_metadata(c[:blueprint_metadata]),
           }
 

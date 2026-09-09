@@ -1051,6 +1051,16 @@ h2 {
     background-color: $color-blue;
     color: white;
   }
+  &.projected
+  {
+    background-color: #e8eefc;
+    color: #2b4a9b;
+  }
+  &.tentative
+  {
+    background-color: #f4ecd8;
+    color: #7a5a12;
+  }
   &.over_budget,
   &.error,
   &.impossible,
@@ -1166,3 +1176,9 @@ body.logged_out #login a {
   background-image: none !important;
 }
 
+
+// Projected ledger rows on the contributor page: the amount sits one step
+// lighter than body text so it reads as an estimate next to real items.
+.projected-amount {
+  color: $color-grey;
+}

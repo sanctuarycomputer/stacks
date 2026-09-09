@@ -33,29 +33,84 @@
         <%= number_to_currency(balance[:unsettled]) %>
       </td>
     </tr>
+    <% projected_total = projected_by_month.values.sum { |m| m[:amount] } %>
+    <tr class="even">
+      <td class="col">
+        <strong>Projected</strong> <span style="opacity: 0.6;">(next <%= projection_months %> months)</span>
+      </td>
+      <td class="col text-right">
+        <%= number_to_currency(projected_total) %>
+        <%# A raised projection and a stale-but-valid one both leave as_of nil-ish;
+            without this branch the exception case reads as merely "sync stale". %>
+        <% if projection_error %>
+          <span class="pill error" style="margin-left: 6px;">Projection unavailable</span>
+        <% elsif ContributorProjections.stale?(projection_as_of) %>
+          <span class="pill at_risk" style="margin-left: 6px;">Runn sync stale</span>
+        <% else %>
+          <span style="opacity: 0.6;">as of <%= time_ago_in_words(projection_as_of) %> ago</span>
+        <% end %>
+      </td>
+    </tr>
   </tbody>
 </table>
 
 <% new_deal_ledger_items[:by_month].each do |period, metadata| %>
+  <% projected = projected_by_month[period.starts_at] %>
+  <%# by_contributor_month returns a summary for EVERY horizon month, so test for lines, not presence %>
+  <% projected_month = projected.present? && projected[:lines].any? && period.starts_at >= Date.today.beginning_of_month %>
   <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
     <div id="titlebar_left">
       <h2 id="page_title"><%= period.starts_at.strftime("%B %Y") %></h2>
     </div>
     <% if view_mode == :all %>
       <div id="titlebar_right">
-        <span class="pill <%= metadata[:elevated_service] ? 'misc' : '' %>">
-          <%= metadata[:elevated_service] ? 'Elevated' : 'Standard' %> Service
-          <span class="split">
-            <% if metadata[:fulltime] %>
-              Fulltime
-            <% else %>
-              <strong><%= metadata[:total_hours] %>hrs, </strong><span><%= number_to_currency(metadata[:total_income]) %><%= metadata[:partial_salary] > 0 ? " + #{number_to_currency(metadata[:partial_salary])} partial salary" : "" %></span>
-            <% end %>
+        <% if projected_month %>
+          <%# A projected month gets one badge — Projected (Nhrs, $X) — in
+              place of the Standard/Elevated Service badge, which only means
+              something once the month has been invoiced. %>
+          <span class="pill projected">
+            Projected
+            <span class="split"><% if projected[:hours] > 0 %><strong><%= projected[:hours] % 1 == 0 ? projected[:hours].to_i : projected[:hours].round(1) %>hrs, </strong><% end %><span><%= number_to_currency(projected[:amount], precision: 0) %></span></span>
           </span>
-        </span>
+        <% else %>
+          <span class="pill <%= metadata[:elevated_service] ? 'misc' : '' %>">
+            <%= metadata[:elevated_service] ? 'Elevated' : 'Standard' %> Service
+            <span class="split">
+              <% if metadata[:fulltime] %>
+                Fulltime
+              <% else %>
+                <strong><%= metadata[:total_hours] %>hrs, </strong><span><%= number_to_currency(metadata[:total_income]) %><%= metadata[:partial_salary] > 0 ? " + #{number_to_currency(metadata[:partial_salary])} partial salary" : "" %></span>
+              <% end %>
+            </span>
+          </span>
+        <% end %>
       </div>
     <% end %>
   </div>
+
+  <% if projected_month %>
+    <%# Resourcing notice: how allocated the person is in Runn for this month
+        (100% = 40 hrs/week), that the figures below are a projection, and
+        where to change the plan. %>
+    <% utilization_pct = projected[:utilization] ? (projected[:utilization] * 100).round : nil %>
+    <div class="dashboard-modules table index_table index">
+      <div class="dashboard-module">
+        <div class="module-body factoid-parent">
+          <p style="margin-bottom: 6px;">
+            🔭 <strong>Projected.</strong>
+            <% if utilization_pct && projected[:allocated_hours] > 0 %>
+              Resourced at <strong><%= utilization_pct %>%</strong> for <%= period.starts_at.strftime("%B") %> across all projects
+              (<%= projected[:allocated_hours] % 1 == 0 ? projected[:allocated_hours].to_i : projected[:allocated_hours].round(1) %> of <%= projected[:capacity_hours] %> hrs; 100% = 40 hrs/week).
+            <% else %>
+              No personal Runn allocation for <%= period.starts_at.strftime("%B") %>; the projected figures are lead, commission, or adjustment shares rather than hours worked.
+            <% end %>
+            The projected rows below come solely from what is recorded in Runn.io and will move as the plan there changes.
+          </p>
+          <%= link_to "Adjust resourcing in Runn ↗", runn_link, target: "_blank", rel: "noopener" %>
+        </div>
+      </div>
+    </div>
+  <% end %>
 
   <% if view_mode == :all && metadata[:fulltime] %>
     <div class="dashboard-modules table index_table index">
@@ -290,6 +345,34 @@
               <% end %>
             </td>
           </tr>
+        <% end %>
+        <% if projected_month %>
+          <% projected[:lines].each_with_index do |line, pindex| %>
+            <tr class="<%= (metadata[:items].size + pindex).even? ? "even" : "odd" %>" style="opacity: 0.85;">
+              <td class="col" style="font-style: italic;"><%= period.starts_at.strftime("%B %Y") %></td>
+              <td class="col">
+                <span class="pill projected">Projected</span>
+                <% if line.tentative %>
+                  <span class="pill tentative" style="margin-left: 4px;">Tentative</span>
+                <% end %>
+                <% if line.rate_mismatch %>
+                  <span class="pill at_risk" style="margin-left: 4px;" title="The Runn role's rate matched no workstream on this tracker; priced at the first workstream's rate.">Rate?</span>
+                <% end %>
+              </td>
+              <td class="col">
+                <% if line.project_tracker_id %>
+                  <%= link_to "#{line.project_tracker_name} ↗", admin_project_tracker_path(line.project_tracker_id) %>
+                <% else %>
+                  <%= line.project_tracker_name %>
+                <% end %>
+                <span style="opacity: 0.6;"><%= line.kind.to_s.humanize %></span>
+              </td>
+              <td class="col projected-amount">
+                <%= line.amount.negative? ? "-" : "+" %> <%= number_to_currency(line.amount.abs) %>
+              </td>
+              <td class="col text-right"><code><%= line.description %></code></td>
+            </tr>
+          <% end %>
         <% end %>
       </tbody>
     </table>

@@ -115,6 +115,133 @@ ledger_item_path = ->(li) {
     </tbody>
   </table>
 
+  <%# Projected payables — from the Runn forward plan, priced per ledger and
+      month by ContributorProjections::Build. Scoped to the selected tab. %>
+  <div style="margin: 24px 0 8px 0;">
+    <h3 style="margin-bottom: 8px;">Projected Payables</h3>
+    <% if @projection.nil? %>
+      <p><em>Projection unavailable — see logs.</em></p>
+    <% else %>
+      <% totals = @projection.totals_by_month(enterprise_id: @projection_enterprise_id) %>
+      <% months = @projection.horizon.months %>
+      <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+        <thead>
+          <tr>
+            <th class="col">Month</th>
+            <th class="col text-right">Confirmed</th>
+            <th class="col text-right">Tentative</th>
+            <th class="col text-right">Projected</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% months.each_with_index do |month, i| %>
+            <% t = totals[month.starts_at] %>
+            <tr class="<%= i.even? ? "even" : "odd" %>">
+              <td class="col"><%= month.starts_at.strftime("%B %Y") %></td>
+              <td class="col text-right"><%= number_to_currency(t[:confirmed_amount]) %></td>
+              <td class="col text-right" style="opacity: 0.6;"><%= t[:tentative_amount] == 0 ? "—" : number_to_currency(t[:tentative_amount]) %></td>
+              <td class="col text-right"><strong><%= number_to_currency(t[:amount]) %></strong></td>
+            </tr>
+          <% end %>
+          <tr class="<%= months.size.even? ? "even" : "odd" %>">
+            <td class="col"><strong>Horizon total</strong></td>
+            <td class="col text-right"><%= number_to_currency(totals.values.sum { |t| t[:confirmed_amount] }) %></td>
+            <td class="col text-right" style="opacity: 0.6;"><%= number_to_currency(totals.values.sum { |t| t[:tentative_amount] }) %></td>
+            <td class="col text-right"><strong><%= number_to_currency(totals.values.sum { |t| t[:amount] }) %></strong></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p style="margin: 8px 0 0 0; opacity: 0.7; font-size: 13px;">
+        <% if @projection.stale? %>
+          <span class="pill at_risk" style="margin-right: 6px;">Runn sync stale</span>
+        <% end %>
+        Projected from Runn as of <%= @projection.as_of ? "#{time_ago_in_words(@projection.as_of)} ago" : "never" %>
+        <%# The counters are per-ASSIGNMENT; the parenthetical counts distinct
+            ENTITIES (projects, people, mismatching trackers) so "12 skipped
+            (on 2 unmapped projects)" reads as two things to fix, not twelve. %>
+        · <%= @projection.skipped_total %> assignment<%= "s" if @projection.skipped_total != 1 %> skipped
+        (on <%= @projection.skipped_details[:unmapped_project]&.uniq&.size.to_i %> unmapped projects,
+         for <%= @projection.skipped_details[:unmapped_person]&.uniq&.size.to_i %> unmapped people,
+         <%= @projection.skipped_details[:role_rate_mismatch]&.uniq&.size.to_i %> rate mismatches)
+      </p>
+
+      <% by_contributor = @projection.by_contributor_totals(enterprise_id: @projection_enterprise_id) %>
+      <% if by_contributor.any? %>
+        <details style="margin-top: 12px;">
+          <summary style="cursor: pointer;">By contributor (<%= by_contributor.size %>)</summary>
+          <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-top: 8px;">
+            <thead>
+              <tr>
+                <th class="col">Contributor</th>
+                <% months.each do |month| %>
+                  <th class="col text-right"><%= month.starts_at.strftime("%b %Y") %></th>
+                <% end %>
+                <th class="col text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% rows = by_contributor.map { |cid, by_month| [cid, by_month, by_month.values.sum { |m| m[:amount] }] }.sort_by { |_, _, total| -total } %>
+              <% rows.each_with_index do |(cid, by_month, total), i| %>
+                <% contributor = @projection.contributors[cid] %>
+                <tr class="<%= i.even? ? "even" : "odd" %>">
+                  <td class="col">
+                    <% if contributor %>
+                      <%= link_to "#{contributor.display_name} ↗", admin_contributor_path(contributor) %>
+                    <% else %>
+                      Contributor #<%= cid %>
+                    <% end %>
+                  </td>
+                  <% months.each do |month| %>
+                    <% m = by_month[month.starts_at] %>
+                    <td class="col text-right">
+                      <%= number_to_currency(m[:amount]) %>
+                      <% if m[:tentative_amount] != 0 %>
+                        <%# The tentative figure is already INSIDE m[:amount]; the
+                            "+" says it is a component of that number, not an extra. %>
+                        <span style="opacity: 0.6; font-size: 12px;">(+<%= number_to_currency(m[:tentative_amount]) %> tentative)</span>
+                      <% end %>
+                    </td>
+                  <% end %>
+                  <td class="col text-right"><strong><%= number_to_currency(total) %></strong></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </details>
+      <% end %>
+
+      <%# The one-line notice above names only the three reasons worth chasing.
+          Every OTHER reason (non-billable, ambiguous tracker, missing ledger,
+          a broken recurring adjustment…) is still folded into the skipped
+          total, so list them all here — otherwise the total never reconciles
+          against anything visible. %>
+      <% if @projection.skipped.any? %>
+        <details style="margin-top: 12px;">
+          <summary style="cursor: pointer;">Skipped assignments (<%= @projection.skipped_total %>)</summary>
+          <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="margin-top: 8px;">
+            <thead>
+              <tr>
+                <th class="col">Reason</th>
+                <th class="col text-right">Assignments</th>
+                <th class="col">Examples</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% @projection.skipped.sort_by { |_reason, count| -count }.each_with_index do |(reason, count), i| %>
+                <tr class="<%= i.even? ? "even" : "odd" %>">
+                  <td class="col"><%= reason.to_s.humanize %></td>
+                  <td class="col text-right"><%= count %></td>
+                  <td class="col" style="opacity: 0.7;"><%= (@projection.skipped_details[reason] || []).uniq.first(5).join(", ") %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </details>
+      <% end %>
+    <% end %>
+  </div>
+
   <% if @rows.empty? %>
     <div class="dashboard-modules table index_table index">
       <div class="dashboard-module">
