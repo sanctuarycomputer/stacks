@@ -238,6 +238,20 @@ class ContributorProjections::BuildTest < ActiveSupport::TestCase
     assert_in_delta 4960.0, amount_for(r, @ic, kind: :individual_contributor, month: OCT), 0.01  # no PL → 62%
   end
 
+  test "open-ended lead period is treated as continuing even though account_lead_for_month returns nil for future months" do
+    @ic = person!("ic-#{@seq}@example.com")
+    al = person!("al-#{@seq}@example.com", admin: true)
+    client = client!
+    ws = workstream!(client, rate: 200)
+    pt = tracker!([ws])
+    lead!(AccountLeadPeriod, pt, al.admin_user, started_at: Date.new(2026, 8, 1), ended_at: nil)
+    pt.update_column(:snapshot, { "first_forecast_assignment_start_date" => "2026-08-03", "last_forecast_assignment_end_date" => "2026-08-28" })
+    assign!(runn_person!(@ic.email), pt, runn_role!(200), start_date: Date.new(2026, 10, 5), end_date: Date.new(2026, 10, 9))
+    assert_nil pt.account_lead_for_month(Date.new(2026, 10, 1))
+    r = build
+    assert_in_delta 640.0, amount_for(r, al, kind: :account_lead, month: OCT), 0.01
+  end
+
   # --- resolve --------------------------------------------------------
 
   test "two assignments for one person on one workstream in one month are priced once" do
@@ -376,6 +390,24 @@ class ContributorProjections::BuildTest < ActiveSupport::TestCase
     assert_in_delta 25 + 20, by[Date.new(2026, 11, 1)][:amount], 0.01
     assert_in_delta 25 + 20, by[Date.new(2026, 12, 1)][:amount], 0.01
     assert_equal :recurring_adjustment, by[SEP][:lines].first.kind
+  end
+
+  test "a recurring adjustment with an invalid cadence is skipped without raising, and a valid sibling still projects" do
+    ic = person!("rla-#{@seq}@example.com")
+    ledger = Ledger.find_by!(enterprise: @sanctuary, contributor: ic.contributor)
+    bad = RecurringLedgerAdjustment.create!(ledger: ledger, amount: 25, description: "Bad cadence", cadence: "monthly", next_due_on: Date.new(2026, 9, 10))
+    bad.update_column(:cadence, "weekly") # bypass validation to simulate a corrupt row
+    RecurringLedgerAdjustment.create!(ledger: ledger, amount: 50, description: "Good", cadence: "monthly", next_due_on: Date.new(2026, 9, 15))
+    r = nil
+    assert_nothing_raised { r = build }
+    assert_equal 1, r.skipped[:invalid_recurring_adjustment]
+    assert_includes r.skipped_details[:invalid_recurring_adjustment].first, "##{bad.id}"
+    by = r.by_contributor_month(ic.contributor)
+    # The bad row's already-due Sep 10 occurrence still projects (its cadence
+    # only breaks when computing the *next* due date); the good row projects
+    # every month of the horizon, proving the bad row didn't take it down.
+    assert_in_delta 25 + 50, by[SEP][:amount], 0.01
+    assert_in_delta 50.0, by[OCT][:amount], 0.01
   end
 
   # --- filtering and caching ------------------------------------------------

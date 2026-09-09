@@ -25,6 +25,10 @@ module ContributorProjections
       @skipped = Hash.new { |h, k| h[k] = [] }
     end
 
+    # skipped / skipped_details are always global across every assignment,
+    # even when contributor: filters lines down to one person's Result — the
+    # contributor page does not render them, so this is left as-is rather
+    # than filtered to match.
     def call
       load!
       hours_by_key, flags_by_key = resolve
@@ -78,7 +82,8 @@ module ContributorProjections
         @contributors_by_email[email] = c if existing.nil? || better_match?(c, existing)
       end
 
-      @ledgers = Ledger.includes(:enterprise).index_by { |l| [l.enterprise_id, l.contributor_id] }
+      # Only ids are read below, so no association needs eager loading.
+      @ledgers = Ledger.all.index_by { |l| [l.enterprise_id, l.contributor_id] }
       @adjustments = RecurringLedgerAdjustment.active.includes(:ledger).to_a
       @tracker_count_by_workstream = ProjectTrackerForecastProject.group(:forecast_project_id).count
     end
@@ -123,7 +128,7 @@ module ContributorProjections
           next
         end
 
-        workstream, mismatch = workstream_for(tracker, a)
+        workstream, mismatch_detail = workstream_for(tracker, a)
         if workstream.nil?
           skip!(:no_forecast_project, tracker.name)
           next
@@ -132,6 +137,11 @@ module ContributorProjections
           skip!(:ambiguous_tracker, workstream.name)
           next
         end
+        # Only count role_rate_mismatch once we know the assignment is not
+        # also being dropped as ambiguous_tracker above — otherwise a single
+        # assignment on an ambiguous, rate-mismatched workstream would inflate
+        # two skip counters for the one problem.
+        skip!(:role_rate_mismatch, mismatch_detail) if mismatch_detail
 
         @horizon.months.each do |month|
           hours = a.hours_between(month.starts_at, month.ends_at)
@@ -139,7 +149,7 @@ module ContributorProjections
           key = Key.new(contributor, tracker, workstream, month.starts_at)
           hours_by_key[key] += hours
           flags_by_key[key][:tentative] ||= (rp.is_confirmed == false)
-          flags_by_key[key][:rate_mismatch] ||= mismatch
+          flags_by_key[key][:rate_mismatch] ||= mismatch_detail.present?
         end
       end
 
@@ -147,17 +157,22 @@ module ContributorProjections
     end
 
     # The Runn role's standard_rate is only a selector: pick the workstream
-    # whose p/h tag equals it. It is never used as a price.
+    # whose p/h tag equals it. It is never used as a price. Returns
+    # [workstream, mismatch_detail]: mismatch_detail is nil on a clean match,
+    # or the skip! detail string when the role's rate matched no workstream.
+    # Does NOT call skip! itself — the caller only does that once it has also
+    # ruled out ambiguous_tracker for this workstream, so skip counts stay
+    # one-reason-per-problem instead of double-counting the same assignment.
     def workstream_for(tracker, assignment)
       workstreams = tracker.forecast_projects.to_a
-      return [nil, false] if workstreams.empty?
+      return [nil, nil] if workstreams.empty?
 
       rate = assignment.runn_role&.standard_rate
       match = rate.nil? ? nil : workstreams.find { |ws| ws.hourly_rate.to_f == rate.to_f }
-      return [match, false] if match
+      return [match, nil] if match
 
-      skip!(:role_rate_mismatch, "#{tracker.name}: Runn role rate #{rate.inspect} matches no workstream")
-      [workstreams.find { |ws| !ws.archived } || workstreams.first, true]
+      detail = "#{tracker.name}: Runn role rate #{rate.inspect} matches no workstream"
+      [workstreams.find { |ws| !ws.archived } || workstreams.first, detail]
     end
 
     # ----------------------------------------------------------------- price
@@ -166,7 +181,10 @@ module ContributorProjections
       ws = key.forecast_project
       client = ws.forecast_client
       if client.nil?
-        skip!(:no_forecast_project, ws.name)
+        # Distinct from resolve's no_forecast_project (tracker has no
+        # workstream at all): here the workstream exists but has no Forecast
+        # client, so the two skip reasons are not conflated.
+        skip!(:no_forecast_client, ws.name)
         return
       end
 
@@ -188,7 +206,10 @@ module ContributorProjections
 
     # Mirrors PayCycles::GenerateStubs: hours × (override || tag rate), no
     # splits, no commissions; a workstream with neither an explicit tag nor
-    # an override is what GenerateStubs raises MissingRateError on.
+    # an override is what GenerateStubs raises MissingRateError on. Pay
+    # cycles are the path internal work actually settles through, so that is
+    # what this mirrors; InvoiceTracker#make_contributor_payouts!'s internal
+    # branch (which does deduct commissions) is not mirrored here.
     def price_internal(key, hours, ws, client, override, bill_rate, month_end, base)
       if override.nil? && ws.has_no_explicit_hourly_rate?
         skip!(:no_explicit_rate, "#{ws.name} / #{key.contributor.display_name}")
@@ -269,6 +290,11 @@ module ContributorProjections
 
       # The real builder only computes surplus from persisted IC entries, and
       # a zero IC amount never persists — so no surplus when the IC line is 0.
+      # This is a deliberate difference from the real builder's per-payee
+      # zero check: there, an IC with a 0p/h override who is also a lead on
+      # the same tracker can get a persisted zero IC entry and a phantom
+      # surplus computed against it — that is a bug in the real behavior,
+      # not a rule this projection should reproduce.
       return unless ic_amount > 0 && working_amount > 0
       margin = (working_amount - ic_amount) / working_amount
       surplus = ((margin - rules.surplus_threshold) * working_amount).round(2).to_f
@@ -287,9 +313,24 @@ module ContributorProjections
       end
     end
 
-    # A lead period with no explicit end is treated as continuing. The
-    # models' period_started_at falls back to the tracker's first recorded
-    # assignment when started_at is nil (most rows in production).
+    # A lead period with no explicit end is treated as continuing through
+    # every future month. This deliberately differs from
+    # ProjectTracker#account_lead_for_month / #project_lead_for_month, which
+    # use period_ended_at instead of ended_at directly: for a nil ended_at,
+    # period_ended_at falls back to the tracker's last_recorded_assignment_end_date
+    # (read from the Forecast-derived snapshot). Forecast actuals cannot exist
+    # for a future month, so those model helpers return nil — "not a lead" —
+    # for every month beyond the last recorded assignment, including every
+    # future horizon month. That is correct for their callers (current-state
+    # views keyed off real, recorded assignments) but wrong here: an open
+    # (still-active) lead period must not lapse just because the future has
+    # no Forecast actuals yet, or an active account/project lead would never
+    # be projected a share of forward-looking work. This divergence is an
+    # approved design decision, not a bug — do not "fix" it to match the
+    # model helpers. The start side still uses period_started_at (rather than
+    # started_at directly) because most production lead-period rows have a
+    # nil started_at and rely on that fallback to the tracker's first
+    # recorded assignment.
     def lead_for_month(periods, month_start)
       month_end = month_start.end_of_month
       periods.find { |p| p.period_started_at <= month_end && (p.ended_at.nil? || p.ended_at >= month_start) }&.admin_user
@@ -325,19 +366,26 @@ module ContributorProjections
 
     def project_recurring_adjustments
       @adjustments.each do |rla|
-        due = rla.next_due_on
-        while due <= @horizon.ends_at
-          if due >= @horizon.starts_at
-            @lines << Line.new(
-              kind: :recurring_adjustment,
-              ledger_id: rla.ledger_id, enterprise_id: rla.ledger.enterprise_id, contributor_id: rla.ledger.contributor_id,
-              project_tracker_id: nil, project_tracker_name: rla.description,
-              hours: nil, rate: nil, amount: rla.amount.to_f.round(2),
-              description: "- #{rla.description} (#{rla.cadence.humanize.downcase}, due #{due.strftime('%b %-d')})",
-              tentative: false, rate_mismatch: false, month: due.beginning_of_month,
-            )
+        # advance raises ArgumentError on a cadence it doesn't recognize (e.g.
+        # a row whose cadence was forced past validation). Data problems never
+        # raise here — catch it, skip! this one row, and move on to the rest.
+        begin
+          due = rla.next_due_on
+          while due <= @horizon.ends_at
+            if due >= @horizon.starts_at
+              @lines << Line.new(
+                kind: :recurring_adjustment,
+                ledger_id: rla.ledger_id, enterprise_id: rla.ledger.enterprise_id, contributor_id: rla.ledger.contributor_id,
+                project_tracker_id: nil, project_tracker_name: rla.description,
+                hours: nil, rate: nil, amount: rla.amount.to_f.round(2),
+                description: "- #{rla.description} (#{rla.cadence.humanize.downcase}, due #{due.strftime('%b %-d')})",
+                tentative: false, rate_mismatch: false, month: due.beginning_of_month,
+              )
+            end
+            due = rla.advance(due)
           end
-          due = rla.advance(due)
+        rescue ArgumentError => e
+          skip!(:invalid_recurring_adjustment, "##{rla.id}: #{e.message}")
         end
       end
     end
