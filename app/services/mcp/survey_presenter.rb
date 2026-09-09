@@ -98,5 +98,51 @@ module Mcp
         url: adapter.url,
       }
     end
+
+    def results
+      expected = adapter.expected_response_count
+      base = summary.merge(
+        description: adapter.record.description,
+        expected_response_count: expected,
+        response_rate: expected.zero? ? nil : response_count.fdiv(expected).round(2),
+      )
+      return base.merge(results_withheld: 'survey is open') unless closed?
+
+      text_allowed = response_count >= MIN_RESPONSES_FOR_TEXT
+      payload = base.merge(
+        small_sample: response_count < SMALL_SAMPLE_THRESHOLD,
+        questions: question_results(text_allowed),
+        free_text_questions: free_text_results(text_allowed),
+      )
+      payload[:free_text_withheld] = "fewer than #{MIN_RESPONSES_FOR_TEXT} responses" unless text_allowed
+      payload
+    end
+
+    private
+
+    # Text arrays are SORTED, never in insertion order: DB order would align index i of every
+    # array to the same respondent, reconstructing one full questionnaire per index.
+    def question_results(text_allowed)
+      by_question = adapter.rating_answers.group_by(&:first)
+      adapter.questions.map do |question|
+        rows = by_question.fetch(question.id, [])
+        valid = rows.map { |(_, sentiment, _)| sentiment }.select { |s| SENTIMENT_SCORES.key?(s) }
+        {
+          prompt: question.prompt,
+          average: valid.empty? ? nil : (valid.sum { |s| SENTIMENT_SCORES[s] } / valid.size).round(2),
+          response_count: valid.size,
+          distribution: SENTIMENT_ORDER.each_with_object({}) { |s, h| h[s.to_sym] = valid.count(s) },
+          contexts: text_allowed ? rows.map(&:last).select(&:present?).sort : [],
+        }
+      end
+    end
+
+    def free_text_results(text_allowed)
+      by_question = adapter.free_text_answers.group_by(&:first)
+      adapter.free_text_questions.map do |question|
+        answers = by_question.fetch(question.id, []).map(&:last).select(&:present?)
+        { prompt: question.prompt, responses: text_allowed ? answers.sort : [] }
+      end
+    end
   end
 end
