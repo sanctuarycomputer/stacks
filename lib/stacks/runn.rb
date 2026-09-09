@@ -40,12 +40,122 @@ class Stacks::Runn
     end
   end
 
-  def sync_all!
-    all_projects = get_projects()
+  # Arbitrary 32-bit int identifying this lock. Forecast uses 84_217_295.
+  SYNC_ALL_ADVISORY_LOCK_KEY = 84_217_296
 
-    ActiveRecord::Base.transaction do
-      sync_projects!(all_projects)
+  # Full mirror refresh: projects, people, roles, assignments. Mirrors the
+  # Forecast sync: changed-rows-only upserts, assignments pruned by absence,
+  # people/roles never pruned (isArchived is mirrored instead), and a
+  # non-blocking advisory lock so the scheduler and daily_tasks can't run
+  # two syncs at once. runn_synced_at is stamped only when every table
+  # succeeded; a failure part-way leaves the earlier tables refreshed.
+  def sync_all!
+    acquired = ActiveRecord::Base.connection.select_value(
+      "SELECT pg_try_advisory_lock(#{SYNC_ALL_ADVISORY_LOCK_KEY})"
+    )
+    unless acquired
+      Rails.logger.warn("Stacks::Runn#sync_all! skipped — another sync is already running")
+      return
     end
+
+    begin
+      sync_projects!
+      sync_people!
+      sync_roles!
+      seen = sync_assignments!
+      prune_assignments_not_in!(seen)
+      # System.first, not System.instance: instance is memoized per process and
+      # the web workers must see a fresh stamp for the stale-sync pill.
+      (System.first || System.create!(settings: {})).update!(runn_synced_at: Time.current)
+    ensure
+      ActiveRecord::Base.connection.select_value(
+        "SELECT pg_advisory_unlock(#{SYNC_ALL_ADVISORY_LOCK_KEY})"
+      )
+    end
+  end
+
+  # Only write rows that are NEW or whose Runn updatedAt moved (same fix the
+  # Forecast sync needed — unconditional upsert_all rewrote every row nightly
+  # and bloated the table). Returns EVERY seen runn_id so prune-by-absence
+  # still treats unchanged rows as present.
+  def upsert_changed!(model, rows)
+    return [] if rows.empty?
+
+    seen_ids = rows.map { |row| row[:runn_id] }
+    stored_updated_at = model.where(runn_id: seen_ids).pluck(:runn_id, :updated_at).to_h
+    changed = rows.select do |row|
+      prev = stored_updated_at[row[:runn_id]]
+      incoming = row[:updated_at]
+      prev.nil? || incoming.blank? || prev.to_i != Time.parse(incoming.to_s).to_i
+    end
+    model.upsert_all(changed, unique_by: :runn_id) if changed.any?
+    seen_ids
+  end
+
+  # Chunked so each delete holds locks for milliseconds. Blank input is a
+  # no-op so an empty fetch can never wipe the mirror.
+  def prune_assignments_not_in!(seen_ids)
+    return if seen_ids.blank?
+
+    RunnAssignment.where.not(runn_id: seen_ids).in_batches(of: 1000) do |batch|
+      batch.delete_all
+    end
+  end
+
+  def sync_people!(all_people = get_people())
+    rows = all_people.map do |c|
+      {
+        runn_id: c["id"],
+        first_name: c["firstName"],
+        last_name: c["lastName"],
+        email: c["email"],
+        is_archived: c["isArchived"] == true,
+        created_at: c["createdAt"],
+        updated_at: c["updatedAt"],
+        data: c,
+      }
+    end
+    upsert_changed!(RunnPerson, rows)
+  end
+
+  def sync_roles!(all_roles = get_roles())
+    rows = all_roles.map do |c|
+      {
+        runn_id: c["id"],
+        name: c["name"],
+        standard_rate: c["standardRate"],
+        default_hour_cost: c["defaultHourCost"],
+        is_archived: c["isArchived"] == true,
+        created_at: c["createdAt"],
+        updated_at: c["updatedAt"],
+        data: c,
+      }
+    end
+    upsert_changed!(RunnRole, rows)
+  end
+
+  def sync_assignments!(all_assignments = get_assignments())
+    rows = all_assignments.map do |c|
+      {
+        runn_id: c["id"],
+        person_id: c["personId"],
+        project_id: c["projectId"],
+        role_id: c["roleId"],
+        start_date: c["startDate"],
+        end_date: c["endDate"],
+        minutes_per_day: c["minutesPerDay"].to_i,
+        is_active: c["isActive"] != false,
+        is_billable: c["isBillable"] != false,
+        is_placeholder: c["isPlaceholder"] == true,
+        is_template: c["isTemplate"] == true,
+        is_non_working_day: c["isNonWorkingDay"] == true,
+        note: c["note"],
+        created_at: c["createdAt"],
+        updated_at: c["updatedAt"],
+        data: c,
+      }
+    end
+    upsert_changed!(RunnAssignment, rows)
   end
 
   # Lightweight paginated fetch — called once per "Create Runn project"
@@ -225,11 +335,11 @@ class Stacks::Runn
         #runn_client_id: c["clientId"],
         #runn_rate_card_id: c["rateCardId"],
         created_at: c["createdAt"],
-        updated_at: c["UpdatedAt"],
+        updated_at: c["updatedAt"],
         data: c,
       }
     end
-    RunnProject.upsert_all(data, unique_by: :runn_id)
+    upsert_changed!(RunnProject, data)
   end
 
   def create_or_update_actual(date, billable_minutes, runn_person_id, runn_project_id, runn_role_id)
