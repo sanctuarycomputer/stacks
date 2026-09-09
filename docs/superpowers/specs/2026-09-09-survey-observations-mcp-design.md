@@ -91,18 +91,22 @@ Field mapping:
 
 | Field | `studio` (`Survey`) | `project` (`ProjectSatisfactionSurvey`) |
 |---|---|---|
-| `status` | `survey.status` (`open`/`closed`; **drafts are never listed** and `find` on a draft behaves as open) | `survey.status` |
-| `opened_at` | `opens_at` (date, may be nil) | `created_at.to_date` |
+| `status` | `survey.status` (`open`/`closed`; **drafts are invisible**: never listed, and `find` on a draft returns nil → `Survey not found`) | `survey.status` |
+| `opened_at` | `opens_at` (a date; non-nil for any non-draft survey) | `created_at.to_date` (project surveys are created open) |
 | `closed_at` | `closed_at` | `closed_at` |
 | `scope` | `{ studios: [{ name:, mini_name: }] }` | `{ project_tracker_id:, project: tracker.name }` |
 | `url` | `#{ADMIN_HOST}/admin/surveys/#{id}` | `#{ADMIN_HOST}/admin/project_satisfaction_surveys/#{id}` |
-| `response_count` | `survey_responses.count` | `project_satisfaction_survey_responses.count` |
-| `expected_response_count` | `expected_responders.size` | `expected_responders.size` (it's a Hash) |
-| `overall_score` | mean of per-question averages, skipping questions whose average is `nil` (matches the admin page) | response-weighted mean of all rating answers (matches persisted `score` and the admin page) |
+| `response_count` | count of `survey_responses` | count of `project_satisfaction_survey_responses` |
+| `expected_response_count` | `expected_responder_ids.size` (new, see below) | `expected_responders.size` (it's a Hash; reads `all_contributors_with_roles` + `AdminUser.active`, never responder rows) |
+| `overall_score` | mean of per-question averages, skipping questions whose average is `nil`; `nil` when no question has an answer (matches the admin page) | the persisted `score` column (synced on close; what the admin page and the OKR snapshot show) |
 
-`list` queries each family separately (`Survey.open`/`Survey.closed`, `ProjectSatisfactionSurvey.open`/`.closed`, with `closed_at: closed_range` applied when given), wraps them, sorts in Ruby by `(closed_at || opened_at)` descending, then applies `offset`/`limit`. Ruby-side sorting is acceptable: the population is a few hundred rows at most and the list payload never triggers the expensive `expected_responders` computation. Preload questions/free-text questions for `results`.
+`list` queries each family separately (`Survey.open`/`Survey.closed`, `ProjectSatisfactionSurvey.open`/`.closed`, with `closed_at: closed_range` applied when given), wraps them, sorts in Ruby by `sort_time = closed_at || opened_at.in_time_zone` descending (normalize to `Time` — never compare a `Date` with a `TimeWithZone`), then applies `offset`/`limit`. Ruby-side sorting is acceptable: the population is a few hundred rows at most.
 
-`expected_response_count` and `response_rate` are computed **only in `results`** (one survey per call) because `Survey#expected_responders` runs the elevated-service bulk computation; doing it for 50 list rows risks Heroku's 30 s cap.
+`list` must not be N+1: preload `includes(:studios)` for studio surveys and `includes(project_capsule: :project_tracker)` for project surveys; compute `response_count` with one grouped query per family (`SurveyResponse.where(survey_id: ids).group(:survey_id).count`, likewise for `ProjectSatisfactionSurveyResponse`). Studio `overall_score` for list rows is computed from `includes(survey_responses: :survey_question_responses)` (a few hundred rows in total across all studio surveys); project rows read the `score` column. `overall_score` is `nil` for open surveys in list rows too.
+
+`expected_response_count` and `response_rate` are computed **only in `results`** (one survey per call) because the studio expected set runs the elevated-service bulk computation; doing it for 50 list rows risks Heroku's 30 s cap.
+
+**One small model addition** (the only model change): `Survey#expected_responder_ids` — a memoized `Set` of admin_user ids equal to the keys of `expected_responder_status`, computed the same way (core members ∪ elevated-service members across the survey's studios) but stopping **before** the per-member `SurveyResponder.find_by`. `expected_responder_status` is refactored to build from it (behaviour unchanged, existing tests must still pass). The presenter uses `expected_responder_ids.size` so `get_survey_results` never queries `survey_responders`.
 
 ### A2. `list_surveys`
 
@@ -123,14 +127,18 @@ Row shape:
 { "kind": "project", "id": 42, "title": "Acme Redesign — Project Satisfaction", "status": "closed",
   "opened_at": "2026-07-01", "closed_at": "2026-08-15T14:02:11Z",
   "scope": { "project_tracker_id": 7, "project": "Acme Redesign" },
-  "response_count": 6,
+  "response_count": 6, "overall_score": 3.4,
   "url": "https://stacks.garden3d.net/admin/project_satisfaction_surveys/42" }
 ```
 
 Rules: `closed_after`/`closed_before` go through `Mcp::DateRange.parse` (blank/invalid ignored,
-one-sided OK) and, when either is present, force `status = "closed"` (an open survey has no
-`closed_at`). Unknown `kind` → `Unknown kind 'x'. Valid kinds: studio, project`; unknown `status`
-→ `Unknown status 'x'. Valid statuses: open, closed`. Payload is a bare array (like
+one-sided OK). When a closed range is present and `status` is nil, the list is implicitly
+`closed` (an open survey has no `closed_at`); when a closed range is present and
+`status: "open"` is also passed, return the error
+`closed_after/closed_before cannot be combined with status 'open'` rather than silently
+flipping. Unknown `kind` → `Unknown kind 'x'. Valid kinds: studio, project`; unknown `status`
+→ `Unknown status 'x'. Valid statuses: open, closed`. `offset` is a plain row skip after
+sorting (`offset: 50` with `limit: 50` = the second page). Payload is a bare array (like
 `list_documents`). Draft studio surveys are excluded.
 
 ### A3. `get_survey_results`
@@ -163,33 +171,58 @@ Closed-survey payload = the list row plus:
 ```
 
 - Scores use `SurveyQuestionResponse.sentiment_to_score` (0 / 1.25 / 2.5 / 3.75 / 5), the same
-  0–5 scale the admin pages show. `average` is `nil` for a question with no answered responses;
-  `overall_score` is `nil` when there are no responses. Rounded to 2 dp.
-- `distribution` counts only answers whose `sentiment` is a valid enum key (the column defaults
-  to `0`, which is not a key); `response_count` per question = that same count.
-- `contexts` / `responses` include only `present?` strings, in DB order.
-- `response_rate = (response_count / expected_response_count).round(2)`, `nil` when expected is 0.
-- `small_sample = response_count < SMALL_SAMPLE_THRESHOLD`.
-- Questions are ordered by id (creation order), which is the order the form shows.
-- The presenter computes aggregates itself rather than calling `Survey#results` (raises
-  `NoMethodError` on an empty response set or an unanswered question) or
-  `ProjectSatisfactionSurvey#results` (one query per question). Those model methods are unchanged.
+  0–5 scale the admin pages show. `average` is `nil` for a question with no answered responses.
+  Studio `overall_score` is the mean of the non-nil question averages (`nil` when none); project
+  `overall_score` is the persisted `score` column. Rounded to 2 dp.
+- `distribution` and `average` count only answers whose `sentiment` is a valid enum key (the
+  column defaults to `0`, which is not a key and reads back as `nil`); `response_count` per
+  question = that same count. (The persisted project `score` scores such rows as 0, so a project
+  survey containing an invalid row can show a `score` that differs from the mean of its question
+  averages — accepted; such rows cannot be created through the form. In tests, create one with
+  `update_column(:sentiment, 0)` — the enum setter raises on `0` and validation rejects `nil`.)
+- `contexts` / `responses` include only `present?` strings, **sorted alphabetically within each
+  array**. DB order would align index *i* of every array to the same respondent (one full
+  questionnaire per index), which is a re-identification aid; sorting breaks that alignment
+  deterministically.
+- **Free text is withheld below three responses:** when `response_count <
+  MIN_RESPONSES_FOR_TEXT` (3), `contexts` are `[]`, `free_text_questions` carry `responses: []`,
+  and the payload adds `"free_text_withheld": "fewer than 3 responses"`. Scores and
+  distributions are still returned. This is a tool-level guardrail for every MCP consumer, not
+  just the observe skill.
+- `response_rate = response_count.fdiv(expected_response_count).round(2)` (float division),
+  `nil` when expected is 0. It can exceed 1.0 (non-expected users may "Respond anyway"); do not
+  clamp.
+- `small_sample = response_count < SMALL_SAMPLE_THRESHOLD` (5).
+- Questions are ordered by id (creation order) by the presenter.
+- The presenter computes aggregates itself rather than calling `Survey#results` (which omits
+  unanswered questions and returns no `:overall` for an empty set, leaving the view to raise) or
+  `ProjectSatisfactionSurvey#results` (one query per question). Those model methods are
+  unchanged. Preload `survey_questions`, `survey_free_text_questions`,
+  `survey_responses: [:survey_question_responses, :survey_free_text_question_responses]` (and
+  the project equivalents) so `results` is a bounded number of queries.
 
-Open (or draft studio) survey payload = the list row plus `description`,
-`expected_response_count`, `response_rate`, and `"results_withheld": "survey is open"`. No
-`questions`, no `free_text_questions`, no `overall_score`, no `small_sample`.
+Open survey payload = the list row plus `description`, `expected_response_count`,
+`response_rate`, and `"results_withheld": "survey is open"`. No `questions`, no
+`free_text_questions`, no `small_sample`; `overall_score` is `nil`.
 
-Errors: unknown kind as above; missing id → `Survey not found`.
+Errors: unknown kind as above; missing id, an id of the other kind, or a draft studio survey →
+`Survey not found`.
 
 ### A4. Privacy rules (Part A)
 
 - The payload **never** contains an `AdminUser`/`Contributor`/`ForecastPerson` name or email,
   a `*Responder` row, or any per-response identifier. Only counts.
-- Free text is returned **only for closed surveys**.
+- Free text is returned **only for closed surveys with at least 3 responses**, and each array is
+  sorted so arrays cannot be aligned by respondent.
 - Both tool descriptions state the anonymity contract so any MCP client (not just the observe
   skill) sees it.
-- No `SurveyResponder` / `ProjectSatisfactionSurveyResponder` association is ever loaded by the
-  presenter.
+- The presenter never issues SQL against `survey_responders` or
+  `project_satisfaction_survey_responders` (tested by subscribing to `sql.active_record`).
+- **Known residual risk, mitigated in the contract not the code:** the same API key can call
+  `get_project_contributors(project_tracker_id)` / `find_contributor` / `get_person_metrics`,
+  which enumerate exactly the people a survey went to. That is the pre-existing admin-page
+  exposure (any admin can open both pages), not a new one, but the Part B contract explicitly
+  forbids the observe and Recall flows from calling those tools for a survey's project or studio.
 
 ### A5. Registration and wiring
 
@@ -197,30 +230,48 @@ Errors: unknown kind as above; missing id → `Survey not found`.
   (`app/services/mcp/server.rb`). Read server only — never the write server.
 - Update the sorted tool-name literal in `test/integration/mcp_endpoint_test.rb` (the
   `tools/list` test) to include `get_survey_results` and `list_surveys`.
-- No migrations, no model changes, no ActiveAdmin changes.
+- No migrations, no ActiveAdmin changes. The only model change is `Survey#expected_responder_ids`
+  (A1).
 
 ### A6. Tests
 
-- `test/services/mcp/survey_presenter_test.rb`
-  - studio + project: `summary` fields (scope, url, opened_at, closed_at, response_count).
+- `test/models/survey_test.rb`: `expected_responder_ids` equals the key ids of
+  `expected_responder_status` (core + elevated members), and computing it issues no SQL against
+  `survey_responders`.
+- `test/services/mcp/survey_presenter_test.rb` (use `travel_to` — `Survey.open`/`#status` use
+  `Date.today`, the same midnight-ET hazard the memory notes for `AdminUserTest`):
+  - studio + project: `summary` fields (scope, url, opened_at, closed_at, response_count,
+    overall_score; `overall_score: nil` for open rows).
   - `results` for a closed survey: per-question `average`, `distribution`, `contexts`,
-    `free_text_questions`, `overall_score` (studio = mean of question averages; project =
-    response-weighted mean equal to the persisted `score`), `response_rate`, `small_sample` at
-    4 vs 5 responses.
+    `free_text_questions`, `overall_score` (studio = mean of question averages; project = the
+    persisted `score`), `response_rate` pinned to a non-integer value such as `0.75`,
+    `small_sample` at 4 vs 5 responses.
+  - `response_rate: nil` when `expected_response_count` is 0; studio `expected_response_count`
+    with a real core member (`make_admin_user!` + `StudioMembership` + `FullTimePeriod`, see
+    `test/test_helper.rb`).
+  - free text withheld at 2 responses (`free_text_withheld`, empty arrays, scores still present);
+    present at 3.
+  - arrays are sorted: two responses whose contexts/answers would align by index come back
+    alphabetically, not in insertion order.
   - empty-response closed survey: `overall_score: nil`, questions present with `average: nil`,
     no exception.
-  - an answer with `sentiment: 0` (invalid default) is excluded from distribution/average.
+  - a row forced to `sentiment` `0` via `update_column` is excluded from distribution/average.
   - open survey: `results_withheld`, no free text, no questions.
-  - draft studio survey: not returned by `list`; `find` → open-shaped payload.
+  - draft studio survey: not returned by `list`; `find` → nil.
   - **anonymity**: create a responder `AdminUser` with a distinctive email + name; assert the
-    JSON of `results` and `summary` contains neither.
-  - `list`: kind/status filters, `closed_range`, newest-first ordering across kinds, offset/limit.
-- `test/services/mcp/list_surveys_tool_test.rb`: enumerated errors for bad kind/status; limit
-  clamp (0 → 1, 999 → 200); `closed_after` forces closed; payload is an array.
-- `test/services/mcp/get_survey_results_tool_test.rb`: bad kind error; not-found error; closed
-  payload includes free text; open payload withholds it.
+    JSON of `results` and `summary` contains neither. Subscribe to `sql.active_record` around
+    `results` and assert no statement references `survey_responders` /
+    `project_satisfaction_survey_responders`.
+  - `list`: kind/status filters, `closed_range` (both bounds), newest-first ordering across
+    kinds, offset/limit; query count for a 10-survey list stays bounded (no N+1).
+- `test/services/mcp/list_surveys_tool_test.rb`: enumerated errors for bad kind/status; the
+  closed-range + `status: "open"` conflict error; limit clamp (0 → 1, 999 → 200);
+  `closed_after` alone implies closed; payload is an array.
+- `test/services/mcp/get_survey_results_tool_test.rb`: bad kind error; not-found error (missing
+  id, and `kind: studio` with a project survey's id); closed payload includes free text; open
+  payload withholds it.
 - `test/integration/mcp_endpoint_test.rb`: `tools/list` array; one `tools/call` round-trip per
-  tool (a closed project survey with one free-text answer).
+  tool (a closed project survey with three responses and one free-text answer each).
 - Note (per memory): run targeted tests during development; the full suite once before the PR,
   skipping `EtlRakeTest` locally (`bin/rails test $(ls test/**/*_test.rb | grep -v etl_rake)`),
   and never while a subagent may be running tests.
@@ -240,42 +291,58 @@ Daily TRANSITION sensing over contributor surveys via the stacks MCP. Surveys ar
 see Privacy below before writing anything. Window start = the observe-window high-water mark
 (`since`); default 48h.
 1. Newly closed surveys: `list_surveys(status: "closed", closed_after: <since>)`, paging by
-   offset until fewer than `limit` come back. For each row call
-   `get_survey_results(kind, id)` → { title, scope, closed_at, response_count,
-   expected_response_count, response_rate, small_sample, overall_score, questions[],
-   free_text_questions[], url }. Normalize to { id: "<kind>:<id>", timestamp: closed_at,
-   author: none (anonymous), text: the results payload, url }.
-   Mint, per closed survey:
+   offset until fewer than `limit` come back. **IDEMPOTENCE GATE (do this first, per survey):**
+   query the Observations DB for Source Key `stacks:survey:<kind>:<id>:closed`; if it exists,
+   SKIP THIS SURVEY ENTIRELY — do not fetch its results and do not mint any theme rows. The
+   window's 6h overlap re-lists recently closed surveys and theme slugs are chosen by you, so
+   only the close key is stable; the gate is what makes re-runs write zero rows.
+   For each un-observed survey call `get_survey_results(kind, id)` → { title, scope,
+   closed_at, response_count, expected_response_count, response_rate, small_sample,
+   overall_score, questions[], free_text_questions[], free_text_withheld?, url }. Normalize to
+   { id: "<kind>:<id>", timestamp: closed_at, author: none (anonymous), text: the results
+   payload, url }.
+   Mint, per closed survey (Observed At = closed_at for all rows):
    a. CLOSE SUMMARY — always exactly one row. Source Key `stacks:survey:<kind>:<id>:closed`.
       Type FYI; Type Risk (Salience Medium) when overall_score < 3.0 or any question's average
       < 2.5; Salience High when overall_score < 2.5. Text: title + scope, overall x/5, response
       rate (n of m), the weakest and strongest questions with their averages, and — when
       `list_surveys(kind: <kind>, status: "closed")` shows a prior closed survey with the same
-      scope (same studios, or the same project) — "up/down from y/5 on <date>".
-   b. THEMES — at most THREE per survey. Source Key `stacks:survey:<kind>:<id>:theme:<kebab-slug>`
-      (slug from the theme's short name; stable wording, e.g. `timeline-pressure`,
-      `unclear-ownership`, `strong-design-dev-collab`). Type Risk for pain points and asks the
-      team should act on; Type FYI for wins worth repeating; Type Question for an explicit
-      unanswered ask. Salience Medium for a pain point, Low otherwise. Text paraphrases the theme
-      and states support as a count ("4 of 12 responses raise …"). A theme MUST be supported by
-      at least TWO distinct responses (contexts or free-text answers) — a single response is one
-      person's comment and is never its own row. Skip themes entirely when response_count < 2.
-2. Stalled open surveys: `list_surveys(status: "open")`. For each open survey whose opened_at is
-   more than 14 days ago, call `get_survey_results(kind, id)`; if response_rate < 0.5 mint
-   Source Key `stacks:survey:<kind>:<id>:stalled` — Type Risk, Salience Low, text = title, days
-   open, n of m responses. (A single stateless key: it dedups on every later run.)
-Entities: Sanctuary Computer Inc for project surveys (client services) when confident; leave
-blank for studio surveys unless the studio clearly maps. Projects relation: for `project` kind,
-link the 🎛️ Projects row matching `scope.project` when confident. NEVER set the People relation
-from this source.
+      scope (same studios, or the same project; its `overall_score` is in the list row) —
+      "up/down from y/5 on <date>".
+   b. THEMES — at most THREE per survey, written in the SAME run as the close summary. Source
+      Key `stacks:survey:<kind>:<id>:theme:<kebab-slug>` (slug from the theme's short name, e.g.
+      `timeline-pressure`, `unclear-ownership`, `strong-design-dev-collab`; uniqueness within
+      the survey is all that matters — the gate above handles re-runs). Type Risk for pain
+      points and asks the team should act on; Type FYI for wins worth repeating; Type Question
+      for an explicit unanswered ask. Salience Medium for a pain point, Low otherwise. Text
+      paraphrases the theme and states support as a count ("4 of 12 responses raise …"). A theme
+      MUST be supported by at least TWO distinct responses (contexts or free-text answers) — a
+      single response is one person's comment and is never its own row. Skip themes entirely
+      when `free_text_withheld` is present (fewer than 3 responses).
+2. Stalled open surveys: `list_surveys(status: "open")`. Consider only surveys whose
+   `opened_at` is between 14 and 90 days ago (older open surveys are abandoned capsules, not
+   signal). For each, call `get_survey_results(kind, id)`; if `response_rate` is non-null and
+   < 0.5, mint Source Key `stacks:survey:<kind>:<id>:stalled` — Type Risk, Salience Low,
+   Observed At = opened_at + 14 days, text = title, days open, n of m responses. (A single
+   stateless key: it dedups on every later run.) Skip when `response_rate` is null.
+Reopened surveys: a survey that is reopened and re-closed keeps its `:closed` key and is NOT
+re-observed (accepted for v1); while reopened it may appear in the open list — the 14–90 day
+bound and the stalled key's dedup make that harmless.
+Entities: leave BLANK for every row from this source (the Projects relation carries the link;
+a survey about our own team is not "about" a legal entity). Projects relation: for `project`
+kind, link the 🎛️ Projects row matching `scope.project` when confident. NEVER set the People
+relation from this source.
 
 ## Privacy (binding)
 Responses are anonymous by design — the stacks tool exposes no responder identity, and you must
-not reconstruct one. NEVER quote a context or free-text answer verbatim; paraphrase. NEVER
-attribute, guess, or hint who wrote something (no roles, no "the designer on the project"). When
-`small_sample` is true, be more conservative: only themes with ≥2 supporters, and keep the
-paraphrase general enough that it cannot be matched to one person. Never write survey content to
-the Knowledge DB from this source; durable findings are the nightly distiller's job.
+not reconstruct one. NEVER call `get_project_contributors`, `find_contributor`,
+`get_person_metrics`, or any people-listing tool for a survey's project or studio while
+observing or recalling surveys — knowing who was surveyed defeats the anonymity. NEVER quote a
+context or free-text answer verbatim; paraphrase. NEVER attribute, guess, or hint who wrote
+something (no roles, no "the designer on the project"). When `small_sample` is true, be more
+conservative: only themes with ≥2 supporters, and keep the paraphrase general enough that it
+cannot be matched to one person. Never write survey content to the Knowledge DB from this
+source; durable findings are the nightly distiller's job.
 
 ## Source Key
 `stacks:survey:<kind>:<id>:closed` · `stacks:survey:<kind>:<id>:theme:<slug>` ·
@@ -353,11 +420,12 @@ window is capped at 14 days).
 - **Part B (dry run, before enabling):**
   1. Run `observe` for `stacks-surveys` over a window containing one known closed survey →
      exactly one `:closed` row plus ≤3 `:theme:` rows, `Source = Stacks/Surveys`, working admin
-     backlink, no verbatim quotes, no People relation.
-  2. Re-run immediately → **zero** new rows (deterministic-key idempotence).
-  3. A closed survey with a single response → the `:closed` row only, no theme rows.
-  4. An open survey older than 14 days with < 50% response rate → one `:stalled` row; younger or
-     well-responded open surveys → nothing.
+     backlink, no verbatim quotes, no People relation, Entities blank.
+  2. Re-run immediately → **zero** new rows (the `:closed` gate skips the survey before any
+     theme is generated).
+  3. A closed survey with fewer than three responses → the `:closed` row only, no theme rows.
+  4. An open survey 14–90 days old with < 50% response rate → one `:stalled` row; younger,
+     older, or well-responded open surveys → nothing.
 
 ## Out of scope (v1)
 
@@ -369,3 +437,4 @@ window is capped at 14 days).
   per-question queries are noted, not fixed).
 - Audit logging or per-tool scopes on the MCP (a general gap, unchanged here).
 - Draft studio surveys are invisible to the tools.
+- Re-observing a survey that is reopened and re-closed (keyed once on `:closed`).
