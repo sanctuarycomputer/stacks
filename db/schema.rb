@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_09_09_000001) do
+ActiveRecord::Schema.define(version: 2026_09_09_000004) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -1223,6 +1223,42 @@ ActiveRecord::Schema.define(version: 2026_09_09_000001) do
     t.index ["deleted_at"], name: "index_reviews_on_deleted_at"
   end
 
+  create_table "runn_assignments", force: :cascade do |t|
+    t.bigint "runn_id", null: false
+    t.bigint "person_id"
+    t.bigint "project_id"
+    t.bigint "role_id"
+    t.date "start_date", null: false
+    t.date "end_date", null: false
+    t.integer "minutes_per_day", default: 0, null: false
+    t.boolean "is_active", default: true, null: false
+    t.boolean "is_billable", default: true, null: false
+    t.boolean "is_placeholder", default: false, null: false
+    t.boolean "is_template", default: false, null: false
+    t.boolean "is_non_working_day", default: false, null: false
+    t.text "note"
+    t.datetime "created_at"
+    t.datetime "updated_at"
+    t.jsonb "data"
+    t.index ["person_id"], name: "index_runn_assignments_on_person_id"
+    t.index ["project_id"], name: "index_runn_assignments_on_project_id"
+    t.index ["runn_id"], name: "index_runn_assignments_on_runn_id", unique: true
+    t.index ["start_date", "end_date"], name: "idx_runn_assignments_on_daterange", using: :gist
+  end
+
+  create_table "runn_people", force: :cascade do |t|
+    t.bigint "runn_id", null: false
+    t.string "first_name"
+    t.string "last_name"
+    t.string "email"
+    t.boolean "is_archived", default: false, null: false
+    t.datetime "created_at"
+    t.datetime "updated_at"
+    t.jsonb "data"
+    t.index "lower((email)::text)", name: "index_runn_people_on_lower_email"
+    t.index ["runn_id"], name: "index_runn_people_on_runn_id", unique: true
+  end
+
   create_table "runn_projects", force: :cascade do |t|
     t.bigint "runn_id", null: false
     t.string "name"
@@ -1237,6 +1273,18 @@ ActiveRecord::Schema.define(version: 2026_09_09_000001) do
     t.datetime "updated_at"
     t.jsonb "data"
     t.index ["runn_id"], name: "index_runn_projects_on_runn_id", unique: true
+  end
+
+  create_table "runn_roles", force: :cascade do |t|
+    t.bigint "runn_id", null: false
+    t.string "name"
+    t.decimal "standard_rate"
+    t.decimal "default_hour_cost"
+    t.boolean "is_archived", default: false, null: false
+    t.datetime "created_at"
+    t.datetime "updated_at"
+    t.jsonb "data"
+    t.index ["runn_id"], name: "index_runn_roles_on_runn_id", unique: true
   end
 
   create_table "score_trees", force: :cascade do |t|
