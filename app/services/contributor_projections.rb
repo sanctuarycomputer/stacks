@@ -2,8 +2,17 @@
 # with the same rules the invoice pass and pay cycles apply. See
 # docs/superpowers/specs/2026-09-08-contributor-payment-projections-design.md.
 module ContributorProjections
-  MONTHS_AHEAD = 3
+  # Horizon = the current month plus this many following months (3 in total).
+  MONTHS_AHEAD = 2
   STALE_AFTER_DAYS = 2
+  HOURS_PER_DAY = 8
+
+  # 100% resourced = every weekday of the month at HOURS_PER_DAY, i.e.
+  # 40 hours a week. Used for the "resourced at N%" line on the contributor page.
+  def self.capacity_hours(month_start)
+    first = month_start.beginning_of_month
+    (first..first.end_of_month).count { |d| (1..5).cover?(d.wday) } * HOURS_PER_DAY
+  end
 
   KIND_ORDER = %i[
     individual_contributor pay_stub account_lead project_lead

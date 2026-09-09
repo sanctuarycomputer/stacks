@@ -1,6 +1,6 @@
 require "test_helper"
 
-# Every test builds its own rows. Horizon is pinned to Sep–Dec 2026.
+# Every test builds its own rows. Horizon is pinned to Sep–Nov 2026.
 # Sep 7–11 2026 is Mon–Fri: a 480 min/day assignment = 40 hours.
 class ContributorProjections::BuildTest < ActiveSupport::TestCase
   TODAY = Date.new(2026, 9, 8)
@@ -434,8 +434,24 @@ class ContributorProjections::BuildTest < ActiveSupport::TestCase
     assert_in_delta 25 + 20, by[SEP][:amount], 0.01          # monthly + two twice_monthly (Sep 1, Sep 15); Aug 15 is before the horizon
     assert_in_delta 25 + 20 + 100, by[OCT][:amount], 0.01
     assert_in_delta 25 + 20, by[Date.new(2026, 11, 1)][:amount], 0.01
-    assert_in_delta 25 + 20, by[Date.new(2026, 12, 1)][:amount], 0.01
     assert_equal :recurring_adjustment, by[SEP][:lines].first.kind
+  end
+
+  test "allocated hours count every Runn assignment for the person, billable or not, mapped or not" do
+    standard_setup                                                                        # 40h billable, priced
+    assign!(@rp_ic, @pt, @role, start_date: Date.new(2026, 9, 14), end_date: Date.new(2026, 9, 14), billable: false)  # 8h, skipped non_billable
+    orphan = RunnProject.create!(runn_id: nid, name: "Orphan", is_confirmed: true, is_archived: false, is_template: false)
+    RunnAssignment.create!(runn_id: nid, person_id: @rp_ic.runn_id, project_id: orphan.runn_id, role_id: @role.runn_id,
+                           start_date: Date.new(2026, 9, 15), end_date: Date.new(2026, 9, 15), minutes_per_day: 240)  # 4h, skipped unmapped_project
+    r = build
+    sep = r.by_contributor_month(@ic.contributor)[SEP]
+    assert_equal 40.0, sep[:hours], "priced hours are unchanged"
+    assert_equal 52.0, sep[:allocated_hours]
+    assert_equal 176, sep[:capacity_hours]                                                # 22 weekdays × 8
+    assert_in_delta 52.0 / 176, sep[:utilization], 0.0001
+    assert_equal 0.0, r.by_contributor_month(@ic.contributor)[OCT][:allocated_hours]
+    assert_equal 1, r.skipped[:non_billable]
+    assert_equal 1, r.skipped[:unmapped_project]
   end
 
   test "a recurring adjustment with an invalid cadence is skipped without raising, and a valid sibling still projects" do

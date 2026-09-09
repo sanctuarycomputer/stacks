@@ -64,25 +64,51 @@
     </div>
     <% if view_mode == :all %>
       <div id="titlebar_right">
-        <span class="pill <%= metadata[:elevated_service] ? 'misc' : '' %>">
-          <%= metadata[:elevated_service] ? 'Elevated' : 'Standard' %> Service
-          <span class="split">
-            <% if metadata[:fulltime] %>
-              Fulltime
-            <% else %>
-              <%# The leading figure is ALWAYS the real, recorded hours — swapping
-                  in projected hours here hid whatever the month actually logged.
-                  Projected hours and dollars are appended alongside instead. %>
-              <strong><%= metadata[:total_hours] %>hrs, </strong><span><%= number_to_currency(metadata[:total_income]) %><%= metadata[:partial_salary] > 0 ? " + #{number_to_currency(metadata[:partial_salary])} partial salary" : "" %></span>
-              <% if projected_month && projected[:amount] != 0 %>
-                <span> · projected <%= projected[:hours] %>hrs, <%= number_to_currency(projected[:amount]) %></span>
-              <% end %>
-            <% end %>
+        <% if projected_month %>
+          <%# A projected month gets one badge — Projected (Nhrs, $X) — in
+              place of the Standard/Elevated Service badge, which only means
+              something once the month has been invoiced. %>
+          <span class="pill projected">
+            Projected
+            <span class="split"><%= projected[:hours] % 1 == 0 ? projected[:hours].to_i : projected[:hours].round(1) %>hrs, <%= number_to_currency(projected[:amount], precision: 0) %></span>
           </span>
-        </span>
+        <% else %>
+          <span class="pill <%= metadata[:elevated_service] ? 'misc' : '' %>">
+            <%= metadata[:elevated_service] ? 'Elevated' : 'Standard' %> Service
+            <span class="split">
+              <% if metadata[:fulltime] %>
+                Fulltime
+              <% else %>
+                <strong><%= metadata[:total_hours] %>hrs, </strong><span><%= number_to_currency(metadata[:total_income]) %><%= metadata[:partial_salary] > 0 ? " + #{number_to_currency(metadata[:partial_salary])} partial salary" : "" %></span>
+              <% end %>
+            </span>
+          </span>
+        <% end %>
       </div>
     <% end %>
   </div>
+
+  <% if projected_month %>
+    <%# Resourcing notice: how allocated the person is in Runn for this month
+        (100% = 40 hrs/week), that the figures below are a projection, and
+        where to change the plan. %>
+    <% utilization_pct = projected[:utilization] ? (projected[:utilization] * 100).round : nil %>
+    <div class="dashboard-modules table index_table index">
+      <div class="dashboard-module">
+        <div class="module-body factoid-parent">
+          <p style="margin-bottom: 6px;">
+            🔭 <strong>Projection only.</strong>
+            <% if utilization_pct %>
+              Resourced at <strong><%= utilization_pct %>%</strong> for <%= period.starts_at.strftime("%B") %>
+              (<%= projected[:allocated_hours] % 1 == 0 ? projected[:allocated_hours].to_i : projected[:allocated_hours].round(1) %> of <%= projected[:capacity_hours] %> hrs; 100% = 40 hrs/week).
+            <% end %>
+            These figures come solely from what is recorded in Runn.io and will move as the plan there changes.
+          </p>
+          <%= link_to "Adjust resourcing in Runn ↗", runn_link, target: "_blank", rel: "noopener" %>
+        </div>
+      </div>
+    </div>
+  <% end %>
 
   <% if view_mode == :all && metadata[:fulltime] %>
     <div class="dashboard-modules table index_table index">

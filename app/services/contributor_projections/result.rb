@@ -1,15 +1,25 @@
 module ContributorProjections
-  Result = Struct.new(:horizon, :lines, :skipped, :skipped_details, :as_of, keyword_init: true) do
+  # allocated_hours: { [contributor_id, Date] => Float } — the person's total
+  # Runn allocation per month, priced or not (see Build#resolve).
+  Result = Struct.new(:horizon, :lines, :skipped, :skipped_details, :allocated_hours, :as_of, keyword_init: true) do
     # { ledger_id => { Date => [Line] } }
     def by_ledger_month
       lines.group_by(&:ledger_id).transform_values { |ls| ls.group_by(&:month) }
     end
 
     # { Date => summary } for every horizon month, across the contributor's
-    # ledgers or just one of them.
+    # ledgers or just one of them. Each summary also carries the person's
+    # resourcing for the month: allocated_hours, capacity_hours (weekdays ×
+    # HOURS_PER_DAY) and utilization (their ratio, nil when capacity is 0).
     def by_contributor_month(contributor, ledger: nil)
       subset = lines.select { |l| l.contributor_id == contributor.id && (ledger.nil? || l.ledger_id == ledger.id) }
-      month_index(subset)
+      month_index(subset).each do |month, summary|
+        allocated = (allocated_hours || {})[[contributor.id, month]].to_f.round(2)
+        capacity = ContributorProjections.capacity_hours(month)
+        summary[:allocated_hours] = allocated
+        summary[:capacity_hours] = capacity
+        summary[:utilization] = capacity.positive? ? (allocated / capacity).round(4) : nil
+      end
     end
 
     # { enterprise_id => { Date => summary } }

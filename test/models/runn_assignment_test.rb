@@ -69,4 +69,9 @@ class RunnAssignmentTest < ActiveSupport::TestCase
     s.update!(runn_synced_at: t)
     assert_equal t.to_i, System.first.runn_synced_at.to_i
   end
+
+  test "RunnPerson#link points at the person's Runn page" do
+    assert_equal "https://app.runn.io/people/504", RunnPerson.new(runn_id: 504).link
+    assert_equal "https://app.runn.io/planner", RunnPerson::PLANNER_URL
+  end
 end

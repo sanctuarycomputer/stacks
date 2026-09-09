@@ -6,6 +6,14 @@ class RunnPerson < ApplicationRecord
 
   scope :active, -> { where(is_archived: false) }
 
+  # Where to send someone to change a person's resourcing when we cannot
+  # match them to a Runn person.
+  PLANNER_URL = "https://app.runn.io/planner".freeze
+
+  def link
+    "https://app.runn.io/people/#{runn_id}"
+  end
+
   # Ad-hoc lookup. The projection engine builds one email index instead of
   # calling this per row.
   def contributor

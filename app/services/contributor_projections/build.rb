@@ -23,6 +23,8 @@ module ContributorProjections
       @only_contributor_id = contributor&.id
       @lines = []
       @skipped = Hash.new { |h, k| h[k] = [] }
+      # [contributor_id, month_start] => hours of Runn allocation, priced or not.
+      @allocated = Hash.new(0.0)
       # no_forecast_client is a property of the workstream, not of the people
       # assigned to it — count it once per workstream instead of once per
       # (contributor, month) key that happens to land on it.
@@ -49,6 +51,7 @@ module ContributorProjections
         # and memory_store marshals every entry (cached_all would silently
         # fail forever).
         skipped_details: Hash[@skipped],
+        allocated_hours: Hash[@allocated],
         as_of: ContributorProjections.runn_synced_at,
       )
     end
@@ -120,6 +123,15 @@ module ContributorProjections
         if contributor.nil?
           skip!(:unmapped_person, a.runn_person&.email.presence || "runn person #{a.person_id}")
           next
+        end
+
+        # The person's total Runn allocation this month — billable or not,
+        # mapped to a tracker or not. This is the "how resourced are they"
+        # figure the contributor page shows, deliberately independent of what
+        # gets priced below.
+        @horizon.months.each do |month|
+          hours = a.hours_between(month.starts_at, month.ends_at)
+          @allocated[[contributor.id, month.starts_at]] += hours if hours > 0
         end
 
         rp = a.runn_project

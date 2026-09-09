@@ -95,4 +95,21 @@ class ContributorProjections::ResultTest < ActiveSupport::TestCase
     r = result([line(kind: :pay_stub, ledger_id: 1, enterprise_id: 1, contributor_id: real.id, amount: 1.0, hours: 1.0, month: SEP)])
     assert_equal real, r.contributors[real.id]
   end
+
+  test "by_contributor_month carries allocated, capacity, and utilization per month" do
+    c = Contributor.new; c.stubs(:id).returns(100)
+    r = ContributorProjections::Result.new(
+      horizon: ContributorProjections::Horizon.current(Date.new(2026, 9, 8)),
+      lines: lines, skipped: {}, skipped_details: {}, as_of: nil,
+      allocated_hours: { [100, SEP] => 52.0 },
+    )
+    by = r.by_contributor_month(c)
+    assert_equal 52.0, by[SEP][:allocated_hours]
+    assert_equal 176, by[SEP][:capacity_hours]
+    assert_in_delta 0.2955, by[SEP][:utilization], 0.0001
+    assert_equal 0.0, by[OCT][:allocated_hours]
+    assert_equal 0.0, by[OCT][:utilization]
+    # Results built without allocated_hours (older cache entries) still work
+    assert_equal 0.0, result(lines).by_contributor_month(c)[SEP][:allocated_hours]
+  end
 end

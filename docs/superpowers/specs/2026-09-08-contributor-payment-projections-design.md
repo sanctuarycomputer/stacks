@@ -6,7 +6,7 @@
 ## Goal
 
 Project what each contributor will be paid for the current month and the
-next three, from the forward plan in Runn, using the same payout rules the
+next two, from the forward plan in Runn, using the same payout rules the
 real invoice pass and pay cycle apply. Show the projection on the
 contributor's own ledger page (`/admin/contributors/:id`) and roll it up per
 enterprise and month on the payables page (`/admin/money/payable_qbo_bills`),
@@ -45,7 +45,7 @@ Three deliverables, each shippable on its own and built in this order:
   part of this work:** add that override to the Principal Forecast projects.
 - Dollars bucket by the month the hours are worked, not by expected payment
   date.
-- Horizon is the current month plus the next three months.
+- Horizon is the current month plus the next two months (three in total; revised from four on 2026-09-09).
 - Unconfirmed Runn projects are included and flagged tentative.
 - The `/admin/dashboard` page and its redirect are untouched; the roll-up
   lives on the payables page.
@@ -507,7 +507,7 @@ per month: sum over ledgers of that enterprise. Global: `skipped` counts and
 
 ```ruby
 Horizon = Struct.new(:starts_at, :ends_at, :months) do
-  MONTHS_AHEAD = 3
+  MONTHS_AHEAD = 2
   def self.current(today = Date.today)
     starts_at = today.beginning_of_month
     ends_at = (today + MONTHS_AHEAD.months).end_of_month
@@ -660,7 +660,7 @@ Add locals `projected_by_month:` and `projection_as_of:` to the partial.
 
 `app/views/admin/contributors/_show.html.erb`:
 
-- Balance table: third row `Projected (next 4 months)` with
+- Balance table: third row `Projected (next 3 months)` with
   `number_to_currency(projected_by_month.values.sum { |m| m[:amount] })` and a
   muted `as of <time_ago>` suffix; when `projection_as_of` is nil or older
   than 2 days, render `<span class="pill at_risk">Runn sync stale</span>`

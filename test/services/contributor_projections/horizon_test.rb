@@ -4,9 +4,9 @@ class ContributorProjections::HorizonTest < ActiveSupport::TestCase
   test "current covers this month plus MONTHS_AHEAD following months" do
     h = ContributorProjections::Horizon.current(Date.new(2026, 9, 8))
     assert_equal Date.new(2026, 9, 1), h.starts_at
-    assert_equal Date.new(2026, 12, 31), h.ends_at
-    assert_equal 4, h.months.size
-    assert_equal [Date.new(2026, 9, 1), Date.new(2026, 10, 1), Date.new(2026, 11, 1), Date.new(2026, 12, 1)], h.month_keys
+    assert_equal Date.new(2026, 11, 30), h.ends_at
+    assert_equal 3, h.months.size
+    assert_equal [Date.new(2026, 9, 1), Date.new(2026, 10, 1), Date.new(2026, 11, 1)], h.month_keys
     assert_equal "September, 2026", h.months.first.label
     assert_equal Date.new(2026, 9, 30), h.months.first.ends_at
     assert_equal :month, h.months.first.gradation
@@ -14,8 +14,13 @@ class ContributorProjections::HorizonTest < ActiveSupport::TestCase
 
   test "current crosses a year boundary" do
     h = ContributorProjections::Horizon.current(Date.new(2026, 11, 20))
-    assert_equal [Date.new(2026, 11, 1), Date.new(2026, 12, 1), Date.new(2027, 1, 1), Date.new(2027, 2, 1)], h.month_keys
-    assert_equal Date.new(2027, 2, 28), h.ends_at
+    assert_equal [Date.new(2026, 11, 1), Date.new(2026, 12, 1), Date.new(2027, 1, 1)], h.month_keys
+    assert_equal Date.new(2027, 1, 31), h.ends_at
+  end
+
+  test "capacity_hours is weekdays in the month times HOURS_PER_DAY" do
+    assert_equal 176, ContributorProjections.capacity_hours(Date.new(2026, 9, 1))   # 22 weekdays
+    assert_equal 168, ContributorProjections.capacity_hours(Date.new(2026, 11, 15)) # 21 weekdays; any day in the month works
   end
 
   test "stale? is true for nil and for anything older than STALE_AFTER_DAYS" do

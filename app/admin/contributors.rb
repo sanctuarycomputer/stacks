@@ -323,6 +323,12 @@ ActiveAdmin.register Contributor do
     admin = resource.forecast_person&.admin_user
     pending_tasks = admin&.pending_tasks || []
 
+    # Deep link for the projection notice: this person's page in Runn, or the
+    # planner when the mirror has nobody with their email.
+    runn_email = resource.forecast_person&.email.to_s.strip.downcase
+    runn_person = runn_email.present? ? RunnPerson.active.where("lower(email) = ?", runn_email).first : nil
+    runn_link = runn_person&.link || RunnPerson::PLANNER_URL
+
     render(partial: "show", locals: {
       contributor: resource,
       items_result: items_result,
@@ -336,6 +342,7 @@ ActiveAdmin.register Contributor do
       projection_as_of: projection&.as_of,
       projection_months: horizon.months.size,
       projection_error: projection_error,
+      runn_link: runn_link,
     })
   end
 end
