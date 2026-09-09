@@ -55,6 +55,7 @@ module Stacks
       Discoveries::MissingQboVendors,
       Discoveries::LegacyLedgersPendingQboMigration,
       Discoveries::AutoPausedRecurringLedgerAdjustments,
+      Discoveries::RunnMirror,
     ].freeze
 
     # Returns Array<StacksTask> — every open task system-wide.

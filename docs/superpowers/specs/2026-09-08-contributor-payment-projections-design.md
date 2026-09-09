@@ -718,6 +718,25 @@ existing summary card:
 
 The pill vocabulary matches the rest of the page (`pill at_risk`).
 
+#### 3.6 Tasks for the data problems the projection skips
+
+Added 2026-09-09. `Stacks::TaskBuilder::Discoveries::RunnMirror` turns the
+projection's skip reasons into per-person tasks (nightly, via the existing
+task builder), so they land on people's task lists and in the payables
+pending-tasks pill instead of only in the "Skipped assignments" notice:
+
+| Task type | Subject | Trigger | Owners |
+|---|---|---|---|
+| `runn_project_not_linked_to_project_tracker` | `RunnProject` | live Runn project with forward plannable hours and no tracker | the project's Runn managers when they are admin users, else the admin team; link prefills a new tracker with `runn_project_id` |
+| `runn_person_not_in_forecast` | `RunnPerson` | active, non-placeholder person with forward hours whose email matches no `ForecastPerson` | admin team; link opens the person in Runn |
+| `runn_role_rate_mismatch` | `ProjectTracker` | a forward assignment's Runn role rate matches none of the tracker's workstream rates | the tracker's current project leads |
+| `runn_sync_stale` | `System` | `ContributorProjections.stale?(runn_synced_at)` (nil or > 2 days) | admin team; link opens the system tasks list |
+
+Placeholders (unfilled seats) are deliberately not tasks. The existing
+`no_explicit_hourly_rate_set`, `no_project_lead_set` and
+`no_account_lead_set` tasks already cover the remaining skip reasons and now
+matter more, since lead lines are only projected when a lead period exists.
+
 ### Error handling
 
 - **Sync:** each `sync_*` raises on HTTP failure (`handle_response` already
@@ -818,6 +837,7 @@ implementation and the full suite once before opening the PR.
 - Mirroring Runn clients, phases, or rate cards.
 - Replacing the live `Resourcing::RunnPersonResolver` with the mirror.
 - An MCP tool or HTTP endpoint for projections.
+- Tasks for placeholders (unfilled Runn seats).
 - Any change to `/admin/dashboard` or its redirect.
 - Salary projections for full-timers (never on the ledger today).
 - Adding the `0p/h` Principal overrides to Forecast project notes

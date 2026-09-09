@@ -54,6 +54,12 @@ class StacksTask
     legacy_ledger_needs_qbo_migration: "Legacy ledger needs migration to QBO-bound",
     auto_paused_recurring_on_qbo_bound: "Recurring deduction auto-paused on QBO-bound ledger (would never deduct)",
 
+    # Runn mirror / projection issues
+    runn_project_not_linked_to_project_tracker: "Runn project has forward hours but no project tracker (cannot be projected)",
+    runn_person_not_in_forecast: "Runn person has forward hours but matches no Forecast person (cannot be projected)",
+    runn_role_rate_mismatch: "Project tracker has Runn hours at a rate that matches none of its workstreams",
+    runn_sync_stale: "Runn mirror has not synced in over #{ContributorProjections::STALE_AFTER_DAYS} days (projections are stale)",
+
   }.freeze
 
   # type    — Symbol classifying the task (:project_capsule_incomplete, :survey, …)
@@ -128,6 +134,12 @@ class StacksTask
       else
         "#{base} — #{subject.cadence} $#{format("%.2f", subject.amount)}"
       end
+    when RunnProject then subject.name.presence || "Runn Project ##{subject.runn_id}"
+    when RunnPerson
+      [subject.first_name, subject.last_name].compact.join(" ").presence || subject.email.presence || "Runn Person ##{subject.runn_id}"
+    when System
+      synced = subject.runn_synced_at
+      synced ? "Runn mirror (last synced #{synced.to_date.to_s(:long)})" : "Runn mirror (never synced)"
     else
       if redact_amounts
         # New monetary subject types must add an explicit redacting branch
@@ -169,6 +181,11 @@ class StacksTask
         helpers.edit_admin_contributor_path(subject.contributor)
       end
     when RecurringLedgerAdjustment then helpers.edit_admin_recurring_ledger_adjustment_path(subject)
+    # The fix is a new tracker linked to this Runn project; prefill the link.
+    when RunnProject then helpers.new_admin_project_tracker_path(project_tracker: { runn_project_id: subject.runn_id })
+    # The fix lives in Runn (correct the email) or Forecast (add the person).
+    when RunnPerson then subject.link
+    when System then helpers.admin_system_tasks_path
     else subject.try(:external_link)
     end
   end
@@ -176,7 +193,7 @@ class StacksTask
   def subject_url_external?
     return true if type == :missing_human_operating_manual
     case subject
-    when ForecastProject, ForecastPerson, ForecastAssignment, Stacks::Notion::Lead, Stacks::Notion::HumanOperatingManual then true
+    when ForecastProject, ForecastPerson, ForecastAssignment, Stacks::Notion::Lead, Stacks::Notion::HumanOperatingManual, RunnPerson then true
     else false
     end
   end
