@@ -70,7 +70,7 @@
               something once the month has been invoiced. %>
           <span class="pill projected">
             Projected
-            <span class="split"><%= projected[:hours] % 1 == 0 ? projected[:hours].to_i : projected[:hours].round(1) %>hrs, <%= number_to_currency(projected[:amount], precision: 0) %></span>
+            <span class="split"><strong><%= projected[:hours] % 1 == 0 ? projected[:hours].to_i : projected[:hours].round(1) %>hrs, </strong><span><%= number_to_currency(projected[:amount], precision: 0) %></span></span>
           </span>
         <% else %>
           <span class="pill <%= metadata[:elevated_service] ? 'misc' : '' %>">
@@ -346,8 +346,8 @@
         <% end %>
         <% if projected_month %>
           <% projected[:lines].each_with_index do |line, pindex| %>
-            <tr class="<%= (metadata[:items].size + pindex).even? ? "even" : "odd" %>" style="font-style: italic; opacity: 0.85;">
-              <td class="col"><%= period.starts_at.strftime("%B %Y") %></td>
+            <tr class="<%= (metadata[:items].size + pindex).even? ? "even" : "odd" %>" style="opacity: 0.85;">
+              <td class="col" style="font-style: italic;"><%= period.starts_at.strftime("%B %Y") %></td>
               <td class="col">
                 <span class="pill projected">Projected</span>
                 <% if line.tentative %>
@@ -365,10 +365,10 @@
                 <% end %>
                 <span style="opacity: 0.6;"><%= line.kind.to_s.humanize %></span>
               </td>
-              <td class="col">
+              <td class="col projected-amount">
                 <%= line.amount.negative? ? "-" : "+" %> <%= number_to_currency(line.amount.abs) %>
               </td>
-              <td class="col text-right"><code style="font-style: normal;"><%= line.description %></code></td>
+              <td class="col text-right"><code><%= line.description %></code></td>
             </tr>
           <% end %>
         <% end %>
