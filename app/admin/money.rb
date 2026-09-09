@@ -52,6 +52,18 @@ ActiveAdmin.register_page "Money" do
         acc[contributor] = { admin_user: admin_user, count: task_builder.task_count_for(admin_user) }
       end
 
+    # Projected payables per month from the Runn mirror. Cached for an hour
+    # per sync stamp; a failure renders a placeholder, never a 500.
+    @projection =
+      begin
+        ContributorProjections::Build.cached_all
+      rescue => e
+        Rails.logger.error("[payables] projection failed: #{e.class}: #{e.message}")
+        Sentry.capture_exception(e) if defined?(Sentry)
+        nil
+      end
+    @projection_enterprise_id = @active_qa&.enterprise&.id
+
     render "admin/money/payable_qbo_bills"
   end
 
