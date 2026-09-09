@@ -330,4 +330,14 @@ class LedgerBalanceUnderQboBoundTest < ActiveSupport::TestCase
     assert_in_delta 0.4, @ledger.balance.to_f, 0.001, "contribution should be qbo_bill.remaining_balance, not amount"
     assert_equal 0, @ledger.unsettled.to_f
   end
+
+  test "items_grouped_by_month min_ends_at extends the range but never shortens it" do
+    @ledger = Ledger.find_by!(enterprise: @enterprise, contributor: @contributor)   # LedgerTest's setup defines only @enterprise/@contributor
+    far = Date.today + 8.months
+    months = @ledger.items_grouped_by_month(min_ends_at: far)[:by_month].keys
+    assert_equal far.beginning_of_month >> -1, months.first.starts_at, "for_gradation stops one month before `through`, so +1 month lands on the floor"
+    default_months = @ledger.items_grouped_by_month[:by_month].keys
+    floored_low = @ledger.items_grouped_by_month(min_ends_at: Date.today - 12.months)[:by_month].keys
+    assert_equal default_months.map(&:starts_at), floored_low.map(&:starts_at)
+  end
 end
