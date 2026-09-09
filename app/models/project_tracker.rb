@@ -40,6 +40,20 @@ class ProjectTracker < ApplicationRecord
 
   belongs_to :runn_project, class_name: "RunnProject", foreign_key: "runn_project_id", primary_key: "runn_id", optional: true
 
+  # Which payout split rules apply to this project's client work. The rules
+  # themselves live in Stacks::BillingModel; this column only names them.
+  enum billing_model: Stacks::BillingModel.names.index_by(&:itself), _default: Stacks::BillingModel::DEFAULT
+
+  def billing_rules
+    Stacks::BillingModel.for(billing_model)
+  end
+
+  # Kept as a method for the readers that pre-date billing_model
+  # (InvoiceTracker#make_contributor_payouts!, admin views). Derived, never stored.
+  def company_treasury_split
+    billing_rules.treasury_share
+  end
+
   has_many :old_deal_project_lead_periods, dependent: :delete_all
   has_many :old_deal_project_leads, through: :old_deal_project_lead_periods, source: :admin_user
 
