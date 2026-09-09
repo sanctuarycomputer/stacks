@@ -19,7 +19,21 @@
 - `runn_synced_at` is written through `System.first`, never `System.instance` (which is process-memoized).
 - `created_at` / `updated_at` on the mirror tables hold Runn's own timestamps; no Rails `t.timestamps`.
 - Migration filenames use 14-digit timestamps: `20260909000002`, `20260909000003`, `20260909000004`.
-- After adding migrations: `bin/rails db:migrate` then `RAILS_ENV=test bin/rails db:schema:load`. Commit `db/schema.rb`.
+- `stacks_development` and `stacks_test` are SHARED with the main checkout and every other worktree (`config/database.yml` has no per-worktree naming). Do not run the main checkout's dev server or tests until this branch merges. If this worktree's tests start failing with `PendingMigrationError` or an unknown table, another checkout reloaded the test DB — re-run the Schema procedure's two `RAILS_ENV=test` commands.
+- After adding migrations, follow the **Schema procedure** below exactly. `db/schema.rb` is hand-curated in this repo (pgvector and a generated column are deliberately omitted so `schema:load` works without pgvector); a raw dump must not be committed.
+
+## Schema procedure (used by every migration task)
+
+```bash
+bin/rails db:migrate
+git diff db/schema.rb
+```
+Keep ONLY: the `ActiveRecord::Schema.define(version: ...)` bump and the new `create_table` blocks / columns / indexes this task adds. Revert everything else the dumper re-emitted: restore the pgvector comment block under `enable_extension`, remove any re-added `enable_extension "vector"`, `t.vector "embedding"`, `hnsw` index, and the `content_tsv` column / GIN index on `chunks` (restore that comment block too). Compare against the last schema commit (`git log -1 -- db/schema.rb`) — the diff must otherwise be byte-identical to HEAD. Then:
+```bash
+RAILS_ENV=test bin/rails db:environment:set   # test DB lacks ar_internal_metadata.environment; schema:load aborts without this
+RAILS_ENV=test bin/rails db:schema:load
+```
+Expected: schema loads with no error. If `schema:load` fails, the leftover is almost always a re-dumped `content_tsv` DEFAULT or `vector` column — re-check the diff.
 - Run targeted test files only.
 - Commit messages end with:
   ```
@@ -294,15 +308,12 @@ In `app/models/system.rb`, inside the `store_attributes :settings do ... end` bl
     runn_synced_at DateTime, default: nil
 ```
 
-- [ ] **Step 5: Migrate, reload the test schema, run the test**
+- [ ] **Step 5: Migrate, curate the schema dump, reload the test schema, run the test**
 
-Run:
-```bash
-bin/rails db:migrate
-RAILS_ENV=test bin/rails db:schema:load
-bin/rails test test/models/runn_assignment_test.rb
-```
-Expected: `db/schema.rb` gains the three tables (with `t.index ["start_date", "end_date"], name: "idx_runn_assignments_on_daterange", using: :gist`), and the test prints `9 runs, 0 failures, 0 errors`.
+Follow the **Schema procedure** in Global Constraints. The curated `db/schema.rb` diff must contain only the version bump to `2026_09_09_000004` and the three new `create_table` blocks (`runn_assignments`, `runn_people`, `runn_roles`), including `t.index ["start_date", "end_date"], name: "idx_runn_assignments_on_daterange", using: :gist` and `t.index "lower((email)::text)", name: "index_runn_people_on_lower_email"` (that is the dumper's form for an expression index — see `idx_optix_users_on_lower_email` already in the file; do not "fix" it).
+
+Then run: `bin/rails test test/models/runn_assignment_test.rb`
+Expected: `9 runs, 0 failures, 0 errors`.
 
 - [ ] **Step 6: Commit**
 
@@ -506,7 +517,7 @@ Expected: FAIL — `NoMethodError: undefined method 'sync_people!'` and friends;
 
 - [ ] **Step 3: Rewrite `sync_all!` and `sync_projects!`, add the new methods**
 
-In `lib/stacks/runn.rb`, replace the existing `sync_all!` method (the six lines from `def sync_all!` through its `end`, ~:43-49) with:
+In `lib/stacks/runn.rb`, replace the existing `sync_all!` method (`:43-49`, from `def sync_all!` through its `end`) with:
 
 ```ruby
   # Arbitrary 32-bit int identifying this lock. Forecast uses 84_217_295.
@@ -640,7 +651,7 @@ Expected: all pass.
 - [ ] **Step 5: Live smoke against the dev database**
 
 Run: `bin/rails runner 'Stacks::Runn.new(max_retries: 0).sync_all!; puts [RunnPerson.count, RunnRole.count, RunnAssignment.count, RunnProject.where(updated_at: nil).count, System.first.runn_synced_at].inspect'`
-Expected: non-zero people/roles/assignments counts (roughly 40 roles, ~1600 assignments), `0` projects with nil `updated_at`, and a fresh timestamp. This is a read-only call against Runn; it writes only to the local dev database.
+Expected: non-zero people/roles/assignments counts (live today: about 43 roles and 1600 assignments); `RunnProject.where(updated_at: nil).count` drops from 205 to roughly 66 (projects that no longer exist in Runn are never pruned, so they keep a nil `updated_at`); and a fresh timestamp. This is a read-only call against Runn; it writes only to the local dev database.
 
 - [ ] **Step 6: Commit**
 

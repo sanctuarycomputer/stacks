@@ -60,7 +60,7 @@
 
 **Interfaces:**
 - Produces:
-  - `ContributorProjections::MONTHS_AHEAD = 3`, `ContributorProjections::STALE_AFTER_DAYS = 2`, `ContributorProjections.runn_synced_at` → `DateTime|nil`, `ContributorProjections.stale?(as_of, today: Date.today)` → Boolean.
+  - `ContributorProjections::MONTHS_AHEAD = 3`, `ContributorProjections::STALE_AFTER_DAYS = 2`, `ContributorProjections::KIND_ORDER`, `ContributorProjections::HOURS_KINDS`, `ContributorProjections.runn_synced_at` → `DateTime|nil`, `ContributorProjections.stale?(as_of, today: Date.today)` → Boolean.
   - `ContributorProjections::Horizon` (Struct, keyword_init: `starts_at`, `ends_at`, `months`) with `Horizon.current(today = Date.today)` and `#month_keys` → `[Date]`. `months` are `Stacks::Period` instances.
   - `ContributorProjections::Line` (Struct, keyword_init) with members `kind, ledger_id, enterprise_id, contributor_id, project_tracker_id, project_tracker_name, hours, rate, amount, description, tentative, rate_mismatch, month`. `ContributorProjections::KIND_ORDER`.
 
@@ -132,6 +132,11 @@ module ContributorProjections
     individual_contributor pay_stub account_lead project_lead
     account_lead_surplus project_lead_surplus commission recurring_adjustment
   ].freeze
+
+  # Line kinds whose `hours` are the payee's own worked hours (a constant
+  # inside a `Struct.new do` block lands on this module anyway, so define it
+  # here explicitly).
+  HOURS_KINDS = %i[individual_contributor pay_stub].freeze
 
   # System.first, NOT System.instance: instance is memoized for the life of
   # the process, so a web worker would never see a newer sync stamp.
@@ -382,8 +387,6 @@ module ContributorProjections
     def month_index(ls)
       horizon.month_keys.index_with { |m| summarize(ls.select { |l| l.month == m }) }
     end
-
-    HOURS_KINDS = %i[individual_contributor pay_stub].freeze
 
     def summarize(ls)
       sorted = ls.sort_by { |l| [l.tentative ? 1 : 0, l.project_tracker_name.to_s, KIND_ORDER.index(l.kind) || 99] }
@@ -732,7 +735,7 @@ class ContributorProjections::BuildTest < ActiveSupport::TestCase
     @ic = person!("ic-#{@seq}@example.com")
     client = client!
     ws150 = workstream!(client, rate: 150)
-    ws225 = workstream!(client, rate: 225, notes: "ic-#{@seq}@example.com:100p/h")
+    ws225 = workstream!(client, rate: 225, notes: "#{@ic.email}:100p/h")   # @seq has moved on since person!; use the real email
     pt = tracker!([ws150, ws225])
     assign!(runn_person!(@ic.email), pt, runn_role!(225))
     r = build
@@ -756,7 +759,7 @@ class ContributorProjections::BuildTest < ActiveSupport::TestCase
     orphan_rp = RunnProject.create!(runn_id: nid, name: "Orphan", is_confirmed: true, is_archived: false, is_template: false)
     RunnAssignment.create!(runn_id: nid, person_id: rp_ic.runn_id, project_id: orphan_rp.runn_id, role_id: role.runn_id,
                            start_date: Date.new(2026, 9, 7), end_date: Date.new(2026, 9, 11), minutes_per_day: 480)   # unmapped_project
-    archived_pt = tracker!([ws], archived: true)
+    archived_pt = tracker!([workstream!(client, rate: 200)], archived: true)  # own workstream: a workstream may link to one tracker only
     assign!(rp_ic, archived_pt, role)                                       # silent
     bare_pt = tracker!([])
     assign!(rp_ic, bare_pt, role)                                           # no_forecast_project
@@ -825,6 +828,8 @@ class ContributorProjections::BuildTest < ActiveSupport::TestCase
     s = System.first || System.create!(settings: {})
     s.update!(runn_synced_at: DateTime.new(2026, 9, 8, 2))
     assert_equal DateTime.new(2026, 9, 8, 2).to_i, build.as_of.to_i
+    # memory_store marshals entries; a Result must survive that (no default-proc hashes, no AR objects)
+    assert_nothing_raised { ActiveSupport::Cache::MemoryStore.new.write("probe", build) }
 
     store = ActiveSupport::Cache::MemoryStore.new
     Rails.stubs(:cache).returns(store)
@@ -886,7 +891,10 @@ module ContributorProjections
         horizon: @horizon,
         lines: lines,
         skipped: @skipped.transform_values(&:size),
-        skipped_details: @skipped.to_h,
+        # Hash[] drops the default proc; a Hash with one cannot be Marshal'd,
+        # and memory_store marshals every entry (cached_all would silently
+        # fail forever).
+        skipped_details: Hash[@skipped],
         as_of: ContributorProjections.runn_synced_at,
       )
     end
@@ -1074,28 +1082,33 @@ module ContributorProjections
       end
       working_amount -= commission_total
 
+      # The real builder resolves each lead to a ForecastPerson and treats the
+      # lead as present only then (invoice_tracker.rb:444/465): a lead with no
+      # Forecast identity neither gets a line nor reduces the IC share.
       account_lead = lead_for_month(tracker.account_lead_periods, key.month)
       project_lead = lead_for_month(tracker.project_lead_periods, key.month)
+      al_contributor = account_lead && contributor_for_admin(account_lead)
+      pl_contributor = project_lead && contributor_for_admin(project_lead)
       hours_x_rate = "#{fmt(hours)} hrs * #{n2c(bill_rate)} p/h"
       basis = commission_total > 0 ? "(#{hours_x_rate}) - #{n2c(commission_total)} commission = #{n2c(working_amount)}" : hours_x_rate
 
-      if account_lead
+      if al_contributor
         amount = (working_amount * rules.account_lead_share).round(2).to_f
-        emit(contributor_for_admin(account_lead), enterprise, month_end, base.merge(
+        emit(al_contributor, enterprise, month_end, base.merge(
           kind: :account_lead, hours: hours, rate: bill_rate, amount: amount,
           description: "- #{basis} * #{pct(rules.account_lead_share)} = #{n2c(amount)}",
         ))
       end
-      if project_lead
+      if pl_contributor
         amount = (working_amount * rules.project_lead_share).round(2).to_f
-        emit(contributor_for_admin(project_lead), enterprise, month_end, base.merge(
+        emit(pl_contributor, enterprise, month_end, base.merge(
           kind: :project_lead, hours: hours, rate: bill_rate, amount: amount,
           description: "- #{basis} * #{pct(rules.project_lead_share)} = #{n2c(amount)}",
         ))
       end
 
       if override.nil?
-        share = rules.ic_share(account_lead: account_lead.present?, project_lead: project_lead.present?)
+        share = rules.ic_share(account_lead: al_contributor.present?, project_lead: pl_contributor.present?)
         ic_amount = (working_amount * share).round(2).to_f
         ic_rate = bill_rate
         ic_description = "- #{basis} * #{pct(share)} = #{n2c(ic_amount)}"
@@ -1116,13 +1129,13 @@ module ContributorProjections
       return unless surplus > 0
       lead_share = (surplus * rules.surplus_lead_share).round(2).to_f
       surplus_description = "- #{n2c(surplus)} surplus * #{pct(rules.surplus_lead_share)} = #{n2c(lead_share)}"
-      if account_lead
-        emit(contributor_for_admin(account_lead), enterprise, month_end, base.merge(
+      if al_contributor
+        emit(al_contributor, enterprise, month_end, base.merge(
           kind: :account_lead_surplus, hours: nil, rate: nil, amount: lead_share, description: surplus_description,
         ))
       end
-      if project_lead
-        emit(contributor_for_admin(project_lead), enterprise, month_end, base.merge(
+      if pl_contributor
+        emit(pl_contributor, enterprise, month_end, base.merge(
           kind: :project_lead_surplus, hours: nil, rate: nil, amount: lead_share, description: surplus_description,
         ))
       end
@@ -1215,6 +1228,8 @@ Expected: `22 runs, 0 failures, 0 errors`. Likely first-run failures and their f
 
 - [ ] **Step 5: Live smoke against the dev database**
 
+If `bin/rails runner 'puts RunnAssignment.count'` prints `0`, populate the mirror first with `bin/rails runner 'Stacks::Runn.new(max_retries: 0).sync_all!'` (read-only against Runn, writes only the local dev DB).
+
 Run: `bin/rails runner 'r = ContributorProjections::Build.call; puts r.lines.size; puts r.skipped.inspect; t = r.totals_by_month; t.each { |m, s| puts "#{m}: #{s[:amount]} (tentative #{s[:tentative_amount]})" }; puts r.by_contributor_totals.size'`
 Expected: a few hundred lines, a skipped hash with small counts (unmapped_project ≈ 3, unmapped_person ≈ 1), four month totals in the tens of thousands of dollars descending toward December, and roughly 30–40 contributors. If a `NoMethodError` or `nil` comparison surfaces here that the tests did not catch, it is production data shape; add a guard and a test reproducing it.
 
@@ -1247,6 +1262,7 @@ Append inside `class LedgerTest` in `test/models/ledger_test.rb` (before its clo
 
 ```ruby
   test "items_grouped_by_month min_ends_at extends the range but never shortens it" do
+    @ledger = Ledger.find_by!(enterprise: @enterprise, contributor: @contributor)   # LedgerTest's setup defines only @enterprise/@contributor
     far = Date.today + 8.months
     months = @ledger.items_grouped_by_month(min_ends_at: far)[:by_month].keys
     assert_equal far.beginning_of_month >> -1, months.first.starts_at, "for_gradation stops one month before `through`, so +1 month lands on the floor"
@@ -1283,7 +1299,7 @@ end
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `bin/rails test test/models/ledger_test.rb test/models/contributor_test.rb`
-Expected: FAIL with `ArgumentError: unknown keyword: :min_ends_at`.
+Expected: the new tests error with a `NoMethodError` from inside `Stacks::Period.for_gradation` (both methods take only optional positionals today, so `min_ends_at:` is swallowed as a positional Hash rather than rejected as an unknown keyword).
 
 - [ ] **Step 3: Add the floor**
 
@@ -1420,7 +1436,8 @@ Directly inside the `new_deal_ledger_items[:by_month].each do |period, metadata|
 
 ```erb
   <% projected = projected_by_month[period.starts_at] %>
-  <% projected_month = projected.present? && period.starts_at >= Date.today.beginning_of_month %>
+  <%# by_contributor_month returns a summary for EVERY horizon month, so test for lines, not presence %>
+  <% projected_month = projected.present? && projected[:lines].any? && period.starts_at >= Date.today.beginning_of_month %>
 ```
 
 Then in the `view_mode == :all` header pill, replace

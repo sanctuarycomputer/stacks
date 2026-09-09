@@ -17,7 +17,21 @@
 - `invoice_trackers.company_treasury_split` and `ContributorPayout#contributor_payouts_within_seventy_percent` are NOT touched.
 - Shares are `BigDecimal`; coerce with `.to_f` only where a Float is written into a jsonb blueprint.
 - Run targeted test files only (`bin/rails test path/to/file_test.rb`); the full suite takes ~100 minutes and is run once at the end of Part 3.
-- After adding the migration: `bin/rails db:migrate` (development) regenerates `db/schema.rb`; then `RAILS_ENV=test bin/rails db:schema:load` so the test DB matches. Commit `db/schema.rb` with the migration.
+- `stacks_development` and `stacks_test` are SHARED with the main checkout and every other worktree (`config/database.yml` has no per-worktree naming). Migrating here changes them for everyone. Do not run the main checkout's dev server or tests until this branch merges. If this worktree's tests start failing with `unknown attribute 'billing_model'` or `PendingMigrationError`, another checkout reloaded the test DB — re-run the Schema procedure's two `RAILS_ENV=test` commands.
+- After adding the migration, follow the **Schema procedure** below exactly. `db/schema.rb` is hand-curated in this repo (pgvector and a generated column are deliberately omitted so `schema:load` works without pgvector); a raw dump must not be committed.
+
+## Schema procedure
+
+```bash
+bin/rails db:migrate
+git diff db/schema.rb
+```
+Keep ONLY: the `ActiveRecord::Schema.define(version: ...)` bump and the changes this task makes to `project_trackers` (the new `billing_model` column, the removed `company_treasury_split` column and its check constraint). Revert everything else the dumper re-emitted: restore the pgvector comment block under `enable_extension`, remove any re-added `enable_extension "vector"`, `t.vector "embedding"`, `hnsw` index, and the `content_tsv` column / GIN index on `chunks` (restore that comment block too). Compare against the last schema commit (`git log -1 -- db/schema.rb`) — the diff must otherwise be byte-identical to HEAD. Then:
+```bash
+RAILS_ENV=test bin/rails db:environment:set   # test DB lacks ar_internal_metadata.environment; schema:load aborts without this
+RAILS_ENV=test bin/rails db:schema:load
+```
+Expected: schema loads with no error. If `schema:load` fails, the leftover is almost always a re-dumped `content_tsv` DEFAULT or `vector` column — re-check the diff.
 - Commit messages end with:
   ```
   Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
@@ -60,7 +74,7 @@
 # test/lib/stacks/billing_model_test.rb
 require "test_helper"
 
-class Stacks::BillingModelTest < ActiveSupport::TestCase
+class StacksBillingModelTest < ActiveSupport::TestCase
   test "new_deal_v1 derives the legacy 57% ceiling and 43% threshold" do
     rules = Stacks::BillingModel.for("new_deal_v1")
     assert_equal BigDecimal("0.30"), rules.treasury_share
@@ -110,7 +124,7 @@ end
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `bin/rails test test/lib/stacks/billing_model_test.rb`
-Expected: FAIL with `NameError: uninitialized constant Stacks::BillingModel`
+Expected: `7 runs, 0 failures, 7 errors` — every test errors with `NameError: uninitialized constant Stacks::BillingModel` (minitest reports raised exceptions as errors, not failures)
 
 - [ ] **Step 3: Write the registry**
 
@@ -240,7 +254,7 @@ Append to `test/models/project_tracker_test.rb` (inside the class, before the fi
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `bin/rails test test/models/project_tracker_test.rb`
-Expected: FAIL — `NoMethodError: undefined method 'billing_model'` / `unknown attribute 'billing_model'`, and the column test fails.
+Expected: 3 errors (`unknown attribute 'billing_model'` / `NoMethodError: undefined method 'billing_model'`) and 1 failure (the `column_names` assertion); the pre-existing tests still pass.
 
 - [ ] **Step 3: Write the migration**
 
@@ -304,15 +318,9 @@ insert:
   end
 ```
 
-- [ ] **Step 5: Migrate and reload the test schema**
+- [ ] **Step 5: Migrate, curate the schema dump, reload the test schema**
 
-Run:
-```bash
-bin/rails db:migrate
-RAILS_ENV=test bin/rails db:schema:load
-git diff --stat db/schema.rb
-```
-Expected: migration runs with no error; `db/schema.rb` shows `t.string "billing_model", default: "new_deal_v1", null: false` under `project_trackers`, no `company_treasury_split` line and no `check_company_treasury_split_range` constraint under `project_trackers` (the `invoice_trackers` ones remain), and the schema version bumps to `2026_09_09_000001`.
+Follow the **Schema procedure** in Global Constraints. The migration must run with no error. The curated `db/schema.rb` diff must show only: the version bump to `2026_09_09_000001`; `t.string "billing_model", default: "new_deal_v1", null: false` under `project_trackers`; and the removal of the `company_treasury_split` line and the `check_company_treasury_split_range` constraint under `project_trackers` (the `invoice_trackers` ones remain).
 
 - [ ] **Step 6: Run tests to verify they pass**
 
@@ -384,7 +392,7 @@ Append inside `ContributorPayoutTest`:
     assert_in_delta 540.0, chunk[:maximum], 0.001
   end
 
-  test "calculate_surplus on a new_deal_v2 tracker yields the 3-point pool when the IC is paid at the v1 ceiling" do
+  test "calculate_surplus on a new_deal_v2 tracker: 57% pay is under the 46% threshold, 40% pay yields (0.60 - 0.46) * 1000" do
     # IC paid 570 (old 57%) → margin 0.43 → below the 0.46 threshold → still no surplus
     chunk = surplus_cp_for(tracker_with_model("new_deal_v2"), ic_amount: 570.0).calculate_surplus.first
     assert_in_delta 0.0, chunk[:surplus], 0.001
@@ -744,7 +752,7 @@ Expected: `0 failures, 0 errors`.
 
 - [ ] **Step 2: Grep for stragglers**
 
-Run: `grep -rn "company_treasury_split" app lib db/migrate --include=*.rb --include=*.erb | grep -v invoice_tracker`
-Expected: only `app/models/project_tracker.rb` (the method) and the migration. If anything else appears, it is a reader the spec missed; convert it to `billing_rules` and add a test.
+Run: `grep -rn "company_treasury_split" app lib db/migrate --include='*.rb' --include='*.erb' | grep -v invoice_tracker`
+Expected: exactly three sources — `app/models/project_tracker.rb` (the derived method), `db/migrate/20250630223026_add_company_treasury_split_to_project_trackers.rb` (historical, leave it), and `db/migrate/20260909000001_add_billing_model_to_project_trackers.rb` (new). Anything else is a reader the spec missed; convert it to `billing_rules` and add a test.
 
 No commit for this task unless Step 2 found something.
