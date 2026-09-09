@@ -129,6 +129,67 @@ class ContributorPayoutTest < ActiveSupport::TestCase
     assert_in_delta 0.57 * 850, chunk[:maximum], 0.01
   end
 
+  def surplus_cp_for(tracker, ic_amount:)
+    qbo_line = { "id" => "5", "amount" => 1000.0, "description" => "ABC-1 Foo" }
+    qbo_invoice = mock("qbo_invoice")
+    qbo_invoice.stubs(:line_items).returns([qbo_line])
+
+    invoice_tracker = mock("invoice_tracker")
+    invoice_tracker.stubs(:qbo_invoice).returns(qbo_invoice)
+    invoice_tracker.stubs(:project_trackers).returns([tracker].compact)
+    invoice_tracker.stubs(:commission_total_for_line).with("5").returns(0.0)
+
+    cp = ContributorPayout.new(
+      amount: ic_amount,
+      blueprint: {
+        "IndividualContributor" => [
+          { "amount" => ic_amount, "blueprint_metadata" => { "id" => "5", "forecast_project" => 99 } },
+        ],
+      },
+    )
+    cp.stubs(:invoice_tracker).returns(invoice_tracker)
+    cp.stubs(:contributor).returns(mock("contributor"))
+    cp.stubs(:in_sync?).returns(true)
+    cp
+  end
+
+  def tracker_with_model(model)
+    pt = ProjectTracker.new(name: "Surplus #{model}", billing_model: model)
+    pt.stubs(:forecast_project_ids).returns([99])
+    pt
+  end
+
+  test "calculate_surplus on a new_deal_v2 tracker uses the 46% threshold and 54% maximum" do
+    # IC paid 540 of 1000 = exactly the v2 ceiling → margin 0.46 → zero surplus
+    chunk = surplus_cp_for(tracker_with_model("new_deal_v2"), ic_amount: 540.0).calculate_surplus.first
+    assert_in_delta 0.0, chunk[:surplus], 0.001
+    assert_in_delta 540.0, chunk[:maximum], 0.001
+  end
+
+  test "calculate_surplus on a new_deal_v2 tracker: 57% pay is under the 46% threshold, 40% pay yields (0.60 - 0.46) * 1000" do
+    # IC paid 570 (old 57%) → margin 0.43 → below the 0.46 threshold → still no surplus
+    chunk = surplus_cp_for(tracker_with_model("new_deal_v2"), ic_amount: 570.0).calculate_surplus.first
+    assert_in_delta 0.0, chunk[:surplus], 0.001
+
+    # IC paid 400 → margin 0.60 → (0.60 - 0.46) * 1000 = 140
+    chunk = surplus_cp_for(tracker_with_model("new_deal_v2"), ic_amount: 400.0).calculate_surplus.first
+    assert_in_delta 140.0, chunk[:surplus], 0.001
+  end
+
+  test "calculate_surplus on a new_deal_v1 tracker keeps the 43% threshold and 57% maximum" do
+    chunk = surplus_cp_for(tracker_with_model("new_deal_v1"), ic_amount: 400.0).calculate_surplus.first
+    # margin 0.60 → (0.60 - 0.43) * 1000 = 170
+    assert_in_delta 170.0, chunk[:surplus], 0.001
+    assert_in_delta 570.0, chunk[:maximum], 0.001
+  end
+
+  test "calculate_surplus falls back to the default model when no tracker resolves" do
+    chunk = surplus_cp_for(nil, ic_amount: 400.0).calculate_surplus.first
+    assert_nil chunk[:project_tracker]
+    assert_in_delta 170.0, chunk[:surplus], 0.001
+    assert_in_delta 570.0, chunk[:maximum], 0.001
+  end
+
   # A client-level payout is shared by every ProjectTracker on that client, so
   # attribution has to come from each entry's forecast_project. Blueprints grew a
   # Commission key in May 2026; the exact-key-set matching this replaced stopped
