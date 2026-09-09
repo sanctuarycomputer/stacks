@@ -429,6 +429,8 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
       { sentiment: :agree, context: "fine", free_text: "keep retros" },
       { sentiment: :neutral, context: nil, free_text: "clearer scope" },
     ])
+    responder = build_admin!(email_prefix: "survey-responder")
+    ProjectSatisfactionSurveyResponder.create!(project_satisfaction_survey: survey, admin_user: responder)
 
     rows = call_tool("list_surveys", { status: "closed", closed_after: "2026-06-01" })
     assert_equal [survey.id], rows.map { |r| r["id"] }
@@ -438,8 +440,7 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     payload = call_tool("get_survey_results", { kind: "project", id: survey.id })
     assert_equal "closed", payload["status"]
     assert_equal ["clearer scope", "keep retros", "more discovery"], payload["free_text_questions"].first["responses"]
-    refute_includes response.body, "@example.com"
-  ensure
-    travel_back
+    refute_includes response.body, responder.email
+    refute_includes response.body, "survey-responder"
   end
 end
