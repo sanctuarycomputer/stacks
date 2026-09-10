@@ -4,6 +4,10 @@ require 'rails/test_help'
 require 'mocha/minitest'
 require 'minitest/autorun'
 
+# The Notion client paces requests per process (NOTION_RPS, default 0.6/s). Tests stub
+# HTTP, so pacing is only latency here; individual tests override as needed.
+ENV["NOTION_RPS"] ||= "1000"
+
 # Ensure DB triggers that schema.rb cannot capture are present in the test DB.
 # The ScopeQboRecordsByQboAccount migration installs a BEFORE DELETE trigger on
 # qbo_invoices that nullifies qbo_invoice_id on child tables (invoice_trackers,
