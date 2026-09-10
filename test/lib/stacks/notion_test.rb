@@ -6,11 +6,13 @@ class StacksNotionTest < ActiveSupport::TestCase
   setup do
     Stacks::Utils.stubs(:config).returns(FAKE_CONFIG)
     Stacks::Notion.reset_pacer!
+    @saved_rps = ENV["NOTION_RPS"]
     ENV["NOTION_RPS"] = "1000" # no pacing delay unless a test sets it
   end
 
   teardown do
-    ENV.delete("NOTION_RPS")
+    # Restore (not delete) so test_helper's process-wide default survives this file.
+    ENV["NOTION_RPS"] = @saved_rps
     Stacks::Notion.reset_pacer!
   end
 

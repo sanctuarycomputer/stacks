@@ -148,11 +148,12 @@ class StacksNotionTest < ActiveSupport::TestCase
   setup do
     Stacks::Utils.stubs(:config).returns(FAKE_CONFIG)
     Stacks::Notion.reset_pacer!
+    @saved_rps = ENV["NOTION_RPS"]
     ENV["NOTION_RPS"] = "1000" # no pacing delay unless a test sets it
   end
 
   teardown do
-    ENV.delete("NOTION_RPS")
+    ENV["NOTION_RPS"] = @saved_rps # restore, never delete: test_helper sets a process-wide default
     Stacks::Notion.reset_pacer!
   end
 
@@ -1114,7 +1115,7 @@ class StacksNotionSyncDatabaseTest < ActiveSupport::TestCase
     Stacks::Notion.reset_pacer!
   end
 
-  teardown { ENV.delete("NOTION_RPS") }
+  teardown { ENV["NOTION_RPS"] = "1000" } # restore the test_helper default, never delete
 
   def row(id, title, last_edited: "2026-09-01T00:00:00.000Z", in_trash: false)
     { "object" => "page", "id" => id, "last_edited_time" => last_edited, "in_trash" => in_trash,
@@ -1252,7 +1253,7 @@ class StacksNotionTreeFetcherTest < ActiveSupport::TestCase
     Stacks::Notion.reset_pacer!
     @client = Stacks::Notion.new
   end
-  teardown { ENV.delete("NOTION_RPS") }
+  teardown { ENV["NOTION_RPS"] = "1000" } # restore the test_helper default, never delete
 
   def page_obj(last_edited: "2026-09-10T10:00:00.000Z")
     { "object" => "page", "id" => PAGE, "last_edited_time" => last_edited, "in_trash" => false,
@@ -1513,7 +1514,7 @@ class Api::Notion::ProxyControllerTest < ActionDispatch::IntegrationTest
     Stacks::Notion.reset_pacer!
     @key = { "X-Api-Key" => Stacks::Utils.config[:stacks][:private_api_key] }
   end
-  teardown { ENV.delete("NOTION_RPS") }
+  teardown { ENV["NOTION_RPS"] = "1000" } # restore the test_helper default, never delete
 
   def page_obj(last_edited: "2026-09-10T10:00:00.000Z")
     { "object" => "page", "id" => PAGE, "last_edited_time" => last_edited, "in_trash" => false,
@@ -1810,7 +1811,7 @@ class Api::Notion::ProxyBlocksTest < ActionDispatch::IntegrationTest
       "parent" => { "type" => "workspace", "workspace" => true }, "properties" => {}, "url" => "u"
     )
   end
-  teardown { ENV.delete("NOTION_RPS") }
+  teardown { ENV["NOTION_RPS"] = "1000" } # restore the test_helper default, never delete
 
   def block(id, parent, has_children: false)
     { "object" => "block", "id" => id, "type" => "paragraph", "has_children" => has_children,
@@ -1992,7 +1993,7 @@ class Api::Notion::ProxyPassthroughTest < ActionDispatch::IntegrationTest
     Stacks::Notion.reset_pacer!
     @key = { "X-Api-Key" => Stacks::Utils.config[:stacks][:private_api_key], "Content-Type" => "application/json" }
   end
-  teardown { ENV.delete("NOTION_RPS") }
+  teardown { ENV["NOTION_RPS"] = "1000" } # restore the test_helper default, never delete
 
   def page_obj(id = PAGE, last_edited: "2026-09-10T10:00:00.000Z")
     { "object" => "page", "id" => id, "last_edited_time" => last_edited, "in_trash" => false,
@@ -2190,7 +2191,7 @@ class StacksNotionSweepTest < ActiveSupport::TestCase
     @client = Stacks::Notion.new
     travel_to Time.zone.parse("2026-09-10T12:00:00Z")
   end
-  teardown { ENV.delete("NOTION_RPS") }
+  teardown { ENV["NOTION_RPS"] = "1000" } # restore the test_helper default, never delete
 
   def page(id, last_edited)
     { "object" => "page", "id" => id, "last_edited_time" => last_edited, "in_trash" => false,
@@ -2533,7 +2534,7 @@ class StacksNotionBackfillTest < ActiveSupport::TestCase
     Stacks::Notion.reset_pacer!
     @client = Stacks::Notion.new
   end
-  teardown { ENV.delete("NOTION_RPS") }
+  teardown { ENV["NOTION_RPS"] = "1000" } # restore the test_helper default, never delete
 
   def page(id) = { "object" => "page", "id" => id, "last_edited_time" => "2026-09-01T00:00:00.000Z", "in_trash" => false, "parent" => { "type" => "workspace", "workspace" => true }, "properties" => {}, "url" => "u" }
   def ds_obj = { "object" => "data_source", "id" => DS, "title" => [{ "plain_text" => "Leads" }], "parent" => { "type" => "database_id", "database_id" => DB }, "properties" => { "Name" => {} }, "last_edited_time" => "2026-09-01T00:00:00.000Z", "in_trash" => false }
@@ -2585,7 +2586,7 @@ class StacksNotionReconcileTest < ActiveSupport::TestCase
     Stacks::Notion.reset_pacer!
     @client = Stacks::Notion.new
   end
-  teardown { ENV.delete("NOTION_RPS") }
+  teardown { ENV["NOTION_RPS"] = "1000" } # restore the test_helper default, never delete
 
   def page(id, last_edited: "2026-09-01T00:00:00.000Z", in_trash: false) = { "object" => "page", "id" => id, "last_edited_time" => last_edited, "in_trash" => in_trash, "parent" => { "type" => "workspace", "workspace" => true }, "properties" => {}, "url" => "u" }
 
@@ -3109,7 +3110,7 @@ class Mcp::NotionToolsTest < ActiveSupport::TestCase
     ENV["NOTION_RPS"] = "1000"
     Stacks::Notion.reset_pacer!
   end
-  teardown { ENV.delete("NOTION_RPS") }
+  teardown { ENV["NOTION_RPS"] = "1000" } # restore the test_helper default, never delete
 
   def page_obj = { "object" => "page", "id" => PAGE, "last_edited_time" => "2026-09-10T10:00:00.000Z", "in_trash" => false, "parent" => { "type" => "workspace", "workspace" => true }, "properties" => { "title" => { "type" => "title", "title" => [{ "plain_text" => "Guide" }] } }, "url" => "https://www.notion.so/x" }
   def payload(resp) = JSON.parse(resp.content.first[:text])
