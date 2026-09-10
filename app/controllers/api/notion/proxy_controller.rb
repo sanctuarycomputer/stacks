@@ -54,8 +54,46 @@ class Api::Notion::ProxyController < ApiController
     render_live(obj)
   end
 
-  # Tasks 8 and 9 replace these bodies.
-  def get_block_children = not_found
+  # Level cache: fresh → local slice; stale/never → the caller's ONE cursor page
+  # live, stored opportunistically; unknown parent → live, not stored.
+  def get_block_children
+    parent_id = Stacks::Notion::Ids.normalize(params[:id]) || params[:id].to_s
+    page_id = Stacks::Notion::Mirror.owning_page_id(parent_id)
+    page_size = [[params[:page_size].to_i, 1].max, 100].min
+    page_size = 100 if params[:page_size].blank?
+    cursor = params[:start_cursor].presence
+
+    return render_live(client.get_block_children(parent_id, start_cursor: cursor, page_size: page_size)) if page_id.nil?
+
+    page = NotionPage.with_deleted.find_by!(notion_id: page_id)
+    marker = parent_id == page_id ? page.root_children_fetched_at : NotionBlock.where(notion_id: parent_id).pick(:children_fetched_at)
+    fresh = marker.present? && (page.blocks_stale_at.nil? || marker > page.blocks_stale_at)
+
+    if fresh
+      rows = NotionBlock.children_of(parent_id).to_a
+      start = cursor ? rows.index { |r| r.notion_id == Stacks::Notion::Ids.normalize(cursor) || r.notion_id == cursor } : 0
+      raise Stacks::Notion::RequestError.new(400, { "object" => "error", "status" => 400, "code" => "validation_error", "message" => "start_cursor is invalid" }) if start.nil?
+      slice = rows[start, page_size] || []
+      nxt = rows[start + page_size]
+      return render_cached(
+        { "object" => "list", "results" => slice.map(&:data), "next_cursor" => nxt&.notion_id, "has_more" => !nxt.nil?, "type" => "block", "block" => {} },
+        fetched_at: marker, state: "hit"
+      )
+    end
+
+    live = client.get_block_children(parent_id, start_cursor: cursor, page_size: 100)
+    offset = cursor ? NotionBlock.where(parent_id: parent_id).count : 0
+    if cursor.nil? && live["next_cursor"].nil?
+      Stacks::Notion::Mirror.replace_level(parent_id: parent_id, page_id: page_id, blocks: live["results"], fetched_at: Time.current)
+    else
+      Stacks::Notion::Mirror.store_blocks(parent_id: parent_id, page_id: page_id, blocks: live["results"], position_offset: offset)
+    end
+    response.set_header("X-Stacks-Cache", marker.present? ? "stale" : "miss")
+    response.set_header("X-Stacks-Fetched-At", Time.current.utc.iso8601)
+    render json: live, status: 200
+  end
+
+  # Task 9 replaces these bodies.
   def query_data_source = not_found
   def search = not_found
   def create_page = not_found
