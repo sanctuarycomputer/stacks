@@ -22,14 +22,14 @@ module Mcp
         studio: { type: 'string', description: 'Studio name or mini_name (case-insensitive). Required.' },
         okr: { type: 'string', description: "One of: #{OKRS.join(', ')}. Required." },
         gradation: { type: 'string', description: "#{GRADATIONS.join(', ')} (default month)" },
-        accounting_method: { type: 'string', description: 'cash (default) or accrual' },
+        accounting_method: { type: 'string', description: 'accrual (default) or cash' },
         periods: { type: 'integer', description: 'Most recent N periods (default 3, clamped 1..6 — evidence is computed live and is heavy)' },
       },
       required: %w[studio okr]
     )
     annotations(read_only_hint: true, destructive_hint: false, idempotent_hint: true)
 
-    def self.call(studio:, okr:, gradation: 'month', accounting_method: 'cash', periods: 3, server_context:)
+    def self.call(studio:, okr:, gradation: 'month', accounting_method: 'accrual', periods: 3, server_context:)
       okr = okr.to_s
       unless OKRS.include?(okr)
         return Responses.error("Invalid okr '#{okr}'. Valid okrs: #{OKRS.join(', ')}")

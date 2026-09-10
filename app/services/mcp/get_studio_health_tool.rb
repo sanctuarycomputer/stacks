@@ -12,14 +12,14 @@ module Mcp
       properties: {
         studio: { type: 'string', description: 'Optional studio name or mini_name (case-insensitive). Default: all studios with a snapshot.' },
         gradation: { type: 'string', description: "#{GRADATIONS.join(', ')} (default month)" },
-        accounting_method: { type: 'string', description: 'cash (default) or accrual' },
+        accounting_method: { type: 'string', description: 'accrual (default) or cash' },
         periods: { type: 'integer', description: 'Most recent N periods (default 6, clamped 1..24)' },
       },
       required: []
     )
     annotations(read_only_hint: true, destructive_hint: false, idempotent_hint: true)
 
-    def self.call(studio: nil, gradation: 'month', accounting_method: 'cash', periods: 6, server_context:)
+    def self.call(studio: nil, gradation: 'month', accounting_method: 'accrual', periods: 6, server_context:)
       gradation = gradation.to_s
       unless GRADATIONS.include?(gradation)
         return Responses.error("Invalid gradation '#{gradation}'. Valid gradations: #{GRADATIONS.join(', ')}")

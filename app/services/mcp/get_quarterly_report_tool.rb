@@ -13,13 +13,13 @@ module Mcp
       properties: {
         period_label: { type: 'string', description: "A report's period label, e.g. 'Q2, 2026'. Default: the latest generated report." },
         studio: { type: 'string', description: "Studio tab: #{PeriodicReport::STUDIO_TAB_KEYS.join(' | ')} (default g3d)" },
-        accounting_method: { type: 'string', description: 'cash (default) | accrual' },
+        accounting_method: { type: 'string', description: 'accrual (default) | cash' },
       },
       required: []
     )
     annotations(read_only_hint: true, destructive_hint: false, idempotent_hint: true)
 
-    def self.call(period_label: nil, studio: 'g3d', accounting_method: 'cash', server_context:)
+    def self.call(period_label: nil, studio: 'g3d', accounting_method: 'accrual', server_context:)
       tab = studio.to_s.downcase.strip
       unless STUDIO_TABS.include?(tab)
         return Responses.error("Invalid studio '#{studio}'. Valid studio tabs: #{STUDIO_TABS.join(', ')}")
