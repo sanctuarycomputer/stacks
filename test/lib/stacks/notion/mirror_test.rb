@@ -52,6 +52,8 @@ class StacksNotionMirrorTest < ActiveSupport::TestCase
     trashed = M.upsert_page(page_obj(in_trash: true, last_edited: "2026-09-10T22:00:00.000Z"))
     assert trashed.deleted?
     assert trashed.in_trash
+    assert_equal "In 2024, xxix.co Better", trashed.page_title
+    assert_equal Time.zone.parse("2026-09-10T22:00:00Z"), trashed.notion_last_edited_at
     live = M.upsert_page(page_obj(in_trash: false, last_edited: "2026-09-10T22:05:00.000Z"))
     refute live.deleted?
     refute live.in_trash
@@ -123,6 +125,30 @@ class StacksNotionMirrorTest < ActiveSupport::TestCase
     assert row.fetched_at.present?
     fresh = M.upsert_data_source(obj.merge("id" => SecureRandom.uuid), fetched_at: nil)
     assert_nil fresh.fetched_at
+  end
+
+  test "upsert_page retries once on a first-insert unique-index race and returns the persisted row" do
+    existing = M.upsert_page(page_obj)
+
+    # Simulate a concurrent writer (e.g. the sweep rake process) winning the race to
+    # insert notion_id first: the first lookup hands back a brand-new unsaved record
+    # (as if the lock didn't see the winner's row yet) whose save! collides on the
+    # unique index. The second lookup (the retry) uses the real scope, which now
+    # finds the row the "other" writer already committed.
+    racing_new_record = NotionPage.new(notion_id: PAGE_ID)
+    racing_new_record.define_singleton_method(:save!) { raise ActiveRecord::RecordNotUnique, "dup" }
+
+    fake_relation = Object.new
+    fake_relation.define_singleton_method(:lock) { self }
+    fake_relation.define_singleton_method(:find_or_initialize_by) { |*_args| racing_new_record }
+
+    real_relation = NotionPage.with_deleted
+    NotionPage.stubs(:with_deleted).returns(fake_relation, real_relation)
+
+    result = M.upsert_page(page_obj)
+
+    assert_equal existing.id, result.id
+    assert_equal "In 2024, xxix.co Better", result.page_title
   end
 
   test "a workspace-parented page stores a nil parent id" do
