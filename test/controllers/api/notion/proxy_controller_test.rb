@@ -78,6 +78,50 @@ class Api::Notion::ProxyControllerTest < ActionDispatch::IntegrationTest
     assert_equal "rate_limited", JSON.parse(response.body)["code"]
   end
 
+  test "Notion 5xx errors are reported to Sentry" do
+    err = Stacks::Notion::RequestError.new(502, { "object" => "error", "status" => 502, "code" => "internal_server_error", "message" => "boom" })
+    Stacks::Notion.any_instance.stubs(:get_page).raises(err)
+    Sentry.expects(:capture_exception).once
+    get "/api/notion/v1/pages/#{PAGE}", headers: @key
+    assert_response 502
+    assert_equal "internal_server_error", JSON.parse(response.body)["code"]
+  end
+
+  test "GET blocks/:id misses, stores when the owning page is known, and serves live" do
+    Stacks::Notion::Mirror.upsert_page(page_obj)
+    Stacks::Notion.any_instance.expects(:get_block).with("b1").returns(
+      { "object" => "block", "id" => "b1", "type" => "paragraph", "has_children" => false,
+        "parent" => { "type" => "page_id", "page_id" => PAGE },
+        "paragraph" => { "rich_text" => [] }, "request_id" => "r" }
+    )
+    get "/api/notion/v1/blocks/b1", headers: @key
+    assert_response :success
+    assert_equal "live", response.headers["X-Stacks-Cache"]
+    body = JSON.parse(response.body)
+    assert body.key?("request_id")
+    block = NotionBlock.find_by!(notion_id: "b1")
+    assert_equal PAGE, block.page_id
+    refute block.data.key?("request_id")
+
+    Stacks::Notion.any_instance.expects(:get_block).never
+    get "/api/notion/v1/blocks/b1", headers: @key
+    assert_response :success
+    assert_equal "hit", response.headers["X-Stacks-Cache"]
+    refute JSON.parse(response.body).key?("request_id")
+  end
+
+  test "GET blocks/:id with an unknown parent serves live and stores nothing" do
+    Stacks::Notion.any_instance.expects(:get_block).with("b2").returns(
+      { "object" => "block", "id" => "b2", "type" => "paragraph", "has_children" => false,
+        "parent" => { "type" => "page_id", "page_id" => SecureRandom.uuid },
+        "paragraph" => { "rich_text" => [] } }
+    )
+    get "/api/notion/v1/blocks/b2", headers: @key
+    assert_response :success
+    assert_equal "live", response.headers["X-Stacks-Cache"]
+    refute NotionBlock.exists?(notion_id: "b2")
+  end
+
   test "GET data_sources/:id and databases/:id miss then hit" do
     Stacks::Notion.any_instance.expects(:get_data_source).with(DS).returns({ "object" => "data_source", "id" => DS, "title" => [{ "plain_text" => "Leads" }], "parent" => { "type" => "database_id", "database_id" => DB }, "properties" => {}, "last_edited_time" => "2026-09-01T00:00:00.000Z", "in_trash" => false, "request_id" => "r" })
     get "/api/notion/v1/data_sources/#{DS}", headers: @key

@@ -39,7 +39,9 @@ class Api::Notion::ProxyController < ApiController
   end
 
   def get_block
-    id = normalized_id!
+    # Notion block ids in the wild are uuids, but a block id the caller got from
+    # us (e.g. Task 8's level-cache tests) must round-trip even when it isn't one.
+    id = Stacks::Notion::Ids.normalize(params[:id]) || params[:id]
     row = NotionBlock.find_by(notion_id: id)
     return render_cached(row.data, fetched_at: row.updated_at, state: "hit") if row
 
@@ -109,6 +111,10 @@ class Api::Notion::ProxyController < ApiController
   end
 
   def render_notion_error(err)
+    # 4xx from Notion is the caller's problem and passes through silently; a 5xx
+    # that survived the client's retries or a 401 (revoked integration token) is
+    # ours to know about.
+    Sentry.capture_exception(err) if defined?(Sentry) && (err.code >= 500 || err.code == 401)
     response.set_header("Retry-After", err.headers["retry-after"]) if err.headers["retry-after"].present?
     render json: err.body, status: err.code
   end
