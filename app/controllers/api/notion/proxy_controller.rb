@@ -82,8 +82,13 @@ class Api::Notion::ProxyController < ApiController
     end
 
     live = client.get_block_children(parent_id, start_cursor: cursor, page_size: 100)
+    # Positions written here by a single-page fill are provisional: replace_level
+    # rewrites them from 0 when the level is completed, and children_of is only
+    # ever read back on a fresh (completed) level.
     offset = cursor ? NotionBlock.where(parent_id: parent_id).count : 0
-    if cursor.nil? && live["next_cursor"].nil?
+    # A malformed response (has_more absent/true but next_cursor nil, or vice
+    # versa) must never stamp a level complete and trigger replace_level's deletes.
+    if cursor.nil? && live["has_more"] == false && live["next_cursor"].nil?
       Stacks::Notion::Mirror.replace_level(parent_id: parent_id, page_id: page_id, blocks: live["results"], fetched_at: Time.current)
     else
       Stacks::Notion::Mirror.store_blocks(parent_id: parent_id, page_id: page_id, blocks: live["results"], position_offset: offset)

@@ -28,6 +28,7 @@ class Api::Notion::ProxyBlocksTest < ActionDispatch::IntegrationTest
     get "/api/notion/v1/blocks/#{PAGE.delete('-')}/children", headers: @key
     assert_response :success
     assert_equal "miss", response.headers["X-Stacks-Cache"]
+    assert response.headers["X-Stacks-Fetched-At"].present?
     body = JSON.parse(response.body)
     assert_equal %w[b1 b2], body["results"].map { |b| b["id"] }
     assert_equal false, body["has_more"]
@@ -56,6 +57,7 @@ class Api::Notion::ProxyBlocksTest < ActionDispatch::IntegrationTest
 
     get "/api/notion/v1/blocks/#{PAGE}/children", params: { page_size: 2 }, headers: @key
     assert_equal "hit", response.headers["X-Stacks-Cache"]
+    assert_equal NotionPage.find_by!(notion_id: PAGE).root_children_fetched_at.utc.iso8601, response.headers["X-Stacks-Fetched-At"]
     body = JSON.parse(response.body)
     assert_equal %w[b1 b2], body["results"].map { |b| b["id"] }
     assert_equal "b3", body["next_cursor"]
@@ -91,6 +93,7 @@ class Api::Notion::ProxyBlocksTest < ActionDispatch::IntegrationTest
     Stacks::Notion.any_instance.expects(:get_block_children).with(PAGE, start_cursor: nil, page_size: 100).returns(list([block("b1", PAGE), block("b2", PAGE)]))
     get "/api/notion/v1/blocks/#{PAGE}/children", headers: @key
     assert_equal "stale", response.headers["X-Stacks-Cache"]
+    assert response.headers["X-Stacks-Fetched-At"].present?
     assert_equal %w[b1 b2], NotionBlock.children_of(PAGE).pluck(:notion_id)
     assert_operator NotionPage.find_by!(notion_id: PAGE).root_children_fetched_at, :>, NotionPage.find_by!(notion_id: PAGE).blocks_stale_at
   end
@@ -99,6 +102,16 @@ class Api::Notion::ProxyBlocksTest < ActionDispatch::IntegrationTest
     Stacks::Notion.any_instance.expects(:get_block_children).with("zzz", start_cursor: nil, page_size: 100).returns(list([block("q", "zzz")]))
     get "/api/notion/v1/blocks/zzz/children", headers: @key
     assert_equal "live", response.headers["X-Stacks-Cache"]
+    assert_nil response.headers["X-Stacks-Fetched-At"]
     refute NotionBlock.exists?(notion_id: "q")
+  end
+
+  test "an invalid start_cursor on a fresh level returns Notion-style 400 without a request" do
+    Stacks::Notion::Mirror.replace_level(parent_id: PAGE, page_id: PAGE, blocks: [block("b1", PAGE), block("b2", PAGE)], fetched_at: Time.current)
+    Stacks::Notion.any_instance.expects(:get_block_children).never
+
+    get "/api/notion/v1/blocks/#{PAGE}/children", params: { start_cursor: "nope" }, headers: @key
+    assert_response :bad_request
+    assert_equal "validation_error", JSON.parse(response.body)["code"]
   end
 end
