@@ -262,23 +262,33 @@ class StacksNotionTest < ActiveSupport::TestCase
     assert_operator elapsed, :>=, 0.19, "three requests at 10 rps need ≥ 2 slots of spacing"
   end
 
-  test "a thread sleeping on Retry-After does not hold the pacer for other threads" do
-    ENV["NOTION_RPS"] = "1000"
-    Stacks::Notion.reset_pacer!
-    slow = Stacks::Notion.new(max_retries: 1, retry_after_cap: 60)
-    slow_resp = fake_response(code: 429, body: { object: "error" }, headers: { "retry-after" => "1" })
-    ok_resp = fake_response(code: 200, body: { object: "page", id: "p" })
-    Stacks::Notion.stubs(:get).with { |path, _| path == "/pages/slow" }.returns(slow_resp).then.returns(ok_resp)
-    Stacks::Notion.stubs(:get).with { |path, _| path == "/pages/fast" }.returns(ok_resp)
+  test "Retry-After survives HTTParty's Net::HTTPHeader (array values)" do
+    hdrs = HTTParty::Response::Headers.new({ "Retry-After" => "9" })
+    client = Stacks::Notion.new(max_retries: 0)
+    Stacks::Notion.stubs(:get).returns(fake_response(code: 429, body: { object: "error" }, headers: hdrs))
+    err = assert_raises(Stacks::Notion::RateLimited) { client.get_page("p") }
+    assert_equal 9, err.retry_after
+    assert_equal "9", err.headers["retry-after"]
+  end
 
-    t = Thread.new { slow.get_page("slow") }
-    sleep 0.05 # let the slow thread enter its Retry-After sleep
-    t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    Stacks::Notion.new.get_page("fast")
-    assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0, :<, 0.5
-    t.join
+  test "a Retry-After sleep does not consume pacer slots (sleep happens outside the pacer)" do
+    client = Stacks::Notion.new(max_retries: 1, retry_after_cap: 60)
+    Stacks::Notion.stubs(:get)
+                  .returns(fake_response(code: 429, body: { object: "error" }, headers: { "retry-after" => "1" }))
+                  .then.returns(fake_response(code: 200, body: { object: "page", id: "p" }))
+    client.expects(:sleep).with(1)
+    Stacks::Notion.expects(:pace!).twice # one slot per attempt, none for the cooldown
+    client.get_page("p")
   end
 end
+```
+
+Also add to `test/test_helper.rb`, right after `require 'minitest/autorun'`, so no test that reaches an un-stubbed client path sleeps on the 0.6 rps default:
+
+```ruby
+# The Notion client paces requests per process (NOTION_RPS, default 0.6/s). Tests stub
+# HTTP, so pacing is only latency here; individual tests override as needed.
+ENV["NOTION_RPS"] ||= "1000"
 ```
 
 - [ ] **Step 2: Run to verify failure**
@@ -315,7 +325,10 @@ class Stacks::Notion
     def initialize(code, body, headers = {})
       @code = code.to_i
       @body = body.is_a?(Hash) ? body : (JSON.parse(body.to_s) rescue { "message" => body.to_s })
-      @headers = headers.to_h.transform_keys(&:downcase)
+      # HTTParty::Response::Headers is a Net::HTTPHeader: to_h gives Array values.
+      @headers = headers.to_h.each_with_object({}) do |(k, v), h|
+        h[k.to_s.downcase] = v.is_a?(Array) ? v.first : v
+      end
       super("Notion API #{@code}: #{@body['code'] || @body['message']}")
     end
 
@@ -442,7 +455,9 @@ Keep the existing `def sync_database(database_id) … end` and the closing `end`
 - [ ] **Step 4: Run the client tests**
 
 Run: `bin/rails test test/lib/stacks/notion_test.rb`
-Expected: `11 runs, 0 failures`. The pacer test needs real time (about 0.2 s).
+Expected: `12 runs, 0 failures`. The pacer test needs real time (about 0.2 s).
+
+The pacer's structural guarantee (slot claimed under the mutex, sleep outside it, Retry-After sleep never inside `synchronize`) is enforced by the code shape in `pace!` and `request`; keep the comment there.
 
 - [ ] **Step 5: Check existing consumers still load**
 
@@ -452,7 +467,7 @@ Expected: all pass.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add lib/stacks/notion.rb test/lib/stacks/notion_test.rb
+git add lib/stacks/notion.rb test/lib/stacks/notion_test.rb test/test_helper.rb
 git commit -m "feat: Stacks::Notion on Notion-Version 2026-03-11 with class-level pacer and Retry-After handling"
 ```
 
@@ -498,11 +513,17 @@ class NotionPageTest < ActiveSupport::TestCase
     assert_equal [hom.id], NotionPage.human_operating_manual.pluck(:id)
   end
 
-  test "created_at falls back to the column when data has no created_time" do
+  test "created_at is nil-safe when data has no created_time" do
     p = page!(database_id: LEADS_DB)
-    assert_kind_of ActiveSupport::TimeWithZone, p.created_at
+    assert_nil p.created_at
     p.update!(data: { "created_time" => "2024-01-02T03:04:00.000Z" })
     assert_equal DateTime.parse("2024-01-02T03:04:00.000Z"), p.created_at
+  end
+
+  test "Stacks::Notion::Lead.all uses the lead scope" do
+    page!(database_id: LEADS_DB)
+    assert_equal 1, Stacks::Notion::Lead.all.size
+    assert_kind_of Stacks::Notion::Lead, Stacks::Notion::Lead.all.first
   end
 
   test "status_history is gone" do
@@ -562,6 +583,17 @@ class ExtendNotionPagesForMirror < ActiveRecord::Migration[6.1]
              url = data->>'url',
              in_trash = COALESCE((data->>'in_trash')::boolean, false)
        WHERE data ? 'last_edited_time'
+    SQL
+    # The old sync stored only the first rich-text run of the title; join every run.
+    execute <<~SQL
+      UPDATE notion_pages p
+         SET page_title = COALESCE((
+               SELECT string_agg(run->>'plain_text', '' ORDER BY ord)
+                 FROM jsonb_each(p.data->'properties') AS props(key, val),
+                      jsonb_array_elements(val->'title') WITH ORDINALITY AS t(run, ord)
+                WHERE val->>'type' = 'title'
+             ), p.page_title)
+       WHERE p.data ? 'properties'
     SQL
   end
 
@@ -684,12 +716,23 @@ class NotionPage < ApplicationRecord
     data.dig("properties", name, prop_type)
   end
 
-  # Notion's created_time when present; the row's own timestamp otherwise.
+  # Notion's created_time when present; nil otherwise (notion_pages has no
+  # created_at column, so there is nothing to fall back to).
   def created_at
     created_time = data.is_a?(Hash) ? data["created_time"] : nil
-    created_time.present? ? DateTime.parse(created_time) : super
+    created_time.present? ? DateTime.parse(created_time) : nil
   end
 end
+```
+
+In `lib/stacks/notion/lead.rb`, replace the `all` class method (it still queries the old parent pair, which the new API version never writes) with:
+
+```ruby
+  class << self
+    def all
+      NotionPage.lead.map(&:as_lead)
+    end
+  end
 ```
 
 ```ruby
@@ -721,7 +764,7 @@ Expected: all pass. If a test fails because its helper creates rows with `notion
 - [ ] **Step 7: Commit**
 
 ```bash
-git add db/migrate db/schema.rb app/models/notion_page.rb app/models/notion_block.rb app/models/notion_data_source.rb app/models/notion_database.rb test/models/notion_page_test.rb test/services/mcp/explore_okr_tool_test.rb test/lib/stacks/task_builder
+git add db/migrate db/schema.rb app/models/notion_page.rb app/models/notion_block.rb app/models/notion_data_source.rb app/models/notion_database.rb lib/stacks/notion/lead.rb test/models/notion_page_test.rb test/services/mcp/explore_okr_tool_test.rb test/lib/stacks/task_builder
 git commit -m "feat: mirror schema — extend notion_pages, add notion_blocks/data_sources/databases; scopes on database_id"
 ```
 
@@ -865,6 +908,23 @@ class StacksNotionMirrorTest < ActiveSupport::TestCase
     assert_equal PAGE_ID, M.owning_page_id("b1")
     assert_nil M.owning_page_id("nope")
   end
+
+  test "upsert_data_source with fetched_at: nil never clears an existing fetched_at" do
+    obj = { "object" => "data_source", "id" => DS_ID, "title" => [], "parent" => {}, "properties" => {}, "last_edited_time" => "2026-09-01T00:00:00.000Z", "in_trash" => false }
+    M.upsert_data_source(obj, fetched_at: Time.current)
+    row = M.upsert_data_source(obj, fetched_at: nil)
+    assert row.fetched_at.present?
+    fresh = M.upsert_data_source(obj.merge("id" => SecureRandom.uuid), fetched_at: nil)
+    assert_nil fresh.fetched_at
+  end
+
+  test "a workspace-parented page stores a nil parent id" do
+    obj = page_obj.merge("parent" => { "type" => "workspace", "workspace" => true })
+    page = M.upsert_page(obj)
+    assert_equal "workspace", page.notion_parent_type
+    assert_nil page.notion_parent_id
+    assert_nil page.database_id
+  end
 end
 ```
 
@@ -910,11 +970,16 @@ module Stacks::Notion::Mirror
         end
 
         walked = page.tree_fetched_for_edited_at
-        page.assign_attributes(
+        # acts_as_paranoid 0.7: save! on a soft-deleted row updates through the
+        # default scope, matches 0 rows and raises RecordNotSaved. Recover first
+        # when the object is live; write a still-trashed row with update_all.
+        page.recover! if page.persisted? && page.deleted? && obj["in_trash"] == false
+
+        attrs = {
           data: strip(obj),
           page_title: title_of(obj),
           notion_parent_type: parent_type,
-          notion_parent_id: Stacks::Notion::Ids.normalize(parent[parent_type]) || parent[parent_type],
+          notion_parent_id: parent_type == "workspace" ? nil : (Stacks::Notion::Ids.normalize(parent[parent_type]) || parent[parent_type]),
           database_id: Stacks::Notion::Ids.normalize(parent["database_id"]),
           data_source_id: Stacks::Notion::Ids.normalize(parent["data_source_id"]),
           notion_last_edited_at: stamp,
@@ -922,23 +987,33 @@ module Stacks::Notion::Mirror
           in_trash: obj["in_trash"] == true,
           access_lost: false,
           url: obj["url"]
-        )
-        page.blocks_stale_at ||= fetched_at if walked && stamp && walked != stamp
-        page.save!
-        page.recover! if page.deleted? && obj["in_trash"] == false
-        page
+        }
+        attrs[:blocks_stale_at] = page.blocks_stale_at || fetched_at if walked && stamp && walked != stamp
+
+        if page.persisted? && page.deleted?
+          NotionPage.with_deleted.where(id: page.id).update_all(attrs)
+          NotionPage.with_deleted.find(page.id)
+        else
+          page.assign_attributes(attrs)
+          page.save!
+          page
+        end
       end
     end
 
     def upsert_data_source(obj, fetched_at: Time.current)
       id = Stacks::Notion::Ids.normalize(obj["id"]) or raise ArgumentError, "data source id missing"
       row = NotionDataSource.find_or_initialize_by(notion_id: id)
-      row.update!(
+      row.assign_attributes(
         data: strip(obj), title: title_of(obj),
         database_id: Stacks::Notion::Ids.normalize(obj.dig("parent", "database_id")),
         notion_last_edited_at: parse_time(obj["last_edited_time"]),
-        fetched_at: fetched_at, in_trash: obj["in_trash"] == true
+        in_trash: obj["in_trash"] == true
       )
+      # A feed-sourced object (fetched_at: nil) must not clear a fetched_at learned
+      # from GET /data_sources/:id — the backfill relies on nil meaning "schema not fetched".
+      row.fetched_at = fetched_at if fetched_at || row.new_record?
+      row.save!
       row
     end
 
@@ -1001,7 +1076,7 @@ end
 - [ ] **Step 4: Run the tests**
 
 Run: `bin/rails test test/lib/stacks/notion/mirror_test.rb`
-Expected: `9 runs, 0 failures`
+Expected: `11 runs, 0 failures`
 
 - [ ] **Step 5: Commit**
 
@@ -1102,6 +1177,9 @@ Delete the old `sync_database` (and any leftover `query_database` / `create_data
       cursor = page["next_cursor"]
       break if cursor.nil?
     end
+    # An empty result must never wipe the database: where.not(notion_id: []) is 1=1.
+    return { upserted: 0, removed: 0 } if seen.empty?
+
     removed = NotionPage.where(database_id: dashed_db).where.not(notion_id: seen).to_a
     removed.each(&:destroy)
     { upserted: seen.size, removed: removed.size }
@@ -1251,11 +1329,11 @@ class StacksNotionTreeFetcherTest < ActiveSupport::TestCase
 
   test "an edit during the walk leaves the page stale" do
     Stacks::Notion::Mirror.upsert_page(page_obj)
-    @client.stubs(:get_block_children).with(PAGE, start_cursor: nil, page_size: 100).returns(list([block("b1", PAGE)])).then.returns(list([block("b1", PAGE)]))
-    @client.stubs(:get_page).returns(page_obj(last_edited: "2026-09-10T10:05:00.000Z"))
-    fetcher = Stacks::Notion::TreeFetcher.new(@client)
-    fetcher.stubs(:refresh_page_stamp!).with { |_| Stacks::Notion::Mirror.upsert_page(page_obj(last_edited: "2026-09-10T10:05:00.000Z")); true }
-    result = fetcher.walk(PAGE)
+    # The sweep is what normally moves the stamp mid-walk; simulate it from inside the stub.
+    @client.stubs(:get_block_children)
+           .with { |*| Stacks::Notion::Mirror.upsert_page(page_obj(last_edited: "2026-09-10T10:05:00.000Z")); true }
+           .returns(list([block("b1", PAGE)]))
+    result = Stacks::Notion::TreeFetcher.new(@client).walk(PAGE)
     refute result[:complete]
     assert NotionPage.find_by!(notion_id: PAGE).blocks_stale_at.present?
   end
@@ -1318,18 +1396,22 @@ class Stacks::Notion::TreeFetcher
     until queue.empty?
       parent_id = queue.shift
       if level_stale?(page, parent_id, stale_at)
-        return give_up(page) if expired?
         blocks, n = self.class.fetch_level(@client, parent_id: parent_id, page_id: page_id)
         @requests += n
         Stacks::Notion::Mirror.replace_level(parent_id: parent_id, page_id: page_id, blocks: blocks, fetched_at: Time.current)
+        enqueue_children!(queue, parent_id)
+        # Checked AFTER the level so every walk makes progress; the next call
+        # resumes because fresh levels are skipped.
+        return give_up(page) if expired? && queue.any?
+        next
       end
-      NotionBlock.where(parent_id: parent_id, has_children: true).order(:position).pluck(:notion_id).each { |id| queue << id }
+      enqueue_children!(queue, parent_id)
     end
 
     refresh_page_stamp!(page) if stamp_at_start.nil?
     page.reload
     if page.notion_last_edited_at != stamp_at_start && !stamp_at_start.nil?
-      page.update!(blocks_stale_at: page.blocks_stale_at || Time.current)
+      update_page!(page, blocks_stale_at: page.blocks_stale_at || Time.current)
       return { complete: false, requests: @requests }
     end
 
@@ -1337,11 +1419,21 @@ class Stacks::Notion::TreeFetcher
     if page.notion_last_edited_at && walk_started_at < page.notion_last_edited_at + MINUTE_GUARD
       attrs[:recheck_after] = page.notion_last_edited_at + MINUTE_GUARD
     end
-    page.update!(attrs)
+    update_page!(page, attrs)
     { complete: true, requests: @requests }
   end
 
   private
+
+  def enqueue_children!(queue, parent_id)
+    NotionBlock.where(parent_id: parent_id, has_children: true).order(:position).pluck(:notion_id).each { |id| queue << id }
+  end
+
+  # update_all through with_deleted: `update!` on a soft-deleted row raises
+  # RecordNotSaved under acts_as_paranoid 0.7 (default scope matches 0 rows).
+  def update_page!(page, attrs)
+    NotionPage.with_deleted.where(id: page.id).update_all(attrs)
+  end
 
   def fetch_page!(page_id)
     obj = @client.get_page(page_id)
@@ -1372,19 +1464,13 @@ class Stacks::Notion::TreeFetcher
   end
 
   def give_up(page)
-    page.update!(wanted_at: page.wanted_at || Time.current)
+    update_page!(page, wanted_at: page.wanted_at || Time.current)
     { complete: false, requests: @requests }
   end
 end
 ```
 
-Note on the "edit during the walk" test: it stubs `refresh_page_stamp!` because the walk only re-reads the page object when the row had no stamp at start; the sweep is what normally moves `notion_last_edited_at` during a walk. The test simulates that by having the stub upsert a newer object — but the stub is only invoked when `stamp_at_start.nil?`. Make the test deterministic instead: after the first `get_block_children` stub fires, upsert the newer page object from a `.with { … }` block on that stub:
-
-```ruby
-    @client.stubs(:get_block_children).with { |*| Stacks::Notion::Mirror.upsert_page(page_obj(last_edited: "2026-09-10T10:05:00.000Z")); true }.returns(list([block("b1", PAGE)]))
-```
-
-and delete the `fetcher.stubs(:refresh_page_stamp!)` and `@client.stubs(:get_page)` lines from that test.
+With `deadline: 0.0` the first stale level is still fetched (the deadline is checked after each level), which is what the resume test's `requests: 1` then `requests: 2` asserts.
 
 - [ ] **Step 4: Run the tests**
 
@@ -1603,9 +1689,10 @@ class Api::Notion::ProxyController < ApiController
     return render_cached(row.data, fetched_at: row.updated_at, state: "hit") if row
 
     obj = client.get_block(id)
-    page_id = Stacks::Notion::Mirror.owning_page_id(obj.dig("parent", "page_id") || obj.dig("parent", "block_id"))
+    parent_id = obj.dig("parent", "page_id") || obj.dig("parent", "block_id")
+    page_id = Stacks::Notion::Mirror.owning_page_id(parent_id)
     if page_id
-      Stacks::Notion::Mirror.store_blocks(parent_id: obj.dig("parent", "page_id") || obj.dig("parent", "block_id"), page_id: page_id, blocks: [obj], position_offset: NotionBlock.where(parent_id: obj.dig("parent", "page_id") || obj.dig("parent", "block_id")).count)
+      Stacks::Notion::Mirror.store_blocks(parent_id: parent_id, page_id: page_id, blocks: [obj], position_offset: NotionBlock.where(parent_id: parent_id).count)
     end
     render_live(obj)
   end
@@ -2160,20 +2247,33 @@ class StacksNotionSweepTest < ActiveSupport::TestCase
     assert_equal Time.zone.parse("2026-09-10T11:50:00Z"), row.tree_fetched_for_edited_at
   end
 
-  test "pages never walked are not refreshed, wanted_at pages go first, and the run deadline stops refresh" do
+  test "wanted_at pages are refreshed first and pages never walked are skipped" do
     never, wanted, stale = 3.times.map { SecureRandom.uuid }
     [never, wanted, stale].each { |id| Stacks::Notion::Mirror.upsert_page(page(id, "2026-09-10T11:00:00.000Z")) }
     NotionPage.find_by!(notion_id: wanted).update!(wanted_at: Time.current)
     NotionPage.find_by!(notion_id: stale).update!(blocks_stale_at: Time.current, tree_fetched_for_edited_at: 1.day.ago, root_children_fetched_at: 1.day.ago)
     @client.stubs(:search).returns(feed([]))
-    @client.expects(:get_block_children).with(wanted, start_cursor: nil, page_size: 100).returns({ "object" => "list", "results" => [], "next_cursor" => nil, "has_more" => false })
-    @client.expects(:get_block_children).with(stale, start_cursor: nil, page_size: 100).never
+    seq = sequence("refresh order")
+    empty = { "object" => "list", "results" => [], "next_cursor" => nil, "has_more" => false }
+    @client.expects(:get_block_children).with(wanted, start_cursor: nil, page_size: 100).returns(empty).in_sequence(seq)
+    @client.expects(:get_block_children).with(stale, start_cursor: nil, page_size: 100).returns(empty).in_sequence(seq)
     @client.expects(:get_block_children).with(never, start_cursor: nil, page_size: 100).never
 
-    stats = Stacks::Notion::Sweep.new(@client, run_deadline: 0.seconds).run
+    stats = Stacks::Notion::Sweep.new(@client).run
+    assert_equal 2, stats[:trees_refreshed]
+  end
 
-    assert_equal 1, stats[:trees_refreshed]
-    assert_equal 1, stats[:pages_still_stale]
+  test "the run deadline stops tree refresh and leaves the pages flagged" do
+    wanted, stale = 2.times.map { SecureRandom.uuid }
+    [wanted, stale].each { |id| Stacks::Notion::Mirror.upsert_page(page(id, "2026-09-10T11:00:00.000Z")) }
+    NotionPage.find_by!(notion_id: wanted).update!(wanted_at: Time.current)
+    NotionPage.find_by!(notion_id: stale).update!(blocks_stale_at: Time.current, tree_fetched_for_edited_at: 1.day.ago, root_children_fetched_at: 1.day.ago)
+    @client.stubs(:search).returns(feed([]))
+    @client.expects(:get_block_children).never
+
+    stats = Stacks::Notion::Sweep.new(@client, run_deadline: 0.seconds).run
+    assert_equal 0, stats[:trees_refreshed]
+    assert_equal 2, stats[:pages_still_stale]
   end
 
   test "recheck_after pages get one GET and are re-flagged only if the stamp moved" do
@@ -2336,10 +2436,10 @@ class Stacks::Notion::Sweep
       @stats[:requests_spent] += 1
       @stats[:rechecks] += 1
       Stacks::Notion::Mirror.upsert_page(obj, fetched_at: @now) # marks stale if the stamp moved
-      page.reload.update!(recheck_after: nil)
+      NotionPage.with_deleted.where(id: page.id).update_all(recheck_after: nil)
     rescue Stacks::Notion::RequestError => e
       Rails.logger.warn("[Stacks::Notion::Sweep] recheck #{page.notion_id} failed: #{e.message}")
-      page.update!(recheck_after: nil)
+      NotionPage.with_deleted.where(id: page.id).update_all(recheck_after: nil)
     end
   end
 
@@ -2505,12 +2605,25 @@ class StacksNotionReconcileTest < ActiveSupport::TestCase
     assert_equal Time.zone.parse("2026-09-05T00:00:00Z"), NotionPage.find_by!(notion_id: drifted).notion_last_edited_at
   end
 
-  test "the disambiguation limit bounds requests" do
-    3.times { Stacks::Notion::Mirror.upsert_page(page(SecureRandom.uuid)) }
+  test "the disambiguation limit bounds requests across pages and data sources" do
+    ids = 3.times.map { SecureRandom.uuid }
+    ids.each { |id| Stacks::Notion::Mirror.upsert_page(page(id)) }
+    NotionDataSource.create!(notion_id: SecureRandom.uuid, title: "DS", data: {})
     @client.stubs(:search).returns({ "object" => "list", "results" => [], "next_cursor" => nil, "has_more" => false })
-    @client.expects(:get_page).twice.returns(page(SecureRandom.uuid, in_trash: true))
+    @client.expects(:get_page).twice.with { |id| ids.include?(id) }.returns { |id| page(id, in_trash: true) }
+    @client.expects(:get_data_source).never
     stats = Stacks::Notion::Reconcile.new(@client, disambiguation_limit: 2).run
     assert_equal 2, stats[:checked]
+    assert_equal 2, stats[:trashed]
+  end
+
+  test "unseen data sources are disambiguated too" do
+    ds = NotionDataSource.create!(notion_id: SecureRandom.uuid, title: "DS", data: {})
+    @client.stubs(:search).returns({ "object" => "list", "results" => [], "next_cursor" => nil, "has_more" => false })
+    @client.expects(:get_data_source).with(ds.notion_id).raises(Stacks::Notion::RequestError.new(404, { "object" => "error" }))
+    stats = Stacks::Notion::Reconcile.new(@client).run
+    assert_equal 1, stats[:access_lost]
+    assert ds.reload.in_trash
   end
 end
 ```
@@ -2605,16 +2718,7 @@ class Stacks::Notion::Backfill
 end
 ```
 
-Note: `Mirror.upsert_data_source(obj, fetched_at: nil)` must leave `fetched_at` nil for feed-sourced data source objects (search results carry the schema but the backfill treats them as unfetched so `GET /data_sources/:id` is the canonical copy). Adjust `Mirror.upsert_data_source` so a `nil` `fetched_at` argument does not overwrite an existing non-nil value: `row.fetched_at = fetched_at if fetched_at || row.new_record?` — and add a line to `mirror_test.rb`:
-
-```ruby
-  test "upsert_data_source with fetched_at: nil never clears an existing fetched_at" do
-    obj = { "object" => "data_source", "id" => DS_ID, "title" => [], "parent" => {}, "properties" => {}, "last_edited_time" => "2026-09-01T00:00:00.000Z", "in_trash" => false }
-    M.upsert_data_source(obj, fetched_at: Time.current)
-    row = M.upsert_data_source(obj, fetched_at: nil)
-    assert row.fetched_at.present?
-  end
-```
+`Mirror.upsert_data_source(obj, fetched_at: nil)` (Task 4) leaves `fetched_at` nil for feed-sourced data source objects, so the schemas phase knows which ones still need `GET /data_sources/:id`.
 
 ```ruby
 # lib/stacks/notion/reconcile.rb
@@ -2639,6 +2743,7 @@ class Stacks::Notion::Reconcile
   end
 
   def run
+    before = NotionPage.pluck(:notion_id, :notion_last_edited_at).to_h
     seen_pages = {}
     seen_ds = Set.new
     cursor = nil
@@ -2649,21 +2754,23 @@ class Stacks::Notion::Reconcile
       list["results"].each do |obj|
         id = Stacks::Notion::Ids.normalize(obj["id"])
         case obj["object"]
-        when "page" then seen_pages[id] = Time.zone.parse(obj["last_edited_time"].to_s)
-        when "data_source" then seen_ds << id
+        when "page"
+          Stacks::Notion::Mirror.upsert_page(obj) # feed objects are full: brings drifted rows current
+          seen_pages[id] = Time.zone.parse(obj["last_edited_time"].to_s)
+        when "data_source"
+          Stacks::Notion::Mirror.upsert_data_source(obj, fetched_at: nil)
+          seen_ds << id
         end
       end
       cursor = list["next_cursor"]
       break if cursor.nil?
     end
 
-    drift = NotionPage.where(notion_id: seen_pages.keys).pluck(:notion_id, :notion_last_edited_at)
-                      .count { |id, stamp| stamp.nil? || (seen_pages[id] && stamp < seen_pages[id]) }
-    # Upsert nothing here beyond what the feed already carried? We do: the feed
-    # objects are full, so bring the drifted rows current too.
+    drift = seen_pages.count { |id, stamp| before.key?(id) && (before[id].nil? || (stamp && before[id] < stamp)) }
     stats = { seen: seen_pages.size, checked: 0, trashed: 0, access_lost: 0, drift: drift }
 
-    NotionPage.where(in_trash: false, access_lost: false).where.not(notion_id: seen_pages.keys).order(:notion_last_edited_at).limit(@limit).each do |page|
+    NotionPage.where(in_trash: false, access_lost: false).where.not(notion_id: seen_pages.keys)
+              .order(:notion_last_edited_at).limit(@limit).each do |page|
       stats[:checked] += 1
       obj = @client.get_page(page.notion_id)
       Stacks::Notion::Mirror.upsert_page(obj)
@@ -2673,12 +2780,22 @@ class Stacks::Notion::Reconcile
       page.update!(access_lost: true)
       stats[:access_lost] += 1
     end
+
+    NotionDataSource.where(in_trash: false).where.not(notion_id: seen_ds.to_a)
+                    .order(:notion_last_edited_at).limit([@limit - stats[:checked], 0].max).each do |ds|
+      stats[:checked] += 1
+      obj = @client.get_data_source(ds.notion_id)
+      Stacks::Notion::Mirror.upsert_data_source(obj)
+      stats[:trashed] += 1 if obj["in_trash"] == true
+    rescue Stacks::Notion::RequestError => e
+      raise unless [403, 404].include?(e.code)
+      ds.update!(in_trash: true)
+      stats[:access_lost] += 1
+    end
     stats
   end
 end
 ```
-
-The feed walk in `Reconcile#run` must also upsert page objects it sees (that is what brings `drifted` current in the test): inside the `when "page"` branch add `Stacks::Notion::Mirror.upsert_page(obj)` **before** recording the stamp, and compute `drift` from the stamps read **before** the walk — restructure as: first `before = NotionPage.pluck(:notion_id, :notion_last_edited_at).to_h`, then walk (upserting), then `drift = seen_pages.count { |id, stamp| before.key?(id) && (before[id].nil? || before[id] < stamp) }`.
 
 - [ ] **Step 4: Add the rake tasks**
 
@@ -2694,7 +2811,7 @@ Append inside `namespace :notion` in `lib/tasks/notion.rake`:
         puts stats.inspect if stats
       rescue => e
         system_task.mark_as_error(e)
-        raise
+        raise # a one-off `heroku run` must exit non-zero so the operator re-runs it
       else
         system_task.mark_as_success
       end
@@ -2722,7 +2839,7 @@ Expected: all pass.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add lib/stacks/notion/backfill.rb lib/stacks/notion/reconcile.rb lib/stacks/notion/mirror.rb lib/tasks/notion.rake test/lib/stacks/notion/backfill_test.rb test/lib/stacks/notion/reconcile_test.rb test/lib/stacks/notion/mirror_test.rb
+git add lib/stacks/notion/backfill.rb lib/stacks/notion/reconcile.rb lib/tasks/notion.rake test/lib/stacks/notion/backfill_test.rb test/lib/stacks/notion/reconcile_test.rb
 git commit -m "feat: Notion mirror backfill (resumable) and daily reconcile with trash/access-lost disambiguation"
 ```
 
@@ -2775,7 +2892,7 @@ git commit -m "feat: Notion mirror backfill (resumable) and daily reconcile with
 }
 ```
 
-`test/fixtures/files/notion/blocks_tree.md` (exact bytes, trailing newline):
+`test/fixtures/files/notion/blocks_tree.md` (exact bytes, one trailing newline; the ```` ```ruby ```` fence inside it is fixture content, not plan markup — the fixture file is everything between the outer ```` ```markdown ```` fences):
 
 ```markdown
 # Title
@@ -2868,13 +2985,16 @@ module Stacks::Notion::Markdown
     def render_children(by_parent, parent_id, depth, out)
       blocks = by_parent[parent_id] || []
       numbered = 0
-      blocks.each do |b|
+      blocks.each_with_index do |b, i|
         type = b["type"]
         numbered = type == "numbered_list_item" ? numbered + 1 : 0
         lines = render_block(by_parent, b, depth, numbered)
         next if lines.nil?
         out.concat(lines)
-        out << "" unless LIST_TYPES.include?(type)
+        nxt = blocks[i + 1]
+        # No blank line inside a run of list items; one after everything else.
+        next if LIST_TYPES.include?(type) && nxt && LIST_TYPES.include?(nxt["type"])
+        out << ""
       end
     end
 
@@ -3238,7 +3358,7 @@ class Stacks::Notion::Parity
     end
     check("row seeded from a search result then GET pages/:id equals Notion's GET") do
       hit = @notion.search({ "query" => "Leads", "page_size" => 5, "filter" => { "property" => "object", "value" => "page" } })["results"].first
-      NotionPage.with_deleted.where(notion_id: Stacks::Notion::Ids.normalize(hit["id"])).each { |p| p.really_destroy! rescue p.delete }
+      NotionPage.with_deleted.where(notion_id: Stacks::Notion::Ids.normalize(hit["id"])).each(&:destroy_fully!)
       Stacks::Notion::Mirror.upsert_page(hit)
       compare_get("/pages/#{hit['id']}", @notion.get_page(hit["id"]), expect: "hit")
     end
@@ -3314,7 +3434,11 @@ class Stacks::Notion::Parity
   def proxy(method, path, body = nil)
     if @base
       resp = HTTParty.send(method, "#{@base}/api/notion/v1#{path}", headers: { "X-Api-Key" => @key, "Content-Type" => "application/json" }, body: body&.to_json)
-      [resp.code, resp.headers.to_h.transform_keys { |k| k.split("-").map(&:capitalize).join("-") }, resp.parsed_response]
+      # HTTParty headers are a Net::HTTPHeader: to_h yields Array values.
+      headers = resp.headers.to_h.each_with_object({}) do |(k, v), h|
+        h[k.to_s.split("-").map(&:capitalize).join("-")] = v.is_a?(Array) ? v.first : v
+      end
+      [resp.code, headers, resp.parsed_response]
     else
       session = ActionDispatch::Integration::Session.new(Rails.application)
       session.host! "localhost"
@@ -3325,7 +3449,7 @@ class Stacks::Notion::Parity
 end
 ```
 
-`NotionPage#really_destroy!` is provided by `acts_as_paranoid`; the `rescue p.delete` fallback is defensive.
+`destroy_fully!` is acts_as_paranoid 0.7's hard delete (there is no `really_destroy!` in this version).
 
 - [ ] **Step 2: Write the live test (self-skipping) and the rake task**
 
