@@ -27,8 +27,26 @@ class Stacks::Notion::TreeFetcher
   end
 
   def walk(page_id)
+    # Reset per-walk counters: @requests/@started are set in initialize, so a
+    # second walk on the same instance would otherwise report a cumulative
+    # request count against an already-spent deadline.
+    @requests = 0
+    @started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
     page_id = Stacks::Notion::Ids.normalize(page_id) || page_id
     page = NotionPage.with_deleted.find_by(notion_id: page_id) || fetch_page!(page_id)
+
+    # A completed tree stamped for the page's current edit, with no
+    # invalidation pending (no staleness marker, no outstanding want), is
+    # fresh by construction: nothing in the tree can be stale, so skip the
+    # DB walk entirely rather than pay two indexed queries per has_children
+    # block on every call.
+    if page.blocks_stale_at.nil? && page.wanted_at.nil? &&
+       page.tree_fetched_for_edited_at.present? &&
+       page.tree_fetched_for_edited_at == page.notion_last_edited_at
+      return { complete: true, requests: @requests }
+    end
+
     stamp_at_start = page.notion_last_edited_at
     walk_started_at = Time.current
     stale_at = page.blocks_stale_at

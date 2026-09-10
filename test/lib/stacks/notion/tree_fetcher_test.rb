@@ -57,7 +57,19 @@ class StacksNotionTreeFetcherTest < ActiveSupport::TestCase
     Stacks::Notion::Mirror.replace_level(parent_id: PAGE, page_id: PAGE, blocks: [block("b1", PAGE)], fetched_at: Time.current)
     NotionPage.find_by!(notion_id: PAGE).update!(tree_fetched_for_edited_at: Time.zone.parse("2026-09-10T10:00:00Z"))
     @client.expects(:get_block_children).never
+    # Proves the short-circuit skips the DB tree walk entirely: no block queries.
+    NotionBlock.expects(:where).never
     assert_equal({ complete: true, requests: 0 }, Stacks::Notion::TreeFetcher.new(@client).walk(PAGE))
+  end
+
+  test "a completed tree whose stamp moved is not short-circuited" do
+    Stacks::Notion::Mirror.upsert_page(page_obj)
+    NotionPage.find_by!(notion_id: PAGE).update!(
+      tree_fetched_for_edited_at: Time.zone.parse("2026-09-10T09:00:00Z"),
+      blocks_stale_at: Time.current
+    )
+    @client.expects(:get_block_children).with(PAGE, start_cursor: nil, page_size: 100).returns(list([]))
+    assert_equal({ complete: true, requests: 1 }, Stacks::Notion::TreeFetcher.new(@client).walk(PAGE))
   end
 
   test "a stale page refetches only levels older than blocks_stale_at" do
