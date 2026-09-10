@@ -1,23 +1,16 @@
 class NotionPage < ApplicationRecord
   acts_as_paranoid
 
-  scope :lead, -> {
-    where(
-      notion_parent_type: "database_id",
-      notion_parent_id: Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:LEADS])
-    )
-  }
+  # Rows of a Notion database, by dashed database id. in_trash rows are kept
+  # (served one-to-one by the proxy) but are not "in" the database for Stacks.
+  scope :for_database, ->(dashed_database_id) { where(database_id: dashed_database_id, in_trash: false) }
+
+  scope :lead, -> { for_database(Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:LEADS])) }
+  scope :human_operating_manual, -> { for_database(Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:HUMAN_OPERATING_MANUALS])) }
 
   def as_lead
     Stacks::Notion::Lead.new(self)
   end
-
-  scope :human_operating_manual, -> {
-    where(
-      notion_parent_type: "database_id",
-      notion_parent_id: Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:HUMAN_OPERATING_MANUALS])
-    )
-  }
 
   def as_human_operating_manual
     Stacks::Notion::HumanOperatingManual.new(self)
@@ -41,45 +34,10 @@ class NotionPage < ApplicationRecord
     data.dig("properties", name, prop_type)
   end
 
+  # Notion's created_time when present; nil otherwise (notion_pages has no
+  # created_at column, so there is nothing to fall back to).
   def created_at
-    DateTime.parse(data.dig("created_time"))
-  end
-
-  def status_history
-    original = versions.first&.reify || self
-
-    versions.reduce([{
-      original_status: original.status,
-      changed_at: original.created_at.to_date,
-    }]) do |acc, v|
-      prev_status = ""
-      current_status = ""
-
-      # The initial accumaltor handles the original state
-      next acc if v.event == "create"
-
-      # If data didn't change, ignore
-      next acc if v.changeset["data"].nil?
-
-      # Data changed, so let's check if status changed
-      if notion_parent_id == Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:TASKS])
-        prev_status = v.changeset["data"][0].dig("properties", "✳️ Status 🚦", "status", "name")
-        current_status = v.changeset["data"][1].dig("properties", "✳️ Status 🚦", "status", "name")
-      else
-        prev_status = v.changeset["data"][0].dig("properties", "Status", "select", "name") || v.changeset["data"][0].dig("properties", 'Stage (formerly "Status")', "select", "name")
-        current_status = v.changeset["data"][1].dig("properties", "Status", "select", "name") || v.changeset["data"][1].dig("properties", 'Stage (formerly "Status")', "select", "name")
-      end
-
-      # Only stash this version if status actually changed
-      if prev_status != current_status
-        acc = [*acc, {
-          prev_status: prev_status,
-          current_status: current_status,
-          changed_at: v.created_at.to_date,
-        }]
-      end
-
-      acc
-    end
+    created_time = data.is_a?(Hash) ? data["created_time"] : nil
+    created_time.present? ? DateTime.parse(created_time) : nil
   end
 end

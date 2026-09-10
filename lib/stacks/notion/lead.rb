@@ -1,10 +1,7 @@
 class Stacks::Notion::Lead < Stacks::Notion::Base
   class << self
     def all
-      NotionPage.where(
-        notion_parent_type: "database_id",
-        notion_parent_id: Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:LEADS])
-      ).map(&:as_lead)
+      NotionPage.lead.map(&:as_lead)
     end
   end
 

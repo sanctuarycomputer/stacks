@@ -52,6 +52,7 @@ class Mcp::ExploreOkrToolTest < ActiveSupport::TestCase
       notion_id: SecureRandom.uuid,
       notion_parent_type: 'database_id',
       notion_parent_id: Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:LEADS]),
+      database_id: Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:LEADS]),
       page_title: title,
       data: { 'properties' => properties }
     )

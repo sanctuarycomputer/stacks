@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_08_19_002741) do
+ActiveRecord::Schema.define(version: 2026_09_10_100003) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -607,6 +607,47 @@ ActiveRecord::Schema.define(version: 2026_08_19_002741) do
     t.index ["recipient_type", "recipient_id"], name: "index_notifications_on_recipient_type_and_recipient_id"
   end
 
+  create_table "notion_blocks", force: :cascade do |t|
+    t.string "notion_id", null: false
+    t.string "parent_id", null: false
+    t.string "page_id", null: false
+    t.integer "position", null: false
+    t.boolean "has_children", default: false, null: false
+    t.datetime "children_fetched_at"
+    t.jsonb "data", default: {}, null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["notion_id"], name: "index_notion_blocks_on_notion_id", unique: true
+    t.index ["page_id"], name: "index_notion_blocks_on_page_id"
+    t.index ["parent_id", "position"], name: "index_notion_blocks_on_parent_id_and_position"
+  end
+
+  create_table "notion_data_sources", force: :cascade do |t|
+    t.string "notion_id", null: false
+    t.string "database_id"
+    t.string "title", default: "", null: false
+    t.jsonb "data", default: {}, null: false
+    t.datetime "notion_last_edited_at"
+    t.datetime "fetched_at"
+    t.boolean "in_trash", default: false, null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["database_id"], name: "index_notion_data_sources_on_database_id"
+    t.index ["notion_id"], name: "index_notion_data_sources_on_notion_id", unique: true
+  end
+
+  create_table "notion_databases", force: :cascade do |t|
+    t.string "notion_id", null: false
+    t.string "title", default: "", null: false
+    t.jsonb "data", default: {}, null: false
+    t.datetime "notion_last_edited_at"
+    t.datetime "fetched_at"
+    t.boolean "in_trash", default: false, null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["notion_id"], name: "index_notion_databases_on_notion_id", unique: true
+  end
+
   create_table "notion_pages", force: :cascade do |t|
     t.string "notion_id", null: false
     t.string "notion_parent_type"
@@ -614,8 +655,26 @@ ActiveRecord::Schema.define(version: 2026_08_19_002741) do
     t.jsonb "data", default: {}, null: false
     t.string "page_title", default: "", null: false
     t.datetime "deleted_at"
+    t.string "database_id"
+    t.string "data_source_id"
+    t.datetime "notion_last_edited_at"
+    t.datetime "page_fetched_at"
+    t.datetime "root_children_fetched_at"
+    t.datetime "tree_fetched_for_edited_at"
+    t.datetime "blocks_stale_at"
+    t.datetime "recheck_after"
+    t.datetime "wanted_at"
+    t.boolean "in_trash", default: false, null: false
+    t.boolean "access_lost", default: false, null: false
+    t.string "url"
+    t.index ["blocks_stale_at"], name: "index_notion_pages_on_blocks_stale_at", where: "(blocks_stale_at IS NOT NULL)"
+    t.index ["data_source_id"], name: "index_notion_pages_on_data_source_id"
+    t.index ["database_id"], name: "index_notion_pages_on_database_id"
     t.index ["deleted_at"], name: "index_notion_pages_on_deleted_at"
     t.index ["notion_id"], name: "index_notion_pages_on_notion_id", unique: true
+    t.index ["notion_last_edited_at"], name: "index_notion_pages_on_notion_last_edited_at"
+    t.index ["recheck_after"], name: "index_notion_pages_on_recheck_after", where: "(recheck_after IS NOT NULL)"
+    t.index ["wanted_at"], name: "index_notion_pages_on_wanted_at", where: "(wanted_at IS NOT NULL)"
   end
 
   create_table "okr_period_studios", force: :cascade do |t|

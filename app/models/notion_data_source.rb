@@ -1,0 +1,2 @@
+class NotionDataSource < ApplicationRecord
+end
