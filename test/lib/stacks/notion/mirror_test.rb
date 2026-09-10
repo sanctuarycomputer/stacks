@@ -110,6 +110,32 @@ class StacksNotionMirrorTest < ActiveSupport::TestCase
     assert_equal 3, NotionBlock.where(page_id: PAGE_ID).count
   end
 
+  test "replace_level survives a unique-index race on one block inside its transaction" do
+    M.upsert_page(page_obj)
+    NotionBlock.create!(notion_id: "b1", parent_id: PAGE_ID, page_id: PAGE_ID, position: 0, has_children: false, data: {})
+
+    # Simulate a concurrent writer winning the race to insert "b1" for real: the
+    # first find_or_initialize_by call hands back a brand-new unsaved record (as
+    # if it didn't see the pre-existing row), so its update! collides on the
+    # unique index and Postgres raises a real RecordNotUnique. Every later call
+    # goes to the real method, which finds the row that's actually there.
+    real = NotionBlock.method(:find_or_initialize_by)
+    NotionBlock.stubs(:find_or_initialize_by)
+      .with(notion_id: "b1").returns(NotionBlock.new(notion_id: "b1")).then
+      .returns(real.call(notion_id: "b1"))
+    # Stubbing find_or_initialize_by with .with(notion_id: "b1") only intercepts
+    # that exact call; b2's call still goes through the same stubbed method, so it
+    # needs its own pass-through expectation (evaluated eagerly, same as above).
+    NotionBlock.stubs(:find_or_initialize_by).with(notion_id: "b2").returns(real.call(notion_id: "b2"))
+
+    result = M.replace_level(parent_id: PAGE_ID, page_id: PAGE_ID,
+                              blocks: [block("b1", PAGE_ID), block("b2", PAGE_ID)], fetched_at: Time.current)
+
+    assert result
+    assert_equal %w[b1 b2], NotionBlock.children_of(PAGE_ID).pluck(:notion_id)
+    assert NotionPage.find_by(notion_id: PAGE_ID).root_children_fetched_at.present?
+  end
+
   test "owning_page_id resolves pages and cached blocks, nil otherwise" do
     M.upsert_page(page_obj)
     M.replace_level(parent_id: PAGE_ID, page_id: PAGE_ID, blocks: [block("b1", PAGE_ID)], fetched_at: Time.current)

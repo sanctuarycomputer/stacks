@@ -123,10 +123,20 @@ module Stacks::Notion::Mirror
       blocks.each_with_index.map do |obj, i|
         bid = Stacks::Notion::Ids.normalize(obj["id"]) || obj["id"]
         retry_once_on_unique_violation do
-          row = NotionBlock.find_or_initialize_by(notion_id: bid)
-          row.update!(parent_id: parent_id, page_id: page_id, position: position_offset + i,
-                      has_children: obj["has_children"] == true, data: strip(obj))
-          row
+          # requires_new: true opens a savepoint rather than joining whatever
+          # transaction is already open. store_blocks is called both standalone
+          # and from inside replace_level's NotionBlock.transaction do ... end;
+          # without a savepoint, a RecordNotUnique here aborts that enclosing
+          # Postgres transaction, so the retry's update! would run inside an
+          # already-failed transaction and raise PG::InFailedSqlTransaction
+          # instead of succeeding. The savepoint isolates the failed attempt so
+          # the retry can run cleanly regardless of what's calling us.
+          NotionBlock.transaction(requires_new: true) do
+            row = NotionBlock.find_or_initialize_by(notion_id: bid)
+            row.update!(parent_id: parent_id, page_id: page_id, position: position_offset + i,
+                        has_children: obj["has_children"] == true, data: strip(obj))
+            row
+          end
         end
       end
     end
