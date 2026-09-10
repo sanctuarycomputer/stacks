@@ -101,27 +101,6 @@ class Stacks::Notion
   def update_block(block_id, body) = request(:patch, "/blocks/#{block_id}", body: body)
   def delete_block(block_id) = request(:delete, "/blocks/#{block_id}")
 
-  # Back-compat for callers that resolved rows by database id.
-  def query_database_all(database_id)
-    ds_id = get_database(database_id).dig("data_sources", 0, "id")
-    results = []
-    cursor = nil
-    loop do
-      page = query_data_source(ds_id, cursor ? { start_cursor: cursor } : {})
-      results.concat(page["results"])
-      cursor = page["next_cursor"]
-      break if cursor.nil?
-    end
-    results
-  end
-
-  # Temporary shim so `sync_database` (below, rewritten in Task 5) keeps
-  # working against the new data-source-based query API.
-  def query_database(database_id, start_cursor = nil)
-    ds_id = get_database(database_id).dig("data_sources", 0, "id")
-    query_data_source(ds_id, start_cursor.present? ? { start_cursor: start_cursor } : {})
-  end
-
   private
 
   def request(method, path, body: nil, query: nil)
@@ -153,57 +132,28 @@ class Stacks::Notion
 
   public
 
+  # Full reconcile of one Stacks-owned database (Leads, Human Operating Manuals):
+  # every row is upserted through the mirror; rows of that database_id that
+  # Notion no longer returns are soft-deleted (TaskBuilder relies on them
+  # disappearing). Rows that come back are recovered by Mirror.upsert_page.
   def sync_database(database_id)
-    database_entries_touched = []
-    next_cursor = nil
+    dashed_db = Stacks::Notion::Ids.normalize(database_id) or raise ArgumentError, "bad database id #{database_id.inspect}"
+    ds_id = get_database(database_id).dig("data_sources", 0, "id") or raise "database #{database_id} has no data source"
+    seen = []
+    cursor = nil
     loop do
-      response = query_database(database_id, next_cursor)
-      response["results"].each do |r|
-        page_title = (r.dig("properties").values.find{|v| v["type"] == "title"}.dig("title", 0, "plain_text") || "")
-
-        r.delete("icon") # Custom icons have an AWS Expiry that break our diff
-        r.delete("cover") # Cover images have an AWS Expiry that break our diff
-        # File properties embed hourly-expiring S3 URLs that make every page
-        # diff dirty on every sync. Strip the volatile payload — keep only
-        # "name" and "type" so superpowers_pdf? (array presence) still works.
-        r.dig("properties")&.each_value do |prop|
-          next unless prop.is_a?(Hash) && prop["type"] == "files"
-          Array(prop["files"]).each { |f| f.delete("file") }
-        end
-        notion_id = r.dig("id")
-        parent_type = r.dig("parent", "type")
-        parent_id = r.dig("parent", parent_type)
-
-        database_entries_touched << {
-          notion_id: notion_id,
-          notion_parent_type: parent_type,
-          notion_parent_id: parent_id,
-        }
-
-        page =
-          NotionPage.with_deleted.find_or_initialize_by(notion_id: notion_id)
-        # If someone accidentally trashed this page, recover it
-        page.recover! if page.deleted?
-        if !page.persisted? || Hashdiff.diff(r, page.data).any?
-          page.update!({
-            notion_parent_type: parent_type,
-            notion_parent_id: parent_id,
-            data: r,
-            page_title: page_title
-          })
-        end
+      page = query_data_source(ds_id, cursor ? { start_cursor: cursor } : {})
+      page["results"].each do |obj|
+        seen << Stacks::Notion::Mirror.upsert_page(obj).notion_id
       end
-      next_cursor = response["next_cursor"]
-      break if next_cursor.nil?
+      cursor = page["next_cursor"]
+      break if cursor.nil?
     end
+    # An empty result must never wipe the database: where.not(notion_id: []) is 1=1.
+    return { upserted: 0, removed: 0 } if seen.empty?
 
-    return if database_entries_touched.empty?
-    NotionPage
-      .where(
-        notion_parent_type: database_entries_touched.first[:notion_parent_type],
-        notion_parent_id: database_entries_touched.first[:notion_parent_id]
-      ).where.not(
-        notion_id: database_entries_touched.map{|n| n[:notion_id]}
-      ).delete_all
+    removed = NotionPage.where(database_id: dashed_db).where.not(notion_id: seen).to_a
+    removed.each(&:destroy)
+    { upserted: seen.size, removed: removed.size }
   end
 end
