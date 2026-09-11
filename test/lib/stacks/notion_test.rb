@@ -140,4 +140,52 @@ class StacksNotionTest < ActiveSupport::TestCase
     Stacks::Notion.expects(:pace!).twice # one slot per attempt, none for the cooldown
     client.get_page("p")
   end
+
+  test "a transport timeout on a GET retries once then raises a Notion-shaped 503" do
+    client = Stacks::Notion.new(max_retries: 1)
+    Stacks::Notion.stubs(:get).raises(Net::ReadTimeout).then.raises(Net::ReadTimeout)
+    client.expects(:sleep).with(1)
+    err = assert_raises(Stacks::Notion::RequestError) { client.get_page("p1") }
+    assert_equal 503, err.code
+    assert_equal "service_unavailable", err.body["code"]
+    assert_match(/Net::ReadTimeout/, err.body["message"])
+  end
+
+  test "a transport failure on a POST is a 503 with no retry" do
+    client = Stacks::Notion.new(max_retries: 3)
+    Stacks::Notion.stubs(:post).raises(Errno::ECONNREFUSED)
+    client.expects(:sleep).never
+    err = assert_raises(Stacks::Notion::RequestError) { client.search({}) }
+    assert_equal 503, err.code
+    assert_equal "service_unavailable", err.body["code"]
+  end
+
+  test "max_wait fails fast with a synthetic 429 instead of parking on a saturated pacer" do
+    ENV["NOTION_RPS"] = "0.1" # 10s slots
+    Stacks::Notion.reset_pacer!
+    Stacks::Notion.stubs(:get).returns(fake_response(code: 200, body: { object: "page", id: "p" }))
+    Stacks::Notion.new.get_page("p") # claims the slot; the next one is 10s out
+    Stacks::Notion.unstub(:get)
+
+    client = Stacks::Notion.new(max_wait: 1, max_retries: 1, retry_after_cap: 6)
+    client.expects(:sleep).never   # the synthetic 429 must not sleep out its own backlog
+    Stacks::Notion.expects(:get).never
+    err = assert_raises(Stacks::Notion::RateLimited) { client.get_page("p") }
+    assert_equal 429, err.code
+    assert_equal "rate_limited", err.body["code"]
+    assert err.synthetic?
+    assert_operator err.retry_after, :>=, 1
+  end
+
+  test "a saturated slot is not claimed, so the pacer stays available for the next caller" do
+    ENV["NOTION_RPS"] = "0.1"
+    Stacks::Notion.reset_pacer!
+    assert_nil Stacks::Notion.pace!(max_wait: 5)
+    kind, wait = Stacks::Notion.pace!(max_wait: 1)
+    assert_equal :saturated, kind
+    assert_operator wait, :>, 1
+    # Unchanged next slot: a second saturated caller sees the same wait, not a longer one.
+    _kind2, wait2 = Stacks::Notion.pace!(max_wait: 1)
+    assert_operator wait2, :<=, wait
+  end
 end

@@ -7,7 +7,10 @@ class NotionParityLiveTest < ActiveSupport::TestCase
 
   setup do
     skip "set NOTION_LIVE=1 to run the live Notion parity test" unless ENV["NOTION_LIVE"] == "1"
-    ENV["NOTION_RPS"] ||= "2"
+    # test_helper sets NOTION_RPS=1000 (no pacing) for stubbed tests; this one
+    # hits api.notion.com for real, so it must pace itself. ||= would be a no-op.
+    @saved_rps = ENV["NOTION_RPS"]
+    ENV["NOTION_RPS"] = "2"
     # Clear only the rows this run exercises so the cold pass is a real miss.
     guide = Stacks::Notion::Ids.normalize(Stacks::Notion::Parity::HOM_GUIDE_PAGE)
     NotionBlock.where(page_id: guide).delete_all
@@ -22,6 +25,7 @@ class NotionParityLiveTest < ActiveSupport::TestCase
   # test runs on the shared test DB (soft-deleted rows hide under the paranoid
   # default scope and collide on the unique notion_id index).
   teardown do
+    ENV["NOTION_RPS"] = @saved_rps if @saved_rps
     next unless @started
     pages = NotionPage.with_deleted.where("page_fetched_at >= ?", @started)
     NotionBlock.where(page_id: pages.pluck(:notion_id)).delete_all

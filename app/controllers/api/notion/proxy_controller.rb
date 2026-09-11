@@ -5,6 +5,16 @@ class Api::Notion::ProxyController < ApiController
   skip_before_action :verify_authenticity_token
   before_action :require_api_key!
 
+  # Declared FIRST on purpose: Rails picks the LAST matching handler, so the
+  # narrower rescues below win. A caller of this proxy is a Notion API client,
+  # so even our own bugs have to come back in Notion's error shape rather than
+  # as ApiController's Stacks-flavoured 500.
+  rescue_from StandardError do |e|
+    Sentry.capture_exception(e) if defined?(Sentry)
+    Rails.logger.error("[Api::Notion::Proxy] #{e.class}: #{e.message}")
+    notion_error(500, "internal_server_error", "Stacks proxy error")
+  end
+
   # Child rescue_from wins over ApiController's blanket StandardError handler:
   # Notion's own error is passed through, untouched and without Sentry.
   rescue_from Stacks::Notion::RequestError, with: :render_notion_error
@@ -20,7 +30,10 @@ class Api::Notion::ProxyController < ApiController
   def get_page
     id = normalized_id!
     row = NotionPage.with_deleted.find_by(notion_id: id)
-    return render_cached(row.data, fetched_at: row.page_fetched_at, state: "hit") if row && !row.deleted? && !row.access_lost
+    # page_fetched_at nil means the row predates the mirror: the old sync wrote
+    # it with icon/cover/file payloads stripped, so it is NOT one-to-one. Treat
+    # it as a miss; the refetch overwrites `data` with the full object.
+    return render_cached(row.data, fetched_at: row.page_fetched_at, state: "hit") if row && row.page_fetched_at.present? && !row.deleted? && !row.access_lost
 
     obj = with_access_tracking(NotionPage.with_deleted.where(notion_id: id)) { client.get_page(id) }
     page = Stacks::Notion::Mirror.upsert_page(obj)
@@ -66,8 +79,10 @@ class Api::Notion::ProxyController < ApiController
   def get_block_children
     parent_id = Stacks::Notion::Ids.normalize(params[:id]) || params[:id].to_s
     page_id = Stacks::Notion::Mirror.owning_page_id(parent_id)
-    page_size = [[params[:page_size].to_i, 1].max, 100].min
-    page_size = 100 if params[:page_size].blank?
+    # params[:page_size] is whatever the caller put in the query string: an
+    # Array (page_size[]=1) or a Hash has no #to_i, so validate before coercing.
+    raw = params[:page_size]
+    page_size = raw.is_a?(String) && raw.match?(/\A\d+\z/) ? raw.to_i.clamp(1, 100) : 100
     cursor = params[:start_cursor].presence
 
     return render_live(client.get_block_children(parent_id, start_cursor: cursor, page_size: page_size)) if page_id.nil?
@@ -160,7 +175,7 @@ class Api::Notion::ProxyController < ApiController
   private
 
   def client
-    @client ||= Stacks::Notion.new(max_retries: 1, retry_after_cap: 6)
+    @client ||= Stacks::Notion.new(max_retries: 1, retry_after_cap: 6, max_wait: 5)
   end
 
   def require_api_key!

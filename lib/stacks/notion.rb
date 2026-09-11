@@ -6,10 +6,18 @@ require 'uri'
 class Stacks::Notion
   include HTTParty
   base_uri 'https://api.notion.com/v1'
+  # A hung socket must never outlive rack-timeout's 15s: one attempt caps at 10s.
+  default_timeout 10
 
   NOTION_VERSION = "2026-03-11".freeze
   DEFAULT_RPS = 0.6
   RETRYABLE_5XX = [500, 502, 503, 504].freeze
+  # Transport failures callers see as one Notion-shaped 503, rather than as a
+  # grab-bag of Net::/Errno:: classes leaking out of HTTParty.
+  TRANSPORT_ERRORS = [
+    Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNRESET, Errno::ECONNREFUSED,
+    SocketError, HTTParty::Error
+  ].freeze
 
   DATABASE_IDS = {
     LEADS: "4d9b46b8bad542509f144347db37964d",
@@ -35,6 +43,12 @@ class Stacks::Notion
   end
 
   class RateLimited < RequestError
+    # True when Stacks (not Notion) produced the 429: the local pacer was
+    # saturated. Retrying it in-process would only sleep out the same backlog.
+    attr_writer :synthetic
+
+    def synthetic? = !!@synthetic
+
     # Integer seconds Notion asked us to wait (default 2 when absent).
     def retry_after
       raw = headers["retry-after"]
@@ -58,21 +72,31 @@ class Stacks::Notion
       @pacer_mutex.synchronize { @next_slot = 0.0 }
     end
 
-    def pace!
+    # Claims the next slot and sleeps to it. With max_wait, a slot further out
+    # than max_wait seconds is NOT claimed: the caller is told the pacer is
+    # saturated so a web thread fails fast instead of parking on a cold burst.
+    # → nil when paced, [:saturated, seconds_it_would_have_waited] otherwise.
+    def pace!(max_wait: nil)
       interval = 1.0 / rps
       wait = @pacer_mutex.synchronize do
         now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         start_at = [now, @next_slot].max
+        next [:saturated, start_at - now] if max_wait && (start_at - now) > max_wait
+
         @next_slot = start_at + interval
         start_at - now
       end
+      return wait if wait.is_a?(Array)
+
       sleep(wait) if wait.positive?
+      nil
     end
   end
 
-  def initialize(max_retries: 3, retry_after_cap: 60)
+  def initialize(max_retries: 3, retry_after_cap: 60, max_wait: nil)
     @max_retries = max_retries
     @retry_after_cap = retry_after_cap
+    @max_wait = max_wait
     @headers = {
       "Authorization" => "Bearer #{Stacks::Utils.config[:notion][:token]}",
       "Notion-Version" => NOTION_VERSION,
@@ -106,7 +130,8 @@ class Stacks::Notion
   def request(method, path, body: nil, query: nil)
     attempt = 0
     begin
-      self.class.pace!
+      saturated = self.class.pace!(max_wait: @max_wait)
+      raise_saturated!(saturated.last) if saturated
       opts = { headers: @headers }
       opts[:query] = query if query
       opts[:body] = body.to_json if body
@@ -118,7 +143,9 @@ class Stacks::Notion
 
       raise (response.code == 429 || response.code == 529 ? RateLimited : RequestError).new(response.code, response.parsed_response, response.headers)
     rescue RateLimited => e
-      raise e if attempt >= @max_retries
+      # A synthetic 429 means OUR queue is full; sleeping on it in-process is
+      # the very thing max_wait exists to prevent.
+      raise e if e.synthetic? || attempt >= @max_retries
       attempt += 1
       sleep([e.retry_after, @retry_after_cap].min)
       retry
@@ -127,7 +154,30 @@ class Stacks::Notion
       attempt += 1
       sleep(2**(attempt - 1))
       retry
+    rescue *TRANSPORT_ERRORS => e
+      # Idempotent GETs get the same backoff a 5xx gets; everything else (and an
+      # exhausted GET) surfaces as one Notion-shaped 503.
+      if method == :get && attempt < @max_retries
+        attempt += 1
+        sleep(2**(attempt - 1))
+        retry
+      end
+      raise RequestError.new(503, {
+        "object" => "error", "status" => 503, "code" => "service_unavailable",
+        "message" => "#{e.class}: #{e.message}"
+      })
     end
+  end
+
+  def raise_saturated!(wait)
+    err = RateLimited.new(
+      429,
+      { "object" => "error", "status" => 429, "code" => "rate_limited",
+        "message" => "Stacks Notion pacer saturated; retry later" },
+      { "retry-after" => wait.ceil.to_s }
+    )
+    err.synthetic = true
+    raise err
   end
 
   public

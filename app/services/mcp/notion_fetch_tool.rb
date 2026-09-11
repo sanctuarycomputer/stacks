@@ -14,7 +14,7 @@ module Mcp
       page_id = Stacks::Notion::Ids.normalize(id)
       return Responses.error("invalid Notion id: #{id}") unless page_id
 
-      client = Stacks::Notion.new(max_retries: 1, retry_after_cap: 6)
+      client = Stacks::Notion.new(max_retries: 1, retry_after_cap: 6, max_wait: 5)
       result = Stacks::Notion::TreeFetcher.new(client, deadline: DEADLINE).walk(page_id)
       page = NotionPage.with_deleted.find_by!(notion_id: page_id)
       Responses.ok(

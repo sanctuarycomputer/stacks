@@ -15,9 +15,9 @@ module Mcp
     annotations(read_only_hint: true, destructive_hint: false, idempotent_hint: true)
 
     def self.call(query:, page_size: 10, filter: nil, server_context:)
-      body = { "query" => query, "page_size" => page_size.to_i.clamp(1, 100) }
+      body = { "query" => query, "page_size" => (page_size || 10).to_i.clamp(1, 100) }
       body["filter"] = filter if filter.present?
-      live = Stacks::Notion.new(max_retries: 1, retry_after_cap: 6).search(body)
+      live = Stacks::Notion.new(max_retries: 1, retry_after_cap: 6, max_wait: 5).search(body)
       results = Array(live["results"]).map do |obj|
         case obj["object"]
         when "page" then Stacks::Notion::Mirror.upsert_page(obj)

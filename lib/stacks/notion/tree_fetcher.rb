@@ -5,7 +5,11 @@
 class Stacks::Notion::TreeFetcher
   MINUTE_GUARD = 60.seconds
 
-  def self.fetch_level(client, parent_id:, page_id:)
+  # → [blocks, requests, complete]. A level of 1,000 blocks is 10 paced
+  # requests, so the deadline has to bite BETWEEN cursor pages or a single wide
+  # level blows straight past notion-fetch's 6s (and rack-timeout's 15s).
+  # deadline_at is a Process::CLOCK_MONOTONIC timestamp.
+  def self.fetch_level(client, parent_id:, page_id:, deadline_at: nil)
     blocks = []
     cursor = nil
     requests = 0
@@ -15,8 +19,9 @@ class Stacks::Notion::TreeFetcher
       blocks.concat(list["results"])
       cursor = list["next_cursor"]
       break if cursor.nil?
+      return [blocks, requests, false] if deadline_at && Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline_at
     end
-    [blocks, requests]
+    [blocks, requests, true]
   end
 
   def initialize(client, deadline: nil)
@@ -55,8 +60,15 @@ class Stacks::Notion::TreeFetcher
     until queue.empty?
       parent_id = queue.shift
       if level_stale?(page, parent_id, stale_at)
-        blocks, n = self.class.fetch_level(@client, parent_id: parent_id, page_id: page_id)
+        blocks, n, level_complete = self.class.fetch_level(@client, parent_id: parent_id, page_id: page_id, deadline_at: deadline_at)
         @requests += n
+        unless level_complete
+          # Keep the pages we paid for, but stamp NO marker: the level stays
+          # unfetched, so the next walk resumes it from its first cursor page
+          # (and replace_level then rewrites positions from 0).
+          Stacks::Notion::Mirror.store_blocks(parent_id: parent_id, page_id: page_id, blocks: blocks, position_offset: 0)
+          return give_up(page)
+        end
         Stacks::Notion::Mirror.replace_level(parent_id: parent_id, page_id: page_id, blocks: blocks, fetched_at: Time.current)
         enqueue_children!(queue, parent_id)
         # Checked AFTER the level so every walk makes progress; the next call
@@ -116,6 +128,10 @@ class Stacks::Notion::TreeFetcher
         NotionBlock.where(notion_id: parent_id).pick(:children_fetched_at)
       end
     marker.nil? || (stale_at && marker < stale_at)
+  end
+
+  def deadline_at
+    @deadline && (@started + @deadline)
   end
 
   def expired?

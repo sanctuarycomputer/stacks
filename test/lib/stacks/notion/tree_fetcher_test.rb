@@ -97,6 +97,25 @@ class StacksNotionTreeFetcherTest < ActiveSupport::TestCase
     assert_nil NotionPage.find_by!(notion_id: PAGE).wanted_at
   end
 
+  test "the deadline stops the walk BETWEEN cursor pages of one level and the next walk redoes it" do
+    Stacks::Notion::Mirror.upsert_page(page_obj)
+    @client.stubs(:get_block_children).with(PAGE, start_cursor: nil, page_size: 100).returns(list([block("b1", PAGE)], next_cursor: "c2"))
+    @client.stubs(:get_block_children).with(PAGE, start_cursor: "c2", page_size: 100).returns(list([block("b2", PAGE)]))
+
+    # Already expired: the first cursor page is paid for, the second is not.
+    assert_equal({ complete: false, requests: 1 }, Stacks::Notion::TreeFetcher.new(@client, deadline: 0.0).walk(PAGE))
+    page = NotionPage.find_by!(notion_id: PAGE)
+    assert_nil page.root_children_fetched_at, "an incomplete level must not stamp its marker"
+    assert page.wanted_at.present?
+    assert_equal %w[b1], NotionBlock.where(parent_id: PAGE).pluck(:notion_id), "the page we paid for is kept"
+
+    assert_equal({ complete: true, requests: 2 }, Stacks::Notion::TreeFetcher.new(@client).walk(PAGE))
+    page.reload
+    assert page.root_children_fetched_at.present?
+    assert_nil page.wanted_at
+    assert_equal %w[b1 b2], NotionBlock.children_of(PAGE).pluck(:notion_id)
+  end
+
   test "an edit during the walk leaves the page stale" do
     Stacks::Notion::Mirror.upsert_page(page_obj)
     # The sweep is what normally moves the stamp mid-walk; simulate it from inside the stub.

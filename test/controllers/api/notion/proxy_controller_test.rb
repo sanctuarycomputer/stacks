@@ -148,4 +148,48 @@ class Api::Notion::ProxyControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
     assert_equal "object_not_found", JSON.parse(response.body)["code"]
   end
+
+  test "an unexpected Stacks error renders a Notion-shaped 500 and goes to Sentry" do
+    Stacks::Notion.any_instance.stubs(:get_page).raises(RuntimeError.new("boom"))
+    Sentry.expects(:capture_exception).once
+    get "/api/notion/v1/pages/#{PAGE}", headers: @key
+    assert_response 500
+    body = JSON.parse(response.body)
+    assert_equal "error", body["object"]
+    assert_equal "internal_server_error", body["code"]
+    assert_equal 500, body["status"]
+  end
+
+  test "a saturated pacer is a Notion-shaped 429 with Retry-After" do
+    err = Stacks::Notion::RateLimited.new(429, { "object" => "error", "status" => 429, "code" => "rate_limited", "message" => "Stacks Notion pacer saturated; retry later" }, { "retry-after" => "5" })
+    err.synthetic = true
+    Stacks::Notion.any_instance.stubs(:get_page).raises(err)
+    get "/api/notion/v1/pages/#{PAGE}", headers: @key
+    assert_response 429
+    assert_equal "5", response.headers["Retry-After"]
+    assert_equal "rate_limited", JSON.parse(response.body)["code"]
+  end
+
+  test "a non-numeric page_size (an array) is treated as 100, not a 500" do
+    Stacks::Notion::Mirror.upsert_page(page_obj)
+    Stacks::Notion.any_instance.expects(:get_block_children)
+                  .with(PAGE, start_cursor: nil, page_size: 100)
+                  .returns({ "object" => "list", "results" => [], "next_cursor" => nil, "has_more" => false, "type" => "block", "block" => {} })
+    get "/api/notion/v1/blocks/#{PAGE}/children?page_size[]=1", headers: @key
+    assert_response :success
+    assert_equal "miss", response.headers["X-Stacks-Cache"]
+  end
+
+  test "a legacy row with no page_fetched_at is a miss and is rewritten with the full object" do
+    NotionPage.create!(notion_id: PAGE, page_title: "Guide", page_fetched_at: nil,
+                       notion_last_edited_at: Time.zone.parse("2026-09-10T10:00:00Z"),
+                       data: { "object" => "page", "id" => PAGE }) # the old sync stripped icon/cover/files
+    Stacks::Notion.any_instance.expects(:get_page).with(PAGE).once.returns(page_obj.merge("icon" => { "type" => "emoji", "emoji" => "📘" }))
+    get "/api/notion/v1/pages/#{PAGE}", headers: @key
+    assert_response :success
+    assert_equal "miss", response.headers["X-Stacks-Cache"]
+    row = NotionPage.find_by!(notion_id: PAGE)
+    assert_equal page_obj.merge("icon" => { "type" => "emoji", "emoji" => "📘" }).except("request_id"), row.data
+    assert row.page_fetched_at.present?
+  end
 end

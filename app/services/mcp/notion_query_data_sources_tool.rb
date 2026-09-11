@@ -20,11 +20,11 @@ module Mcp
       ds_id = Stacks::Notion::Ids.normalize(data_source_id)
       return Responses.error("invalid data source id: #{data_source_id}") unless ds_id
 
-      body = { "page_size" => page_size.to_i.clamp(1, 100) }
+      body = { "page_size" => (page_size || 100).to_i.clamp(1, 100) }
       body["filter"] = filter if filter.present?
       body["sorts"] = sorts if sorts.present?
       body["start_cursor"] = start_cursor if start_cursor.present?
-      live = Stacks::Notion.new(max_retries: 1, retry_after_cap: 6).query_data_source(ds_id, body)
+      live = Stacks::Notion.new(max_retries: 1, retry_after_cap: 6, max_wait: 5).query_data_source(ds_id, body)
       Array(live["results"]).each { |obj| Stacks::Notion::Mirror.upsert_page(obj) if obj["object"] == "page" }
       Responses.ok(live)
     rescue Stacks::Notion::RequestError => e
