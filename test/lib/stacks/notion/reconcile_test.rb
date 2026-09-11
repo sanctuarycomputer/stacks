@@ -29,14 +29,21 @@ class StacksNotionReconcileTest < ActiveSupport::TestCase
 
   test "the disambiguation limit bounds requests across pages and data sources" do
     ids = 3.times.map { SecureRandom.uuid }
-    ids.each { |id| Stacks::Notion::Mirror.upsert_page(page(id)) }
+    stamps = %w[2026-01-01T00:00:00.000Z 2026-02-01T00:00:00.000Z 2026-03-01T00:00:00.000Z]
+    ids.each_with_index { |id, i| Stacks::Notion::Mirror.upsert_page(page(id, last_edited: stamps[i])) }
     NotionDataSource.create!(notion_id: SecureRandom.uuid, title: "DS", data: {})
     @client.stubs(:search).returns({ "object" => "list", "results" => [], "next_cursor" => nil, "has_more" => false })
-    @client.expects(:get_page).twice.with { |id| ids.include?(id) }.returns(*ids.first(2).map { |id| page(id, in_trash: true) })
+    # Oldest two (by notion_last_edited_at) are checked first; the returned object must
+    # carry the same or a newer stamp than the cached row, or Mirror.upsert_page ignores it.
+    ids.first(2).each_with_index { |id, i| @client.expects(:get_page).with(id).returns(page(id, in_trash: true, last_edited: stamps[i])) }
+    @client.expects(:get_page).with(ids.last).never
     @client.expects(:get_data_source).never
     stats = Stacks::Notion::Reconcile.new(@client, disambiguation_limit: 2).run
     assert_equal 2, stats[:checked]
     assert_equal 2, stats[:trashed]
+    assert NotionPage.find_by!(notion_id: ids[0]).in_trash
+    assert NotionPage.find_by!(notion_id: ids[1]).in_trash
+    assert_not NotionPage.find_by!(notion_id: ids[2]).in_trash
   end
 
   test "unseen data sources are disambiguated too" do

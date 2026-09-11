@@ -19,9 +19,14 @@ class Stacks::Notion::Reconcile
   end
 
   def run
+    # started_at is captured before the feed walk so that, once the walk is done,
+    # any row this run actually touched carries a stamp >= started_at. That lets
+    # "unseen" be a timestamp predicate instead of a `NOT IN (<every seen id>)`
+    # list, which at workspace scale would inline tens of thousands of ids into
+    # SQL twice per run.
+    started_at = Time.current
     before = NotionPage.pluck(:notion_id, :notion_last_edited_at).to_h
     seen_pages = {}
-    seen_ds = Set.new
     cursor = nil
     loop do
       body = FEED_BODY.dup
@@ -34,8 +39,11 @@ class Stacks::Notion::Reconcile
           Stacks::Notion::Mirror.upsert_page(obj) # feed objects are full: brings drifted rows current
           seen_pages[id] = Time.zone.parse(obj["last_edited_time"].to_s)
         when "data_source"
-          Stacks::Notion::Mirror.upsert_data_source(obj, fetched_at: nil)
-          seen_ds << id
+          ds = Stacks::Notion::Mirror.upsert_data_source(obj, fetched_at: nil)
+          # upsert_data_source's save! is a no-op (no UPDATE, updated_at left alone)
+          # when nothing about the row actually changed, so touch explicitly to mark
+          # this row "seen this run" for the updated_at-based query below.
+          ds.touch
         end
       end
       cursor = list["next_cursor"]
@@ -45,7 +53,16 @@ class Stacks::Notion::Reconcile
     drift = seen_pages.count { |id, stamp| before.key?(id) && (before[id].nil? || (stamp && before[id] < stamp)) }
     stats = { seen: seen_pages.size, checked: 0, trashed: 0, access_lost: 0, drift: drift }
 
-    NotionPage.where(in_trash: false, access_lost: false).where.not(notion_id: seen_pages.keys)
+    # Unseen pages: Mirror.upsert_page stamps page_fetched_at on every write it
+    # actually performs during the walk above, so a page whose page_fetched_at is
+    # still older than started_at (or nil) was not returned by this run's feed.
+    # Note: upsert_page returns early with NO write at all when the incoming feed
+    # object's last_edited_time is OLDER than the row's cached stamp; such a page
+    # would then look "unseen" here too. That's acceptable — it costs one extra
+    # GET below — and should essentially never happen since the feed reports each
+    # object's current, most-recent last_edited_time.
+    NotionPage.where(in_trash: false, access_lost: false)
+              .where("page_fetched_at IS NULL OR page_fetched_at < ?", started_at)
               .order(:notion_last_edited_at).limit(@limit).each do |page|
       stats[:checked] += 1
       obj = @client.get_page(page.notion_id)
@@ -57,7 +74,9 @@ class Stacks::Notion::Reconcile
       stats[:access_lost] += 1
     end
 
-    NotionDataSource.where(in_trash: false).where.not(notion_id: seen_ds.to_a)
+    # Unseen data sources: same idea, keyed off updated_at (bumped by the explicit
+    # touch above for every data source the feed walk saw).
+    NotionDataSource.where(in_trash: false).where("updated_at < ?", started_at)
                     .order(:notion_last_edited_at).limit([@limit - stats[:checked], 0].max).each do |ds|
       stats[:checked] += 1
       obj = @client.get_data_source(ds.notion_id)
