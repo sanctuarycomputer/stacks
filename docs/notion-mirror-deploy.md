@@ -15,9 +15,11 @@ Credentials (every host block): `notion.token` (existing), `stacks.private_api_k
 ## Deploy order (phase 1 ships the migration)
 
 1. `heroku run bin/rails db:migrate` **before** the release goes live (no `release:` phase in the Procfile).
+   Verify the scope switch: `heroku run bin/rails runner 'puts NotionPage.lead.count, NotionPage.human_operating_manual.count'` should print roughly 1018 and 94 (the pre-migration Leads/HOM row counts); after the first `stacks:sync_notion` run, the same counts must not have dropped to 0 — if they did, `parent.database_id` is missing from the API objects and `Mirror.upsert_page` needs a fallback.
 2. Push / release.
 3. Scheduler: add `NOTION_RPS=1.2 bin/rails stacks:notion:sweep` every 10 minutes and `NOTION_RPS=1.2 bin/rails stacks:notion:reconcile` daily. `stacks:sync_notion` stays as it is.
 4. One-off: `heroku run NOTION_RPS=1.2 bin/rails stacks:notion:backfill` — re-run until `SourceSync(notion_backfill).cursor.phase == "done"`.
+   Legacy rows (the ~23.6k written by the pre-mirror sync, which stripped `icon`, `cover` and file payloads and left `page_fetched_at` nil) serve as **misses** until the backfill's feed walk rewrites them, which is why stacksbot's read switch (step 6) must wait for `phase == "done"`.
 5. Parity against prod: `APP_BASE_URL=https://stacks.garden3d.net STACKS_API_KEY=… bin/rails stacks:notion:verify_parity` from a laptop with the dev token.
 6. Switch stacksbot reads: `TOOLS.md` `## Notion` reads → `https://stacks.garden3d.net/api/notion/v1/...` with `X-Api-Key`; `notion-query-dump.mjs` / `ops-preread-dump.mjs` gain `NOTION_BASE_URL` + auth header. Writes stay on `ntn`.
 

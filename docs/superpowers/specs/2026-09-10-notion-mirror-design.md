@@ -340,6 +340,24 @@ routes; these tools are for MCP clients (claude.ai, Claude Code).
 6. An edit made in the same minute as a completed tree walk is caught by the
    `recheck_after` re-read on the next sweep, not immediately.
 7. MCP tool arguments are REST-shaped, not Notion MCP's SQL/rows/view modes.
+8. The first-ever sweep (no watermark) caps at 5 feed pages; the backfill owns history.
+9. A sweep refreshes at most 500 candidates per tier, and only pages whose root
+   level was already fetched.
+10. A 403/404 during a sweep refresh marks the page `access_lost` (and clears its flags).
+11. Reconcile detects unseen rows by comparing `page_fetched_at` / `updated_at`
+    against the run's start time, not by collecting every id it saw.
+12. On a miss or stale level, `GET blocks/:id/children` asks Notion for
+    `page_size=100` regardless of the caller's `page_size`, which is therefore
+    honoured only on cache hits.
+13. Cursors differ by cache state: block ids on hits, Notion's opaque cursors on
+    live fills. A level that flips to stale mid-pagination 400s the next cursor page.
+14. Legacy rows written before this branch (`page_fetched_at` nil, icon/cover/file
+    payloads stripped) are served as misses until a refetch rewrites them.
+15. An unexpected Stacks-side error renders a Notion-shaped 500
+    (`code: "internal_server_error"`), not Rails' own error body.
+16. When the local pacer is saturated beyond the caller's `max_wait`, the proxy
+    returns a synthetic Notion-shaped 429 (`code: "rate_limited"`) with
+    `Retry-After`, without having asked Notion anything.
 
 ## Freshness
 
