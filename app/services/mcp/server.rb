@@ -38,6 +38,9 @@ module Mcp
       Mcp::GetMembershipStatsTool,
       Mcp::GetInvoicePassesTool,
       Mcp::GetClientRevenueTool,
+      Mcp::NotionFetchTool,
+      Mcp::NotionSearchTool,
+      Mcp::NotionQueryDataSourcesTool,
     ].freeze
 
     def self.build
