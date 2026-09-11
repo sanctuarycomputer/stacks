@@ -117,6 +117,48 @@ class StacksNotionSweepTest < ActiveSupport::TestCase
     assert NotionPage.find_by!(notion_id: b).blocks_stale_at.present?
   end
 
+  test "a wanted_at page whose tree fetch loses access is marked access_lost and skipped next run" do
+    a = SecureRandom.uuid
+    Stacks::Notion::Mirror.upsert_page(page(a, "2026-09-10T11:00:00.000Z"))
+    NotionPage.find_by!(notion_id: a).update!(wanted_at: Time.current)
+    @client.stubs(:search).returns(feed([]))
+    @client.expects(:get_block_children).with(a, start_cursor: nil, page_size: 100)
+           .raises(Stacks::Notion::RequestError.new(404, { "object" => "error" }))
+
+    stats = Stacks::Notion::Sweep.new(@client).run
+
+    row = NotionPage.find_by!(notion_id: a)
+    assert row.access_lost
+    assert_nil row.wanted_at
+    assert_nil row.blocks_stale_at
+    assert_equal 1, stats[:pages_access_lost]
+
+    @client.expects(:get_block_children).never
+    Stacks::Notion::Sweep.new(@client).run
+  end
+
+  test "a nil watermark caps the first-run feed walk at FIRST_RUN_FEED_PAGES and still sets a watermark" do
+    @client.stubs(:search).returns(feed([page(SecureRandom.uuid, "2026-09-10T11:59:00.000Z")], next_cursor: "next"))
+
+    stats = Stacks::Notion::Sweep.new(@client).run
+
+    assert_equal Stacks::Notion::Sweep::FIRST_RUN_FEED_PAGES, stats[:feed_requests]
+    assert SourceSync.for(:notion_mirror).reload.cursor["watermark"].present?
+  end
+
+  test "refresh_trees! passes the remaining run budget as the tree fetcher deadline" do
+    a = SecureRandom.uuid
+    Stacks::Notion::Mirror.upsert_page(page(a, "2026-09-10T11:00:00.000Z"))
+    NotionPage.find_by!(notion_id: a).update!(wanted_at: Time.current)
+    @client.stubs(:search).returns(feed([]))
+    Stacks::Notion::TreeFetcher.expects(:new)
+      .with { |_c, **kw| kw[:deadline].is_a?(Float) && kw[:deadline] <= 0.5 }
+      .returns(stub(walk: { complete: true, requests: 0 }))
+
+    stats = Stacks::Notion::Sweep.new(@client, run_deadline: 0.5.seconds).run
+    assert_equal 1, stats[:trees_refreshed]
+  end
+
   test "the feed failing leaves the watermark alone" do
     SourceSync.for(:notion_mirror).advance!(cursor: { "watermark" => "2026-09-10T11:30:00Z" })
     @client.stubs(:search).raises(Stacks::Notion::RequestError.new(502, { "object" => "error" }))
