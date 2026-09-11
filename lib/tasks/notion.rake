@@ -40,5 +40,11 @@ namespace :stacks do
         system_task.mark_as_success
       end
     end
+
+    desc "Notion mirror: live parity check against api.notion.com (optional APP_BASE_URL for a deployed app)"
+    task verify_parity: :environment do
+      result = Stacks::Notion::Parity.run(app_base_url: ENV["APP_BASE_URL"].presence, api_key: ENV["STACKS_API_KEY"].presence)
+      abort("parity FAILED") if result[:failed].positive?
+    end
   end
 end

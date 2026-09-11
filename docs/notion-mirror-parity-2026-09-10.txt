@@ -1,0 +1,43 @@
+Calling `DidYouMean::SPELL_CHECKERS.merge!(error_name => spell_checker)' has been deprecated. Please call `DidYouMean.correct_error(error_name, spell_checker)' instead.
+DEPRECATION WARNING: Initialization autoloaded the constant Stacks::Utils.
+
+Being able to do this is deprecated. Autoloading during initialization is going
+to be an error condition in future versions of Rails.
+
+Reloading does not reboot the application, and therefore code executed during
+initialization does not run again. So, if you reload Stacks::Utils, for example,
+the expected changes won't be reflected in that stale Class object.
+
+This autoloaded constant has been unloaded.
+
+In order to autoload safely at boot time, please wrap your code in a reloader
+callback this way:
+
+    Rails.application.reloader.to_prepare do
+      # Autoload classes and modules needed at boot time here.
+    end
+
+That block runs when the application boots, and every time there is a reload.
+For historical reasons, it may run twice, so it has to be idempotent.
+
+Check the "Autoloading and Reloading Constants" guide to learn more about how
+Rails autoloads and reloads.
+ (called from <main> at /Users/hhff/Documents/Code/stacks/.claude/worktrees/notion-read-cache/config/environment.rb:5)
+Run options: --seed 9629
+
+# Running:
+
+  ok   GET pages/:id (plain page) cold=miss
+  ok   GET pages/:id (plain page) warm=hit
+  ok   GET pages/:id (database row) cold/warm
+  ok   GET databases/:id
+  ok   GET data_sources/:id
+  ok   GET blocks/:id/children every cursor page, cold then warm
+  ok   POST data_sources/:id/query with filter (live)
+  ok   POST search (live)
+  ok   row seeded from a search result then GET pages/:id equals Notion's GET
+parity: 9 passed, 0 failed
+.
+
+Finished in 16.501519s, 0.0606 runs/s, 0.1212 assertions/s.
+1 runs, 2 assertions, 0 failures, 0 errors, 0 skips
