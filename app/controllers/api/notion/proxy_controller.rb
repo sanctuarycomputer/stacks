@@ -9,6 +9,13 @@ class Api::Notion::ProxyController < ApiController
   # Notion's own error is passed through, untouched and without Sentry.
   rescue_from Stacks::Notion::RequestError, with: :render_notion_error
 
+  # Rails' parameter parser raises this before the action runs (and before
+  # json_body's own rescue can see it) when Content-Type: application/json
+  # carries a malformed body.
+  rescue_from ActionDispatch::Http::Parameters::ParseError do |_e|
+    notion_error(400, "invalid_json", "Error parsing JSON body.")
+  end
+
   # ---- single objects ------------------------------------------------------
   def get_page
     id = normalized_id!
@@ -98,14 +105,53 @@ class Api::Notion::ProxyController < ApiController
     render json: live, status: 200
   end
 
-  # Task 9 replaces these bodies.
-  def query_data_source = not_found
-  def search = not_found
-  def create_page = not_found
-  def update_page = not_found
-  def append_block_children = not_found
-  def update_block = not_found
-  def delete_block = not_found
+  # ---- lists: always live; results warm the cache --------------------------
+  def query_data_source
+    id = normalized_id!
+    live = client.query_data_source(id, json_body)
+    upsert_results(live["results"])
+    render_live(live)
+  end
+
+  def search
+    live = client.search(json_body)
+    upsert_results(live["results"])
+    render_live(live)
+  end
+
+  # ---- writes: live, then invalidate ---------------------------------------
+  def create_page
+    obj = client.create_page(json_body)
+    Stacks::Notion::Mirror.upsert_page(obj)
+    render_live(obj)
+  end
+
+  def update_page
+    obj = client.update_page(normalized_id!, json_body)
+    Stacks::Notion::Mirror.upsert_page(obj)
+    render_live(obj)
+  end
+
+  def append_block_children
+    parent_id = Stacks::Notion::Ids.normalize(params[:id]) || params[:id].to_s
+    live = client.append_block_children(parent_id, json_body)
+    mark_page_stale(parent_id)
+    render_live(live)
+  end
+
+  def update_block
+    block_id = Stacks::Notion::Ids.normalize(params[:id]) || params[:id].to_s
+    obj = client.update_block(block_id, json_body)
+    mark_page_stale(block_id, obj)
+    render_live(obj)
+  end
+
+  def delete_block
+    block_id = Stacks::Notion::Ids.normalize(params[:id]) || params[:id].to_s
+    obj = client.delete_block(block_id)
+    mark_page_stale(block_id, obj)
+    render_live(obj)
+  end
 
   def not_found
     notion_error(404, "object_not_found", "Could not find route #{request.method} #{request.path}")
@@ -168,5 +214,23 @@ class Api::Notion::ProxyController < ApiController
   rescue Stacks::Notion::RequestError => e
     scope.update_all(access_lost: true) if [403, 404].include?(e.code)
     raise
+  end
+
+  def upsert_results(results)
+    Array(results).each do |obj|
+      case obj["object"]
+      when "page" then Stacks::Notion::Mirror.upsert_page(obj)
+      when "data_source" then Stacks::Notion::Mirror.upsert_data_source(obj)
+      end
+    end
+  end
+
+  # The owning page of a block id: a cached page/block, or the parent the
+  # response reports. Unknown → nothing to invalidate.
+  def mark_page_stale(block_or_page_id, obj = nil)
+    page_id = Stacks::Notion::Mirror.owning_page_id(block_or_page_id)
+    page_id ||= Stacks::Notion::Mirror.owning_page_id(obj.dig("parent", "page_id") || obj.dig("parent", "block_id")) if obj
+    return unless page_id
+    NotionPage.with_deleted.where(notion_id: page_id).update_all(blocks_stale_at: Time.current)
   end
 end
