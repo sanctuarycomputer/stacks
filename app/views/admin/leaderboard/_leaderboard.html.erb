@@ -1,0 +1,90 @@
+<%# Top X earners per month, styled to match the Money (payable QBO bills)
+    screen: a title_bar per group with the heading on the left and a pill on
+    the right, over a standard .index_table.index table. %>
+
+<%# Limit toggles, styled as the same nag-pill tab bar the Money page uses. %>
+<div style="margin-bottom: 32px;">
+  <% [3, 4, 5, 10, 20].each do |n| %>
+    <%= link_to admin_leaderboard_path(limit: n), style: "margin-right: 6px" do %>
+      <p class="nag pill <%= 'complete' if n == limit %>" style="margin-bottom: 0px;margin-right: 6px;position: relative;">
+        <%= n %>
+      </p>
+    <% end %>
+  <% end %>
+</div>
+
+<% if months.empty? %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-body factoid-parent">
+        <p style="margin: 20px 0;"><em>No contributor payouts recorded yet.</em></p>
+      </div>
+    </div>
+  </div>
+<% else %>
+  <% months.each do |group| %>
+    <div class="title_bar" id="title_bar" style="padding: 40px 0px 20px 0px;">
+      <div id="titlebar_left">
+        <h2 id="page_title"><%= group.start_of_month.strftime("%B %Y") %></h2>
+      </div>
+      <div id="titlebar_right">
+        <span class="pill complete">
+          <%= number_to_currency(group.average) %>
+          <span class="split">avg of top <%= group.entries.size %></span>
+        </span>
+      </div>
+    </div>
+
+    <%# Same markup ActiveAdmin's Arbre `panel` builder emits, so it picks up
+        the standard panel styling from an ERB template. %>
+    <div class="panel">
+      <h3>MSO Compensation</h3>
+      <div class="panel_contents">
+        <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="width: 100%;">
+          <tbody>
+            <% Stacks::Leaderboard.mso_compensation(group.average).each_with_index do |tier, index| %>
+              <tr class="<%= index.even? ? "even" : "odd" %>">
+                <td class="col"><%= tier.label %> (<%= tier.multiplier_label %>)</td>
+                <td class="col text-right"><%= number_to_currency(tier.amount) %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <table border="0" cellspacing="0" cellpadding="0" class="index_table index" style="table-layout: fixed; width: 100%;">
+      <thead>
+        <tr>
+          <th class="col" style="width: 4em;">#</th>
+          <th class="col">Contributor</th>
+          <th class="col text-right">Earnings</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% group.entries.each_with_index do |entry, index| %>
+          <tr class="<%= index.even? ? "even" : "odd" %>">
+            <td class="col"><%= entry.rank %></td>
+            <td class="col"><%= link_to entry.display_name, admin_contributor_path(entry.contributor_id) %></td>
+            <td class="col text-right"><%= number_to_currency(entry.amount) %></td>
+          </tr>
+        <% end %>
+        <tr class="<%= group.entries.size.even? ? "even" : "odd" %>">
+          <td class="col"></td>
+          <td class="col"><strong>Total</strong></td>
+          <td class="col text-right"><strong><%= number_to_currency(group.total) %></strong></td>
+        </tr>
+      </tbody>
+    </table>
+  <% end %>
+
+  <%# Mirrors the #index_footer > .download_links markup ActiveAdmin renders
+      beneath a standard index table, so the download reads as the convention
+      it is. Keeps the current ?limit= so you export exactly what you see. %>
+  <div id="index_footer">
+    <div class="download_links">
+      <span><%= I18n.t("active_admin.download") %></span>
+      <%= link_to "CSV", admin_leaderboard_path(limit: limit, format: :csv) %>
+    </div>
+  </div>
+<% end %>
