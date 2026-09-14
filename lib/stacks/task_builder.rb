@@ -11,6 +11,7 @@ require_relative "task_builder/discoveries/pay_cycles"
 require_relative "task_builder/discoveries/missing_qbo_vendors"
 require_relative "task_builder/discoveries/legacy_ledgers_pending_qbo_migration"
 require_relative "task_builder/discoveries/auto_paused_recurring_ledger_adjustments"
+require_relative "task_builder/discoveries/unaccepted_payouts"
 
 module Stacks
   # Single source of truth for "what needs attention right now" across the system.
@@ -53,6 +54,7 @@ module Stacks
       Discoveries::MissingQboVendors,
       Discoveries::LegacyLedgersPendingQboMigration,
       Discoveries::AutoPausedRecurringLedgerAdjustments,
+      Discoveries::UnacceptedPayouts,
     ].freeze
 
     # Returns Array<StacksTask> — every open task system-wide.
@@ -101,6 +103,7 @@ module Stacks
         subject_id: subject_id_for(task.subject),
         type: task.type,
         owner_ids: task.owners.map(&:id),
+        ledger_id: task.ledger&.id,
       }
     end
 
@@ -129,7 +132,8 @@ module Stacks
         # StacksTask "must have ≥1 owner" invariant.
         next nil if owners.empty?
 
-        StacksTask.new(type: d[:type], subject: subject, owners: owners)
+        ledger = d[:ledger_id] && Ledger.find_by(id: d[:ledger_id])
+        StacksTask.new(type: d[:type], subject: subject, owners: owners, ledger: ledger)
       end.compact
     end
 

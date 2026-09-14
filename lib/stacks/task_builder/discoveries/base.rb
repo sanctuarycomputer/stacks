@@ -14,10 +14,10 @@ module Stacks
 
         # Build a StacksTask, falling back to the admin team when the natural-owner
         # rule produced no owners. Centralizes the always-has-an-owner invariant.
-        def task(subject:, type:, owners:)
+        def task(subject:, type:, owners:, ledger: nil)
           owners = Array(owners).compact.uniq
           owners = @admin_fallback if owners.empty?
-          StacksTask.new(type: type, subject: subject, owners: owners)
+          StacksTask.new(type: type, subject: subject, owners: owners, ledger: ledger)
         end
       end
     end
