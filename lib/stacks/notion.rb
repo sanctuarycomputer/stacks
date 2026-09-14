@@ -6,7 +6,8 @@ class Stacks::Notion
   base_uri 'https://api.notion.com/v1'
 
   DATABASE_IDS = {
-    LEADS: "4d9b46b8bad542509f144347db37964d"
+    LEADS: "4d9b46b8bad542509f144347db37964d",
+    HUMAN_OPERATING_MANUALS: "5d59dcd95bfb458a9747ce7d6ce9e009"
   }
 
   def initialize()
@@ -104,6 +105,13 @@ class Stacks::Notion
 
         r.delete("icon") # Custom icons have an AWS Expiry that break our diff
         r.delete("cover") # Cover images have an AWS Expiry that break our diff
+        # File properties embed hourly-expiring S3 URLs that make every page
+        # diff dirty on every sync. Strip the volatile payload — keep only
+        # "name" and "type" so superpowers_pdf? (array presence) still works.
+        r.dig("properties")&.each_value do |prop|
+          next unless prop.is_a?(Hash) && prop["type"] == "files"
+          Array(prop["files"]).each { |f| f.delete("file") }
+        end
         notion_id = r.dig("id")
         parent_type = r.dig("parent", "type")
         parent_id = r.dig("parent", parent_type)

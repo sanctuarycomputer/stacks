@@ -6,11 +6,13 @@ require_relative "task_builder/discoveries/forecast_assignments"
 require_relative "task_builder/discoveries/admin_users"
 require_relative "task_builder/discoveries/reimbursements"
 require_relative "task_builder/discoveries/notion_leads"
+require_relative "task_builder/discoveries/human_operating_manuals"
 require_relative "task_builder/discoveries/surveys"
 require_relative "task_builder/discoveries/pay_cycles"
 require_relative "task_builder/discoveries/missing_qbo_vendors"
 require_relative "task_builder/discoveries/legacy_ledgers_pending_qbo_migration"
 require_relative "task_builder/discoveries/auto_paused_recurring_ledger_adjustments"
+require_relative "task_builder/discoveries/runn_mirror"
 require_relative "task_builder/discoveries/unaccepted_payouts"
 
 module Stacks
@@ -49,11 +51,13 @@ module Stacks
       Discoveries::AdminUsers,
       Discoveries::Reimbursements,
       Discoveries::NotionLeads,
+      Discoveries::HumanOperatingManuals,
       Discoveries::Surveys,
       Discoveries::PayCycles,
       Discoveries::MissingQboVendors,
       Discoveries::LegacyLedgersPendingQboMigration,
       Discoveries::AutoPausedRecurringLedgerAdjustments,
+      Discoveries::RunnMirror,
       Discoveries::UnacceptedPayouts,
     ].freeze
 
@@ -74,6 +78,14 @@ module Stacks
     # descriptor array, no hydration.
     def task_count
       cached_descriptors.length
+    end
+
+    # Pending-task count for one AdminUser. Descriptor filtering only — no
+    # subject hydration — so callers can annotate lists of people cheaply
+    # (e.g. the payable-bills page header pills).
+    def task_count_for(admin_user)
+      return 0 unless admin_user&.id
+      cached_descriptors.count { |d| d[:owner_ids].include?(admin_user.id) }
     end
 
     def refresh!
@@ -109,7 +121,7 @@ module Stacks
 
     def subject_id_for(subject)
       case subject
-      when Stacks::Notion::Lead then subject.notion_page.id
+      when Stacks::Notion::Lead, Stacks::Notion::HumanOperatingManual then subject.notion_page.id
       else subject.id
       end
     end
@@ -158,6 +170,8 @@ module Stacks
             # Lead is a wrapper around NotionPage; load the underlying pages
             # and re-wrap. Index by NotionPage.id so descriptor lookup matches.
             NotionPage.where(id: ids).index_by(&:id).transform_values(&:as_lead)
+          elsif klass == Stacks::Notion::HumanOperatingManual
+            NotionPage.where(id: ids).index_by(&:id).transform_values(&:as_human_operating_manual)
           else
             # Use the model's declared primary_key so this works for models
             # with non-default PKs (ForecastProject uses forecast_id, etc.).

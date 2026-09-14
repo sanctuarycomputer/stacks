@@ -148,6 +148,53 @@ class InvoiceTrackerTest < ActiveSupport::TestCase
     )
     assert_empty deductions
   end
+
+  # A blueprint line whose quantity differs from the live QBO line item —
+  # the "changed" diff path that rewrites scalars into [was, now] pairs.
+  def tracker_with_changed_quantity
+    invoice_tracker = InvoiceTracker.new(blueprint: {
+      "generated_at" => "2026-08-01T00:00:00+00:00",
+      "lines" => {
+        "Design Services" => {
+          "id" => "1",
+          "forecast_project" => nil,
+          "forecast_person" => nil,
+          "quantity" => 80.0,
+          "unit_price" => 150.0,
+        },
+      },
+    })
+    invoice_tracker.stubs(:qbo_invoice).returns(stub(line_items: [
+      {
+        "id" => "1",
+        "description" => "Design Services",
+        "detail_type" => "SalesItemLineDetail",
+        "sales_line_item_detail" => { "quantity" => 48.0, "unit_price" => 150.0 },
+      },
+    ]))
+    invoice_tracker
+  end
+
+  test "#blueprint_diff marks a changed quantity as [was, now]" do
+    diff = tracker_with_changed_quantity.blueprint_diff
+    line = diff["lines"]["Design Services"]
+    assert_equal "changed", line["diff_state"]
+    assert_equal [80.0, 48.0], line["quantity"]
+  end
+
+  test "#blueprint_diff is idempotent when called twice on the same instance" do
+    invoice_tracker = tracker_with_changed_quantity
+    first = invoice_tracker.blueprint_diff
+    second = invoice_tracker.blueprint_diff
+    assert_equal first, second
+  end
+
+  test "#blueprint_diff does not mutate the underlying blueprint attribute" do
+    invoice_tracker = tracker_with_changed_quantity
+    invoice_tracker.blueprint_diff
+    assert_equal 80.0, invoice_tracker.blueprint["lines"]["Design Services"]["quantity"]
+    assert_nil invoice_tracker.blueprint["lines"]["Design Services"]["diff_state"]
+  end
 end
 
 class InvoiceTrackerRegenAcceptancePreservationTest < ActiveSupport::TestCase

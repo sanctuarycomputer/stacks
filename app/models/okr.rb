@@ -44,6 +44,10 @@ class Okr < ApplicationRecord
     story_points_per_billable_week: 24,
     cost_per_story_point: 25,
     project_satisfaction: 26,
+    average_client_lifetime_value: 27,
+    average_client_tenure: 28,
+    client_revenue_concentration: 29,
+    forecasted_sales_revenue: 30,
   }
 
   def self.make_annual_growth_progress_data(target, tolerance, last_year_value, current_value, base_unit_type)

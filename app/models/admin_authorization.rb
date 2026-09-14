@@ -12,16 +12,47 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
   ].freeze
   OWN_LEDGER_ITEM_DENY = [:update, :destroy].freeze
 
-  # def scope_collection(collection, action = nil)
-  #   # This automatically filters the Index page
-  #   if user.admin?
-  #     collection
-  #   else
-  #     # Ensure users only see records they own
-  #     # This assumes the model has a user_id or similar relation
-  #     collection.where(user_id: user.id)
-  #   end
-  # end
+  # Narrows index pages for users whose only access comes from
+  # project-scoped "lead" grants. Admins and (actual or granted) leads see
+  # everything. ActiveAdmin calls this automatically for every index via
+  # apply_authorization_scope.
+  def scope_collection(collection, action = :read)
+    return collection if user.is_admin? || user.can_act_as_lead?
+
+    scoped_ids = user.lead_scoped_project_tracker_ids
+    return collection if scoped_ids.empty?
+
+    # ActiveAdmin calls scope_collection with whatever scoped_collection
+    # returns. Resources that override scoped_collection (e.g. InvoicePass)
+    # hand us an ActiveRecord::Relation, but top-level resources fall back to
+    # InheritedResources' end_of_association_chain, which for a bare model
+    # (no association scoping applied yet) is the model Class itself — and a
+    # Class doesn't respond to #klass. Resolve to the actual model class
+    # either way rather than assuming a Relation.
+    model = collection.respond_to?(:klass) ? collection.klass : collection
+
+    case model.name
+    when "ProjectTracker"
+      collection.where(id: scoped_ids)
+    when "InvoiceTracker"
+      forecast_project_ids = ProjectTrackerForecastProject
+        .where(project_tracker_id: scoped_ids)
+        .pluck(:forecast_project_id)
+      return collection.none if forecast_project_ids.empty?
+
+      collection.where(<<~SQL.squish, forecast_project_ids)
+        invoice_trackers.blueprint IS NOT NULL
+        AND jsonb_typeof(invoice_trackers.blueprint -> 'lines') = 'object'
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_each(invoice_trackers.blueprint -> 'lines') AS line
+          WHERE (line.value ->> 'forecast_project')::bigint IN (?)
+        )
+      SQL
+    else
+      collection
+    end
+  end
 
   def authorized?(action, subject = nil)
     if subject.is_a?(ContributorAdjustment) || subject == ContributorAdjustment
@@ -32,7 +63,22 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
       return user.is_admin?
     end
 
-    return true if (user.is_admin? || user.has_led_projects?)
+    return true if (user.is_admin? || user.can_act_as_lead?)
+
+    # Project-scoped "lead" grants (leads-in-training limited to specific
+    # projects): read-only visibility into the granted ProjectTrackers, the
+    # InvoiceTrackers that bill them, and the InvoicePass containers needed
+    # to navigate to those trackers. scope_collection narrows the index
+    # pages; this handles class-level (menu/index) and per-record checks.
+    if action == :read
+      scoped_ids = user.lead_scoped_project_tracker_ids
+      if scoped_ids.any?
+        return true if [ProjectTracker, InvoiceTracker, InvoicePass].include?(subject)
+        return true if subject.is_a?(InvoicePass)
+        return true if subject.is_a?(ProjectTracker) && scoped_ids.include?(subject.id)
+        return true if subject.is_a?(InvoiceTracker) && (subject.project_trackers.map(&:id) & scoped_ids).any?
+      end
+    end
 
     if subject.is_a?(AdminUser)
       return true if subject == user && action == :read

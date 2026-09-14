@@ -166,6 +166,12 @@
               </td>
             </tr>
             <tr class="odd">
+              <td class="col"><strong>Billing Model</strong></td>
+              <td class="col text-right">
+                <code><%= @project_tracker.billing_rules.label %></code>
+              </td>
+            </tr>
+            <tr class="even">
               <td class="col"><strong>Considered Successful?</strong></td>
               <td class="col text-right">
                 <% if @project_tracker.considered_successful? %>

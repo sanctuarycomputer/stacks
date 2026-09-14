@@ -2,6 +2,7 @@ require 'test_helper'
 
 class McpEndpointTest < ActionDispatch::IntegrationTest
   include ActiveSupport::Testing::TimeHelpers
+  include SurveyFixtures
 
   TOOLS_LIST_REQUEST = {
     jsonrpc: "2.0",
@@ -57,7 +58,7 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     assert body.key?("result"), "Expected JSON-RPC result key, got: #{body.inspect}"
     tool_names = body["result"]["tools"].map { |t| t["name"] }
     assert_includes tool_names, "search", "Expected 'search' tool in: #{tool_names.inspect}"
-    assert_equal %w[get_ar_aging get_document get_resourcing_projections get_studio_health list_documents list_open_admin_tasks list_overdue_invoices list_projects_at_risk list_sources search], tool_names.sort,
+    assert_equal %w[explore_okr find_contributor get_ar_aging get_capacity get_client_revenue get_document get_enterprise_health get_executive_dashboard get_invoice_passes get_membership_stats get_okr_grid get_person_metrics get_project_burnup get_project_contributors get_project_cost_breakdown get_quarterly_report get_resourcing_projections get_studio_health get_survey_results list_documents list_open_admin_tasks list_overdue_invoices list_payable_bills list_project_trackers list_projects_at_risk list_sources list_surveys search], tool_names.sort,
       "Expected all registered tools, got: #{tool_names.inspect}"
   end
 
@@ -115,6 +116,58 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     assert_equal (today + 90).iso8601, payload.dig("window", "end")
   end
 
+  test "get_resourcing_projections computes recent_actuals from the Forecast mirror" do
+    travel_to Time.zone.parse("2026-07-15 12:00:00")
+    today = Time.zone.today
+
+    Stacks::Runn.any_instance.stubs(:get_projects).returns([
+      { "id" => 92_100, "name" => "Actuals Project", "isConfirmed" => true, "isArchived" => false, "isTemplate" => false, "clientId" => 5, "budget" => nil, "pricingModel" => "tm" },
+    ])
+    Stacks::Runn.any_instance.stubs(:get_people).returns([
+      { "id" => 30, "firstName" => "Fresh", "lastName" => "Worker", "email" => "fresh@example.com", "isArchived" => false },
+      { "id" => 31, "firstName" => "Stale", "lastName" => "Worker", "email" => "stale@example.com", "isArchived" => false },
+    ])
+    # one HISTORICAL (pre-window) assignment pins Fresh Worker's last-known role
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns([
+      { "id" => 900, "personId" => 30, "projectId" => 92_100, "roleId" => 7, "startDate" => (today - 200).iso8601, "endDate" => (today - 100).iso8601, "minutesPerDay" => 480, "isPlaceholder" => false, "isActive" => true, "isTemplate" => false, "note" => "" },
+    ])
+
+    RunnProject.create!(runn_id: 92_100, name: "Actuals Project", data: {})
+    tracker = ProjectTracker.new(name: "Actuals Tracker", runn_project_id: 92_100,
+      snapshot: { "last_forecast_assignment_end_date" => (today + 30).iso8601 })
+    assert tracker.save(validate: false)
+
+    # Forecast models key on forecast_id (the upstream Harvest Forecast id)
+    fclient = ForecastClient.create!(forecast_id: 70_001, name: "Actuals Client")
+    fproject = ForecastProject.create!(forecast_id: 70_100, name: "Actuals Project", code: "ACT-1", forecast_client: fclient)
+    ProjectTrackerForecastProject.create!(project_tracker: tracker, forecast_project: fproject)
+    fresh = ForecastPerson.create!(forecast_id: 70_030, email: "fresh@example.com", first_name: "Fresh", last_name: "Worker")
+    stale = ForecastPerson.create!(forecast_id: 70_031, email: "stale@example.com", first_name: "Stale", last_name: "Worker")
+    # fresh: 480 min/day (28800s) over the last two weeks — inside the 21d window
+    ForecastAssignment.create!(forecast_person: fresh, forecast_project: fproject,
+      start_date: today - 14, end_date: today - 1, allocation: 28_800)
+    # overlapping second FA (240 min/day over the last week) must SUM on shared
+    # days: 10 weekdays × 480 + 5 weekdays × 240 = 6000 over 10 days → 600 avg
+    ForecastAssignment.create!(forecast_person: fresh, forecast_project: fproject,
+      start_date: today - 7, end_date: today - 1, allocation: 14_400)
+    # stale: activity entirely before the window
+    ForecastAssignment.create!(forecast_person: stale, forecast_project: fproject,
+      start_date: today - 90, end_date: today - 40, allocation: 28_800)
+
+    payload = call_tool("get_resourcing_projections")
+
+    project = payload["projects"].find { |p| p["id"] == 92_100 }
+    actuals = project["recent_actuals"]
+    assert_equal 1, actuals.size, "only in-window people appear; got: #{actuals.inspect}"
+    entry = actuals.first
+    assert_equal 30, entry["person_id"]
+    assert_equal "Fresh Worker", entry["name"]
+    assert_equal 600, entry["avg_minutes_per_day"], "overlapping assignments must sum per day, not dilute the mean"
+    assert_equal (today - 1).iso8601, entry["last_active_on"]
+    assert_equal 7, entry["role_id"], "role comes from the most recent historical assignment"
+    assert entry.keys.exclude?("email"), "no emails on the surface"
+  end
+
   test "get_resourcing_projections clamps a hostile window_days" do
     Stacks::Runn.any_instance.stubs(:get_projects).returns([])
     Stacks::Runn.any_instance.stubs(:get_people).returns([])
@@ -152,6 +205,74 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
     assert payload.key?("studios")
   end
 
+  test "tools/call round-trip for get_enterprise_health surfaces tool errors through the endpoint" do
+    payload = call_tool("get_enterprise_health", { "entity" => "Nope Inc" })
+    assert_includes payload["error"], "Unknown entity 'Nope Inc'"
+    assert_includes payload["error"], "Sanctuary Computer Inc"
+  end
+
+  test "tools/call round-trip for get_capacity returns per-person rows from the persisted reports" do
+    fp = ForecastPerson.create!(forecast_id: 88_100_001, email: "cap@sanctuary.computer",
+                                first_name: "Cap", last_name: "Acity", archived: false, data: {})
+    ForecastPersonUtilizationReport.create!(
+      forecast_person: fp, starts_at: Date.new(2026, 6, 1), ends_at: Date.new(2026, 6, 30),
+      period_gradation: "month",
+      expected_hours_sold: 100.0, expected_hours_unsold: 20.0,
+      actual_hours_sold: 80.0, actual_hours_internal: 5.0, actual_hours_time_off: 8.0,
+      actual_hours_sold_by_rate: { "175.0" => 80.0 }, utilization_rate: 80.0
+    )
+
+    payload = call_tool("get_capacity", { "gradation" => "month" })
+
+    assert_equal "month", payload["gradation"]
+    row = payload["people"].find { |p| p["email"] == "cap@sanctuary.computer" }
+    assert row.present?, "expected the seeded person in: #{payload['people'].inspect}"
+    assert_equal 100.0, row["sellable"]
+    assert_equal 80.0, row["sold"]
+    assert_equal 20.0, row["benched"]
+    assert_equal 20.0, row["non_sellable"]
+    assert payload.key?("unfilled_placeholders")
+  end
+
+  test "tools/call round-trip for list_payable_bills labels every entity" do
+    payload = call_tool("list_payable_bills")
+
+    assert_match(/\A\d{4}-\d{2}-\d{2}\z/, payload["as_of"])
+    assert_equal Enterprise.order(:name).pluck(:name), payload["entities"].map { |e| e["entity"] }
+    payload["entities"].each do |ent|
+      assert ent.key?("bills")
+      assert ent.key?("total_outstanding")
+      assert ent.key?("skipped_count")
+      assert_equal false, ent["truncated"]
+    end
+  end
+
+  test "tools/call round-trip for get_project_burnup returns the snapshot-backed payload" do
+    tracker = ProjectTracker.new(name: "Endpoint Burnup Tracker")
+    tracker.save!(validate: false)
+    tracker.update_column(:snapshot, {
+      "generated_at" => "2026-08-01T02:00:00+00:00",
+      "spend" => [{ "x" => "2026-06-01", "y" => 1000.0 }],
+      "cost" => [{ "x" => "2026-06-30", "y" => 400.0 }],
+      "hours" => [{ "x" => "2026-06-01", "y" => 10.0 }],
+      "cost_total" => 400.0,
+      "invoiced_income_total" => 800.0,
+      "invoiced_with_running_spend_total" => 1000.0,
+      "first_forecast_assignment_start_date" => "2026-06-01",
+      "last_forecast_assignment_end_date" => "2026-06-03",
+    })
+
+    payload = call_tool("get_project_burnup", { "tracker" => tracker.id.to_s })
+
+    assert_equal "Endpoint Burnup Tracker", payload["tracker"]
+    assert_equal tracker.id, payload["id"]
+    assert_equal [{ "x" => "2026-06-01", "y" => 0 }], payload.dig("series", "income")
+    assert_equal 1000.0, payload.dig("totals", "total_spend")
+    assert_equal 800.0, payload.dig("totals", "invoiced")
+    assert_equal "no_budget", payload["status"]
+    assert_equal 0, payload["skipped_invoices"]
+  end
+
   test "POST returns 403 when MCP API key is not configured" do
     Stacks::Utils.stub(:config, { stacks: { private_api_key: '' } }) do
       post "/api/mcp",
@@ -159,5 +280,168 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
         params: TOOLS_LIST_REQUEST.to_json
       assert_response :forbidden
     end
+  end
+
+  test "get_resourcing_projections includes people[].contributor_id, the new managed overlay shape, and degraded flag" do
+    travel_to Time.zone.parse("2026-07-15 12:00:00")
+    today = Time.zone.today
+    Stacks::Runn.any_instance.stubs(:get_projects).returns([
+      { "id" => 91_100, "name" => "P", "isConfirmed" => true, "isArchived" => false, "isTemplate" => false,
+        "clientId" => 5, "budget" => 100_000, "pricingModel" => "tm" },
+    ])
+    Stacks::Runn.any_instance.stubs(:get_people).returns([
+      { "id" => 10, "firstName" => "Ada", "lastName" => "Lovelace", "email" => "ada@x.com", "isArchived" => false },
+    ])
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns([
+      { "id" => 1, "personId" => 10, "projectId" => 91_100, "roleId" => 7, "startDate" => (today - 30).iso8601,
+        "endDate" => (today - 1).iso8601, "minutesPerDay" => 480, "isTemplate" => false },
+      { "id" => 2, "personId" => 10, "projectId" => 91_100, "roleId" => 9, "startDate" => (today + 1).iso8601,
+        "endDate" => (today + 10).iso8601, "minutesPerDay" => 480, "isTemplate" => false },
+    ])
+    RunnProject.create!(runn_id: 91_100, name: "P", data: {})
+    tr = ProjectTracker.new(name: "T", runn_project_id: 91_100)
+    tr.save(validate: false)
+    fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "ada@x.com", data: {})
+    # ForecastPerson's after_create already made this person's Contributor. Creating
+    # another here would leave two rows sharing one email, and the tool resolves
+    # contributor_id_by_email last-write-wins over a scope ordered by email alone —
+    # so the winner between duplicates is arbitrary and the assertion below flaps.
+    contributor = fp.contributor
+    assert_equal 1,
+      Contributor.unscoped.joins(:forecast_person).where(forecast_people: { email: "ada@x.com" }).count,
+      "exactly one contributor must resolve to this email, or contributor_id is ambiguous"
+    ProjectedAssignment.create!(source_key: "world:1", project_tracker: tr, contributor: contributor,
+      start_date: (today + 1), end_date: (today + 20), minutes_per_day: 480,
+      runn_assignment_id: 2, managed_by: "detector")
+
+    payload = call_tool("get_resourcing_projections")
+    ada = payload["people"].find { |p| p["id"] == 10 }
+    refute ada.key?("default_role_id"), "the client no longer deals with roles"
+    assert_equal contributor.id, ada["contributor_id"]
+    assert_equal false, payload["degraded"]
+    managed = payload["managed"].find { |m| m["source_key"] == "world:1" }
+    assert_equal 2, managed["runn_assignment_id"]
+    assert_equal "detector", managed["managed_by"]
+    assert_equal contributor.id, managed["contributor_id"]
+    assert_equal tr.id, managed["project_tracker_id"]
+    refute managed.key?("kind")
+    refute managed.key?("capacity_pct")
+    refute managed.key?("runn_role_id")
+    refute managed.key?("is_placeholder")
+  end
+
+  test "get_resourcing_projections degrades (partial + degraded:true) when a Runn read fails" do
+    Stacks::Runn.any_instance.stubs(:get_projects).raises(RuntimeError, "runn 429")
+    Stacks::Runn.any_instance.stubs(:get_people).returns([])
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns([])
+    payload = call_tool("get_resourcing_projections")
+    assert_equal true, payload["degraded"]
+  end
+
+  test "tools/call round-trip for get_membership_stats returns counts with no member PII" do
+    travel_to Time.zone.parse("2026-08-04 12:00:00")
+    org = OptixOrganization.create!(name: "Endpoint Org", synced_at: Time.zone.now)
+    loc = OptixLocation.create!(optix_id: "ep-loc", optix_organization: org, name: "Annex")
+    tpl = OptixPlanTemplate.create!(optix_id: "ep-tpl", optix_organization: org, name: "Patron Membership")
+    OptixPlanTemplateLocation.create!(optix_plan_template_id: tpl.optix_id, optix_location_id: loc.optix_id)
+    OptixUser.create!(optix_id: "ep-user", optix_organization: org, email: "member@example.com", name: "Member")
+    OptixAccountPlan.create!(optix_id: "ep-plan", optix_organization: org,
+      optix_plan_template_id: tpl.optix_id, access_usage_user_optix_id: "ep-user",
+      status: "ACTIVE", start_timestamp: 10.weeks.ago.to_i)
+
+    payload = call_tool("get_membership_stats", { "weeks" => 6 })
+
+    assert_equal "Endpoint Org", payload["organization"]
+    assert_equal 1, payload["total_paying_members"]
+    annex = payload["locations"].find { |l| l["location"] == "Annex" }
+    assert_equal 1, annex["paying_members"]
+    assert_equal 1, annex["patron_members"]
+    assert_equal 6, annex["weekly_counts"].length
+    assert_equal [{ "plan_type" => "Patron Membership", "count" => 1 }], annex["plan_mix"]
+    refute_includes response.body, "member@example.com", "no member PII may cross the endpoint"
+    refute_includes response.body, "ep-user"
+  end
+
+  test "tools/call round-trip for get_invoice_passes attributes entities from stored data" do
+    travel_to Time.zone.parse("2026-08-04 12:00:00")
+    pass = InvoicePass.create!(start_of_month: Date.new(2026, 7, 1))
+    client = ForecastClient.create!(forecast_id: 88_200_001, name: "Endpoint Client")
+    qa = Enterprise.find(enterprises(:sanctuary).id).qbo_account
+    QboInvoice.create!(qbo_account: qa, qbo_id: "ep-inv",
+      data: { "total" => 1200.0, "balance" => 0.0, "email_status" => "EmailSent", "due_date" => "2026-08-15" })
+    InvoiceTracker.create!(invoice_pass: pass, forecast_client_id: client.forecast_id,
+      qbo_account: qa, qbo_invoice_id: "ep-inv", blueprint: { "lines" => {} })
+
+    payload = call_tool("get_invoice_passes", { "months_back" => 3 })
+
+    assert_equal ["2026-07-01"], payload["passes"].map { |p| p["month"] }
+    entity = payload["passes"].first["entities"].first
+    assert_equal "Sanctuary Computer Inc", entity["entity"]
+    assert_equal 1200.0, entity["invoiced_total"]
+    assert_equal({ "paid" => 1 }, entity["status_mix"])
+    assert_equal [{ "month" => "2026-06-01", "total_invoiced" => 0.0 },
+                  { "month" => "2026-07-01", "total_invoiced" => 1200.0 },
+                  { "month" => "2026-08-01", "total_invoiced" => 0.0 }], payload["mom"],
+      "mom zero-fills pass-less months across the window"
+  end
+
+  test "tools/call round-trip for get_client_revenue returns client x month rows" do
+    travel_to Time.zone.parse("2026-08-04 12:00:00")
+    make_studio!
+    pass = InvoicePass.create!(start_of_month: Date.new(2026, 7, 1))
+    client = ForecastClient.create!(forecast_id: 88_300_001, name: "Endpoint Revenue Client")
+    qa = Enterprise.find(enterprises(:sanctuary).id).qbo_account
+    QboInvoice.create!(qbo_account: qa, qbo_id: "ep-rev",
+      data: { "total" => 4000.0, "balance" => 0.0, "email_status" => "EmailSent", "due_date" => "2026-08-15" })
+    InvoiceTracker.create!(invoice_pass: pass, forecast_client_id: client.forecast_id,
+      qbo_account: qa, qbo_invoice_id: "ep-rev", blueprint: { "lines" => {} })
+
+    payload = call_tool("get_client_revenue", { "months_back" => 2 })
+
+    assert_equal "garden3d", payload["studio"]
+    row = payload["clients"].find { |c| c["client"] == "Endpoint Revenue Client" }
+    assert_equal 4000.0, row["total"]
+    assert_equal [{ "month" => "2026-07-01", "amount" => 4000.0 }, { "month" => "2026-08-01", "amount" => 0.0 }],
+      row["monthly"]
+    assert_equal 4000.0, payload["total_revenue"]
+    assert_equal 0, payload["skipped_tracker_count"]
+  end
+
+  test "find_contributor is exposed on the read surface and returns matches" do
+    ForecastPerson.create!(forecast_id: 7_654_321, first_name: "Hugh", last_name: "Person",
+      email: "hugh@sanctuary.computer", archived: false, roles: [], updated_at: Time.current)
+    # ForecastPerson#after_create (ensure_contributor_exists!) already provisions the Contributor row.
+
+    post "/api/mcp", headers: api_key_headers, params: TOOLS_LIST_REQUEST.to_json
+    assert_response :success
+    tool_names = JSON.parse(response.body)["result"]["tools"].map { |t| t["name"] }
+    assert_includes tool_names, "find_contributor"
+    assert_includes tool_names, "list_project_trackers"
+
+    result = call_tool("find_contributor", { "email" => "hugh@sanctuary.computer" })
+    assert_equal "hugh@sanctuary.computer", result.first["email"]
+  end
+
+  test "tools/call round-trip for list_surveys and get_survey_results" do
+    travel_to Time.zone.parse(SurveyFixtures::FROZEN_NOW)
+    survey = build_project_survey!(answers: [
+      { sentiment: :agree, context: "tight", free_text: "more discovery" },
+      { sentiment: :agree, context: "fine", free_text: "keep retros" },
+      { sentiment: :neutral, context: nil, free_text: "clearer scope" },
+    ])
+    responder = build_admin!(email_prefix: "survey-responder")
+    ProjectSatisfactionSurveyResponder.create!(project_satisfaction_survey: survey, admin_user: responder)
+
+    rows = call_tool("list_surveys", { status: "closed", closed_after: "2026-06-01" })
+    assert_equal [survey.id], rows.map { |r| r["id"] }
+    assert_equal "project", rows.first["kind"]
+    assert_equal 3, rows.first["response_count"]
+    refute_includes response.body, responder.email
+
+    payload = call_tool("get_survey_results", { kind: "project", id: survey.id })
+    assert_equal "closed", payload["status"]
+    assert_equal ["clearer scope", "keep retros", "more discovery"], payload["free_text_questions"].first["responses"]
+    refute_includes response.body, responder.email
+    refute_includes response.body, "survey-responder"
   end
 end

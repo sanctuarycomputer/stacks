@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_07_10_200715) do
+ActiveRecord::Schema.define(version: 2026_09_09_000004) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -146,8 +146,11 @@ ActiveRecord::Schema.define(version: 2026_07_10_200715) do
     t.jsonb "metadata", default: {}, null: false
     t.string "display_name"
     t.jsonb "source_events", default: {}, null: false
+    t.string "ghost_id"
+    t.jsonb "ghost_data", default: {}, null: false
     t.index ["apollo_id"], name: "index_contacts_on_apollo_id", unique: true
     t.index ["email"], name: "index_contacts_on_email", unique: true
+    t.index ["ghost_id"], name: "index_contacts_on_ghost_id", unique: true
   end
 
   create_table "contributor_adjustments", force: :cascade do |t|
@@ -830,6 +833,22 @@ ActiveRecord::Schema.define(version: 2026_07_10_200715) do
     t.index ["review_id"], name: "index_peer_reviews_on_review_id"
   end
 
+  create_table "permission_grants", force: :cascade do |t|
+    t.bigint "admin_user_id", null: false
+    t.string "permission", null: false
+    t.string "subject_type"
+    t.bigint "subject_id"
+    t.bigint "granted_by_id"
+    t.text "notes"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id", "permission", "subject_type", "subject_id"], name: "index_permission_grants_unique_scoped", unique: true, where: "(subject_id IS NOT NULL)"
+    t.index ["admin_user_id", "permission"], name: "index_permission_grants_unique_global", unique: true, where: "((subject_type IS NULL) AND (subject_id IS NULL))"
+    t.index ["admin_user_id"], name: "index_permission_grants_on_admin_user_id"
+    t.index ["granted_by_id"], name: "index_permission_grants_on_granted_by_id"
+    t.index ["subject_type", "subject_id"], name: "index_permission_grants_on_subject_type_and_subject_id"
+  end
+
   create_table "periodic_reports", force: :cascade do |t|
     t.integer "period_gradation", default: 0, null: false
     t.date "period_starts_at", null: false
@@ -1023,9 +1042,27 @@ ActiveRecord::Schema.define(version: 2026_07_10_200715) do
     t.decimal "target_free_hours_percent", default: "0.0"
     t.decimal "target_profit_margin", default: "0.0"
     t.bigint "runn_project_id"
-    t.decimal "company_treasury_split", default: "0.3"
+    t.string "billing_model", default: "new_deal_v1", null: false
     t.index ["runn_project_id"], name: "index_project_trackers_on_runn_project_id", unique: true
-    t.check_constraint "(company_treasury_split >= (0)::numeric) AND (company_treasury_split <= (1)::numeric)", name: "check_company_treasury_split_range"
+  end
+
+  create_table "projected_assignments", force: :cascade do |t|
+    t.string "source_key", null: false
+    t.bigint "contributor_id", null: false
+    t.bigint "project_tracker_id", null: false
+    t.date "start_date", null: false
+    t.date "end_date", null: false
+    t.integer "minutes_per_day", default: 0, null: false
+    t.bigint "runn_assignment_id"
+    t.jsonb "last_synced_runn_state"
+    t.text "note"
+    t.string "managed_by"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["contributor_id"], name: "index_projected_assignments_on_contributor_id"
+    t.index ["project_tracker_id"], name: "index_projected_assignments_on_project_tracker_id"
+    t.index ["runn_assignment_id"], name: "index_projected_assignments_on_runn_assignment_id"
+    t.index ["source_key"], name: "index_projected_assignments_on_source_key", unique: true
   end
 
   create_table "qbo_accounts", force: :cascade do |t|
@@ -1090,6 +1127,35 @@ ActiveRecord::Schema.define(version: 2026_07_10_200715) do
     t.string "refresh_token"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+  end
+
+  create_table "recurring_assignment_occurrences", force: :cascade do |t|
+    t.bigint "recurring_assignment_id", null: false
+    t.date "occurs_on", null: false
+    t.bigint "forecast_assignment_id"
+    t.string "status", default: "materialized", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["forecast_assignment_id"], name: "idx_recurring_occurrences_on_forecast_assignment_id"
+    t.index ["recurring_assignment_id", "occurs_on"], name: "idx_recurring_occurrences_on_rule_and_date", unique: true
+    t.index ["recurring_assignment_id"], name: "idx_recurring_occurrences_on_recurring_assignment_id"
+  end
+
+  create_table "recurring_assignments", force: :cascade do |t|
+    t.bigint "forecast_person_id", null: false
+    t.bigint "forecast_project_id", null: false
+    t.integer "allocation", null: false
+    t.boolean "active_on_days_off", default: false, null: false
+    t.text "notes", default: "", null: false
+    t.integer "weekdays", default: [1, 2, 3, 4, 5], null: false, array: true
+    t.date "starts_on", null: false
+    t.date "ends_on"
+    t.datetime "paused_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["forecast_person_id"], name: "index_recurring_assignments_on_forecast_person_id"
+    t.index ["forecast_project_id"], name: "index_recurring_assignments_on_forecast_project_id"
+    t.index ["paused_at"], name: "index_recurring_assignments_on_paused_at"
   end
 
   create_table "recurring_charges", force: :cascade do |t|
@@ -1157,6 +1223,42 @@ ActiveRecord::Schema.define(version: 2026_07_10_200715) do
     t.index ["deleted_at"], name: "index_reviews_on_deleted_at"
   end
 
+  create_table "runn_assignments", force: :cascade do |t|
+    t.bigint "runn_id", null: false
+    t.bigint "person_id"
+    t.bigint "project_id"
+    t.bigint "role_id"
+    t.date "start_date", null: false
+    t.date "end_date", null: false
+    t.integer "minutes_per_day", default: 0, null: false
+    t.boolean "is_active", default: true, null: false
+    t.boolean "is_billable", default: true, null: false
+    t.boolean "is_placeholder", default: false, null: false
+    t.boolean "is_template", default: false, null: false
+    t.boolean "is_non_working_day", default: false, null: false
+    t.text "note"
+    t.datetime "created_at"
+    t.datetime "updated_at"
+    t.jsonb "data"
+    t.index ["person_id"], name: "index_runn_assignments_on_person_id"
+    t.index ["project_id"], name: "index_runn_assignments_on_project_id"
+    t.index ["runn_id"], name: "index_runn_assignments_on_runn_id", unique: true
+    t.index ["start_date", "end_date"], name: "idx_runn_assignments_on_daterange", using: :gist
+  end
+
+  create_table "runn_people", force: :cascade do |t|
+    t.bigint "runn_id", null: false
+    t.string "first_name"
+    t.string "last_name"
+    t.string "email"
+    t.boolean "is_archived", default: false, null: false
+    t.datetime "created_at"
+    t.datetime "updated_at"
+    t.jsonb "data"
+    t.index "lower((email)::text)", name: "index_runn_people_on_lower_email"
+    t.index ["runn_id"], name: "index_runn_people_on_runn_id", unique: true
+  end
+
   create_table "runn_projects", force: :cascade do |t|
     t.bigint "runn_id", null: false
     t.string "name"
@@ -1171,6 +1273,18 @@ ActiveRecord::Schema.define(version: 2026_07_10_200715) do
     t.datetime "updated_at"
     t.jsonb "data"
     t.index ["runn_id"], name: "index_runn_projects_on_runn_id", unique: true
+  end
+
+  create_table "runn_roles", force: :cascade do |t|
+    t.bigint "runn_id", null: false
+    t.string "name"
+    t.decimal "standard_rate"
+    t.decimal "default_hour_cost"
+    t.boolean "is_archived", default: false, null: false
+    t.datetime "created_at"
+    t.datetime "updated_at"
+    t.jsonb "data"
+    t.index ["runn_id"], name: "index_runn_roles_on_runn_id", unique: true
   end
 
   create_table "score_trees", force: :cascade do |t|
@@ -1195,6 +1309,17 @@ ActiveRecord::Schema.define(version: 2026_07_10_200715) do
     t.index ["deleted_at"], name: "index_scores_on_deleted_at"
     t.index ["score_tree_id"], name: "index_scores_on_score_tree_id"
     t.index ["trait_id"], name: "index_scores_on_trait_id"
+  end
+
+  create_table "ship_scans", force: :cascade do |t|
+    t.bigint "document_id", null: false
+    t.integer "outcome", null: false
+    t.string "scanned_content_hash"
+    t.datetime "scanned_at", null: false
+    t.boolean "human_locked", default: false, null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["document_id"], name: "index_ship_scans_on_document_id", unique: true
   end
 
   create_table "source_syncs", force: :cascade do |t|
@@ -1341,6 +1466,23 @@ ActiveRecord::Schema.define(version: 2026_07_10_200715) do
     t.index ["qbo_bill_id"], name: "index_trueups_on_qbo_bill_id"
   end
 
+  create_table "weekly_ships", force: :cascade do |t|
+    t.bigint "document_id", null: false
+    t.bigint "project_tracker_id", null: false
+    t.datetime "sent_at", null: false
+    t.string "sent_by_email"
+    t.string "sent_by_name"
+    t.integer "matched_by", null: false
+    t.float "confidence"
+    t.text "rationale"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["document_id", "project_tracker_id"], name: "index_weekly_ships_on_document_id_and_project_tracker_id", unique: true
+    t.index ["document_id"], name: "index_weekly_ships_on_document_id"
+    t.index ["project_tracker_id", "sent_at"], name: "index_weekly_ships_on_project_tracker_id_and_sent_at"
+    t.index ["project_tracker_id"], name: "index_weekly_ships_on_project_tracker_id"
+  end
+
   create_table "workspaces", force: :cascade do |t|
     t.string "reviewable_type", null: false
     t.bigint "reviewable_id", null: false
@@ -1422,6 +1564,8 @@ ActiveRecord::Schema.define(version: 2026_07_10_200715) do
   add_foreign_key "pay_stubs", "pay_cycles"
   add_foreign_key "peer_reviews", "admin_users"
   add_foreign_key "peer_reviews", "reviews"
+  add_foreign_key "permission_grants", "admin_users"
+  add_foreign_key "permission_grants", "admin_users", column: "granted_by_id"
   add_foreign_key "periodic_reports", "notifications"
   add_foreign_key "pre_profit_share_purchases", "admin_users"
   add_foreign_key "profit_share_payments", "admin_users"
@@ -1446,12 +1590,15 @@ ActiveRecord::Schema.define(version: 2026_07_10_200715) do
   add_foreign_key "project_tracker_forecast_to_runn_sync_tasks", "project_trackers"
   add_foreign_key "project_tracker_links", "project_trackers"
   add_foreign_key "project_trackers", "runn_projects", primary_key: "runn_id"
+  add_foreign_key "projected_assignments", "contributors"
+  add_foreign_key "projected_assignments", "project_trackers"
   add_foreign_key "qbo_accounts", "enterprises"
   add_foreign_key "qbo_bills", "qbo_accounts"
   add_foreign_key "qbo_invoices", "qbo_accounts"
   add_foreign_key "qbo_profit_and_loss_reports", "qbo_accounts"
   add_foreign_key "qbo_tokens", "qbo_accounts"
   add_foreign_key "qbo_vendors", "qbo_accounts"
+  add_foreign_key "recurring_assignment_occurrences", "recurring_assignments"
   add_foreign_key "recurring_ledger_adjustments", "ledgers"
   add_foreign_key "reimbursements", "admin_users", column: "accepted_by_id"
   add_foreign_key "reimbursements", "ledgers"
@@ -1462,6 +1609,7 @@ ActiveRecord::Schema.define(version: 2026_07_10_200715) do
   add_foreign_key "score_trees", "workspaces"
   add_foreign_key "scores", "score_trees"
   add_foreign_key "scores", "traits"
+  add_foreign_key "ship_scans", "documents"
   add_foreign_key "source_syncs", "system_tasks"
   add_foreign_key "studio_memberships", "admin_users"
   add_foreign_key "studio_memberships", "studios"
@@ -1480,4 +1628,6 @@ ActiveRecord::Schema.define(version: 2026_07_10_200715) do
   add_foreign_key "traits", "trees"
   add_foreign_key "trueups", "invoice_passes"
   add_foreign_key "trueups", "ledgers"
+  add_foreign_key "weekly_ships", "documents"
+  add_foreign_key "weekly_ships", "project_trackers"
 end

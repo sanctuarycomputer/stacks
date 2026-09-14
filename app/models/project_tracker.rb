@@ -20,6 +20,7 @@ class ProjectTracker < ApplicationRecord
     if: :validate_budgets?
 
   has_one :project_capsule, dependent: :delete
+  has_many :weekly_ships, dependent: :destroy
   has_many :project_tracker_links, dependent: :delete_all
   accepts_nested_attributes_for :project_tracker_links, allow_destroy: true
 
@@ -38,6 +39,20 @@ class ProjectTracker < ApplicationRecord
   has_many :forecast_assignments, through: :forecast_projects
 
   belongs_to :runn_project, class_name: "RunnProject", foreign_key: "runn_project_id", primary_key: "runn_id", optional: true
+
+  # Which payout split rules apply to this project's client work. The rules
+  # themselves live in Stacks::BillingModel; this column only names them.
+  enum billing_model: Stacks::BillingModel.names.index_by(&:itself), _default: Stacks::BillingModel::DEFAULT
+
+  def billing_rules
+    Stacks::BillingModel.for(billing_model)
+  end
+
+  # Kept as a method for the readers that pre-date billing_model
+  # (InvoiceTracker#make_contributor_payouts!, admin views). Derived, never stored.
+  def company_treasury_split
+    billing_rules.treasury_share
+  end
 
   has_many :old_deal_project_lead_periods, dependent: :delete_all
   has_many :old_deal_project_leads, through: :old_deal_project_lead_periods, source: :admin_user
@@ -59,6 +74,8 @@ class ProjectTracker < ApplicationRecord
   accepts_nested_attributes_for :project_lead_periods, allow_destroy: true
   has_many :project_leads, through: :project_lead_periods, source: :admin_user
 
+  has_many :permission_grants, as: :subject, dependent: :destroy
+
   scope :complete, -> {
     where.not(work_completed_at: nil)
       .includes(:project_capsule).where(
@@ -79,8 +96,134 @@ class ProjectTracker < ApplicationRecord
       .where("(snapshot->>'last_forecast_assignment_end_date')::date < ?", threshold)
   }
 
+  def last_weekly_ship
+    weekly_ships.order(sent_at: :desc).first
+  end
+
+  # Staleness for the "Last Ship" index pill, anchored to the project's last
+  # recorded Forecast hour rather than the calendar — a paused project whose
+  # ships kept pace with its work stays green instead of rotting to red.
+  # Gap between the anchor and the last ship: ≤10d fresh (green), >10d stale
+  # (orange), >30d overdue (red); no ship ever → :never (black).
+  def self.ship_staleness(ship, anchor:)
+    return :never if ship.nil?
+    days = (anchor - ship.sent_at.to_date).to_i
+    if days > 30 then :overdue
+    elsif days > 10 then :stale
+    else :fresh
+    end
+  end
+
+  # The anchor for ship staleness: the last Forecast assignment date from the
+  # snapshot, capped at today (future-dated allocations haven't recorded hours
+  # yet). Falls back to today when the snapshot hasn't been generated.
+  def last_recorded_forecast_date
+    d = date_from_snapshot_key("last_forecast_assignment_end_date")
+    [d, Time.zone.today].compact.min
+  end
+
+  # True when every Forecast project on this tracker bills one of our own
+  # companies — internal work isn't expected to send weekly ships.
+  def internal_client?
+    fps = forecast_projects.to_a
+    fps.any? && fps.all?(&:is_internal?)
+  end
+
   def capsule_complete?
     project_capsule.present? && project_capsule.complete?
+  end
+
+  ROLE_PERIOD_ASSOCIATIONS = { "account_lead" => :account_lead_periods, "project_lead" => :project_lead_periods }.freeze
+
+  # Assign a lead role via a full-month, non-overlapping period. Ends the current open
+  # period at the end of the prior month and starts a new one at `starts_on` (first of a
+  # month). No-op if `admin_user` is already the open lead. Raises on a same-month swap.
+  def set_role_assignee!(role:, admin_user:, starts_on: Date.today.beginning_of_month)
+    assoc = ROLE_PERIOD_ASSOCIATIONS[role.to_s]
+    raise ArgumentError, "role must be one of #{ROLE_PERIOD_ASSOCIATIONS.keys.join(', ')}" if assoc.nil?
+    raise ArgumentError, "starts_on must be the first day of a month" unless starts_on == starts_on.beginning_of_month
+
+    periods = public_send(assoc)
+    current = periods.detect { |p| p.ended_at.nil? }
+    return current if current&.admin_user_id == admin_user.id
+
+    raise ArgumentError, "a #{role} already starts this month; resolve same-month lead changes in the admin UI" if current&.started_at && current.started_at >= starts_on
+
+    transaction do
+      current&.update!(ended_at: starts_on.prev_day)
+      periods.create!(admin_user: admin_user, started_at: starts_on, ended_at: nil)
+    end
+  end
+
+  def self.provision!(name:, msa_url: nil, sow_url: nil, budget_low_end: nil, budget_high_end: nil)
+    warnings = []
+    # Array#<< returns the (truthy) array, so `&&` short-circuits into the placeholder URL
+    # while the warning is recorded as a side effect of building the left-hand side.
+    msa = msa_url.presence || (warnings << "MSA link is a placeholder — replace it in Forecast/admin." && "https://todo.example.com/msa")
+    sow = sow_url.presence || (warnings << "SOW link is a placeholder — replace it in Forecast/admin." && "https://todo.example.com/sow")
+
+    tracker = transaction do
+      pt = new(name: name, budget_low_end: budget_low_end, budget_high_end: budget_high_end)
+      pt.project_tracker_links.build(name: "MSA", url: msa, link_type: :msa)
+      pt.project_tracker_links.build(name: "SOW", url: sow, link_type: :sow)
+      pt.save!
+      pt
+    end
+    [tracker, warnings]
+  end
+
+  def derived_client
+    forecast_projects.first&.forecast_client
+  end
+
+  # Adds a workstream (a rate-bearing schedulable strip) to this tracker. Resolves the
+  # client from the tracker's existing workstreams, else find-or-creates it by name (the
+  # first workstream establishes the tracker's client). Creates the underlying Forecast
+  # project (outside a txn, per the create-external-then-link convention) and links it.
+  def add_workstream!(name:, code:, rate: nil, client_name: nil, forecast_client: Stacks::Forecast.new)
+    # Code guards first — they need no client, and must run before any external call
+    # so a rejected workstream can't orphan a Forecast client/project.
+    errors.clear
+    errors.add(:base, "A workstream Project Code is required.") if code.blank?
+    if code.present?
+      taken = ForecastProject.forecast_codes_already_associated_to_project_tracker(id)
+      errors.add(:base, "Project Code #{code} is already used by another Project Tracker.") if taken.include?(code)
+    end
+    raise ActiveRecord::RecordInvalid.new(self) if errors.any?
+
+    client = derived_client
+    client ||= forecast_client.find_or_create_client!(client_name) if client_name.present?
+    errors.add(:base, "A client is required for the first workstream.") if client.nil?
+    raise ActiveRecord::RecordInvalid.new(self) if errors.any?
+
+    tags = rate.present? ? [Stacks::Forecast.rate_tag(rate)] : []
+    project = forecast_client.create_project(client_id: client.forecast_id, name: name, code: code, tags: tags)
+    transaction { project_tracker_forecast_projects.create!(forecast_project_id: project["id"]) }
+  end
+
+  def update_details!(name: nil, budget_low_end: nil, budget_high_end: nil, msa_url: nil, sow_url: nil)
+    self.name = name if name.present?
+    self.budget_low_end = budget_low_end unless budget_low_end.nil?
+    self.budget_high_end = budget_high_end unless budget_high_end.nil?
+    upsert_link!(:msa, "MSA", msa_url) unless msa_url.nil?
+    upsert_link!(:sow, "SOW", sow_url) unless sow_url.nil?
+    save!
+    self
+  end
+
+  def mark_work_completed!(at:)
+    # validate: false — work_completed_at has no validations of its own, and this action must
+    # not be blocked by unrelated model validations (e.g. has_msa_and_sow_links) on trackers
+    # that haven't had their MSA/SOW links set up yet.
+    self.work_completed_at = at
+    save!(validate: false)
+    self
+  end
+
+  private def upsert_link!(type, label, url)
+    link = project_tracker_links.find { |l| l.link_type == type.to_s } ||
+           project_tracker_links.build(name: label, link_type: type)
+    link.url = url
   end
 
   def self.capsule_pending
@@ -147,8 +290,13 @@ class ProjectTracker < ApplicationRecord
                 ORDER BY end_date DESC LIMIT 1) AS max_end
       FROM unnest(ARRAY[#{int_ids_csv}]::int[]) AS pt(pid)
     SQL
+    # exec_query bypasses model attribute casting, so date columns come back as
+    # ISO strings ("2021-06-23"), not Dates. Cast them here — downstream callers
+    # (first_recorded_assignment_start_date, period_started_at) compare these
+    # against Date.today and a String would raise "comparison of String with Date".
+    cast_date = ->(v) { v.blank? ? nil : (v.is_a?(Date) ? v : Date.iso8601(v.to_s)) }
     edges_by_project_id = rows.each_with_object({}) do |row, h|
-      h[row["pid"].to_i] = [row["min_start"], row["max_end"]]
+      h[row["pid"].to_i] = [cast_date.call(row["min_start"]), cast_date.call(row["max_end"])]
     end
 
     list.each do |pt|
@@ -580,7 +728,9 @@ class ProjectTracker < ApplicationRecord
 
   def invoice_trackers
     # TODO: Speed me up, I'm naive
-    InvoiceTracker
+    # Memoized: this is a full-table scan, and single requests (e.g. the MCP
+    # burn-up tool: income series + lifetime_commissions_paid) read it twice.
+    @invoice_trackers ||= InvoiceTracker
       .includes(:invoice_pass, :qbo_invoice)
       .all
       .select{|it| (it.forecast_project_ids & forecast_projects.map(&:forecast_id)).any?}
@@ -649,28 +799,11 @@ class ProjectTracker < ApplicationRecord
       # Contributor payouts are on the client level, so lets filter out
       # any parts of the payout that are not due to work done against this
       # specific project tracker
-      amount_for_this_tracker = cp.amount
-      bp = cp.blueprint || {}
-      legacy_team_lead_keys = bp.keys.sort == ["AccountLead", "IndividualContributor", "TeamLead"].sort
-      project_lead_keys = bp.keys.sort == ["AccountLead", "IndividualContributor", "ProjectLead"].sort
-      # New blueprint shape may also include AccountLeadSurplus / ProjectLeadSurplus
-      # (in any combination — a CP without surplus shares won't have those keys).
-      role_keys = %w[AccountLead AccountLeadSurplus IndividualContributor ProjectLead ProjectLeadSurplus TeamLead Commission]
-      surplus_aware_keys = bp.keys.any? && (bp.keys - role_keys).empty? &&
-        (bp.key?("AccountLeadSurplus") || bp.key?("ProjectLeadSurplus"))
-      if bp.is_a?(Hash) && (legacy_team_lead_keys || project_lead_keys || surplus_aware_keys)
-        amount_for_this_tracker = 0
-        amount_for_this_tracker = bp.values.flatten.reduce(0) do |acc, v|
-          if fpids.include?(v.try(:dig, "blueprint_metadata", "forecast_project"))
-            acc += v.try(:dig, "amount").to_f
-          end
-          acc
-        end
-      end
+      amount_for_this_tracker = cp.amount_attributable_to(fpids)
 
       next acc unless amount_for_this_tracker > 0
       acc[cp.accrual_date][cp.contributor.forecast_person] = {
-        amount: amount_for_this_tracker.round(2),
+        amount: amount_for_this_tracker,
         type: :contributor_payout,
       }
       acc

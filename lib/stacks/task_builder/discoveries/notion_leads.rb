@@ -39,6 +39,8 @@ module Stacks
           studios = lead.studios
           out << :no_studios_set if studios.blank?
 
+          out << :needs_budget_estimate if lead.open? && lead.estimated_budget.nil?
+
           out
         end
       end

@@ -1,6 +1,6 @@
 class Stacks::Twist
   include HTTParty
-  base_uri 'api.twist.com/api/v3'
+  base_uri 'https://api.twist.com/api/v3'
 
   def initialize()
     @headers = {

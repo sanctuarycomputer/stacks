@@ -5,7 +5,7 @@ ActiveAdmin.register_page "OKR Explorer" do
     all_gradations = ["month", "quarter", "year", "trailing_3_months", "trailing_4_months", "trailing_6_months", "trailing_12_months"]
     default_gradation = "month"
 
-    all_okrs = ["average_hourly_rate", "successful_projects", "successful_proposals"]
+    all_okrs = ["average_hourly_rate", "successful_projects", "successful_proposals", "average_client_lifetime_value", "average_client_tenure", "client_revenue_concentration", "forecasted_sales_revenue"]
     default_okr = "average_hourly_rate"
 
     studio = Studio.find(params[:studio_id])

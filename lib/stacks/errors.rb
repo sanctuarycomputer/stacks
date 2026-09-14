@@ -92,4 +92,30 @@ module Stacks::Errors
       :forbidden
     end
   end
+
+  class NotFound < Stacks::Errors::Base
+    def initialize(message = 'Not found'); @message = message; end
+    def title; 'Not Found'; end
+    def detail; @message; end
+    def source; nil; end
+    def status; :not_found; end
+  end
+
+  # Raised by the API exception handler for genuinely-unexpected errors. Renders a
+  # generic 500 that NEVER echoes the underlying exception's message (which may carry
+  # upstream response bodies), while logging + Sentry-capturing the real exception.
+  class Unexpected < Stacks::Errors::Base
+    def initialize(detail, exception = nil)
+      @detail = detail
+      if exception
+        Rails.logger.warn("[Stacks::Errors::Unexpected] #{exception.class}: #{exception.message}")
+        Sentry.capture_exception(exception) if defined?(Sentry)
+      end
+    end
+
+    def title; 'Unexpected Error'; end
+    def detail; @detail; end
+    def source; nil; end
+    def status; :internal_server_error; end
+  end
 end

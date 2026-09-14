@@ -27,6 +27,35 @@ class ContributorPayoutTest < ActiveSupport::TestCase
     assert_equal 0, cp.as_commission
   end
 
+  test "as_individual_contributor sums IndividualContributor blueprint entries" do
+    cp = ContributorPayout.new(blueprint: {
+      "IndividualContributor" => [
+        { "amount" => 100.0 },
+        { "amount" => 50.5 },
+      ],
+    })
+    assert_in_delta 150.5, cp.as_individual_contributor, 0.001
+  end
+
+  test "as_individual_contributor coerces string amounts (e.g. QBO discount lines stored as strings)" do
+    # A comped/$0 "Discount" invoice line arrives from the QBO mirror with its
+    # numeric fields serialized as strings, so make_contributor_payouts! can
+    # persist a String amount alongside Float amounts. Summing raw would raise
+    # "String can't be coerced into Float" and 500 the payouts index.
+    cp = ContributorPayout.new(blueprint: {
+      "IndividualContributor" => [
+        { "amount" => 15783.3 },
+        { "amount" => "0.0" },
+      ],
+    })
+    assert_in_delta 15783.3, cp.as_individual_contributor, 0.001
+  end
+
+  test "as_individual_contributor returns 0 when no IndividualContributor entries" do
+    cp = ContributorPayout.new(blueprint: { "Commission" => [{ "amount" => 200.0 }] })
+    assert_equal 0, cp.as_individual_contributor
+  end
+
   test "70% cap excludes commission entries from LHS sum and uses post-commission total as basis" do
     invoice_tracker = mock("invoice_tracker")
     forecast_client = mock("forecast_client")
@@ -98,5 +127,182 @@ class ContributorPayoutTest < ActiveSupport::TestCase
     # surplus = (0.52941 - 0.43) * 850 = 0.09941 * 850 = ~84.50
     assert_in_delta 84.50, chunk[:surplus], 0.05
     assert_in_delta 0.57 * 850, chunk[:maximum], 0.01
+  end
+
+  def surplus_cp_for(tracker, ic_amount:)
+    qbo_line = { "id" => "5", "amount" => 1000.0, "description" => "ABC-1 Foo" }
+    qbo_invoice = mock("qbo_invoice")
+    qbo_invoice.stubs(:line_items).returns([qbo_line])
+
+    invoice_tracker = mock("invoice_tracker")
+    invoice_tracker.stubs(:qbo_invoice).returns(qbo_invoice)
+    invoice_tracker.stubs(:project_trackers).returns([tracker].compact)
+    invoice_tracker.stubs(:commission_total_for_line).with("5").returns(0.0)
+
+    cp = ContributorPayout.new(
+      amount: ic_amount,
+      blueprint: {
+        "IndividualContributor" => [
+          { "amount" => ic_amount, "blueprint_metadata" => { "id" => "5", "forecast_project" => 99 } },
+        ],
+      },
+    )
+    cp.stubs(:invoice_tracker).returns(invoice_tracker)
+    cp.stubs(:contributor).returns(mock("contributor"))
+    cp.stubs(:in_sync?).returns(true)
+    cp
+  end
+
+  def tracker_with_model(model)
+    pt = ProjectTracker.new(name: "Surplus #{model}", billing_model: model)
+    pt.stubs(:forecast_project_ids).returns([99])
+    pt
+  end
+
+  test "calculate_surplus on a new_deal_v2 tracker uses the 46% threshold and 54% maximum" do
+    # IC paid 540 of 1000 = exactly the v2 ceiling → margin 0.46 → zero surplus
+    chunk = surplus_cp_for(tracker_with_model("new_deal_v2"), ic_amount: 540.0).calculate_surplus.first
+    assert_in_delta 0.0, chunk[:surplus], 0.001
+    assert_in_delta 540.0, chunk[:maximum], 0.001
+  end
+
+  test "calculate_surplus on a new_deal_v2 tracker: 57% pay is under the 46% threshold, 40% pay yields (0.60 - 0.46) * 1000" do
+    # IC paid 570 (old 57%) → margin 0.43 → below the 0.46 threshold → still no surplus
+    chunk = surplus_cp_for(tracker_with_model("new_deal_v2"), ic_amount: 570.0).calculate_surplus.first
+    assert_in_delta 0.0, chunk[:surplus], 0.001
+
+    # IC paid 400 → margin 0.60 → (0.60 - 0.46) * 1000 = 140
+    chunk = surplus_cp_for(tracker_with_model("new_deal_v2"), ic_amount: 400.0).calculate_surplus.first
+    assert_in_delta 140.0, chunk[:surplus], 0.001
+  end
+
+  test "calculate_surplus on a new_deal_v1 tracker keeps the 43% threshold and 57% maximum" do
+    chunk = surplus_cp_for(tracker_with_model("new_deal_v1"), ic_amount: 400.0).calculate_surplus.first
+    # margin 0.60 → (0.60 - 0.43) * 1000 = 170
+    assert_in_delta 170.0, chunk[:surplus], 0.001
+    assert_in_delta 570.0, chunk[:maximum], 0.001
+  end
+
+  test "calculate_surplus falls back to the default model when no tracker resolves" do
+    chunk = surplus_cp_for(nil, ic_amount: 400.0).calculate_surplus.first
+    assert_nil chunk[:project_tracker]
+    assert_in_delta 170.0, chunk[:surplus], 0.001
+    assert_in_delta 570.0, chunk[:maximum], 0.001
+  end
+
+  # A client-level payout is shared by every ProjectTracker on that client, so
+  # attribution has to come from each entry's forecast_project. Blueprints grew a
+  # Commission key in May 2026; the exact-key-set matching this replaced stopped
+  # recognising them and handed the full amount to both trackers.
+  test "amount_attributable_to splits a commission-bearing blueprint by forecast project" do
+    cp = ContributorPayout.new(
+      amount: 3310.50,
+      blueprint: {
+        "AccountLead" => [
+          { "amount" => 228.0, "blueprint_metadata" => { "forecast_project" => 4869136 } },
+          { "amount" => 336.0, "blueprint_metadata" => { "forecast_project" => 4869137 } },
+        ],
+        "ProjectLead" => [
+          { "amount" => 142.5, "blueprint_metadata" => { "forecast_project" => 4869136 } },
+          { "amount" => 210.0, "blueprint_metadata" => { "forecast_project" => 4869137 } },
+        ],
+        "IndividualContributor" => [
+          { "amount" => 2394.0, "blueprint_metadata" => { "forecast_project" => 4869137 } },
+        ],
+        "Commission" => [],
+      },
+    )
+
+    assert_in_delta 2940.0, cp.amount_attributable_to([4869137]), 0.001
+    assert_in_delta 370.5, cp.amount_attributable_to([4869136]), 0.001
+  end
+
+  test "amount_attributable_to returns 0 when no entry belongs to the given forecast projects" do
+    cp = ContributorPayout.new(
+      amount: 1624.50,
+      blueprint: {
+        "AccountLead" => [],
+        "ProjectLead" => [],
+        "Commission" => [],
+        "IndividualContributor" => [
+          { "amount" => 1624.5, "blueprint_metadata" => { "forecast_project" => 4869136 } },
+        ],
+      },
+    )
+
+    assert_equal 0, cp.amount_attributable_to([4869137])
+  end
+
+  test "amount_attributable_to coerces string amounts" do
+    cp = ContributorPayout.new(
+      amount: 100.0,
+      blueprint: {
+        "IndividualContributor" => [
+          { "amount" => "100.0", "blueprint_metadata" => { "forecast_project" => 7 } },
+        ],
+      },
+    )
+
+    assert_in_delta 100.0, cp.amount_attributable_to([7]), 0.001
+  end
+
+  # 15 legacy payouts carry no blueprint at all, so there is nothing to attribute
+  # by. Falling back to the full amount keeps their cost visible rather than
+  # silently dropping it from every tracker.
+  test "amount_attributable_to falls back to the full amount when the blueprint is empty" do
+    cp = ContributorPayout.new(amount: 4125.0, blueprint: {})
+
+    assert_in_delta 4125.0, cp.amount_attributable_to([4869137]), 0.001
+  end
+
+  # Adding the Commission role in May 2026 is what broke attribution the first
+  # time, because the old check matched on an exact set of role names. Attribution
+  # keys off each entry's forecast_project instead, so the next new role splits
+  # correctly without anyone remembering to update a list.
+  test "amount_attributable_to splits correctly across a role it has never seen before" do
+    cp = ContributorPayout.new(
+      amount: 300.0,
+      blueprint: {
+        "IndividualContributor" => [
+          { "amount" => 100.0, "blueprint_metadata" => { "forecast_project" => 1 } },
+        ],
+        "SomeFutureRole" => [
+          { "amount" => 200.0, "blueprint_metadata" => { "forecast_project" => 2 } },
+        ],
+      },
+    )
+
+    assert_in_delta 100.0, cp.amount_attributable_to([1]), 0.001
+    assert_in_delta 200.0, cp.amount_attributable_to([2]), 0.001
+  end
+
+  # blueprint is editable as raw JSON from the admin, so a malformed entry has to
+  # skip that entry rather than raise — monthly_cosr runs inside the nightly
+  # generate_snapshot!, where a TypeError would take down every project's cost.
+  test "amount_attributable_to skips an entry whose blueprint_metadata is not a hash" do
+    cp = ContributorPayout.new(
+      amount: 500.0,
+      blueprint: {
+        "IndividualContributor" => [
+          { "amount" => 300.0, "blueprint_metadata" => { "forecast_project" => 1 } },
+          { "amount" => 200.0, "blueprint_metadata" => "corrupted" },
+        ],
+      },
+    )
+
+    assert_in_delta 300.0, cp.amount_attributable_to([1]), 0.001
+  end
+
+  test "amount_attributable_to falls back to the full amount when every entry's metadata is malformed" do
+    cp = ContributorPayout.new(
+      amount: 500.0,
+      blueprint: {
+        "IndividualContributor" => [
+          { "amount" => 500.0, "blueprint_metadata" => "corrupted" },
+        ],
+      },
+    )
+
+    assert_in_delta 500.0, cp.amount_attributable_to([1]), 0.001
   end
 end

@@ -24,6 +24,8 @@
                 <h2 style="margin: 0;" class="<%= health %>"><%= value.round(2) %>%</h2> <p>(<%= target.round(2) %>%±<%= tolerance %>)</p>
               <% elsif unit == "display" %>
                 <h2 style="margin: 0;" class="<%= health %>"><%= okr_results.dig("value") %></h2>
+              <% elsif unit == "months" %>
+                <h2 style="margin: 0;" class="<%= health %>"><%= value.round(1) %> months</h2> <p>(<%= target.round(1) %> months±<%= tolerance %>)</p>
               <% else %>
                 <h2 style="margin: 0;" class="<%= health %>"><%= value.round(2) %></h2> <p>(<%= target.round(2) %>±<%= tolerance %>)</p>
               <% end %>

@@ -21,6 +21,7 @@ gem 'acts_as_paranoid', '~> 0.7.0'
 gem 'sentry-ruby'
 gem 'sentry-rails'
 gem 'httparty'
+gem 'jwt' # Ghost Admin API auth
 gem 'quickbooks-ruby'
 gem 'order_as_specified'
 gem 'validate_url'

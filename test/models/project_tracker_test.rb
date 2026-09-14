@@ -80,6 +80,32 @@ class ProjectTrackerTest < ActiveSupport::TestCase
     assert_equal Date.new(2024, 6, 30), pt.last_recorded_assignment_end_date
   end
 
+  test "batch-cached edge assignments expose Date bounds, not raw SQL strings" do
+    pt = ProjectTracker.new(name: "Edge assignment bounds")
+    pt.save!(validate: false)
+    pt.update_column(:snapshot, {}) # no snapshot bounds -> forces the edge-assignment fallback
+
+    fp = ForecastProject.new(forecast_id: 987_654, name: "FP", client_id: 123_456)
+    fp.save!(validate: false)
+    ProjectTrackerForecastProject.create!(project_tracker: pt, forecast_project: fp)
+    fa = ForecastAssignment.new(
+      project_id: fp.forecast_id,
+      start_date: Date.new(2021, 6, 23),
+      end_date: Date.new(2022, 3, 31),
+    )
+    fa.save!(validate: false)
+
+    # preload_for_render runs batch_cache_edge_recorded_assignments!, the path the
+    # admin index uses (and the only path that populates @_first_recorded_assignment
+    # from raw SQL).
+    ProjectTracker.preload_for_render([pt])
+
+    assert_instance_of Date, pt.first_recorded_assignment_start_date
+    assert_equal Date.new(2021, 6, 23), pt.first_recorded_assignment_start_date
+    assert_instance_of Date, pt.last_recorded_assignment_end_date
+    assert_equal Date.new(2022, 3, 31), pt.last_recorded_assignment_end_date
+  end
+
   test "lifetime_commissions_paid sums as_commission across all CPs on this tracker's invoices" do
     pt = ProjectTracker.new(name: "Commission Total Test")
     pt.save!(validate: false)
@@ -93,5 +119,100 @@ class ProjectTrackerTest < ActiveSupport::TestCase
     pt.stubs(:invoice_trackers).returns([invoice_tracker])
 
     assert_in_delta 80.0, pt.lifetime_commissions_paid, 0.001
+  end
+
+  # A client with separate Design and Development trackers shares one
+  # client-level InvoiceTracker, so both trackers see the same payouts.
+  # monthly_cosr has to split them by each blueprint entry's forecast_project,
+  # or both projects book the full cost and both margins crater.
+  test "monthly_cosr attributes a shared client payout to each tracker by forecast project" do
+    enterprise = Enterprise.find_by!(name: Enterprise::SANCTUARY_NAME)
+    forecast_client = ForecastClient.create!(forecast_id: 90_100_001, name: "Split Client")
+    invoice_pass = InvoicePass.find_or_create_by!(start_of_month: Date.new(2026, 6, 1))
+    qbo_account = enterprise.qbo_account || QboAccount.create!(
+      enterprise: enterprise,
+      client_id: "test_client",
+      client_secret: "test_secret",
+      realm_id: "test_realm_#{SecureRandom.hex(4)}",
+    )
+    invoice_tracker = InvoiceTracker.create!(
+      forecast_client: forecast_client,
+      invoice_pass: invoice_pass,
+      qbo_account: qbo_account,
+    )
+
+    design_fp = ForecastProject.create!(forecast_id: 90_200_001, name: "Design", code: "SPL-1", client_id: forecast_client.forecast_id)
+    dev_fp = ForecastProject.create!(forecast_id: 90_200_002, name: "Development", code: "SPL-2", client_id: forecast_client.forecast_id)
+
+    design = ProjectTracker.new(name: "Split Design")
+    design.save!(validate: false)
+    ProjectTrackerForecastProject.create!(project_tracker: design, forecast_project_id: design_fp.forecast_id)
+
+    dev = ProjectTracker.new(name: "Split Development")
+    dev.save!(validate: false)
+    ProjectTrackerForecastProject.create!(project_tracker: dev, forecast_project_id: dev_fp.forecast_id)
+
+    person = ForecastPerson.create!(forecast_id: 90_300_001, first_name: "Lead", last_name: "Person", email: "lead-#{SecureRandom.hex(3)}@example.com")
+    contributor = Contributor.create!(forecast_person_id: person.forecast_id)
+    ledger = Ledger.find_by!(contributor: contributor, enterprise: enterprise)
+
+    payout = ContributorPayout.new(
+      invoice_tracker: invoice_tracker,
+      ledger: ledger,
+      created_by: AdminUser.first || AdminUser.create!(email: "admin-#{SecureRandom.hex(3)}@example.com", password: SecureRandom.hex(8)),
+      amount: 3310.50,
+      blueprint: {
+        "AccountLead" => [
+          { "amount" => 228.0, "blueprint_metadata" => { "forecast_project" => dev_fp.forecast_id } },
+          { "amount" => 336.0, "blueprint_metadata" => { "forecast_project" => design_fp.forecast_id } },
+        ],
+        "ProjectLead" => [
+          { "amount" => 142.5, "blueprint_metadata" => { "forecast_project" => dev_fp.forecast_id } },
+          { "amount" => 210.0, "blueprint_metadata" => { "forecast_project" => design_fp.forecast_id } },
+        ],
+        "IndividualContributor" => [
+          { "amount" => 2394.0, "blueprint_metadata" => { "forecast_project" => design_fp.forecast_id } },
+        ],
+        "Commission" => [],
+      },
+    )
+    payout.save!(validate: false)
+
+    design.stubs(:invoice_trackers).returns([invoice_tracker])
+    dev.stubs(:invoice_trackers).returns([invoice_tracker])
+
+    accrual = invoice_pass.start_of_month.end_of_month
+    design_cost = design.monthly_cosr[accrual].values.sum { |c| c[:amount] }
+    dev_cost = dev.monthly_cosr[accrual].values.sum { |c| c[:amount] }
+
+    assert_in_delta 2940.0, design_cost, 0.001
+    assert_in_delta 370.5, dev_cost, 0.001
+    assert_in_delta payout.amount, design_cost + dev_cost, 0.001
+  end
+
+  # The income-series assembly lives in ProjectTrackers::IncomeSeries
+  # (tested in test/services/project_trackers/income_series_test.rb).
+
+  test "billing_model defaults to new_deal_v1" do
+    pt = ProjectTracker.new(name: "Default model")
+    pt.save!(validate: false)
+    assert_equal "new_deal_v1", pt.reload.billing_model
+    assert pt.new_deal_v1?
+  end
+
+  test "billing_rules and company_treasury_split derive from the model" do
+    pt = ProjectTracker.new(name: "V2 model", billing_model: "new_deal_v2")
+    pt.save!(validate: false)
+    assert_equal Stacks::BillingModel.for("new_deal_v2"), pt.billing_rules
+    assert_equal BigDecimal("0.33"), pt.company_treasury_split
+    assert_equal BigDecimal("0.30"), ProjectTracker.new(name: "V1").company_treasury_split
+  end
+
+  test "billing_model rejects unknown values" do
+    assert_raises(ArgumentError) { ProjectTracker.new(name: "Bad", billing_model: "old_deal") }
+  end
+
+  test "company_treasury_split is no longer a column" do
+    assert_not ProjectTracker.column_names.include?("company_treasury_split")
   end
 end

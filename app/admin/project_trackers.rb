@@ -11,6 +11,7 @@ ActiveAdmin.register ProjectTracker do
   scope :complete
 
   permit_params :name,
+    :billing_model,
     :budget_low_end,
     :budget_high_end,
     :target_profit_margin,
@@ -76,7 +77,7 @@ ActiveAdmin.register ProjectTracker do
     def scoped_collection
       super.includes(
         :runn_project,
-        :forecast_projects,
+        { forecast_projects: { forecast_client: :enterprise_forecast_client } },
         { project_capsule: :project_satisfaction_survey },
         { project_tracker_forecast_projects: :forecast_project },
         { adhoc_invoice_trackers: :qbo_invoice },
@@ -85,11 +86,21 @@ ActiveAdmin.register ProjectTracker do
       )
     end
 
+    # Arbre column blocks don't see controller ivars (a bare @ivar reads the
+    # Arbre component's own, nil ivar) — but they DO delegate method calls to
+    # the controller's helpers. Expose the ship map as a helper method, same
+    # pattern as admin_users.rb#last_month_utilization_by_email.
+    helper_method :last_weekly_ships_by_tracker_id
+    def last_weekly_ships_by_tracker_id
+      @last_ships_by_tracker_id || {}
+    end
+
     def collection
       c = super
       if action_name == "index" && !@_preloaded_for_render
         arr = c.to_a
         ProjectTracker.preload_for_render(arr)
+        @last_ships_by_tracker_id = WeeklyShip.includes(:document).latest_by_tracker(arr.map(&:id))
         @_preloaded_for_render = true
         # Group by account lead on the Active and Dormant tabs (and on the
         # default unfiltered view). Within each lead, fall back to the
@@ -179,6 +190,47 @@ ActiveAdmin.register ProjectTracker do
     column :work_status do |resource|
       span(resource.work_status.to_s.humanize.capitalize, class: "pill #{resource.work_status}")
     end
+
+    column "Last Ship" do |pt|
+      # Completed projects aren't expected to ship — show a muted dash.
+      if params[:scope] == "complete"
+        span "—", style: "opacity: 0.4;"
+        next
+      end
+      # Anchored to the project's last recorded Forecast hour, not the
+      # calendar — a paused project whose ships kept pace stays green.
+      ship = last_weekly_ships_by_tracker_id[pt.id]
+      staleness = ProjectTracker.ship_staleness(ship, anchor: pt.last_recorded_forecast_date)
+      if ship.nil?
+        if pt.internal_client?
+          # Our own companies don't send client-facing weekly ships.
+          span "—", style: "opacity: 0.4;"
+        else
+          span "No ships yet", class: "pill", style: "background-color: #1a1a1a; color: #fff;"
+        end
+      else
+        pill_class =
+          case staleness
+          when :overdue then "pill error"
+          when :stale then "pill at_risk"
+          # NOT "pill complete" — .complete is re-declared purple later in the
+          # stylesheet cascade; .exceptional is the stable green.
+          else "pill exceptional"
+          end
+        label = "#{time_ago_in_words(ship.sent_at)} ago by #{(ship.sent_by_name || ship.sent_by_email).to_s.split(" ").first} ↗"
+        url = ship.document&.google_groups_permalink
+        if url
+          # Arbre `a`, not block-form link_to — Rails' capture doesn't see
+          # Arbre elements, which renders the pill OUTSIDE an empty anchor.
+          a(href: url, target: "_blank", rel: "noopener", style: "text-decoration: none;") do
+            span label, class: pill_class
+          end
+        else
+          span label, class: pill_class
+        end
+      end
+    end
+
     column :forecast_projects do |resource|
       if resource.forecast_projects.any?
         div(
@@ -320,42 +372,12 @@ ActiveAdmin.register ProjectTracker do
     end_date =
       resource.last_recorded_assignment_end_date&.iso8601 || DateTime.now.iso8601
 
-    income_data = [
-      *resource.invoice_trackers,
-      *resource.adhoc_invoice_trackers
-    ].reject{|i| i.qbo_invoice.nil?}
-     .sort do |a, b|
-        ((a.qbo_invoice.try(:data) || {}).dig("due_date") || a.created_at.to_date.iso8601) <=>
-        ((b.qbo_invoice.try(:data) || {}).dig("due_date") || b.created_at.to_date.iso8601)
-     end
-     .reduce({
-       income: [{
-         x: start_date,
-         y: 0
-       }],
-       income_total: 0
-     }) do |acc, it|
-       if it.is_a?(InvoiceTracker)
-         acc[:income].push({
-           x: (
-             (it.qbo_invoice.try(:data) || {}).dig("due_date") ||
-             it.created_at.to_date.iso8601
-           ),
-           y: acc[:income_total] += (it.qbo_line_items_relating_to_forecast_projects(
-             resource.forecast_projects
-           ).map{|qbo_li| qbo_li.dig("amount").to_f}.reduce(&:+) || 0)
-         })
-       else
-         acc[:income].push({
-           x: (
-             (it.qbo_invoice.try(:data) || {}).dig("due_date") ||
-             it.created_at.to_date.iso8601
-           ),
-           y: acc[:income_total] += it.qbo_invoice.try(:total).to_f
-         })
-       end
-       acc
-     end
+    # Assembled by the service (shared with Mcp::GetProjectBurnupTool) — the
+    # seed point uses the same first-assignment-date fallback as start_date
+    # above, so the chart's x-axis min and the series origin still agree.
+    # (:skipped_invoices — unsynced QBO invoice mirrors — is intentionally
+    # ignored here; the chart simply omits them.)
+    income_data = ProjectTrackers::IncomeSeries.call(resource)
 
     latest_timestamp =
       income_data[:income].reduce(end_date) do |acc, datapoint|
@@ -449,6 +471,23 @@ ActiveAdmin.register ProjectTracker do
     render(partial: 'show', locals: {
       burnup_data: burnup_data
     })
+
+    panel "Weekly Ships" do
+      ships = resource.weekly_ships.includes(:document).order(sent_at: :desc).limit(20)
+      if ships.any?
+        table_for ships do
+          column("Sent") { |ws| "#{time_ago_in_words(ws.sent_at)} ago" }
+          column("Subject") { |ws| ws.document.title }
+          column("Sender") { |ws| ws.sent_by_name || ws.sent_by_email }
+          column("") do |ws|
+            url = ws.document.google_groups_permalink
+            link_to("Open ↗", url, target: "_blank", rel: "noopener") if url
+          end
+        end
+      else
+        para em("No weekly ships linked yet.")
+      end
+    end
   end
 
   form do |f|
@@ -460,7 +499,11 @@ ActiveAdmin.register ProjectTracker do
       f.input :budget_high_end
 
       if current_admin_user.is_admin?
-        f.input :company_treasury_split, hint: "The percentage of the project's profit that will be allocated to the company treasury. This is used to calculate the project's profit margin."
+        f.input :billing_model,
+          as: :select,
+          collection: Stacks::BillingModel.names.map { |n| [Stacks::BillingModel.for(n).label, n] },
+          include_blank: false,
+          hint: "Which payout split rules apply to this project's client work. new_deal_v2 is the 2026 rate card (33% treasury / 54% IC ceiling). Existing projects stay on new_deal_v1 until they wrap."
         f.input :target_profit_margin, hint: "The target profit margin for the project. This is used to calculate the project's profit margin."
         f.input :target_free_hours_percent, hint: "The target free hours percent for the project. This is used to calculate the project's free hours ratio."
       end

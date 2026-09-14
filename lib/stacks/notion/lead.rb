@@ -43,6 +43,31 @@ class Stacks::Notion::Lead < Stacks::Notion::Base
     won_at.present?
   end
 
+  # Current-status is the source of truth for "open pipeline". The terminal
+  # date stamps (✨ Status: Won/Lost/Ghosted) are missing on most dead leads,
+  # so they must not be used to decide openness.
+  OPEN_STATUSES = ["Active", "Not started", "On hold (re-engage)"].freeze
+
+  def lead_status
+    (get_prop_value("Lead Status") || {}).dig("name")
+  end
+
+  def open?
+    OPEN_STATUSES.include?(lead_status)
+  end
+
+  # Midpoint of the Est. Budget Low/High Notion number props; a single value
+  # if only one is filled; nil when unbudgeted (callers treat nil as $0 and
+  # file a needs_budget_estimate task).
+  def estimated_budget
+    values = [
+      get_prop_value("Est. Budget Low"),
+      get_prop_value("Est. Budget High")
+    ].select { |v| v.is_a?(Numeric) }
+    return nil if values.empty?
+    values.sum / values.length.to_f
+  end
+
   # Bulk-preload cache populated by callers iterating many leads. When set,
   # account_lead_admin_users resolves against this in-memory map instead of
   # firing one SQL query per lead.

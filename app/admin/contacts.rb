@@ -12,6 +12,8 @@ ActiveAdmin.register Contact do
   scope :all, default: true
   scope :synced_to_apollo
   scope :not_synced_to_apollo
+  scope :synced_to_ghost
+  scope :not_synced_to_ghost
 
   collection_action :import_contacts, method: :post do
     csv = CSV.parse(File.read(params["file"]), :headers => true)
@@ -21,7 +23,7 @@ ActiveAdmin.register Contact do
         sources: row["Sources"] || row["sources"] || row["Source"] || row["source"]
       }
       if d[:email].present?
-        contact = Contact.create_or_find_by!(email: d[:email])
+        contact = Contact.create_or_find_by!(email: d[:email].to_s.downcase.strip)
         contact.update(sources: [*contact.sources, *(d[:sources].split(" ").map(&:strip) || [])].uniq)
       end
     end
@@ -58,6 +60,26 @@ ActiveAdmin.register Contact do
       end
       row :created_at
       row :updated_at
+    end
+
+    panel "Ghost" do
+      attributes_table_for resource do
+        row("Ghost ID") do
+          if resource.ghost_id.present?
+            link_to resource.ghost_id,
+              "#{Stacks::Utils.config[:ghost][:api_url]}/ghost/#/members/#{resource.ghost_id}",
+              target: "_blank", rel: "noopener"
+          end
+        end
+        row("Newsletters") { (resource.ghost_data.dig("snapshot", "newsletters") || []).join(", ") }
+        row("Suppressed?") { resource.ghost_data.dig("snapshot", "suppressed").inspect }
+        row("Email Disabled?") { resource.ghost_data.dig("snapshot", "email_disabled").inspect }
+        row("Email in Ghost") do
+          mismatch = resource.ghost_data.dig("snapshot", "email_in_ghost")
+          mismatch.present? ? status_tag(mismatch, class: "warning") : "—"
+        end
+        row("Last Synced") { resource.ghost_data["synced_at"] }
+      end
     end
 
     panel "Source Events" do

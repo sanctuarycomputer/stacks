@@ -212,6 +212,7 @@ class ContributorPayout < ApplicationRecord
     return [] unless qbo_inv.present?
 
     project_trackers = invoice_tracker.project_trackers
+    default_rules = Stacks::BillingModel.for(Stacks::BillingModel::DEFAULT)
 
     blueprint["IndividualContributor"].map do |ic|
       blueprint_metadata = ic.dig("blueprint_metadata")
@@ -222,20 +223,19 @@ class ContributorPayout < ApplicationRecord
       commission_for_line = invoice_tracker.commission_total_for_line(blueprint_metadata.dig("id"))
       working_amount = amount_billed - commission_for_line
 
-      surplus = 0
-      if working_amount > 0
-        profit_margin = (working_amount - amount_paid) / working_amount
-        surplus = ((profit_margin - 0.43) * working_amount).round(2)
-        surplus = 0 if surplus <= 0
-      end
-
+      # The tracker decides the split rules for this line. Resolve it before
+      # the surplus math so the threshold and ceiling come from its model.
       project_tracker = project_trackers.find{|pt| pt.forecast_project_ids.include?(blueprint_metadata.dig("forecast_project"))}
+      rules = project_tracker&.billing_rules || default_rules
+
+      surplus = rules.surplus_for(working_amount: working_amount, ic_amount: amount_paid)
+
       {
         project_tracker: project_tracker,
         contributor: contributor,
         surplus: surplus,
         actual: amount_paid,
-        maximum: 0.57 * working_amount,
+        maximum: (rules.ic_ceiling * working_amount).to_f,
         chunk: ic,
         qbo_line_item: qbo_line_item,
         blueprint_metadata: blueprint_metadata,
@@ -344,12 +344,50 @@ class ContributorPayout < ApplicationRecord
 
   def as_individual_contributor
     return 0 unless blueprint["IndividualContributor"].present?
-    blueprint["IndividualContributor"].sum{|l| l["amount"]}
+    blueprint["IndividualContributor"].sum{|l| l["amount"].to_f}
   end
 
   def as_commission
     return 0 unless blueprint["Commission"].present?
     blueprint["Commission"].sum { |l| l["amount"].to_f }
+  end
+
+  def blueprint_entries
+    bp = blueprint
+    return [] unless bp.is_a?(Hash)
+    bp.values.flatten.select { |entry| entry.is_a?(Hash) }
+  end
+
+  # The portion of this payout earned against `forecast_project_ids`.
+  #
+  # Payouts hang off a client-level InvoiceTracker, so every ProjectTracker on
+  # that client sees the same payout. Splitting by each entry's forecast_project
+  # is the only thing stopping a client with separate Design and Development
+  # trackers from booking the full cost against both.
+  #
+  # Attribution keys off the presence of forecast_project metadata rather than a
+  # list of known role names: blueprints have gained roles twice (ProjectLead,
+  # then Commission), and a name-based check silently reverts to charging every
+  # tracker the full amount each time. A blueprint with no attributable entries
+  # at all — the legacy payouts that predate blueprints — still falls back to the
+  # full amount so its cost stays visible somewhere.
+  # blueprint is editable as raw JSON from the admin, so an entry's metadata is
+  # not guaranteed to be a Hash. Reaching into a malformed one with dig raises
+  # TypeError, and this runs inside the nightly generate_snapshot!, so one bad
+  # paste would take down every project's cost rather than one payout's.
+  def entry_forecast_project(entry)
+    metadata = entry["blueprint_metadata"]
+    metadata.is_a?(Hash) ? metadata["forecast_project"] : nil
+  end
+
+  def amount_attributable_to(forecast_project_ids)
+    attributable = blueprint_entries.select { |entry| entry_forecast_project(entry).present? }
+    return amount.to_f if attributable.empty?
+
+    attributable.reduce(0.0) { |acc, entry|
+      next acc unless forecast_project_ids.include?(entry_forecast_project(entry))
+      acc + entry["amount"].to_f
+    }.round(2)
   end
 
   # SyncsAsQboBill contract

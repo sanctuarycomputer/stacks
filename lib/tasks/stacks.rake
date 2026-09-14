@@ -30,16 +30,25 @@ namespace :stacks do
       # Step 1: proactively refresh every enterprise's QBO token so
       # downstream steps aren't racing the 10-minute staleness gate or
       # surprise-401-ing mid-job. Per-enterprise failures are isolated and
-      # only logged — downstream steps continue regardless (a stale token
-      # will surface as an AuthorizationFailure inside sync_all! /
-      # generate_snapshot!, which are already isolated per-enterprise).
+      # only logged — downstream steps continue regardless (a dead token
+      # surfaces again inside sync_all! / generate_snapshot!, which isolate
+      # per-account/per-enterprise below).
       refresh_results = QboTokens::RefreshAll.call
       failed_refreshes = refresh_results.reject(&:ok?)
       if failed_refreshes.any?
         Rails.logger.warn("[stacks:daily_enterprise_tasks] #{failed_refreshes.size}/#{refresh_results.size} QBO token refreshes failed: #{failed_refreshes.map { |r| "enterprise=#{r.qbo_account.enterprise_id}" }.join(', ')}")
       end
 
-      Parallel.map(QboAccount.all, in_threads: 2) { |e| e.sync_all! }
+      # Per-account errors are isolated: a revoked token on one realm (e.g.
+      # an enterprise temporarily locked out of QBO) must not abort the run
+      # before OpenScheduledCycles — payroll for every other enterprise
+      # depends on this task reaching that step.
+      Parallel.map(QboAccount.all, in_threads: 2) do |qa|
+        qa.sync_all!
+      rescue => e
+        Rails.logger.error("[stacks:daily_enterprise_tasks] sync_all! failed for qbo_account=#{qa.id} (#{qa.enterprise&.name}): #{e.class}: #{e.message}")
+        Sentry.capture_exception(e) if defined?(Sentry)
+      end
 
       # Sync vendors per-account so the Contributor-edit dropdown can offer
       # mappings across every enterprise's QBO realm. sync_all! above only
@@ -53,7 +62,15 @@ namespace :stacks do
         Sentry.capture_exception(e) if defined?(Sentry)
       end
 
-      Parallel.map(Enterprise.all, in_threads: 2) { |e| e.generate_snapshot! }
+      # Snapshots reach QBO live too (Stacks::Period#report →
+      # QboProfitAndLossReport.find_or_fetch_for_range fetches uncached
+      # periods), so the same per-enterprise isolation applies.
+      Parallel.map(Enterprise.all, in_threads: 2) do |e|
+        e.generate_snapshot!
+      rescue => err
+        Rails.logger.error("[stacks:daily_enterprise_tasks] generate_snapshot! failed for enterprise=#{e.id} (#{e.name}): #{err.class}: #{err.message}")
+        Sentry.capture_exception(err) if defined?(Sentry)
+      end
 
       # Backfill any missing Contributor rows for active ForecastPersons
       # FIRST — Contributor.after_create cascades into Ledger.ensure_for_contributor!,
@@ -119,6 +136,24 @@ namespace :stacks do
       rescue => err
         Rails.logger.error("[stacks:daily_enterprise_tasks] Enterprise##{e.id} (#{e.name}) daily_tasks failed: #{err.class}: #{err.message}")
         Sentry.capture_exception(err) if defined?(Sentry)
+      end
+
+      # Ghost two-way contact sync (members, source-name labels, funnel
+      # sources). Per-contact errors are already isolated inside the sweep;
+      # a total failure (e.g. Ghost API unreachable) is isolated here so it
+      # doesn't fail the rest of the daily pass. Advisory lock makes an
+      # overlap with a manual "Sync Now" a clean no-op (returns nil).
+      begin
+        ghost_sync = Stacks::GhostSync.sync_all_with_lock!
+        if ghost_sync
+          Rails.logger.info("[stacks:daily_enterprise_tasks] Ghost sync: #{ghost_sync.summary.to_h.inspect}")
+          ghost_sync.errors.each { |err| Rails.logger.error("[stacks:daily_enterprise_tasks] Ghost sync error: #{err}") }
+        else
+          Rails.logger.info("[stacks:daily_enterprise_tasks] Ghost sync skipped: another run holds the advisory lock")
+        end
+      rescue => e
+        Rails.logger.error("[stacks:daily_enterprise_tasks] Ghost sync failed: #{e.class}: #{e.message}")
+        Sentry.capture_exception(e) if defined?(Sentry)
       end
     rescue => e
       system_task.mark_as_error(e)
@@ -351,10 +386,14 @@ namespace :stacks do
   task :sync_runn => :environment do
     system_task = SystemTask.create!(name: "stacks:sync_runn")
     begin
-      Stacks::Runn.new.sync_all!
+      ran = Stacks::Runn.new.sync_all!
     rescue => e
       system_task.mark_as_error(e)
     else
+      # A lock skip is not a failure — the other holder is doing the work —
+      # so it still marks success, just loudly enough to explain a run that
+      # finished instantly and refreshed nothing.
+      puts "~~~> Runn sync skipped (another sync holds the lock)" if ran == false
       system_task.mark_as_success
     end
   end
@@ -366,6 +405,9 @@ namespace :stacks do
       notion = Stacks::Notion.new
       Parallel.map(Stacks::Notion::DATABASE_IDS.values, in_threads: 3) do |db_id|
         notion.sync_database(db_id)
+      rescue => e
+        Rails.logger.error("Notion sync failed for database #{db_id}: #{e.class}: #{e.message}")
+        Sentry.capture_exception(e) if defined?(Sentry)
       end
     rescue => e
       system_task.mark_as_error(e)
@@ -491,6 +533,18 @@ namespace :stacks do
       end
 
       Stacks::Forecast.new.sync_all! # Has internal retry counter
+
+      # Materialize Stacks-owned recurring assignments into Forecast. MUST run
+      # right after sync_all! so the ForecastAssignment mirror is fresh — that's
+      # how materialize! distinguishes "deleted in the UI" from "not yet synced".
+      forecast_client = Stacks::Forecast.new
+      RecurringAssignment.active.find_each do |ra|
+        begin
+          ra.materialize!(forecast_client: forecast_client)
+        rescue => e
+          Sentry.capture_exception(e)
+        end
+      end
 
       Retriable.retriable(tries: 3, base_interval: 5, multiplier: 2, max_interval: 60) do
         Stacks::OptixSync.new(OptixOrganization.first).sync_all!

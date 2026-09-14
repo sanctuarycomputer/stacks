@@ -29,6 +29,10 @@ class StacksTask
     no_full_time_periods_set: "Admin user needs full-time periods set",
     missing_skill_tree: "Admin user needs skill tree set",
 
+    # Human Operating Manual issues
+    missing_human_operating_manual: "Admin user needs a Human Operating Manual",
+    missing_superpowers_pdf: "Human Operating Manual needs a Pigment.is Superpowers PDF",
+
     # Reimbursement issues
     pending_acceptance: "Reimbursement needs acceptance",
 
@@ -36,6 +40,7 @@ class StacksTask
     no_received_at_timestamp_set: "Notion lead needs received-at timestamp",
     needs_settling: "Notion lead needs settling",
     no_studios_set: "Notion lead needs studios assigned",
+    needs_budget_estimate: "Notion lead needs an estimated budget",
 
     # Survey issues
     survey: "Studio survey response required",
@@ -49,6 +54,12 @@ class StacksTask
     legacy_ledger_needs_qbo_migration: "Legacy ledger needs migration to QBO-bound",
     auto_paused_recurring_on_qbo_bound: "Recurring deduction auto-paused on QBO-bound ledger (would never deduct)",
     unaccepted_payouts: "Contributor has unaccepted payout(s)",
+
+    # Runn mirror / projection issues
+    runn_project_not_linked_to_project_tracker: "Runn project has forward hours but no project tracker (cannot be projected)",
+    runn_person_not_in_forecast: "Runn person has forward hours but matches no Forecast person (cannot be projected)",
+    runn_role_rate_mismatch: "Project tracker has Runn hours at a rate that matches none of its workstreams",
+    runn_sync_stale: "Runn mirror has not synced in over #{ContributorProjections::STALE_AFTER_DAYS} days (projections are stale)",
 
   }.freeze
 
@@ -82,6 +93,7 @@ class StacksTask
   def subject_class_key
     case subject
     when Stacks::Notion::Lead then "notion_leads"
+    when Stacks::Notion::HumanOperatingManual then "human_operating_manuals"
     else subject.class.name.demodulize.underscore.pluralize
     end
   end
@@ -114,6 +126,8 @@ class StacksTask
       pt_name = subject.try(:project_capsule).try(:project_tracker).try(:name)
       pt_name.present? ? "#{pt_name} (satisfaction survey)" : "Project Satisfaction Survey ##{subject.id}"
     when Stacks::Notion::Lead then subject.try(:page_title).presence || "Notion Lead"
+    when Stacks::Notion::HumanOperatingManual
+      subject.try(:page_title).presence || subject.email || "Human Operating Manual"
     when PayCycle then "#{subject.enterprise.name} — #{subject.starts_at.to_s(:long)} to #{subject.ends_at.to_s(:long)}"
     when Ledger then "#{subject.contributor.forecast_person&.email || "Contributor ##{subject.contributor_id}"} on #{subject.enterprise.name}"
     when RecurringLedgerAdjustment
@@ -123,6 +137,12 @@ class StacksTask
       else
         "#{base} — #{subject.cadence} $#{format("%.2f", subject.amount)}"
       end
+    when RunnProject then subject.name.presence || "Runn Project ##{subject.runn_id}"
+    when RunnPerson
+      [subject.first_name, subject.last_name].compact.join(" ").presence || subject.email.presence || "Runn Person ##{subject.runn_id}"
+    when System
+      synced = subject.runn_synced_at
+      synced ? "Runn mirror (last synced #{synced.to_date.to_s(:long)})" : "Runn mirror (never synced)"
     else
       if redact_amounts
         # New monetary subject types must add an explicit redacting branch
@@ -145,11 +165,17 @@ class StacksTask
     when ForecastProject then subject.try(:link)
     when ForecastPerson then subject.try(:external_link)
     when ForecastAssignment then subject.try(:external_link)
-    when AdminUser then helpers.admin_admin_user_path(subject)
+    when AdminUser
+      if type == :missing_human_operating_manual
+        Stacks::Notion::HumanOperatingManual::SETUP_GUIDE_URL
+      else
+        helpers.admin_admin_user_path(subject)
+      end
     when Reimbursement then helpers.admin_ledger_reimbursement_path(subject.ledger, subject)
     when Survey then helpers.admin_survey_path(subject)
     when ProjectSatisfactionSurvey then helpers.admin_project_satisfaction_survey_path(subject)
     when Stacks::Notion::Lead then subject.try(:notion_link) || subject.try(:external_link)
+    when Stacks::Notion::HumanOperatingManual then Stacks::Notion::HumanOperatingManual::ASSESSMENT_GUIDE_URL
     when PayCycle then helpers.admin_enterprise_pay_cycle_path(subject.enterprise, subject)
     when Contributor then helpers.admin_contributor_path(subject, ledger: ledger.id)
     when Ledger
@@ -159,13 +185,19 @@ class StacksTask
         helpers.edit_admin_contributor_path(subject.contributor)
       end
     when RecurringLedgerAdjustment then helpers.edit_admin_recurring_ledger_adjustment_path(subject)
+    # The fix is a new tracker linked to this Runn project; prefill the link.
+    when RunnProject then helpers.new_admin_project_tracker_path(project_tracker: { runn_project_id: subject.runn_id })
+    # The fix lives in Runn (correct the email) or Forecast (add the person).
+    when RunnPerson then subject.link
+    when System then helpers.admin_system_tasks_path
     else subject.try(:external_link)
     end
   end
 
   def subject_url_external?
+    return true if type == :missing_human_operating_manual
     case subject
-    when ForecastProject, ForecastPerson, ForecastAssignment, Stacks::Notion::Lead then true
+    when ForecastProject, ForecastPerson, ForecastAssignment, Stacks::Notion::Lead, Stacks::Notion::HumanOperatingManual, RunnPerson then true
     else false
     end
   end
