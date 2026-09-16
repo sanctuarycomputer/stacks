@@ -179,18 +179,22 @@ class ProjectCapsuleTest < ActiveSupport::TestCase
   end
 
   test "no_response_from_client is free inside the grace period and gated after it" do
+    # The grace anchor is capsule created_at, not tracker.work_completed_at (see
+    # no_response_grace_anchor) — pin created_at directly to simulate elapsed time.
     inside = make_gated_capsule!(
       :client_feedback_survey_status, :no_response_from_client,
       tracker: make_tracker!(work_completed_at: 3.weeks.ago),
     )
-    assert_not inside.requires_admin_sign_off?
+    inside.update_column(:created_at, 3.weeks.ago)
+    assert_not inside.reload.requires_admin_sign_off?
     assert inside.complete?
 
     outside = make_gated_capsule!(
       :client_feedback_survey_status, :no_response_from_client,
       tracker: make_tracker!(work_completed_at: 5.weeks.ago),
     )
-    assert_equal ["client_feedback_no_response"], outside.gated_selections
+    outside.update_column(:created_at, 5.weeks.ago)
+    assert_equal ["client_feedback_no_response"], outside.reload.gated_selections
     assert_not outside.complete?
   end
 
@@ -227,6 +231,12 @@ class ProjectCapsuleTest < ActiveSupport::TestCase
 
     capsule.update!(client_feedback_survey_url: "https://www.notion.so/garden3d/resp")
     assert capsule.reload.complete?
+
+    capsule.update!(client_feedback_survey_url: "  https://www.notion.so/garden3d/resp  ")
+    assert capsule.reload.complete?, "a pasted url with stray whitespace is still proof"
+
+    capsule.update!(client_feedback_survey_url: "https://x.com\nn/a")
+    assert_not capsule.reload.complete?, "a multi-line value must not pass"
   end
 
   test "sign_off_exempt bypasses both the sign-off gate and the url proof" do
@@ -249,7 +259,60 @@ class ProjectCapsuleTest < ActiveSupport::TestCase
   end
 
   test "gated_selection_labels renders prose for every key" do
-    capsule = make_gated_capsule!(:capsule_status, :opt_out_of_sharing_project_capsule_with_garden3d)
-    assert_equal ["Sharing the capsule with garden3d"], capsule.gated_selection_labels
+    capsule = make_honest_capsule!(tracker: make_tracker!(work_completed_at: 8.weeks.ago))
+    capsule.update!(
+      client_feedback_survey_status: :no_response_from_client,
+      internal_marketing_status: :opt_out_out_of_publishing_a_case_study,
+      capsule_status: :opt_out_of_sharing_project_capsule_with_garden3d,
+      project_satisfaction_survey_status: :opt_out_of_internal_project_team_satisfaction_survey,
+    )
+    capsule.update_column(:created_at, 8.weeks.ago)
+    capsule.reload
+
+    # Four opt-outs + the expired no-response hatch = four keys here, since the
+    # client feedback slot can only be in ONE state at a time.
+    assert_equal 4, capsule.gated_selections.length
+    assert_equal capsule.gated_selections.length, capsule.gated_selection_labels.length
+    capsule.gated_selections.each { |k| assert_includes ProjectCapsule::GATED_SELECTION_LABELS.keys, k }
+    assert_includes capsule.gated_selection_labels, "Chasing an unresponsive client"
+    assert_includes capsule.gated_selection_labels, "Publishing a case study"
+  end
+
+  test "the grace clock is anchored on the capsule row and cannot be moved by re-wrapping" do
+    tracker = make_tracker!(work_completed_at: 6.months.ago)
+    capsule = make_gated_capsule!(:client_feedback_survey_status, :no_response_from_client, tracker: tracker)
+    capsule.update_column(:created_at, 8.weeks.ago)
+    assert_not capsule.reload.complete?, "8 weeks past creation is well outside the 4-week grace"
+
+    # What two clicks on the tracker page do (app/admin/project_trackers.rb:303-312).
+    tracker.update_column(:work_completed_at, nil)
+    tracker.update_column(:work_completed_at, DateTime.now)
+    assert_not capsule.reload.complete?, "re-wrapping must not hand back grace"
+
+    # And nulling it entirely must not either.
+    tracker.update_column(:work_completed_at, nil)
+    assert_not capsule.reload.complete?, "an absent wrap date must not hand back grace"
+  end
+
+  test "mark_work_completed! stamps the capsule so created_at tracks the first wrap" do
+    pt = ProjectTracker.new(name: "Client Project")
+    pt.save!(validate: false)
+    assert_nil pt.project_capsule
+
+    pt.mark_work_completed!(at: 6.months.ago)
+    assert pt.reload.project_capsule.present?,
+      "a wrap set through mark_work_completed! must create the capsule, or created_at stops tracking the wrap"
+  end
+
+  test "junk in admin_signed_off_selections does not act as a blanket signature" do
+    capsule = make_gated_capsule!(:internal_marketing_status, :opt_out_out_of_publishing_a_case_study)
+    capsule.update!(
+      admin_signed_off_at: DateTime.now,
+      admin_signed_off_selections: ["not_a_real_key", "internal_marketing"],
+    )
+    assert capsule.complete?, "a real approved key still counts"
+
+    capsule.update!(admin_signed_off_selections: ["not_a_real_key"])
+    assert_not capsule.reload.complete?, "junk keys alone must not satisfy the gate"
   end
 end

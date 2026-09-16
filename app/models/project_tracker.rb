@@ -81,10 +81,6 @@ class ProjectTracker < ApplicationRecord
       .where("(snapshot->>'last_forecast_assignment_end_date')::date < ?", threshold)
   }
 
-  def capsule_complete?
-    project_capsule.present? && project_capsule.complete?
-  end
-
   ROLE_PERIOD_ASSOCIATIONS = { "account_lead" => :account_lead_periods, "project_lead" => :project_lead_periods }.freeze
 
   # Assign a lead role via a full-month, non-overlapping period. Ends the current open
@@ -169,6 +165,12 @@ class ProjectTracker < ApplicationRecord
     # that haven't had their MSA/SOW links set up yet.
     self.work_completed_at = at
     save!(validate: false)
+    # Stamp the capsule at the FIRST wrap, including backdated wraps set through
+    # the MCP tool. ProjectCapsule#no_response_grace_anchor floors the grace clock
+    # on project_capsules.created_at, so a capsule row created later than the real
+    # wrap would hand back grace that uncomplete_work/complete_work could then
+    # re-trigger.
+    ensure_project_capsule_exists! if at.present?
     self
   end
 
