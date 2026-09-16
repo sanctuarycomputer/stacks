@@ -1,7 +1,7 @@
 class ProjectCapsule < ApplicationRecord
   include BustsTaskCache
 
-  belongs_to :project_tracker
+  belongs_to :project_tracker, inverse_of: :project_capsule
   belongs_to :admin_signed_off_by, class_name: "AdminUser", optional: true
 
   has_one :project_satisfaction_survey

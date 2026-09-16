@@ -19,7 +19,7 @@ class ProjectTracker < ApplicationRecord
     greater_than_or_equal_to: :budget_low_end,
     if: :validate_budgets?
 
-  has_one :project_capsule, dependent: :delete
+  has_one :project_capsule, dependent: :delete, inverse_of: :project_tracker
   has_many :project_tracker_links, dependent: :delete_all
   accepts_nested_attributes_for :project_tracker_links, allow_destroy: true
 

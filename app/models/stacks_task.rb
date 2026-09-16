@@ -7,6 +7,7 @@ class StacksTask
   HUMANIZED_TYPES = {
     # ProjectTracker issues
     project_capsule_incomplete: "Project capsule needs completion",
+    project_capsule_needs_admin_sign_off: "Project capsule opt-outs need admin sign-off",
     likely_should_mark_as_work_complete?: "Project tracker likely needs to be marked as work complete",
     no_project_lead_set: "Project tracker needs project lead assigned",
     no_account_lead_set: "Project tracker needs account lead assigned",
