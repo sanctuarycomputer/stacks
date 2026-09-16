@@ -323,6 +323,41 @@ Replace the `newsletter_events_for` tests added in `5ae3789a`. Keep `find_member
     end
   end
 
+  test "newsletter_events_for rejects a non-Array current_newsletter_ids" do
+    # nil would otherwise reach `.empty?` and NoMethodError, aborting the sweep rather
+    # than skipping one member.
+    client = build_client
+    Stacks::Ghost.expects(:get).never
+    [nil, "nl-1", { "nl-1" => true }].each do |bad|
+      assert_raises(Stacks::Ghost::UntrustworthyHistory, "accepted #{bad.inspect}") do
+        client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: bad)
+      end
+    end
+  end
+
+  test "newsletter_events_for raises when an event has no newsletter_id" do
+    # Every other guard passes here. Without this one the consumer reads "no event for
+    # newsletter N" and grants someone who actually unsubscribed.
+    client = build_client
+    [nil, "", 12345].each do |bad_id|
+      ev = nl_event
+      ev["data"]["newsletter_id"] = bad_id
+      Stacks::Ghost.stubs(:get).returns(events_response([ev], total: 1))
+      err = assert_raises(Stacks::Ghost::UntrustworthyHistory, "accepted #{bad_id.inspect}") do
+        client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [])
+      end
+      assert_match(/no newsletter_id/, err.message)
+    end
+  end
+
+  test "newsletter_events_for returns a complete history at the 100 event boundary" do
+    # limit caps at 100, so 100-of-100 is complete and must be ACCEPTED. Pins the
+    # boundary so a future tightening to >= cannot silently change behaviour.
+    client = build_client
+    Stacks::Ghost.stubs(:get).returns(events_response(Array.new(100) { nl_event }, total: 100))
+    assert_equal 100, client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: ["nl-1"]).length
+  end
+
   test "newsletter_events_for raises when an event belongs to a different member" do
     client = build_client
     Stacks::Ghost.stubs(:get).returns(events_response([nl_event(member_id: "someone-else")]))
@@ -392,10 +427,17 @@ Replace the `newsletter_events_for` tests added in `5ae3789a`. Keep `find_member
     resp.stubs(:success?).returns(true)
     resp.stubs(:code).returns(200)
     resp.stubs(:body).returns("<html>gateway error</html>")
-    resp.stubs(:parsed_response).returns("<html>gateway error</html>")
-    Stacks::Ghost.stubs(:get).returns(resp)
-    assert_raises(Stacks::Ghost::UntrustworthyHistory) do
-      client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [])
+    # An Array body is the case that matters: without the is_a?(Hash) guard, []["events"]
+    # raises TypeError and escapes the fail-closed error class. A String body would be
+    # caught by the events-Array guard anyway, so assert the message to tell them apart.
+    [["<html>gateway error</html>", /non-object events response/],
+     [[{ "events" => [] }], /non-object events response/]].each do |parsed, pattern|
+      resp.stubs(:parsed_response).returns(parsed)
+      Stacks::Ghost.stubs(:get).returns(resp)
+      err = assert_raises(Stacks::Ghost::UntrustworthyHistory) do
+        client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [])
+      end
+      assert_match(pattern, err.message)
     end
   end
 
@@ -408,6 +450,17 @@ Replace the `newsletter_events_for` tests added in `5ae3789a`. Keep `find_member
       client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: ["nl-1"])
     end
     assert_match(/subscribed to 1 newsletter/, err.message)
+  end
+
+  test "coherence is tested by emptiness, not truthiness" do
+    # [nil].any? is false but [nil].empty? is false too. Using .any? here would skip the
+    # coherence guard and fall through to the weaker existence probe.
+    client = build_client
+    Stacks::Ghost.stubs(:get).returns(events_response([]))
+    client.expects(:find_member).never
+    assert_raises(Stacks::Ghost::UntrustworthyHistory) do
+      client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [nil])
+    end
   end
 
   test "an empty history fails closed when the existence probe 404s" do
@@ -428,7 +481,7 @@ Replace the `newsletter_events_for` tests added in `5ae3789a`. Keep `find_member
     client = build_client
     Stacks::Ghost.stubs(:get).returns(events_response([]))
     [{}, { "id" => "someotheridsomeotherid00" }].each do |probed|
-      client.stubs(:find_member).returns(probed)
+      client.stubs(:find_member).with(MEMBER_ID).returns(probed)
       assert_raises(Stacks::Ghost::UntrustworthyHistory) do
         client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [])
       end
@@ -457,9 +510,8 @@ Replace the `newsletter_events_for` tests added in `5ae3789a`. Keep `find_member
 
   test "newsletter_events_for raises rather than NoMethodError on malformed events" do
     # One malformed member must not take down the whole sweep. Each case carries a VALID
-    # meta.pagination.total, so it reaches the per-event shape guards rather than being
-    # short-circuited by the total check (which would make those guards deletable with
-    # the suite still green).
+    # meta.pagination.total so it reaches the per-event shape guards instead of being
+    # short-circuited by the total check.
     client = build_client
     Stacks::Ghost.stubs(:get).returns(fake_response(code: 200, body: { events: "not-an-array",
       meta: { pagination: { limit: 100, total: 0, pages: 1 } } }))
@@ -467,12 +519,20 @@ Replace the `newsletter_events_for` tests added in `5ae3789a`. Keep `find_member
       client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [])
     end
 
+    # Assert the MESSAGE, not just the class. Without it these cases fall through to the
+    # type and provenance guards below (a String's ["type"] is a substring miss, so nil),
+    # which raise the same class and leave the shape guard deletable with the suite green.
+    # The Integer and Array-data shapes are the ones only the shape guard catches: they
+    # TypeError otherwise.
     [events_response(["not-a-hash"], total: 1),
-     events_response([{ "type" => "newsletter_event", "data" => "scalar" }], total: 1)].each do |resp|
+     events_response([5], total: 1),
+     events_response([{ "type" => "newsletter_event", "data" => "scalar" }], total: 1),
+     events_response([{ "type" => "newsletter_event", "data" => [] }], total: 1)].each do |resp|
       Stacks::Ghost.stubs(:get).returns(resp)
-      assert_raises(Stacks::Ghost::UntrustworthyHistory) do
+      err = assert_raises(Stacks::Ghost::UntrustworthyHistory) do
         client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [])
       end
+      assert_match(/malformed event entry/, err.message)
     end
   end
 
@@ -559,6 +619,13 @@ Delete `EVENTS_MAX_PAGES` and the whole paging loop. Keep `UntrustworthyHistory`
       actual = event["data"]["member_id"]
       unless actual == member_id
         raise UntrustworthyHistory, "event for member #{actual.inspect} returned when querying #{member_id}"
+      end
+      # An event with no newsletter_id is worse than useless: the consumer asks
+      # `events.any? { |e| e.dig("data","newsletter_id") == n }`, so a dropped or renamed
+      # field turns a real unsubscribe into "never subscribed" and grants. That is the
+      # exact failure this method exists to prevent, so refuse the whole history.
+      unless event["data"]["newsletter_id"].is_a?(String) && !event["data"]["newsletter_id"].empty?
+        raise UntrustworthyHistory, "event #{event["data"]["id"].inspect} has no newsletter_id for member #{member_id}"
       end
     end
 
