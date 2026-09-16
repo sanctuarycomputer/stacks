@@ -168,12 +168,41 @@ class Stacks::GhostTest < ActiveSupport::TestCase
     end
   end
 
-  test "newsletter_events_for raises when meta.pagination.total is absent" do
-    # total is documented reliable, so its absence is itself evidence the response is
-    # not what we think it is. Without this guard a body with no meta would skip the
-    # completeness check entirely and read as "never subscribed".
+  test "newsletter_events_for raises when meta.pagination.total is absent or not an Integer" do
     client = build_client
     Stacks::Ghost.stubs(:get).returns(events_response([], meta: :omit))
+    err = assert_raises(Stacks::Ghost::UntrustworthyHistory) do
+      client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [])
+    end
+    assert_match(/meta\.pagination\.total/, err.message)
+
+    # A Float total is what makes the Integer check load-bearing: 1 == 1.0 in Ruby, so
+    # without it this response passes the completeness check and is accepted.
+    Stacks::Ghost.stubs(:get).returns(events_response([nl_event], total: 1.0))
+    assert_raises(Stacks::Ghost::UntrustworthyHistory) do
+      client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: ["nl-1"])
+    end
+  end
+
+  test "newsletter_events_for raises when meta itself is a scalar" do
+    # body.dig would raise TypeError here, escaping the fail-closed error class.
+    client = build_client
+    [{ events: [], meta: "nope" }, { events: [], meta: [] }].each do |body|
+      Stacks::Ghost.stubs(:get).returns(fake_response(code: 200, body: body))
+      assert_raises(Stacks::Ghost::UntrustworthyHistory) do
+        client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [])
+      end
+    end
+  end
+
+  test "newsletter_events_for raises when the response body is not an object at all" do
+    client = build_client
+    resp = mock("response")
+    resp.stubs(:success?).returns(true)
+    resp.stubs(:code).returns(200)
+    resp.stubs(:body).returns("<html>gateway error</html>")
+    resp.stubs(:parsed_response).returns("<html>gateway error</html>")
+    Stacks::Ghost.stubs(:get).returns(resp)
     assert_raises(Stacks::Ghost::UntrustworthyHistory) do
       client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [])
     end
@@ -182,8 +211,36 @@ class Stacks::GhostTest < ActiveSupport::TestCase
   test "newsletter_events_for raises on an empty history for a member with live subscriptions" do
     client = build_client
     Stacks::Ghost.stubs(:get).returns(events_response([]))
-    assert_raises(Stacks::Ghost::UntrustworthyHistory) do
+    # never: the coherence guard must fire on its own, not fall through to the probe.
+    client.expects(:find_member).never
+    err = assert_raises(Stacks::Ghost::UntrustworthyHistory) do
       client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: ["nl-1"])
+    end
+    assert_match(/subscribed to 1 newsletter/, err.message)
+  end
+
+  test "an empty history fails closed when the existence probe 404s" do
+    # Verified live: GET /members/<unknown>/ answers 404, so find_member RAISES rather
+    # than returning nil. This is the realistic shape of the case the probe exists for.
+    client = build_client
+    Stacks::Ghost.stubs(:get).returns(events_response([]))
+    client.expects(:find_member).with(MEMBER_ID)
+      .raises(Stacks::Ghost::RequestError.new(404, "not found"))
+    assert_raises(Stacks::Ghost::UntrustworthyHistory) do
+      client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [])
+    end
+  end
+
+  test "an empty history fails closed when the probe returns a different member" do
+    # This is the ONLY exit that lets a caller conclude "never subscribed" and grant,
+    # so bare truthiness is not enough.
+    client = build_client
+    Stacks::Ghost.stubs(:get).returns(events_response([]))
+    [{}, { "id" => "someotheridsomeotherid00" }].each do |probed|
+      client.stubs(:find_member).returns(probed)
+      assert_raises(Stacks::Ghost::UntrustworthyHistory) do
+        client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [])
+      end
     end
   end
 
@@ -207,12 +264,21 @@ class Stacks::GhostTest < ActiveSupport::TestCase
     assert_equal [], client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [])
   end
 
-  test "newsletter_events_for raises rather than NoMethodError on a malformed body" do
-    # One malformed member must not take down the whole sweep.
+  test "newsletter_events_for raises rather than NoMethodError on malformed events" do
+    # One malformed member must not take down the whole sweep. Each case carries a VALID
+    # meta.pagination.total, so it reaches the per-event shape guards rather than being
+    # short-circuited by the total check (which would make those guards deletable with
+    # the suite still green).
     client = build_client
-    [nil, { "events" => "not-an-array" }, { "events" => ["not-a-hash"] },
-     { "events" => [{ "type" => "newsletter_event", "data" => "scalar" }] }].each do |body|
-      Stacks::Ghost.stubs(:get).returns(fake_response(code: 200, body: body || {}))
+    Stacks::Ghost.stubs(:get).returns(fake_response(code: 200, body: { events: "not-an-array",
+      meta: { pagination: { limit: 100, total: 0, pages: 1 } } }))
+    assert_raises(Stacks::Ghost::UntrustworthyHistory) do
+      client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [])
+    end
+
+    [events_response(["not-a-hash"], total: 1),
+     events_response([{ "type" => "newsletter_event", "data" => "scalar" }], total: 1)].each do |resp|
+      Stacks::Ghost.stubs(:get).returns(resp)
       assert_raises(Stacks::Ghost::UntrustworthyHistory) do
         client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [])
       end

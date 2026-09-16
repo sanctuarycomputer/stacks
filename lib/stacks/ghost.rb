@@ -114,16 +114,15 @@ class Stacks::Ghost
   # current_newsletter_ids has no default on purpose: the coherence guard is inert for
   # an empty list, and that is exactly the population at risk.
   def newsletter_events_for(member_id, current_newsletter_ids:)
-    # The type check matters as much as the format: member_id.to_s would let a Symbol
-    # with valid-looking hex content silently pass (":abc...".to_s still matches the
-    # regex), so require an actual String before matching.
+    # is_a?(String), not to_s: a Symbol whose to_s is valid hex would otherwise pass the
+    # format check and then fail provenance with a misleading message. This guard's whole
+    # job is refusing ambiguous input, so reject non-Strings outright.
     unless member_id.is_a?(String) && member_id.match?(MEMBER_ID_FORMAT)
       raise UntrustworthyHistory, "refusing to query events for malformed member id #{member_id.inspect}"
     end
-    # Coerce (a no-op given the check above) and use this value everywhere below, so a
-    # future loosening of the check above can't reintroduce a non-String leaking into
-    # the filter string or the provenance comparison.
-    member_id = member_id.to_s
+    unless current_newsletter_ids.is_a?(Array)
+      raise UntrustworthyHistory, "current_newsletter_ids must be an Array, got #{current_newsletter_ids.class}"
+    end
 
     # Quotes must be RAW: HTTParty encodes the query itself, so a pre-encoded %27
     # arrives as %2527 and 422s. Safe from injection because the guard above restricts
@@ -141,9 +140,16 @@ class Stacks::Ghost
     events = body["events"]
     raise UntrustworthyHistory, "events was #{events.class} for member #{member_id}" unless events.is_a?(Array)
 
-    total = body.dig("meta", "pagination", "total")
+    # Not body.dig: a scalar or Array "meta" makes dig raise TypeError, which escapes the
+    # error class this whole design rests on and would abort the sweep instead of
+    # skipping one member.
+    meta = body["meta"]
+    pagination = meta.is_a?(Hash) ? meta["pagination"] : nil
+    total = pagination.is_a?(Hash) ? pagination["total"] : nil
+    # Must be an Integer specifically: 1 == 1.0 in Ruby, so a Float total would sail
+    # through the completeness check below.
     unless total.is_a?(Integer)
-      raise UntrustworthyHistory, "missing meta.pagination.total for member #{member_id}"
+      raise UntrustworthyHistory, "missing or non-integer meta.pagination.total for member #{member_id}"
     end
 
     events.each do |event|
@@ -164,14 +170,24 @@ class Stacks::Ghost
     end
 
     if events.empty?
-      if current_newsletter_ids.any?
+      unless current_newsletter_ids.empty?
         raise UntrustworthyHistory,
           "member #{member_id} is subscribed to #{current_newsletter_ids.length} newsletter(s) but has no events"
       end
       # Nothing above distinguishes "genuinely never subscribed" from "this id does not
-      # exist", and both return 200 with an empty list. Confirm positively.
-      unless find_member(member_id)
-        raise UntrustworthyHistory, "no events and no such member #{member_id}"
+      # exist": both return 200 with an empty list. Confirm positively. Verified live:
+      # GET /members/<unknown>/ answers 404, so this RAISES rather than returning nil,
+      # and the probe must convert that into the fail-closed error class.
+      probed = begin
+        find_member(member_id)
+      rescue RequestError => e
+        raise UntrustworthyHistory, "could not confirm member #{member_id} exists (Ghost #{e.code})"
+      end
+      # Bare truthiness is not enough: this is the ONLY exit that lets a caller conclude
+      # "never subscribed" and grant, so it gets the same provenance check as everything
+      # else. An {} or a member with a different id must not satisfy it.
+      unless probed.is_a?(Hash) && probed["id"] == member_id
+        raise UntrustworthyHistory, "no events and no confirmed member #{member_id}"
       end
     end
 
