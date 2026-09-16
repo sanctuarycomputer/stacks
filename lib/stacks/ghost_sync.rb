@@ -236,7 +236,9 @@ class Stacks::GhostSync
       begin
         events ||= @ghost.newsletter_events_for(member["id"], current_newsletter_ids: current_ids)
       rescue Stacks::Ghost::UntrustworthyHistory, Stacks::Ghost::RequestError => e
-        # Fail closed: no grants for this member this sweep, no ledger writes.
+        # Fail closed: no grants for this member this sweep. Any "observed" entry already
+        # recorded for an earlier target stands, which is fine: observed only ever blocks
+        # a future grant, it never permits one.
         @summary[:grant_errors] += 1
         @errors << "#{contact.email}: history unreadable: #{e.class}: #{e.message}"
         return []
