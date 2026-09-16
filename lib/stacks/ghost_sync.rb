@@ -267,10 +267,12 @@ class Stacks::GhostSync
     label_names(member).select { |n| enabled_downcased.include?(n.downcase) }.sort
   end
 
-  # Returns the updated member hash when a write happened, nil for a no-op.
+  # Pure: computes the attrs a label-only write would send, or nil for a no-op.
   # Labels are full-replace in Ghost, so always resend the preserved
   # (unmanaged) labels alongside ours. Never includes :newsletters.
-  def update_member_labels(contact, member, desired, enabled)
+  # Issues no request, so the grant path can recompute the diff against a fresh
+  # member and fold it into a single PUT.
+  def label_attrs_for(contact, member, desired, enabled)
     attrs = {}
     # Compare case-insensitively: Ghost dedupes labels by slug so it may store
     # "newsletter" even when the enabled source is named "Newsletter".
@@ -287,7 +289,13 @@ class Stacks::GhostSync
     if member["name"].blank? && contact.display_name.present?
       attrs[:name] = contact.display_name
     end
-    return nil if attrs.empty?
+    attrs.presence
+  end
+
+  # Returns the updated member hash when a write happened, nil for a no-op.
+  def update_member_labels(contact, member, desired, enabled)
+    attrs = label_attrs_for(contact, member, desired, enabled)
+    return nil if attrs.nil?
 
     updated = @ghost.update_member(member["id"], attrs)
     @summary[:updated] += 1

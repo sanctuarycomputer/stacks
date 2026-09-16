@@ -495,6 +495,28 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
     sync_with(ghost).sync_all!
   end
 
+  test "label_attrs_for computes the label diff without issuing a request" do
+    enable_sources("newsletter", "fundraising")
+    contact = Contact.create!(email: "attrs@example.com", sources: %w[newsletter fundraising])
+    existing = member(id: "m70", email: "attrs@example.com", labels: ["VIP", "newsletter"])
+
+    ghost = mock("ghost")
+    ghost.expects(:update_member).never
+    sync = sync_with(ghost)
+    attrs = sync.send(:label_attrs_for, contact, existing, %w[fundraising newsletter], %w[newsletter fundraising])
+
+    assert_equal ["VIP", "fundraising", "newsletter"], attrs[:labels].sort
+    refute attrs.key?(:newsletters)
+  end
+
+  test "label_attrs_for returns nil when nothing needs changing" do
+    enable_sources("newsletter")
+    contact = Contact.create!(email: "attrs2@example.com", sources: %w[newsletter], display_name: nil)
+    existing = member(id: "m71", email: "attrs2@example.com", labels: ["newsletter"], name: "Has Name")
+    sync = sync_with(mock("ghost"))
+    assert_nil sync.send(:label_attrs_for, contact, existing, %w[newsletter], %w[newsletter])
+  end
+
   # Finding F: NQL email filter escapes single quotes
   test "find_member_by_email escapes single quotes in the NQL filter" do
     Stacks::Utils.stubs(:config).returns({
