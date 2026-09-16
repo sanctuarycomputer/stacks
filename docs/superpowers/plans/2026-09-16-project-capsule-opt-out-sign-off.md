@@ -896,12 +896,23 @@ Task 3 left a NOTE comment in `test/models/studio_test.rb` saying this assertion
       "fixture must be GATED - otherwise this test passes even if the filter regresses"
 ```
 
-- [ ] **Step 6: Verify Task 3's regression net still holds**
+- [ ] **Step 6: Prove the Studio regression test is no longer vacuous**
+
+At Task 3 this test was structurally vacuous — `complete?` and `substantively_complete?` were identical, so no fixture could make the two filters disagree. The gate you just added is what makes it real. Verify that, don't assume it:
+
+1. Temporarily change `app/models/studio.rb`'s filter back from `pt.project_capsule&.substantively_complete?` to `pt.capsule_complete?`.
+2. Run: `bin/rails test test/models/studio_test.rb`
+3. **Expected: the "project satisfaction score still counts a project whose capsule awaits sign-off" test now FAILS.** If it still passes, the test is not exercising the regression it claims to and you must report that — do not proceed.
+4. Restore the `substantively_complete?` version and confirm green again.
+
+Record both outcomes in your report.
+
+- [ ] **Step 7: Verify Task 3's regression net still holds**
 
 Run: `bin/rails test test/models/project_tracker_test.rb test/models/studio_test.rb test/models/project_satisfaction_survey_test.rb test/models/profit_share_test.rb`
 Expected: PASS, 0 failures, 0 errors. **If `considered_successful?` tests now fail, Task 3 was done wrong — stop and fix Task 3 rather than weakening these tests.**
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add app/models/project_capsule.rb test/models/project_capsule_test.rb test/models/studio_test.rb
