@@ -9,6 +9,8 @@ class Stacks::GhostTest < ActiveSupport::TestCase
     },
   }.freeze
 
+  MEMBER_ID = "6aaa0647345d7200012fc658".freeze
+
   def build_client(max_retries: 0)
     Stacks::Utils.stubs(:config).returns(FAKE_CONFIG)
     Stacks::Ghost.new(max_retries: max_retries)
@@ -21,6 +23,21 @@ class Stacks::GhostTest < ActiveSupport::TestCase
     resp.stubs(:body).returns(JSON.dump(body))
     resp.stubs(:parsed_response).returns(body.deep_stringify_keys)
     resp
+  end
+
+  def nl_event(member_id: MEMBER_ID, newsletter_id: "nl-1", subscribed: true,
+               created_at: "2026-09-16T03:00:23.000Z", type: "newsletter_event")
+    { "type" => type,
+      "data" => { "id" => "ev-1", "member_id" => member_id, "subscribed" => subscribed,
+                  "created_at" => created_at, "source" => "api", "newsletter_id" => newsletter_id } }
+  end
+
+  def events_response(events, total: nil, meta: :default)
+    body = { events: events }
+    unless meta == :omit
+      body[:meta] = { pagination: { limit: 100, total: total || events.length, pages: 1 } }
+    end
+    fake_response(code: 200, body: body)
   end
 
   test "token is an HS256 JWT signed with the hex-decoded secret, kid header, /admin/ audience" do
@@ -85,37 +102,21 @@ class Stacks::GhostTest < ActiveSupport::TestCase
     assert_equal 500, error.code
   end
 
-  MEMBER_ID = "6aaa0647345d7200012fc658".freeze
-
-  def nl_event(member_id: MEMBER_ID, newsletter_id: "nl-1", subscribed: true, created_at: "2026-09-16T03:00:23.000Z")
-    { "type" => "newsletter_event",
-      "data" => { "id" => "ev-#{rand(1_000_000)}", "member_id" => member_id,
-                  "subscribed" => subscribed, "created_at" => created_at,
-                  "source" => "api", "newsletter_id" => newsletter_id } }
-  end
-
-  def events_response(events, total: nil)
-    fake_response(code: 200, body: {
-      events: events,
-      meta: { pagination: { limit: 100, total: total || events.length, pages: 1, page: nil, next: nil } },
-    })
-  end
-
-  test "newsletter_events_for returns events and filters by type and member only" do
+  test "newsletter_events_for issues ONE request, filtered by type and member only" do
     client = build_client
-    Stacks::Ghost.expects(:get).with { |url, opts|
+    Stacks::Ghost.expects(:get).once.with { |url, opts|
       url.include?("/members/events/") &&
         opts[:query][:filter].include?("type:newsletter_event") &&
         opts[:query][:filter].include?(MEMBER_ID) &&
-        # verified 400s if present
-        !opts[:query][:filter].include?("data.subscribed") &&
-        !opts[:query][:filter].include?("data.newsletter_id") &&
-        # verified silently ignored on this endpoint
-        !opts[:query].key?(:page) &&
+        !opts[:query][:filter].include?("data.subscribed") &&   # verified 400
+        !opts[:query][:filter].include?("data.newsletter_id") && # verified 400
+        !opts[:query][:filter].include?("%27") &&                # verified 422
+        !opts[:query].key?(:page) &&                             # verified ignored
+        !opts[:query].key?(:order) &&                            # verified ignored
         opts[:query][:limit] == 100
     }.returns(events_response([nl_event]))
 
-    events = client.newsletter_events_for(MEMBER_ID)
+    events = client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: ["nl-1"])
     assert_equal 1, events.length
     assert_equal "nl-1", events.first["data"]["newsletter_id"]
   end
@@ -123,27 +124,62 @@ class Stacks::GhostTest < ActiveSupport::TestCase
   test "newsletter_events_for rejects a malformed member id without issuing a request" do
     client = build_client
     Stacks::Ghost.expects(:get).never
-    ["not-an-id", "", nil, "6AAA0647345D7200012FC658", "6aaa0647345d7200012fc65"].each do |bad|
-      assert_raises(Stacks::Ghost::UntrustworthyHistory) { client.newsletter_events_for(bad) }
+    ["not-an-id", "", nil, :"6aaa0647345d7200012fc658",
+     "6AAA0647345D7200012FC658", "6aaa0647345d7200012fc65"].each do |bad|
+      assert_raises(Stacks::Ghost::UntrustworthyHistory, "accepted #{bad.inspect}") do
+        client.newsletter_events_for(bad, current_newsletter_ids: [])
+      end
     end
   end
 
   test "newsletter_events_for raises when an event belongs to a different member" do
     client = build_client
     Stacks::Ghost.stubs(:get).returns(events_response([nl_event(member_id: "someone-else")]))
-    assert_raises(Stacks::Ghost::UntrustworthyHistory) { client.newsletter_events_for(MEMBER_ID) }
+    err = assert_raises(Stacks::Ghost::UntrustworthyHistory) do
+      client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [])
+    end
+    assert_match(/someone-else/, err.message)
   end
 
-  test "newsletter_events_for raises when fewer events are collected than meta.pagination.total" do
+  test "newsletter_events_for raises on an event of the wrong type" do
     client = build_client
-    Stacks::Ghost.stubs(:get).returns(events_response([nl_event], total: 7))
-    assert_raises(Stacks::Ghost::UntrustworthyHistory) { client.newsletter_events_for(MEMBER_ID) }
+    Stacks::Ghost.stubs(:get).returns(events_response([nl_event(type: "email_delivered_event")]))
+    assert_raises(Stacks::Ghost::UntrustworthyHistory) do
+      client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [])
+    end
   end
 
-  test "newsletter_events_for raises on an empty history for a member that has live subscriptions" do
-    # A 200 with an empty list is what a nonexistent or malformed member id returns.
-    # A member currently subscribed to something MUST have at least one event, so an
-    # empty result here is incoherent and must never read as "never subscribed".
+  test "newsletter_events_for raises when the member has more events than one page can carry" do
+    # page and order are both silently ignored, so a second page cannot be fetched
+    # reliably. Fail closed rather than return a truncated history.
+    client = build_client
+    Stacks::Ghost.expects(:get).once.returns(events_response(Array.new(100) { nl_event }, total: 150))
+    err = assert_raises(Stacks::Ghost::UntrustworthyHistory) do
+      client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: ["nl-1"])
+    end
+    assert_match(/100 of 150/, err.message)
+  end
+
+  test "newsletter_events_for raises when the collected count exceeds total" do
+    client = build_client
+    Stacks::Ghost.stubs(:get).returns(events_response([nl_event, nl_event], total: 1))
+    assert_raises(Stacks::Ghost::UntrustworthyHistory) do
+      client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: ["nl-1"])
+    end
+  end
+
+  test "newsletter_events_for raises when meta.pagination.total is absent" do
+    # total is documented reliable, so its absence is itself evidence the response is
+    # not what we think it is. Without this guard a body with no meta would skip the
+    # completeness check entirely and read as "never subscribed".
+    client = build_client
+    Stacks::Ghost.stubs(:get).returns(events_response([], meta: :omit))
+    assert_raises(Stacks::Ghost::UntrustworthyHistory) do
+      client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [])
+    end
+  end
+
+  test "newsletter_events_for raises on an empty history for a member with live subscriptions" do
     client = build_client
     Stacks::Ghost.stubs(:get).returns(events_response([]))
     assert_raises(Stacks::Ghost::UntrustworthyHistory) do
@@ -151,32 +187,36 @@ class Stacks::GhostTest < ActiveSupport::TestCase
     end
   end
 
-  test "newsletter_events_for allows a genuinely empty history for a member with no subscriptions" do
+  test "an empty history is confirmed against the member actually existing" do
+    # The coherence guard above is inert when current_newsletter_ids is empty, which is
+    # exactly the case for someone who unsubscribed from everything: the population this
+    # feature exists to protect. Their empty history is indistinguishable from a
+    # nonexistent or mistyped id, which returns the same 200 {"events": []}.
     client = build_client
     Stacks::Ghost.stubs(:get).returns(events_response([]))
+    client.expects(:find_member).with(MEMBER_ID).returns(nil)
+    assert_raises(Stacks::Ghost::UntrustworthyHistory) do
+      client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [])
+    end
+  end
+
+  test "a genuinely empty history for a confirmed member is allowed" do
+    client = build_client
+    Stacks::Ghost.stubs(:get).returns(events_response([]))
+    client.expects(:find_member).with(MEMBER_ID).returns({ "id" => MEMBER_ID, "newsletters" => [] })
     assert_equal [], client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [])
   end
 
-  test "newsletter_events_for pages with a raw-quoted created_at cursor, never the page param" do
+  test "newsletter_events_for raises rather than NoMethodError on a malformed body" do
+    # One malformed member must not take down the whole sweep.
     client = build_client
-    page1 = Array.new(100) { |i| nl_event(created_at: "2026-09-#{format('%02d', 16 - (i / 20))}T03:00:23.000Z") }
-    page2 = [nl_event(created_at: "2026-08-01T00:00:00.000Z")]
-    seen_filters = []
-    Stacks::Ghost.stubs(:get).with { |_url, opts| seen_filters << opts[:query][:filter]; true }
-      .returns(events_response(page1, total: 101)).then.returns(events_response(page2, total: 101))
-
-    events = client.newsletter_events_for(MEMBER_ID)
-    assert_equal 101, events.length
-    assert_equal 2, seen_filters.length
-    assert seen_filters[1].include?("data.created_at:<'"), "cursor must use raw single quotes"
-    refute seen_filters[1].include?("%27"), "percent-encoded quotes yield 422"
-  end
-
-  test "newsletter_events_for raises rather than looping when a page does not advance the cursor" do
-    client = build_client
-    stuck = Array.new(100) { nl_event(created_at: "2026-09-16T03:00:23.000Z") }
-    Stacks::Ghost.stubs(:get).returns(events_response(stuck, total: 500))
-    assert_raises(Stacks::Ghost::UntrustworthyHistory) { client.newsletter_events_for(MEMBER_ID) }
+    [nil, { "events" => "not-an-array" }, { "events" => ["not-a-hash"] },
+     { "events" => [{ "type" => "newsletter_event", "data" => "scalar" }] }].each do |body|
+      Stacks::Ghost.stubs(:get).returns(fake_response(code: 200, body: body || {}))
+      assert_raises(Stacks::Ghost::UntrustworthyHistory) do
+        client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [])
+      end
+    end
   end
 
   test "find_member requests one member with labels and newsletters" do

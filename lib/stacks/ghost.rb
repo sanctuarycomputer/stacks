@@ -24,7 +24,6 @@ class Stacks::Ghost
 
   MEMBER_ID_FORMAT = /\A[0-9a-f]{24}\z/.freeze
   EVENTS_PAGE_LIMIT = 100
-  EVENTS_MAX_PAGES = 20
 
   # max_retries: backoff count for 429/5xx. Request-path callers (webhooks,
   # admin buttons) should keep this small; the cron sweep can afford retries.
@@ -102,64 +101,81 @@ class Stacks::Ghost
   end
 
   # Returns every newsletter_event for a member, or raises UntrustworthyHistory.
-  # current_newsletter_ids enables the coherence check: a member currently
-  # subscribed to something must have at least one event.
-  def newsletter_events_for(member_id, current_newsletter_ids: [])
-    unless member_id.to_s.match?(MEMBER_ID_FORMAT)
+  #
+  # This endpoint returns 200 with an empty list for a nonexistent OR malformed member
+  # id, so "no events" is not evidence of "never subscribed" unless every guard below
+  # passes. Callers MUST treat the raise as fail-closed: no grants for this member.
+  #
+  # Deliberately does not page. Both `page` and `order` are silently ignored here
+  # (verified live), so there is no reliable way to walk past the first 100 events and
+  # no way to know which 100 we got. A member with more than 100 newsletter events fails
+  # closed instead, which takes 100+ subscribe/unsubscribe toggles to reach.
+  #
+  # current_newsletter_ids has no default on purpose: the coherence guard is inert for
+  # an empty list, and that is exactly the population at risk.
+  def newsletter_events_for(member_id, current_newsletter_ids:)
+    # The type check matters as much as the format: member_id.to_s would let a Symbol
+    # with valid-looking hex content silently pass (":abc...".to_s still matches the
+    # regex), so require an actual String before matching.
+    unless member_id.is_a?(String) && member_id.match?(MEMBER_ID_FORMAT)
       raise UntrustworthyHistory, "refusing to query events for malformed member id #{member_id.inspect}"
     end
+    # Coerce (a no-op given the check above) and use this value everywhere below, so a
+    # future loosening of the check above can't reintroduce a non-String leaking into
+    # the filter string or the provenance comparison.
+    member_id = member_id.to_s
 
-    collected = []
-    cursor = nil
-    total = nil
-    pages = 0
+    # Quotes must be RAW: HTTParty encodes the query itself, so a pre-encoded %27
+    # arrives as %2527 and 422s. Safe from injection because the guard above restricts
+    # member_id to hex.
+    response = handle_response {
+      self.class.get(url("/members/events/"), query: {
+        filter: "type:newsletter_event+data.member_id:'#{member_id}'",
+        limit: EVENTS_PAGE_LIMIT,
+      }, headers: headers)
+    }
 
-    loop do
-      pages += 1
-      if pages > EVENTS_MAX_PAGES
-        raise UntrustworthyHistory, "member #{member_id} exceeded #{EVENTS_MAX_PAGES} event pages"
+    body = response.parsed_response
+    raise UntrustworthyHistory, "non-object events response for member #{member_id}" unless body.is_a?(Hash)
+
+    events = body["events"]
+    raise UntrustworthyHistory, "events was #{events.class} for member #{member_id}" unless events.is_a?(Array)
+
+    total = body.dig("meta", "pagination", "total")
+    unless total.is_a?(Integer)
+      raise UntrustworthyHistory, "missing meta.pagination.total for member #{member_id}"
+    end
+
+    events.each do |event|
+      unless event.is_a?(Hash) && event["data"].is_a?(Hash)
+        raise UntrustworthyHistory, "malformed event entry for member #{member_id}"
       end
-
-      # NQL quoting mirrors find_member_by_email. Quotes must be RAW: HTTParty
-      # encodes the query itself, so a pre-encoded %27 arrives as %2527 and 422s.
-      filter = "type:newsletter_event+data.member_id:'#{member_id}'"
-      filter += "+data.created_at:<'#{cursor}'" if cursor
-
-      response = handle_response {
-        self.class.get(url("/members/events/"), query: {
-          filter: filter, limit: EVENTS_PAGE_LIMIT, order: "created_at desc",
-        }, headers: headers)
-      }
-      body = response.parsed_response
-      page = body["events"] || []
-      total ||= body.dig("meta", "pagination", "total")
-
-      page.each do |event|
-        actual = event.dig("data", "member_id")
-        next if actual == member_id
+      unless event["type"] == "newsletter_event"
+        raise UntrustworthyHistory, "unexpected event type #{event["type"].inspect} for member #{member_id}"
+      end
+      actual = event["data"]["member_id"]
+      unless actual == member_id
         raise UntrustworthyHistory, "event for member #{actual.inspect} returned when querying #{member_id}"
       end
+    end
 
-      collected += page
-      break if page.length < EVENTS_PAGE_LIMIT
+    unless events.length == total
+      raise UntrustworthyHistory, "collected #{events.length} of #{total} events for member #{member_id}"
+    end
 
-      oldest = page.map { |e| e.dig("data", "created_at") }.compact.min
-      if oldest.nil? || (cursor && oldest >= cursor)
-        raise UntrustworthyHistory, "member #{member_id} event cursor did not advance past #{cursor.inspect}"
+    if events.empty?
+      if current_newsletter_ids.any?
+        raise UntrustworthyHistory,
+          "member #{member_id} is subscribed to #{current_newsletter_ids.length} newsletter(s) but has no events"
       end
-      cursor = oldest
+      # Nothing above distinguishes "genuinely never subscribed" from "this id does not
+      # exist", and both return 200 with an empty list. Confirm positively.
+      unless find_member(member_id)
+        raise UntrustworthyHistory, "no events and no such member #{member_id}"
+      end
     end
 
-    if total && collected.length < total
-      raise UntrustworthyHistory, "collected #{collected.length} of #{total} events for member #{member_id}"
-    end
-
-    if collected.empty? && current_newsletter_ids.any?
-      raise UntrustworthyHistory,
-        "member #{member_id} is subscribed to #{current_newsletter_ids.length} newsletter(s) but has no events"
-    end
-
-    collected
+    events
   end
 
   private
