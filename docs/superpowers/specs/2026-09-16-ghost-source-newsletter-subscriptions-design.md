@@ -263,7 +263,9 @@ in-memory hash rather than an older copy, including in its steal branch (`:254`)
   `contact.rb` to union `newsletter_ledger["entries"]` across all merged contacts (earliest `at` wins),
   mirroring the existing `deleted_at` handling. Build a **new** hash rather than `merge!`-ing a
   loser's nested hash in place (`merged_ghost_data` is only a shallow `dup`, `contact.rb:185`).
-  Keep the survivor's `member_id` if it has one, else the merged `ghost_id` owner's.
+  The merged `member_id` must be the **`ghost_id` owner's**, not the survivor's own. After a dedupe the
+  survivor is linked to the merged `ghost_id`, so a ledger carrying any other member's id describes
+  someone the contact is not linked to, and the grant decision then ignores the whole ledger.
 - **`stacks:sync_contacts` must take the Ghost advisory lock** around its `Contact.all.each(&:dedupe!)`
   loop (`lib/tasks/stacks.rake:419`). Without it, `dedupe!` deletes a contact row mid-sweep and the
   sweep's ledger `update!` silently affects zero rows. Union-on-merge does not fix a lost update.

@@ -728,6 +728,27 @@ Ledger shape: `ghost_data["newsletter_ledger"] = { "member_id" => "<id>", "entri
     assert_equal "2026-01-01T00:00:00Z", reversed["entries"]["nl-1"]["at"]
   end
 
+  test "record_ledger_entry! with a nil member_id does not create the key" do
+    # ||= would set member_id to nil, which makes the ledger differ from the stored one
+    # and writes a nil member_id on the next save.
+    c = Contact.create!(email: "nilmem@example.com")
+    c.record_ledger_entry!("nl-1", "observed", member_id: nil)
+    refute c.newsletter_ledger.key?("member_id")
+    assert c.ledger_has?("nl-1")
+  end
+
+  test "an entry with a blank at does not displace a well-formed one" do
+    good = { "entries" => { "nl-1" => { "state" => "history", "at" => "2026-01-01T00:00:00Z" } } }
+    blank = { "entries" => { "nl-1" => { "state" => "granted" } } }
+    # "" stringifies as earliest in both directions, so without the guard the malformed
+    # entry wins whichever order it arrives in.
+    [[good, blank], [blank, good]].each do |ledgers|
+      merged = Contact.merge_newsletter_ledgers(ledgers)
+      assert_equal "history", merged["entries"]["nl-1"]["state"], "order #{ledgers.first.equal?(good)}"
+      assert_equal "2026-01-01T00:00:00Z", merged["entries"]["nl-1"]["at"]
+    end
+  end
+
   test "a merged ledger takes its member_id from the ghost_id owner, not input order" do
     # A ledger whose member_id does not match the contact's linked member is ignored by
     # the grant decision, so mis-attributing it silently disables layer 2 even though
@@ -758,6 +779,27 @@ Ledger shape: `ghost_data["newsletter_ledger"] = { "member_id" => "<id>", "entri
     entries = survivor.ghost_data.dig("newsletter_ledger", "entries")
     assert_equal %w[nl-1 nl-2], entries.keys.sort, "a lost ledger entry is a consent violation"
     assert_equal "m1", survivor.ghost_id
+  end
+
+  test "the fresh_existing merge reads the locked row, not a stale in-memory copy" do
+    # The surrounding code merges from locked reads so a concurrent write is not lost.
+    # A ledger entry written to our row after this object was loaded must survive the
+    # save!, which rewrites the whole ghost_data column.
+    a = Contact.create!(email: "stale@example.com")
+    Contact.create!(email: "stale2@example.com", apollo_id: "apollo-stale")
+    # Write behind a's back, exactly as another process would.
+    Contact.where(id: a.id).first.tap do |fresh|
+      fresh.record_ledger_entry!("nl-concurrent", "history", member_id: "m7")
+      fresh.save!
+    end
+    refute a.ledger_has?("nl-concurrent"), "the in-memory copy must still be stale"
+
+    apollo = mock("apollo")
+    apollo.stubs(:search_by_email).returns([{ "id" => "apollo-stale", "email" => a.email }])
+    a.sync_to_apollo!(apollo)
+
+    assert a.reload.ledger_has?("nl-concurrent"),
+      "a ledger entry written between load and lock must not be clobbered"
   end
 
   test "the fresh_existing merge path unions ledgers in both directions" do
@@ -879,11 +921,12 @@ In `dedupe!`, after the existing `any_deleted_at` block and before `losers.each`
 
 ```ruby
         # Order matters for member_id only: merge_newsletter_ledgers takes the first
-        # non-nil one, and it must be the ghost_id owner's. A ledger whose member_id does
+        # non-nil one, and it must be the ghost_id owner's, because that is the member
+        # the survivor ends up linked to. A ledger whose member_id does
         # not match the contact's linked member is IGNORED by the grant decision, so
         # picking the wrong one silently disables layer 2 for the whole merged ledger
         # even though every entry survived. Entry unioning itself is order-independent.
-        ledger_sources = [survivor, ghost_id_owner, *dupes].compact.uniq
+        ledger_sources = [ghost_id_owner, survivor, *dupes].compact.uniq
         merged_ledger = Contact.merge_newsletter_ledgers(
           ledger_sources.map { |d| d.ghost_data["newsletter_ledger"] }
         )
