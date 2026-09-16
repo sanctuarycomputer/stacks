@@ -145,4 +145,28 @@ class AdminAuthorizationTest < ActiveSupport::TestCase
     assert auth.authorized?(:read, Survey)
     refute auth.authorized?(:read, InvoiceTracker)
   end
+
+  # Sign-off exists to police project leads, so it must not inherit the blanket
+  # lead access granted a few lines below in authorized?.
+  test "a lead cannot sign off or revoke sign-off on a project capsule" do
+    user = make_user("lead@sanctuary.computer")
+    pt = make_project_tracker("Gated")
+    ProjectLeadPeriod.create!(admin_user: user, project_tracker: pt, started_at: Date.today.beginning_of_month)
+    capsule = ProjectCapsule.create!(project_tracker: pt)
+
+    auth = auth_for(user)
+    assert auth.authorized?(:update, capsule), "leads still edit capsules normally"
+    refute auth.authorized?(:sign_off, capsule)
+    refute auth.authorized?(:revoke_sign_off, capsule)
+    refute auth.authorized?(:sign_off, ProjectCapsule)
+  end
+
+  test "an admin can sign off and revoke sign-off on a project capsule" do
+    user = AdminUser.create!(email: "boss@sanctuary.computer", password: "password12345", roles: ["admin"])
+    capsule = ProjectCapsule.create!(project_tracker: make_project_tracker("Gated"))
+
+    auth = auth_for(user)
+    assert auth.authorized?(:sign_off, capsule)
+    assert auth.authorized?(:revoke_sign_off, capsule)
+  end
 end

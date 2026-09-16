@@ -63,6 +63,12 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
       return user.is_admin?
     end
 
+    # Opt-out sign-off polices project leads, so it must sit above the blanket
+    # lead grant below — otherwise every lead could approve their own bypass.
+    if subject.is_a?(ProjectCapsule) || subject == ProjectCapsule
+      return user.is_admin? if [:sign_off, :revoke_sign_off].include?(action)
+    end
+
     return true if (user.is_admin? || user.can_act_as_lead?)
 
     # Project-scoped "lead" grants (leads-in-training limited to specific
