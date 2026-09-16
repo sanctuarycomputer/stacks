@@ -65,6 +65,19 @@ class AdminProjectCapsuleSignOffTest < ActionDispatch::IntegrationTest
     assert_nil capsule.admin_signed_off_at
   end
 
+  test "the tracker page renders the sign-off banner for a gated capsule" do
+    capsule = make_gated_capsule!
+    # The tracker show view renders `notes` through RDiscount unconditionally;
+    # make_gated_capsule! builds its tracker with validate: false and leaves
+    # notes nil, which only this test's full-page render exercises.
+    capsule.project_tracker.update_column(:notes, "Notes")
+    sign_in make_admin!
+
+    get admin_project_tracker_path(capsule.project_tracker)
+    assert_response :success
+    assert_includes response.body, "An admin needs to approve"
+  end
+
   test "an admin can revoke a sign-off" do
     capsule = make_gated_capsule!
     sign_in make_admin!
