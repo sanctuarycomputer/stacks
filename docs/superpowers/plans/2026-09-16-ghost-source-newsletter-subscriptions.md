@@ -981,7 +981,7 @@ git commit -m "feat: write-once newsletter ledger on contacts with merge unionin
 - Test: `test/lib/stacks/ghost_sync_test.rb`
 
 **Interfaces:**
-- Produces: `Stacks::GhostSync::EXCLUDED_SOURCE_PREFIX = "g3d:ghost"`, `.source_prefix(source)` -> String, `#target_newsletter_ids(contact, enabled)` -> Array of ids. Instance state set up in `sync_all!`: `@prefix_map`, `@grants_enabled`, `@writes_remaining`, `@active_newsletter_ids`.
+- Produces: `Stacks::GhostSync::EXCLUDED_SOURCE_PREFIX = "g3d:ghost"`, `.source_prefix(source)` -> String, `#target_newsletter_ids(contact, enabled)` -> Array of ids. Instance state set up by `load_newsletter_config!`: `@prefix_map`, `@grants_enabled`, `@writes_remaining`.
 - Consumes: Task 1's `System#ghost_newsletter_prefix_map_clean`, `#ghost_newsletter_grants_enabled?`, `#ghost_sweep_write_budget_clamped`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -999,20 +999,34 @@ Insert before the closing `end` of `class Stacks::GhostSyncTest`, alongside the 
   test "the g3d:ghost namespace never produces a target even when g3d is mapped" do
     enable_sources("g3d:ghost", "g3d:ghost:index", "g3d:substack:g3d_substack")
     sys!(ghost_newsletter_prefix_map: { "g3d" => "nl-g3d" })
-    contact = Contact.create!(email: "loop@example.com", sources: ["g3d:ghost", "g3d:ghost:index"])
+    contact = Contact.create!(email: "loop@example.com",
+      sources: ["g3d:ghost", "g3d:ghost:index", "g3d:substack:g3d_substack"])
     ghost = mock("ghost")
     ghost.stubs(:all_newsletters).returns(active_nl("nl-g3d"))
     sync = sync_with(ghost)
     sync.send(:load_newsletter_config!)
-    assert_equal [], sync.target_newsletter_ids(contact, enabled_sources)
+    # Both directions. Without the third source an over-broad exclusion such as
+    # start_with?("g3d") would pass this test while silently dropping every
+    # g3d:substack:* contact (3,197 of them) out of the g3d newsletter.
+    assert_equal ["nl-g3d"], sync.target_newsletter_ids(contact, enabled_sources),
+      "g3d:ghost* is excluded; other g3d:* sources still map to the g3d newsletter"
+  end
+
+  test "excluded_source? draws the boundary at the colon, not the prefix string" do
+    { "g3d:ghost" => true, "g3d:ghost:index" => true, "G3D:Ghost" => true,
+      "g3d:ghostwriter" => false, "g3d:substack:g3d_substack" => false,
+      "g3d" => false }.each do |source, expected|
+      assert_equal expected, Stacks::GhostSync.excluded_source?(source), source
+    end
   end
 
   test "targets come only from enabled, mapped, non-blank prefixes" do
-    enable_sources("index:shopify_customer", "xxix:mailchimp:xxix_mailchimp")
+    enable_sources("index:shopify_customer", "index:luma:chinatown", "xxix:mailchimp:xxix_mailchimp")
     sys!(ghost_newsletter_prefix_map: {
       "index" => "nl-index", "xxix" => "", "usb_club" => "nl-usb" })
     contact = Contact.create!(email: "t@example.com", sources: [
       "index:shopify_customer",              # enabled + mapped
+      "index:luma:chinatown",                # same prefix again: must not duplicate
       "xxix:mailchimp:xxix_mailchimp",       # enabled but mapped to blank
       "usb_club:shopify_customer",           # mapped but NOT enabled
       "etl:meet",                            # neither
@@ -1022,6 +1036,20 @@ Insert before the closing `end` of `class Stacks::GhostSyncTest`, alongside the 
     sync = sync_with(ghost)
     sync.send(:load_newsletter_config!)
     assert_equal ["nl-index"], sync.target_newsletter_ids(contact, enabled_sources)
+  end
+
+  test "sync_all! loads the newsletter config" do
+    # Pins the call site itself: remove it and @prefix_map stays empty.
+    enable_sources("index:shopify_customer")
+    sys!(ghost_newsletter_prefix_map: { "index" => "nl-index" })
+    Contact.create!(email: "cfg@example.com", sources: ["index:shopify_customer"])
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-index"))
+    ghost.expects(:all_members).returns([])
+    ghost.stubs(:create_member).returns(member(id: "mcfg", email: "cfg@example.com"))
+    sync = sync_with(ghost)
+    sync.sync_all!
+    assert_equal({ "index" => "nl-index" }, sync.instance_variable_get(:@prefix_map))
   end
 
   test "an empty prefix map issues no all_newsletters call" do
@@ -1081,7 +1109,10 @@ Add near `SOURCE_PREFIX` in `lib/stacks/ghost_sync.rb`:
   # written by the pull leg. Deriving subscriptions from them would subscribe
   # everyone who subscribed to anything to the g3d newsletter: a consent feedback
   # loop. They are excluded from prefix derivation, always.
-  EXCLUDED_SOURCE_PREFIX = "g3d:ghost".freeze
+  # Must equal SOURCE_PREFIX: the exclusion exists precisely because the pull leg writes
+  # SOURCE_PREFIX-namespaced sources. Aliased rather than repeating the literal so the two
+  # cannot drift apart and silently disable the feedback-loop guard.
+  EXCLUDED_SOURCE_PREFIX = SOURCE_PREFIX
 
   def self.source_prefix(source)
     source.to_s.split(":", 2).first.to_s.downcase
@@ -1121,8 +1152,22 @@ Add the private per-sweep config loader:
       return @prefix_map
     end
 
-    active = all_newsletters.select { |n| n["status"].nil? || n["status"] == "active" }
-    active_ids = active.map { |n| n["id"] }.to_set
+    # Degrade rather than abort. Before this, /newsletters/ was only touched from inside
+    # upsert_contact_from_member, which runs under capture_errors, so an outage became
+    # per-contact error lines and the deletion and label legs still completed. As the
+    # first statement in sync_all! an exception would kill all of them. Fail closed on
+    # GRANTS only: an empty prefix map means no grants, which is the safe posture, while
+    # labels and deletion reconciliation carry on.
+    fetched = begin
+      all_newsletters
+    rescue => e
+      @errors << "newsletter config: #{e.class}: #{e.message}"
+      @summary[:grant_config_unavailable] += 1
+      @prefix_map = {}
+      return @prefix_map
+    end
+
+    active_ids = fetched.select { |n| n["status"] == "active" }.map { |n| n["id"] }.to_set
     @prefix_map = requested.select { |_, id| active_ids.include?(id) }
     @summary[:grant_mapping_invalid] += (requested.length - @prefix_map.length)
     @prefix_map
@@ -1133,6 +1178,9 @@ Share one fetch between this and the pull leg's slug map, so a sweep never hits 
 Replace the existing `newsletter_slug_map` (`ghost_sync.rb:159-163`) with:
 
 ```ruby
+  # One /newsletters/ fetch per sweep, shared by the push leg's prefix-map validation
+  # (load_newsletter_config!) and the pull leg's slug resolution. Keep the RAW list here:
+  # the slug map needs archived newsletters too, the prefix map does not.
   def all_newsletters
     @all_newsletters ||= @ghost.all_newsletters
   end
@@ -1880,6 +1928,7 @@ In `initialize`, add the nested counters (a bare `Hash.new(0)` cannot lazily nes
     @summary[:granted_by_newsletter] = Hash.new(0)
     @summary[:grants_planned_by_newsletter] = Hash.new(0)
     @writes_remaining = 0   # fail closed until load_newsletter_config! sets the budget
+    @prefix_map = {}        # so target_newsletter_ids cannot NoMethodError on nil
 ```
 
 In `link_contact!`, change both `contact.ghost_data` reads so ledger entries written during this sweep survive. Replace `new_data = wrote ? contact.ghost_data.merge(...) : contact.ghost_data` with a merge onto the same in-memory hash the ledger was written to (it already is `contact.ghost_data`), and make the no-op early return also persist a dirty ledger:
