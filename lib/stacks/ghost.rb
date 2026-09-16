@@ -163,6 +163,13 @@ class Stacks::Ghost
       unless actual == member_id
         raise UntrustworthyHistory, "event for member #{actual.inspect} returned when querying #{member_id}"
       end
+      # An event with no newsletter_id is worse than useless: the consumer asks
+      # `events.any? { |e| e.dig("data","newsletter_id") == n }`, so a dropped or renamed
+      # field turns a real unsubscribe into "never subscribed" and grants. That is the
+      # exact failure this method exists to prevent, so refuse the whole history.
+      unless event["data"]["newsletter_id"].is_a?(String) && !event["data"]["newsletter_id"].empty?
+        raise UntrustworthyHistory, "event #{event["data"]["id"].inspect} has no newsletter_id for member #{member_id}"
+      end
     end
 
     unless events.length == total
