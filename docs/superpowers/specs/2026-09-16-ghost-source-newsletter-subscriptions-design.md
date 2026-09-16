@@ -423,10 +423,12 @@ When the flag is off, run steps 1-6 fully (ledger and history writes are safe) a
   legitimate grant with no repair path.
 - **Insert the created or adopted member into `members_by_email`** (keyed by
   `member["email"].to_s.downcase`) as well as `members_by_id`. Today only the id index is updated
-  (`ghost_sync.rb:59-60`), and `contacts` has no unique index on email, so two Contact rows for one
-  email both create in the same sweep: the second 422s into the adopt path, burning an extra POST, a
-  `find_member_by_email`, a layer-3 read, and a second budget unit for the same human. "Creates are
-  idempotent by email" is only true across sweeps, not within one.
+  (`ghost_sync.rb:59-60`). `contacts` does have a unique index on `email`, but it is **case
+  sensitive**, so `Foo@x.com` and `foo@x.com` coexist -- which is exactly why `dedupe!` matches on
+  `LOWER(email)` and why `link_contact!` has a case-fold branch. Both rows key to the same
+  `members_by_email` entry, so in one sweep the first creates and the second 422s into the adopt path,
+  burning an extra POST, a `find_member_by_email`, a layer-3 read, and a second budget unit for the
+  same human. "Creates are idempotent by email" is true across sweeps, not within one.
 - The 422 adopt path routes through the existing-member decision above, including layer 3 and the flag.
 
 **Never, in any path:** remove a subscription; write `newsletters` without a fresh GET immediately
