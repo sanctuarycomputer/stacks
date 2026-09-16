@@ -509,21 +509,28 @@ Insert before the final `end` of `test/models/studio_test.rb`:
     survey = ProjectSatisfactionSurvey.create!(
       project_capsule: capsule, title: "Survey", description: "Description"
     )
+    # A response is REQUIRED, not incidental: studio.rb:495 calls
+    # `survey.results[:overall]`, and #results returns nil when there are no
+    # responses (project_satisfaction_survey.rb:113) - so a response-less survey
+    # raises NoMethodError precisely when the project IS included, which would
+    # invert what this test proves.
+    ProjectSatisfactionSurveyResponse.create!(project_satisfaction_survey: survey)
     survey.update!(closed_at: DateTime.new(2025, 1, 20))
 
     assert capsule.reload.substantively_complete?,
       "fixture must be substantively complete for this test to mean anything"
+    assert_not capsule.complete?,
+      "fixture must be GATED - otherwise this test passes even if the filter regresses"
 
     data = studio.key_datapoints_for_period(
       period, nil, "cash", [studio], [], {}, {}, {}, {},
       Stacks::ClientRevenue.new(studio, [studio], [])
     )
 
-    assert data.key?(:project_satisfaction_score)
-    # No responses => results[:overall] is nil, so the value is nil rather than a
-    # number; what matters is that the project was not FILTERED OUT. If the filter
-    # regressed to complete?, completed_projects_in_period would be empty.
-    assert_nothing_raised { data[:project_satisfaction_score] }
+    # If the filter regressed to complete?, completed_projects_in_period would be
+    # empty and the score would stay nil.
+    assert_not_nil data[:project_satisfaction_score][:value],
+      "a gated capsule with a closed, answered survey must still count"
   end
 ```
 
