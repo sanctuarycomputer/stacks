@@ -194,6 +194,24 @@ class ContactDedupeGhostTest < ActiveSupport::TestCase
     assert_equal '2026-02-01T00:00:00Z', result.ghost_data.dig('snapshot', 'deleted_at')
   end
 
+  test "a merged ledger takes its member_id from the ghost_id owner, not input order" do
+    # A ledger whose member_id does not match the contact's linked member is ignored by
+    # the grant decision, so mis-attributing it silently disables layer 2 even though
+    # every entry survived.
+    first = Contact.create!(email: "attrib@example.com", ghost_data: {
+      "newsletter_ledger" => { "member_id" => "m9", "entries" => {
+        "nl-1" => { "state" => "history", "at" => "2026-01-01T00:00:00Z" } } } })
+    Contact.create!(email: "ATTRIB@example.com", ghost_id: "m5", ghost_data: {
+      "newsletter_ledger" => { "member_id" => "m5", "entries" => {
+        "nl-2" => { "state" => "granted", "at" => "2026-02-01T00:00:00Z" } } } })
+
+    survivor = first.dedupe!
+    assert_equal "m5", survivor.ghost_id
+    assert_equal "m5", survivor.ghost_data.dig("newsletter_ledger", "member_id"),
+      "the ledger must describe the member the survivor is actually linked to"
+    assert_equal %w[nl-1 nl-2], survivor.ghost_data.dig("newsletter_ledger", "entries").keys.sort
+  end
+
   test "dedupe! unions ledgers regardless of which dupe owns ghost_id" do
     keeper = Contact.create!(email: "dupe@example.com", ghost_data: {
       "newsletter_ledger" => { "member_id" => "m1", "entries" => {
@@ -291,7 +309,7 @@ class ContactSyncToApolloGhostTest < ActiveSupport::TestCase
     a = Contact.create!(email: "fx@example.com", ghost_data: {
       "newsletter_ledger" => { "member_id" => "m3", "entries" => {
         "nl-1" => { "state" => "history", "at" => "2026-01-01T00:00:00Z" } } } })
-    b = Contact.create!(email: "fx2@example.com", apollo_id: "apollo-1", ghost_data: {
+    Contact.create!(email: "fx2@example.com", apollo_id: "apollo-1", ghost_data: {
       "newsletter_ledger" => { "member_id" => "m3", "entries" => {
         "nl-2" => { "state" => "granted", "at" => "2026-02-01T00:00:00Z" } } } })
 
@@ -363,5 +381,11 @@ class ContactNewsletterLedgerTest < ActiveSupport::TestCase
     assert_equal "history", merged["entries"]["nl-1"]["state"], "earliest entry wins"
     assert_equal "2026-01-01T00:00:00Z", merged["entries"]["nl-1"]["at"]
     assert_equal "observed", merged["entries"]["nl-2"]["state"]
+
+    # Both orders, otherwise a naive "last one processed wins" implementation produces
+    # exactly these values for [late, early] and the test proves nothing.
+    reversed = Contact.merge_newsletter_ledgers([early, late])
+    assert_equal "history", reversed["entries"]["nl-1"]["state"], "earliest wins in either input order"
+    assert_equal "2026-01-01T00:00:00Z", reversed["entries"]["nl-1"]["at"]
   end
 end
