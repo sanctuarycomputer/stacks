@@ -181,4 +181,59 @@ class StudioTest < ActiveSupport::TestCase
     assert data[:forecasted_sales_revenue][:extras].key?(:open_lead_count)
     assert data[:forecasted_sales_revenue][:extras].key?(:budgeted_lead_count)
   end
+
+  # A capsule awaiting opt-out sign-off must still count toward the period's
+  # satisfaction score: the survey is closed and answered, and whether an admin
+  # has signed a bypass says nothing about how the team rated the project.
+  test "project satisfaction score still counts a project whose capsule awaits sign-off" do
+    studio = Studio.create!(name: "garden3d", mini_name: "g3d", accounting_prefix: "")
+    studio.stubs(:profit_and_loss_for_period).returns(
+      { income: 0.0, cost_of_goods_sold: 0.0, expenses: 0.0, net_operating_income: 0.0 }
+    )
+    period = Stacks::Period.new("Jan 2025", Date.new(2025, 1, 1), Date.new(2025, 1, 31))
+
+    pt = ProjectTracker.new(name: "Client Project")
+    pt.save!(validate: false)
+    pt.update_column(:work_completed_at, Date.new(2025, 1, 15))
+
+    capsule = ProjectCapsule.create!(
+      project_tracker: pt,
+      client_feedback_survey_status: :opt_out_of_sending_client_feedback_survey,
+      internal_marketing_status: :case_study_scheduled_with_communications_team,
+      capsule_status: :project_capsule_shared_with_garden3d_on_twist,
+      project_satisfaction_survey_status: :internal_project_team_satisfaction_survey_created,
+      client_satisfaction_status: :satisfied,
+    )
+    survey = ProjectSatisfactionSurvey.create!(
+      project_capsule: capsule, title: "Survey", description: "Description"
+    )
+    # A response is REQUIRED, not incidental: studio.rb:495 calls
+    # `survey.results[:overall]`, and #results returns nil when there are no
+    # responses (project_satisfaction_survey.rb:113) - so a response-less survey
+    # raises NoMethodError precisely when the project IS included, which would
+    # invert what this test proves.
+    ProjectSatisfactionSurveyResponse.create!(project_satisfaction_survey: survey)
+    survey.update!(closed_at: DateTime.new(2025, 1, 20))
+
+    assert capsule.reload.substantively_complete?,
+      "fixture must be substantively complete for this test to mean anything"
+    # NOTE: this fixture is not yet GATED - complete? is still an alias for
+    # substantively_complete? until Task 4 lands. Task 4 adds the assertion that
+    # it is gated, at which point this test becomes a real regression net: the
+    # opt_out_of_sending_client_feedback_survey status above will then require
+    # sign-off, so the capsule will be incomplete but must STILL be counted here.
+
+    data = studio.key_datapoints_for_period(
+      period, nil, "cash", [studio], [], {}, {}, {}, {},
+      Stacks::ClientRevenue.new(studio, [studio], [])
+    )
+
+    # The datapoint key is :project_satisfaction (studio.rb:563) -
+    # project_satisfaction_score is only the local variable's name. Its
+    # extras[:project_tracker_ids] lists exactly which trackers survived the
+    # filter, which is what this test is really about: if the filter regressed to
+    # complete?, this tracker would be missing.
+    assert_includes data[:project_satisfaction][:extras][:project_tracker_ids], pt.id,
+      "a gated capsule with a closed, answered survey must still count"
+  end
 end

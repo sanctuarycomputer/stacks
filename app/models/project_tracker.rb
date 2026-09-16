@@ -321,7 +321,11 @@ class ProjectTracker < ApplicationRecord
   end
 
   def considered_successful?
-    if work_status == :complete
+    # Deliberately NOT `work_status == :complete`: work_status folds in the admin
+    # sign-off gate, and a gated capsule would fall to the else branch and lose the
+    # client_satisfied? requirement — making a bypass score better than compliance.
+    # This is the substantive close-out bar only. See the spec, §6.
+    if work_completed_at.present? && !!project_capsule&.substantively_complete?
       client_satisfied? && target_profit_margin_satisfied? && target_free_hours_ratio_satisfied?
     else
       target_profit_margin_satisfied? && target_free_hours_ratio_satisfied?
