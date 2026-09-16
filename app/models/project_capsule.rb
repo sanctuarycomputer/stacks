@@ -5,7 +5,10 @@ class ProjectCapsule < ApplicationRecord
 
   has_one :project_satisfaction_survey
 
-  scope :complete, -> {
+  # The four close-out enums being filled in at all. NOT the same as #complete?,
+  # which additionally requires client satisfaction, a closed satisfaction survey,
+  # survey-URL proof, and admin sign-off on any opt-outs.
+  scope :all_statuses_set, -> {
     self
       .where.not(client_feedback_survey_status: nil)
       .where.not(internal_marketing_status: nil)
@@ -39,13 +42,24 @@ class ProjectCapsule < ApplicationRecord
     opt_out_of_internal_project_team_satisfaction_survey: 1
   }
 
-  def complete?
+  def all_statuses_set?
     client_feedback_survey_status.present? &&
     internal_marketing_status.present? &&
     capsule_status.present? &&
-    project_satisfaction_survey_status.present? &&
-    project_satisfaction_survey_status_valid? &&
-    client_satisfaction_status.present?
+    project_satisfaction_survey_status.present?
+  end
+
+  # The close-out bar as it stood before bypass protections existed. Metrics that
+  # feed compensation and OKRs read THIS, not #complete?, so that gating a capsule
+  # can never move a number. See the spec, §6.
+  def substantively_complete?
+    all_statuses_set? &&
+    client_satisfaction_status.present? &&
+    project_satisfaction_survey_status_valid?
+  end
+
+  def complete?
+    substantively_complete?
   end
 
   def project_satisfaction_survey_status_valid?

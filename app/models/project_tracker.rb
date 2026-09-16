@@ -64,7 +64,7 @@ class ProjectTracker < ApplicationRecord
   scope :complete, -> {
     where.not(work_completed_at: nil)
       .includes(:project_capsule).where(
-        project_capsules: { id: ProjectCapsule.complete }
+        project_capsules: { id: ProjectCapsule.all_statuses_set }
       )
   }
 
@@ -280,12 +280,7 @@ class ProjectTracker < ApplicationRecord
   end
 
   private def capsule_complete_by_statuses?
-    pc = project_capsule
-    pc.present? &&
-      pc.client_feedback_survey_status.present? &&
-      pc.internal_marketing_status.present? &&
-      pc.capsule_status.present? &&
-      pc.project_satisfaction_survey_status.present?
+    !!project_capsule&.all_statuses_set?
   end
 
   def forecast_projects
