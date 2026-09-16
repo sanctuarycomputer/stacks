@@ -787,7 +787,26 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
     sys!(ghost_newsletter_prefix_map: { "xxix" => "nl-xxix", "index" => "nl-index" })
     contact = Contact.create!(email: "multi@example.com",
       sources: ["xxix:", "index:shopify_customer"], ghost_id: "m57")
-    m = member(id: "m57", email: "multi@example.com", extra: {
+    # BOTH targets must reach the fetch line, so the member is subscribed to NEITHER.
+    # With one target currently subscribed it short-circuits first, and then `events =`
+    # and `events ||=` are indistinguishable: only one target ever fetches.
+    m = member(id: "m57", email: "multi@example.com")
+
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix", "nl-index"))
+    ghost.expects(:newsletter_events_for).once.returns([])
+    sync = sync_with(ghost); sync.send(:load_newsletter_config!)
+
+    assert_equal %w[nl-index nl-xxix],
+      sync.send(:grant_candidates_for, contact, m, enabled_sources).sort
+  end
+
+  test "a target the member is already subscribed to costs no API call" do
+    enable_sources("xxix:", "index:shopify_customer")
+    sys!(ghost_newsletter_prefix_map: { "xxix" => "nl-xxix", "index" => "nl-index" })
+    contact = Contact.create!(email: "mixed@example.com",
+      sources: ["xxix:", "index:shopify_customer"], ghost_id: "m58")
+    m = member(id: "m58", email: "mixed@example.com", extra: {
       "newsletters" => [{ "id" => "nl-index", "name" => "Index", "status" => "active" }] })
 
     ghost = mock("ghost")
@@ -796,7 +815,7 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
     sync = sync_with(ghost); sync.send(:load_newsletter_config!)
 
     assert_equal ["nl-xxix"], sync.send(:grant_candidates_for, contact, m, enabled_sources)
-    assert_equal "observed", contact.ledger_state("nl-index"), "the subscribed target costs no API call"
+    assert_equal "observed", contact.ledger_state("nl-index")
   end
 
   test "a RequestError from the history read also fails closed" do
