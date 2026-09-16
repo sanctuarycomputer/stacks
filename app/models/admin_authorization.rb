@@ -69,6 +69,10 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
       return user.is_admin? if [:sign_off, :revoke_sign_off].include?(action)
     end
 
+    if subject.is_a?(ProjectSatisfactionSurvey) || subject == ProjectSatisfactionSurvey
+      return user.is_admin? if [:close_survey, :reopen_survey].include?(action)
+    end
+
     return true if (user.is_admin? || user.can_act_as_lead?)
 
     # Project-scoped "lead" grants (leads-in-training limited to specific

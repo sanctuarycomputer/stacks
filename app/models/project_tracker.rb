@@ -180,9 +180,20 @@ class ProjectTracker < ApplicationRecord
     link.url = url
   end
 
+  # Capsules the LEAD still has work to do on. Deliberately excludes capsules
+  # that are finished but awaiting an admin's opt-out sign-off — nagging a lead
+  # to "complete their capsule" when the ball is in an admin's court blames the
+  # wrong person. Those go to .awaiting_capsule_sign_off instead.
   def self.capsule_pending
     ProjectTracker.where.not(work_completed_at: nil).select do |pt|
-      pt.work_status == :capsule_pending
+      pt.work_status == :capsule_pending &&
+        !pt.project_capsule&.complete_but_for_admin_sign_off?
+    end
+  end
+
+  def self.awaiting_capsule_sign_off
+    ProjectTracker.where.not(work_completed_at: nil).select do |pt|
+      !!pt.project_capsule&.complete_but_for_admin_sign_off?
     end
   end
 

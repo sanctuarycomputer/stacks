@@ -8,9 +8,11 @@ class AddAdminSignOffToProjectCapsules < ActiveRecord::Migration[6.1]
     add_column :project_capsules, :sign_off_exempt, :boolean,
       null: false, default: false
 
-    # Grandfather capsules whose close-out decisions are already made — the exact
-    # set that would otherwise flip from Complete back to Pending. Capsules with
-    # statuses still blank are already Pending, so gating them reopens nothing.
+    # Grandfather capsules whose close-out decisions are already made — mirrors
+    # #substantively_complete? exactly, minus the new client_feedback_survey_url
+    # proof (exempt rows must keep skipping that check, or previously-Complete
+    # capsules with no URL would reopen). Capsules with statuses still blank are
+    # already Pending, so gating them reopens nothing.
     # Raw SQL, not the model, so this can't break if ProjectCapsule's callbacks
     # change later.
     execute <<~SQL
@@ -18,7 +20,16 @@ class AddAdminSignOffToProjectCapsules < ActiveRecord::Migration[6.1]
       WHERE client_feedback_survey_status       IS NOT NULL
         AND internal_marketing_status           IS NOT NULL
         AND capsule_status                      IS NOT NULL
-        AND project_satisfaction_survey_status  IS NOT NULL;
+        AND project_satisfaction_survey_status  IS NOT NULL
+        AND client_satisfaction_status          IS NOT NULL
+        AND (
+          project_satisfaction_survey_status = 1
+          OR EXISTS (
+            SELECT 1 FROM project_satisfaction_surveys s
+            WHERE s.project_capsule_id = project_capsules.id
+              AND s.closed_at IS NOT NULL
+          )
+        );
     SQL
   end
 

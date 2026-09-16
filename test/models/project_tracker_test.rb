@@ -246,4 +246,26 @@ class ProjectTrackerTest < ActiveSupport::TestCase
     # scores only on margin + free hours.
     assert pt.reload.considered_successful?
   end
+
+  # --- capsule_pending / awaiting_capsule_sign_off split ------------------
+  # A gated capsule (finished, but blocked on an admin's opt-out sign-off) must
+  # not land the lead in the Tuesday "your capsule isn't done" nag — the ball is
+  # in an admin's court. It goes to .awaiting_capsule_sign_off instead.
+  test "a gated tracker appears in awaiting_capsule_sign_off, not capsule_pending; a half-filled one does the opposite" do
+    gated = ProjectTracker.new(name: "Gated Capsule Tracker")
+    gated.save!(validate: false)
+    gated.update_column(:work_completed_at, 2.months.ago)
+    make_capsule_for!(gated, client_satisfaction_status: :satisfied)
+
+    half_filled = ProjectTracker.new(name: "Half-Filled Capsule Tracker")
+    half_filled.save!(validate: false)
+    half_filled.update_column(:work_completed_at, 2.months.ago)
+    ProjectCapsule.create!(project_tracker: half_filled)
+
+    assert_includes ProjectTracker.awaiting_capsule_sign_off, gated.reload
+    assert_not_includes ProjectTracker.capsule_pending, gated.reload
+
+    assert_includes ProjectTracker.capsule_pending, half_filled.reload
+    assert_not_includes ProjectTracker.awaiting_capsule_sign_off, half_filled.reload
+  end
 end

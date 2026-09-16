@@ -169,4 +169,28 @@ class AdminAuthorizationTest < ActiveSupport::TestCase
     assert auth.authorized?(:sign_off, capsule)
     assert auth.authorized?(:revoke_sign_off, capsule)
   end
+
+  # Closing/reopening a survey is the cheapest way around the new opt-out sign-off
+  # gate (an empty survey a lead creates and closes themselves reads as Complete
+  # for free), so this must be as tightly policed as sign_off/revoke_sign_off.
+  test "a lead cannot close or reopen a project satisfaction survey, but an admin can" do
+    lead = make_user("survey-lead@sanctuary.computer")
+    pt = make_project_tracker("Surveyed")
+    ProjectLeadPeriod.create!(admin_user: lead, project_tracker: pt, started_at: Date.today.beginning_of_month)
+    capsule = ProjectCapsule.create!(project_tracker: pt)
+    survey = ProjectSatisfactionSurvey.create!(
+      project_capsule: capsule,
+      title: "Project Satisfaction Survey",
+      description: "Feedback please",
+    )
+
+    lead_auth = auth_for(lead)
+    refute lead_auth.authorized?(:close_survey, survey)
+    refute lead_auth.authorized?(:reopen_survey, survey)
+
+    admin = AdminUser.create!(email: "survey-admin@sanctuary.computer", password: "password12345", roles: ["admin"])
+    admin_auth = auth_for(admin)
+    assert admin_auth.authorized?(:close_survey, survey)
+    assert admin_auth.authorized?(:reopen_survey, survey)
+  end
 end
