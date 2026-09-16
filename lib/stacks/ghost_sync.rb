@@ -10,7 +10,10 @@ class Stacks::GhostSync
   # written by the pull leg. Deriving subscriptions from them would subscribe
   # everyone who subscribed to anything to the g3d newsletter: a consent feedback
   # loop. They are excluded from prefix derivation, always.
-  EXCLUDED_SOURCE_PREFIX = "g3d:ghost".freeze
+  # Must equal SOURCE_PREFIX: the exclusion exists precisely because the pull leg writes
+  # SOURCE_PREFIX-namespaced sources. Aliased rather than repeating the literal so the two
+  # cannot drift apart and silently disable the feedback-loop guard.
+  EXCLUDED_SOURCE_PREFIX = SOURCE_PREFIX
   # Fixed app-wide advisory lock key for the sweep (rand of a keyboard mash;
   # any stable int works — must only avoid colliding with other app locks).
   ADVISORY_LOCK_KEY = 728534291
@@ -30,6 +33,7 @@ class Stacks::GhostSync
     @ghost = ghost
     @summary = Hash.new(0)
     @errors = []
+    @prefix_map = {}
   end
 
   # Wraps the sweep in a pg advisory lock so an overlapping Scheduler run or
@@ -178,10 +182,9 @@ class Stacks::GhostSync
 
   private
 
-  # Member browse payloads embed newsletters WITHOUT their slug (only
-  # id/name/status — verified against Ghost(Pro) v6 in production), so resolve
-  # slugs via the newsletters endpoint: fetched lazily only when a payload
-  # actually lacks a slug, memoized per sync instance.
+  # One /newsletters/ fetch per sweep, shared by the push leg's prefix-map validation
+  # (load_newsletter_config!) and the pull leg's slug resolution. Keep the RAW list here:
+  # the slug map needs archived newsletters too, the prefix map does not.
   def all_newsletters
     @all_newsletters ||= @ghost.all_newsletters
   end
@@ -204,8 +207,22 @@ class Stacks::GhostSync
       return @prefix_map
     end
 
-    active = all_newsletters.select { |n| n["status"].nil? || n["status"] == "active" }
-    active_ids = active.map { |n| n["id"] }.to_set
+    # Degrade rather than abort. Before this, /newsletters/ was only touched from inside
+    # upsert_contact_from_member, which runs under capture_errors, so an outage became
+    # per-contact error lines and the deletion and label legs still completed. As the
+    # first statement in sync_all! an exception would kill all of them. Fail closed on
+    # GRANTS only: an empty prefix map means no grants, which is the safe posture, while
+    # labels and deletion reconciliation carry on.
+    fetched = begin
+      all_newsletters
+    rescue => e
+      @errors << "newsletter config: #{e.class}: #{e.message}"
+      @summary[:grant_config_unavailable] += 1
+      @prefix_map = {}
+      return @prefix_map
+    end
+
+    active_ids = fetched.select { |n| n["status"] == "active" }.map { |n| n["id"] }.to_set
     @prefix_map = requested.select { |_, id| active_ids.include?(id) }
     @summary[:grant_mapping_invalid] += (requested.length - @prefix_map.length)
     @prefix_map

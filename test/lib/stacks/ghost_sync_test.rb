@@ -508,20 +508,34 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
   test "the g3d:ghost namespace never produces a target even when g3d is mapped" do
     enable_sources("g3d:ghost", "g3d:ghost:index", "g3d:substack:g3d_substack")
     sys!(ghost_newsletter_prefix_map: { "g3d" => "nl-g3d" })
-    contact = Contact.create!(email: "loop@example.com", sources: ["g3d:ghost", "g3d:ghost:index"])
+    contact = Contact.create!(email: "loop@example.com",
+      sources: ["g3d:ghost", "g3d:ghost:index", "g3d:substack:g3d_substack"])
     ghost = mock("ghost")
     ghost.stubs(:all_newsletters).returns(active_nl("nl-g3d"))
     sync = sync_with(ghost)
     sync.send(:load_newsletter_config!)
-    assert_equal [], sync.target_newsletter_ids(contact, enabled_sources)
+    # Both directions. Without the third source an over-broad exclusion such as
+    # start_with?("g3d") would pass this test while silently dropping every
+    # g3d:substack:* contact (3,197 of them) out of the g3d newsletter.
+    assert_equal ["nl-g3d"], sync.target_newsletter_ids(contact, enabled_sources),
+      "g3d:ghost* is excluded; other g3d:* sources still map to the g3d newsletter"
+  end
+
+  test "excluded_source? draws the boundary at the colon, not the prefix string" do
+    { "g3d:ghost" => true, "g3d:ghost:index" => true, "G3D:Ghost" => true,
+      "g3d:ghostwriter" => false, "g3d:substack:g3d_substack" => false,
+      "g3d" => false }.each do |source, expected|
+      assert_equal expected, Stacks::GhostSync.excluded_source?(source), source
+    end
   end
 
   test "targets come only from enabled, mapped, non-blank prefixes" do
-    enable_sources("index:shopify_customer", "xxix:mailchimp:xxix_mailchimp")
+    enable_sources("index:shopify_customer", "index:luma:chinatown", "xxix:mailchimp:xxix_mailchimp")
     sys!(ghost_newsletter_prefix_map: {
       "index" => "nl-index", "xxix" => "", "usb_club" => "nl-usb" })
     contact = Contact.create!(email: "t@example.com", sources: [
       "index:shopify_customer",              # enabled + mapped
+      "index:luma:chinatown",                # same prefix again: must not duplicate
       "xxix:mailchimp:xxix_mailchimp",       # enabled but mapped to blank
       "usb_club:shopify_customer",           # mapped but NOT enabled
       "etl:meet",                            # neither
@@ -531,6 +545,40 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
     sync = sync_with(ghost)
     sync.send(:load_newsletter_config!)
     assert_equal ["nl-index"], sync.target_newsletter_ids(contact, enabled_sources)
+  end
+
+  test "sync_all! loads the newsletter config" do
+    # Pins the call site itself: remove it and @prefix_map stays empty.
+    enable_sources("index:shopify_customer")
+    sys!(ghost_newsletter_prefix_map: { "index" => "nl-index" })
+    Contact.create!(email: "cfg@example.com", sources: ["index:shopify_customer"])
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-index"))
+    ghost.expects(:all_members).returns([])
+    ghost.stubs(:create_member).returns(member(id: "mcfg", email: "cfg@example.com"))
+    sync = sync_with(ghost)
+    sync.sync_all!
+    assert_equal({ "index" => "nl-index" }, sync.instance_variable_get(:@prefix_map))
+  end
+
+  test "a /newsletters/ outage degrades to no grants but lets the rest of the sweep finish" do
+    # Before this fix, load_newsletter_config! was the first unguarded statement in
+    # sync_all!, so an all_newsletters exception aborted the deletion and label legs
+    # too. It must now fail closed on grants alone (empty @prefix_map) while the
+    # rest of the sweep -- here, creating the contact's Ghost member -- still runs.
+    enable_sources("index:shopify_customer")
+    sys!(ghost_newsletter_prefix_map: { "index" => "nl-index" })
+    Contact.create!(email: "outage@example.com", sources: ["index:shopify_customer"])
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).raises(StandardError, "boom")
+    ghost.expects(:all_members).returns([])
+    ghost.stubs(:create_member).returns(member(id: "mout", email: "outage@example.com"))
+    sync = sync_with(ghost)
+    sync.sync_all!
+    assert_equal({}, sync.instance_variable_get(:@prefix_map))
+    assert_equal 1, sync.summary[:grant_config_unavailable]
+    assert sync.errors.any? { |e| e.include?("newsletter config") }, sync.errors.inspect
+    assert_equal 1, sync.summary[:created], "label/create leg must still complete despite the newsletters outage"
   end
 
   test "an empty prefix map issues no all_newsletters call" do
@@ -573,5 +621,21 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
     sync.send(:load_newsletter_config!)
     assert_equal({ "index" => "nl-index" }, sync.instance_variable_get(:@prefix_map))
     assert_equal 2, sync.summary[:grant_mapping_invalid]
+  end
+
+  test "a newsletter with no status key is treated as inactive, not active" do
+    # Strict == "active" is the safer failure: if Ghost ever omitted status, every
+    # newsletter would be dropped, meaning no grants -- fail-closed and visible via
+    # grant_mapping_invalid -- rather than silently granting against an unverified state.
+    enable_sources("index:shopify_customer")
+    sys!(ghost_newsletter_prefix_map: { "index" => "nl-index" })
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns([
+      { "id" => "nl-index", "name" => "Index Space", "slug" => "index" },
+    ])
+    sync = sync_with(ghost)
+    sync.send(:load_newsletter_config!)
+    assert_equal({}, sync.instance_variable_get(:@prefix_map))
+    assert_equal 1, sync.summary[:grant_mapping_invalid]
   end
 end
