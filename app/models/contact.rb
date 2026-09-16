@@ -53,6 +53,70 @@ class Contact < ApplicationRecord
     end
   end
 
+  # Unions write-once newsletter ledgers across merging duplicates. A lost entry
+  # could re-subscribe someone who deliberately unsubscribed, so the earliest
+  # entry for a newsletter always wins. Builds a NEW hash rather than mutating a
+  # loser's nested hash, matching the deleted_at handling in dedupe!.
+  def self.merge_newsletter_ledgers(ledgers)
+    present = Array(ledgers).compact.reject(&:blank?)
+    return {} if present.empty?
+
+    entries = {}
+    present.each do |ledger|
+      (ledger["entries"] || {}).each do |newsletter_id, entry|
+        existing = entries[newsletter_id]
+        next if existing && existing["at"].to_s <= entry["at"].to_s
+        entries[newsletter_id] = entry.dup
+      end
+    end
+    { "member_id" => present.map { |l| l["member_id"] }.compact.first, "entries" => entries }.compact
+  end
+
+  def newsletter_ledger
+    ghost_data["newsletter_ledger"] || {}
+  end
+
+  def newsletter_ledger_entries
+    newsletter_ledger["entries"] || {}
+  end
+
+  def ledger_member_id
+    newsletter_ledger["member_id"]
+  end
+
+  def ledger_entry(newsletter_id)
+    newsletter_ledger_entries[newsletter_id.to_s]
+  end
+
+  def ledger_has?(newsletter_id)
+    newsletter_ledger_entries.key?(newsletter_id.to_s)
+  end
+
+  def ledger_state(newsletter_id)
+    ledger_entry(newsletter_id)&.dig("state")
+  end
+
+  # Write-once, in memory only. The caller persists via the single update! at the
+  # end of sync_contact!. Never write the ledger with update_column/update_all/raw
+  # jsonb: link_contact! rebuilds ghost_data from this same in-memory hash and
+  # would clobber an out-of-band write.
+  def record_ledger_entry!(newsletter_id, state, member_id:)
+    ledger = newsletter_ledger.deep_dup
+    ledger["member_id"] ||= member_id
+    ledger["entries"] ||= {}
+    if ledger["entries"].key?(newsletter_id.to_s)
+      # Write-once on the entry, but still persist a newly-learned member_id: a ledger
+      # carried through a merge can have entries and no member_id, and without this it
+      # could never acquire one, leaving the identity check permanently disabled.
+      self.ghost_data = ghost_data.merge("newsletter_ledger" => ledger) if ledger != newsletter_ledger
+      return self
+    end
+
+    ledger["entries"][newsletter_id.to_s] = { "state" => state.to_s, "at" => Time.current.iso8601 }
+    self.ghost_data = ghost_data.merge("newsletter_ledger" => ledger)
+    self
+  end
+
   def self.ransackable_scopes(*)
     %i(address_cont sources_cont)
   end
@@ -100,6 +164,12 @@ class Contact < ApplicationRecord
                       "deleted_at" => fresh_existing.ghost_data.dig("snapshot", "deleted_at")
                     )
                   )
+                end
+                merged_ledger = Contact.merge_newsletter_ledgers(
+                  [self.ghost_data["newsletter_ledger"], fresh_existing.ghost_data["newsletter_ledger"]]
+                )
+                if merged_ledger.present?
+                  self.ghost_data = self.ghost_data.merge("newsletter_ledger" => merged_ledger)
                 end
               end
               # Destroy before save!: self still carries the conflicting
@@ -189,6 +259,9 @@ class Contact < ApplicationRecord
         if any_deleted_at && merged_ghost_data.dig("snapshot", "deleted_at").blank?
           merged_ghost_data["snapshot"] = (merged_ghost_data["snapshot"] || {}).merge("deleted_at" => any_deleted_at)
         end
+
+        merged_ledger = Contact.merge_newsletter_ledgers(dupes.map { |d| d.ghost_data["newsletter_ledger"] })
+        merged_ghost_data["newsletter_ledger"] = merged_ledger if merged_ledger.present?
 
         losers.each do |loser|
           CONTACT_REFERENCES.each do |table, fk, scope_cols|

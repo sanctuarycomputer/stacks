@@ -193,6 +193,32 @@ class ContactDedupeGhostTest < ActiveSupport::TestCase
     # but loser's deleted_at must be preserved (opt-out must survive any merge direction)
     assert_equal '2026-02-01T00:00:00Z', result.ghost_data.dig('snapshot', 'deleted_at')
   end
+
+  test "dedupe! unions ledgers regardless of which dupe owns ghost_id" do
+    keeper = Contact.create!(email: "dupe@example.com", ghost_data: {
+      "newsletter_ledger" => { "member_id" => "m1", "entries" => {
+        "nl-1" => { "state" => "history", "at" => "2026-01-01T00:00:00Z" } } } })
+    Contact.create!(email: "DUPE@example.com", ghost_id: "m1", ghost_data: {
+      "newsletter_ledger" => { "member_id" => "m1", "entries" => {
+        "nl-2" => { "state" => "granted", "at" => "2026-02-01T00:00:00Z" } } } })
+
+    survivor = keeper.dedupe!
+    entries = survivor.ghost_data.dig("newsletter_ledger", "entries")
+    assert_equal %w[nl-1 nl-2], entries.keys.sort, "a lost ledger entry is a consent violation"
+    assert_equal "m1", survivor.ghost_id
+  end
+
+  test "dedupe! preserves deleted_at alongside a unioned ledger" do
+    keeper = Contact.create!(email: "dupe2@example.com", ghost_data: {
+      "newsletter_ledger" => { "member_id" => "m2", "entries" => {
+        "nl-1" => { "state" => "history", "at" => "2026-01-01T00:00:00Z" } } } })
+    Contact.create!(email: "DUPE2@example.com", ghost_id: "m2",
+      ghost_data: { "snapshot" => { "deleted_at" => "2026-03-01T00:00:00Z" } })
+
+    survivor = keeper.dedupe!
+    assert_equal "2026-03-01T00:00:00Z", survivor.ghost_data.dig("snapshot", "deleted_at")
+    assert survivor.ghost_data.dig("newsletter_ledger", "entries").key?("nl-1")
+  end
 end
 
 class ContactSyncToApolloTest < ActiveSupport::TestCase
@@ -258,6 +284,25 @@ class ContactSyncToApolloGhostTest < ActiveSupport::TestCase
     assert_equal 'g-existing-3', contact.ghost_id
     assert_equal '2026-03-01T00:00:00Z', contact.ghost_data.dig('snapshot', 'deleted_at')
   end
+
+  # sync_to_apollo!'s RecordNotUnique handler is the other merge path, and a ledger
+  # entry lost there is a consent violation exactly as in dedupe!.
+  test "the fresh_existing merge path unions ledgers in both directions" do
+    a = Contact.create!(email: "fx@example.com", ghost_data: {
+      "newsletter_ledger" => { "member_id" => "m3", "entries" => {
+        "nl-1" => { "state" => "history", "at" => "2026-01-01T00:00:00Z" } } } })
+    b = Contact.create!(email: "fx2@example.com", apollo_id: "apollo-1", ghost_data: {
+      "newsletter_ledger" => { "member_id" => "m3", "entries" => {
+        "nl-2" => { "state" => "granted", "at" => "2026-02-01T00:00:00Z" } } } })
+
+    apollo = mock("apollo")
+    apollo.stubs(:search_by_email).returns([{ "id" => "apollo-1", "email" => a.email }])
+    a.sync_to_apollo!(apollo)
+
+    entries = a.reload.ghost_data.dig("newsletter_ledger", "entries")
+    assert_equal %w[nl-1 nl-2], entries.keys.sort
+    assert_equal "history", entries["nl-1"]["state"]
+  end
 end
 
 class ContactRansackTest < ActiveSupport::TestCase
@@ -285,5 +330,38 @@ class ContactRecordSourceEventsTest < ActiveSupport::TestCase
     assert_includes Contact.synced_to_ghost, linked
     assert_includes Contact.not_synced_to_ghost, unlinked
     assert_not_includes Contact.synced_to_ghost, unlinked
+  end
+end
+
+class ContactNewsletterLedgerTest < ActiveSupport::TestCase
+  test "record_ledger_entry! is write-once and mutates in memory without saving" do
+    c = Contact.create!(email: "ledger@example.com")
+    c.record_ledger_entry!("nl-1", "granted", member_id: "m1")
+    first_at = c.ledger_entry("nl-1")["at"]
+    c.record_ledger_entry!("nl-1", "observed", member_id: "m1")
+
+    assert_equal "granted", c.ledger_state("nl-1"), "an existing entry is never overwritten"
+    assert_equal first_at, c.ledger_entry("nl-1")["at"]
+    assert_equal({}, c.reload.ghost_data, "record_ledger_entry! must not persist on its own")
+  end
+
+  test "ledger records the member id it describes" do
+    c = Contact.create!(email: "ledger2@example.com")
+    c.record_ledger_entry!("nl-1", "observed", member_id: "m1")
+    assert_equal "m1", c.ledger_member_id
+    assert c.ledger_has?("nl-1")
+    refute c.ledger_has?("nl-2")
+  end
+
+  test "merge_newsletter_ledgers unions entries and keeps the earliest at" do
+    early = { "member_id" => "m1", "entries" => { "nl-1" => { "state" => "history", "at" => "2026-01-01T00:00:00Z" } } }
+    late  = { "member_id" => "m1", "entries" => {
+      "nl-1" => { "state" => "granted", "at" => "2026-06-01T00:00:00Z" },
+      "nl-2" => { "state" => "observed", "at" => "2026-06-01T00:00:00Z" } } }
+
+    merged = Contact.merge_newsletter_ledgers([late, early])
+    assert_equal "history", merged["entries"]["nl-1"]["state"], "earliest entry wins"
+    assert_equal "2026-01-01T00:00:00Z", merged["entries"]["nl-1"]["at"]
+    assert_equal "observed", merged["entries"]["nl-2"]["state"]
   end
 end
