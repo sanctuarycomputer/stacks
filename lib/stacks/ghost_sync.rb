@@ -190,6 +190,70 @@ class Stacks::GhostSync
       .compact.uniq
   end
 
+  # Decision steps 1, 2, 3, 5 and 6. Returns the newsletter ids this member has
+  # provably never been subscribed to. Writes observed/history ledger entries in
+  # memory; the caller persists them.
+  #
+  # The layer-3 read is deliberately NOT memoized across an API call. A candidate
+  # is by definition not currently subscribed, so re-checking "is subscribed" in
+  # the apply phase cannot disqualify one: only a fresh history read can.
+  def grant_candidates_for(contact, member, enabled, count: true)
+    targets = target_newsletter_ids(contact, enabled)
+    return [] if targets.empty?
+
+    current_ids = (member["newsletters"] || []).map { |n| n["id"] }.compact
+    ledger_applies = contact.ledger_member_id.nil? || contact.ledger_member_id == member["id"]
+
+    undeliverable = member.dig("email_suppression", "suppressed") || member["email_disabled"]
+    candidates = []
+    events = nil
+
+    targets.each do |newsletter_id|
+      # Step 1 runs before step 3 on purpose: a suppressed member still gets observed
+      # entries for what they ARE subscribed to, which is the population most likely to
+      # unsubscribe next.
+      if current_ids.include?(newsletter_id)
+        contact.record_ledger_entry!(newsletter_id, "observed", member_id: member["id"])
+        next
+      end
+
+      if undeliverable
+        @summary[:grant_skipped_undeliverable] += 1
+        next
+      end
+
+      if ledger_applies && contact.ledger_has?(newsletter_id)
+        if count
+          if contact.ledger_state(newsletter_id) == "history"
+            @summary[:unsubscribe_respected] += 1
+          else
+            @summary[:already_handled] += 1
+          end
+        end
+        next
+      end
+
+      begin
+        events ||= @ghost.newsletter_events_for(member["id"], current_newsletter_ids: current_ids)
+      rescue Stacks::Ghost::UntrustworthyHistory, Stacks::Ghost::RequestError => e
+        # Fail closed: no grants for this member this sweep, no ledger writes.
+        @summary[:grant_errors] += 1
+        @errors << "#{contact.email}: history unreadable: #{e.class}: #{e.message}"
+        return []
+      end
+
+      if events.any? { |ev| ev.dig("data", "newsletter_id") == newsletter_id }
+        contact.record_ledger_entry!(newsletter_id, "history", member_id: member["id"])
+        @summary[:unsubscribe_respected] += 1 if count
+        next
+      end
+
+      candidates << newsletter_id
+    end
+
+    candidates
+  end
+
   private
 
   # One /newsletters/ fetch per sweep, shared by the push leg's prefix-map validation

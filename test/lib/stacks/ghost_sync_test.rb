@@ -683,4 +683,121 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
     assert_equal({}, sync.instance_variable_get(:@prefix_map))
     assert_equal 1, sync.summary[:grant_mapping_invalid]
   end
+
+  # ghost_id defaults to "m50" (matching every other grant test's member id),
+  # but is overridable: the suppressed/email-disabled test calls this twice in
+  # one test and needs distinct ghost_ids to avoid colliding on the unique index.
+  def grant_setup(sources:, map:, newsletters: [], ghost_id: "m50")
+    enable_sources(*sources)
+    sys!(ghost_newsletter_prefix_map: map)
+    Contact.create!(email: "g@example.com", sources: sources, ghost_id: ghost_id)
+  end
+
+  test "a never-subscribed member with a mapped source becomes a grant candidate" do
+    contact = grant_setup(sources: ["xxix:"], map: { "xxix" => "nl-xxix" })
+    m = member(id: "m50", email: "g@example.com")
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix"))
+    ghost.expects(:newsletter_events_for).with("m50", current_newsletter_ids: []).returns([])
+    sync = sync_with(ghost); sync.send(:load_newsletter_config!)
+
+    assert_equal ["nl-xxix"], sync.send(:grant_candidates_for, contact, m, enabled_sources)
+  end
+
+  test "a currently subscribed newsletter is observed, never a candidate" do
+    contact = grant_setup(sources: ["xxix:"], map: { "xxix" => "nl-xxix" })
+    m = member(id: "m50", email: "g@example.com", extra: {
+      "newsletters" => [{ "id" => "nl-xxix", "name" => "XXIX", "status" => "active" }] })
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix"))
+    ghost.expects(:newsletter_events_for).never
+    sync = sync_with(ghost); sync.send(:load_newsletter_config!)
+
+    assert_equal [], sync.send(:grant_candidates_for, contact, m, enabled_sources)
+    assert_equal "observed", contact.ledger_state("nl-xxix")
+  end
+
+  test "an existing ledger entry blocks the grant without any events call" do
+    contact = grant_setup(sources: ["xxix:"], map: { "xxix" => "nl-xxix" })
+    contact.record_ledger_entry!("nl-xxix", "history", member_id: "m50")
+    m = member(id: "m50", email: "g@example.com")
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix"))
+    ghost.expects(:newsletter_events_for).never
+    sync = sync_with(ghost); sync.send(:load_newsletter_config!)
+
+    assert_equal [], sync.send(:grant_candidates_for, contact, m, enabled_sources)
+    assert_equal 1, sync.summary[:unsubscribe_respected]
+  end
+
+  test "history showing any event for N blocks the grant and caches a history entry" do
+    contact = grant_setup(sources: ["xxix:"], map: { "xxix" => "nl-xxix" })
+    m = member(id: "m50", email: "g@example.com")
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix"))
+    ghost.expects(:newsletter_events_for).returns([
+      { "type" => "newsletter_event", "data" => {
+        "member_id" => "m50", "newsletter_id" => "nl-xxix", "subscribed" => false,
+        "created_at" => "2026-01-01T00:00:00.000Z" } }])
+    sync = sync_with(ghost); sync.send(:load_newsletter_config!)
+
+    assert_equal [], sync.send(:grant_candidates_for, contact, m, enabled_sources)
+    assert_equal "history", contact.ledger_state("nl-xxix")
+    assert_equal 1, sync.summary[:unsubscribe_respected]
+  end
+
+  test "history for a different newsletter does not block the grant" do
+    contact = grant_setup(sources: ["xxix:"], map: { "xxix" => "nl-xxix" })
+    m = member(id: "m50", email: "g@example.com")
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix"))
+    ghost.expects(:newsletter_events_for).returns([
+      { "type" => "newsletter_event", "data" => {
+        "member_id" => "m50", "newsletter_id" => "nl-other", "subscribed" => false,
+        "created_at" => "2026-01-01T00:00:00.000Z" } }])
+    sync = sync_with(ghost); sync.send(:load_newsletter_config!)
+
+    assert_equal ["nl-xxix"], sync.send(:grant_candidates_for, contact, m, enabled_sources)
+  end
+
+  test "an untrustworthy history fails closed for the whole member" do
+    contact = grant_setup(sources: ["xxix:"], map: { "xxix" => "nl-xxix" })
+    m = member(id: "m50", email: "g@example.com")
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix"))
+    ghost.expects(:newsletter_events_for).raises(Stacks::Ghost::UntrustworthyHistory, "200 with empty list")
+    sync = sync_with(ghost); sync.send(:load_newsletter_config!)
+
+    assert_equal [], sync.send(:grant_candidates_for, contact, m, enabled_sources)
+    assert_equal 1, sync.summary[:grant_errors]
+    assert_equal({}, contact.newsletter_ledger_entries, "a failed history read writes no ledger entry")
+  end
+
+  test "a suppressed or email-disabled member is skipped before any events call" do
+    [{ "email_suppression" => { "suppressed" => true } }, { "email_disabled" => true }].each_with_index do |extra, i|
+      contact = grant_setup(sources: ["xxix:"], map: { "xxix" => "nl-xxix" }, ghost_id: "m5#{i}")
+      contact.update!(email: "g#{i}@example.com")
+      m = member(id: "m5#{i}", email: contact.email, extra: extra)
+      ghost = mock("ghost")
+      ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix"))
+      ghost.expects(:newsletter_events_for).never
+      sync = sync_with(ghost); sync.send(:load_newsletter_config!)
+
+      assert_equal [], sync.send(:grant_candidates_for, contact, m, enabled_sources)
+      assert_equal 1, sync.summary[:grant_skipped_undeliverable]
+      assert_nil contact.ledger_state("nl-xxix")
+    end
+  end
+
+  test "a ledger describing a different member is ignored, falling through to history" do
+    contact = grant_setup(sources: ["xxix:"], map: { "xxix" => "nl-xxix" })
+    contact.record_ledger_entry!("nl-xxix", "granted", member_id: "SOMEONE-ELSE")
+    m = member(id: "m50", email: "g@example.com")
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix"))
+    ghost.expects(:newsletter_events_for).returns([])
+    sync = sync_with(ghost); sync.send(:load_newsletter_config!)
+
+    assert_equal ["nl-xxix"], sync.send(:grant_candidates_for, contact, m, enabled_sources)
+  end
 end
