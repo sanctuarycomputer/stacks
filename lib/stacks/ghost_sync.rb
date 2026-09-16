@@ -32,8 +32,11 @@ class Stacks::GhostSync
   def initialize(ghost = Stacks::Ghost.new)
     @ghost = ghost
     @summary = Hash.new(0)
+    @summary[:granted_by_newsletter] = Hash.new(0)
+    @summary[:grants_planned_by_newsletter] = Hash.new(0)
     @errors = []
-    @prefix_map = {}
+    @writes_remaining = 0   # fail closed until load_newsletter_config! sets the budget
+    @prefix_map = {}        # so target_newsletter_ids cannot NoMethodError on nil
   end
 
   # Wraps the sweep in a pg advisory lock so an overlapping Scheduler run or
@@ -76,7 +79,10 @@ class Stacks::GhostSync
         capture_errors(contact) do
           next skip_invalid(contact) unless contact.email.match?(Devise.email_regexp)
           updated = sync_contact!(contact, enabled, members_by_id, members_by_email)
-          members_by_id[updated["id"]] = updated if updated
+          if updated
+            members_by_id[updated["id"]] = updated
+            members_by_email[updated["email"].to_s.downcase] = updated
+          end
         end
       end
 
@@ -108,24 +114,29 @@ class Stacks::GhostSync
       end
 
       begin
+        requested_newsletter_ids = create_newsletter_ids(contact, enabled)
         member = @ghost.create_member(
-          { email: contact.email, name: contact.display_name.presence, labels: desired }.compact
+          { email: contact.email, name: contact.display_name.presence, labels: desired,
+            newsletters: requested_newsletter_ids.map { |id| { id: id } } }.compact
         )
         @summary[:created] += 1
         wrote = true
+        confirm_granted!(contact, member, requested_newsletter_ids)
       rescue Stacks::Ghost::RequestError => e
         raise unless e.code == 422
         # Someone created this email in Ghost since our sweep snapshot — adopt it.
+        # This member DOES already exist, so it runs the full existing-member decision
+        # (history check included) and is gated by the grants flag like any other.
         member = @ghost.find_member_by_email(contact.email)
         raise if member.nil?
-        updated = update_member_labels(contact, member, desired, enabled)
+        updated = apply_grants_or_labels!(contact, member, desired, enabled)
         if updated
           member = updated
           wrote = true
         end
       end
     else
-      updated = update_member_labels(contact, member, desired, enabled)
+      updated = apply_grants_or_labels!(contact, member, desired, enabled)
       if updated
         member = updated
         wrote = true
@@ -368,6 +379,86 @@ class Stacks::GhostSync
     updated
   end
 
+  # Targets minus anything already in the ledger. A create cannot violate the
+  # invariant (no member means no history), so it is NOT gated by the flag: that
+  # is what makes the index backfill a single pass.
+  def create_newsletter_ids(contact, enabled)
+    target_newsletter_ids(contact, enabled) - contact.newsletter_ledger_entries.keys
+  end
+
+  # Write granted only for what the response confirms AND what we actually asked for.
+  # Ghost's subscribe_on_signup can attach newsletters we never requested; recording
+  # those as "granted" would both inflate the number rollout step 7 compares against
+  # grants_planned and permanently block a future legitimate grant, since ledger
+  # entries are write-once with no repair path.
+  def confirm_granted!(contact, member, requested)
+    confirmed = (member["newsletters"] || []).map { |n| n["id"] }.compact
+    (confirmed & requested).each do |id|
+      contact.record_ledger_entry!(id, "granted", member_id: member["id"])
+      @summary[:granted_on_create] += 1
+      @summary[:granted_by_newsletter][id] += 1
+    end
+    (confirmed - requested).each do |id|
+      contact.record_ledger_entry!(id, "observed", member_id: member["id"])
+    end
+  end
+
+  # One PUT per contact. When there are candidates we must re-read the member and
+  # its history immediately before writing, then recompute the label diff against
+  # that fresh member so both ride in a single write.
+  def apply_grants_or_labels!(contact, member, desired, enabled)
+    # A case-fold duplicate resolves to another Contact's member via members_by_email
+    # while carrying ghost_id: nil and an empty ledger, which structurally disables
+    # layer 2 for it. Guard on who OWNS the member, not on this contact's ghost_id:
+    # checking `contact.ghost_id.present?` would never fire, because the case we are
+    # defending against is precisely the one where it is nil.
+    # No write at all, labels included: the member is owned by another Contact row,
+    # so a label full-replace here would just race that owner's own label sync.
+    # dedupe! resolves this contact into its owner on a later run; until then it
+    # drives no Ghost write whatsoever.
+    if contact.ghost_id.nil? &&
+       Contact.where(ghost_id: member["id"]).where.not(id: contact.id).exists?
+      @summary[:grants_skipped_unlinked] += 1
+      return nil
+    end
+
+    candidates = grant_candidates_for(contact, member, enabled)
+
+    if candidates.empty?
+      return update_member_labels(contact, member, desired, enabled)
+    end
+
+    unless @grants_enabled
+      @summary[:grants_planned] += candidates.length
+      candidates.each { |id| @summary[:grants_planned_by_newsletter][id] += 1 }
+      return update_member_labels(contact, member, desired, enabled)
+    end
+
+    fresh = @ghost.find_member(member["id"])
+    return update_member_labels(contact, member, desired, enabled) if fresh.nil?
+
+    # count: false - the decision-phase call already counted these; recounting would
+    # double every unsubscribe_respected / already_handled that rollout step 6 reviews.
+    candidates = grant_candidates_for(contact, fresh, enabled, count: false)
+    return update_member_labels(contact, fresh, desired, enabled) if candidates.empty?
+
+    current_ids = (fresh["newsletters"] || []).map { |n| n["id"] }.compact
+    attrs = label_attrs_for(contact, fresh, desired, enabled) || {}
+    attrs[:newsletters] = (current_ids | candidates).map { |id| { id: id } }
+
+    updated = @ghost.update_member(fresh["id"], attrs)
+    @summary[:updated] += 1
+
+    confirmed = (updated["newsletters"] || []).map { |n| n["id"] }.compact
+    candidates.each do |id|
+      next unless confirmed.include?(id)
+      contact.record_ledger_entry!(id, "granted", member_id: fresh["id"])
+      @summary[:granted] += 1
+      @summary[:granted_by_newsletter][id] += 1
+    end
+    updated
+  end
+
   def delabel_member!(contact, member, enabled)
     return member if managed_label_names(member, enabled).empty?
     enabled_downcased = enabled.map(&:downcase)
@@ -380,10 +471,16 @@ class Stacks::GhostSync
   end
 
   # Finding A: only stamp synced_at when a real Ghost write occurred (wrote=true).
-  # Skip the update entirely when ghost_id already matches and nothing was written.
+  # Skip the update entirely when ghost_id already matches, nothing was written to
+  # Ghost, AND the in-memory ledger carries no unsaved entry. A pre-write history
+  # read (layer 3, or the pre-PUT recheck) can record a "history"/"observed" ledger
+  # entry in memory even when the Ghost write it was guarding turns out to be a
+  # no-op or gets skipped entirely -- without this check that entry would evaporate
+  # unsaved, and the next sweep would re-roll the same history read forever.
   def link_contact!(contact, member, wrote = false)
     already_linked = contact.ghost_id == member["id"]
-    return if already_linked && !wrote
+    ledger_dirty = contact.changed.include?("ghost_data")
+    return if already_linked && !wrote && !ledger_dirty
 
     new_data = wrote ? contact.ghost_data.merge("synced_at" => Time.current.iso8601) : contact.ghost_data
     contact.update!(ghost_id: member["id"], ghost_data: new_data)

@@ -71,7 +71,10 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
     ghost.expects(:all_members).returns([])
     created = member(id: "m1", email: "new@example.com", labels: ["newsletter"], newsletters: ["weekly"])
     ghost.expects(:create_member)
-      .with { |attrs| attrs == { email: "new@example.com", name: "New Person", labels: ["newsletter"] } }
+      .with { |attrs|
+        attrs[:email] == "new@example.com" && attrs[:name] == "New Person" &&
+          attrs[:labels] == ["newsletter"] && attrs[:newsletters] == []
+      }
       .returns(created)
 
     sync = sync_with(ghost)
@@ -886,5 +889,203 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
     sync = sync_with(ghost); sync.send(:load_newsletter_config!)
 
     assert_equal ["nl-xxix"], sync.send(:grant_candidates_for, contact, m, enabled_sources)
+  end
+
+  test "a grant re-reads the member and its history immediately before the PUT" do
+    contact = grant_setup(sources: ["xxix:"], map: { "xxix" => "nl-xxix" })
+    sys!(ghost_newsletter_grants_enabled: "1")
+    # labels match the enabled source, so the label path is a genuine no-op and any
+    # update_member call we see is the grant.
+    snapshot = member(id: "m50", email: "g@example.com", labels: ["xxix:"])
+    fresh = member(id: "m50", email: "g@example.com", labels: ["xxix:"], extra: {
+      "newsletters" => [{ "id" => "nl-index", "name" => "Index", "status" => "active" }] })
+
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix", "nl-index"))
+    ghost.expects(:all_members).returns([snapshot])
+    ghost.expects(:newsletter_events_for).twice.returns([])
+    ghost.expects(:find_member).with("m50").returns(fresh)
+    ghost.expects(:update_member).with { |id, attrs|
+      id == "m50" &&
+        attrs[:newsletters].map { |n| n[:id] }.sort == %w[nl-index nl-xxix] &&
+        !attrs.key?(:subscribed)
+    }.returns(fresh.merge("newsletters" => [
+      { "id" => "nl-index" }, { "id" => "nl-xxix" }]))
+
+    sync = sync_with(ghost)
+    sync.sync_all!
+    assert_equal "granted", contact.reload.ledger_state("nl-xxix")
+    assert_equal 1, sync.summary[:granted]
+  end
+
+  test "an unsubscribe landing between the decision and the PUT blocks the write" do
+    contact = grant_setup(sources: ["xxix:"], map: { "xxix" => "nl-xxix" })
+    sys!(ghost_newsletter_grants_enabled: "1")
+    m = member(id: "m50", email: "g@example.com", labels: ["xxix:"])
+
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix"))
+    ghost.expects(:all_members).returns([m])
+    ghost.expects(:find_member).with("m50").returns(m)
+    # Decision-phase read sees nothing; the pre-PUT read sees the unsubscribe.
+    ghost.expects(:newsletter_events_for).twice.returns([]).then.returns([
+      { "type" => "newsletter_event", "data" => {
+        "member_id" => "m50", "newsletter_id" => "nl-xxix", "subscribed" => false,
+        "created_at" => "2026-09-16T04:00:00.000Z" } }])
+    ghost.expects(:update_member).never
+
+    sync_with(ghost).sync_all!
+    assert_equal "history", contact.reload.ledger_state("nl-xxix")
+  end
+
+  test "with the grants flag off the decision runs but nothing is written to Ghost" do
+    contact = grant_setup(sources: ["xxix:"], map: { "xxix" => "nl-xxix" })
+    sys!(ghost_newsletter_grants_enabled: "0")
+    m = member(id: "m50", email: "g@example.com", labels: ["xxix:"])
+
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix"))
+    ghost.expects(:all_members).returns([m])
+    ghost.expects(:newsletter_events_for).returns([])
+    ghost.expects(:find_member).never
+    ghost.expects(:update_member).never
+
+    sync = sync_with(ghost)
+    sync.sync_all!
+    assert_equal 1, sync.summary[:grants_planned]
+    assert_equal 0, sync.summary[:granted]
+    assert_nil contact.reload.ledger_state("nl-xxix"), "a planned grant writes no granted entry"
+  end
+
+  test "a new member is created with its mapped newsletters even when grants are off" do
+    enable_sources("index:shopify_customer")
+    sys!(ghost_newsletter_prefix_map: { "index" => "nl-index" },
+         ghost_newsletter_grants_enabled: "0")
+    contact = Contact.create!(email: "fresh@example.com", sources: ["index:shopify_customer"])
+
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-index"))
+    ghost.expects(:all_members).returns([])
+    ghost.expects(:create_member).with { |attrs| attrs[:newsletters] == [{ id: "nl-index" }] }
+      .returns(member(id: "m60", email: "fresh@example.com").merge(
+        "newsletters" => [{ "id" => "nl-index" }]))
+
+    sync_with(ghost).sync_all!
+    assert_equal "granted", contact.reload.ledger_state("nl-index")
+  end
+
+  test "a contact with no mapped prefix is created with an explicit empty newsletters array" do
+    enable_sources("usb_club:shopify_customer")
+    sys!(ghost_newsletter_prefix_map: { "index" => "nl-index" })
+    Contact.create!(email: "unmapped@example.com", sources: ["usb_club:shopify_customer"])
+
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-index"))
+    ghost.expects(:all_members).returns([])
+    ghost.expects(:create_member).with { |attrs| attrs.key?(:newsletters) && attrs[:newsletters] == [] }
+      .returns(member(id: "m61", email: "unmapped@example.com"))
+
+    sync_with(ghost).sync_all!
+  end
+
+  test "granted is written only for newsletters the create response confirms" do
+    enable_sources("index:shopify_customer")
+    sys!(ghost_newsletter_prefix_map: { "index" => "nl-index" })
+    contact = Contact.create!(email: "dropped@example.com", sources: ["index:shopify_customer"])
+
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-index"))
+    ghost.expects(:all_members).returns([])
+    # Ghost silently drops the newsletter. A granted entry is write-once and would
+    # block the legitimate grant forever, with no repair path.
+    ghost.expects(:create_member).returns(member(id: "m62", email: "dropped@example.com"))
+
+    sync_with(ghost).sync_all!
+    assert_nil contact.reload.ledger_state("nl-index")
+  end
+
+  test "a history ledger entry survives a sweep that also writes a label update" do
+    # link_contact! rebuilds the whole ghost_data column from the in-memory hash. If a
+    # ledger entry were written out of band (update_column / raw jsonb), this would
+    # clobber it, turning a durable "no" back into a fresh layer-3 roll every sweep.
+    enable_sources("xxix:")
+    sys!(ghost_newsletter_prefix_map: { "xxix" => "nl-xxix" }, ghost_newsletter_grants_enabled: "1")
+    contact = Contact.create!(email: "clob@example.com", sources: ["xxix:"], ghost_id: "m85")
+    m = member(id: "m85", email: "clob@example.com", labels: [])   # label diff WILL fire
+
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix"))
+    ghost.expects(:all_members).returns([m])
+    ghost.stubs(:newsletter_events_for).returns([
+      { "type" => "newsletter_event", "data" => {
+        "member_id" => "m85", "newsletter_id" => "nl-xxix", "subscribed" => false,
+        "created_at" => "2026-01-01T00:00:00.000Z" } }])
+    ghost.stubs(:update_member).returns(member(id: "m85", email: "clob@example.com", labels: ["xxix:"]))
+
+    sync_with(ghost).sync_all!
+    assert_equal "history", contact.reload.ledger_state("nl-xxix"),
+      "the ledger entry must survive link_contact! rebuilding ghost_data"
+  end
+
+  test "the 422 adopt path runs layer 3 and respects the grants flag" do
+    enable_sources("xxix:")
+    sys!(ghost_newsletter_prefix_map: { "xxix" => "nl-xxix" }, ghost_newsletter_grants_enabled: "0")
+    contact = Contact.create!(email: "adopt@example.com", sources: ["xxix:"])
+    existing = member(id: "m86", email: "adopt@example.com", labels: ["xxix:"])
+
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix"))
+    ghost.expects(:all_members).returns([])
+    ghost.expects(:create_member).raises(Stacks::Ghost::RequestError.new(422, "already exists"))
+    ghost.expects(:find_member_by_email).with("adopt@example.com").returns(existing)
+    # An adopted member is NOT new: it must run the history check, not skip it.
+    ghost.expects(:newsletter_events_for).returns([])
+    ghost.expects(:update_member).never   # grants flag is off
+
+    sync = sync_with(ghost)
+    sync.sync_all!
+    assert_equal 1, sync.summary[:grants_planned]
+    assert_equal "m86", contact.reload.ghost_id
+  end
+
+  test "two case-fold duplicate contacts produce exactly one create" do
+    enable_sources("index:shopify_customer")
+    sys!(ghost_newsletter_prefix_map: { "index" => "nl-index" })
+    Contact.create!(email: "dup@example.com", sources: ["index:shopify_customer"])
+    Contact.create!(email: "DUP@example.com", sources: ["index:shopify_customer"])
+
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-index"))
+    ghost.expects(:all_members).returns([])
+    ghost.expects(:create_member).once.returns(
+      member(id: "m63", email: "dup@example.com").merge("newsletters" => [{ "id" => "nl-index" }]))
+    ghost.stubs(:newsletter_events_for).returns([])
+
+    sync_with(ghost).sync_all!
+  end
+
+  test "a contact left unlinked by a case-fold link conflict never drives a newsletters write" do
+    enable_sources("index:shopify_customer")
+    sys!(ghost_newsletter_prefix_map: { "index" => "nl-index" },
+         ghost_newsletter_grants_enabled: "1")
+    Contact.create!(email: "owner@example.com", sources: ["index:shopify_customer"], ghost_id: "m64")
+    Contact.create!(email: "OWNER@example.com", sources: ["index:shopify_customer"])
+
+    linked = member(id: "m64", email: "owner@example.com", labels: ["index:shopify_customer"])
+    seen = []
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-index"))
+    ghost.expects(:all_members).returns([linked])
+    ghost.stubs(:newsletter_events_for).returns([])
+    ghost.stubs(:find_member).returns(linked)
+    ghost.stubs(:update_member).with { |_id, attrs| seen << attrs; true }
+      .returns(linked.merge("newsletters" => [{ "id" => "nl-index" }]))
+
+    sync = sync_with(ghost)
+    sync.sync_all!
+
+    assert_equal 1, seen.count { |a| a.key?(:newsletters) },
+      "exactly one contact may write newsletters for member m64"
+    assert_equal 1, sync.summary[:grants_skipped_unlinked]
   end
 end
