@@ -479,7 +479,7 @@ In `app/models/studio.rb`, in `project_satisfaction_score`, change the `select` 
 
 - [ ] **Step 5: Write the Studio satisfaction-score regression test**
 
-`project_satisfaction_score` is a **local variable** inside `key_datapoints_for_period` (`app/models/studio.rb:454`, assigned at `:493`), not a method — reach it through that call. Follow the existing shape at `test/models/studio_test.rb:134`.
+`project_satisfaction_score` is a **local variable** inside `key_datapoints_for_period` (`app/models/studio.rb:454`, assigned at `:493`), not a method — reach it through that call. It is exposed in the returned hash under the key **`:project_satisfaction`** (`studio.rb:563`), not `:project_satisfaction_score`. Follow the existing shape at `test/models/studio_test.rb:134`.
 
 Insert before the final `end` of `test/models/studio_test.rb`:
 
