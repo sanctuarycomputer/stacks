@@ -217,11 +217,8 @@ class StudioTest < ActiveSupport::TestCase
 
     assert capsule.reload.substantively_complete?,
       "fixture must be substantively complete for this test to mean anything"
-    # NOTE: this fixture is not yet GATED - complete? is still an alias for
-    # substantively_complete? until Task 4 lands. Task 4 adds the assertion that
-    # it is gated, at which point this test becomes a real regression net: the
-    # opt_out_of_sending_client_feedback_survey status above will then require
-    # sign-off, so the capsule will be incomplete but must STILL be counted here.
+    assert_not capsule.complete?,
+      "fixture must be GATED - otherwise this test passes even if the filter regresses"
 
     data = studio.key_datapoints_for_period(
       period, nil, "cash", [studio], [], {}, {}, {}, {},
