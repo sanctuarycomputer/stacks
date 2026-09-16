@@ -149,13 +149,15 @@ class ProjectCapsule < ApplicationRecord
   # unreachable from any app write path. work_completed_at is deliberately NOT
   # consulted: uncomplete_work then complete_work rewrites it to DateTime.now
   # (app/admin/project_trackers.rb:303-312), which would hand back grace
-  # repeatably. Capsules are created at the first wrap - complete_work and (as of
-  # this change) mark_work_completed! both call ensure_project_capsule_exists! -
-  # so created_at IS the wrap date for anything created from here on.
+  # repeatably. Capsules are created when the wrap is RECORDED - complete_work
+  # and (as of this change) mark_work_completed! both call
+  # ensure_project_capsule_exists! - so created_at is the recording date, not
+  # necessarily the wrap date: a backdated wrap set through the MCP tool
+  # (mark_work_completed!(at: 6.months.ago)) still creates the capsule row today,
+  # so its grace period starts from when it was recorded, not from the wrap date.
   #
-  # For a legacy capsule whose row appeared later than its real wrap, this starts
-  # the clock at creation. That is the correct reading anyway: a lead cannot chase
-  # a client through a capsule that does not exist yet.
+  # That is accepted behaviour, not a bug: a lead cannot chase a client through a
+  # capsule that does not exist yet.
   def no_response_grace_anchor
     created_at
   end

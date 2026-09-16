@@ -165,11 +165,14 @@ class ProjectTracker < ApplicationRecord
     # that haven't had their MSA/SOW links set up yet.
     self.work_completed_at = at
     save!(validate: false)
-    # Stamp the capsule at the FIRST wrap, including backdated wraps set through
-    # the MCP tool. ProjectCapsule#no_response_grace_anchor floors the grace clock
-    # on project_capsules.created_at, so a capsule row created later than the real
-    # wrap would hand back grace that uncomplete_work/complete_work could then
-    # re-trigger.
+    # Stamp the capsule when the wrap is RECORDED (created_at = now), not the wrap
+    # date itself — a backdated wrap set through the MCP tool (at: 6.months.ago)
+    # still creates the capsule row today. ProjectCapsule#no_response_grace_anchor
+    # floors the grace clock on project_capsules.created_at, so a backdated wrap's
+    # grace period starts from when it was recorded, not when the work actually
+    # wrapped. That's accepted behaviour, not a bug: a capsule row created later
+    # than the real wrap would otherwise hand back grace that uncomplete_work/
+    # complete_work could then re-trigger.
     ensure_project_capsule_exists! if at.present?
     self
   end

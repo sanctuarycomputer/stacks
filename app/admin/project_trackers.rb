@@ -16,7 +16,8 @@ ActiveAdmin.register ProjectTracker do
   # counted Ruby-filtered scope would scan all completed trackers on each load of
   # the default In Progress tab.
   scope :needs_capsule_sign_off, show_count: false do |scope|
-    ids = ProjectTracker.complete.select { |pt| pt.project_capsule&.complete_but_for_admin_sign_off? }.map(&:id)
+    ids = ProjectTracker.complete.includes(project_capsule: :project_satisfaction_survey)
+      .select { |pt| pt.project_capsule&.complete_but_for_admin_sign_off? }.map(&:id)
     scope.where(id: ids)
   end
 

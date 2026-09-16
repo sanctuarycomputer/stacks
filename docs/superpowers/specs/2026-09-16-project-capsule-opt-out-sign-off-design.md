@@ -461,7 +461,7 @@ New `test/models/project_capsule_test.rb` (none exists today):
 - creating the internal survey (the `update!` at `project_satisfaction_surveys.rb:161`) does not void an unrelated approval
 - `no_response_from_client` at 3 weeks past anchor: complete; at 5 weeks: blocked
 - **grace clock can't be reset** by `uncomplete_work` → `complete_work`
-- `no_response_from_client` with nil `work_completed_at` falls back to `created_at`
+- `no_response_from_client` with nil `work_completed_at` still anchors on `created_at` (work_completed_at is never consulted)
 - "received & shared" with blank / `"n/a"` / valid URL
 - `sign_off_exempt: true` bypasses both the sign-off gate and the URL proof
 - `complete_but_for_admin_sign_off?` false while other requirements unmet

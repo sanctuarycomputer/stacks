@@ -60,7 +60,14 @@ class AdminProjectCapsuleSignOffTest < ActionDispatch::IntegrationTest
     capsule = make_gated_capsule!
     sign_in make_lead!(capsule.project_tracker)
 
+    # Positive control: prove the session is live and the lead can actually
+    # reach the page, so the denial below isn't just `sign_in` silently
+    # failing.
+    get edit_admin_project_capsule_path(capsule)
+    assert_response :success
+
     post sign_off_admin_project_capsule_path(capsule)
+    assert_response :redirect
     assert_not capsule.reload.complete?, "a lead must not be able to approve their own bypass"
     assert_nil capsule.admin_signed_off_at
   end
@@ -76,6 +83,18 @@ class AdminProjectCapsuleSignOffTest < ActionDispatch::IntegrationTest
     get admin_project_tracker_path(capsule.project_tracker)
     assert_response :success
     assert_includes response.body, "An admin needs to approve"
+  end
+
+  test "the needs_capsule_sign_off admin scope lists a gated tracker" do
+    capsule = make_gated_capsule!
+    # _show.html.erb 500s on a tracker with nil `notes` (pre-existing bug) -
+    # this scope's index renders that partial, so give the fixture notes.
+    capsule.project_tracker.update_column(:notes, "Notes")
+    sign_in make_admin!
+
+    get admin_project_trackers_path(scope: "needs_capsule_sign_off")
+    assert_response :success
+    assert_includes response.body, capsule.project_tracker.name
   end
 
   test "an admin can revoke a sign-off" do

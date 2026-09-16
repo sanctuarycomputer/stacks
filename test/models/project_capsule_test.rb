@@ -212,7 +212,7 @@ class ProjectCapsuleTest < ActiveSupport::TestCase
       "re-wrapping must not buy another grace period"
   end
 
-  test "the grace clock falls back to the capsule created_at when work_completed_at is nil" do
+  test "the grace clock ignores work_completed_at entirely" do
     tracker = make_tracker!(work_completed_at: nil)
     capsule = make_gated_capsule!(:client_feedback_survey_status, :no_response_from_client, tracker: tracker)
     capsule.update_column(:created_at, 5.weeks.ago)

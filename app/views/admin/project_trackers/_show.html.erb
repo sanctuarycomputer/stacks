@@ -66,7 +66,7 @@
     <div class="dashboard-module">
       <div class="module-header">
         <p>Wrapup Status</p>
-        <% if project_capsule.client_feedback_survey_url.present? %>
+        <% if project_capsule.client_feedback_survey_url_valid? && project_capsule.client_feedback_survey_url.present? %>
           <%= link_to "Client Survey URL ↗", project_capsule.client_feedback_survey_url %>
         <% end %>
       </div>
@@ -78,7 +78,11 @@
               <td class="col text-right">
                 <%= project_capsule.client_feedback_survey_status.try(:humanize) %>
                 <% unless project_capsule.client_feedback_survey_url_valid? %>
-                  <span class="pill error">survey URL missing</span>
+                  <% if project_capsule.client_feedback_survey_url.blank? %>
+                    <span class="pill error">survey URL missing</span>
+                  <% else %>
+                    <span class="pill error">survey URL must start with https://</span>
+                  <% end %>
                 <% end %>
               </td>
             </tr>

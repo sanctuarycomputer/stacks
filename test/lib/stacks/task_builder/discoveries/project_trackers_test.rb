@@ -76,10 +76,9 @@ class StacksTaskBuilderDiscoveriesProjectTrackersTest < ActiveSupport::TestCase
       "don't nag admins about a capsule the lead hasn't finished"
   end
 
-  # Must use a capsule on the no_response path: gated_selections short-circuits
-  # (`no_response_from_client? && no_response_grace_expired?`), so a capsule on any
-  # other status never dereferences project_tracker and the assertion would be
-  # vacuous.
+  # Must use a capsule on the no_response path so gated_selections actually
+  # evaluates no_response_grace_expired? (created_at-anchored) rather than
+  # short-circuiting on an unrelated opt-out.
   def make_no_response_capsule!(tracker)
     capsule = make_gated_capsule!(tracker)
     capsule.update!(client_feedback_survey_status: :no_response_from_client)
@@ -88,15 +87,31 @@ class StacksTaskBuilderDiscoveriesProjectTrackersTest < ActiveSupport::TestCase
     capsule.reload
   end
 
-  test "the discovery does not fire a query per capsule for its project_tracker" do
-    3.times { make_no_response_capsule!(make_wrapped_tracker!) }
-
+  def count_queries
     queries = 0
     counter = ->(_name, _start, _finish, _id, payload) do
       queries += 1 unless payload[:name].to_s =~ /SCHEMA|TRANSACTION/
     end
 
-    ActiveSupport::Notifications.subscribed(counter, "sql.active_record") { discover }
-    assert queries < 15, "expected a bounded query count, got #{queries} - check inverse_of / preloading"
+    ActiveSupport::Notifications.subscribed(counter, "sql.active_record") { yield }
+    queries
+  end
+
+  test "the discovery does not fire a query per capsule for its project_tracker" do
+    # A per-record N+1 grows with fixture count; a properly batched/preloaded
+    # discovery does not. `queries < some constant` can't tell those apart (a
+    # small per-record N+1 still fits comfortably under a loose ceiling) - only
+    # comparing the query count at two different fixture counts can. Additive
+    # (2 fixtures, then 4 more added for 6 total) rather than deleting between
+    # measurements, since ProjectTracker has FK-dependent rows (capsules, lead
+    # periods) that would need their own cleanup.
+    2.times { make_no_response_capsule!(make_wrapped_tracker!) }
+    queries_at_2 = count_queries { discover }
+
+    4.times { make_no_response_capsule!(make_wrapped_tracker!) }
+    queries_at_6 = count_queries { discover }
+
+    assert_equal queries_at_2, queries_at_6,
+      "query count grew with fixture count (#{queries_at_2} at 2, #{queries_at_6} at 6) - check inverse_of / preloading"
   end
 end
