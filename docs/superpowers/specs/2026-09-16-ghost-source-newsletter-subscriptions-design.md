@@ -426,6 +426,11 @@ only within one uninterrupted decision-plus-apply block.
    sweep; count `grant_errors`; no ledger writes.
 6. Otherwise N is a grant candidate.
 
+Implementation note: the undeliverable check runs before the ledger check rather than after.
+Behaviourally identical (both skip without producing a candidate), but it means a suppressed member's
+already-ledgered targets count as `grant_skipped_undeliverable` rather than `already_handled` or
+`unsubscribe_respected`, very slightly deflating the numbers rollout step 6 reviews.
+
 **Applying grants (only if `ghost_newsletter_grants_enabled?`):**
 
 - PUT `newsletters: (fresh current ids union candidate ids).map { {id:} }`, plus labels if they differ.

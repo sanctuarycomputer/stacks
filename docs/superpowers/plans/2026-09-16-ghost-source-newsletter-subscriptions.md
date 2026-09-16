@@ -1445,6 +1445,71 @@ This task implements decision steps 1, 2, 3, 5 and 6. Step 4 (budget) arrives in
     assert_equal 1, sync.summary[:unsubscribe_respected]
   end
 
+  test "a prior SUBSCRIBE event disqualifies just as an unsubscribe does" do
+    # "Never been subscribed" means never, in either direction. Narrowing this to
+    # subscribed == false would re-grant anyone who subscribed and later unsubscribed,
+    # which is the entire population this feature protects.
+    contact = grant_setup(sources: ["xxix:"], map: { "xxix" => "nl-xxix" })
+    m = member(id: "m50", email: "g@example.com")
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix"))
+    ghost.expects(:newsletter_events_for).returns([
+      { "type" => "newsletter_event", "data" => {
+        "member_id" => "m50", "newsletter_id" => "nl-xxix", "subscribed" => true,
+        "created_at" => "2026-01-01T00:00:00.000Z" } }])
+    sync = sync_with(ghost); sync.send(:load_newsletter_config!)
+
+    assert_equal [], sync.send(:grant_candidates_for, contact, m, enabled_sources)
+    assert_equal "history", contact.ledger_state("nl-xxix")
+  end
+
+  test "a granted or observed ledger entry counts as already_handled, not unsubscribe_respected" do
+    # These are different numbers in the rollout review: unsubscribe_respected is meant to
+    # mean "we correctly did not re-subscribe someone", so entries this sync created must
+    # not inflate it.
+    contact = grant_setup(sources: ["xxix:"], map: { "xxix" => "nl-xxix" })
+    contact.record_ledger_entry!("nl-xxix", "granted", member_id: "m50")
+    m = member(id: "m50", email: "g@example.com")
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix"))
+    ghost.expects(:newsletter_events_for).never
+    sync = sync_with(ghost); sync.send(:load_newsletter_config!)
+
+    assert_equal [], sync.send(:grant_candidates_for, contact, m, enabled_sources)
+    assert_equal 1, sync.summary[:already_handled]
+    assert_equal 0, sync.summary[:unsubscribe_respected]
+  end
+
+  test "the history is read at most once per member across several targets" do
+    # Pins both the memoization and the per-MEMBER (not per-target) scope of the read.
+    enable_sources("xxix:", "index:shopify_customer")
+    sys!(ghost_newsletter_prefix_map: { "xxix" => "nl-xxix", "index" => "nl-index" })
+    contact = Contact.create!(email: "multi@example.com",
+      sources: ["xxix:", "index:shopify_customer"], ghost_id: "m57")
+    m = member(id: "m57", email: "multi@example.com", extra: {
+      "newsletters" => [{ "id" => "nl-index", "name" => "Index", "status" => "active" }] })
+
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix", "nl-index"))
+    ghost.expects(:newsletter_events_for).once.returns([])
+    sync = sync_with(ghost); sync.send(:load_newsletter_config!)
+
+    assert_equal ["nl-xxix"], sync.send(:grant_candidates_for, contact, m, enabled_sources)
+    assert_equal "observed", contact.ledger_state("nl-index"), "the subscribed target costs no API call"
+  end
+
+  test "a RequestError from the history read also fails closed" do
+    contact = grant_setup(sources: ["xxix:"], map: { "xxix" => "nl-xxix" })
+    m = member(id: "m50", email: "g@example.com")
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix"))
+    ghost.expects(:newsletter_events_for).raises(Stacks::Ghost::RequestError.new(500, "boom"))
+    sync = sync_with(ghost); sync.send(:load_newsletter_config!)
+
+    assert_equal [], sync.send(:grant_candidates_for, contact, m, enabled_sources)
+    assert_equal 1, sync.summary[:grant_errors]
+  end
+
   test "history for a different newsletter does not block the grant" do
     contact = grant_setup(sources: ["xxix:"], map: { "xxix" => "nl-xxix" })
     m = member(id: "m50", email: "g@example.com")
@@ -1456,7 +1521,10 @@ This task implements decision steps 1, 2, 3, 5 and 6. Step 4 (budget) arrives in
         "created_at" => "2026-01-01T00:00:00.000Z" } }])
     sync = sync_with(ghost); sync.send(:load_newsletter_config!)
 
-    assert_equal ["nl-xxix"], sync.send(:grant_candidates_for, contact, m, enabled_sources)
+    candidates = sync.send(:grant_candidates_for, contact, m, enabled_sources)
+    assert_equal ["nl-xxix"], candidates
+    assert_equal({}, contact.newsletter_ledger_entries),
+      "a candidate is not a grant: the decision writes no ledger entry for it"
   end
 
   test "an untrustworthy history fails closed for the whole member" do
@@ -1555,7 +1623,9 @@ Expected: FAIL, `NoMethodError: undefined method 'grant_candidates_for'`
       begin
         events ||= @ghost.newsletter_events_for(member["id"], current_newsletter_ids: current_ids)
       rescue Stacks::Ghost::UntrustworthyHistory, Stacks::Ghost::RequestError => e
-        # Fail closed: no grants for this member this sweep, no ledger writes.
+        # Fail closed: no grants for this member this sweep. Any "observed" entry already
+        # recorded for an earlier target stands, which is fine: observed only ever blocks
+        # a future grant, it never permits one.
         @summary[:grant_errors] += 1
         @errors << "#{contact.email}: history unreadable: #{e.class}: #{e.message}"
         return []
