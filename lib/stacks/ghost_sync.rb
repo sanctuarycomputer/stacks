@@ -6,9 +6,23 @@
 # docs/superpowers/specs/2026-07-20-ghost-contact-sync-design.md
 class Stacks::GhostSync
   SOURCE_PREFIX = "g3d:ghost".freeze
+  # Sources under this namespace are stacks' own record of Ghost opt-in state,
+  # written by the pull leg. Deriving subscriptions from them would subscribe
+  # everyone who subscribed to anything to the g3d newsletter: a consent feedback
+  # loop. They are excluded from prefix derivation, always.
+  EXCLUDED_SOURCE_PREFIX = "g3d:ghost".freeze
   # Fixed app-wide advisory lock key for the sweep (rand of a keyboard mash;
   # any stable int works — must only avoid colliding with other app locks).
   ADVISORY_LOCK_KEY = 728534291
+
+  def self.source_prefix(source)
+    source.to_s.split(":", 2).first.to_s.downcase
+  end
+
+  def self.excluded_source?(source)
+    s = source.to_s.downcase
+    s == EXCLUDED_SOURCE_PREFIX || s.start_with?("#{EXCLUDED_SOURCE_PREFIX}:")
+  end
 
   attr_reader :summary, :errors
 
@@ -36,6 +50,7 @@ class Stacks::GhostSync
   end
 
   def sync_all!
+    load_newsletter_config!
     enabled = System.first_or_create!(settings: {}).ghost_synced_sources
     members = @ghost.all_members
     members_by_id = members.index_by { |m| m["id"] }
@@ -150,16 +165,50 @@ class Stacks::GhostSync
     contact
   end
 
+  # Resolves a contact's enabled, mapped sources into the Ghost newsletter ids
+  # it should be subscribed to. Excludes the g3d:ghost namespace (see
+  # EXCLUDED_SOURCE_PREFIX) so the pull leg's own record of opt-in state can
+  # never feed back into itself.
+  def target_newsletter_ids(contact, enabled)
+    (contact.sources & enabled)
+      .reject { |s| self.class.excluded_source?(s) }
+      .map { |s| @prefix_map[self.class.source_prefix(s)] }
+      .compact.uniq
+  end
+
   private
 
   # Member browse payloads embed newsletters WITHOUT their slug (only
   # id/name/status — verified against Ghost(Pro) v6 in production), so resolve
   # slugs via the newsletters endpoint: fetched lazily only when a payload
   # actually lacks a slug, memoized per sync instance.
+  def all_newsletters
+    @all_newsletters ||= @ghost.all_newsletters
+  end
+
   def newsletter_slug_map
-    @newsletter_slug_map ||= @ghost.all_newsletters.each_with_object({}) do |n, map|
-      map[n["id"]] = n["slug"]
+    @newsletter_slug_map ||= all_newsletters.each_with_object({}) { |n, map| map[n["id"]] = n["slug"] }
+  end
+
+  # Read settings fresh every sweep. System.instance memoizes in a class variable
+  # that is never invalidated, so a setting saved in one puma worker is invisible
+  # to another forever, and the admin "Sync Now" button runs this in a web dyno.
+  def load_newsletter_config!
+    system = System.first_or_create!(settings: {})
+    @grants_enabled = system.ghost_newsletter_grants_enabled?
+    @writes_remaining = system.ghost_sweep_write_budget_clamped
+    requested = system.ghost_newsletter_prefix_map_clean
+
+    if requested.empty?
+      @prefix_map = {}
+      return @prefix_map
     end
+
+    active = all_newsletters.select { |n| n["status"].nil? || n["status"] == "active" }
+    active_ids = active.map { |n| n["id"] }.to_set
+    @prefix_map = requested.select { |_, id| active_ids.include?(id) }
+    @summary[:grant_mapping_invalid] += (requested.length - @prefix_map.length)
+    @prefix_map
   end
 
   # Severs a Ghost member link: clears ghost_id and stamps snapshot.deleted_at

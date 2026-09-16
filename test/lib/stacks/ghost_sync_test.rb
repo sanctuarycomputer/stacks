@@ -17,6 +17,22 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
     System.first_or_create!(settings: {}).update!(ghost_synced_sources: sources)
   end
 
+  # Generic System settings writer for tests, going through first_or_create!
+  # rather than the memoized System.instance (see the "reads settings fresh"
+  # test below for why that memo is dangerous inside a test transaction).
+  def sys!(**attrs)
+    System.first_or_create!(settings: {}).update!(attrs)
+  end
+
+  def enabled_sources
+    System.first_or_create!(settings: {}).ghost_synced_sources
+  end
+
+  # Minimal active-newsletter payloads, keyed by id, for stubbing all_newsletters.
+  def active_nl(*ids)
+    ids.map { |id| { "id" => id, "name" => id, "slug" => id, "status" => "active" } }
+  end
+
   test "upsert resolves newsletter slugs via the newsletters endpoint when the member payload lacks them" do
     ghost = mock("ghost")
     # .once also proves the map is memoized across upserts on the same sync
@@ -480,5 +496,82 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
     )
     client.find_member_by_email("o'brien@x.com")
     assert captured_filter.include?("o\\'brien"), "Expected escaped quote in filter, got: #{captured_filter}"
+  end
+
+  test "source_prefix takes the first colon segment, downcased" do
+    { "index:luma:chinatown" => "index", "xxix:" => "xxix", "team" => "team",
+      "G3D:foo" => "g3d", "sanctu:luma:family.intelligence" => "sanctu" }.each do |source, expected|
+      assert_equal expected, Stacks::GhostSync.source_prefix(source), source
+    end
+  end
+
+  test "the g3d:ghost namespace never produces a target even when g3d is mapped" do
+    enable_sources("g3d:ghost", "g3d:ghost:index", "g3d:substack:g3d_substack")
+    sys!(ghost_newsletter_prefix_map: { "g3d" => "nl-g3d" })
+    contact = Contact.create!(email: "loop@example.com", sources: ["g3d:ghost", "g3d:ghost:index"])
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-g3d"))
+    sync = sync_with(ghost)
+    sync.send(:load_newsletter_config!)
+    assert_equal [], sync.target_newsletter_ids(contact, enabled_sources)
+  end
+
+  test "targets come only from enabled, mapped, non-blank prefixes" do
+    enable_sources("index:shopify_customer", "xxix:mailchimp:xxix_mailchimp")
+    sys!(ghost_newsletter_prefix_map: {
+      "index" => "nl-index", "xxix" => "", "usb_club" => "nl-usb" })
+    contact = Contact.create!(email: "t@example.com", sources: [
+      "index:shopify_customer",              # enabled + mapped
+      "xxix:mailchimp:xxix_mailchimp",       # enabled but mapped to blank
+      "usb_club:shopify_customer",           # mapped but NOT enabled
+      "etl:meet",                            # neither
+    ])
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-index", "nl-usb"))
+    sync = sync_with(ghost)
+    sync.send(:load_newsletter_config!)
+    assert_equal ["nl-index"], sync.target_newsletter_ids(contact, enabled_sources)
+  end
+
+  test "an empty prefix map issues no all_newsletters call" do
+    enable_sources("newsletter")
+    Contact.create!(email: "nomap@example.com", sources: ["newsletter"])
+    ghost = mock("ghost")
+    ghost.expects(:all_newsletters).never
+    ghost.expects(:all_members).returns([])
+    ghost.expects(:create_member).returns(member(id: "m1", email: "nomap@example.com"))
+    sync_with(ghost).sync_all!
+  end
+
+  test "the sweep reads settings fresh, not through the memoized System.instance" do
+    enable_sources("index:shopify_customer")
+    System.instance   # prime the class-variable memo
+    # Change the row behind the memo, the way another puma worker or a rake dyno would.
+    System.first.update_columns(settings: System.first.settings.merge(
+      "ghost_newsletter_prefix_map" => { "index" => "nl-index" }))
+
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-index"))
+    sync = sync_with(ghost)
+    sync.send(:load_newsletter_config!)
+    assert_equal({ "index" => "nl-index" }, sync.instance_variable_get(:@prefix_map),
+      "System.instance memoizes per process and is never invalidated")
+  ensure
+    System.class_variable_set(:@@instance, nil)
+  end
+
+  test "a mapping to an unknown or archived newsletter is dropped and counted" do
+    enable_sources("index:shopify_customer")
+    sys!(ghost_newsletter_prefix_map: {
+      "index" => "nl-index", "sanctu" => "nl-archived", "team" => "nl-missing" })
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns([
+      { "id" => "nl-index", "name" => "Index Space", "slug" => "index", "status" => "active" },
+      { "id" => "nl-archived", "name" => "Old", "slug" => "old", "status" => "archived" },
+    ])
+    sync = sync_with(ghost)
+    sync.send(:load_newsletter_config!)
+    assert_equal({ "index" => "nl-index" }, sync.instance_variable_get(:@prefix_map))
+    assert_equal 2, sync.summary[:grant_mapping_invalid]
   end
 end
