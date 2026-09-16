@@ -519,8 +519,11 @@ Insert before the final `end` of `test/models/studio_test.rb`:
 
     assert capsule.reload.substantively_complete?,
       "fixture must be substantively complete for this test to mean anything"
-    assert_not capsule.complete?,
-      "fixture must be GATED - otherwise this test passes even if the filter regresses"
+    # NOTE: this fixture is not yet GATED - complete? is still an alias for
+    # substantively_complete? until Task 4 lands. Task 4 adds the assertion that
+    # it is gated, at which point this test becomes a real regression net: the
+    # opt_out_of_sending_client_feedback_survey status above will then require
+    # sign-off, so the capsule will be incomplete but must STILL be counted here.
 
     data = studio.key_datapoints_for_period(
       period, nil, "cash", [studio], [], {}, {}, {}, {},
@@ -884,15 +887,24 @@ false
 Run: `bin/rails test test/models/project_capsule_test.rb`
 Expected: PASS, 0 failures, 0 errors.
 
-- [ ] **Step 5: Verify Task 3's regression net still holds**
+- [ ] **Step 5: Strengthen the Studio regression test now that the gate exists**
+
+Task 3 left a NOTE comment in `test/models/studio_test.rb` saying this assertion belongs here. The gate now exists, so the fixture (which opts out of sending the client feedback survey) is genuinely gated. Replace that NOTE comment block with a real assertion, so the test proves a *gated* capsule still counts rather than merely a complete one:
+
+```ruby
+    assert_not capsule.complete?,
+      "fixture must be GATED - otherwise this test passes even if the filter regresses"
+```
+
+- [ ] **Step 6: Verify Task 3's regression net still holds**
 
 Run: `bin/rails test test/models/project_tracker_test.rb test/models/studio_test.rb test/models/project_satisfaction_survey_test.rb test/models/profit_share_test.rb`
 Expected: PASS, 0 failures, 0 errors. **If `considered_successful?` tests now fail, Task 3 was done wrong — stop and fix Task 3 rather than weakening these tests.**
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add app/models/project_capsule.rb test/models/project_capsule_test.rb
+git add app/models/project_capsule.rb test/models/project_capsule_test.rb test/models/studio_test.rb
 git commit -m "feat: require admin sign-off on project capsule opt-outs
 
 All four opt-outs now block completion until an admin signs off, and
