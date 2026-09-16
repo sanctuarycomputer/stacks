@@ -1458,7 +1458,30 @@ with:
   </p>
 ```
 
-- [ ] **Step 3: Explain a missing survey URL on the Client Feedback row**
+- [ ] **Step 3: Stop blaming the lead in the yellow banner**
+
+`app/views/admin/project_trackers/_show.html.erb:42-45` currently renders *"This project is complete, but the project team have not yet completed their Project Capsule"* for ANY incomplete capsule. A capsule awaiting an admin signature now hits that branch, blaming the lead for work they have already finished. Replace the `<% unless project_capsule.complete? %>` block's `<p>` and link so the sign-off case gets its own copy:
+
+```erb
+  <% unless project_capsule.complete? %>
+    <div class="dashboard-modules table index_table index">
+      <div class="dashboard-module">
+        <div class="module-body factoid-parent">
+          <% if project_capsule.complete_but_for_admin_sign_off? %>
+            <p style="margin-bottom: 6px;">⏳ The project team have finished this Project Capsule, but it opts out of <%= project_capsule.gated_selection_labels.to_sentence.downcase %>. An admin needs to approve that before the capsule counts as complete.</p>
+          <% else %>
+            <p style="margin-bottom: 6px;">🚧 This project is complete, but the project team have not yet completed their Project Capsule.</p>
+          <% end %>
+          <a href="https://www.notion.so/garden3d/How-to-wrap-a-project-Support-Team-a249d0340d21447897c7a261e2b40ab3" target="_blank">
+            Learn how to Wrap a Project ↗
+          </a>
+        </div>
+      </div>
+    </div>
+  <% end %>
+```
+
+- [ ] **Step 4: Explain a missing survey URL on the Client Feedback row**
 
 In the same file, replace the Client Feedback row body (the `<td class="col text-right">` containing `project_capsule.client_feedback_survey_status.try(:humanize)`):
 
@@ -1471,7 +1494,7 @@ In the same file, replace the Client Feedback row body (the `<td class="col text
               </td>
 ```
 
-- [ ] **Step 4: Verify the view and scope load**
+- [ ] **Step 5: Verify the view and scope load**
 
 Run:
 ```bash
@@ -1482,7 +1505,7 @@ Expected: an array including `"Needs Capsule Sign Off"` — ActiveAdmin titleize
 Run: `bin/rails test test/integration 2>&1 | tail -5`
 Expected: PASS, 0 failures, 0 errors.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add app/admin/project_trackers.rb app/views/admin/project_trackers/_show.html.erb
