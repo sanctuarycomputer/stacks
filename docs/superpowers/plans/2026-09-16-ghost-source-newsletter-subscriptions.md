@@ -720,6 +720,30 @@ Ledger shape: `ghost_data["newsletter_ledger"] = { "member_id" => "<id>", "entri
     assert_equal "history", merged["entries"]["nl-1"]["state"], "earliest entry wins"
     assert_equal "2026-01-01T00:00:00Z", merged["entries"]["nl-1"]["at"]
     assert_equal "observed", merged["entries"]["nl-2"]["state"]
+
+    # Both orders, otherwise a naive "last one processed wins" implementation produces
+    # exactly these values for [late, early] and the test proves nothing.
+    reversed = Contact.merge_newsletter_ledgers([early, late])
+    assert_equal "history", reversed["entries"]["nl-1"]["state"], "earliest wins in either input order"
+    assert_equal "2026-01-01T00:00:00Z", reversed["entries"]["nl-1"]["at"]
+  end
+
+  test "a merged ledger takes its member_id from the ghost_id owner, not input order" do
+    # A ledger whose member_id does not match the contact's linked member is ignored by
+    # the grant decision, so mis-attributing it silently disables layer 2 even though
+    # every entry survived.
+    first = Contact.create!(email: "attrib@example.com", ghost_data: {
+      "newsletter_ledger" => { "member_id" => "m9", "entries" => {
+        "nl-1" => { "state" => "history", "at" => "2026-01-01T00:00:00Z" } } } })
+    Contact.create!(email: "ATTRIB@example.com", ghost_id: "m5", ghost_data: {
+      "newsletter_ledger" => { "member_id" => "m5", "entries" => {
+        "nl-2" => { "state" => "granted", "at" => "2026-02-01T00:00:00Z" } } } })
+
+    survivor = first.dedupe!
+    assert_equal "m5", survivor.ghost_id
+    assert_equal "m5", survivor.ghost_data.dig("newsletter_ledger", "member_id"),
+      "the ledger must describe the member the survivor is actually linked to"
+    assert_equal %w[nl-1 nl-2], survivor.ghost_data.dig("newsletter_ledger", "entries").keys.sort
   end
 
   test "dedupe! unions ledgers regardless of which dupe owns ghost_id" do
@@ -742,7 +766,7 @@ Ledger shape: `ghost_data["newsletter_ledger"] = { "member_id" => "<id>", "entri
     a = Contact.create!(email: "fx@example.com", ghost_data: {
       "newsletter_ledger" => { "member_id" => "m3", "entries" => {
         "nl-1" => { "state" => "history", "at" => "2026-01-01T00:00:00Z" } } } })
-    b = Contact.create!(email: "fx2@example.com", apollo_id: "apollo-1", ghost_data: {
+    Contact.create!(email: "fx2@example.com", apollo_id: "apollo-1", ghost_data: {
       "newsletter_ledger" => { "member_id" => "m3", "entries" => {
         "nl-2" => { "state" => "granted", "at" => "2026-02-01T00:00:00Z" } } } })
 
@@ -791,6 +815,9 @@ Add to `Contact` (public, near `merge_source_events`):
       (ledger["entries"] || {}).each do |newsletter_id, entry|
         existing = entries[newsletter_id]
         next if existing && existing["at"].to_s <= entry["at"].to_s
+        # A missing at stringifies to "" and would otherwise always compare as earliest,
+        # letting a malformed entry displace a well-formed one.
+        next if existing && entry["at"].to_s.empty?
         entries[newsletter_id] = entry.dup
       end
     end
@@ -821,13 +848,18 @@ Add to `Contact` (public, near `merge_source_events`):
     ledger_entry(newsletter_id)&.dig("state")
   end
 
-  # Write-once, in memory only. The caller persists via the single update! at the
-  # end of sync_contact!. Never write the ledger with update_column/update_all/raw
-  # jsonb: link_contact! rebuilds ghost_data from this same in-memory hash and
-  # would clobber an out-of-band write.
+  # Write-once, in memory only: this method never saves. Never write the ledger with
+  # update_column/update_all/raw jsonb either, because link_contact! rebuilds ghost_data
+  # from this same in-memory hash and would clobber an out-of-band write.
+  #
+  # NOTE for callers: link_contact! early-returns when the contact is already linked and
+  # nothing was written, which is the steady state for most contacts. A caller that
+  # records a ledger entry MUST ensure a save actually happens, or the entry evaporates.
   def record_ledger_entry!(newsletter_id, state, member_id:)
     ledger = newsletter_ledger.deep_dup
-    ledger["member_id"] ||= member_id
+    # Guard against nil: ||= would create the key with a nil value, which makes the
+    # ledger "changed" and writes a nil member_id on the next save.
+    ledger["member_id"] = member_id if ledger["member_id"].blank? && member_id.present?
     ledger["entries"] ||= {}
     if ledger["entries"].key?(newsletter_id.to_s)
       # Write-once on the entry, but still persist a newly-learned member_id: a ledger
@@ -846,16 +878,31 @@ Add to `Contact` (public, near `merge_source_events`):
 In `dedupe!`, after the existing `any_deleted_at` block and before `losers.each`, add:
 
 ```ruby
-        merged_ledger = Contact.merge_newsletter_ledgers(dupes.map { |d| d.ghost_data["newsletter_ledger"] })
+        # Order matters for member_id only: merge_newsletter_ledgers takes the first
+        # non-nil one, and it must be the ghost_id owner's. A ledger whose member_id does
+        # not match the contact's linked member is IGNORED by the grant decision, so
+        # picking the wrong one silently disables layer 2 for the whole merged ledger
+        # even though every entry survived. Entry unioning itself is order-independent.
+        ledger_sources = [survivor, ghost_id_owner, *dupes].compact.uniq
+        merged_ledger = Contact.merge_newsletter_ledgers(
+          ledger_sources.map { |d| d.ghost_data["newsletter_ledger"] }
+        )
         merged_ghost_data["newsletter_ledger"] = merged_ledger if merged_ledger.present?
 ```
 
 In the `fresh_existing` merge in `sync_to_apollo!`, inside `if fresh_existing`, after the existing `deleted_at` preservation block, add:
 
 ```ruby
-                merged_ledger = Contact.merge_newsletter_ledgers(
-                  [self.ghost_data["newsletter_ledger"], fresh_existing.ghost_data["newsletter_ledger"]]
-                )
+                # Include fresh_self: the surrounding code deliberately merges from the
+                # LOCKED reads so a concurrent write is not lost, and a ledger entry
+                # written to our row between load and lock would otherwise be clobbered
+                # by the save! below, which rewrites the whole ghost_data column.
+                # self first so its member_id wins.
+                merged_ledger = Contact.merge_newsletter_ledgers([
+                  self.ghost_data["newsletter_ledger"],
+                  fresh_self.ghost_data["newsletter_ledger"],
+                  fresh_existing.ghost_data["newsletter_ledger"],
+                ])
                 if merged_ledger.present?
                   self.ghost_data = self.ghost_data.merge("newsletter_ledger" => merged_ledger)
                 end
