@@ -65,10 +65,18 @@ class Contact < ApplicationRecord
     present.each do |ledger|
       (ledger["entries"] || {}).each do |newsletter_id, entry|
         existing = entries[newsletter_id]
-        next if existing && existing["at"].to_s <= entry["at"].to_s
-        # A missing at stringifies to "" and would otherwise always compare as earliest,
-        # letting a malformed entry displace a well-formed one.
-        next if existing && entry["at"].to_s.empty?
+        if existing
+          existing_at = existing["at"].to_s
+          incoming_at = entry["at"].to_s
+          # A blank timestamp is UNKNOWN, not "earliest". Comparing it as a string makes
+          # "" sort earliest in both directions, so a malformed entry would win whichever
+          # order it arrived in. Resolve it explicitly instead:
+          #   incoming blank        -> never displaces
+          #   existing blank, incoming good -> fall through and replace
+          #   both well-formed      -> earliest wins
+          next if incoming_at.empty?
+          next if !existing_at.empty? && existing_at <= incoming_at
+        end
         entries[newsletter_id] = entry.dup
       end
     end

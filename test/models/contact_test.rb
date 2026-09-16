@@ -321,6 +321,36 @@ class ContactSyncToApolloGhostTest < ActiveSupport::TestCase
     assert_equal %w[nl-1 nl-2], entries.keys.sort
     assert_equal "history", entries["nl-1"]["state"]
   end
+
+  test "the fresh_existing merge reads the locked row, not a stale in-memory copy" do
+    # The surrounding code merges from locked reads so a concurrent write is not lost.
+    # A ledger entry written to our row after this object was loaded must survive the
+    # save!, which rewrites the whole ghost_data column.
+    #
+    # fresh_existing carries unrelated, non-blank ghost_data (not just {}) so that
+    # self.ghost_data is actually reassigned (and therefore dirty) regardless of the
+    # merge outcome. Without that, ActiveRecord's dirty tracking sees ghost_data as
+    # unchanged ({} == {}), save! never emits an UPDATE for that column, and the
+    # concurrent write already sitting in the DB survives by accident even if the
+    # merge silently drops it — which would let this test pass with fresh_self's
+    # ledger excluded from the merge.
+    a = Contact.create!(email: "stale@example.com")
+    Contact.create!(email: "stale2@example.com", apollo_id: "apollo-stale",
+      ghost_data: { "unrelated" => "data" })
+    # Write behind a's back, exactly as another process would.
+    Contact.where(id: a.id).first.tap do |fresh|
+      fresh.record_ledger_entry!("nl-concurrent", "history", member_id: "m7")
+      fresh.save!
+    end
+    refute a.ledger_has?("nl-concurrent"), "the in-memory copy must still be stale"
+
+    apollo = mock("apollo")
+    apollo.stubs(:search_by_email).returns([{ "id" => "apollo-stale", "email" => a.email }])
+    a.sync_to_apollo!(apollo)
+
+    assert a.reload.ledger_has?("nl-concurrent"),
+      "a ledger entry written between load and lock must not be clobbered"
+  end
 end
 
 class ContactRansackTest < ActiveSupport::TestCase
@@ -387,5 +417,26 @@ class ContactNewsletterLedgerTest < ActiveSupport::TestCase
     reversed = Contact.merge_newsletter_ledgers([early, late])
     assert_equal "history", reversed["entries"]["nl-1"]["state"], "earliest wins in either input order"
     assert_equal "2026-01-01T00:00:00Z", reversed["entries"]["nl-1"]["at"]
+  end
+
+  test "record_ledger_entry! with a nil member_id does not create the key" do
+    # ||= would set member_id to nil, which makes the ledger differ from the stored one
+    # and writes a nil member_id on the next save.
+    c = Contact.create!(email: "nilmem@example.com")
+    c.record_ledger_entry!("nl-1", "observed", member_id: nil)
+    refute c.newsletter_ledger.key?("member_id")
+    assert c.ledger_has?("nl-1")
+  end
+
+  test "an entry with a blank at does not displace a well-formed one" do
+    good = { "entries" => { "nl-1" => { "state" => "history", "at" => "2026-01-01T00:00:00Z" } } }
+    blank = { "entries" => { "nl-1" => { "state" => "granted" } } }
+    # "" stringifies as earliest in both directions, so without the guard the malformed
+    # entry wins whichever order it arrives in.
+    [[good, blank], [blank, good]].each do |ledgers|
+      merged = Contact.merge_newsletter_ledgers(ledgers)
+      assert_equal "history", merged["entries"]["nl-1"]["state"], "order #{ledgers.first.equal?(good)}"
+      assert_equal "2026-01-01T00:00:00Z", merged["entries"]["nl-1"]["at"]
+    end
   end
 end
