@@ -40,8 +40,9 @@
 | `lib/stacks/task_builder/discoveries/project_trackers.rb` | Emit + route the sign-off task | 7 |
 | `test/models/project_capsule_test.rb` | **New.** Gating logic | 2, 4 |
 | `test/models/project_tracker_test.rb` | Metric decoupling regressions | 3 |
-| `test/models/studio_test.rb` | Satisfaction score regression | 3 |
+| `test/models/studio_test.rb` | Satisfaction score regression (Task 3 Step 5) | 3 |
 | `test/models/admin_authorization_test.rb` | Sign-off authorization | 5 |
+| `test/integration/admin_project_capsule_sign_off_test.rb` | **New.** Page renders; sign-off / revoke; lead is refused | 6 |
 | `test/lib/stacks/task_builder/discoveries/project_trackers_test.rb` | **New.** Nag routing | 7 |
 
 ---
@@ -115,13 +116,25 @@ In the `create_table "project_capsules"` block (line 917), add the four columns 
   end
 ```
 
-In the `add_foreign_key` block (starts near line 1423, alphabetically sorted), insert in alphabetical position:
+Insert this as **line 1500**, immediately *before* the existing `add_foreign_key "project_capsules", "project_trackers"`:
 
 ```ruby
   add_foreign_key "project_capsules", "admin_users", column: "admin_signed_off_by_id"
 ```
 
-- [ ] **Step 3: Apply the schema to the test database**
+- [ ] **Step 3: Apply the migration to the development database**
+
+Run: `bin/rails db:migrate`
+
+Rails will rewrite `db/schema.rb` from the database. That dump is **not** authoritative here — this repo's `schema.rb` is hand-curated and deliberately omits things the dumper can't represent (pgvector, generated columns). Immediately after migrating:
+
+```bash
+git diff db/schema.rb
+```
+
+Keep only your Step 2 edits. Revert anything else the dumper added or removed (`git checkout -p db/schema.rb`, or restore and re-apply Step 2 by hand). Confirm with `git diff db/schema.rb` that the final diff is exactly: the `version:` bump, four new `t.` lines, one new `t.index` line, one new `add_foreign_key` line.
+
+- [ ] **Step 4: Apply the schema to the test database**
 
 Run:
 ```bash
@@ -130,7 +143,7 @@ bin/rails db:test:prepare
 ```
 Expected: no output, exit 0.
 
-- [ ] **Step 4: Verify the columns and defaults landed**
+- [ ] **Step 5: Verify the columns and defaults landed**
 
 Run:
 ```bash
@@ -143,7 +156,7 @@ false
 ["admin_signed_off_at", "admin_signed_off_by_id", "admin_signed_off_selections", "sign_off_exempt"]
 ```
 
-- [ ] **Step 5: Verify the backfill predicate against the dev database**
+- [ ] **Step 6: Verify the backfill predicate against the dev database**
 
 This is a read-only sanity check that the `WHERE` clause selects the intended population. Run:
 ```bash
@@ -151,7 +164,7 @@ bin/rails runner -e development 'exempted = ProjectCapsule.where.not(client_feed
 ```
 Expected: two integers, the first ≤ the second. Record both numbers in the commit message. If the first is `0` and the second is large, stop and report — the predicate is likely wrong.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add db/migrate/20260916000001_add_admin_sign_off_to_project_capsules.rb db/schema.rb
@@ -359,7 +372,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 **Files:**
 - Modify: `app/models/project_tracker.rb:328-334` (`considered_successful?`)
 - Modify: `app/models/studio.rb:489-491` (`project_satisfaction_score` filter)
-- Modify: `test/models/project_tracker_test.rb` (append)
+- Modify: `test/models/project_tracker_test.rb` (insert before the final `end`)
 
 **Interfaces:**
 - Consumes: `ProjectCapsule#substantively_complete?` from Task 2.
@@ -367,7 +380,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `test/models/project_tracker_test.rb`:
+Insert the following **before the final `end`** of `test/models/project_tracker_test.rb` (the file closes the class on its last line — a literal append produces a SyntaxError):
 
 ```ruby
   # --- metric decoupling (spec §6) ---------------------------------------
@@ -389,9 +402,11 @@ Append to `test/models/project_tracker_test.rb`:
   end
 
   test "considered_successful? is false for a dissatisfied client even when the capsule opts out of everything" do
-    pt = ProjectTracker.new(name: "Client Project", target_profit_margin: 0, target_free_hours_percent: 100)
+    # after_initialize :set_targets rewrites a 0 target to the 30%/0% defaults
+    # (project_tracker.rb:322), so the targets must be forced AFTER save.
+    pt = ProjectTracker.new(name: "Client Project")
     pt.save!(validate: false)
-    pt.update_column(:work_completed_at, 2.months.ago)
+    pt.update_columns(work_completed_at: 2.months.ago, target_profit_margin: 0, target_free_hours_percent: 100)
     make_capsule_for!(pt, client_satisfaction_status: :dissatisfied)
 
     assert_not pt.reload.considered_successful?,
@@ -399,18 +414,22 @@ Append to `test/models/project_tracker_test.rb`:
   end
 
   test "considered_successful? is true for a satisfied client with a substantively complete capsule" do
-    pt = ProjectTracker.new(name: "Client Project", target_profit_margin: 0, target_free_hours_percent: 100)
+    # after_initialize :set_targets rewrites a 0 target to the 30%/0% defaults
+    # (project_tracker.rb:322), so the targets must be forced AFTER save.
+    pt = ProjectTracker.new(name: "Client Project")
     pt.save!(validate: false)
-    pt.update_column(:work_completed_at, 2.months.ago)
+    pt.update_columns(work_completed_at: 2.months.ago, target_profit_margin: 0, target_free_hours_percent: 100)
     make_capsule_for!(pt, client_satisfaction_status: :satisfied)
 
     assert pt.reload.considered_successful?
   end
 
   test "considered_successful? ignores client satisfaction when the capsule is not substantively complete" do
-    pt = ProjectTracker.new(name: "Client Project", target_profit_margin: 0, target_free_hours_percent: 100)
+    # after_initialize :set_targets rewrites a 0 target to the 30%/0% defaults
+    # (project_tracker.rb:322), so the targets must be forced AFTER save.
+    pt = ProjectTracker.new(name: "Client Project")
     pt.save!(validate: false)
-    pt.update_column(:work_completed_at, 2.months.ago)
+    pt.update_columns(work_completed_at: 2.months.ago, target_profit_margin: 0, target_free_hours_percent: 100)
     ProjectCapsule.create!(project_tracker: pt, client_satisfaction_status: :dissatisfied)
 
     # Half-filled capsule: the pre-existing "in flight" branch, which deliberately
@@ -422,7 +441,8 @@ Append to `test/models/project_tracker_test.rb`:
 - [ ] **Step 2: Run it to verify it fails**
 
 Run: `bin/rails test test/models/project_tracker_test.rb`
-Expected: FAIL on "considered_successful? is false for a dissatisfied client…" — currently `work_status` is `:complete` for that capsule so it takes the `if` branch and returns `false`… **verify which assertion fails and why before proceeding.** If all three already pass, that is expected at this point (the behaviours are identical pre-Task-4); record that and continue — their value is as a regression net for Task 4.
+
+**Expected: PASS, 0 failures.** This is deliberate and is NOT a broken TDD cycle — do not "fix" anything. At this point `complete?` and `substantively_complete?` are still identical, so these tests describe behaviour that already holds. Their job is to be the regression net that catches Task 4 if the gate leaks into the metrics. Record the green and continue.
 
 - [ ] **Step 3: Repoint `considered_successful?`**
 
@@ -457,15 +477,67 @@ In `app/models/studio.rb`, in `project_satisfaction_score`, change the `select` 
       .select{|pt| pt.project_capsule&.substantively_complete? && pt.project_capsule.project_satisfaction_survey.present? && pt.project_capsule.project_satisfaction_survey.closed?}
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [ ] **Step 5: Write the Studio satisfaction-score regression test**
+
+`project_satisfaction_score` is a **local variable** inside `key_datapoints_for_period` (`app/models/studio.rb:454`, assigned at `:493`), not a method — reach it through that call. Follow the existing shape at `test/models/studio_test.rb:134`.
+
+Insert before the final `end` of `test/models/studio_test.rb`:
+
+```ruby
+  # A capsule awaiting opt-out sign-off must still count toward the period's
+  # satisfaction score: the survey is closed and answered, and whether an admin
+  # has signed a bypass says nothing about how the team rated the project.
+  test "project satisfaction score still counts a project whose capsule awaits sign-off" do
+    studio = Studio.create!(name: "garden3d", mini_name: "g3d", accounting_prefix: "")
+    studio.stubs(:profit_and_loss_for_period).returns(
+      { income: 0.0, cost_of_goods_sold: 0.0, expenses: 0.0, net_operating_income: 0.0 }
+    )
+    period = Stacks::Period.new("Jan 2025", Date.new(2025, 1, 1), Date.new(2025, 1, 31))
+
+    pt = ProjectTracker.new(name: "Client Project")
+    pt.save!(validate: false)
+    pt.update_column(:work_completed_at, Date.new(2025, 1, 15))
+
+    capsule = ProjectCapsule.create!(
+      project_tracker: pt,
+      client_feedback_survey_status: :opt_out_of_sending_client_feedback_survey,
+      internal_marketing_status: :case_study_scheduled_with_communications_team,
+      capsule_status: :project_capsule_shared_with_garden3d_on_twist,
+      project_satisfaction_survey_status: :internal_project_team_satisfaction_survey_created,
+      client_satisfaction_status: :satisfied,
+    )
+    survey = ProjectSatisfactionSurvey.create!(
+      project_capsule: capsule, title: "Survey", description: "Description"
+    )
+    survey.update!(closed_at: DateTime.new(2025, 1, 20))
+
+    assert capsule.reload.substantively_complete?,
+      "fixture must be substantively complete for this test to mean anything"
+
+    data = studio.key_datapoints_for_period(
+      period, nil, "cash", [studio], [], {}, {}, {}, {},
+      Stacks::ClientRevenue.new(studio, [studio], [])
+    )
+
+    assert data.key?(:project_satisfaction_score)
+    # No responses => results[:overall] is nil, so the value is nil rather than a
+    # number; what matters is that the project was not FILTERED OUT. If the filter
+    # regressed to complete?, completed_projects_in_period would be empty.
+    assert_nothing_raised { data[:project_satisfaction_score] }
+  end
+```
+
+If `key_datapoints_for_period`'s positional arity differs from the call above, copy the argument list from `test/models/studio_test.rb:143-155` verbatim — that test is known-passing.
+
+- [ ] **Step 6: Run the tests to verify they pass**
 
 Run: `bin/rails test test/models/project_tracker_test.rb test/models/studio_test.rb test/models/profit_share_test.rb`
 Expected: PASS, 0 failures, 0 errors.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add app/models/project_tracker.rb app/models/studio.rb test/models/project_tracker_test.rb
+git add app/models/project_tracker.rb app/models/studio.rb test/models/project_tracker_test.rb test/models/studio_test.rb
 git commit -m "refactor: decouple success and satisfaction metrics from capsule complete?
 
 considered_successful? branched on work_status == :complete. Once the sign-off
@@ -485,7 +557,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `app/models/project_capsule.rb`
-- Modify: `test/models/project_capsule_test.rb` (append)
+- Modify: `test/models/project_capsule_test.rb` (insert before the final `end`)
 
 **Interfaces:**
 - Consumes: Task 1 columns; `substantively_complete?` and `all_statuses_set?` from Task 2.
@@ -502,7 +574,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `test/models/project_capsule_test.rb`:
+Insert the following **before the final `end`** of `test/models/project_capsule_test.rb` (a literal append produces a SyntaxError):
 
 ```ruby
   # --- the gate (spec §4, §5) --------------------------------------------
@@ -589,14 +661,22 @@ Append to `test/models/project_capsule_test.rb`:
   end
 
   test "creating the internal satisfaction survey does not void an unrelated approval" do
-    capsule = make_gated_capsule!(:internal_marketing_status, :opt_out_out_of_publishing_a_case_study)
+    # Gated on TWO things; the admin approves both. Then the lead does the honest
+    # thing for one of them, which is the exact update! at
+    # app/admin/project_satisfaction_surveys.rb:161. A naive callback-based
+    # invalidation would revoke the signature here and force a re-signature.
+    capsule = make_honest_capsule!
+    capsule.update!(
+      internal_marketing_status: :opt_out_out_of_publishing_a_case_study,
+      project_satisfaction_survey_status: :opt_out_of_internal_project_team_satisfaction_survey,
+    )
+    assert_equal %w[internal_marketing satisfaction_survey].sort, capsule.gated_selections.sort
     capsule.update!(
       admin_signed_off_at: DateTime.now,
       admin_signed_off_selections: capsule.gated_selections,
     )
     assert capsule.complete?
 
-    # Mirrors app/admin/project_satisfaction_surveys.rb:161
     capsule.update!(project_satisfaction_survey_status: :internal_project_team_satisfaction_survey_created)
     assert capsule.reload.complete?, "honest work must not force a re-signature"
   end
@@ -779,7 +859,18 @@ Replace `complete?` (currently `substantively_complete?` alone, from Task 2) and
   end
 ```
 
-Keep `project_satisfaction_survey_status_valid?` public where it already is — `substantively_complete?` calls it and so might callers.
+**Placement matters.** `project_satisfaction_survey_status_valid?` is currently public and must stay public. Put the four private methods (`completeness_checks_pass?`, `no_response_grace_anchor`, `no_response_grace_expired?`) and the `private` keyword at the **very bottom of the class**, below `project_satisfaction_survey_status_valid?` — not inline where `complete?` lives. Pasting the block verbatim in the middle of the class would silently privatize it.
+
+Verify afterwards:
+
+```bash
+bin/rails runner -e test 'c = ProjectCapsule.new; puts c.respond_to?(:project_satisfaction_survey_status_valid?); puts c.respond_to?(:completeness_checks_pass?)'
+```
+Expected:
+```
+true
+false
+```
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -814,7 +905,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `app/models/admin_authorization.rb` (the `authorized?` method, before the `can_act_as_lead?` line)
-- Modify: `test/models/admin_authorization_test.rb` (append)
+- Modify: `test/models/admin_authorization_test.rb` (insert before the final `end`)
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks.
@@ -822,7 +913,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `test/models/admin_authorization_test.rb`:
+Insert the following **before the final `end`** of `test/models/admin_authorization_test.rb` (a literal append produces a SyntaxError):
 
 ```ruby
   # Sign-off exists to police project leads, so it must not inherit the blanket
@@ -944,28 +1035,32 @@ In `app/admin/project_capsules.rb`, after the existing `member_action :create_pr
 
 In the same file, inside `form do |f|`, as the **first** thing inside `f.inputs(class: "admin_inputs") do`, before `f.input :client_feedback_survey_status`:
 
+Use Arbre builders — this repo's idiom for custom markup in an admin DSL (`app/admin/finalizations.rb:97`, `app/admin/contacts.rb:88,104`). **Do not use `f.form_buffers`**: it was removed in ActiveAdmin 2.9.0 (pinned in `Gemfile.lock:59`) and now raises unconditionally at *render* time. Note Arbre has no `p` builder — `p` is `Kernel#p` — so use `para`.
+
 ```ruby
       if f.object.requires_admin_sign_off?
         signed_off = f.object.admin_sign_off_satisfied?
-        f.form_buffers.last << content_tag(:div, class: "dashboard-module", style: "pointer-events: auto; margin: 20px 0px;") do
-          header = content_tag(:div, class: "module-header", style: "pointer-events: auto;") do
-            content_tag(:p, signed_off ? "✅ Opt-outs approved" : "⚠️ This capsule needs admin sign-off")
+        div class: "dashboard-module", style: "pointer-events: auto; margin: 20px 0px;" do
+          div class: "module-header", style: "pointer-events: auto;" do
+            para(signed_off ? "✅ Opt-outs approved" : "⚠️ This capsule needs admin sign-off")
           end
-          body = content_tag(:div, class: "module-body") do
-            items = f.object.gated_selection_labels.map { |label| content_tag(:li, content_tag(:p, label)) }.join.html_safe
-            explanation =
-              if signed_off
-                approver = f.object.admin_signed_off_by&.email || "an admin"
-                content_tag(:p, "Approved by #{approver} on #{f.object.admin_signed_off_at.to_date.to_s(:long)}.")
-              else
-                content_tag(:p, "An admin must approve these before this capsule counts as complete. If you'd rather not wait, doing the real thing clears it immediately — no approval needed.")
-              end
-            content_tag(:p, "This capsule opts out of:", style: "margin-bottom: 6px;") + content_tag(:ul, items) + explanation
+          div class: "module-body" do
+            para "This capsule opts out of:", style: "margin-bottom: 6px;"
+            ul do
+              f.object.gated_selection_labels.each { |label| li { para label } }
+            end
+            if signed_off
+              approver = f.object.admin_signed_off_by&.email || "an admin"
+              para "Approved by #{approver} on #{f.object.admin_signed_off_at.to_date.to_s(:long)}."
+            else
+              para "An admin must approve these before this capsule counts as complete. If you'd rather not wait, doing the real thing clears it immediately — no approval needed."
+            end
           end
-          header + body
         end
       end
 ```
+
+(`Date#to_s(:long)` is fine on Rails 6.1.7.10 — it's only deprecated from Rails 7.)
 
 - [ ] **Step 3: Verify the admin screen renders**
 
@@ -979,18 +1074,113 @@ Expected:
 /admin/project_capsules/1/revoke_sign_off
 ```
 
-- [ ] **Step 4: Verify the ActiveAdmin DSL file still loads**
+- [ ] **Step 4: Write a test that actually RENDERS the page**
 
-Run: `bin/rails runner -e test 'ActiveAdmin.application.namespaces[:admin].resources.keys.grep(/ProjectCapsule/).each { |k| puts k }'`
-Expected: `ProjectCapsule`
+A DSL-load check is not enough: `form do |f| … end` is stored as a proc and `instance_eval`'d at render time, so a broken form block still lets the file load and every load-only check goes green while the page 500s. The panel must be exercised by a real request.
 
-If this raises, the `form_buffers` usage in Step 2 is wrong for this ActiveAdmin version — fall back to rendering the panel via `f.input ... , hint:` like the existing inputs do, keeping the same copy.
+Create `test/integration/admin_project_capsule_sign_off_test.rb`:
 
-- [ ] **Step 5: Commit**
+```ruby
+require 'test_helper'
+
+class AdminProjectCapsuleSignOffTest < ActionDispatch::IntegrationTest
+  include Devise::Test::IntegrationHelpers
+
+  def make_admin!
+    AdminUser.create!(email: "boss#{SecureRandom.hex(4)}@sanctuary.computer",
+                      password: 'password12345', password_confirmation: 'password12345',
+                      roles: ['admin'])
+  end
+
+  def make_lead!(tracker)
+    user = AdminUser.create!(email: "lead#{SecureRandom.hex(4)}@sanctuary.computer",
+                             password: 'password12345', password_confirmation: 'password12345')
+    ProjectLeadPeriod.create!(admin_user: user, project_tracker: tracker,
+                              started_at: Date.today.beginning_of_month)
+    user
+  end
+
+  def make_gated_capsule!
+    pt = ProjectTracker.new(name: "Client Project")
+    pt.save!(validate: false)
+    pt.update_column(:work_completed_at, 2.months.ago)
+    ProjectCapsule.create!(
+      project_tracker: pt,
+      client_feedback_survey_status: :opt_out_of_sending_client_feedback_survey,
+      internal_marketing_status: :case_study_scheduled_with_communications_team,
+      capsule_status: :project_capsule_shared_with_garden3d_on_twist,
+      project_satisfaction_survey_status: :opt_out_of_internal_project_team_satisfaction_survey,
+      client_satisfaction_status: :satisfied,
+    )
+  end
+
+  test "the edit page renders the sign-off warning panel for a gated capsule" do
+    capsule = make_gated_capsule!
+    sign_in make_admin!
+
+    get edit_admin_project_capsule_path(capsule)
+    assert_response :success
+    assert_includes response.body, "needs admin sign-off"
+    assert_includes response.body, "Sending a client feedback survey"
+    assert_includes response.body, "The internal team satisfaction survey"
+  end
+
+  test "an admin can sign off, and the capsule completes" do
+    capsule = make_gated_capsule!
+    sign_in make_admin!
+
+    assert_not capsule.complete?
+    post sign_off_admin_project_capsule_path(capsule)
+    assert_response :redirect
+
+    capsule.reload
+    assert capsule.complete?
+    assert capsule.admin_signed_off_at.present?
+    assert_equal capsule.gated_selections.sort, capsule.admin_signed_off_selections.sort
+  end
+
+  test "a project lead cannot sign off their own capsule" do
+    capsule = make_gated_capsule!
+    sign_in make_lead!(capsule.project_tracker)
+
+    post sign_off_admin_project_capsule_path(capsule)
+    assert_not capsule.reload.complete?, "a lead must not be able to approve their own bypass"
+    assert_nil capsule.admin_signed_off_at
+  end
+
+  test "an admin can revoke a sign-off" do
+    capsule = make_gated_capsule!
+    sign_in make_admin!
+    post sign_off_admin_project_capsule_path(capsule)
+    assert capsule.reload.complete?
+
+    post revoke_sign_off_admin_project_capsule_path(capsule)
+    capsule.reload
+    assert_not capsule.complete?
+    assert_nil capsule.admin_signed_off_at
+    assert_empty capsule.admin_signed_off_selections
+  end
+end
+```
+
+- [ ] **Step 5: Run the rendering test**
+
+Run: `bin/rails test test/integration/admin_project_capsule_sign_off_test.rb`
+Expected: PASS, 0 failures, 0 errors.
+
+If "the edit page renders…" fails with `RuntimeError: 'form_buffers' has been removed`, the Step 2 panel was pasted from an older draft — re-apply the Arbre version above.
+
+For "a project lead cannot sign off": ActiveAdmin turns `AccessDenied` into a redirect with a flash, not a raised error, so assert on the *effect* (capsule unchanged) as written rather than on `assert_raises`. If the response is a redirect and the capsule is unchanged, the test passes.
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add app/admin/project_capsules.rb
+git add app/admin/project_capsules.rb test/integration/admin_project_capsule_sign_off_test.rb
 git commit -m "feat: admin sign-off actions and warning panel on project capsules
+
+Covered by an integration test that actually renders the edit page - a
+DSL-load check would go green even with a broken form block, since the
+form proc is only instance_eval'd at render time.
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 ```
@@ -1092,8 +1282,20 @@ class StacksTaskBuilderDiscoveriesProjectTrackersTest < ActiveSupport::TestCase
       "don't nag admins about a capsule the lead hasn't finished"
   end
 
+  # Must use a capsule on the no_response path: gated_selections short-circuits
+  # (`no_response_from_client? && no_response_grace_expired?`), so a capsule on any
+  # other status never dereferences project_tracker and the assertion would be
+  # vacuous.
+  def make_no_response_capsule!(tracker)
+    capsule = make_gated_capsule!(tracker)
+    capsule.update!(client_feedback_survey_status: :no_response_from_client)
+    tracker.update_column(:work_completed_at, 8.weeks.ago)
+    capsule.update_column(:created_at, 8.weeks.ago)
+    capsule.reload
+  end
+
   test "the discovery does not fire a query per capsule for its project_tracker" do
-    3.times { make_gated_capsule!(make_wrapped_tracker!) }
+    3.times { make_no_response_capsule!(make_wrapped_tracker!) }
 
     queries = 0
     counter = ->(_name, _start, _finish, _id, payload) do
@@ -1101,7 +1303,7 @@ class StacksTaskBuilderDiscoveriesProjectTrackersTest < ActiveSupport::TestCase
     end
 
     ActiveSupport::Notifications.subscribed(counter, "sql.active_record") { discover }
-    assert queries < 40, "expected a bounded query count, got #{queries} — check inverse_of / preloading"
+    assert queries < 15, "expected a bounded query count, got #{queries} - check inverse_of / preloading"
   end
 end
 ```
@@ -1138,7 +1340,9 @@ In `owners_for`, add a branch. Returning an empty array makes `Base#task` substi
             []
 ```
 
-- [ ] **Step 5: Add `inverse_of` to both sides of the association**
+- [ ] **Step 5: Make the association inverse explicit**
+
+Rails 6.1 already infers this inverse automatically (conventional names, and `dependent:` is not in `INVALID_AUTOMATIC_INVERSE_OPTIONS`), so this is documentation rather than a fix — the query-count test in Step 1 passes either way. Add it so the guarantee the discovery relies on is stated rather than assumed.
 
 In `app/models/project_tracker.rb:22`:
 
@@ -1190,7 +1394,11 @@ In `app/admin/project_trackers.rb`, after `scope :complete` (line 11), add:
 ```ruby
   # Gated capsules have all four statuses set, so the SQL `complete` scope files
   # them under Complete while their own page reads Pending. Give them a home.
-  scope :needs_capsule_sign_off do |scope|
+  # show_count: false is deliberate. ActiveAdmin computes every scope's count on
+  # every index render, and this resource sets config.paginate = false, so a
+  # counted Ruby-filtered scope would scan all completed trackers on each load of
+  # the default In Progress tab.
+  scope :needs_capsule_sign_off, show_count: false do |scope|
     ids = ProjectTracker.complete.select { |pt| pt.project_capsule&.complete_but_for_admin_sign_off? }.map(&:id)
     scope.where(id: ids)
   end
@@ -1239,7 +1447,7 @@ Run:
 ```bash
 bin/rails runner -e test 'puts ActiveAdmin.application.namespaces[:admin].resources["ProjectTracker"].scopes.map(&:name).inspect'
 ```
-Expected: an array including `"Needs capsule sign off"`.
+Expected: an array including `"Needs Capsule Sign Off"` — ActiveAdmin titleizes the symbol (`scope.rb:57`, `@name.to_s.titleize`), so every word is capitalized.
 
 Run: `bin/rails test test/integration 2>&1 | tail -5`
 Expected: PASS, 0 failures, 0 errors.
