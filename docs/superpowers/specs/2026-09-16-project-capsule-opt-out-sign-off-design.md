@@ -41,8 +41,9 @@ route. No state machine is required.
 ## Scope decisions
 
 - **All four opt-outs are gated.**
-- **"No response from client" is gated after a 4-week grace period.** Chasing an
-  unresponsive client is legitimate; sitting on it forever is not.
+- **"No response from client" is gated after a 4-week grace period**, anchored on
+  the capsule row's `created_at`. Chasing an unresponsive client is legitimate;
+  sitting on it forever is not. (Revised during implementation — see §4.)
 - **The happy path also needs proof**: "received & shared with project team"
   requires a well-formed `client_feedback_survey_url`.
 - **Both admins and the project lead are nagged** while a capsule waits on
@@ -223,13 +224,25 @@ def completeness_checks_pass?
   substantively_complete? && client_feedback_survey_url_valid?
 end
 
-# Anchored on the EARLIEST wrap signal we have. work_completed_at alone is
-# resettable: uncomplete_work then complete_work rewrites it to DateTime.now
-# (app/admin/project_trackers.rb:303-312), which would buy another 4 weeks,
-# repeatably. project_capsules.created_at is immutable and is stamped at the
-# first complete_work, so the earlier of the two can't be pushed forward.
+# SHIPPED: created_at alone. work_completed_at is deliberately NOT consulted.
+#
+# The original design anchored on work_completed_at; adversarial review found it
+# resettable — uncomplete_work then complete_work rewrites it to DateTime.now
+# (app/admin/project_trackers.rb:303-312), buying another 4 weeks, repeatably.
+# min(work_completed_at, created_at) was tried next and also failed: after a
+# reset BOTH columns read "now", so no formula over the two can recover the real
+# wrap. created_at is immutable and unreachable from every app write path, so
+# there is no reset to defend against.
+#
+# mark_work_completed! now calls ensure_project_capsule_exists! (it previously
+# did not, and is reachable with a backdated date via the MCP write tool), so
+# created_at IS the wrap date for every capsule created from here on.
+#
+# Accepted consequence: a legacy capsule whose row appeared later than its real
+# wrap gets its 4 weeks from creation. That is the right reading anyway — a lead
+# cannot chase a client through a capsule that does not exist yet.
 def no_response_grace_anchor
-  [project_tracker&.work_completed_at, created_at].compact.min
+  created_at
 end
 
 def no_response_grace_expired?
