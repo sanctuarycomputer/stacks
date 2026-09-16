@@ -246,6 +246,29 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
     assert_equal true, contact.ghost_data.dig("snapshot", "email_disabled")
   end
 
+  test "the pull leg records observed ledger entries for current subscriptions" do
+    ghost = mock("ghost")
+    sync = sync_with(ghost)
+    m = member(id: "m90", email: "obs@example.com", newsletters: %w[weekly])
+    contact = sync.upsert_contact_from_member(m).reload
+
+    assert_equal "observed", contact.ledger_state("nl-weekly")
+    assert_equal "m90", contact.ledger_member_id
+    assert_equal ["weekly"], contact.ghost_data.dig("snapshot", "newsletters"),
+      "snapshot semantics must be untouched"
+  end
+
+  test "observation never overwrites an existing ledger entry" do
+    ghost = mock("ghost")
+    sync = sync_with(ghost)
+    contact = Contact.create!(email: "obs2@example.com", ghost_id: "m91", ghost_data: {
+      "newsletter_ledger" => { "member_id" => "m91", "entries" => {
+        "nl-weekly" => { "state" => "history", "at" => "2026-01-01T00:00:00Z" } } } })
+
+    sync.upsert_contact_from_member(member(id: "m91", email: "obs2@example.com", newsletters: %w[weekly]))
+    assert_equal "history", contact.reload.ledger_state("nl-weekly")
+  end
+
   test "sync_all! pull leg upserts Ghost-only members" do
     ghost = mock("ghost")
     ghost.expects(:all_members).returns([

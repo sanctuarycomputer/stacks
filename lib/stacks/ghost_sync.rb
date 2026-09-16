@@ -164,6 +164,16 @@ class Stacks::GhostSync
       }.compact
     )
     contact.ghost_data = new_ghost_data if new_ghost_data != contact.ghost_data
+
+    # Backstop for layer 2: record that this contact is currently subscribed to
+    # each newsletter, regardless of the grants flag. record_ledger_entry! is
+    # write-once, so this can never downgrade an entry already marking the
+    # contact as unsubscribed ("history") -- it only ever fills in the gap for
+    # newsletters we have not yet observed either way.
+    (member["newsletters"] || []).map { |n| n["id"] }.compact.each do |newsletter_id|
+      contact.record_ledger_entry!(newsletter_id, "observed", member_id: member["id"])
+    end
+
     contact.save! if contact.changed?
     contact.record_source_events!(new_sources)
     contact
