@@ -75,24 +75,20 @@ class Survey < ApplicationRecord
     Contributor.elevated_service_admin_user_ids(elevated_service_periods, [fp_id]).include?(admin_user.id)
   end
 
+  # Memoized Set of admin_user ids expected to respond: core members of each of the
+  # survey's studios as of reference_date, plus elevated-service members. Deliberately
+  # stops before touching survey_responders, so it is safe where responder identity
+  # must stay out of scope (the MCP survey presenter).
+  def expected_responder_ids
+    @expected_responder_ids ||= expected_members_by_studio.values.flatten.map(&:id).to_set
+  end
+
   # Memoized: called repeatedly per survey (index rows call expected_responders twice),
   # and the elevated-service bulk is the expensive part.
   def expected_responder_status
-    @expected_responder_status ||= begin
-      ref = reference_date
-      # One bulk elevated-service computation for the whole survey.
-      candidate_fp_ids = studios.flat_map { |s|
-        s.members_active_on(ref).joins(:forecast_person).pluck("forecast_people.forecast_id")
-      }.uniq
-      elevated_ids = Contributor.elevated_service_admin_user_ids(elevated_service_periods, candidate_fp_ids)
-
-      studios.each_with_object({}) do |studio, acc|
-        core = studio.core_members_active_on(ref).to_a
-        elevated = studio.members_active_on(ref).where(id: elevated_ids.to_a).to_a
-        members = (core + elevated).uniq
-        acc[studio] = members.each_with_object({}) do |admin_user, h|
-          h[admin_user] = SurveyResponder.find_by(survey: self, admin_user: admin_user)
-        end
+    @expected_responder_status ||= expected_members_by_studio.transform_values do |members|
+      members.each_with_object({}) do |admin_user, h|
+        h[admin_user] = SurveyResponder.find_by(survey: self, admin_user: admin_user)
       end
     end
   end
@@ -166,6 +162,27 @@ class Survey < ApplicationRecord
 
       new_survey.save!
       new_survey
+    end
+  end
+
+  private
+
+  # { Studio => [AdminUser] } of expected members per studio. Memoized; runs the
+  # elevated-service bulk computation once for the whole survey.
+  def expected_members_by_studio
+    @expected_members_by_studio ||= begin
+      ref = reference_date
+      # One bulk elevated-service computation for the whole survey.
+      candidate_fp_ids = studios.flat_map { |s|
+        s.members_active_on(ref).joins(:forecast_person).pluck("forecast_people.forecast_id")
+      }.uniq
+      elevated_ids = Contributor.elevated_service_admin_user_ids(elevated_service_periods, candidate_fp_ids)
+
+      studios.each_with_object({}) do |studio, acc|
+        core = studio.core_members_active_on(ref).to_a
+        elevated = studio.members_active_on(ref).where(id: elevated_ids.to_a).to_a
+        acc[studio] = (core + elevated).uniq
+      end
     end
   end
 end

@@ -212,6 +212,7 @@ class ContributorPayout < ApplicationRecord
     return [] unless qbo_inv.present?
 
     project_trackers = invoice_tracker.project_trackers
+    default_rules = Stacks::BillingModel.for(Stacks::BillingModel::DEFAULT)
 
     blueprint["IndividualContributor"].map do |ic|
       blueprint_metadata = ic.dig("blueprint_metadata")
@@ -222,20 +223,19 @@ class ContributorPayout < ApplicationRecord
       commission_for_line = invoice_tracker.commission_total_for_line(blueprint_metadata.dig("id"))
       working_amount = amount_billed - commission_for_line
 
-      surplus = 0
-      if working_amount > 0
-        profit_margin = (working_amount - amount_paid) / working_amount
-        surplus = ((profit_margin - 0.43) * working_amount).round(2)
-        surplus = 0 if surplus <= 0
-      end
-
+      # The tracker decides the split rules for this line. Resolve it before
+      # the surplus math so the threshold and ceiling come from its model.
       project_tracker = project_trackers.find{|pt| pt.forecast_project_ids.include?(blueprint_metadata.dig("forecast_project"))}
+      rules = project_tracker&.billing_rules || default_rules
+
+      surplus = rules.surplus_for(working_amount: working_amount, ic_amount: amount_paid)
+
       {
         project_tracker: project_tracker,
         contributor: contributor,
         surplus: surplus,
         actual: amount_paid,
-        maximum: 0.57 * working_amount,
+        maximum: (rules.ic_ceiling * working_amount).to_f,
         chunk: ic,
         qbo_line_item: qbo_line_item,
         blueprint_metadata: blueprint_metadata,

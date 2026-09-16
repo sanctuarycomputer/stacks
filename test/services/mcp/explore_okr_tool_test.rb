@@ -14,8 +14,8 @@ class Mcp::ExploreOkrToolTest < ActiveSupport::TestCase
       'label' => label,
       'period_starts_at' => starts_at,
       'period_ends_at' => ends_at,
-      'cash' => { 'datapoints' => datapoints, 'okrs' => {} },
-      'accrual' => { 'datapoints' => {}, 'okrs' => {} },
+      'accrual' => { 'datapoints' => datapoints, 'okrs' => {} },
+      'cash' => { 'datapoints' => {}, 'okrs' => {} },
       'utilization' => utilization,
     }
   end

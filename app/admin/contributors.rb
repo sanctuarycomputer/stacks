@@ -275,11 +275,38 @@ ActiveAdmin.register Contributor do
       view_mode = :ledger if current_ledger
     end
 
+    # Projected earnings from the Runn mirror. A failure here must not take
+    # the ledger down with it — render the real items and an empty projection.
+    # Tracked separately from `projection.nil?` so the view can say "this
+    # blew up" rather than mislabelling it as a stale Runn sync.
+    projection_error = false
+    projection =
+      begin
+        ContributorProjections::Build.call(contributor: resource)
+      rescue => e
+        Rails.logger.error("[admin contributors] projection failed for contributor ##{resource.id}: #{e.class}: #{e.message}")
+        Sentry.capture_exception(e) if defined?(Sentry)
+        projection_error = true
+        nil
+      end
+    horizon = projection&.horizon || ContributorProjections::Horizon.current
+    # for_gradation stops one month short of `through`, hence + 1.month.
+    floor = horizon.ends_at + 1.month
+
     items_result =
       if view_mode == :all
-        resource.all_items_grouped_by_month
+        resource.all_items_grouped_by_month(min_ends_at: floor)
       else
-        current_ledger.items_grouped_by_month
+        current_ledger.items_grouped_by_month(min_ends_at: floor)
+      end
+
+    projected_by_month =
+      if projection.nil?
+        {}
+      elsif view_mode == :ledger && current_ledger
+        projection.by_contributor_month(resource, ledger: current_ledger)
+      else
+        projection.by_contributor_month(resource)
       end
 
     # Balance/Unsettled summary card scopes to the current view:
@@ -296,6 +323,16 @@ ActiveAdmin.register Contributor do
     admin = resource.forecast_person&.admin_user
     pending_tasks = admin&.pending_tasks || []
 
+    # Deep link for the projection notice: this person's page in Runn, or the
+    # planner when the mirror has nobody with their email. Only looked up when
+    # a notice will actually render.
+    runn_link = RunnPerson::PLANNER_URL
+    if projected_by_month.values.any? { |s| s[:lines].any? }
+      runn_email = resource.forecast_person&.email.to_s.strip.downcase
+      runn_person = runn_email.present? ? RunnPerson.where("lower(email) = ?", runn_email).order(:is_archived).first : nil
+      runn_link = runn_person&.link || RunnPerson::PLANNER_URL
+    end
+
     render(partial: "show", locals: {
       contributor: resource,
       items_result: items_result,
@@ -305,6 +342,11 @@ ActiveAdmin.register Contributor do
       view_mode: view_mode,
       ledgers: ledgers,
       current_ledger: current_ledger,
+      projected_by_month: projected_by_month,
+      projection_as_of: projection&.as_of,
+      projection_months: horizon.months.size,
+      projection_error: projection_error,
+      runn_link: runn_link,
     })
   end
 end

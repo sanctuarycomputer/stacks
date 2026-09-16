@@ -11,7 +11,7 @@ class Mcp::OkrGridToolTest < ActiveSupport::TestCase
       'label' => label,
       'period_starts_at' => '06/01/2026',
       'period_ends_at' => '06/30/2026',
-      'cash' => {
+      'accrual' => {
         'datapoints' => { 'income' => { 'value' => 1000.0, 'unit' => 'usd' } },
         'okrs' => {
           'Profit Margin' => { 'value' => margin, 'unit' => 'percentage', 'target' => 30.0,
@@ -23,7 +23,7 @@ class Mcp::OkrGridToolTest < ActiveSupport::TestCase
                         'health' => 'at_risk', 'surplus' => 220.0, 'hint' => 'derived' },
         },
       },
-      'accrual' => {
+      'cash' => {
         'datapoints' => {},
         'okrs' => { 'Profit Margin' => { 'value' => margin + 1, 'unit' => 'percentage' } },
       },
@@ -43,7 +43,7 @@ class Mcp::OkrGridToolTest < ActiveSupport::TestCase
 
     assert_equal 'Sanctuary Test', payload['studio']
     assert_equal 'month', payload['gradation']
-    assert_equal 'cash', payload['accounting_method']
+    assert_equal 'accrual', payload['accounting_method'], 'garden3d reports on the accrual basis — it must be the default'
     assert_equal ['Profit', 'Profit Margin', 'Workplace Satisfaction'], payload['okr_names'],
       'sorted union of okr names across periods (jsonb does not preserve insertion order)'
 
@@ -78,9 +78,9 @@ class Mcp::OkrGridToolTest < ActiveSupport::TestCase
     assert_equal 'usd', synthetic['unit']
   end
 
-  test 'accrual accounting_method selects the accrual okrs subtree' do
+  test 'cash accounting_method selects the cash okrs subtree' do
     studio!
-    payload = mcp_payload(Mcp::GetOkrGridTool.call(studio: 'sanc', accounting_method: 'accrual', server_context: {}))
+    payload = mcp_payload(Mcp::GetOkrGridTool.call(studio: 'sanc', accounting_method: 'cash', server_context: {}))
     assert_equal ['Profit Margin'], payload['okr_names']
     assert_equal 23.0, payload['periods'].last['okrs']['Profit Margin']['value']
   end
