@@ -128,7 +128,7 @@ in the spec's "Blocking pre-implementation verification" section.
 - Test: `test/models/system_test.rb` (create)
 
 **Interfaces:**
-- Produces: `System#ghost_newsletter_prefix_map` (Hash), `System#ghost_newsletter_grants_enabled?` (Boolean predicate), `System#ghost_sweep_write_budget` (Integer), `System#ghost_last_sync_summary` (Hash), and class helper `System.ghost_settings` returning a fresh, normalized struct.
+- Produces: `System#ghost_newsletter_prefix_map` (Hash), `System#ghost_newsletter_grants_enabled?` (Boolean predicate), `System#ghost_sweep_write_budget` (Integer), `System#ghost_last_sync_summary` (Hash), plus `System#ghost_sweep_write_budget_clamped` and `System#ghost_newsletter_prefix_map_clean`.
 
 **Why this task exists:** every one of these settings has a silent-failure mode verified in the spec. `""` reads back truthy through a Storext Boolean reader; `""` and `"abc"` stay Strings through an Integer reader and raise on `> 0`.
 
@@ -237,60 +237,77 @@ git commit -m "feat: Ghost newsletter settings with coercion-safe accessors"
 
 ### Task 2: Ghost client - find_member and hardened newsletter_events_for
 
+> **This task was implemented once and sent back by review.** Commit `5ae3789a` is on the branch and
+> contains a version with a paging loop. This revision REPLACES that implementation. The paging loop
+> must be deleted, not extended: a later probe found `order` is silently ignored, so it was built on an
+> assumption the API does not honour.
+
 **Files:**
 - Modify: `lib/stacks/ghost.rb`
 - Test: `test/lib/stacks/ghost_test.rb`
 
 **Interfaces:**
-- Produces: `Stacks::Ghost#find_member(id)` returning a member Hash. `Stacks::Ghost#newsletter_events_for(member_id, current_newsletter_ids: [])` returning an Array of raw event Hashes, or **raising** `Stacks::Ghost::UntrustworthyHistory` when the result cannot be trusted.
-- Consumes: nothing from earlier tasks.
+- Produces: `Stacks::Ghost#find_member(id)` -> member Hash or nil. `Stacks::Ghost#newsletter_events_for(member_id, current_newsletter_ids:)` -> Array of raw event Hashes, or **raises** `Stacks::Ghost::UntrustworthyHistory`. The keyword argument is **required**.
 
-**This is the highest-risk task in the plan.** The endpoint returns `200 {"events": []}` for a nonexistent *and* for a malformed member id. A naive reading of that is "never subscribed", which grants. Write the hardening tests first.
+**Why this is the highest-risk task.** The endpoint returns `200 {"events": []}` for a nonexistent
+*and* for a malformed member id. A naive reading is "never subscribed", which grants, which mails
+someone who deliberately opted out.
 
-Verified constraints you must honour (do not re-derive, do not assume otherwise):
-- `data.subscribed` and `data.newsletter_id` are **not** filterable (400). Filter by `type` and `data.member_id` only, inspect the rest in Ruby.
-- `data.created_at:<'<iso>'` **is** filterable and applied. Quotes must be **raw**, never percent-encoded (`%27` yields 422).
-- `limit` caps at **100**; `limit: "all"` is coerced to 100, unlike `/newsletters/`.
-- The `page` param is **silently ignored**, unlike `/members/`. Page with a `created_at` cursor.
+Verified endpoint facts (live, 2026-09-16 - do not re-derive, do not assume otherwise):
+- `data.subscribed` and `data.newsletter_id` are NOT filterable (400 each). Fetch and inspect in Ruby.
+- Quotes in a filter must be RAW `'`. A pre-encoded `%27` yields 422.
+- `limit` caps at 100. `limit: "all"` is coerced to 100, unlike `/newsletters/`.
+- **`page` is silently ignored**, unlike `/members/`.
+- **`order` is silently ignored too** - `created_at desc`, `created_at asc`, and `garbage nonsense` all
+  return 200 with identical ordering.
 - `meta.pagination.total` is reliable.
-- Use `data["newsletter_id"]` (scalar), not `data["newsletter"]["id"]`.
+- Use the scalar `data["newsletter_id"]`, not `data["newsletter"]["id"]`.
 
-- [ ] **Step 1: Write the failing tests**
+**Because both `page` and `order` are ignored, this endpoint cannot be walked.** Issue exactly one
+request and fail closed when there is more than one page's worth. A member with >100 newsletter events
+becomes unprocessable until handled by hand; that takes 100+ subscribe/unsubscribe toggles, today's
+live maximum is 3, and it is counted in `grant_errors`. Guessing an order risks collecting the wrong
+100 events and reading "no event for N" for someone who unsubscribed.
 
-Insert **before the closing `end` of `class Stacks::GhostTest`** (currently line 87). Do not append past it.
+- [ ] **Step 1: Rewrite the tests**
+
+Replace the `newsletter_events_for` tests added in `5ae3789a`. Keep `find_member`'s test and the
+`nl_event` / `events_response` helpers, moving the helpers up next to `build_client` and
+`fake_response` (around line 24) rather than leaving them mid-class.
 
 ```ruby
   MEMBER_ID = "6aaa0647345d7200012fc658".freeze
 
-  def nl_event(member_id: MEMBER_ID, newsletter_id: "nl-1", subscribed: true, created_at: "2026-09-16T03:00:23.000Z")
-    { "type" => "newsletter_event",
-      "data" => { "id" => "ev-#{rand(1_000_000)}", "member_id" => member_id,
-                  "subscribed" => subscribed, "created_at" => created_at,
-                  "source" => "api", "newsletter_id" => newsletter_id } }
+  def nl_event(member_id: MEMBER_ID, newsletter_id: "nl-1", subscribed: true,
+               created_at: "2026-09-16T03:00:23.000Z", type: "newsletter_event")
+    { "type" => type,
+      "data" => { "id" => "ev-1", "member_id" => member_id, "subscribed" => subscribed,
+                  "created_at" => created_at, "source" => "api", "newsletter_id" => newsletter_id } }
   end
 
-  def events_response(events, total: nil)
-    fake_response(code: 200, body: {
-      events: events,
-      meta: { pagination: { limit: 100, total: total || events.length, pages: 1, page: nil, next: nil } },
-    })
+  def events_response(events, total: nil, meta: :default)
+    body = { events: events }
+    unless meta == :omit
+      body[:meta] = { pagination: { limit: 100, total: total || events.length, pages: 1 } }
+    end
+    fake_response(code: 200, body: body)
   end
 
-  test "newsletter_events_for returns events and filters by type and member only" do
+  test "newsletter_events_for issues ONE request, filtered by type and member only" do
     client = build_client
-    Stacks::Ghost.expects(:get).with { |url, opts|
+    Stacks::Ghost.expects(:get).once.with { |url, opts|
       url.include?("/members/events/") &&
         opts[:query][:filter].include?("type:newsletter_event") &&
         opts[:query][:filter].include?(MEMBER_ID) &&
-        # verified 400s if present
-        !opts[:query][:filter].include?("data.subscribed") &&
-        !opts[:query][:filter].include?("data.newsletter_id") &&
-        # verified silently ignored on this endpoint
-        !opts[:query].key?(:page) &&
+        !opts[:query][:filter].include?("data.subscribed") &&   # verified 400
+        !opts[:query][:filter].include?("data.newsletter_id") && # verified 400
+        !opts[:query][:filter].include?("%27") &&                # verified 422
+        !opts[:query].key?(:page) &&                             # verified ignored
+        !opts[:query].key?(:order) &&                            # verified ignored
         opts[:query][:limit] == 100
     }.returns(events_response([nl_event]))
 
-    events = client.newsletter_events_for(MEMBER_ID)
+    events = client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: ["nl-1"])
     assert_equal 1, events.length
     assert_equal "nl-1", events.first["data"]["newsletter_id"]
   end
@@ -298,27 +315,62 @@ Insert **before the closing `end` of `class Stacks::GhostTest`** (currently line
   test "newsletter_events_for rejects a malformed member id without issuing a request" do
     client = build_client
     Stacks::Ghost.expects(:get).never
-    ["not-an-id", "", nil, "6AAA0647345D7200012FC658", "6aaa0647345d7200012fc65"].each do |bad|
-      assert_raises(Stacks::Ghost::UntrustworthyHistory) { client.newsletter_events_for(bad) }
+    ["not-an-id", "", nil, :"6aaa0647345d7200012fc658",
+     "6AAA0647345D7200012FC658", "6aaa0647345d7200012fc65"].each do |bad|
+      assert_raises(Stacks::Ghost::UntrustworthyHistory, "accepted #{bad.inspect}") do
+        client.newsletter_events_for(bad, current_newsletter_ids: [])
+      end
     end
   end
 
   test "newsletter_events_for raises when an event belongs to a different member" do
     client = build_client
     Stacks::Ghost.stubs(:get).returns(events_response([nl_event(member_id: "someone-else")]))
-    assert_raises(Stacks::Ghost::UntrustworthyHistory) { client.newsletter_events_for(MEMBER_ID) }
+    err = assert_raises(Stacks::Ghost::UntrustworthyHistory) do
+      client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [])
+    end
+    assert_match(/someone-else/, err.message)
   end
 
-  test "newsletter_events_for raises when fewer events are collected than meta.pagination.total" do
+  test "newsletter_events_for raises on an event of the wrong type" do
     client = build_client
-    Stacks::Ghost.stubs(:get).returns(events_response([nl_event], total: 7))
-    assert_raises(Stacks::Ghost::UntrustworthyHistory) { client.newsletter_events_for(MEMBER_ID) }
+    Stacks::Ghost.stubs(:get).returns(events_response([nl_event(type: "email_delivered_event")]))
+    assert_raises(Stacks::Ghost::UntrustworthyHistory) do
+      client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [])
+    end
   end
 
-  test "newsletter_events_for raises on an empty history for a member that has live subscriptions" do
-    # A 200 with an empty list is what a nonexistent or malformed member id returns.
-    # A member currently subscribed to something MUST have at least one event, so an
-    # empty result here is incoherent and must never read as "never subscribed".
+  test "newsletter_events_for raises when the member has more events than one page can carry" do
+    # page and order are both silently ignored, so a second page cannot be fetched
+    # reliably. Fail closed rather than return a truncated history.
+    client = build_client
+    Stacks::Ghost.expects(:get).once.returns(events_response(Array.new(100) { nl_event }, total: 150))
+    err = assert_raises(Stacks::Ghost::UntrustworthyHistory) do
+      client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: ["nl-1"])
+    end
+    assert_match(/100 of 150/, err.message)
+  end
+
+  test "newsletter_events_for raises when the collected count exceeds total" do
+    client = build_client
+    Stacks::Ghost.stubs(:get).returns(events_response([nl_event, nl_event], total: 1))
+    assert_raises(Stacks::Ghost::UntrustworthyHistory) do
+      client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: ["nl-1"])
+    end
+  end
+
+  test "newsletter_events_for raises when meta.pagination.total is absent" do
+    # total is documented reliable, so its absence is itself evidence the response is
+    # not what we think it is. Without this guard a body with no meta would skip the
+    # completeness check entirely and read as "never subscribed".
+    client = build_client
+    Stacks::Ghost.stubs(:get).returns(events_response([], meta: :omit))
+    assert_raises(Stacks::Ghost::UntrustworthyHistory) do
+      client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [])
+    end
+  end
+
+  test "newsletter_events_for raises on an empty history for a member with live subscriptions" do
     client = build_client
     Stacks::Ghost.stubs(:get).returns(events_response([]))
     assert_raises(Stacks::Ghost::UntrustworthyHistory) do
@@ -326,32 +378,36 @@ Insert **before the closing `end` of `class Stacks::GhostTest`** (currently line
     end
   end
 
-  test "newsletter_events_for allows a genuinely empty history for a member with no subscriptions" do
+  test "an empty history is confirmed against the member actually existing" do
+    # The coherence guard above is inert when current_newsletter_ids is empty, which is
+    # exactly the case for someone who unsubscribed from everything: the population this
+    # feature exists to protect. Their empty history is indistinguishable from a
+    # nonexistent or mistyped id, which returns the same 200 {"events": []}.
     client = build_client
     Stacks::Ghost.stubs(:get).returns(events_response([]))
+    client.expects(:find_member).with(MEMBER_ID).returns(nil)
+    assert_raises(Stacks::Ghost::UntrustworthyHistory) do
+      client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [])
+    end
+  end
+
+  test "a genuinely empty history for a confirmed member is allowed" do
+    client = build_client
+    Stacks::Ghost.stubs(:get).returns(events_response([]))
+    client.expects(:find_member).with(MEMBER_ID).returns({ "id" => MEMBER_ID, "newsletters" => [] })
     assert_equal [], client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [])
   end
 
-  test "newsletter_events_for pages with a raw-quoted created_at cursor, never the page param" do
+  test "newsletter_events_for raises rather than NoMethodError on a malformed body" do
+    # One malformed member must not take down the whole sweep.
     client = build_client
-    page1 = Array.new(100) { |i| nl_event(created_at: "2026-09-#{format('%02d', 16 - (i / 20))}T03:00:23.000Z") }
-    page2 = [nl_event(created_at: "2026-08-01T00:00:00.000Z")]
-    seen_filters = []
-    Stacks::Ghost.stubs(:get).with { |_url, opts| seen_filters << opts[:query][:filter]; true }
-      .returns(events_response(page1, total: 101)).then.returns(events_response(page2, total: 101))
-
-    events = client.newsletter_events_for(MEMBER_ID)
-    assert_equal 101, events.length
-    assert_equal 2, seen_filters.length
-    assert seen_filters[1].include?("data.created_at:<'"), "cursor must use raw single quotes"
-    refute seen_filters[1].include?("%27"), "percent-encoded quotes yield 422"
-  end
-
-  test "newsletter_events_for raises rather than looping when a page does not advance the cursor" do
-    client = build_client
-    stuck = Array.new(100) { nl_event(created_at: "2026-09-16T03:00:23.000Z") }
-    Stacks::Ghost.stubs(:get).returns(events_response(stuck, total: 500))
-    assert_raises(Stacks::Ghost::UntrustworthyHistory) { client.newsletter_events_for(MEMBER_ID) }
+    [nil, { "events" => "not-an-array" }, { "events" => ["not-a-hash"] },
+     { "events" => [{ "type" => "newsletter_event", "data" => "scalar" }] }].each do |body|
+      Stacks::Ghost.stubs(:get).returns(fake_response(code: 200, body: body || {}))
+      assert_raises(Stacks::Ghost::UntrustworthyHistory) do
+        client.newsletter_events_for(MEMBER_ID, current_newsletter_ids: [])
+      end
+    end
   end
 
   test "find_member requests one member with labels and newsletters" do
@@ -363,110 +419,104 @@ Insert **before the closing `end` of `class Stacks::GhostTest`** (currently line
   end
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **Step 2: Run tests to verify the new ones fail**
 
 Run: `RAILS_ENV=test bundle exec rails test test/lib/stacks/ghost_test.rb`
-Expected: FAIL, `NameError: uninitialized constant Stacks::Ghost::UntrustworthyHistory`
+Expected: failures on the new guards (total-absent, wrong-type, existence probe, malformed body,
+required kwarg), since `5ae3789a`'s implementation does not have them.
 
-- [ ] **Step 3: Implement**
+- [ ] **Step 3: Replace the implementation**
 
-In `lib/stacks/ghost.rb`, add the error class next to `RequestError`:
-
-```ruby
-  # Raised when a member's event history cannot be trusted to be complete and
-  # correct. The events endpoint returns 200 with an empty list for a nonexistent
-  # OR malformed member id, so "no events" is not evidence of "never subscribed".
-  # Callers MUST treat this as fail-closed: no grants.
-  class UntrustworthyHistory < StandardError; end
-
-  MEMBER_ID_FORMAT = /\A[0-9a-f]{24}\z/.freeze
-  EVENTS_PAGE_LIMIT = 100
-  EVENTS_MAX_PAGES = 20
-```
-
-Add the public methods:
+Delete `EVENTS_MAX_PAGES` and the whole paging loop. Keep `UntrustworthyHistory`,
+`MEMBER_ID_FORMAT`, `EVENTS_PAGE_LIMIT` and `find_member` as they are.
 
 ```ruby
-  def find_member(id)
-    response = handle_response {
-      self.class.get(url("/members/#{id}/"), query: { include: "labels,newsletters" }, headers: headers)
-    }
-    (response.parsed_response["members"] || []).first
-  end
-
   # Returns every newsletter_event for a member, or raises UntrustworthyHistory.
-  # current_newsletter_ids enables the coherence check: a member currently
-  # subscribed to something must have at least one event.
-  def newsletter_events_for(member_id, current_newsletter_ids: [])
+  #
+  # This endpoint returns 200 with an empty list for a nonexistent OR malformed member
+  # id, so "no events" is not evidence of "never subscribed" unless every guard below
+  # passes. Callers MUST treat the raise as fail-closed: no grants for this member.
+  #
+  # Deliberately does not page. Both `page` and `order` are silently ignored here
+  # (verified live), so there is no reliable way to walk past the first 100 events and
+  # no way to know which 100 we got. A member with more than 100 newsletter events fails
+  # closed instead, which takes 100+ subscribe/unsubscribe toggles to reach.
+  #
+  # current_newsletter_ids has no default on purpose: the coherence guard is inert for
+  # an empty list, and that is exactly the population at risk.
+  def newsletter_events_for(member_id, current_newsletter_ids:)
     unless member_id.to_s.match?(MEMBER_ID_FORMAT)
       raise UntrustworthyHistory, "refusing to query events for malformed member id #{member_id.inspect}"
     end
+    # Validate the coerced value, then use it everywhere: a Symbol would otherwise pass
+    # the format check and fail provenance with a misleading message.
+    member_id = member_id.to_s
 
-    collected = []
-    cursor = nil
-    total = nil
-    pages = 0
+    # Quotes must be RAW: HTTParty encodes the query itself, so a pre-encoded %27
+    # arrives as %2527 and 422s. Safe from injection because the guard above restricts
+    # member_id to hex.
+    response = handle_response {
+      self.class.get(url("/members/events/"), query: {
+        filter: "type:newsletter_event+data.member_id:'#{member_id}'",
+        limit: EVENTS_PAGE_LIMIT,
+      }, headers: headers)
+    }
 
-    loop do
-      pages += 1
-      if pages > EVENTS_MAX_PAGES
-        raise UntrustworthyHistory, "member #{member_id} exceeded #{EVENTS_MAX_PAGES} event pages"
+    body = response.parsed_response
+    raise UntrustworthyHistory, "non-object events response for member #{member_id}" unless body.is_a?(Hash)
+
+    events = body["events"]
+    raise UntrustworthyHistory, "events was #{events.class} for member #{member_id}" unless events.is_a?(Array)
+
+    total = body.dig("meta", "pagination", "total")
+    unless total.is_a?(Integer)
+      raise UntrustworthyHistory, "missing meta.pagination.total for member #{member_id}"
+    end
+
+    events.each do |event|
+      unless event.is_a?(Hash) && event["data"].is_a?(Hash)
+        raise UntrustworthyHistory, "malformed event entry for member #{member_id}"
       end
-
-      # NQL quoting mirrors find_member_by_email. Quotes must be RAW: HTTParty
-      # encodes the query itself, so a pre-encoded %27 arrives as %2527 and 422s.
-      filter = "type:newsletter_event+data.member_id:'#{member_id}'"
-      filter += "+data.created_at:<'#{cursor}'" if cursor
-
-      response = handle_response {
-        self.class.get(url("/members/events/"), query: {
-          filter: filter, limit: EVENTS_PAGE_LIMIT, order: "created_at desc",
-        }, headers: headers)
-      }
-      body = response.parsed_response
-      page = body["events"] || []
-      total ||= body.dig("meta", "pagination", "total")
-
-      page.each do |event|
-        actual = event.dig("data", "member_id")
-        next if actual == member_id
+      unless event["type"] == "newsletter_event"
+        raise UntrustworthyHistory, "unexpected event type #{event["type"].inspect} for member #{member_id}"
+      end
+      actual = event["data"]["member_id"]
+      unless actual == member_id
         raise UntrustworthyHistory, "event for member #{actual.inspect} returned when querying #{member_id}"
       end
+    end
 
-      collected += page
-      break if page.length < EVENTS_PAGE_LIMIT
+    unless events.length == total
+      raise UntrustworthyHistory, "collected #{events.length} of #{total} events for member #{member_id}"
+    end
 
-      oldest = page.map { |e| e.dig("data", "created_at") }.compact.min
-      if oldest.nil? || (cursor && oldest >= cursor)
-        raise UntrustworthyHistory, "member #{member_id} event cursor did not advance past #{cursor.inspect}"
+    if events.empty?
+      if current_newsletter_ids.any?
+        raise UntrustworthyHistory,
+          "member #{member_id} is subscribed to #{current_newsletter_ids.length} newsletter(s) but has no events"
       end
-      cursor = oldest
+      # Nothing above distinguishes "genuinely never subscribed" from "this id does not
+      # exist", and both return 200 with an empty list. Confirm positively.
+      unless find_member(member_id)
+        raise UntrustworthyHistory, "no events and no such member #{member_id}"
+      end
     end
 
-    if total && collected.length < total
-      raise UntrustworthyHistory, "collected #{collected.length} of #{total} events for member #{member_id}"
-    end
-
-    if collected.empty? && current_newsletter_ids.any?
-      raise UntrustworthyHistory,
-        "member #{member_id} is subscribed to #{current_newsletter_ids.length} newsletter(s) but has no events"
-    end
-
-    collected
+    events
   end
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `RAILS_ENV=test bundle exec rails test test/lib/stacks/ghost_test.rb`
-Expected: all green, including the 6 pre-existing client tests
+Expected: all green, including the 6 pre-existing client tests.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git branch --show-current
 git add lib/stacks/ghost.rb test/lib/stacks/ghost_test.rb
-git commit -m "feat: hardened Ghost member event history reads"
+git commit -m "fix: do not page Ghost member events; order and page are both ignored"
 ```
 
 ---

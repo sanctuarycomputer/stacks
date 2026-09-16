@@ -114,7 +114,8 @@ Real captured `newsletter_event` payload:
 | `data.created_at:<'<iso8601>'` **is** filterable and genuinely applied | Verified both ways: a cutoff before all events returns 0, after returns all. This is the paging cursor. |
 | Quotes in a filter must be passed **raw** (`'`), never percent-encoded | `%27` yields **422 Invalid value** (HTTParty encodes the query itself, so `%27` becomes `%2527`). |
 | `limit` is **capped at 100**; `limit: "all"` is coerced to `100`, not honored | Unlike `/newsletters/`, where `Stacks::Ghost#all_newsletters` relies on `limit: "all"`. Copying that idiom here truncates silently. |
-| The `page` param is **silently ignored** (`limit: 2, page: 2` returns page 1's rows; `meta.pagination.page` and `.next` are `nil`) | Unlike `/members/`, where `Stacks::Ghost#all_members` pages by number. Copying *that* idiom here re-reads the same rows forever. Paging must use the `created_at` cursor. |
+| The `page` param is **silently ignored** (`limit: 2, page: 2` returns page 1's rows; `meta.pagination.page` and `.next` are `nil`) | Unlike `/members/`, where `Stacks::Ghost#all_members` pages by number. Copying *that* idiom here re-reads the same rows forever. |
+| The `order` param is **silently ignored too**. `order=created_at desc`, `order=created_at asc` and even `order=garbage nonsense` all return 200 with identical ordering | There is no way to pin or even know the sort. Any cursor scheme that assumes page 1 is the newest (or oldest) 100 is unfounded. **Do not page this endpoint at all** (see below). |
 | `meta.pagination.total` and `.pages` are reliable (`limit=1` returned 1, `total` 3, `pages` 3) | Use `total` as a completeness guard. |
 
 **CRITICAL: this endpoint fails silently, not loudly.**
@@ -287,18 +288,46 @@ The events endpoint returns **200 with an empty list** for a nonexistent or malf
 4. **Coherence (positive control).** A member currently subscribed to at least one newsletter **must**
    have at least one newsletter event. Verified live: all 52 members have events, none has zero. If
    the member has current subscriptions and the query returns zero events, the result is incoherent.
+5. **`total` must be present.** `meta.pagination.total` is documented reliable, so its absence is
+   itself evidence the response is not what we think it is. A missing `total` would otherwise skip
+   guard 3 entirely and let an empty body read as "never subscribed".
+6. **Existence probe on an empty history.** Guard 4 is **anticorrelated with the risk**: someone who
+   deliberately unsubscribed from everything has zero current newsletters, so the coherence check is
+   inert for precisely the people this feature protects, and their empty history is indistinguishable
+   from a nonexistent or mistyped member id (which returns the same `200 {"events": []}`). So when the
+   history comes back empty, positively confirm the member exists with `find_member`, and raise if it
+   does not. This costs one extra GET only on an empty history, and only for contacts that have a
+   mapped target at all.
+7. **Type.** Every returned event must be `type == "newsletter_event"`. The type is filtered server
+   side, but the same defence-in-depth that applies to `member_id` applies here.
+8. **Shape.** A non-Hash body, a non-Hash event, or a non-Hash `data` raises `UntrustworthyHistory`,
+   not `NoMethodError`, so one malformed member cannot take down the sweep.
 
-Paging rules, all forced by the **[probe]** facts:
+Coerce `member_id` to a String immediately after the format check and use that value everywhere: the
+guard validates `member_id.to_s` while the provenance check compares the raw object, so a Symbol would
+otherwise pass validation and then fail provenance with a misleading message.
 
-- Pin `order=created_at desc`. Do not rely on a default.
-- Page with a `data.created_at:<'<oldest seen>'` cursor. **Do not use the `page` param** -- it is
-  silently ignored here, and a page-based loop would re-read the same rows forever.
+**Do not page. Issue exactly one request and fail closed above 100.**
+
+Both `page` and `order` are silently ignored, so there is no way to walk this endpoint reliably: a
+cursor scheme would have to assume an ordering the API will not honour or even report. Rather than
+build a loop on an unfounded assumption, fetch one page of `limit: 100` and require
+`collected.length == total`. If a member has more than 100 newsletter events, raise and let them fail
+closed.
+
+This is a deliberate, bounded trade: such a member can never be granted until handled by hand. It
+takes more than 100 subscribe/unsubscribe toggles to reach, the live maximum today is **3**, and the
+failure is counted in `grant_errors` so it is visible rather than silent. Guessing at an order would
+risk collecting the wrong 100 events, reading "no event for N", and re-subscribing someone who opted
+out. That is the failure this whole design exists to prevent.
+
+Remaining rules:
+
 - Pass quotes **raw**, never percent-encoded.
-- Quote and escape the member id the way `find_member_by_email` already does (`ghost.rb:55`), for
-  consistency with the one place in this client that gets NQL quoting right.
-- Cap the loop at 20 pages and **raise** on the cap rather than returning a partial history.
-- If a page's oldest `created_at` is not strictly older than the previous page's, **raise** (guards
-  the >100-events-sharing-one-timestamp case, where strict `<` skips the tail and `<=` loops forever).
+- Quote the member id the way `find_member_by_email` already does (`ghost.rb:55`). It is safe from
+  injection because the format guard restricts it to hex, which is what the comment should say.
+- `current_newsletter_ids:` is a **required** keyword argument. It must not default to `[]`: the
+  coherence check is inert for an empty list, and that is exactly the population at risk (see below).
 
 ### Per-sweep write budget
 
