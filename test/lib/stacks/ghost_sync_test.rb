@@ -934,8 +934,65 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
         "created_at" => "2026-09-16T04:00:00.000Z" } }])
     ghost.expects(:update_member).never
 
-    sync_with(ghost).sync_all!
+    sync = sync_with(ghost)
+    sync.sync_all!
     assert_equal "history", contact.reload.ledger_state("nl-xxix")
+    # count: false on the pre-write recheck. Flipping it to true double-counts every
+    # number the rollout review reads.
+    assert_equal 1, sync.summary[:unsubscribe_respected]
+  end
+
+  test "a grant and a label change ride in a single PUT" do
+    # This is the whole reason label_attrs_for was extracted. Without the fold, labels
+    # are silently dropped from every combined write and the suite stays green.
+    enable_sources("xxix:")
+    sys!(ghost_newsletter_prefix_map: { "xxix" => "nl-xxix" }, ghost_newsletter_grants_enabled: "1")
+    Contact.create!(email: "combo@example.com", sources: ["xxix:"], ghost_id: "m87")
+    stale = member(id: "m87", email: "combo@example.com", labels: [])
+    fresh = member(id: "m87", email: "combo@example.com", labels: [])
+
+    seen = []
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix"))
+    ghost.expects(:all_members).returns([stale])
+    ghost.stubs(:newsletter_events_for).returns([])
+    ghost.expects(:find_member).with("m87").returns(fresh)
+    ghost.expects(:update_member).once.with { |_id, attrs| seen << attrs; true }
+      .returns(member(id: "m87", email: "combo@example.com", labels: ["xxix:"])
+        .merge("newsletters" => [{ "id" => "nl-xxix" }]))
+
+    sync_with(ghost).sync_all!
+    assert_equal 1, seen.length, "one PUT, not one for labels and one for newsletters"
+    assert_equal ["xxix:"], seen.first[:labels]
+    assert_equal [{ id: "nl-xxix" }], seen.first[:newsletters]
+  end
+
+  test "an unlinked case-fold duplicate drives no Ghost write at all" do
+    # Not even a label write. The owner contact converges the member; a duplicate that
+    # does not own it must not touch it, or the two ping-pong one PUT each per sweep
+    # forever with the last writer winning.
+    enable_sources("index:shopify_customer")
+    sys!(ghost_newsletter_prefix_map: { "index" => "nl-index" },
+         ghost_newsletter_grants_enabled: "1")
+    Contact.create!(email: "own@example.com", sources: ["index:shopify_customer"], ghost_id: "m88")
+    Contact.create!(email: "OWN@example.com", sources: ["index:shopify_customer"])
+    # labels: [] so a label diff WOULD fire for the duplicate if the guard let it through.
+    linked = member(id: "m88", email: "own@example.com", labels: [])
+
+    seen = []
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-index"))
+    ghost.expects(:all_members).returns([linked])
+    ghost.stubs(:newsletter_events_for).returns([])
+    ghost.stubs(:find_member).returns(linked)
+    ghost.stubs(:update_member).with { |_id, attrs| seen << attrs; true }
+      .returns(linked.merge("labels" => [{ "name" => "index:shopify_customer" }],
+                            "newsletters" => [{ "id" => "nl-index" }]))
+
+    sync = sync_with(ghost)
+    sync.sync_all!
+    assert_equal 1, seen.length, "only the owner writes; the duplicate writes nothing"
+    assert_equal 1, sync.summary[:writes_skipped_unlinked]
   end
 
   test "with the grants flag off the decision runs but nothing is written to Ghost" do
@@ -1086,6 +1143,6 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
 
     assert_equal 1, seen.count { |a| a.key?(:newsletters) },
       "exactly one contact may write newsletters for member m64"
-    assert_equal 1, sync.summary[:grants_skipped_unlinked]
+    assert_equal 1, sync.summary[:writes_skipped_unlinked]
   end
 end

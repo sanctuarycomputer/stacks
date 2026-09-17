@@ -257,7 +257,11 @@ class Stacks::GhostSync
 
       if events.any? { |ev| ev.dig("data", "newsletter_id") == newsletter_id }
         contact.record_ledger_entry!(newsletter_id, "history", member_id: member["id"])
-        @summary[:unsubscribe_respected] += 1 if count
+        # Always counted, unlike the ledger fast-path above: reaching this line means no
+        # ledger entry existed yet, so this can only be a first-time discovery (either the
+        # decision-phase's own first look, or a race that lands between decision and the
+        # PUT) -- never a recount of something the decision phase already tallied.
+        @summary[:unsubscribe_respected] += 1
         next
       end
 
@@ -418,7 +422,7 @@ class Stacks::GhostSync
     # drives no Ghost write whatsoever.
     if contact.ghost_id.nil? &&
        Contact.where(ghost_id: member["id"]).where.not(id: contact.id).exists?
-      @summary[:grants_skipped_unlinked] += 1
+      @summary[:writes_skipped_unlinked] += 1
       return nil
     end
 
@@ -436,6 +440,11 @@ class Stacks::GhostSync
 
     fresh = @ghost.find_member(member["id"])
     return update_member_labels(contact, member, desired, enabled) if fresh.nil?
+    # Never write newsletters against a member we did not ask for: grant_candidates_for
+    # would compute ledger_applies = false for it, disabling layer 2 entirely.
+    unless fresh["id"] == member["id"]
+      return update_member_labels(contact, member, desired, enabled)
+    end
 
     # count: false - the decision-phase call already counted these; recounting would
     # double every unsubscribe_respected / already_handled that rollout step 6 reviews.
@@ -448,6 +457,10 @@ class Stacks::GhostSync
 
     updated = @ghost.update_member(fresh["id"], attrs)
     @summary[:updated] += 1
+    # A 2xx with an empty members array yields nil. update_member_labels already
+    # tolerates that; degrade the same way rather than raising and losing link_contact!
+    # (and with it this contact's in-memory ledger entries).
+    return fresh if updated.nil?
 
     confirmed = (updated["newsletters"] || []).map { |n| n["id"] }.compact
     candidates.each do |id|
