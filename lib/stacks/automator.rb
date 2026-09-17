@@ -15,7 +15,7 @@ class Stacks::Automator
 
       digest = ProjectTracker.likely_complete.reduce({}) do |acc, pt|
         pt.current_old_deal_project_leads.each do |pl|
-          acc[pl.email] = acc[pl.email] || { likely_complete: [], capsule_pending: [] }
+          acc[pl.email] = acc[pl.email] || { likely_complete: [], capsule_pending: [], awaiting_sign_off: [] }
           acc[pl.email][:likely_complete] = [*acc[pl.email][:likely_complete], pt]
         end
         acc
@@ -23,8 +23,16 @@ class Stacks::Automator
 
       digest = ProjectTracker.capsule_pending.reduce(digest) do |acc, pt|
         pt.current_old_deal_project_leads.each do |pl|
-          acc[pl.email] = acc[pl.email] || { likely_complete: [], capsule_pending: [] }
+          acc[pl.email] = acc[pl.email] || { likely_complete: [], capsule_pending: [], awaiting_sign_off: [] }
           acc[pl.email][:capsule_pending] = [*acc[pl.email][:capsule_pending], pt]
+        end
+        acc
+      end
+
+      digest = ProjectTracker.awaiting_capsule_sign_off.reduce(digest) do |acc, pt|
+        pt.current_old_deal_project_leads.each do |pl|
+          acc[pl.email] = acc[pl.email] || { likely_complete: [], capsule_pending: [], awaiting_sign_off: [] }
+          acc[pl.email][:awaiting_sign_off] = [*acc[pl.email][:awaiting_sign_off], pt]
         end
         acc
       end

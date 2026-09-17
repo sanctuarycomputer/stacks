@@ -38,6 +38,8 @@ module Mcp
       Mcp::GetMembershipStatsTool,
       Mcp::GetInvoicePassesTool,
       Mcp::GetClientRevenueTool,
+      Mcp::ListSurveysTool,
+      Mcp::GetSurveyResultsTool,
     ].freeze
 
     def self.build

@@ -15,7 +15,7 @@ module Mcp
         entity: { type: 'string', description: 'One of the four Enterprise names. Required.' },
         gradation: { type: 'string', description: "#{GRADATIONS.join(', ')} (default month)" },
         vertical: { type: 'string', description: 'A vertical tag (see available_verticals in output); default All' },
-        accounting_method: { type: 'string', description: 'cash (default) | accrual' },
+        accounting_method: { type: 'string', description: 'accrual (default) | cash' },
         periods: { type: 'integer', description: 'How many trailing periods, default 6, max 24' },
         raw_rows: { type: 'boolean', description: 'Include the raw cached P&L rows for the most recent period (label/value pairs). Default false.' },
       },
@@ -23,7 +23,7 @@ module Mcp
     )
     annotations(read_only_hint: true, destructive_hint: false, idempotent_hint: true)
 
-    def self.call(entity:, gradation: 'month', vertical: 'All', accounting_method: 'cash', periods: 6, raw_rows: false, server_context:)
+    def self.call(entity:, gradation: 'month', vertical: 'All', accounting_method: 'accrual', periods: 6, raw_rows: false, server_context:)
       ent = Enterprise.find_by(name: entity)
       unless ent
         return Responses.error("Unknown entity '#{entity}'. Valid entities: #{Enterprise.order(:name).pluck(:name).join(', ')}")

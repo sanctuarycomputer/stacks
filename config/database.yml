@@ -26,6 +26,11 @@ default: &default
 development:
   <<: *default
   database: stacks_development
+  # The default 600s checkout_timeout (a prod setting) is what made post-edit
+  # reloads "hang forever" locally: clear_reloadable_connections! waits the
+  # full checkout_timeout for any straggler checked-out connection before
+  # force-reclaiming it. Locally, fail/reclaim fast instead.
+  checkout_timeout: 5
 
   # The specified database role being used to connect to postgres.
   # To create additional roles in postgres see `$ createuser --help`.

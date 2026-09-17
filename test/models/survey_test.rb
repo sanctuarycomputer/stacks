@@ -97,4 +97,35 @@ class SurveyTest < ActiveSupport::TestCase
     assert_equal survey.expected_responders.include?(au), survey.expected_responder?(au)
     assert_equal survey.expected_responders.include?(outsider), survey.expected_responder?(outsider)
   end
+
+  test "expected_responder_ids matches the keys of expected_responder_status" do
+    studio = Studio.create!(name: "Gamma", mini_name: "gamma")
+    survey = Survey.create!(title: "G", description: "d", opens_at: Date.new(2026, 7, 1))
+    survey.survey_studios.create!(studio: studio)
+    core = make_admin_user!(studio, Date.new(2026, 1, 1), nil, "core-gamma@sanctuary.computer")
+
+    ids = survey.expected_responder_ids
+
+    assert_kind_of Set, ids
+    assert_includes ids, core.id
+    assert_equal survey.expected_responder_status.values.flat_map(&:keys).map(&:id).to_set, ids
+  end
+
+  test "expected_responder_ids never queries survey_responders" do
+    studio = Studio.create!(name: "Delta", mini_name: "delta")
+    survey = Survey.create!(title: "D", description: "d", opens_at: Date.new(2026, 7, 1))
+    survey.survey_studios.create!(studio: studio)
+    make_admin_user!(studio, Date.new(2026, 1, 1), nil, "core-delta@sanctuary.computer")
+
+    statements = []
+    sub = ActiveSupport::Notifications.subscribe("sql.active_record") { |*, payload| statements << payload[:sql] }
+    begin
+      survey.expected_responder_ids
+    ensure
+      ActiveSupport::Notifications.unsubscribe(sub)
+    end
+
+    assert statements.none? { |s| s.include?("survey_responders") },
+           "expected no survey_responders SQL, got: #{statements.grep(/survey_responders/).inspect}"
+  end
 end

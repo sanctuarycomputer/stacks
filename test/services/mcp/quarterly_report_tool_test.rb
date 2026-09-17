@@ -7,13 +7,13 @@ class Mcp::QuarterlyReportToolTest < ActiveSupport::TestCase
       'quarter' => [
         {
           'label' => label,
-          'cash' => {
+          'accrual' => {
             'okrs' => {
               'Profit Margin' => { 'value' => 12.5, 'unit' => 'percentage', 'target' => 15.0, 'health' => 'at_risk', 'surplus' => -2.5, 'hint' => '12.5%' },
               'Successful Projects' => { 'value' => 80.0, 'unit' => 'percentage', 'health' => 'healthy' },
             },
           },
-          'accrual' => { 'okrs' => {} },
+          'cash' => { 'okrs' => {} },
         },
       ],
     })
@@ -68,7 +68,7 @@ class Mcp::QuarterlyReportToolTest < ActiveSupport::TestCase
     assert_equal '2026-06-30', payload['period_ends_at']
     assert_equal 'g3d', payload['studio_tab']
     assert_equal 'garden3d', payload['studio']
-    assert_equal 'cash', payload['accounting_method']
+    assert_equal 'accrual', payload['accounting_method'], 'garden3d reports on the accrual basis — it must be the default'
 
     assert_equal %w[profit_margin income_growth successful_projects successful_proposals lead_growth project_satisfaction],
       payload['okrs'].map { |r| r['datapoint'] }

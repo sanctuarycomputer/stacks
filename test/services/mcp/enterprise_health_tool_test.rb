@@ -8,7 +8,7 @@ class Mcp::EnterpriseHealthToolTest < ActiveSupport::TestCase
       'period_ends_at' => ends_at,
       'verticals' => {
         'All' => {
-          'cash' => {
+          'accrual' => {
             'datapoints' => {
               'revenue' => { 'value' => revenue, 'unit' => 'usd', 'growth' => growth },
               'cogs' => { 'value' => cogs, 'unit' => 'usd' },
@@ -42,7 +42,7 @@ class Mcp::EnterpriseHealthToolTest < ActiveSupport::TestCase
     assert_equal 'Index Space, LLC', payload['entity']
     assert_equal 'month', payload['gradation']
     assert_equal 'All', payload['vertical']
-    assert_equal 'cash', payload['accounting_method']
+    assert_equal 'accrual', payload['accounting_method'], 'garden3d reports on the accrual basis — it must be the default'
     assert_equal 'operating', payload['margin_basis'],
       'All-vertical net/margin are operating figures (rev - cogs - exp), not QBO Net Income'
     assert_includes payload['available_verticals'], 'All'
@@ -115,12 +115,12 @@ class Mcp::EnterpriseHealthToolTest < ActiveSupport::TestCase
     QboProfitAndLossReport.create!(
       qbo_account: qa,
       starts_at: Date.new(2026, 5, 1), ends_at: Date.new(2026, 5, 31),
-      data: { cash: { rows: [['Total Income', '500.0']] }, accrual: { rows: [] } },
+      data: { accrual: { rows: [['Total Income', '500.0']] }, cash: { rows: [] } },
     )
     QboProfitAndLossReport.create!(
       qbo_account: qa,
       starts_at: Date.new(2026, 6, 1), ends_at: Date.new(2026, 6, 30),
-      data: { cash: { rows: [['Total Income', '1000.0'], ['Net Income', '700.0']] }, accrual: { rows: [] } },
+      data: { accrual: { rows: [['Total Income', '1000.0'], ['Net Income', '700.0']] }, cash: { rows: [] } },
     )
 
     payload = mcp_payload(Mcp::GetEnterpriseHealthTool.call(entity: 'Index Space, LLC', raw_rows: true, server_context: {}))

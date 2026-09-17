@@ -386,10 +386,14 @@ namespace :stacks do
   task :sync_runn => :environment do
     system_task = SystemTask.create!(name: "stacks:sync_runn")
     begin
-      Stacks::Runn.new.sync_all!
+      ran = Stacks::Runn.new.sync_all!
     rescue => e
       system_task.mark_as_error(e)
     else
+      # A lock skip is not a failure — the other holder is doing the work —
+      # so it still marks success, just loudly enough to explain a run that
+      # finished instantly and refreshed nothing.
+      puts "~~~> Runn sync skipped (another sync holds the lock)" if ran == false
       system_task.mark_as_success
     end
   end

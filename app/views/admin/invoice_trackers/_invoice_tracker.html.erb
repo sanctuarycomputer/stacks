@@ -322,13 +322,18 @@
 </div>
 
 <% surplus_chunks = invoice_tracker.surplus_chunks.select{|c| c[:surplus] > 0 } %>
+<%
+  ceilings = invoice_tracker.project_trackers.map { |pt| pt.billing_rules.ic_ceiling }.uniq
+  ceiling_pct = ((ceilings.max || Stacks::BillingModel.for(Stacks::BillingModel::DEFAULT).ic_ceiling) * 100).round(2)
+  ceiling_label = ceilings.size > 1 ? "#{ceiling_pct}% (highest across trackers)" : "#{ceiling_pct}%"
+%>
 <% surplus = invoice_tracker.surplus(surplus_chunks) %>
 
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
     <div class="module-body factoid-parent">
       <div class="factoid">
-        <p style="margin-bottom: 6px;">💁 <strong>Note!</strong> When we work with Individual Contributors cheaper than <code>57%</code> of our client's billable rate, the surplus revenue is split between the Account Lead, Project Lead, and our company-wide quarterly profit share program.</p>
+        <p style="margin-bottom: 6px;">💁 <strong>Note!</strong> When we work with Individual Contributors cheaper than <code><%= ceiling_label %></code> of our client's billable rate, the surplus revenue is split between the Account Lead, Project Lead, and our company-wide quarterly profit share program.</p>
         <a href="https://github.com/sanctuarycomputer/stacks" target="_blank">
           Read more here ↗
         </a>
@@ -354,7 +359,7 @@
       <tr>
         <th class="col">Invoice Item</th>
         <th class="col">Payee</th>
-        <th class="col">Maximum Payout (57%)</th>
+        <th class="col">Maximum Payout (<%= ceiling_label %>)</th>
         <th class="col">Actual Payout</th>
         <th class="col text-right">Surplus</th>
       </tr>

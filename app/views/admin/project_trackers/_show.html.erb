@@ -30,7 +30,13 @@
   </div>
 
   <p class="pill nag <%= project_capsule.complete? ? 'complete' : 'pending' %>" style="margin-bottom: 20px;margin-right: 6px;">
-    <%= project_capsule.complete? ? "Complete" : "Pending" %>
+    <% if project_capsule.complete? %>
+      Complete
+    <% elsif project_capsule.complete_but_for_admin_sign_off? %>
+      Pending — needs admin sign-off
+    <% else %>
+      Pending
+    <% end %>
   </p>
 
   <% unless @project_tracker.considered_successful?.nil? %>
@@ -43,10 +49,14 @@
     <div class="dashboard-modules table index_table index">
       <div class="dashboard-module">
         <div class="module-body factoid-parent">
-          <p style="margin-bottom: 6px;">🚧 This project is complete, but the project team have not yet completed their Project Capsule.</p>
-        <a href="https://www.notion.so/garden3d/How-to-wrap-a-project-Support-Team-a249d0340d21447897c7a261e2b40ab3" target="_blank">
-          Learn how to Wrap a Project ↗
-        </a>
+          <% if project_capsule.complete_but_for_admin_sign_off? %>
+            <p style="margin-bottom: 6px;">⏳ The project team have finished this Project Capsule, but it opts out of <%= project_capsule.gated_selection_labels.to_sentence.downcase %>. An admin needs to approve that before the capsule counts as complete.</p>
+          <% else %>
+            <p style="margin-bottom: 6px;">🚧 This project is complete, but the project team have not yet completed their Project Capsule.</p>
+          <% end %>
+          <a href="https://www.notion.so/garden3d/How-to-wrap-a-project-Support-Team-a249d0340d21447897c7a261e2b40ab3" target="_blank">
+            Learn how to Wrap a Project ↗
+          </a>
         </div>
       </div>
     </div>
@@ -56,7 +66,7 @@
     <div class="dashboard-module">
       <div class="module-header">
         <p>Wrapup Status</p>
-        <% if project_capsule.client_feedback_survey_url.present? %>
+        <% if project_capsule.client_feedback_survey_url_valid? && project_capsule.client_feedback_survey_url.present? %>
           <%= link_to "Client Survey URL ↗", project_capsule.client_feedback_survey_url %>
         <% end %>
       </div>
@@ -67,6 +77,13 @@
               <td class="col"><strong>Client Feedback</strong></td>
               <td class="col text-right">
                 <%= project_capsule.client_feedback_survey_status.try(:humanize) %>
+                <% unless project_capsule.client_feedback_survey_url_valid? %>
+                  <% if project_capsule.client_feedback_survey_url.blank? %>
+                    <span class="pill error">survey URL missing</span>
+                  <% else %>
+                    <span class="pill error">survey URL must start with https://</span>
+                  <% end %>
+                <% end %>
               </td>
             </tr>
             <tr class="even">
@@ -166,6 +183,12 @@
               </td>
             </tr>
             <tr class="odd">
+              <td class="col"><strong>Billing Model</strong></td>
+              <td class="col text-right">
+                <code><%= @project_tracker.billing_rules.label %></code>
+              </td>
+            </tr>
+            <tr class="even">
               <td class="col"><strong>Considered Successful?</strong></td>
               <td class="col text-right">
                 <% if @project_tracker.considered_successful? %>
@@ -207,9 +230,11 @@
   </a>
 <% end %>
 
-<div class="skill_tree_hint markdown-body" style="margin-top: 40px; margin-bottom:40px;">
-  <%= sanitize RDiscount.new(@project_tracker.notes).to_html %>
-</div>
+<% if @project_tracker.notes.present? %>
+  <div class="skill_tree_hint markdown-body" style="margin-top: 40px; margin-bottom:40px;">
+    <%= sanitize RDiscount.new(@project_tracker.notes).to_html %>
+  </div>
+<% end %>
 
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">

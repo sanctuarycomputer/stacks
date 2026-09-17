@@ -488,7 +488,7 @@ class Studio < ApplicationRecord
     completed_projects_in_period = ProjectTracker
       .includes(project_capsule: {project_satisfaction_survey: :project_satisfaction_survey_responses})
       .where(work_completed_at: period.starts_at..period.ends_at)
-      .select{|pt| pt.capsule_complete? && pt.project_capsule.project_satisfaction_survey.present? && pt.project_capsule.project_satisfaction_survey.closed?}
+      .select{|pt| pt.project_capsule&.substantively_complete? && pt.project_capsule.project_satisfaction_survey.present? && pt.project_capsule.project_satisfaction_survey.closed?}
 
     project_satisfaction_score = nil
     if completed_projects_in_period.any?

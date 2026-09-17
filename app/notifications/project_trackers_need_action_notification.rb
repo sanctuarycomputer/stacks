@@ -57,6 +57,25 @@ class ProjectTrackersNeedActionNotification < Noticed::Base
       HEREDOC
     end
 
+    awaiting_sign_off = (record.params[:digest][:awaiting_sign_off] || [])
+    if awaiting_sign_off.any?
+      awaiting_sign_off_intro_body = <<~HEREDOC
+        # Awaiting Admin Sign-Off
+
+        You've finished the following Project Capsules, but they opt out of one or more close-out steps, so an admin needs to approve them before they're marked complete. Nothing is required from you — though if you'd rather not wait, doing the step for real clears it immediately.
+
+      HEREDOC
+      awaiting_sign_off_body = awaiting_sign_off.reduce(awaiting_sign_off_intro_body) do |acc, pt|
+        link = Rails.application.routes.url_helpers.admin_project_tracker_url(pt.id, host: "https://stacks.garden3d.net")
+        acc + "- [#{pt.name} ↗](#{link})\n"
+      end
+
+      parent_body = <<~HEREDOC
+        #{parent_body}
+        #{awaiting_sign_off_body}
+      HEREDOC
+    end
+
     <<~HEREDOC
       #{parent_body}
 

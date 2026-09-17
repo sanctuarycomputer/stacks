@@ -6,12 +6,12 @@ class Mcp::StudioHealthToolTest < ActiveSupport::TestCase
       'label' => label,
       'period_starts_at' => '01/01/2026',
       'period_ends_at' => '01/31/2026',
-      'cash' => {
+      'accrual' => {
         'datapoints' => { 'income' => { 'value' => income, 'unit' => 'usd' },
                           'lead_count' => { 'value' => 3, 'unit' => 'count' } },
         'okrs' => { 'Profit Margin' => { 'health' => okr_health, 'target' => 30 } },
       },
-      'accrual' => {
+      'cash' => {
         'datapoints' => { 'income' => { 'value' => income + 1, 'unit' => 'usd' } },
         'okrs' => {},
       },
@@ -32,7 +32,7 @@ class Mcp::StudioHealthToolTest < ActiveSupport::TestCase
     s = payload['studios'].first
     assert_equal 'Sanctuary Test', s['studio']
     assert_equal 'month', s['gradation']
-    assert_equal 'cash', s['accounting_method']
+    assert_equal 'accrual', s['accounting_method'], 'garden3d reports on the accrual basis — it must be the default'
     period = s['periods'].last
     assert_equal({ 'value' => 2000, 'unit' => 'usd' }, period['datapoints']['income'])
     assert_equal 'healthy', period['okrs']['Profit Margin']['health']
@@ -62,9 +62,9 @@ class Mcp::StudioHealthToolTest < ActiveSupport::TestCase
     assert_equal 'Northstar', payload['studios'].first['studio']
   end
 
-  test 'accrual accounting_method selects the accrual subtree' do
-    studio!(name: 'Accrual Studio', mini_name: 'accr')
-    payload = mcp_payload(Mcp::GetStudioHealthTool.call(studio: 'accr', accounting_method: 'accrual', server_context: {}))
+  test 'cash accounting_method selects the cash subtree' do
+    studio!(name: 'Cash Studio', mini_name: 'cashs')
+    payload = mcp_payload(Mcp::GetStudioHealthTool.call(studio: 'cashs', accounting_method: 'cash', server_context: {}))
     assert_equal 2001, payload['studios'].first['periods'].last['datapoints']['income']['value']
   end
 

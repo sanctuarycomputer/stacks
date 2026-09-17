@@ -20,6 +20,10 @@ class System < ApplicationRecord
     ghost_newsletter_grants_enabled Boolean, default: false
     ghost_sweep_write_budget Integer, default: 2500
     ghost_last_sync_summary Hash, default: {}
+
+    # Last time Stacks::Runn#sync_all! completed every table. Read via
+    # System.first, not System.instance (process-memoized).
+    runn_synced_at DateTime, default: nil
   end
 
   def display_name

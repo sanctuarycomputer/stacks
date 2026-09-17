@@ -16,10 +16,6 @@ class AccountLeadPeriod < ApplicationRecord
     end
   end
 
-  def taking_percent
-    0.08
-  end
-
   def period_started_at
     started_at || project_tracker.first_recorded_assignment_start_date || Date.today
   end

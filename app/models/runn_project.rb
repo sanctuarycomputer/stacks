@@ -1,6 +1,7 @@
 class RunnProject < ApplicationRecord
   self.primary_key = "runn_id"
   has_one :project_tracker
+  has_many :runn_assignments, foreign_key: :project_id, primary_key: :runn_id
 
   def self.candidates_for_association_with_project_tracker(project_tracker)
     associated = ProjectTracker.where.not(runn_project: nil).includes(:runn_project).map(&:runn_project)
