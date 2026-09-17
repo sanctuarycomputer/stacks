@@ -1349,7 +1349,17 @@ Replace the body of `update_member_labels` with a delegation, keeping all of its
   def update_member_labels(contact, member, desired, enabled)
     attrs = label_attrs_for(contact, member, desired, enabled)
     return nil if attrs.nil?
+    unless reserve_write!
+      @summary[:updates_deferred] += 1
+      return nil
+    end
+    write_member_labels!(member, attrs)
+  end
 
+  # The write itself, with no reservation. Callers that have already spent a unit (the
+  # dry-run grant path) issue their label write through here so one contact costs one
+  # unit whether or not grants are enabled.
+  def write_member_labels!(member, attrs)
     updated = @ghost.update_member(member["id"], attrs)
     @summary[:updated] += 1
     updated
@@ -2070,9 +2080,20 @@ Add the private helpers:
     end
 
     unless @grants_enabled
+      unless reserve_write!
+        @summary[:grants_deferred] += 1
+        return nil
+      end
       @summary[:grants_planned] += candidates.length
       candidates.each { |id| @summary[:grants_planned_by_newsletter][id] += 1 }
-      return update_member_labels(contact, member, desired, enabled)
+      # The unit is already spent, so issue any label write THROUGH it rather than
+      # reserving a second one. The real path folds labels into the grant PUT for a
+      # single unit; charging two here would make the dry run consume budget at twice
+      # the real rate and defer grants the real run would have made, which is exactly
+      # the preview the rollout gate depends on.
+      attrs = label_attrs_for(contact, member, desired, enabled)
+      return member if attrs.nil?
+      return write_member_labels!(member, attrs)
     end
 
     fresh = @ghost.find_member(member["id"])
@@ -2206,7 +2227,8 @@ The unit is **one mutation, not one newsletter**. Linked contacts are swept firs
       member(id: "mc2", email: "c1@example.com"))
 
     Stacks::GhostSync.new(ghost).sync_all!
-    # The budget lives on the instance, so the second sweep needs a second object.
+    # @summary lives on the instance (the budget itself is re-read per sweep), so the
+    # second sweep needs a second object for the counters to be readable separately.
     second = Stacks::GhostSync.new(ghost)
     second.sync_all!
     assert_equal 1, second.summary[:created]
@@ -2292,6 +2314,51 @@ The unit is **one mutation, not one newsletter**. Linked contacts are swept firs
     assert_equal "granted", contact.reload.ledger_state("nl-xxix")
   end
 
+  test "a dry-run grant costs one unit, not two, when labels also differ" do
+    # The rollout runs with the flag OFF, and the 52 pre-existing members are exactly the
+    # population likely to have both an unwritten label and a first-time candidate. If a
+    # planned grant charged a unit AND its label write charged another, the dry run would
+    # burn budget at twice the real run's rate and under-report grants_planned.
+    enable_sources("xxix:")
+    sys!(ghost_newsletter_prefix_map: { "xxix" => "nl-xxix" },
+         ghost_newsletter_grants_enabled: "0", ghost_sweep_write_budget: 1)
+    Contact.create!(email: "dry@example.com", sources: ["xxix:"], ghost_id: "m91")
+    m = member(id: "m91", email: "dry@example.com", labels: [])   # label diff WILL fire
+
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix"))
+    ghost.expects(:all_members).returns([m])
+    ghost.stubs(:newsletter_events_for).returns([])
+    ghost.expects(:update_member).once.returns(
+      member(id: "m91", email: "dry@example.com", labels: ["xxix:"]))
+
+    sync = sync_with(ghost)
+    sync.sync_all!
+    assert_equal 1, sync.summary[:grants_planned]
+    assert_equal 1, sync.summary[:writes_used], "one contact, one unit"
+    assert_equal 0, sync.summary[:updates_deferred]
+  end
+
+  test "the delabel leg shares the same budget" do
+    enable_sources("newsletter")
+    sys!(ghost_sweep_write_budget: 1)
+    # Linked, labelled, but no longer carrying an enabled source: the delabel leg.
+    Contact.create!(email: "dl1@example.com", sources: ["other"], ghost_id: "m92")
+    Contact.create!(email: "dl2@example.com", sources: ["other"], ghost_id: "m93")
+
+    ghost = mock("ghost")
+    ghost.expects(:all_members).returns([
+      member(id: "m92", email: "dl1@example.com", labels: ["newsletter"]),
+      member(id: "m93", email: "dl2@example.com", labels: ["newsletter"])])
+    ghost.expects(:update_member).once.returns(
+      member(id: "m92", email: "dl1@example.com", labels: []))
+
+    sync = sync_with(ghost)
+    sync.sync_all!
+    assert_equal 1, sync.summary[:delabeled]
+    assert_equal 1, sync.summary[:updates_deferred]
+  end
+
   test "the budget binds identically when the grants flag is off" do
     enable_sources("xxix:")
     sys!(ghost_newsletter_prefix_map: { "xxix" => "nl-xxix" },
@@ -2350,8 +2417,9 @@ Add the reservation helpers:
 
 ```ruby
   # One unit per Ghost member mutation, not per newsletter: a contact with two
-  # candidates is a single PUT. Deferral is always safe, because it never grants
-  # and never writes a ledger entry.
+  # candidates is a single PUT. Deferral is always safe because it never grants and never
+  # records consent. (It can leave an "observed" entry recorded earlier in the same loop;
+  # that only ever BLOCKS a future grant, and it records a fact we did observe.)
   def writes_available?
     @writes_remaining > 0
   end
@@ -2371,6 +2439,12 @@ In `sync_all!`, split the eligible loop so linked contacts run first against a r
       # Size the reservation to the linked population, not to a fraction of the budget.
       # A flat 50% would halve create throughput and double the 19k backfill from ~8
       # sweeps to ~16, contradicting "each sweep creates up to 2,500 members".
+      #
+      # Since each contact costs at most one unit, the linked pass can never spend more
+      # than the linked population anyway, so this cap is a backstop rather than an
+      # active limiter. It only binds if the configured budget is itself below
+      # LINKED_RESERVE_CAP with a large linked population, in which case pass 2 can be
+      # starved; at the 2,500 default that cannot happen.
       linked_budget = [[eligible.synced_to_ghost.count, LINKED_RESERVE_CAP].min, 1].max
 
       [[eligible.synced_to_ghost, linked_budget], [eligible.not_synced_to_ghost, nil]].each do |scope, cap|
@@ -2422,7 +2496,12 @@ and in `delabel_member!` likewise, returning `member` when deferred.
 In `apply_grants_or_labels!`, consume the unit immediately before the grant PUT:
 
 ```ruby
-    return update_member_labels(contact, fresh, desired, enabled) unless reserve_write!
+    unless reserve_write!
+      # The whole contact is deferred: counting a label deferral on top would make one
+      # contact appear twice in the summary the rollout review reads.
+      @summary[:grants_deferred] += 1
+      return nil
+    end
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
