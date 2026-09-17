@@ -1388,4 +1388,28 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
     sync.sync_all!
     assert_equal 1, sync.summary[:updates_deferred]
   end
+
+  test "the sweep persists its summary with a finished_at" do
+    enable_sources("newsletter")
+    Contact.create!(email: "sum@example.com", sources: ["newsletter"])
+    ghost = mock("ghost")
+    ghost.expects(:all_members).returns([])
+    ghost.expects(:create_member).returns(member(id: "ms1", email: "sum@example.com"))
+
+    sync_with(ghost).sync_all!
+    stored = System.first.reload.ghost_last_sync_summary
+    assert_equal 1, stored["created"]
+    assert stored["finished_at"].present?
+  end
+
+  test "an aborted sweep still persists its counters" do
+    enable_sources("newsletter")
+    Contact.create!(email: "boom@example.com", sources: ["newsletter"])
+    ghost = mock("ghost")
+    ghost.expects(:all_members).raises(RuntimeError, "ghost is down")
+
+    assert_raises(RuntimeError) { sync_with(ghost).sync_all! }
+    assert System.first.reload.ghost_last_sync_summary["finished_at"].present?,
+      "the rollout's review gate reads this panel; a killed sweep must not leave it empty"
+  end
 end

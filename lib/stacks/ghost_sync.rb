@@ -89,6 +89,7 @@ class Stacks::GhostSync
 
       [[eligible.synced_to_ghost, linked_budget], [eligible.not_synced_to_ghost, nil]].each do |scope, cap|
         spent_before = @summary[:writes_used]
+        processed = 0
         scope.find_each do |contact|
           break if cap && (@summary[:writes_used] - spent_before) >= cap
           capture_errors(contact) do
@@ -99,6 +100,11 @@ class Stacks::GhostSync
               members_by_email[updated["email"].to_s.downcase] = updated
             end
           end
+          processed += 1
+          # A 2,500-write sweep run inline from the admin button cannot finish inside
+          # rack-timeout's 15s / puma's 60s worker_timeout. Persist periodically so a
+          # killed request still leaves the rollout's review panel populated.
+          persist_summary! if (processed % 250).zero?
         end
       end
 
@@ -115,6 +121,8 @@ class Stacks::GhostSync
 
     pull_members!(members_by_id.values)
     summary
+  ensure
+    persist_summary!
   end
 
   def sync_contact!(contact, enabled, members_by_id, members_by_email)
@@ -363,6 +371,25 @@ class Stacks::GhostSync
     @prefix_map = requested.select { |_, id| active_ids.include?(id) }
     @summary[:grant_mapping_invalid] += (requested.length - @prefix_map.length)
     @prefix_map
+  end
+
+  # Writes @summary to System#ghost_last_sync_summary so the rollout's review panel
+  # can read it. Called every 250 contacts AND from sync_all!'s ensure, since the
+  # admin "Sync Now" button runs the sweep inline against rack-timeout (15s) and
+  # puma's worker_timeout (60s): a 2,500-write sweep can be killed mid-run, and a
+  # summary written only at the end would never reach the panel from that path.
+  #
+  # @summary has symbol keys and a default proc (Hash.new(0)), and its per-newsletter
+  # values are themselves symbol-keyed hashes; the column is jsonb, so stringify both
+  # levels on the way in rather than relying on jsonb to coerce them.
+  def persist_summary!
+    payload = @summary.to_h.each_with_object({}) do |(k, v), acc|
+      acc[k.to_s] = v.is_a?(Hash) ? v.to_h.transform_keys(&:to_s) : v
+    end
+    payload["finished_at"] = Time.current.iso8601
+    System.first_or_create!(settings: {}).update!(ghost_last_sync_summary: payload)
+  rescue => e
+    Rails.logger.error("[GhostSync] could not persist summary: #{e.class}: #{e.message}")
   end
 
   # Severs a Ghost member link: clears ghost_id and stamps snapshot.deleted_at
