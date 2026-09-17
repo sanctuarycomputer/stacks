@@ -40,8 +40,13 @@ class EtlRakeTest < ActiveSupport::TestCase
     # so Heroku CI's in-dyno Postgres blows up with
     # ActiveModel::UnknownAttributeError: unknown attribute 'embedding' for Embedding.
     groups_connector = mock('groups_connector')
+    # Declare the Connector.new expectation BEFORE the .run expectation: Mocha's
+    # in_sequence enforces expectations are satisfied in DECLARATION order, and the
+    # real call order is always new() then .run() on the object it returns — the
+    # reverse declaration order previously made the (correct, real) new-then-run
+    # call sequence look "out of order" to Mocha.
+    Stacks::Etl::Groups::Connector.expects(:new).with(has_key(:admin_email)).returns(groups_connector).in_sequence(seq)
     groups_connector.expects(:run).once.in_sequence(seq)
-    Stacks::Etl::Groups::Connector.expects(:new).with(has_entry(:admin_email)).returns(groups_connector).in_sequence(seq)
     Rake::Task['stacks:etl:sync_meet_all'].reenable
     Rake::Task['stacks:etl:sync_gemini_notes_all'].reenable
     Rake::Task['stacks:etl:sync_google_groups'].reenable
