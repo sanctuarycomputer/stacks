@@ -971,11 +971,15 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
     # Not even a label write. The owner contact converges the member; a duplicate that
     # does not own it must not touch it, or the two ping-pong one PUT each per sweep
     # forever with the last writer winning.
-    enable_sources("index:shopify_customer")
+    enable_sources("index:shopify_customer", "team")
     sys!(ghost_newsletter_prefix_map: { "index" => "nl-index" },
          ghost_newsletter_grants_enabled: "1")
     Contact.create!(email: "own@example.com", sources: ["index:shopify_customer"], ghost_id: "m88")
-    Contact.create!(email: "OWN@example.com", sources: ["index:shopify_customer"])
+    # The duplicate wants an EXTRA label ("team") the owner does not have, so its label
+    # diff is still non-empty even after the owner's own write has converged the member.
+    # If the duplicate shared the owner's exact sources, its diff would already be a
+    # no-op by the time it is reached and the test could not see the guard at all.
+    Contact.create!(email: "OWN@example.com", sources: ["index:shopify_customer", "team"])
     # labels: [] so a label diff WOULD fire for the duplicate if the guard let it through.
     linked = member(id: "m88", email: "own@example.com", labels: [])
 
@@ -992,7 +996,42 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
     sync = sync_with(ghost)
     sync.sync_all!
     assert_equal 1, seen.length, "only the owner writes; the duplicate writes nothing"
+    refute seen.any? { |a| Array(a[:labels]).include?("team") },
+      "the duplicate's own labels must never reach a member it does not own"
     assert_equal 1, sync.summary[:writes_skipped_unlinked]
+  end
+
+  test "the pre-write recheck does not re-count what the decision phase already counted" do
+    # Two targets: one the member is already subscribed to (recorded observed during the
+    # decision phase), one a real candidate. The decision-phase snapshot has nl-index
+    # subscribed, so it is caught by the current-subscription fast path (recorded
+    # "observed", uncounted either way). The fresh member returned by find_member for
+    # the recheck does NOT show nl-index as current -- so the recheck instead reaches
+    # the ledger fast path (`ledger_has?`), which finds that same "observed" entry.
+    # That is exactly where count applies: with count: true it increments
+    # already_handled a second time, inflating the numbers the rollout review reads.
+    enable_sources("xxix:", "index:shopify_customer")
+    sys!(ghost_newsletter_prefix_map: { "xxix" => "nl-xxix", "index" => "nl-index" },
+         ghost_newsletter_grants_enabled: "1")
+    Contact.create!(email: "recount@example.com",
+      sources: ["xxix:", "index:shopify_customer"], ghost_id: "m89")
+    snapshot = member(id: "m89", email: "recount@example.com",
+      labels: %w[xxix: index:shopify_customer],
+      extra: { "newsletters" => [{ "id" => "nl-index", "name" => "Index", "status" => "active" }] })
+    fresh = member(id: "m89", email: "recount@example.com", labels: %w[xxix: index:shopify_customer])
+
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix", "nl-index"))
+    ghost.expects(:all_members).returns([snapshot])
+    ghost.stubs(:newsletter_events_for).returns([])
+    ghost.expects(:find_member).with("m89").returns(fresh)
+    ghost.expects(:update_member).returns(fresh.merge("newsletters" => [{ "id" => "nl-xxix" }]))
+
+    sync = sync_with(ghost)
+    sync.sync_all!
+    assert_equal 1, sync.summary[:granted]
+    assert_equal 0, sync.summary[:already_handled],
+      "the recheck passes count: false, so the ledger fast path must not re-count"
   end
 
   test "with the grants flag off the decision runs but nothing is written to Ghost" do
