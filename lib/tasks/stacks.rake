@@ -420,7 +420,30 @@ namespace :stacks do
   task :sync_contacts => :environment do
     system_task = SystemTask.create!(name: "stacks:sync_contacts")
     begin
-      Contact.all.each(&:dedupe!)
+      # Serialise against the Ghost sweep: dedupe! deletes contact rows, and a
+      # concurrent ledger write from the sweep would silently affect zero rows.
+      # A lost ledger entry can re-subscribe someone who unsubscribed.
+      # try_advisory_lock, not advisory_lock: a full sweep runs tens of minutes, and
+      # blocking would stall the whole daily task chain behind it with no timeout.
+      # Mirrors sync_all_with_lock!'s "another run holds the lock" behaviour.
+      conn = ActiveRecord::Base.connection
+      got_lock = false
+      12.times do
+        got_lock = conn.select_value(
+          "SELECT pg_try_advisory_lock(#{Stacks::GhostSync::ADVISORY_LOCK_KEY})")
+        break if got_lock
+        sleep 5
+      end
+
+      if got_lock
+        begin
+          Contact.all.each(&:dedupe!)
+        ensure
+          conn.execute("SELECT pg_advisory_unlock(#{Stacks::GhostSync::ADVISORY_LOCK_KEY})")
+        end
+      else
+        Rails.logger.warn("[stacks:sync_contacts] skipped dedupe: Ghost sweep holds the advisory lock")
+      end
 
       # First ensure that any new mailing list subscribers have a Contact record
       MailingList.includes(:mailing_list_subscribers).each do |ml|

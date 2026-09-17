@@ -6,16 +6,50 @@
 # docs/superpowers/specs/2026-07-20-ghost-contact-sync-design.md
 class Stacks::GhostSync
   SOURCE_PREFIX = "g3d:ghost".freeze
+  # Sources under this namespace are stacks' own record of Ghost opt-in state,
+  # written by the pull leg. Deriving subscriptions from them would subscribe
+  # everyone who subscribed to anything to the g3d newsletter: a consent feedback
+  # loop. They are excluded from prefix derivation, always.
+  # Must equal SOURCE_PREFIX: the exclusion exists precisely because the pull leg writes
+  # SOURCE_PREFIX-namespaced sources. Aliased rather than repeating the literal so the two
+  # cannot drift apart and silently disable the feedback-loop guard.
+  EXCLUDED_SOURCE_PREFIX = SOURCE_PREFIX
   # Fixed app-wide advisory lock key for the sweep (rand of a keyboard mash;
   # any stable int works — must only avoid colliding with other app locks).
   ADVISORY_LOCK_KEY = 728534291
+
+  # Ceiling on the per-sweep allowance reserved for already-linked contacts. This only
+  # protects the create backfill from starvation while the configured budget exceeds
+  # this cap with a large linked population; below that, the reservation itself can
+  # still absorb the whole budget (see sync_all!'s linked_budget comment).
+  LINKED_RESERVE_CAP = 500
+
+  def self.source_prefix(source)
+    source.to_s.split(":", 2).first.to_s.downcase
+  end
+
+  def self.excluded_source?(source)
+    s = source.to_s.downcase
+    s == EXCLUDED_SOURCE_PREFIX || s.start_with?("#{EXCLUDED_SOURCE_PREFIX}:")
+  end
 
   attr_reader :summary, :errors
 
   def initialize(ghost = Stacks::Ghost.new)
     @ghost = ghost
     @summary = Hash.new(0)
+    @summary[:granted_by_newsletter] = Hash.new(0)
+    @summary[:grants_planned_by_newsletter] = Hash.new(0)
+    # Create-path grants (confirm_granted!) are NOT gated by the flag, unlike existing-
+    # member grants (granted_by_newsletter's other writer): up to 2,500 un-gated creates
+    # per sweep would otherwise swamp the rollout's per-newsletter created-vs-granted
+    # comparison. Kept in its own bucket so granted_by_newsletter means existing-member
+    # grants exactly, symmetric with grants_planned_by_newsletter.
+    @summary[:granted_on_create_by_newsletter] = Hash.new(0)
     @errors = []
+    @writes_remaining = 0   # fail closed until load_newsletter_config! sets the budget
+    @prefix_map = {}        # so target_newsletter_ids cannot NoMethodError on nil
+    @deferred_this_contact = false
   end
 
   # Wraps the sweep in a pg advisory lock so an overlapping Scheduler run or
@@ -35,7 +69,19 @@ class Stacks::GhostSync
     end
   end
 
+  # Single-use per sweep. @summary accumulates on the instance and is never reset here,
+  # so a second call to sync_all! on the SAME instance reports cumulative counters.
+  # @all_newsletters and @all_newsletters_failed also memoize across calls: a first-call
+  # fetch failure sets @all_newsletters_failed, and every call after that -- including a
+  # later sync_all! on the same instance -- degrades silently to [] rather than retrying,
+  # which makes every prefix mapping report grant_mapping_invalid and disables all grants
+  # with no further error logged. @writes_remaining and @prefix_map are NOT sticky:
+  # load_newsletter_config!, called immediately below, resets both every sweep.
+  # Production always news up a fresh Stacks::GhostSync per sweep
+  # (self.sync_all_with_lock!); a test that needs "the next sweep" must instantiate a
+  # new object against the same stubbed client (see ghost_sync_test.rb).
   def sync_all!
+    load_newsletter_config!
     enabled = System.first_or_create!(settings: {}).ghost_synced_sources
     members = @ghost.all_members
     members_by_id = members.index_by { |m| m["id"] }
@@ -53,11 +99,30 @@ class Stacks::GhostSync
     # Outbound legs only run when at least one source is enabled: an empty
     # checkbox set means "sync off", not "remove every label in Ghost".
     if enabled.any?
-      Contact.where("sources && ARRAY[?]::varchar[]", enabled).find_each do |contact|
-        capture_errors(contact) do
-          next skip_invalid(contact) unless contact.email.match?(Devise.email_regexp)
-          updated = sync_contact!(contact, enabled, members_by_id, members_by_email)
-          members_by_id[updated["id"]] = updated if updated
+      eligible = Contact.where("sources && ARRAY[?]::varchar[]", enabled)
+      # Size the reservation to the linked population, not to a fraction of the budget.
+      # A flat 50% would halve create throughput and double the 19k backfill from ~8
+      # sweeps to ~16, contradicting "each sweep creates up to 2,500 members".
+      linked_budget = [[eligible.synced_to_ghost.count, LINKED_RESERVE_CAP].min, 1].max
+
+      [[eligible.synced_to_ghost, linked_budget], [eligible.not_synced_to_ghost, nil]].each do |scope, cap|
+        spent_before = @summary[:writes_used]
+        processed = 0
+        scope.find_each do |contact|
+          break if cap && (@summary[:writes_used] - spent_before) >= cap
+          capture_errors(contact) do
+            next skip_invalid(contact) unless contact.email.match?(Devise.email_regexp)
+            updated = sync_contact!(contact, enabled, members_by_id, members_by_email)
+            if updated
+              members_by_id[updated["id"]] = updated
+              members_by_email[updated["email"].to_s.downcase] = updated
+            end
+          end
+          processed += 1
+          # A 2,500-write sweep run inline from the admin button cannot finish inside
+          # rack-timeout's 15s / puma's 60s worker_timeout. Persist periodically so a
+          # killed request still leaves the rollout's review panel populated.
+          persist_summary! if (processed % 250).zero?
         end
       end
 
@@ -74,6 +139,8 @@ class Stacks::GhostSync
 
     pull_members!(members_by_id.values)
     summary
+  ensure
+    persist_summary!
   end
 
   def sync_contact!(contact, enabled, members_by_id, members_by_email)
@@ -88,25 +155,35 @@ class Stacks::GhostSync
         return nil
       end
 
+      unless reserve_write!
+        @summary[:creates_deferred] += 1
+        return nil
+      end
+
       begin
+        requested_newsletter_ids = create_newsletter_ids(contact, enabled)
         member = @ghost.create_member(
-          { email: contact.email, name: contact.display_name.presence, labels: desired }.compact
+          { email: contact.email, name: contact.display_name.presence, labels: desired,
+            newsletters: requested_newsletter_ids.map { |id| { id: id } } }.compact
         )
         @summary[:created] += 1
         wrote = true
+        confirm_granted!(contact, member, requested_newsletter_ids)
       rescue Stacks::Ghost::RequestError => e
         raise unless e.code == 422
         # Someone created this email in Ghost since our sweep snapshot — adopt it.
+        # This member DOES already exist, so it runs the full existing-member decision
+        # (history check included) and is gated by the grants flag like any other.
         member = @ghost.find_member_by_email(contact.email)
         raise if member.nil?
-        updated = update_member_labels(contact, member, desired, enabled)
+        updated = apply_grants_or_labels!(contact, member, desired, enabled)
         if updated
           member = updated
           wrote = true
         end
       end
     else
-      updated = update_member_labels(contact, member, desired, enabled)
+      updated = apply_grants_or_labels!(contact, member, desired, enabled)
       if updated
         member = updated
         wrote = true
@@ -145,21 +222,265 @@ class Stacks::GhostSync
       }.compact
     )
     contact.ghost_data = new_ghost_data if new_ghost_data != contact.ghost_data
+
+    # Backstop for layer 2: record that this contact is currently subscribed to
+    # each newsletter, regardless of the grants flag. record_ledger_entry! is
+    # write-once, so this can never downgrade an entry already marking the
+    # contact as unsubscribed ("history") -- it only ever fills in the gap for
+    # newsletters we have not yet observed either way.
+    (member["newsletters"] || []).map { |n| n["id"] }.compact.each do |newsletter_id|
+      contact.record_ledger_entry!(newsletter_id, "observed", member_id: member["id"])
+    end
+
     contact.save! if contact.changed?
     contact.record_source_events!(new_sources)
     contact
   end
 
+  # Resolves a contact's enabled, mapped sources into the Ghost newsletter ids
+  # it should be subscribed to. Excludes the g3d:ghost namespace (see
+  # EXCLUDED_SOURCE_PREFIX) so the pull leg's own record of opt-in state can
+  # never feed back into itself.
+  def target_newsletter_ids(contact, enabled)
+    (contact.sources & enabled)
+      .reject { |s| self.class.excluded_source?(s) }
+      .map { |s| @prefix_map[self.class.source_prefix(s)] }
+      .compact.uniq
+  end
+
+  # Decision steps 1, 2, 3, 4, 5 and 6. Returns the newsletter ids this member has
+  # provably never been subscribed to. Writes observed/history ledger entries in
+  # memory; the caller persists them.
+  #
+  # The layer-3 read is deliberately NOT memoized across an API call. A candidate
+  # is by definition not currently subscribed, so re-checking "is subscribed" in
+  # the apply phase cannot disqualify one: only a fresh history read can.
+  def grant_candidates_for(contact, member, enabled, count: true)
+    @deferred_this_contact = false
+    targets = target_newsletter_ids(contact, enabled)
+    return [] if targets.empty?
+
+    current_ids = subscribed_newsletter_ids(member)
+    if current_ids.nil?
+      # Fail closed, structurally: an untrustworthy newsletters payload means we cannot
+      # know whether this member is already subscribed to a target, and the SAME
+      # derivation feeds newsletter_events_for's coherence check below -- an empty
+      # current_ids there silently disables the one guard built to catch "subscribed
+      # with no events". No grants for this member this sweep. Gated on `count` so the
+      # pre-PUT recheck (count: false) never double-counts a decision-phase error.
+      if count
+        @summary[:grant_errors] += 1
+        @errors << "#{contact.email}: newsletters payload untrustworthy, no grants this sweep"
+      end
+      return []
+    end
+    ledger_applies = contact.ledger_member_id.nil? || contact.ledger_member_id == member["id"]
+
+    undeliverable = member.dig("email_suppression", "suppressed") || member["email_disabled"]
+    # grant_skipped_undeliverable counts CONTACTS, like every other deferral counter,
+    # not target newsletters: undeliverability is a property of the member, so a contact
+    # with two mapped targets would otherwise be counted twice for one skipped member.
+    undeliverable_counted = false
+    candidates = []
+    events = nil
+
+    targets.each do |newsletter_id|
+      # Step 1 runs before step 3 on purpose: a suppressed member still gets observed
+      # entries for what they ARE subscribed to, which is the population most likely to
+      # unsubscribe next.
+      if current_ids.include?(newsletter_id)
+        contact.record_ledger_entry!(newsletter_id, "observed", member_id: member["id"])
+        next
+      end
+
+      if undeliverable
+        unless undeliverable_counted
+          @summary[:grant_skipped_undeliverable] += 1
+          undeliverable_counted = true
+        end
+        next
+      end
+
+      if ledger_applies && contact.ledger_has?(newsletter_id)
+        if count
+          if contact.ledger_state(newsletter_id) == "history"
+            @summary[:unsubscribe_respected] += 1
+          else
+            @summary[:already_handled] += 1
+          end
+        end
+        next
+      end
+
+      # Step 4: the budget check comes before the history read, so a deferred member
+      # costs zero API calls, not one. A planned grant (grants flag off) consumes budget
+      # exactly as a real one does, so a dry-run sweep previews the same shape and API
+      # cost as the real run it stands in for.
+      unless writes_available?
+        @summary[:grants_deferred] += 1
+        @deferred_this_contact = true
+        return candidates
+      end
+
+      begin
+        events ||= @ghost.newsletter_events_for(member["id"], current_newsletter_ids: current_ids)
+      rescue Stacks::Ghost::UntrustworthyHistory, Stacks::Ghost::RequestError => e
+        # Fail closed: no grants for this member this sweep. Any "observed" entry already
+        # recorded for an earlier target stands, which is fine: observed only ever blocks
+        # a future grant, it never permits one.
+        @summary[:grant_errors] += 1
+        @errors << "#{contact.email}: history unreadable: #{e.class}: #{e.message}"
+        return []
+      end
+
+      if events.any? { |ev| ev.dig("data", "newsletter_id") == newsletter_id }
+        # When ledger_applies is TRUE, Step 3 above is the only other place that can
+        # reach a already-recorded entry for this id, and it already `next`s before
+        # we ever get here -- so arriving here with ledger_applies true means this is
+        # necessarily the FIRST time this exact (member, newsletter) hit has been
+        # recorded, decision phase or recheck, and must always be counted regardless
+        # of `count` (the recheck can be the call that first discovers it, as when
+        # events change between the decision-phase read and the pre-PUT reread).
+        #
+        # When ledger_applies is FALSE, Step 3 is bypassed on every call, so this
+        # line CAN be reached a second time -- once in the decision phase, once in
+        # the pre-PUT recheck -- for an entry the decision phase already recorded;
+        # `count` (false on the recheck) is what prevents double-counting that case.
+        # It must NOT be the only gate, though: a stale entry recorded under a
+        # DIFFERENT prior member (e.g. a relinked ghost_id) would otherwise suppress
+        # counting a genuine FIRST-time history hit for THIS member during the
+        # decision phase itself, dropping the contact from every counter.
+        contact.record_ledger_entry!(newsletter_id, "history", member_id: member["id"])
+        @summary[:unsubscribe_respected] += 1 if count || ledger_applies
+        next
+      end
+
+      candidates << newsletter_id
+    end
+
+    candidates
+  end
+
   private
 
-  # Member browse payloads embed newsletters WITHOUT their slug (only
-  # id/name/status — verified against Ghost(Pro) v6 in production), so resolve
-  # slugs via the newsletters endpoint: fetched lazily only when a payload
-  # actually lacks a slug, memoized per sync instance.
-  def newsletter_slug_map
-    @newsletter_slug_map ||= @ghost.all_newsletters.each_with_object({}) do |n, map|
-      map[n["id"]] = n["slug"]
+  # Returns the member's currently subscribed newsletter ids, or nil when the payload
+  # cannot be trusted to be complete. Callers MUST treat nil as fail-closed: a
+  # full-replace PUT (or a current-ids list handed to newsletter_events_for's
+  # coherence check) computed from a partial read can unsubscribe people, or silently
+  # disable the one guard built to catch "subscribed with no events". Rejects not just
+  # a non-Array `newsletters`, but Hash entries missing a non-empty String "id" (a
+  # truncated or field-selected payload) and non-Hash entries (e.g. bare slug
+  # strings) -- both pass a naive `is_a?(Array)` check yet yield a silently empty or
+  # wrong ids list via `.map { |n| n["id"] }.compact`.
+  def subscribed_newsletter_ids(member)
+    newsletters = member["newsletters"]
+    return nil unless newsletters.is_a?(Array)
+    return nil unless newsletters.all? { |n| n.is_a?(Hash) && n["id"].is_a?(String) && !n["id"].empty? }
+
+    newsletters.map { |n| n["id"] }
+  end
+
+  # One unit per Ghost member mutation, not per newsletter: a contact with two
+  # candidates is a single PUT. Deferral is always safe: it never grants and never
+  # records consent. (It can leave an "observed" entry recorded earlier in the same
+  # loop -- that's fine, since observed only ever blocks a future grant, it never
+  # permits one; it records a fact we did observe.)
+  def writes_available?
+    @writes_remaining > 0
+  end
+
+  def reserve_write!
+    return false unless writes_available?
+    @writes_remaining -= 1
+    @summary[:writes_used] += 1
+    true
+  end
+
+  # One /newsletters/ fetch per sweep, shared by the push leg's prefix-map validation
+  # (load_newsletter_config!) and the pull leg's slug resolution. Keep the RAW list here:
+  # the slug map needs archived newsletters too, the prefix map does not.
+  #
+  # Caches BOTH success and failure. `||=` alone never caches a raised error, so a
+  # /newsletters/ outage would otherwise be retried (with Stacks::Ghost's 2**n backoff)
+  # by every one of up to ~19,000 pull-leg members that reach newsletter_slug_map for a
+  # member payload lacking an inline slug -- one outage becoming ~19,000 slow, doomed
+  # calls. load_newsletter_config! still sees (and counts/reports) the first failure by
+  # letting it raise once; every call after that degrades silently to [].
+  def all_newsletters
+    return @all_newsletters if @all_newsletters
+    return [] if @all_newsletters_failed
+
+    begin
+      @all_newsletters = @ghost.all_newsletters
+    rescue
+      @all_newsletters_failed = true
+      raise
     end
+  end
+
+  def newsletter_slug_map
+    @newsletter_slug_map ||= all_newsletters.each_with_object({}) { |n, map| map[n["id"]] = n["slug"] }
+  end
+
+  # Read settings fresh every sweep. System.instance memoizes in a class variable
+  # that is never invalidated, so a setting saved in one puma worker is invisible
+  # to another forever, and the admin "Sync Now" button runs this in a web dyno.
+  def load_newsletter_config!
+    system = System.first_or_create!(settings: {})
+    @grants_enabled = system.ghost_newsletter_grants_enabled?
+    @writes_remaining = system.ghost_sweep_write_budget_clamped
+    requested = system.ghost_newsletter_prefix_map_clean
+
+    if requested.empty?
+      @prefix_map = {}
+      return @prefix_map
+    end
+
+    # Degrade rather than abort. Before this, /newsletters/ was only touched from inside
+    # upsert_contact_from_member, which runs under capture_errors, so an outage became
+    # per-contact error lines and the deletion and label legs still completed. As the
+    # first statement in sync_all! an exception would kill all of them. Fail closed on
+    # GRANTS only: an empty prefix map means no grants, which is the safe posture, while
+    # labels and deletion reconciliation carry on.
+    fetched = begin
+      all_newsletters
+    rescue => e
+      @errors << "newsletter config: #{e.class}: #{e.message}"
+      @summary[:grant_config_unavailable] += 1
+      @prefix_map = {}
+      return @prefix_map
+    end
+
+    active_ids = fetched.select { |n| n["status"] == "active" }.map { |n| n["id"] }.to_set
+    @prefix_map = requested.select { |_, id| active_ids.include?(id) }
+    @summary[:grant_mapping_invalid] += (requested.length - @prefix_map.length)
+
+    # Piggyback on the fetch we already made: persist id->name for the contact page
+    # to read, so it never needs its own live Ghost call. Only on a successful fetch
+    # (the rescue above already returned) -- a failed fetch leaves whatever name map
+    # is already stored rather than wiping it.
+    system.update!(ghost_newsletter_name_by_id: fetched.each_with_object({}) { |n, h| h[n["id"]] = n["name"] })
+
+    @prefix_map
+  end
+
+  # Writes @summary to System#ghost_last_sync_summary so the rollout's review panel
+  # can read it. Called every 250 contacts AND from sync_all!'s ensure, since the
+  # admin "Sync Now" button runs the sweep inline against rack-timeout (15s) and
+  # puma's worker_timeout (60s): a 2,500-write sweep can be killed mid-run, and a
+  # summary written only at the end would never reach the panel from that path.
+  #
+  # @summary has symbol keys and a default proc (Hash.new(0)), and its per-newsletter
+  # values are themselves symbol-keyed hashes; the column is jsonb, so stringify both
+  # levels on the way in rather than relying on jsonb to coerce them.
+  def persist_summary!
+    payload = @summary.to_h.each_with_object({}) do |(k, v), acc|
+      acc[k.to_s] = v.is_a?(Hash) ? v.to_h.transform_keys(&:to_s) : v
+    end
+    payload["finished_at"] = Time.current.iso8601
+    System.first_or_create!(settings: {}).update!(ghost_last_sync_summary: payload)
+  rescue => e
+    Rails.logger.error("[GhostSync] could not persist summary: #{e.class}: #{e.message}")
   end
 
   # Severs a Ghost member link: clears ghost_id and stamps snapshot.deleted_at
@@ -191,10 +512,12 @@ class Stacks::GhostSync
     label_names(member).select { |n| enabled_downcased.include?(n.downcase) }.sort
   end
 
-  # Returns the updated member hash when a write happened, nil for a no-op.
+  # Pure: computes the attrs a label-only write would send, or nil for a no-op.
   # Labels are full-replace in Ghost, so always resend the preserved
   # (unmanaged) labels alongside ours. Never includes :newsletters.
-  def update_member_labels(contact, member, desired, enabled)
+  # Issues no request, so the grant path can recompute the diff against a fresh
+  # member and fold it into a single PUT.
+  def label_attrs_for(contact, member, desired, enabled)
     attrs = {}
     # Compare case-insensitively: Ghost dedupes labels by slug so it may store
     # "newsletter" even when the enabled source is named "Newsletter".
@@ -211,15 +534,171 @@ class Stacks::GhostSync
     if member["name"].blank? && contact.display_name.present?
       attrs[:name] = contact.display_name
     end
-    return nil if attrs.empty?
+    attrs.presence
+  end
 
+  # Returns the updated member hash when a write happened, nil for a no-op.
+  def update_member_labels(contact, member, desired, enabled)
+    attrs = label_attrs_for(contact, member, desired, enabled)
+    return nil if attrs.nil?
+    unless reserve_write!
+      @summary[:updates_deferred] += 1
+      return nil
+    end
+
+    write_member_labels!(member, attrs)
+  end
+
+  # Issues the label PUT WITHOUT reserving a budget unit. Callers that already hold a
+  # unit for this contact (the dry-run grant branch in apply_grants_or_labels!, which
+  # reserves once for the whole contact) spend it here, rather than update_member_labels
+  # reserving a second unit for the same contact's single Ghost call.
+  def write_member_labels!(member, attrs)
     updated = @ghost.update_member(member["id"], attrs)
     @summary[:updated] += 1
     updated
   end
 
+  # Targets minus anything already in the ledger. A create cannot violate the
+  # invariant (no member means no history), so it is NOT gated by the flag: that
+  # is what makes the index backfill a single pass.
+  def create_newsletter_ids(contact, enabled)
+    target_newsletter_ids(contact, enabled) - contact.newsletter_ledger_entries.keys
+  end
+
+  # Write granted only for what the response confirms AND what we actually asked for.
+  # Ghost's subscribe_on_signup can attach newsletters we never requested; recording
+  # those as "granted" would both inflate the number rollout step 7 compares against
+  # grants_planned and permanently block a future legitimate grant, since ledger
+  # entries are write-once with no repair path.
+  def confirm_granted!(contact, member, requested)
+    confirmed = (member["newsletters"] || []).map { |n| n["id"] }.compact
+    (confirmed & requested).each do |id|
+      contact.record_ledger_entry!(id, "granted", member_id: member["id"])
+      @summary[:granted_on_create] += 1
+      @summary[:granted_on_create_by_newsletter][id] += 1
+    end
+    (confirmed - requested).each do |id|
+      contact.record_ledger_entry!(id, "observed", member_id: member["id"])
+    end
+  end
+
+  # One PUT per contact. When there are candidates we must re-read the member and
+  # its history immediately before writing, then recompute the label diff against
+  # that fresh member so both ride in a single write.
+  def apply_grants_or_labels!(contact, member, desired, enabled)
+    # A case-fold duplicate resolves to another Contact's member via members_by_email
+    # while carrying ghost_id: nil and an empty ledger, which structurally disables
+    # layer 2 for it. Guard on who OWNS the member, not on this contact's ghost_id:
+    # checking `contact.ghost_id.present?` would never fire, because the case we are
+    # defending against is precisely the one where it is nil.
+    # No write at all, labels included: the member is owned by another Contact row,
+    # so a label full-replace here would just race that owner's own label sync.
+    # dedupe! resolves this contact into its owner on a later run; until then it
+    # drives no Ghost write whatsoever.
+    if contact.ghost_id.nil? &&
+       Contact.where(ghost_id: member["id"]).where.not(id: contact.id).exists?
+      @summary[:writes_skipped_unlinked] += 1
+      return nil
+    end
+
+    candidates = grant_candidates_for(contact, member, enabled)
+    # Fix #3: a budget-exhausted contact must be counted once, not twice. Without this,
+    # falling through to update_member_labels below lets its OWN reserve_write! fail a
+    # second time and increment updates_deferred on top of the grants_deferred already
+    # counted inside grant_candidates_for, double-counting one deferred contact.
+    return nil if @deferred_this_contact
+
+    if candidates.empty?
+      return update_member_labels(contact, member, desired, enabled)
+    end
+
+    unless @grants_enabled
+      # A planned grant consumes budget exactly as a real one does: otherwise a dry-run
+      # sweep would preview a different shape (and a different API cost) than the real
+      # run it stands in for. grant_candidates_for's step 4 already confirmed a unit was
+      # available moments ago, so this reserve always succeeds here; the guard just keeps
+      # this site symmetric with the real grant PUT below.
+      unless reserve_write!
+        @summary[:grants_deferred] += 1
+        return nil
+      end
+      @summary[:grants_planned] += candidates.length
+      candidates.each { |id| @summary[:grants_planned_by_newsletter][id] += 1 }
+      # Spend the unit just reserved above: any label diff rides the SAME unit as the
+      # planned grant, not a second one. update_member_labels would reserve again, so
+      # write directly (or write nothing when there is no label diff to send).
+      attrs = label_attrs_for(contact, member, desired, enabled)
+      return nil if attrs.nil?
+      return write_member_labels!(member, attrs)
+    end
+
+    fresh = @ghost.find_member(member["id"])
+    return update_member_labels(contact, member, desired, enabled) if fresh.nil?
+    # Never write newsletters against a member we did not ask for: grant_candidates_for
+    # would compute ledger_applies = false for it, disabling layer 2 entirely.
+    unless fresh["id"] == member["id"]
+      return update_member_labels(contact, member, desired, enabled)
+    end
+
+    # Fix #1: Ghost's newsletters on edit is a FULL REPLACE. If fresh["newsletters"] is
+    # ever missing or malformed, current_ids below would silently compute as [] (or
+    # miss entries) and the PUT would unsubscribe this member from everything except
+    # the new candidates. subscribed_newsletter_ids is the single source of truth for
+    # "can this payload be trusted": it is used here, in the PUT's union below, and
+    # inside grant_candidates_for's own derivation (which feeds newsletter_events_for),
+    # so the three cannot disagree about what counts as trustworthy.
+    # Do NOT fall back to the stale snapshot's ids -- that would widen the acknowledged
+    # GET-to-PUT window. Fail closed instead: no grants this sweep, label-only write
+    # only, and against `member` (the snapshot), NOT `fresh` -- labels are full-replace
+    # too, so an untrustworthy fresh payload can equally have lost its labels, and
+    # writing against it would strip every hand-added label on the member.
+    current_ids = subscribed_newsletter_ids(fresh)
+    if current_ids.nil?
+      @summary[:grant_errors] += 1
+      @errors << "#{contact.email}: fresh newsletters payload untrustworthy, no grants this sweep"
+      return update_member_labels(contact, member, desired, enabled)
+    end
+
+    # count: false - the decision-phase call already counted these; recounting would
+    # double every unsubscribe_respected / already_handled that rollout step 6 reviews.
+    candidates = grant_candidates_for(contact, fresh, enabled, count: false)
+    return nil if @deferred_this_contact
+    return update_member_labels(contact, fresh, desired, enabled) if candidates.empty?
+
+    attrs = label_attrs_for(contact, fresh, desired, enabled) || {}
+    attrs[:newsletters] = (current_ids | candidates).map { |id| { id: id } }
+
+    unless reserve_write!
+      # The whole contact is deferred: counting a label deferral on top would make one
+      # contact appear twice in the summary the rollout review reads.
+      @summary[:grants_deferred] += 1
+      return nil
+    end
+
+    updated = @ghost.update_member(fresh["id"], attrs)
+    @summary[:updated] += 1
+    # A 2xx with an empty members array yields nil. update_member_labels already
+    # tolerates that; degrade the same way rather than raising and losing link_contact!
+    # (and with it this contact's in-memory ledger entries).
+    return fresh if updated.nil?
+
+    confirmed = (updated["newsletters"] || []).map { |n| n["id"] }.compact
+    candidates.each do |id|
+      next unless confirmed.include?(id)
+      contact.record_ledger_entry!(id, "granted", member_id: fresh["id"])
+      @summary[:granted] += 1
+      @summary[:granted_by_newsletter][id] += 1
+    end
+    updated
+  end
+
   def delabel_member!(contact, member, enabled)
     return member if managed_label_names(member, enabled).empty?
+    unless reserve_write!
+      @summary[:updates_deferred] += 1
+      return member
+    end
     enabled_downcased = enabled.map(&:downcase)
     updated = @ghost.update_member(
       member["id"],
@@ -230,10 +709,16 @@ class Stacks::GhostSync
   end
 
   # Finding A: only stamp synced_at when a real Ghost write occurred (wrote=true).
-  # Skip the update entirely when ghost_id already matches and nothing was written.
+  # Skip the update entirely when ghost_id already matches, nothing was written to
+  # Ghost, AND the in-memory ledger carries no unsaved entry. A pre-write history
+  # read (layer 3, or the pre-PUT recheck) can record a "history"/"observed" ledger
+  # entry in memory even when the Ghost write it was guarding turns out to be a
+  # no-op or gets skipped entirely -- without this check that entry would evaporate
+  # unsaved, and the next sweep would re-roll the same history read forever.
   def link_contact!(contact, member, wrote = false)
     already_linked = contact.ghost_id == member["id"]
-    return if already_linked && !wrote
+    ledger_dirty = contact.changed.include?("ghost_data")
+    return if already_linked && !wrote && !ledger_dirty
 
     new_data = wrote ? contact.ghost_data.merge("synced_at" => Time.current.iso8601) : contact.ghost_data
     contact.update!(ghost_id: member["id"], ghost_data: new_data)

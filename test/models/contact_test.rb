@@ -193,6 +193,87 @@ class ContactDedupeGhostTest < ActiveSupport::TestCase
     # but loser's deleted_at must be preserved (opt-out must survive any merge direction)
     assert_equal '2026-02-01T00:00:00Z', result.ghost_data.dig('snapshot', 'deleted_at')
   end
+
+  test "a merged ledger takes its member_id from the ghost_id owner, not input order" do
+    # A ledger whose member_id does not match the contact's linked member is ignored by
+    # the grant decision, so mis-attributing it silently disables layer 2 even though
+    # every entry survived.
+    first = Contact.create!(email: "attrib@example.com", ghost_data: {
+      "newsletter_ledger" => { "member_id" => "m9", "entries" => {
+        "nl-1" => { "state" => "history", "at" => "2026-01-01T00:00:00Z" } } } })
+    Contact.create!(email: "ATTRIB@example.com", ghost_id: "m5", ghost_data: {
+      "newsletter_ledger" => { "member_id" => "m5", "entries" => {
+        "nl-2" => { "state" => "granted", "at" => "2026-02-01T00:00:00Z" } } } })
+
+    survivor = first.dedupe!
+    assert_equal "m5", survivor.ghost_id
+    assert_equal "m5", survivor.ghost_data.dig("newsletter_ledger", "member_id"),
+      "the ledger must describe the member the survivor is actually linked to"
+    assert_equal %w[nl-1 nl-2], survivor.ghost_data.dig("newsletter_ledger", "entries").keys.sort
+  end
+
+  test "dedupe! unions ledgers regardless of which dupe owns ghost_id" do
+    keeper = Contact.create!(email: "dupe@example.com", ghost_data: {
+      "newsletter_ledger" => { "member_id" => "m1", "entries" => {
+        "nl-1" => { "state" => "history", "at" => "2026-01-01T00:00:00Z" } } } })
+    Contact.create!(email: "DUPE@example.com", ghost_id: "m1", ghost_data: {
+      "newsletter_ledger" => { "member_id" => "m1", "entries" => {
+        "nl-2" => { "state" => "granted", "at" => "2026-02-01T00:00:00Z" } } } })
+
+    survivor = keeper.dedupe!
+    entries = survivor.ghost_data.dig("newsletter_ledger", "entries")
+    assert_equal %w[nl-1 nl-2], entries.keys.sort, "a lost ledger entry is a consent violation"
+    assert_equal "m1", survivor.ghost_id
+  end
+
+  test "dedupe! preserves deleted_at alongside a unioned ledger" do
+    keeper = Contact.create!(email: "dupe2@example.com", ghost_data: {
+      "newsletter_ledger" => { "member_id" => "m2", "entries" => {
+        "nl-1" => { "state" => "history", "at" => "2026-01-01T00:00:00Z" } } } })
+    Contact.create!(email: "DUPE2@example.com", ghost_id: "m2",
+      ghost_data: { "snapshot" => { "deleted_at" => "2026-03-01T00:00:00Z" } })
+
+    survivor = keeper.dedupe!
+    assert_equal "2026-03-01T00:00:00Z", survivor.ghost_data.dig("snapshot", "deleted_at")
+    assert survivor.ghost_data.dig("newsletter_ledger", "entries").key?("nl-1")
+  end
+
+  # Fix #5: the ghost_id owner may have NO ledger of its own at all (common -- the pull
+  # leg created many contacts before this feature shipped). Taking merge_newsletter_
+  # ledgers' input-order member_id pick as-is would then inherit some OTHER dupe's
+  # stale member_id, disabling layer 2 for the survivor forever.
+  test "dedupe! forces the merged ledger's member_id onto the ghost_id owner even when that owner has no ledger of its own" do
+    owner = Contact.create!(email: "noledger@example.com", ghost_id: "m9")
+    Contact.create!(email: "NOLEDGER@example.com", ghost_data: {
+      "newsletter_ledger" => { "member_id" => "m-stale", "entries" => {
+        "nl-1" => { "state" => "history", "at" => "2026-01-01T00:00:00Z" } } } })
+
+    survivor = owner.dedupe!
+    assert_equal "m9", survivor.ghost_id
+    assert_equal "m9", survivor.ghost_data.dig("newsletter_ledger", "member_id"),
+      "the merged ledger must describe the member the survivor is actually linked to, not a stale dupe's member_id"
+    assert survivor.ghost_data.dig("newsletter_ledger", "entries").key?("nl-1"),
+      "entries must still survive the merge"
+  end
+
+  test "dedupe! deletes a stale member_id rather than keeping it when no dupe has a ghost_id" do
+    # Neither dupe has a ghost_id, so merged_ghost_id is blank -- but one dupe's ledger
+    # still carries a member_id left over from a member it is no longer linked to (e.g.
+    # a prior link that was cleared). merge_newsletter_ledgers' own input-order pick
+    # would otherwise carry that stale id straight through.
+    survivor = Contact.create!(email: "nogid@example.com", ghost_data: {
+      "newsletter_ledger" => { "member_id" => "m-stale", "entries" => {
+        "nl-1" => { "state" => "history", "at" => "2026-01-01T00:00:00Z" } } } })
+    Contact.create!(email: "NOGID@example.com")
+
+    result = survivor.dedupe!
+    assert_nil result.ghost_id
+    assert_nil result.ghost_data.dig("newsletter_ledger", "member_id"),
+      "a stale member_id must not survive a merge where no dupe has a ghost_id: it " \
+      "would permanently disable layer 2 once the contact relinks to a real member"
+    assert result.ghost_data.dig("newsletter_ledger", "entries").key?("nl-1"),
+      "entries must still survive the merge"
+  end
 end
 
 class ContactSyncToApolloTest < ActiveSupport::TestCase
@@ -258,6 +339,106 @@ class ContactSyncToApolloGhostTest < ActiveSupport::TestCase
     assert_equal 'g-existing-3', contact.ghost_id
     assert_equal '2026-03-01T00:00:00Z', contact.ghost_data.dig('snapshot', 'deleted_at')
   end
+
+  # sync_to_apollo!'s RecordNotUnique handler is the other merge path, and a ledger
+  # entry lost there is a consent violation exactly as in dedupe!.
+  test "the fresh_existing merge path unions ledgers in both directions" do
+    a = Contact.create!(email: "fx@example.com", ghost_data: {
+      "newsletter_ledger" => { "member_id" => "m3", "entries" => {
+        "nl-1" => { "state" => "history", "at" => "2026-01-01T00:00:00Z" } } } })
+    Contact.create!(email: "fx2@example.com", apollo_id: "apollo-1", ghost_data: {
+      "newsletter_ledger" => { "member_id" => "m3", "entries" => {
+        "nl-2" => { "state" => "granted", "at" => "2026-02-01T00:00:00Z" } } } })
+
+    apollo = mock("apollo")
+    apollo.stubs(:search_by_email).returns([{ "id" => "apollo-1", "email" => a.email }])
+    a.sync_to_apollo!(apollo)
+
+    entries = a.reload.ghost_data.dig("newsletter_ledger", "entries")
+    assert_equal %w[nl-1 nl-2], entries.keys.sort
+    assert_equal "history", entries["nl-1"]["state"]
+  end
+
+  test "the fresh_existing merge reads the locked row, not a stale in-memory copy" do
+    # The surrounding code merges from locked reads so a concurrent write is not lost.
+    # A ledger entry written to our row after this object was loaded must survive the
+    # save!, which rewrites the whole ghost_data column.
+    #
+    # fresh_existing carries unrelated, non-blank ghost_data (not just {}) so that
+    # self.ghost_data is actually reassigned (and therefore dirty) regardless of the
+    # merge outcome. Without that, ActiveRecord's dirty tracking sees ghost_data as
+    # unchanged ({} == {}), save! never emits an UPDATE for that column, and the
+    # concurrent write already sitting in the DB survives by accident even if the
+    # merge silently drops it — which would let this test pass with fresh_self's
+    # ledger excluded from the merge.
+    a = Contact.create!(email: "stale@example.com")
+    Contact.create!(email: "stale2@example.com", apollo_id: "apollo-stale",
+      ghost_data: { "unrelated" => "data" })
+    # Write behind a's back, exactly as another process would.
+    Contact.where(id: a.id).first.tap do |fresh|
+      fresh.record_ledger_entry!("nl-concurrent", "history", member_id: "m7")
+      fresh.save!
+    end
+    refute a.ledger_has?("nl-concurrent"), "the in-memory copy must still be stale"
+
+    apollo = mock("apollo")
+    apollo.stubs(:search_by_email).returns([{ "id" => "apollo-stale", "email" => a.email }])
+    a.sync_to_apollo!(apollo)
+
+    assert a.reload.ledger_has?("nl-concurrent"),
+      "a ledger entry written between load and lock must not be clobbered"
+  end
+
+  # Fix #5 (fresh_existing merge path shape): self may already own a ghost_id while
+  # fresh_existing's ledger describes a different, stale member. Taking fresh_existing's
+  # member_id as-is would leave self's merged ledger permanently describing a member
+  # self is not linked to.
+  test "the fresh_existing merge path forces the merged ledger's member_id onto self's own ghost_id" do
+    existing = Contact.create!(
+      email: "apolloA@example.com",
+      apollo_id: "apollo-forced",
+      ghost_data: {
+        "newsletter_ledger" => { "member_id" => "m-stale-2", "entries" => {
+          "nl-9" => { "state" => "history", "at" => "2026-01-01T00:00:00Z" } } } }
+    )
+    contact = Contact.create!(email: "apolloB@example.com", ghost_id: "m-owned")
+
+    apollo = mock("apollo")
+    apollo.stubs(:search_by_email).returns([{ "id" => "apollo-forced", "email" => contact.email }])
+    contact.sync_to_apollo!(apollo)
+
+    contact.reload
+    assert_nil Contact.find_by(id: existing.id)
+    assert_equal "m-owned", contact.ghost_id
+    assert_equal "m-owned", contact.ghost_data.dig("newsletter_ledger", "member_id"),
+      "the merged ledger must describe self's own linked member, not the colliding contact's stale member_id"
+    assert contact.ghost_data.dig("newsletter_ledger", "entries").key?("nl-9")
+  end
+
+  test "the fresh_existing merge path deletes a stale member_id when self ends up with no ghost_id at all" do
+    existing = Contact.create!(
+      email: "apolloC@example.com",
+      apollo_id: "apollo-forced-2",
+      ghost_data: {
+        "newsletter_ledger" => { "member_id" => "m-stale-3", "entries" => {
+          "nl-9" => { "state" => "history", "at" => "2026-01-01T00:00:00Z" } } } }
+    )
+    # No ghost_id anywhere: self has none, and existing (whose ledger still carries a
+    # stale member_id left over from a link that was since cleared) has none either.
+    contact = Contact.create!(email: "apolloD@example.com")
+
+    apollo = mock("apollo")
+    apollo.stubs(:search_by_email).returns([{ "id" => "apollo-forced-2", "email" => contact.email }])
+    contact.sync_to_apollo!(apollo)
+
+    contact.reload
+    assert_nil Contact.find_by(id: existing.id)
+    assert_nil contact.ghost_id
+    assert_nil contact.ghost_data.dig("newsletter_ledger", "member_id"),
+      "a stale member_id must not survive when self ends up with no ghost_id: it would " \
+      "permanently disable layer 2 once the contact relinks to a real member"
+    assert contact.ghost_data.dig("newsletter_ledger", "entries").key?("nl-9")
+  end
 end
 
 class ContactRansackTest < ActiveSupport::TestCase
@@ -285,5 +466,65 @@ class ContactRecordSourceEventsTest < ActiveSupport::TestCase
     assert_includes Contact.synced_to_ghost, linked
     assert_includes Contact.not_synced_to_ghost, unlinked
     assert_not_includes Contact.synced_to_ghost, unlinked
+  end
+end
+
+class ContactNewsletterLedgerTest < ActiveSupport::TestCase
+  test "record_ledger_entry! is write-once and mutates in memory without saving" do
+    c = Contact.create!(email: "ledger@example.com")
+    c.record_ledger_entry!("nl-1", "granted", member_id: "m1")
+    first_at = c.ledger_entry("nl-1")["at"]
+    c.record_ledger_entry!("nl-1", "observed", member_id: "m1")
+
+    assert_equal "granted", c.ledger_state("nl-1"), "an existing entry is never overwritten"
+    assert_equal first_at, c.ledger_entry("nl-1")["at"]
+    assert_equal({}, c.reload.ghost_data, "record_ledger_entry! must not persist on its own")
+  end
+
+  test "ledger records the member id it describes" do
+    c = Contact.create!(email: "ledger2@example.com")
+    c.record_ledger_entry!("nl-1", "observed", member_id: "m1")
+    assert_equal "m1", c.ledger_member_id
+    assert c.ledger_has?("nl-1")
+    refute c.ledger_has?("nl-2")
+  end
+
+  test "merge_newsletter_ledgers unions entries and keeps the earliest at" do
+    early = { "member_id" => "m1", "entries" => { "nl-1" => { "state" => "history", "at" => "2026-01-01T00:00:00Z" } } }
+    late  = { "member_id" => "m1", "entries" => {
+      "nl-1" => { "state" => "granted", "at" => "2026-06-01T00:00:00Z" },
+      "nl-2" => { "state" => "observed", "at" => "2026-06-01T00:00:00Z" } } }
+
+    merged = Contact.merge_newsletter_ledgers([late, early])
+    assert_equal "history", merged["entries"]["nl-1"]["state"], "earliest entry wins"
+    assert_equal "2026-01-01T00:00:00Z", merged["entries"]["nl-1"]["at"]
+    assert_equal "observed", merged["entries"]["nl-2"]["state"]
+
+    # Both orders, otherwise a naive "last one processed wins" implementation produces
+    # exactly these values for [late, early] and the test proves nothing.
+    reversed = Contact.merge_newsletter_ledgers([early, late])
+    assert_equal "history", reversed["entries"]["nl-1"]["state"], "earliest wins in either input order"
+    assert_equal "2026-01-01T00:00:00Z", reversed["entries"]["nl-1"]["at"]
+  end
+
+  test "record_ledger_entry! with a nil member_id does not create the key" do
+    # ||= would set member_id to nil, which makes the ledger differ from the stored one
+    # and writes a nil member_id on the next save.
+    c = Contact.create!(email: "nilmem@example.com")
+    c.record_ledger_entry!("nl-1", "observed", member_id: nil)
+    refute c.newsletter_ledger.key?("member_id")
+    assert c.ledger_has?("nl-1")
+  end
+
+  test "an entry with a blank at does not displace a well-formed one" do
+    good = { "entries" => { "nl-1" => { "state" => "history", "at" => "2026-01-01T00:00:00Z" } } }
+    blank = { "entries" => { "nl-1" => { "state" => "granted" } } }
+    # "" stringifies as earliest in both directions, so without the guard the malformed
+    # entry wins whichever order it arrives in.
+    [[good, blank], [blank, good]].each do |ledgers|
+      merged = Contact.merge_newsletter_ledgers(ledgers)
+      assert_equal "history", merged["entries"]["nl-1"]["state"], "order #{ledgers.first.equal?(good)}"
+      assert_equal "2026-01-01T00:00:00Z", merged["entries"]["nl-1"]["at"]
+    end
   end
 end
