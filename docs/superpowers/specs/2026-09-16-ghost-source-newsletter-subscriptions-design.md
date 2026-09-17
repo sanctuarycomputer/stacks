@@ -57,7 +57,9 @@ which a person can unsubscribe from a newsletter that is **not** a grant candida
 which resends their current subscriptions verbatim -- re-adds it. The fresh GET shrinks this window;
 it cannot close it. This is a property of Ghost's API, not a bug in this design, and it is stated
 here so the invariant is not over-sold when someone relies on it. Mitigations: keep the GET and the
-PUT adjacent with no other API call between them (see control flow), and never write at all when
+PUT as close together as the design allows (see control flow: the layer-3 read, and on an empty
+history its existence probe, are the only calls permitted in that window, and they are there
+precisely because the fresh GET alone cannot disqualify a candidate), and never write at all when
 there are no candidates.
 
 ## Current data (dev DB, 2026-09-16)
@@ -156,6 +158,12 @@ an error, which is why they are listed.
 | `config/puma.rb`: `workers 2`, `preload_app!`, `worker_timeout 60`; `rack-timeout` 0.7.0 is in the Gemfile (15s default). No background job infrastructure (`app/jobs` has only `application_job.rb`; the production queue adapter is commented out) | The "Sync Now" button runs the whole sweep **inline in the web request** (`app/admin/ghost_sync.rb:58`). A 2,500-write sweep cannot finish in 15-60s. The rollout must be driven by `rake ghost:sync`, not the button. |
 | `System.instance` memoizes in a class variable that is never invalidated (`app/models/system.rb:20-22`), across 2 preloaded puma workers | A setting saved in worker A is not seen by worker B, ever. The sweep currently reads fresh (`ghost_sync.rb:39`) and must continue to. The admin page must **not** read new settings via `System.instance`. |
 | `stacks:sync_contacts` runs `Contact.all.each(&:dedupe!)` (`lib/tasks/stacks.rake:419`) in a **separate task that does not take the Ghost advisory lock** | `dedupe!` row-locks and then `delete_all`s duplicate contacts. A concurrent ledger write from the sweep lands on a deleted row, affects 0 rows, and raises nothing. Unioning ledgers inside the merge does not fix this. |
+
+### A note on line references
+
+This spec cites `ghost_sync.rb` and `contact.rb` line numbers from BEFORE the branch landed, as
+orientation for where a behaviour lived at design time. They no longer resolve against the current
+file. The method and behaviour names are the durable references; use those.
 
 ### Blocking pre-implementation verification
 
@@ -346,7 +354,10 @@ shares the same counter.
 PUT and consumes a single unit. The budget check inside the per-newsletter grant loop is a
 *reservation* check ("is at least one unit left?"); the decrement happens once, when the mutation is
 issued. In dry-run mode the decrement happens once per member that ends the loop with at least one
-candidate, so dry run and real run consume budget identically and cost the same in API calls.
+candidate, so dry run and real run consume BUDGET identically. Their API costs differ and that is
+fine: the real run additionally issues a `find_member` per granting contact, and a dry run can spend
+a unit without issuing any call at all. It is budget consumption, not call count, that has to match,
+because budget is what decides who gets deferred to the next sweep.
 `creates_deferred`, `grants_deferred` and `updates_deferred` count **contacts**, not newsletters.
 
 **Linked contacts are processed first, with their own reserved allowance.** The eligible-contact loop
@@ -363,7 +374,7 @@ where this one stopped. Reword step 4 as writing no **new** ledger entry for the
 a target that already hit step 1 earlier in the loop has legitimately written an `observed` entry.
 
 **Reads are deliberately unbudgeted**, and the implementer should know the cost: a grant candidate
-costs a `find_member` GET plus a `newsletter_events_for` call (itself possibly paged). At a 2,500 unit
+costs a `find_member` GET plus a single `newsletter_events_for` call. At a 2,500 unit
 budget that is up to ~7,500 serial HTTP calls in a sweep. The pull leg is also unbudgeted and O(members):
 after backfill, `all_members` is ~190 serial GETs holding ~19,000 member hashes in memory at once,
 then ~19,000 `find_by` + `save!` + `record_source_events!` round trips. This is accepted, not solved.
@@ -557,7 +568,6 @@ Layer-3 hardening (each must assert **no** `newsletters` write):
 - Collected events fewer than `meta.pagination.total` -> fail closed.
 - Member id not matching `/\A[0-9a-f]{24}\z/` -> no request issued, fail closed.
 - Page cap exceeded -> raises, fail closed.
-- A page whose oldest `created_at` is not strictly older than the previous page's -> raises.
 - Events read returns no XXIX event on the decision-phase call and an XXIX unsubscribe on the
   pre-PUT call -> **no write** (proves the read is not memoized across the write).
 
