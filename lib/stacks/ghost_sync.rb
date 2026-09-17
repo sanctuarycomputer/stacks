@@ -40,9 +40,16 @@ class Stacks::GhostSync
     @summary = Hash.new(0)
     @summary[:granted_by_newsletter] = Hash.new(0)
     @summary[:grants_planned_by_newsletter] = Hash.new(0)
+    # Create-path grants (confirm_granted!) are NOT gated by the flag, unlike existing-
+    # member grants (granted_by_newsletter's other writer): up to 2,500 un-gated creates
+    # per sweep would otherwise swamp the rollout's per-newsletter created-vs-granted
+    # comparison. Kept in its own bucket so granted_by_newsletter means existing-member
+    # grants exactly, symmetric with grants_planned_by_newsletter.
+    @summary[:granted_on_create_by_newsletter] = Hash.new(0)
     @errors = []
     @writes_remaining = 0   # fail closed until load_newsletter_config! sets the budget
     @prefix_map = {}        # so target_newsletter_ids cannot NoMethodError on nil
+    @deferred_this_contact = false
   end
 
   # Wraps the sweep in a pg advisory lock so an overlapping Scheduler run or
@@ -62,6 +69,12 @@ class Stacks::GhostSync
     end
   end
 
+  # Single-use per sweep. @summary, @writes_remaining, @all_newsletters and @prefix_map
+  # all accumulate or memoize on the instance and are never reset here, so a second call
+  # to sync_all! on the SAME instance reports cumulative counters and skips re-fetching
+  # newsletter config. Production always news up a fresh Stacks::GhostSync per sweep
+  # (self.sync_all_with_lock!); a test that needs "the next sweep" must instantiate a
+  # new object against the same stubbed client (see ghost_sync_test.rb).
   def sync_all!
     load_newsletter_config!
     enabled = System.first_or_create!(settings: {}).ghost_synced_sources
@@ -238,6 +251,7 @@ class Stacks::GhostSync
   # is by definition not currently subscribed, so re-checking "is subscribed" in
   # the apply phase cannot disqualify one: only a fresh history read can.
   def grant_candidates_for(contact, member, enabled, count: true)
+    @deferred_this_contact = false
     targets = target_newsletter_ids(contact, enabled)
     return [] if targets.empty?
 
@@ -245,6 +259,10 @@ class Stacks::GhostSync
     ledger_applies = contact.ledger_member_id.nil? || contact.ledger_member_id == member["id"]
 
     undeliverable = member.dig("email_suppression", "suppressed") || member["email_disabled"]
+    # grant_skipped_undeliverable counts CONTACTS, like every other deferral counter,
+    # not target newsletters: undeliverability is a property of the member, so a contact
+    # with two mapped targets would otherwise be counted twice for one skipped member.
+    undeliverable_counted = false
     candidates = []
     events = nil
 
@@ -258,7 +276,10 @@ class Stacks::GhostSync
       end
 
       if undeliverable
-        @summary[:grant_skipped_undeliverable] += 1
+        unless undeliverable_counted
+          @summary[:grant_skipped_undeliverable] += 1
+          undeliverable_counted = true
+        end
         next
       end
 
@@ -279,6 +300,7 @@ class Stacks::GhostSync
       # cost as the real run it stands in for.
       unless writes_available?
         @summary[:grants_deferred] += 1
+        @deferred_this_contact = true
         return candidates
       end
 
@@ -294,12 +316,17 @@ class Stacks::GhostSync
       end
 
       if events.any? { |ev| ev.dig("data", "newsletter_id") == newsletter_id }
+        # Capture existence BEFORE writing: when the ledger's member_id does not match
+        # this member (ledger_applies false), the fast path above is bypassed on every
+        # call, so this line can be reached a second time -- once in the decision phase,
+        # once in the pre-PUT recheck -- for an entry the decision phase already
+        # recorded. record_ledger_entry! is write-once regardless, but count is not
+        # checked here (unlike the fast path above), so only the entry's prior
+        # existence, not the `count:` argument, protects against double-counting the
+        # same history hit.
+        already_recorded = contact.ledger_has?(newsletter_id)
         contact.record_ledger_entry!(newsletter_id, "history", member_id: member["id"])
-        # Always counted, unlike the ledger fast-path above: reaching this line means no
-        # ledger entry existed yet, so this can only be a first-time discovery (either the
-        # decision-phase's own first look, or a race that lands between decision and the
-        # PUT) -- never a recount of something the decision phase already tallied.
-        @summary[:unsubscribe_respected] += 1
+        @summary[:unsubscribe_respected] += 1 unless already_recorded
         next
       end
 
@@ -330,8 +357,23 @@ class Stacks::GhostSync
   # One /newsletters/ fetch per sweep, shared by the push leg's prefix-map validation
   # (load_newsletter_config!) and the pull leg's slug resolution. Keep the RAW list here:
   # the slug map needs archived newsletters too, the prefix map does not.
+  #
+  # Caches BOTH success and failure. `||=` alone never caches a raised error, so a
+  # /newsletters/ outage would otherwise be retried (with Stacks::Ghost's 2**n backoff)
+  # by every one of up to ~19,000 pull-leg members that reach newsletter_slug_map for a
+  # member payload lacking an inline slug -- one outage becoming ~19,000 slow, doomed
+  # calls. load_newsletter_config! still sees (and counts/reports) the first failure by
+  # letting it raise once; every call after that degrades silently to [].
   def all_newsletters
-    @all_newsletters ||= @ghost.all_newsletters
+    return @all_newsletters if @all_newsletters
+    return [] if @all_newsletters_failed
+
+    begin
+      @all_newsletters = @ghost.all_newsletters
+    rescue => e
+      @all_newsletters_failed = true
+      raise
+    end
   end
 
   def newsletter_slug_map
@@ -485,7 +527,7 @@ class Stacks::GhostSync
     (confirmed & requested).each do |id|
       contact.record_ledger_entry!(id, "granted", member_id: member["id"])
       @summary[:granted_on_create] += 1
-      @summary[:granted_by_newsletter][id] += 1
+      @summary[:granted_on_create_by_newsletter][id] += 1
     end
     (confirmed - requested).each do |id|
       contact.record_ledger_entry!(id, "observed", member_id: member["id"])
@@ -512,6 +554,11 @@ class Stacks::GhostSync
     end
 
     candidates = grant_candidates_for(contact, member, enabled)
+    # Fix #3: a budget-exhausted contact must be counted once, not twice. Without this,
+    # falling through to update_member_labels below lets its OWN reserve_write! fail a
+    # second time and increment updates_deferred on top of the grants_deferred already
+    # counted inside grant_candidates_for, double-counting one deferred contact.
+    return nil if @deferred_this_contact
 
     if candidates.empty?
       return update_member_labels(contact, member, desired, enabled)
@@ -545,12 +592,23 @@ class Stacks::GhostSync
       return update_member_labels(contact, member, desired, enabled)
     end
 
+    # Fix #1: Ghost's newsletters on edit is a FULL REPLACE. If fresh["newsletters"] is
+    # ever missing or not an Array, current_ids below would silently compute as [] and
+    # the PUT would unsubscribe this member from everything except the new candidates.
+    # Do NOT fall back to the stale snapshot's ids -- that would widen the acknowledged
+    # GET-to-PUT window. Fail closed instead: no grants this sweep, label-only write only.
+    unless fresh["newsletters"].is_a?(Array)
+      @summary[:grant_errors] += 1
+      return update_member_labels(contact, fresh, desired, enabled)
+    end
+
     # count: false - the decision-phase call already counted these; recounting would
     # double every unsubscribe_respected / already_handled that rollout step 6 reviews.
     candidates = grant_candidates_for(contact, fresh, enabled, count: false)
+    return nil if @deferred_this_contact
     return update_member_labels(contact, fresh, desired, enabled) if candidates.empty?
 
-    current_ids = (fresh["newsletters"] || []).map { |n| n["id"] }.compact
+    current_ids = fresh["newsletters"].map { |n| n["id"] }.compact
     attrs = label_attrs_for(contact, fresh, desired, enabled) || {}
     attrs[:newsletters] = (current_ids | candidates).map { |id| { id: id } }
 

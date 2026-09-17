@@ -185,13 +185,21 @@ class Contact < ApplicationRecord
                 # LOCKED reads so a concurrent write is not lost, and a ledger entry
                 # written to our row between load and lock would otherwise be clobbered
                 # by the save! below, which rewrites the whole ghost_data column.
-                # self first so its member_id wins.
                 merged_ledger = Contact.merge_newsletter_ledgers([
                   self.ghost_data["newsletter_ledger"],
                   fresh_self.ghost_data["newsletter_ledger"],
                   fresh_existing.ghost_data["newsletter_ledger"],
                 ])
                 if merged_ledger.present?
+                  # Force the member_id onto self's own (just-resolved) ghost_id rather
+                  # than trusting merge_newsletter_ledgers' input-order pick. If self had
+                  # no ghost_id of its own and inherited fresh_existing's, that is also
+                  # exactly the id merge_newsletter_ledgers would have picked -- but if
+                  # self already owned a ghost_id, fresh_existing's ledger may describe a
+                  # different, stale member, and taking it as-is would leave the merged
+                  # ledger permanently describing a member self is not linked to,
+                  # disabling layer 2 with no repair path.
+                  merged_ledger["member_id"] = self.ghost_id if self.ghost_id.present?
                   self.ghost_data = self.ghost_data.merge("newsletter_ledger" => merged_ledger)
                 end
               end
@@ -283,16 +291,24 @@ class Contact < ApplicationRecord
           merged_ghost_data["snapshot"] = (merged_ghost_data["snapshot"] || {}).merge("deleted_at" => any_deleted_at)
         end
 
-        # Order matters for member_id only: merge_newsletter_ledgers takes the first
-        # non-nil one, and it must be the ghost_id owner's. A ledger whose member_id does
-        # not match the contact's linked member is IGNORED by the grant decision, so
-        # picking the wrong one silently disables layer 2 for the whole merged ledger
-        # even though every entry survived. Entry unioning itself is order-independent.
+        # Entry unioning is order-independent (earliest `at` wins regardless of input
+        # order), but member_id is not: merge_newsletter_ledgers' input-order pick is not
+        # enough on its own, because the ghost_id owner may have no ledger of its own at
+        # all (common -- the pull leg created many contacts before this feature shipped),
+        # in which case the picked member_id would come from some OTHER dupe and never
+        # equal the survivor's merged_ghost_id. A ledger whose member_id does not match
+        # the contact's linked member is IGNORED by the grant decision, so that silently
+        # disables layer 2 for the whole merged ledger even though every entry survived.
+        # So: implement the spec's rule literally -- force member_id onto merged_ghost_id
+        # after merging, rather than relying on ledger_sources ordering to produce it.
         ledger_sources = [ghost_id_owner, survivor, *dupes].compact.uniq
         merged_ledger = Contact.merge_newsletter_ledgers(
           ledger_sources.map { |d| d.ghost_data["newsletter_ledger"] }
         )
-        merged_ghost_data["newsletter_ledger"] = merged_ledger if merged_ledger.present?
+        if merged_ledger.present?
+          merged_ledger["member_id"] = merged_ghost_id if merged_ghost_id.present?
+          merged_ghost_data["newsletter_ledger"] = merged_ledger
+        end
 
         losers.each do |loser|
           CONTACT_REFERENCES.each do |table, fk, scope_cols|

@@ -237,6 +237,24 @@ class ContactDedupeGhostTest < ActiveSupport::TestCase
     assert_equal "2026-03-01T00:00:00Z", survivor.ghost_data.dig("snapshot", "deleted_at")
     assert survivor.ghost_data.dig("newsletter_ledger", "entries").key?("nl-1")
   end
+
+  # Fix #5: the ghost_id owner may have NO ledger of its own at all (common -- the pull
+  # leg created many contacts before this feature shipped). Taking merge_newsletter_
+  # ledgers' input-order member_id pick as-is would then inherit some OTHER dupe's
+  # stale member_id, disabling layer 2 for the survivor forever.
+  test "dedupe! forces the merged ledger's member_id onto the ghost_id owner even when that owner has no ledger of its own" do
+    owner = Contact.create!(email: "noledger@example.com", ghost_id: "m9")
+    Contact.create!(email: "NOLEDGER@example.com", ghost_data: {
+      "newsletter_ledger" => { "member_id" => "m-stale", "entries" => {
+        "nl-1" => { "state" => "history", "at" => "2026-01-01T00:00:00Z" } } } })
+
+    survivor = owner.dedupe!
+    assert_equal "m9", survivor.ghost_id
+    assert_equal "m9", survivor.ghost_data.dig("newsletter_ledger", "member_id"),
+      "the merged ledger must describe the member the survivor is actually linked to, not a stale dupe's member_id"
+    assert survivor.ghost_data.dig("newsletter_ledger", "entries").key?("nl-1"),
+      "entries must still survive the merge"
+  end
 end
 
 class ContactSyncToApolloTest < ActiveSupport::TestCase
@@ -350,6 +368,32 @@ class ContactSyncToApolloGhostTest < ActiveSupport::TestCase
 
     assert a.reload.ledger_has?("nl-concurrent"),
       "a ledger entry written between load and lock must not be clobbered"
+  end
+
+  # Fix #5 (fresh_existing merge path shape): self may already own a ghost_id while
+  # fresh_existing's ledger describes a different, stale member. Taking fresh_existing's
+  # member_id as-is would leave self's merged ledger permanently describing a member
+  # self is not linked to.
+  test "the fresh_existing merge path forces the merged ledger's member_id onto self's own ghost_id" do
+    existing = Contact.create!(
+      email: "apolloA@example.com",
+      apollo_id: "apollo-forced",
+      ghost_data: {
+        "newsletter_ledger" => { "member_id" => "m-stale-2", "entries" => {
+          "nl-9" => { "state" => "history", "at" => "2026-01-01T00:00:00Z" } } } }
+    )
+    contact = Contact.create!(email: "apolloB@example.com", ghost_id: "m-owned")
+
+    apollo = mock("apollo")
+    apollo.stubs(:search_by_email).returns([{ "id" => "apollo-forced", "email" => contact.email }])
+    contact.sync_to_apollo!(apollo)
+
+    contact.reload
+    assert_nil Contact.find_by(id: existing.id)
+    assert_equal "m-owned", contact.ghost_id
+    assert_equal "m-owned", contact.ghost_data.dig("newsletter_ledger", "member_id"),
+      "the merged ledger must describe self's own linked member, not the colliding contact's stale member_id"
+    assert contact.ghost_data.dig("newsletter_ledger", "entries").key?("nl-9")
   end
 end
 
