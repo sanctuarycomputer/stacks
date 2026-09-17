@@ -671,6 +671,36 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
     assert_equal 2, sync.summary[:grant_mapping_invalid]
   end
 
+  # Minor #9: the contact admin page reads this persisted map instead of inverting
+  # the prefix map (which shows the source prefix, not the newsletter name, and
+  # collapses whenever two prefixes map to one newsletter id).
+  test "load_newsletter_config! persists an id-to-name map for the contact page to read, including archived newsletters" do
+    enable_sources("index:shopify_customer")
+    sys!(ghost_newsletter_prefix_map: { "index" => "nl-index" })
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns([
+      { "id" => "nl-index", "name" => "Index Space", "slug" => "index", "status" => "active" },
+      { "id" => "nl-archived", "name" => "Old Digest", "slug" => "old", "status" => "archived" },
+    ])
+    sync = sync_with(ghost)
+    sync.send(:load_newsletter_config!)
+
+    assert_equal({ "nl-index" => "Index Space", "nl-archived" => "Old Digest" },
+      System.first.reload.ghost_newsletter_name_by_id)
+  end
+
+  test "load_newsletter_config! leaves the persisted name map untouched on a failed fetch" do
+    sys!(ghost_newsletter_prefix_map: { "index" => "nl-index" },
+      ghost_newsletter_name_by_id: { "nl-index" => "Index Space" })
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).raises(RuntimeError, "ghost is down")
+    sync = sync_with(ghost)
+    sync.send(:load_newsletter_config!)
+
+    assert_equal({ "nl-index" => "Index Space" }, System.first.reload.ghost_newsletter_name_by_id,
+      "a failed fetch must not wipe a name map that was already persisted")
+  end
+
   test "a newsletter with no status key is treated as inactive, not active" do
     # Strict == "active" is the safer failure: if Ghost ever omitted status, every
     # newsletter would be dropped, meaning no grants -- fail-closed and visible via
@@ -1415,16 +1445,86 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
 
   # --- Final review round fixes ---------------------------------------------------
 
-  # Fix #1: a fresh member payload with a missing/malformed newsletters field must
-  # never be treated as "currently subscribed to nothing" -- that would make the PUT
-  # unsubscribe the member from everything except the new candidate(s).
-  test "a fresh member with a non-Array newsletters field fails closed and never PUTs newsletters" do
+  # Critical #1: subscribed_newsletter_ids is the single helper behind every
+  # current-ids derivation, so a malformed payload cannot pass one check (a naive
+  # `is_a?(Array)`) and silently slip past another (`.map { |n| n["id"] }.compact`
+  # yielding an empty or wrong list). All four shapes below must fail closed
+  # identically.
+  test "subscribed_newsletter_ids rejects every malformed newsletters shape and accepts a well-formed one" do
+    sync = sync_with(mock("ghost"))
+    assert_nil sync.send(:subscribed_newsletter_ids, { "newsletters" => nil }), "nil"
+    assert_nil sync.send(:subscribed_newsletter_ids, { "newsletters" => "nl-a" }), "non-Array"
+    assert_nil sync.send(:subscribed_newsletter_ids,
+      { "newsletters" => [{ "name" => "XXIX", "slug" => "xxix" }] }), "Hash entries with no id"
+    assert_nil sync.send(:subscribed_newsletter_ids, { "newsletters" => ["nl-a"] }), "String entries"
+    assert_nil sync.send(:subscribed_newsletter_ids, { "newsletters" => [{ "id" => "" }] }), "blank id"
+    assert_equal [], sync.send(:subscribed_newsletter_ids, { "newsletters" => [] })
+    assert_equal ["nl-a"], sync.send(:subscribed_newsletter_ids, { "newsletters" => [{ "id" => "nl-a" }] })
+  end
+
+  # grant_candidates_for is the derivation fed to newsletter_events_for -- pinning
+  # the fail-closed behavior there directly, not just through the apply-phase fresh
+  # read, proves the two call sites cannot disagree.
+  test "grant_candidates_for fails closed on a malformed newsletters payload at the decision phase too" do
+    contact = grant_setup(sources: ["xxix:"], map: { "xxix" => "nl-xxix" })
+    m = member(id: "m50", email: "g@example.com").merge(
+      "newsletters" => [{ "name" => "XXIX", "slug" => "xxix" }])
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix"))
+    ghost.expects(:newsletter_events_for).never
+    sync = sync_with(ghost); sync.send(:load_newsletter_config!)
+
+    assert_equal [], sync.send(:grant_candidates_for, contact, m, enabled_sources)
+    assert_equal 1, sync.summary[:grant_errors]
+    assert_match "g@example.com", sync.errors.first
+  end
+
+  # Fix #1 (apply-phase): a fresh member payload with a missing/malformed newsletters
+  # field must never be treated as "currently subscribed to nothing" -- that would
+  # make the PUT unsubscribe the member from everything except the new candidate(s).
+  [
+    ["missing (nil) newsletters", nil],
+    ["Hash entries with no id -- a truncated or field-selected payload", [{ "name" => "XXIX", "slug" => "xxix" }]],
+    ["String entries", ["nl-a"]],
+  ].each do |(label, malformed)|
+    test "a fresh member with #{label} fails closed and never PUTs newsletters" do
+      contact = grant_setup(sources: ["xxix:"], map: { "xxix" => "nl-xxix" })
+      sys!(ghost_newsletter_grants_enabled: "1")
+      # Labels already match desired, so the label-only fallback has no diff to send:
+      # this isolates the assertion to "newsletters is never touched, no write at all".
+      snapshot = member(id: "m50", email: "g@example.com", labels: ["xxix:"])
+      fresh = member(id: "m50", email: "g@example.com", labels: ["xxix:"]).merge("newsletters" => malformed)
+
+      ghost = mock("ghost")
+      ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix"))
+      ghost.expects(:all_members).returns([snapshot])
+      ghost.stubs(:newsletter_events_for).returns([])
+      ghost.expects(:find_member).with("m50").returns(fresh)
+      ghost.expects(:update_member).never
+
+      sync = sync_with(ghost)
+      sync.sync_all!
+      assert_equal 1, sync.summary[:grant_errors]
+      assert_equal 1, sync.errors.length, "Minor #5: the fail-closed path must log an @errors line"
+      assert_match "g@example.com", sync.errors.first
+      assert_nil contact.reload.ledger_state("nl-xxix"),
+        "no grant may be recorded when the fresh newsletters payload is untrustworthy"
+    end
+  end
+
+  # Important #2: the malformed-newsletters fallback must write labels against the
+  # STALE SNAPSHOT (`member`), never against the untrustworthy `fresh` payload --
+  # labels are full-replace too, so a fresh payload that lost its newsletters can
+  # equally have lost its labels, and writing against `fresh` would strip every
+  # hand-added label the member actually has.
+  test "the malformed-newsletters fallback preserves labels from the snapshot, not the untrustworthy fresh payload" do
     contact = grant_setup(sources: ["xxix:"], map: { "xxix" => "nl-xxix" })
     sys!(ghost_newsletter_grants_enabled: "1")
-    snapshot = member(id: "m50", email: "g@example.com", labels: ["xxix:"])
-    # Simulates a payload where Ghost's newsletters key is missing/malformed on the
-    # fresh pre-PUT GET. labels: [] so there IS a label diff, proving the fall-through
-    # to the label-only path still runs (it just never touches :newsletters).
+    # snapshot carries an unmanaged "VIP" label (hand-added in Ghost) and does not yet
+    # carry the managed "xxix:" label, so there IS a genuine diff to send.
+    snapshot = member(id: "m50", email: "g@example.com", labels: ["VIP"])
+    # fresh simulates a truncated/malformed payload: no "VIP", no newsletters at all.
+    # If the fallback sourced its preserved labels from THIS, "VIP" would be dropped.
     fresh = member(id: "m50", email: "g@example.com", labels: []).merge("newsletters" => nil)
 
     ghost = mock("ghost")
@@ -1433,14 +1533,39 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
     ghost.stubs(:newsletter_events_for).returns([])
     ghost.expects(:find_member).with("m50").returns(fresh)
     ghost.expects(:update_member).with { |id, attrs|
-      id == "m50" && !attrs.key?(:newsletters) && attrs[:labels] == ["xxix:"]
-    }.returns(fresh.merge("labels" => [{ "name" => "xxix:" }]))
+      id == "m50" && !attrs.key?(:newsletters) && attrs[:labels]&.sort == ["VIP", "xxix:"]
+    }.returns(fresh.merge("labels" => [{ "name" => "VIP" }, { "name" => "xxix:" }]))
 
     sync = sync_with(ghost)
     sync.sync_all!
     assert_equal 1, sync.summary[:grant_errors]
-    assert_nil contact.reload.ledger_state("nl-xxix"),
-      "no grant may be recorded when the fresh newsletters payload is untrustworthy"
+  end
+
+  # Minor #8: a genuine history hit must be counted as unsubscribe_respected even when
+  # a STALE ledger entry (recorded under a DIFFERENT, prior member_id -- e.g. after a
+  # relink) already exists for this newsletter. Before this fix, the presence of any
+  # prior entry silently suppressed the counter, and the contact appeared in no
+  # counter at all.
+  test "a genuine history hit is counted even when a stale entry exists from a different prior member" do
+    contact = grant_setup(sources: ["xxix:"], map: { "xxix" => "nl-xxix" }, ghost_id: "m-new")
+    # Seed a ledger entry recorded against a DIFFERENT member_id, so ledger_applies is
+    # false for the current member ("m-new") and the fast path (Step 3) is bypassed.
+    contact.record_ledger_entry!("nl-xxix", "observed", member_id: "m-old")
+    contact.save!
+    m = member(id: "m-new", email: "g@example.com")
+
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix"))
+    ghost.expects(:newsletter_events_for).returns([
+      { "type" => "newsletter_event", "data" => {
+        "member_id" => "m-new", "newsletter_id" => "nl-xxix", "subscribed" => false,
+        "created_at" => "2026-01-01T00:00:00.000Z" } }])
+    sync = sync_with(ghost); sync.send(:load_newsletter_config!)
+
+    assert_equal [], sync.send(:grant_candidates_for, contact, m, enabled_sources)
+    assert_equal 1, sync.summary[:unsubscribe_respected],
+      "a real history hit for the CURRENT member must be counted even though a stale " \
+      "entry from a different member_id already existed"
   end
 
   # Fix #2: creates are not flag-gated (up to 2,500/sweep), so their grants must land in

@@ -255,6 +255,25 @@ class ContactDedupeGhostTest < ActiveSupport::TestCase
     assert survivor.ghost_data.dig("newsletter_ledger", "entries").key?("nl-1"),
       "entries must still survive the merge"
   end
+
+  test "dedupe! deletes a stale member_id rather than keeping it when no dupe has a ghost_id" do
+    # Neither dupe has a ghost_id, so merged_ghost_id is blank -- but one dupe's ledger
+    # still carries a member_id left over from a member it is no longer linked to (e.g.
+    # a prior link that was cleared). merge_newsletter_ledgers' own input-order pick
+    # would otherwise carry that stale id straight through.
+    survivor = Contact.create!(email: "nogid@example.com", ghost_data: {
+      "newsletter_ledger" => { "member_id" => "m-stale", "entries" => {
+        "nl-1" => { "state" => "history", "at" => "2026-01-01T00:00:00Z" } } } })
+    Contact.create!(email: "NOGID@example.com")
+
+    result = survivor.dedupe!
+    assert_nil result.ghost_id
+    assert_nil result.ghost_data.dig("newsletter_ledger", "member_id"),
+      "a stale member_id must not survive a merge where no dupe has a ghost_id: it " \
+      "would permanently disable layer 2 once the contact relinks to a real member"
+    assert result.ghost_data.dig("newsletter_ledger", "entries").key?("nl-1"),
+      "entries must still survive the merge"
+  end
 end
 
 class ContactSyncToApolloTest < ActiveSupport::TestCase
@@ -393,6 +412,31 @@ class ContactSyncToApolloGhostTest < ActiveSupport::TestCase
     assert_equal "m-owned", contact.ghost_id
     assert_equal "m-owned", contact.ghost_data.dig("newsletter_ledger", "member_id"),
       "the merged ledger must describe self's own linked member, not the colliding contact's stale member_id"
+    assert contact.ghost_data.dig("newsletter_ledger", "entries").key?("nl-9")
+  end
+
+  test "the fresh_existing merge path deletes a stale member_id when self ends up with no ghost_id at all" do
+    existing = Contact.create!(
+      email: "apolloC@example.com",
+      apollo_id: "apollo-forced-2",
+      ghost_data: {
+        "newsletter_ledger" => { "member_id" => "m-stale-3", "entries" => {
+          "nl-9" => { "state" => "history", "at" => "2026-01-01T00:00:00Z" } } } }
+    )
+    # No ghost_id anywhere: self has none, and existing (whose ledger still carries a
+    # stale member_id left over from a link that was since cleared) has none either.
+    contact = Contact.create!(email: "apolloD@example.com")
+
+    apollo = mock("apollo")
+    apollo.stubs(:search_by_email).returns([{ "id" => "apollo-forced-2", "email" => contact.email }])
+    contact.sync_to_apollo!(apollo)
+
+    contact.reload
+    assert_nil Contact.find_by(id: existing.id)
+    assert_nil contact.ghost_id
+    assert_nil contact.ghost_data.dig("newsletter_ledger", "member_id"),
+      "a stale member_id must not survive when self ends up with no ghost_id: it would " \
+      "permanently disable layer 2 once the contact relinks to a real member"
     assert contact.ghost_data.dig("newsletter_ledger", "entries").key?("nl-9")
   end
 end

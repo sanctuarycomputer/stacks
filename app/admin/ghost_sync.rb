@@ -12,10 +12,19 @@ ActiveAdmin.register_page "Ghost Sync" do
     newsletters_ok = true
     newsletters = begin
       Stacks::Ghost.new(max_retries: 1).all_newsletters.select { |n| n["status"] != "archived" }
-    rescue => e
+    rescue
       newsletters_ok = false
       []
     end
+    # newsletters_ok only means "the call did not raise" -- the dropdowns can be
+    # equally unable to represent the stored map on a SUCCESSFUL call: Ghost can
+    # return [] (a plan change, or every newsletter archived and filtered out above)
+    # or a partial list missing the id(s) the map already points at. Either way no
+    # <option> gets `selected:`, every affected dropdown silently defaults to "Not
+    # mapped", and a submission would wipe those prefixes even though nothing raised.
+    # map_renderable is the flag that actually matters: "can this page faithfully
+    # round-trip the stored map", not "did the fetch raise".
+    map_renderable = newsletters_ok && map.all? { |_, id| newsletters.any? { |n| n["id"] == id } }
 
     prefixes = Contact.connection.select_rows(<<~SQL).to_h
       SELECT src_prefix, COUNT(*) FROM (
@@ -44,21 +53,26 @@ ActiveAdmin.register_page "Ghost Sync" do
            "under that prefix are subscribed to it once, and never re-subscribed if " \
            "they later unsubscribe. Do not map etl: it records Google Meet attendance, " \
            "not consent."
-      # If Ghost is unreachable every dropdown renders with only "Not mapped", nothing
-      # matches `selected:`, and submitting would post a blank for every prefix, deleting
-      # the entire consent mapping. Refuse to render a submittable form in that state.
-      if !newsletters_ok && map.any?
-        para "Could not reach Ghost, so the newsletter list is unavailable. Saving is " \
-             "disabled to avoid clearing the existing mapping. Reload once Ghost is reachable."
+      # If Ghost is unreachable, or reachable but returns a list that cannot represent
+      # every id already in the stored map, some dropdown(s) render with no matching
+      # `selected:`, defaulting to "Not mapped". Submitting in that state would post a
+      # blank for those prefixes, deleting part or all of the consent mapping. Refuse
+      # to render a submittable form whenever that could happen.
+      if !map_renderable && map.any?
+        para "Could not reach Ghost, or the newsletter list Ghost returned does not " \
+             "include every mapped newsletter, so the dropdowns above cannot be " \
+             "trusted. Saving is disabled to avoid clearing the existing mapping. " \
+             "Reload once Ghost is reachable and returns the full list."
       end
 
       form action: admin_ghost_sync_update_newsletter_settings_path, method: :post do
         input type: :hidden, name: :authenticity_token, value: form_authenticity_token
-        # Tells the page_action whether the dropdowns above were populated from a real
-        # newsletter list. A submission that empties the map is only ever the accidental
-        # "Ghost was unreachable" case when this is "0" -- a deliberate unmap (n=1, list
-        # rendered fine) must still be allowed through.
-        input type: :hidden, name: :newsletters_ok, value: newsletters_ok ? "1" : "0"
+        # Tells the page_action whether the dropdowns above were populated faithfully
+        # enough to trust a submission. A submission that empties (or shrinks) the map
+        # is only ever the accidental "the render could not represent the stored map"
+        # case when this is "0" -- a deliberate unmap (n=1, list rendered fine) must
+        # still be allowed through.
+        input type: :hidden, name: :newsletters_ok, value: map_renderable ? "1" : "0"
         table_for prefixes.to_a do
           column("Prefix") { |(prefix, _)| prefix }
           column("Contacts") { |(_, count)| count }
@@ -104,7 +118,7 @@ ActiveAdmin.register_page "Ghost Sync" do
         end
         div style: "margin-top: 12px" do
           input type: :submit, value: "Save Newsletter Settings",
-            disabled: (!newsletters_ok && map.any?) || nil
+            disabled: (!map_renderable && map.any?) || nil
         end
       end
     end
@@ -173,17 +187,22 @@ ActiveAdmin.register_page "Ghost Sync" do
       .transform_values(&:to_s)
       .reject { |_, v| v.blank? }
 
-    # Only "0" (explicitly posted by the page when the newsletter list failed to load)
-    # counts as unreachable; a missing/garbled value is treated as a real render so a
-    # deliberate clear is never silently refused.
-    newsletters_ok = params[:newsletters_ok] != "0"
+    # Only "1" (explicitly posted by the page when every mapped id round-tripped
+    # through a real, complete newsletter list) counts as renderable; a missing,
+    # garbled, or "0" value fails safe as unreachable/unrepresentable.
+    newsletters_ok = params[:newsletters_ok] == "1"
 
     system = System.first_or_create!(settings: {})
-    if map.empty? && !newsletters_ok && system.ghost_newsletter_prefix_map_clean.any?
+    # Refuse the WHOLE submission, not only an empty one: a render that could not
+    # faithfully represent the stored map (newsletters_ok "0") can just as easily post
+    # a PARTIAL map -- missing exactly the prefixes whose dropdown had no `selected:`
+    # -- as an empty one, and a partial submission is the more dangerous case: it is
+    # non-empty, so a guard gated on `map.empty?` alone could never catch it.
+    if !newsletters_ok && system.ghost_newsletter_prefix_map_clean.any?
       redirect_to admin_ghost_sync_path,
-        alert: "Ghost was unreachable when this page loaded, so every dropdown defaulted " \
-               "to \"Not mapped\". Refusing to save an empty mapping. Reload once Ghost is " \
-               "reachable and try again."
+        alert: "Ghost was unreachable, or returned a newsletter list that could not " \
+               "represent the existing mapping, when this page loaded. Refusing to " \
+               "save. Reload once Ghost is reachable and try again."
       return
     end
 

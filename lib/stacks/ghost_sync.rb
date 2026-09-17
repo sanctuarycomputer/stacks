@@ -69,10 +69,15 @@ class Stacks::GhostSync
     end
   end
 
-  # Single-use per sweep. @summary, @writes_remaining, @all_newsletters and @prefix_map
-  # all accumulate or memoize on the instance and are never reset here, so a second call
-  # to sync_all! on the SAME instance reports cumulative counters and skips re-fetching
-  # newsletter config. Production always news up a fresh Stacks::GhostSync per sweep
+  # Single-use per sweep. @summary accumulates on the instance and is never reset here,
+  # so a second call to sync_all! on the SAME instance reports cumulative counters.
+  # @all_newsletters and @all_newsletters_failed also memoize across calls: a first-call
+  # fetch failure sets @all_newsletters_failed, and every call after that -- including a
+  # later sync_all! on the same instance -- degrades silently to [] rather than retrying,
+  # which makes every prefix mapping report grant_mapping_invalid and disables all grants
+  # with no further error logged. @writes_remaining and @prefix_map are NOT sticky:
+  # load_newsletter_config!, called immediately below, resets both every sweep.
+  # Production always news up a fresh Stacks::GhostSync per sweep
   # (self.sync_all_with_lock!); a test that needs "the next sweep" must instantiate a
   # new object against the same stubbed client (see ghost_sync_test.rb).
   def sync_all!
@@ -255,7 +260,20 @@ class Stacks::GhostSync
     targets = target_newsletter_ids(contact, enabled)
     return [] if targets.empty?
 
-    current_ids = (member["newsletters"] || []).map { |n| n["id"] }.compact
+    current_ids = subscribed_newsletter_ids(member)
+    if current_ids.nil?
+      # Fail closed, structurally: an untrustworthy newsletters payload means we cannot
+      # know whether this member is already subscribed to a target, and the SAME
+      # derivation feeds newsletter_events_for's coherence check below -- an empty
+      # current_ids there silently disables the one guard built to catch "subscribed
+      # with no events". No grants for this member this sweep. Gated on `count` so the
+      # pre-PUT recheck (count: false) never double-counts a decision-phase error.
+      if count
+        @summary[:grant_errors] += 1
+        @errors << "#{contact.email}: newsletters payload untrustworthy, no grants this sweep"
+      end
+      return []
+    end
     ledger_applies = contact.ledger_member_id.nil? || contact.ledger_member_id == member["id"]
 
     undeliverable = member.dig("email_suppression", "suppressed") || member["email_disabled"]
@@ -316,17 +334,24 @@ class Stacks::GhostSync
       end
 
       if events.any? { |ev| ev.dig("data", "newsletter_id") == newsletter_id }
-        # Capture existence BEFORE writing: when the ledger's member_id does not match
-        # this member (ledger_applies false), the fast path above is bypassed on every
-        # call, so this line can be reached a second time -- once in the decision phase,
-        # once in the pre-PUT recheck -- for an entry the decision phase already
-        # recorded. record_ledger_entry! is write-once regardless, but count is not
-        # checked here (unlike the fast path above), so only the entry's prior
-        # existence, not the `count:` argument, protects against double-counting the
-        # same history hit.
-        already_recorded = contact.ledger_has?(newsletter_id)
+        # When ledger_applies is TRUE, Step 3 above is the only other place that can
+        # reach a already-recorded entry for this id, and it already `next`s before
+        # we ever get here -- so arriving here with ledger_applies true means this is
+        # necessarily the FIRST time this exact (member, newsletter) hit has been
+        # recorded, decision phase or recheck, and must always be counted regardless
+        # of `count` (the recheck can be the call that first discovers it, as when
+        # events change between the decision-phase read and the pre-PUT reread).
+        #
+        # When ledger_applies is FALSE, Step 3 is bypassed on every call, so this
+        # line CAN be reached a second time -- once in the decision phase, once in
+        # the pre-PUT recheck -- for an entry the decision phase already recorded;
+        # `count` (false on the recheck) is what prevents double-counting that case.
+        # It must NOT be the only gate, though: a stale entry recorded under a
+        # DIFFERENT prior member (e.g. a relinked ghost_id) would otherwise suppress
+        # counting a genuine FIRST-time history hit for THIS member during the
+        # decision phase itself, dropping the contact from every counter.
         contact.record_ledger_entry!(newsletter_id, "history", member_id: member["id"])
-        @summary[:unsubscribe_respected] += 1 unless already_recorded
+        @summary[:unsubscribe_respected] += 1 if count || ledger_applies
         next
       end
 
@@ -337,6 +362,23 @@ class Stacks::GhostSync
   end
 
   private
+
+  # Returns the member's currently subscribed newsletter ids, or nil when the payload
+  # cannot be trusted to be complete. Callers MUST treat nil as fail-closed: a
+  # full-replace PUT (or a current-ids list handed to newsletter_events_for's
+  # coherence check) computed from a partial read can unsubscribe people, or silently
+  # disable the one guard built to catch "subscribed with no events". Rejects not just
+  # a non-Array `newsletters`, but Hash entries missing a non-empty String "id" (a
+  # truncated or field-selected payload) and non-Hash entries (e.g. bare slug
+  # strings) -- both pass a naive `is_a?(Array)` check yet yield a silently empty or
+  # wrong ids list via `.map { |n| n["id"] }.compact`.
+  def subscribed_newsletter_ids(member)
+    newsletters = member["newsletters"]
+    return nil unless newsletters.is_a?(Array)
+    return nil unless newsletters.all? { |n| n.is_a?(Hash) && n["id"].is_a?(String) && !n["id"].empty? }
+
+    newsletters.map { |n| n["id"] }
+  end
 
   # One unit per Ghost member mutation, not per newsletter: a contact with two
   # candidates is a single PUT. Deferral is always safe: it never grants and never
@@ -370,7 +412,7 @@ class Stacks::GhostSync
 
     begin
       @all_newsletters = @ghost.all_newsletters
-    rescue => e
+    rescue
       @all_newsletters_failed = true
       raise
     end
@@ -412,6 +454,13 @@ class Stacks::GhostSync
     active_ids = fetched.select { |n| n["status"] == "active" }.map { |n| n["id"] }.to_set
     @prefix_map = requested.select { |_, id| active_ids.include?(id) }
     @summary[:grant_mapping_invalid] += (requested.length - @prefix_map.length)
+
+    # Piggyback on the fetch we already made: persist id->name for the contact page
+    # to read, so it never needs its own live Ghost call. Only on a successful fetch
+    # (the rescue above already returned) -- a failed fetch leaves whatever name map
+    # is already stored rather than wiping it.
+    system.update!(ghost_newsletter_name_by_id: fetched.each_with_object({}) { |n, h| h[n["id"]] = n["name"] })
+
     @prefix_map
   end
 
@@ -593,13 +642,22 @@ class Stacks::GhostSync
     end
 
     # Fix #1: Ghost's newsletters on edit is a FULL REPLACE. If fresh["newsletters"] is
-    # ever missing or not an Array, current_ids below would silently compute as [] and
-    # the PUT would unsubscribe this member from everything except the new candidates.
+    # ever missing or malformed, current_ids below would silently compute as [] (or
+    # miss entries) and the PUT would unsubscribe this member from everything except
+    # the new candidates. subscribed_newsletter_ids is the single source of truth for
+    # "can this payload be trusted": it is used here, in the PUT's union below, and
+    # inside grant_candidates_for's own derivation (which feeds newsletter_events_for),
+    # so the three cannot disagree about what counts as trustworthy.
     # Do NOT fall back to the stale snapshot's ids -- that would widen the acknowledged
-    # GET-to-PUT window. Fail closed instead: no grants this sweep, label-only write only.
-    unless fresh["newsletters"].is_a?(Array)
+    # GET-to-PUT window. Fail closed instead: no grants this sweep, label-only write
+    # only, and against `member` (the snapshot), NOT `fresh` -- labels are full-replace
+    # too, so an untrustworthy fresh payload can equally have lost its labels, and
+    # writing against it would strip every hand-added label on the member.
+    current_ids = subscribed_newsletter_ids(fresh)
+    if current_ids.nil?
       @summary[:grant_errors] += 1
-      return update_member_labels(contact, fresh, desired, enabled)
+      @errors << "#{contact.email}: fresh newsletters payload untrustworthy, no grants this sweep"
+      return update_member_labels(contact, member, desired, enabled)
     end
 
     # count: false - the decision-phase call already counted these; recounting would
@@ -608,7 +666,6 @@ class Stacks::GhostSync
     return nil if @deferred_this_contact
     return update_member_labels(contact, fresh, desired, enabled) if candidates.empty?
 
-    current_ids = fresh["newsletters"].map { |n| n["id"] }.compact
     attrs = label_attrs_for(contact, fresh, desired, enabled) || {}
     attrs[:newsletters] = (current_ids | candidates).map { |id| { id: id } }
 

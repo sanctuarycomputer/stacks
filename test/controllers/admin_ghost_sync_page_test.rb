@@ -75,6 +75,49 @@ class AdminGhostSyncPageTest < ActionDispatch::IntegrationTest
       "under 'index': the sweep will never subscribe it"
   end
 
+  test "the newsletter list rendering does not mark itself renderable when a successful fetch omits a mapped id" do
+    System.first_or_create!(settings: {}).update!(
+      ghost_newsletter_prefix_map: { "index" => "nl-index", "xxix" => "nl-xxix" })
+    Contact.create!(email: "partial@example.com", sources: ["index:shopify_customer"])
+    # The call succeeds (no exception) but the returned list omits nl-xxix -- e.g. a
+    # plan change, every matching newsletter archived, or a partial response.
+    Stacks::Ghost.any_instance.stubs(:all_newsletters).returns(
+      [{ "id" => "nl-index", "name" => "Index Space", "slug" => "index", "status" => "active" }])
+
+    get admin_ghost_sync_path
+    assert_response :success
+
+    doc = Nokogiri::HTML(response.body)
+    hidden = doc.at_css('input[name="newsletters_ok"]')
+    assert_equal "0", hidden["value"],
+      "a successful-but-incomplete newsletter list must not be reported as renderable"
+    submit = doc.at_css('input[type="submit"][value="Save Newsletter Settings"]')
+    assert submit["disabled"],
+      "saving must be disabled: submitting would silently drop the xxix mapping"
+  end
+
+  test "a submission posted while the newsletter list was successful but incomplete does not wipe the missing prefix" do
+    System.first_or_create!(settings: {}).update!(
+      ghost_newsletter_prefix_map: { "index" => "nl-index", "xxix" => "nl-xxix" })
+
+    # Simulates exactly what the dropdown-defaulted-to-blank submission this state
+    # produces: xxix's <select> has no `selected:` option (its id was not in the
+    # successful-but-incomplete list), so it posts "" for that prefix while "index"
+    # (which WAS represented) posts its real value -- a PARTIAL, non-empty map, which
+    # a guard gated only on `map.empty?` could never catch.
+    post admin_ghost_sync_update_newsletter_settings_path, params: {
+      prefix_map: { "index" => "nl-index", "xxix" => "" },
+      newsletters_ok: "0",
+      grants_enabled: "0",
+      write_budget: "2500",
+    }
+
+    assert_redirected_to admin_ghost_sync_path
+    assert_equal({ "index" => "nl-index", "xxix" => "nl-xxix" },
+      System.first.reload.ghost_newsletter_prefix_map_clean,
+      "a partial map posted while newsletters_ok=0 must not silently drop the xxix mapping")
+  end
+
   test "a deliberate unmap of the last prefix succeeds" do
     System.first_or_create!(settings: {}).update!(
       ghost_newsletter_prefix_map: { "index" => "nl-index" })
@@ -107,16 +150,32 @@ class AdminGhostSyncPageTest < ActionDispatch::IntegrationTest
       "a submission posted while newsletters_ok=0 must never clear an existing mapping")
   end
 
-  test "contact show page resolves newsletter ledger ids to a label instead of the raw id" do
+  # Minor #9: the label must come from the sweep-persisted id-to-name map, not from
+  # inverting the prefix map -- an inverted map shows the source PREFIX (e.g.
+  # "index"), not the newsletter's actual name, and collapses whenever two prefixes
+  # map to the same newsletter id.
+  test "contact show page resolves newsletter ledger ids to the newsletter name persisted by the sweep" do
     System.first_or_create!(settings: {}).update!(
-      ghost_newsletter_prefix_map: { "index" => "nl-index" })
+      ghost_newsletter_prefix_map: { "index" => "nl-index" },
+      ghost_newsletter_name_by_id: { "nl-index" => "Index Space" })
     contact = Contact.create!(email: "ledger@example.com", sources: ["index:luma:chinatown"])
     contact.record_ledger_entry!("nl-index", "granted", member_id: "member-1")
     contact.save!
 
     get admin_contact_path(contact)
     assert_response :success
-    assert_match "index: granted", response.body
+    assert_match "Index Space: granted", response.body
     assert_no_match "nl-index", response.body
+    assert_no_match ">index: granted", response.body
+  end
+
+  test "contact show page falls back to the raw newsletter id when the sweep has never persisted a name for it" do
+    contact = Contact.create!(email: "unknown-nl@example.com", sources: ["index:luma:chinatown"])
+    contact.record_ledger_entry!("nl-mystery", "granted", member_id: "member-1")
+    contact.save!
+
+    get admin_contact_path(contact)
+    assert_response :success
+    assert_match "nl-mystery: granted", response.body
   end
 end

@@ -10,6 +10,13 @@ class System < ApplicationRecord
     expected_skill_tree_cadence_days Integer, default: 365
     ghost_synced_sources Array, default: []
     ghost_newsletter_prefix_map Hash, default: {}
+    # Ghost newsletter id -> name, refreshed by the sweep every time it fetches
+    # all_newsletters (Stacks::GhostSync#load_newsletter_config!). Lets the contact
+    # page resolve a ledger entry's newsletter id to a human label without an extra
+    # live Ghost call, and without resorting to inverting the prefix map (which
+    # shows the source PREFIX, not the newsletter name, and collapses whenever two
+    # prefixes map to the same newsletter).
+    ghost_newsletter_name_by_id Hash, default: {}
     ghost_newsletter_grants_enabled Boolean, default: false
     ghost_sweep_write_budget Integer, default: 2500
     ghost_last_sync_summary Hash, default: {}

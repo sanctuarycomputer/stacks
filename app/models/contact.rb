@@ -199,7 +199,18 @@ class Contact < ApplicationRecord
                   # different, stale member, and taking it as-is would leave the merged
                   # ledger permanently describing a member self is not linked to,
                   # disabling layer 2 with no repair path.
-                  merged_ledger["member_id"] = self.ghost_id if self.ghost_id.present?
+                  #
+                  # When self has NO ghost_id at all, do not leave whatever stale
+                  # member_id merge_newsletter_ledgers' input-order pick happened to
+                  # carry: DELETE the key instead. A nil/missing member_id makes
+                  # ledger_member_id.nil? true, which makes ledger_applies true --
+                  # the conservative direction, since layer 2 only ever BLOCKS a
+                  # grant, never permits one.
+                  if self.ghost_id.present?
+                    merged_ledger["member_id"] = self.ghost_id
+                  else
+                    merged_ledger.delete("member_id")
+                  end
                   self.ghost_data = self.ghost_data.merge("newsletter_ledger" => merged_ledger)
                 end
               end
@@ -306,7 +317,17 @@ class Contact < ApplicationRecord
           ledger_sources.map { |d| d.ghost_data["newsletter_ledger"] }
         )
         if merged_ledger.present?
-          merged_ledger["member_id"] = merged_ghost_id if merged_ghost_id.present?
+          # When NO dupe has a ghost_id, do not let the stale input-order pick from
+          # merge_newsletter_ledgers survive: DELETE member_id instead of leaving it.
+          # A nil/missing member_id makes ledger_member_id.nil? true, so ledger_applies
+          # is true, the conservative direction (layer 2 only ever blocks a grant, it
+          # never permits one) -- versus a stale, mismatched member_id, which would
+          # disable layer 2 for this contact permanently once it relinks.
+          if merged_ghost_id.present?
+            merged_ledger["member_id"] = merged_ghost_id
+          else
+            merged_ledger.delete("member_id")
+          end
           merged_ghost_data["newsletter_ledger"] = merged_ledger
         end
 
