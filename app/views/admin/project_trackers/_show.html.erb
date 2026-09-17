@@ -230,9 +230,11 @@
   </a>
 <% end %>
 
-<div class="skill_tree_hint markdown-body" style="margin-top: 40px; margin-bottom:40px;">
-  <%= sanitize RDiscount.new(@project_tracker.notes).to_html %>
-</div>
+<% if @project_tracker.notes.present? %>
+  <div class="skill_tree_hint markdown-body" style="margin-top: 40px; margin-bottom:40px;">
+    <%= sanitize RDiscount.new(@project_tracker.notes).to_html %>
+  </div>
+<% end %>
 
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
