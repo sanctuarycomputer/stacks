@@ -165,25 +165,48 @@ This spec cites `ghost_sync.rb` and `contact.rb` line numbers from BEFORE the br
 orientation for where a behaviour lived at design time. They no longer resolve against the current
 file. The method and behaviour names are the durable references; use those.
 
-### Blocking pre-implementation verification
+### Layer-3 verification: RESOLVED for the Portal path (2026-09-17)
 
-The design's authoritative layer assumes **an unsubscribe produces a readable `newsletter_event`**.
-The live instance has zero unsubscribe events, so this is assumed, not verified. Before relying on
-layer 3, unsubscribe a disposable test member from one newsletter via each path and confirm each
-writes an event with `data.subscribed: false` and the right `data.newsletter_id`:
+The design's authoritative layer assumed **an unsubscribe produces a readable `newsletter_event`**.
+At design time that was unverifiable read-only: all 148 events across the 52 members were
+`subscribed: true`, because nobody had ever unsubscribed.
 
-1. the unsubscribe link in a sent email,
-2. RFC 8058 one-click `List-Unsubscribe-Post` (does not go through Portal or the Admin API),
-3. toggling the newsletter off in Ghost Admin by hand.
+Hugh unsubscribed a disposable test member from **one** newsletter via the emailed link's Email
+Preferences page. The result:
 
-Record each response as a test fixture. This requires a write to the production Ghost instance, so
-**ask Hugh before doing it.**
+```
+2026-09-17T02:25:25.000Z  Sanctuary Computer  subscribed=true   source=api      (creation)
+2026-09-17T02:25:25.000Z  Index Space         subscribed=true   source=api      (creation)
+2026-09-17T02:25:25.000Z  XXIX                subscribed=true   source=api      (creation)
+2026-09-17T02:28:19.000Z  XXIX                subscribed=false  source=member   <- the unsubscribe
+```
 
-If any path turns out to be silent, layer 3 is not authoritative for history. Note the residual risk
-is bounded: the always-on observation leg writes an `observed` ledger entry for every currently
-subscribed newsletter on every sweep, so anyone who unsubscribes **after** this ships is blocked by
-layer 2 regardless. The exposure is only people who unsubscribed **before** shipping, and that set is
-currently empty.
+`total` went 3 -> 4. The event names **XXIX specifically**, not a blanket unsubscribe, and the other
+two newsletters were untouched on the member record.
+
+**End-to-end through the shipped code**, against that live member: `newsletter_events_for` returned
+all 4 events without raising (every guard passes on a real payload), and `grant_candidates_for`
+returned **zero candidates** - XXIX blocked with a `history` ledger entry and
+`unsubscribe_respected = 1`, Sanctuary Computer recorded `observed`. So layer 3 is authoritative for
+the Portal / emailed-link path, which is the dominant one.
+
+**New fact: `source: "member"`.** Person-initiated changes carry `source: "member"`; sync-initiated
+ones carry `source: "api"`. This sharpens the "Decision for Hugh" cleanup option below, which needs
+to distinguish "the sync subscribed them" from "they chose it".
+
+**Still unverified, and deliberately so:**
+
+- **RFC 8058 one-click** (`List-Unsubscribe-Post`, the Unsubscribe button Gmail and Apple Mail put in
+  the header). This bypasses Portal, so it is the path least likely to write an event, and it is
+  increasingly what people actually click.
+- **The Ghost Admin UI toggle.** Low risk: it almost certainly shares the member-edit path that
+  `source: "api"` already exercises.
+
+Neither is a blocker. If one-click turned out to be silent, the exposure is people who unsubscribe
+that way **and** whose contact gains a new source under a brand they have never been subscribed to,
+**and** who were not `observed` as subscribed on any prior sweep. The always-on observation leg
+closes the last of those for anyone the sync has seen even once. Worth testing opportunistically; not
+worth blocking the rollout on.
 
 Live newsletter ids (2026-09-16, for orientation; do not hardcode): XXIX `6a21586e051a3d00085d2b9d`,
 Index Space `6a691445819f720001082773`, Sanctuary Computer `6aa857adfe2ac60001f3e242`. The publisher
@@ -661,6 +684,6 @@ behavior, called out here so it is not mistaken for a bug.
 The 52 existing members are subscribed to all three newsletters regardless of source. Under the consent model, most of those subscriptions have no backing source. Options:
 
 - **A. Leave them.** Simplest; people unsubscribe per brand as they choose.
-- **B. One-time cleanup task** (dry run first, Hugh reviews the report, then apply): remove subscription to N only when **all** of these hold: the contact has no enabled source mapping to N, and every `subscribed: true` event for N in the member's history has `source: "api"` (i.e. the sync or an API opt-in did it, never the person via Portal or an admin by hand). Removal would be a one-off, logged action and never part of the recurring sweep.
+- **B. One-time cleanup task** (dry run first, Hugh reviews the report, then apply): remove subscription to N only when **all** of these hold: the contact has no enabled source mapping to N, and every `subscribed: true` event for N in the member's history has `source: "api"`. Verified 2026-09-17: a person acting through Portal produces `source: "member"`, so this predicate does cleanly separate "the sync subscribed them" from "they chose it". Removal would be a one-off, logged action and never part of the recurring sweep.
 
 At 52 members, B is small and reviewable. Recommendation: B, with the dry-run report reviewed before applying.
