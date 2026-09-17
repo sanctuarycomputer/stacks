@@ -9,6 +9,17 @@ ActiveAdmin.register ProjectTracker do
   scope :in_progress, default: true
   scope :dormant
   scope :complete
+  # Gated capsules have all four statuses set, so the SQL `complete` scope files
+  # them under Complete while their own page reads Pending. Give them a home.
+  # show_count: false is deliberate. ActiveAdmin computes every scope's count on
+  # every index render, and this resource sets config.paginate = false, so a
+  # counted Ruby-filtered scope would scan all completed trackers on each load of
+  # the default In Progress tab.
+  scope :needs_capsule_sign_off, show_count: false do |scope|
+    ids = ProjectTracker.complete.includes(project_capsule: :project_satisfaction_survey)
+      .select { |pt| pt.project_capsule&.complete_but_for_admin_sign_off? }.map(&:id)
+    scope.where(id: ids)
+  end
 
   permit_params :name,
     :billing_model,

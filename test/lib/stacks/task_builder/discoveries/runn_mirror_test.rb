@@ -75,7 +75,12 @@ class Stacks::TaskBuilder::Discoveries::RunnMirrorTest < ActiveSupport::TestCase
     archived = runn_project!(archived: true)
     assign!(runn_person!("b#{@seq}@example.com"), archived, runn_role!(200))
     past = runn_project!
-    assign!(runn_person!("c#{@seq}@example.com"), past, runn_role!(200), from: Date.today - 20, to: Date.today - 10)
+    # Anchor to the horizon's own boundary, not to today. ContributorProjections::
+    # Horizon.current starts at the first of the current month, so `Date.today - 10`
+    # lands INSIDE the horizon on any day after the 10th and this project stops
+    # being "past-only" — the test passed only during the first 10 days of a month.
+    month_start = Date.today.beginning_of_month
+    assign!(runn_person!("c#{@seq}@example.com"), past, runn_role!(200), from: month_start - 40, to: month_start - 30)
 
     subjects = discover.map(&:subject)
     assert_not_includes subjects, linked

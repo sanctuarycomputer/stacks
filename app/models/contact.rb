@@ -53,6 +53,86 @@ class Contact < ApplicationRecord
     end
   end
 
+  # Unions write-once newsletter ledgers across merging duplicates. A lost entry
+  # could re-subscribe someone who deliberately unsubscribed, so the earliest
+  # entry for a newsletter always wins. Builds a NEW hash rather than mutating a
+  # loser's nested hash, matching the deleted_at handling in dedupe!.
+  def self.merge_newsletter_ledgers(ledgers)
+    present = Array(ledgers).compact.reject(&:blank?)
+    return {} if present.empty?
+
+    entries = {}
+    present.each do |ledger|
+      (ledger["entries"] || {}).each do |newsletter_id, entry|
+        existing = entries[newsletter_id]
+        if existing
+          existing_at = existing["at"].to_s
+          incoming_at = entry["at"].to_s
+          # A blank timestamp is UNKNOWN, not "earliest". Comparing it as a string makes
+          # "" sort earliest in both directions, so a malformed entry would win whichever
+          # order it arrived in. Resolve it explicitly instead:
+          #   incoming blank        -> never displaces
+          #   existing blank, incoming good -> fall through and replace
+          #   both well-formed      -> earliest wins
+          next if incoming_at.empty?
+          next if !existing_at.empty? && existing_at <= incoming_at
+        end
+        entries[newsletter_id] = entry.dup
+      end
+    end
+    { "member_id" => present.map { |l| l["member_id"] }.compact.first, "entries" => entries }.compact
+  end
+
+  def newsletter_ledger
+    ghost_data["newsletter_ledger"] || {}
+  end
+
+  def newsletter_ledger_entries
+    newsletter_ledger["entries"] || {}
+  end
+
+  def ledger_member_id
+    newsletter_ledger["member_id"]
+  end
+
+  def ledger_entry(newsletter_id)
+    newsletter_ledger_entries[newsletter_id.to_s]
+  end
+
+  def ledger_has?(newsletter_id)
+    newsletter_ledger_entries.key?(newsletter_id.to_s)
+  end
+
+  def ledger_state(newsletter_id)
+    ledger_entry(newsletter_id)&.dig("state")
+  end
+
+  # Write-once, in memory only: this method never saves. Never write the ledger with
+  # update_column/update_all/raw jsonb either, because link_contact! rebuilds ghost_data
+  # from this same in-memory hash and would clobber an out-of-band write.
+  #
+  # NOTE for callers: link_contact! early-returns when the contact is already linked and
+  # nothing was written, which is the steady state for most contacts. A caller that
+  # records a ledger entry MUST ensure a save actually happens, or the entry evaporates.
+  def record_ledger_entry!(newsletter_id, state, member_id:)
+    ledger = newsletter_ledger.deep_dup
+    # Guard against nil: ||= would create the key with a nil value, which makes the
+    # ledger "changed" and writes a nil member_id on the next save.
+    ledger["member_id"] = member_id if ledger["member_id"].blank? && member_id.present?
+    ledger["entries"] ||= {}
+    if ledger["entries"].key?(newsletter_id.to_s)
+      # Write-once on the entry, but still persist a newly-learned member_id: a ledger
+      # carried through a merge can have entries and no member_id, and without this it
+      # could never acquire one, leaving the identity check permanently disabled.
+      self.ghost_data = ghost_data.merge("newsletter_ledger" => ledger) if ledger != newsletter_ledger
+      return self
+    end
+
+    ledger["entries"][newsletter_id.to_s] = { "state" => state.to_s, "at" => Time.current.iso8601 }
+    self.ghost_data = ghost_data.merge("newsletter_ledger" => ledger)
+    self
+  end
+
   def self.ransackable_scopes(*)
     %i(address_cont sources_cont)
   end
@@ -100,6 +180,38 @@ class Contact < ApplicationRecord
                       "deleted_at" => fresh_existing.ghost_data.dig("snapshot", "deleted_at")
                     )
                   )
+                end
+                # Include fresh_self: the surrounding code deliberately merges from the
+                # LOCKED reads so a concurrent write is not lost, and a ledger entry
+                # written to our row between load and lock would otherwise be clobbered
+                # by the save! below, which rewrites the whole ghost_data column.
+                merged_ledger = Contact.merge_newsletter_ledgers([
+                  self.ghost_data["newsletter_ledger"],
+                  fresh_self.ghost_data["newsletter_ledger"],
+                  fresh_existing.ghost_data["newsletter_ledger"],
+                ])
+                if merged_ledger.present?
+                  # Force the member_id onto self's own (just-resolved) ghost_id rather
+                  # than trusting merge_newsletter_ledgers' input-order pick. If self had
+                  # no ghost_id of its own and inherited fresh_existing's, that is also
+                  # exactly the id merge_newsletter_ledgers would have picked -- but if
+                  # self already owned a ghost_id, fresh_existing's ledger may describe a
+                  # different, stale member, and taking it as-is would leave the merged
+                  # ledger permanently describing a member self is not linked to,
+                  # disabling layer 2 with no repair path.
+                  #
+                  # When self has NO ghost_id at all, do not leave whatever stale
+                  # member_id merge_newsletter_ledgers' input-order pick happened to
+                  # carry: DELETE the key instead. A nil/missing member_id makes
+                  # ledger_member_id.nil? true, which makes ledger_applies true --
+                  # the conservative direction, since layer 2 only ever BLOCKS a
+                  # grant, never permits one.
+                  if self.ghost_id.present?
+                    merged_ledger["member_id"] = self.ghost_id
+                  else
+                    merged_ledger.delete("member_id")
+                  end
+                  self.ghost_data = self.ghost_data.merge("newsletter_ledger" => merged_ledger)
                 end
               end
               # Destroy before save!: self still carries the conflicting
@@ -188,6 +300,35 @@ class Contact < ApplicationRecord
         any_deleted_at = dupes.map { |d| d.ghost_data.dig("snapshot", "deleted_at") }.compact.first
         if any_deleted_at && merged_ghost_data.dig("snapshot", "deleted_at").blank?
           merged_ghost_data["snapshot"] = (merged_ghost_data["snapshot"] || {}).merge("deleted_at" => any_deleted_at)
+        end
+
+        # Entry unioning is order-independent (earliest `at` wins regardless of input
+        # order), but member_id is not: merge_newsletter_ledgers' input-order pick is not
+        # enough on its own, because the ghost_id owner may have no ledger of its own at
+        # all (common -- the pull leg created many contacts before this feature shipped),
+        # in which case the picked member_id would come from some OTHER dupe and never
+        # equal the survivor's merged_ghost_id. A ledger whose member_id does not match
+        # the contact's linked member is IGNORED by the grant decision, so that silently
+        # disables layer 2 for the whole merged ledger even though every entry survived.
+        # So: implement the spec's rule literally -- force member_id onto merged_ghost_id
+        # after merging, rather than relying on ledger_sources ordering to produce it.
+        ledger_sources = [ghost_id_owner, survivor, *dupes].compact.uniq
+        merged_ledger = Contact.merge_newsletter_ledgers(
+          ledger_sources.map { |d| d.ghost_data["newsletter_ledger"] }
+        )
+        if merged_ledger.present?
+          # When NO dupe has a ghost_id, do not let the stale input-order pick from
+          # merge_newsletter_ledgers survive: DELETE member_id instead of leaving it.
+          # A nil/missing member_id makes ledger_member_id.nil? true, so ledger_applies
+          # is true, the conservative direction (layer 2 only ever blocks a grant, it
+          # never permits one) -- versus a stale, mismatched member_id, which would
+          # disable layer 2 for this contact permanently once it relinks.
+          if merged_ghost_id.present?
+            merged_ledger["member_id"] = merged_ghost_id
+          else
+            merged_ledger.delete("member_id")
+          end
+          merged_ghost_data["newsletter_ledger"] = merged_ledger
         end
 
         losers.each do |loser|

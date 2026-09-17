@@ -36,8 +36,67 @@ ActiveAdmin.register ProjectCapsule do
     redirect_to new_admin_project_satisfaction_survey_path(project_capsule_id: resource.id), notice: "Please confirm the survey questions before creating the survey."
   end
 
+  action_item :sign_off, only: [:edit],
+    if: proc { current_admin_user.is_admin? && resource.requires_admin_sign_off? && !resource.admin_sign_off_satisfied? } do
+    link_to "✅ Approve Opt-Outs", sign_off_admin_project_capsule_path(resource), method: :post
+  end
+
+  action_item :revoke_sign_off, only: [:edit],
+    if: proc { current_admin_user.is_admin? && resource.admin_signed_off_at.present? } do
+    link_to "Revoke Sign-Off", revoke_sign_off_admin_project_capsule_path(resource), method: :post
+  end
+
+  # Defence in depth: AdminAuthorization already restricts :sign_off to admins,
+  # but member actions are easy to add without an authorize call, so check here too.
+  member_action :sign_off, method: :post do
+    unless current_admin_user.is_admin?
+      raise ActiveAdmin::AccessDenied.new(current_admin_user, :sign_off, resource)
+    end
+    resource.update!(
+      admin_signed_off_at: DateTime.now,
+      admin_signed_off_by: current_admin_user,
+      admin_signed_off_selections: resource.gated_selections,
+    )
+    redirect_to admin_project_tracker_path(resource.project_tracker_id),
+      notice: "Opt-outs approved."
+  end
+
+  member_action :revoke_sign_off, method: :post do
+    unless current_admin_user.is_admin?
+      raise ActiveAdmin::AccessDenied.new(current_admin_user, :revoke_sign_off, resource)
+    end
+    resource.update!(
+      admin_signed_off_at: nil,
+      admin_signed_off_by: nil,
+      admin_signed_off_selections: [],
+    )
+    redirect_to admin_project_tracker_path(resource.project_tracker_id),
+      notice: "Sign-off revoked."
+  end
+
   form do |f|
     f.inputs(class: "admin_inputs") do
+      if f.object.requires_admin_sign_off?
+        signed_off = f.object.admin_sign_off_satisfied?
+        div class: "dashboard-module", style: "pointer-events: auto; margin: 20px 0px;" do
+          div class: "module-header", style: "pointer-events: auto;" do
+            para(signed_off ? "✅ Opt-outs approved" : "⚠️ This capsule needs admin sign-off")
+          end
+          div class: "module-body" do
+            para "This capsule opts out of:", style: "margin-bottom: 6px;"
+            ul do
+              f.object.gated_selection_labels.each { |label| li { para label } }
+            end
+            if signed_off
+              approver = f.object.admin_signed_off_by&.email || "an admin"
+              para "Approved by #{approver} on #{f.object.admin_signed_off_at.to_date.to_s(:long)}."
+            else
+              para "An admin must approve these before this capsule counts as complete. If you'd rather not wait, doing the real thing clears it immediately — no approval needed."
+            end
+          end
+        end
+      end
+
       f.input :client_feedback_survey_status
       f.input :client_feedback_survey_url,
         placeholder: "https://www.notion.so/garden3d/Interchain-26a131fea2c78182ac21f2aa1434a6b7",

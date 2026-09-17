@@ -19,7 +19,7 @@ class ProjectTracker < ApplicationRecord
     greater_than_or_equal_to: :budget_low_end,
     if: :validate_budgets?
 
-  has_one :project_capsule, dependent: :delete
+  has_one :project_capsule, dependent: :delete, inverse_of: :project_tracker
   has_many :weekly_ships, dependent: :destroy
   has_many :project_tracker_links, dependent: :delete_all
   accepts_nested_attributes_for :project_tracker_links, allow_destroy: true
@@ -79,7 +79,7 @@ class ProjectTracker < ApplicationRecord
   scope :complete, -> {
     where.not(work_completed_at: nil)
       .includes(:project_capsule).where(
-        project_capsules: { id: ProjectCapsule.complete }
+        project_capsules: { id: ProjectCapsule.all_statuses_set }
       )
   }
 
@@ -127,10 +127,6 @@ class ProjectTracker < ApplicationRecord
   def internal_client?
     fps = forecast_projects.to_a
     fps.any? && fps.all?(&:is_internal?)
-  end
-
-  def capsule_complete?
-    project_capsule.present? && project_capsule.complete?
   end
 
   ROLE_PERIOD_ASSOCIATIONS = { "account_lead" => :account_lead_periods, "project_lead" => :project_lead_periods }.freeze
@@ -217,6 +213,15 @@ class ProjectTracker < ApplicationRecord
     # that haven't had their MSA/SOW links set up yet.
     self.work_completed_at = at
     save!(validate: false)
+    # Stamp the capsule when the wrap is RECORDED (created_at = now), not the wrap
+    # date itself — a backdated wrap set through the MCP tool (at: 6.months.ago)
+    # still creates the capsule row today. ProjectCapsule#no_response_grace_anchor
+    # floors the grace clock on project_capsules.created_at, so a backdated wrap's
+    # grace period starts from when it was recorded, not when the work actually
+    # wrapped. That's accepted behaviour, not a bug: a capsule row created later
+    # than the real wrap would otherwise hand back grace that uncomplete_work/
+    # complete_work could then re-trigger.
+    ensure_project_capsule_exists! if at.present?
     self
   end
 
@@ -226,9 +231,20 @@ class ProjectTracker < ApplicationRecord
     link.url = url
   end
 
+  # Capsules the LEAD still has work to do on. Deliberately excludes capsules
+  # that are finished but awaiting an admin's opt-out sign-off — nagging a lead
+  # to "complete their capsule" when the ball is in an admin's court blames the
+  # wrong person. Those go to .awaiting_capsule_sign_off instead.
   def self.capsule_pending
     ProjectTracker.where.not(work_completed_at: nil).select do |pt|
-      pt.work_status == :capsule_pending
+      pt.work_status == :capsule_pending &&
+        !pt.project_capsule&.complete_but_for_admin_sign_off?
+    end
+  end
+
+  def self.awaiting_capsule_sign_off
+    ProjectTracker.where.not(work_completed_at: nil).select do |pt|
+      !!pt.project_capsule&.complete_but_for_admin_sign_off?
     end
   end
 
@@ -328,12 +344,7 @@ class ProjectTracker < ApplicationRecord
   end
 
   private def capsule_complete_by_statuses?
-    pc = project_capsule
-    pc.present? &&
-      pc.client_feedback_survey_status.present? &&
-      pc.internal_marketing_status.present? &&
-      pc.capsule_status.present? &&
-      pc.project_satisfaction_survey_status.present?
+    !!project_capsule&.all_statuses_set?
   end
 
   def forecast_projects
@@ -374,7 +385,11 @@ class ProjectTracker < ApplicationRecord
   end
 
   def considered_successful?
-    if work_status == :complete
+    # Deliberately NOT `work_status == :complete`: work_status folds in the admin
+    # sign-off gate, and a gated capsule would fall to the else branch and lose the
+    # client_satisfied? requirement — making a bypass score better than compliance.
+    # This is the substantive close-out bar only. See the spec, §6.
+    if work_completed_at.present? && !!project_capsule&.substantively_complete?
       client_satisfied? && target_profit_margin_satisfied? && target_free_hours_ratio_satisfied?
     else
       target_profit_margin_satisfied? && target_free_hours_ratio_satisfied?
