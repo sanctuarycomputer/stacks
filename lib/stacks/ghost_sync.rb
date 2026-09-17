@@ -18,8 +18,10 @@ class Stacks::GhostSync
   # any stable int works — must only avoid colliding with other app locks).
   ADVISORY_LOCK_KEY = 728534291
 
-  # Ceiling on the per-sweep allowance reserved for already-linked contacts, so a large
-  # linked population can never starve the create backfill.
+  # Ceiling on the per-sweep allowance reserved for already-linked contacts. This only
+  # protects the create backfill from starvation while the configured budget exceeds
+  # this cap with a large linked population; below that, the reservation itself can
+  # still absorb the whole budget (see sync_all!'s linked_budget comment).
   LINKED_RESERVE_CAP = 500
 
   def self.source_prefix(source)
@@ -302,8 +304,10 @@ class Stacks::GhostSync
   private
 
   # One unit per Ghost member mutation, not per newsletter: a contact with two
-  # candidates is a single PUT. Deferral is always safe, because it never grants
-  # and never writes a ledger entry.
+  # candidates is a single PUT. Deferral is always safe: it never grants and never
+  # records consent. (It can leave an "observed" entry recorded earlier in the same
+  # loop -- that's fine, since observed only ever blocks a future grant, it never
+  # permits one; it records a fact we did observe.)
   def writes_available?
     @writes_remaining > 0
   end
@@ -424,6 +428,14 @@ class Stacks::GhostSync
       return nil
     end
 
+    write_member_labels!(member, attrs)
+  end
+
+  # Issues the label PUT WITHOUT reserving a budget unit. Callers that already hold a
+  # unit for this contact (the dry-run grant branch in apply_grants_or_labels!, which
+  # reserves once for the whole contact) spend it here, rather than update_member_labels
+  # reserving a second unit for the same contact's single Ghost call.
+  def write_member_labels!(member, attrs)
     updated = @ghost.update_member(member["id"], attrs)
     @summary[:updated] += 1
     updated
@@ -484,10 +496,18 @@ class Stacks::GhostSync
       # run it stands in for. grant_candidates_for's step 4 already confirmed a unit was
       # available moments ago, so this reserve always succeeds here; the guard just keeps
       # this site symmetric with the real grant PUT below.
-      return update_member_labels(contact, member, desired, enabled) unless reserve_write!
+      unless reserve_write!
+        @summary[:grants_deferred] += 1
+        return nil
+      end
       @summary[:grants_planned] += candidates.length
       candidates.each { |id| @summary[:grants_planned_by_newsletter][id] += 1 }
-      return update_member_labels(contact, member, desired, enabled)
+      # Spend the unit just reserved above: any label diff rides the SAME unit as the
+      # planned grant, not a second one. update_member_labels would reserve again, so
+      # write directly (or write nothing when there is no label diff to send).
+      attrs = label_attrs_for(contact, member, desired, enabled)
+      return nil if attrs.nil?
+      return write_member_labels!(member, attrs)
     end
 
     fresh = @ghost.find_member(member["id"])
@@ -507,7 +527,12 @@ class Stacks::GhostSync
     attrs = label_attrs_for(contact, fresh, desired, enabled) || {}
     attrs[:newsletters] = (current_ids | candidates).map { |id| { id: id } }
 
-    return update_member_labels(contact, fresh, desired, enabled) unless reserve_write!
+    unless reserve_write!
+      # The whole contact is deferred: counting a label deferral on top would make one
+      # contact appear twice in the summary the rollout review reads.
+      @summary[:grants_deferred] += 1
+      return nil
+    end
 
     updated = @ghost.update_member(fresh["id"], attrs)
     @summary[:updated] += 1

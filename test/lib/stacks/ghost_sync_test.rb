@@ -1306,6 +1306,51 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
     assert_equal "granted", contact.reload.ledger_state("nl-xxix")
   end
 
+  test "a dry-run grant costs one unit, not two, when labels also differ" do
+    # The rollout runs with the flag OFF, and the 52 pre-existing members are exactly the
+    # population likely to have both an unwritten label and a first-time candidate. If a
+    # planned grant charged a unit AND its label write charged another, the dry run would
+    # burn budget at twice the real run's rate and under-report grants_planned.
+    enable_sources("xxix:")
+    sys!(ghost_newsletter_prefix_map: { "xxix" => "nl-xxix" },
+         ghost_newsletter_grants_enabled: "0", ghost_sweep_write_budget: 1)
+    Contact.create!(email: "dry@example.com", sources: ["xxix:"], ghost_id: "m91")
+    m = member(id: "m91", email: "dry@example.com", labels: [])   # label diff WILL fire
+
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix"))
+    ghost.expects(:all_members).returns([m])
+    ghost.stubs(:newsletter_events_for).returns([])
+    ghost.expects(:update_member).once.returns(
+      member(id: "m91", email: "dry@example.com", labels: ["xxix:"]))
+
+    sync = sync_with(ghost)
+    sync.sync_all!
+    assert_equal 1, sync.summary[:grants_planned]
+    assert_equal 1, sync.summary[:writes_used], "one contact, one unit"
+    assert_equal 0, sync.summary[:updates_deferred]
+  end
+
+  test "the delabel leg shares the same budget" do
+    enable_sources("newsletter")
+    sys!(ghost_sweep_write_budget: 1)
+    # Linked, labelled, but no longer carrying an enabled source: the delabel leg.
+    Contact.create!(email: "dl1@example.com", sources: ["other"], ghost_id: "m92")
+    Contact.create!(email: "dl2@example.com", sources: ["other"], ghost_id: "m93")
+
+    ghost = mock("ghost")
+    ghost.expects(:all_members).returns([
+      member(id: "m92", email: "dl1@example.com", labels: ["newsletter"]),
+      member(id: "m93", email: "dl2@example.com", labels: ["newsletter"])])
+    ghost.expects(:update_member).once.returns(
+      member(id: "m92", email: "dl1@example.com", labels: []))
+
+    sync = sync_with(ghost)
+    sync.sync_all!
+    assert_equal 1, sync.summary[:delabeled]
+    assert_equal 1, sync.summary[:updates_deferred]
+  end
+
   test "the budget binds identically when the grants flag is off" do
     enable_sources("xxix:")
     sys!(ghost_newsletter_prefix_map: { "xxix" => "nl-xxix" },
