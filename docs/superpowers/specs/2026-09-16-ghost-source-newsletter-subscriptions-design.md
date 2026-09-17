@@ -429,7 +429,8 @@ only within one uninterrupted decision-plus-apply block.
 2. Ledger has N (and the ledger's `member_id` matches this member) -> skip; count `already_handled`
    when the entry is `granted`/`observed`, `unsubscribe_respected` when it is `history`.
 3. Member `email_suppression.suppressed` or `email_disabled` -> skip, no ledger entry; count
-   `grant_skipped_undeliverable`.
+   `grant_skipped_undeliverable`, counted once per CONTACT (every other deferral counter counts
+   contacts, so mixing units in one panel would misread).
 4. **Budget reservation check.** Exhausted -> `grants_deferred += 1` for this contact, skip its
    remaining targets, no layer-3 read, no new ledger entry.
 5. Layer-3 read, hardened as above. Any event for N -> add `history` entry; skip; count
@@ -448,7 +449,10 @@ already-ledgered targets count as `grant_skipped_undeliverable` rather than `alr
   Never send `subscribed`.
 - Confirm the response contains each candidate id; only then write `granted` entries. A failed write
   writes no ledger entries.
-- Count `granted`, and per newsletter id in `@summary[:granted_by_newsletter]`, which **must be
+- Count `granted`, and per newsletter id in `@summary[:granted_by_newsletter]`. The create path counts
+  separately, in `granted_on_create` and `@summary[:granted_on_create_by_newsletter]`: creates are not
+  flag-gated and run up to the full budget per sweep, so folding them in would swamp the per-newsletter
+  comparison rollout step 6 asks a human to make against `grants_planned_by_newsletter`. Both **must be
   initialized to `Hash.new(0)` in `initialize`** -- `@summary` is itself a `Hash.new(0)`, so lazy
   nesting raises `TypeError`.
 
@@ -567,7 +571,6 @@ Layer-3 hardening (each must assert **no** `newsletters` write):
 - Events returned carry a different `data["member_id"]` -> fail closed.
 - Collected events fewer than `meta.pagination.total` -> fail closed.
 - Member id not matching `/\A[0-9a-f]{24}\z/` -> no request issued, fail closed.
-- Page cap exceeded -> raises, fail closed.
 - Events read returns no XXIX event on the decision-phase call and an XXIX unsubscribe on the
   pre-PUT call -> **no write** (proves the read is not memoized across the write).
 
