@@ -38,7 +38,14 @@ ActiveAdmin.register ProjectSatisfactionSurvey do
     end
   end
 
+  # Defence in depth: AdminAuthorization already restricts :close_survey and
+  # :reopen_survey to admins, but member actions are easy to add without an
+  # authorize call, so check here too. Otherwise a lead could create an empty
+  # survey and close it themselves - the cheapest way around admin sign-off.
   member_action :close_survey, method: :post do
+    unless current_admin_user.is_admin?
+      raise ActiveAdmin::AccessDenied.new(current_admin_user, :close_survey, resource)
+    end
     resource.update!({ closed_at: DateTime.now })
 
     # The project_satisfaction_survey_status_valid? method in ProjectCapsule
@@ -49,6 +56,9 @@ ActiveAdmin.register ProjectSatisfactionSurvey do
   end
 
   member_action :reopen_survey, method: :post do
+    unless current_admin_user.is_admin?
+      raise ActiveAdmin::AccessDenied.new(current_admin_user, :reopen_survey, resource)
+    end
     resource.update!({ closed_at: nil })
 
     # The project_satisfaction_survey_status_valid? method in ProjectCapsule

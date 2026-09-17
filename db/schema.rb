@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_09_09_000004) do
+ActiveRecord::Schema.define(version: 2026_09_16_000001) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -926,6 +926,11 @@ ActiveRecord::Schema.define(version: 2026_09_09_000004) do
     t.integer "client_satisfaction_status"
     t.text "client_satisfaction_detail"
     t.integer "project_satisfaction_survey_status"
+    t.datetime "admin_signed_off_at"
+    t.bigint "admin_signed_off_by_id"
+    t.string "admin_signed_off_selections", default: [], null: false, array: true
+    t.boolean "sign_off_exempt", default: false, null: false
+    t.index ["admin_signed_off_by_id"], name: "index_project_capsules_on_admin_signed_off_by_id"
     t.index ["project_tracker_id"], name: "index_project_capsules_on_project_tracker_id"
   end
 
@@ -1572,6 +1577,7 @@ ActiveRecord::Schema.define(version: 2026_09_09_000004) do
   add_foreign_key "profit_share_payments", "profit_share_passes"
   add_foreign_key "profit_shares", "ledgers"
   add_foreign_key "profit_shares", "periodic_reports"
+  add_foreign_key "project_capsules", "admin_users", column: "admin_signed_off_by_id"
   add_foreign_key "project_capsules", "project_trackers"
   add_foreign_key "project_lead_periods", "admin_users"
   add_foreign_key "project_lead_periods", "project_trackers"

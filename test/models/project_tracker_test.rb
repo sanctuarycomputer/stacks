@@ -193,6 +193,82 @@ class ProjectTrackerTest < ActiveSupport::TestCase
   # The income-series assembly lives in ProjectTrackers::IncomeSeries
   # (tested in test/services/project_trackers/income_series_test.rb).
 
+  # --- metric decoupling (spec §6) ---------------------------------------
+  # considered_successful? feeds PSU allocation (profit_share_pass.rb:216) and
+  # Studio OKR metrics. It must depend on the substantive close-out bar, never on
+  # whether an admin has signed off a bypass — otherwise opting out of the client
+  # survey would DROP the client_satisfied? requirement and pay better than
+  # doing the work.
+  def make_capsule_for!(tracker, client_satisfaction_status:)
+    capsule = ProjectCapsule.create!(
+      project_tracker: tracker,
+      client_feedback_survey_status: :opt_out_of_sending_client_feedback_survey,
+      internal_marketing_status: :opt_out_out_of_publishing_a_case_study,
+      capsule_status: :opt_out_of_sharing_project_capsule_with_garden3d,
+      project_satisfaction_survey_status: :opt_out_of_internal_project_team_satisfaction_survey,
+      client_satisfaction_status: client_satisfaction_status,
+    )
+    capsule
+  end
+
+  test "considered_successful? is false for a dissatisfied client even when the capsule opts out of everything" do
+    # after_initialize :set_targets rewrites a 0 target to the 30%/0% defaults
+    # (project_tracker.rb:322), so the targets must be forced AFTER save.
+    pt = ProjectTracker.new(name: "Client Project")
+    pt.save!(validate: false)
+    pt.update_columns(work_completed_at: 2.months.ago, target_profit_margin: 0, target_free_hours_percent: 100)
+    make_capsule_for!(pt, client_satisfaction_status: :dissatisfied)
+
+    assert_not pt.reload.considered_successful?,
+      "a dissatisfied client must not read as successful, gated or not"
+  end
+
+  test "considered_successful? is true for a satisfied client with a substantively complete capsule" do
+    # after_initialize :set_targets rewrites a 0 target to the 30%/0% defaults
+    # (project_tracker.rb:322), so the targets must be forced AFTER save.
+    pt = ProjectTracker.new(name: "Client Project")
+    pt.save!(validate: false)
+    pt.update_columns(work_completed_at: 2.months.ago, target_profit_margin: 0, target_free_hours_percent: 100)
+    make_capsule_for!(pt, client_satisfaction_status: :satisfied)
+
+    assert pt.reload.considered_successful?
+  end
+
+  test "considered_successful? ignores client satisfaction when the capsule is not substantively complete" do
+    # after_initialize :set_targets rewrites a 0 target to the 30%/0% defaults
+    # (project_tracker.rb:322), so the targets must be forced AFTER save.
+    pt = ProjectTracker.new(name: "Client Project")
+    pt.save!(validate: false)
+    pt.update_columns(work_completed_at: 2.months.ago, target_profit_margin: 0, target_free_hours_percent: 100)
+    ProjectCapsule.create!(project_tracker: pt, client_satisfaction_status: :dissatisfied)
+
+    # Half-filled capsule: the pre-existing "in flight" branch, which deliberately
+    # scores only on margin + free hours.
+    assert pt.reload.considered_successful?
+  end
+
+  # --- capsule_pending / awaiting_capsule_sign_off split ------------------
+  # A gated capsule (finished, but blocked on an admin's opt-out sign-off) must
+  # not land the lead in the Tuesday "your capsule isn't done" nag — the ball is
+  # in an admin's court. It goes to .awaiting_capsule_sign_off instead.
+  test "a gated tracker appears in awaiting_capsule_sign_off, not capsule_pending; a half-filled one does the opposite" do
+    gated = ProjectTracker.new(name: "Gated Capsule Tracker")
+    gated.save!(validate: false)
+    gated.update_column(:work_completed_at, 2.months.ago)
+    make_capsule_for!(gated, client_satisfaction_status: :satisfied)
+
+    half_filled = ProjectTracker.new(name: "Half-Filled Capsule Tracker")
+    half_filled.save!(validate: false)
+    half_filled.update_column(:work_completed_at, 2.months.ago)
+    ProjectCapsule.create!(project_tracker: half_filled)
+
+    assert_includes ProjectTracker.awaiting_capsule_sign_off, gated.reload
+    assert_not_includes ProjectTracker.capsule_pending, gated.reload
+
+    assert_includes ProjectTracker.capsule_pending, half_filled.reload
+    assert_not_includes ProjectTracker.awaiting_capsule_sign_off, half_filled.reload
+  end
+
   test "billing_model defaults to new_deal_v1" do
     pt = ProjectTracker.new(name: "Default model")
     pt.save!(validate: false)

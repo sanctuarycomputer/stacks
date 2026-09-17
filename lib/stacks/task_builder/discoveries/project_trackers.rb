@@ -35,6 +35,7 @@ module Stacks
             out << :likely_should_mark_as_work_complete? if pt.likely_should_be_marked_as_completed?
           else
             out << :project_capsule_incomplete if pt.work_status == :capsule_pending
+            out << :project_capsule_needs_admin_sign_off if pt.project_capsule&.complete_but_for_admin_sign_off?
           end
           out
         end
@@ -43,6 +44,9 @@ module Stacks
           case type
           when :project_capsule_incomplete
             pt.current_project_leads
+          when :project_capsule_needs_admin_sign_off
+            # Empty → Base#task falls back to AdminUser.admin. Admins own the call.
+            []
           when :likely_should_mark_as_work_complete?
             # AL owns the call to mark a project complete — they're closer to
             # the client/billing side and PLs often miss the close-out window.
