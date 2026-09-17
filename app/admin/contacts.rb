@@ -79,6 +79,14 @@ ActiveAdmin.register Contact do
           mismatch.present? ? status_tag(mismatch, class: "warning") : "—"
         end
         row("Last Synced") { resource.ghost_data["synced_at"] }
+        row("Newsletter Ledger") do
+          entries = resource.newsletter_ledger_entries
+          if entries.blank?
+            "None"
+          else
+            entries.map { |id, e| "#{id}: #{e["state"]} (#{e["at"]})" }.join(", ")
+          end
+        end
       end
     end
 
