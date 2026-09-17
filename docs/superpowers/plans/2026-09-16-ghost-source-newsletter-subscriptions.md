@@ -2260,6 +2260,38 @@ The unit is **one mutation, not one newsletter**. Linked contacts are swept firs
     assert_operator sync.summary[:creates_deferred], :>=, 4
   end
 
+  test "two candidate newsletters are one PUT and one budget unit" do
+    # The defining semantic of the budget: the unit is a MUTATION, not a newsletter.
+    # With a per-newsletter decrement this contact would consume 2 units and, at a budget
+    # of 1, be deferred entirely rather than granted.
+    enable_sources("xxix:", "index:shopify_customer")
+    sys!(ghost_newsletter_prefix_map: { "xxix" => "nl-xxix", "index" => "nl-index" },
+         ghost_newsletter_grants_enabled: "1", ghost_sweep_write_budget: 1)
+    contact = Contact.create!(email: "twocand@example.com",
+      sources: ["xxix:", "index:shopify_customer"], ghost_id: "m90")
+    m = member(id: "m90", email: "twocand@example.com",
+      labels: %w[xxix: index:shopify_customer])
+
+    seen = []
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix", "nl-index"))
+    ghost.expects(:all_members).returns([m])
+    ghost.stubs(:newsletter_events_for).returns([])
+    ghost.expects(:find_member).with("m90").returns(m)
+    ghost.expects(:update_member).once.with { |_id, attrs| seen << attrs; true }
+      .returns(m.merge("newsletters" => [{ "id" => "nl-index" }, { "id" => "nl-xxix" }]))
+
+    sync = sync_with(ghost)
+    sync.sync_all!
+
+    assert_equal 1, seen.length
+    assert_equal %w[nl-index nl-xxix], seen.first[:newsletters].map { |n| n[:id] }.sort
+    assert_equal 1, sync.summary[:writes_used]
+    assert_equal 2, sync.summary[:granted]
+    assert_equal 0, sync.summary[:grants_deferred]
+    assert_equal "granted", contact.reload.ledger_state("nl-xxix")
+  end
+
   test "the budget binds identically when the grants flag is off" do
     enable_sources("xxix:")
     sys!(ghost_newsletter_prefix_map: { "xxix" => "nl-xxix" },
