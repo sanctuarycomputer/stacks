@@ -74,10 +74,6 @@ class AdminProjectCapsuleSignOffTest < ActionDispatch::IntegrationTest
 
   test "the tracker page renders the sign-off banner for a gated capsule" do
     capsule = make_gated_capsule!
-    # The tracker show view renders `notes` through RDiscount unconditionally;
-    # make_gated_capsule! builds its tracker with validate: false and leaves
-    # notes nil, which only this test's full-page render exercises.
-    capsule.project_tracker.update_column(:notes, "Notes")
     sign_in make_admin!
 
     get admin_project_tracker_path(capsule.project_tracker)
@@ -87,9 +83,6 @@ class AdminProjectCapsuleSignOffTest < ActionDispatch::IntegrationTest
 
   test "the needs_capsule_sign_off admin scope lists a gated tracker" do
     capsule = make_gated_capsule!
-    # _show.html.erb 500s on a tracker with nil `notes` (pre-existing bug) -
-    # this scope's index renders that partial, so give the fixture notes.
-    capsule.project_tracker.update_column(:notes, "Notes")
     sign_in make_admin!
 
     get admin_project_trackers_path(scope: "needs_capsule_sign_off")
