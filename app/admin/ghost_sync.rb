@@ -54,6 +54,11 @@ ActiveAdmin.register_page "Ghost Sync" do
 
       form action: admin_ghost_sync_update_newsletter_settings_path, method: :post do
         input type: :hidden, name: :authenticity_token, value: form_authenticity_token
+        # Tells the page_action whether the dropdowns above were populated from a real
+        # newsletter list. A submission that empties the map is only ever the accidental
+        # "Ghost was unreachable" case when this is "0" -- a deliberate unmap (n=1, list
+        # rendered fine) must still be allowed through.
+        input type: :hidden, name: :newsletters_ok, value: newsletters_ok ? "1" : "0"
         table_for prefixes.to_a do
           column("Prefix") { |(prefix, _)| prefix }
           column("Contacts") { |(_, count)| count }
@@ -72,9 +77,15 @@ ActiveAdmin.register_page "Ghost Sync" do
             # '<prefix>:%' would miss a bare single-segment source such as `team`, which
             # the sweep WOULD subscribe, so the preview would understate the number
             # rollout step 3 asks Hugh to decide on.
+            #
+            # The matching source itself must be enabled, not merely some source on the
+            # contact: target_newsletter_ids only ever derives newsletters from
+            # (contact.sources & enabled), so a contact with an enabled `team` source and
+            # a DISABLED `index:...` source is never subscribed under `index`. Constrain
+            # the EXISTS to enabled sources so the panel cannot overstate what the sweep
+            # will actually do.
             Contact
-              .where("sources && ARRAY[?]::varchar[]", system.ghost_synced_sources)
-              .where("EXISTS (SELECT 1 FROM unnest(sources) s WHERE split_part(lower(s), ':', 1) = ? AND lower(s) <> 'g3d:ghost' AND lower(s) NOT LIKE 'g3d:ghost:%')", prefix)
+              .where("EXISTS (SELECT 1 FROM unnest(sources) s WHERE s = ANY(ARRAY[?]::varchar[]) AND split_part(lower(s), ':', 1) = ? AND lower(s) <> 'g3d:ghost' AND lower(s) NOT LIKE 'g3d:ghost:%')", enabled, prefix)
               .where("NOT jsonb_exists(COALESCE(ghost_data->'newsletter_ledger'->'entries', '{}'::jsonb), ?)", id)
               .count
           end
@@ -162,10 +173,17 @@ ActiveAdmin.register_page "Ghost Sync" do
       .transform_values(&:to_s)
       .reject { |_, v| v.blank? }
 
+    # Only "0" (explicitly posted by the page when the newsletter list failed to load)
+    # counts as unreachable; a missing/garbled value is treated as a real render so a
+    # deliberate clear is never silently refused.
+    newsletters_ok = params[:newsletters_ok] != "0"
+
     system = System.first_or_create!(settings: {})
-    if map.empty? && system.ghost_newsletter_prefix_map_clean.any?
+    if map.empty? && !newsletters_ok && system.ghost_newsletter_prefix_map_clean.any?
       redirect_to admin_ghost_sync_path,
-        alert: "Refusing to clear every newsletter mapping at once. Unmap prefixes one at a time."
+        alert: "Ghost was unreachable when this page loaded, so every dropdown defaulted " \
+               "to \"Not mapped\". Refusing to save an empty mapping. Reload once Ghost is " \
+               "reachable and try again."
       return
     end
 

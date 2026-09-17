@@ -48,6 +48,16 @@ ActiveAdmin.register Contact do
   end
 
   show do
+    # Resolves a Ghost newsletter id to a human label for the ledger row below, without
+    # a live Ghost API call: an unreachable Ghost must never fail or hang this page. The
+    # prefix -> newsletter id mapping in Settings is the only newsletter-identifying data
+    # available locally, so it doubles as the label; ids no longer (or never) present in
+    # that mapping fall back to showing the raw id.
+    # This local must stay above every block that reads it (see the ghost_sync.rb admin
+    # page comment): Ruby resolves Arbre block locals lexically at parse time.
+    newsletter_label_by_id = System.first_or_create!(settings: {})
+      .ghost_newsletter_prefix_map_clean.invert
+
     attributes_table do
       row :email
       row :sources
@@ -84,7 +94,7 @@ ActiveAdmin.register Contact do
           if entries.blank?
             "None"
           else
-            entries.map { |id, e| "#{id}: #{e["state"]} (#{e["at"]})" }.join(", ")
+            entries.map { |id, e| "#{newsletter_label_by_id[id] || id}: #{e["state"]} (#{e["at"]})" }.join(", ")
           end
         end
       end
