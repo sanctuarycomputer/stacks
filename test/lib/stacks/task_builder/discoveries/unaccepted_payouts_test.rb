@@ -9,9 +9,17 @@ class Stacks::TaskBuilder::Discoveries::UnacceptedPayoutsTest < ActiveSupport::T
     @admin = AdminUser.create!(email: "payoutadmin#{SecureRandom.hex(2)}@example.com", password: "password123", password_confirmation: "password123", roles: ["admin"])
 
     fc = ForecastClient.create!(forecast_id: rand(1..2_000_000_000), name: "PayoutClient-#{SecureRandom.hex(2)}")
-    qbo_account = QboAccount.create!(name: "PayoutQBO-#{SecureRandom.hex(2)}", realm_id: SecureRandom.hex(6))
+    qbo_account = QboAccount.create!(enterprise: @enterprise, client_id: "c#{SecureRandom.hex(2)}", client_secret: "s", realm_id: SecureRandom.hex(6))
     ip = InvoicePass.create!(start_of_month: Date.current.beginning_of_month)
-    @invoice_tracker = InvoiceTracker.create!(invoice_pass: ip, forecast_client: fc, qbo_account: qbo_account)
+    # blueprint gives the tracker a non-zero `total` (no qbo_invoice in this
+    # test) — without it, InvoiceTracker#total is 0 and every payout above $0
+    # trips the 70% cap validation (ContributorPayout#contributor_payouts_within_seventy_percent).
+    @invoice_tracker = InvoiceTracker.create!(
+      invoice_pass: ip,
+      forecast_client: fc,
+      qbo_account: qbo_account,
+      blueprint: { "lines" => { "Test Line" => { "quantity" => 10, "unit_price" => 1000 } } },
+    )
   end
 
   test "unaccepted payout produces one contributor task with ledger URL" do
