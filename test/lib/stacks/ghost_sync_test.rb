@@ -1184,4 +1184,131 @@ class Stacks::GhostSyncTest < ActiveSupport::TestCase
       "exactly one contact may write newsletters for member m64"
     assert_equal 1, sync.summary[:writes_skipped_unlinked]
   end
+
+  test "the budget caps creates and defers the rest without linking them" do
+    enable_sources("index:x")
+    sys!(ghost_newsletter_prefix_map: {}, ghost_sweep_write_budget: 1)
+    3.times { |i| Contact.create!(email: "b#{i}@example.com", sources: ["index:x"]) }
+
+    ghost = mock("ghost")
+    ghost.expects(:all_members).returns([])
+    ghost.expects(:create_member).once.returns(member(id: "mb1", email: "b0@example.com"))
+
+    sync = sync_with(ghost)
+    sync.sync_all!
+    assert_equal 1, sync.summary[:created]
+    assert_equal 2, sync.summary[:creates_deferred]
+    assert_equal 2, Contact.where(ghost_id: nil).where("email LIKE 'b%'").count
+  end
+
+  test "a deferred contact is created by the next sweep" do
+    enable_sources("index:x")
+    sys!(ghost_newsletter_prefix_map: {}, ghost_sweep_write_budget: 1)
+    2.times { |i| Contact.create!(email: "c#{i}@example.com", sources: ["index:x"]) }
+
+    ghost = mock("ghost")
+    # The second sweep must see the member created by the first. Otherwise the
+    # deletion-reconciliation leg (ghost_sync.rb:47-51) clears c0's ghost_id and stamps
+    # deleted_at, and the test would pass by recycling c0 rather than resuming c1.
+    # Labels must match what create_member was sent (desired: ["index:x"]) - an
+    # unlabeled double here would make c0's re-sweep look like a pending label fix,
+    # spending the only budget unit on a no-op update instead of leaving it for c1.
+    ghost.stubs(:all_members).returns([]).then.returns(
+      [member(id: "mc1", email: "c0@example.com", labels: ["index:x"])])
+    ghost.stubs(:create_member).returns(
+      member(id: "mc1", email: "c0@example.com")).then.returns(
+      member(id: "mc2", email: "c1@example.com"))
+
+    Stacks::GhostSync.new(ghost).sync_all!
+    # The budget lives on the instance, so the second sweep needs a second object.
+    second = Stacks::GhostSync.new(ghost)
+    second.sync_all!
+    assert_equal 1, second.summary[:created]
+    assert_equal "mc2", Contact.find_by(email: "c1@example.com").ghost_id,
+      "the deferred contact is the one that resumed"
+  end
+
+  test "an exhausted budget skips the history read entirely" do
+    enable_sources("xxix:")
+    sys!(ghost_newsletter_prefix_map: { "xxix" => "nl-xxix" }, ghost_sweep_write_budget: 1)
+    # Two linked contacts, budget 1. The second must be deferred BEFORE its history read.
+    Contact.create!(email: "g1@example.com", sources: ["xxix:"], ghost_id: "m51")
+    Contact.create!(email: "g2@example.com", sources: ["xxix:"], ghost_id: "m52")
+
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix"))
+    ghost.expects(:all_members).returns([
+      member(id: "m51", email: "g1@example.com", labels: ["xxix:"]),
+      member(id: "m52", email: "g2@example.com", labels: ["xxix:"])])
+    # Exactly one history read: the deferred contact must cost no API calls at all.
+    ghost.expects(:newsletter_events_for).once.returns([])
+
+    sync = sync_with(ghost)
+    sync.sync_all!
+    assert_equal 1, sync.summary[:grants_deferred]
+  end
+
+  test "linked contacts get their reserved allowance even when creates would exhaust it" do
+    enable_sources("xxix:")
+    sys!(ghost_newsletter_prefix_map: { "xxix" => "nl-xxix" },
+         ghost_newsletter_grants_enabled: "0",
+         ghost_sweep_write_budget: 2)
+    # Create the unlinked contacts FIRST so they sort ahead of the linked one by id.
+    # Without the scope split, find_each's id order would exhaust the budget on these
+    # five creates and never reach `linked`, so this ordering is what makes the test
+    # actually exercise the reservation.
+    5.times { |i| Contact.create!(email: "z#{i}@example.com", sources: ["xxix:"]) }
+    Contact.create!(email: "linked@example.com", sources: ["xxix:"], ghost_id: "m80")
+
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix"))
+    ghost.expects(:all_members).returns([
+      member(id: "m80", email: "linked@example.com", labels: ["xxix:"])])
+    ghost.expects(:newsletter_events_for).with("m80", anything).returns([])
+    ghost.stubs(:create_member).returns(member(id: "mz", email: "z0@example.com"))
+
+    sync = sync_with(ghost)
+    sync.sync_all!
+    assert_equal 1, sync.summary[:grants_planned],
+      "the linked contact's decision must run on the first sweep, not after the ramp"
+    assert_operator sync.summary[:creates_deferred], :>=, 4
+  end
+
+  test "the budget binds identically when the grants flag is off" do
+    enable_sources("xxix:")
+    sys!(ghost_newsletter_prefix_map: { "xxix" => "nl-xxix" },
+         ghost_newsletter_grants_enabled: "0", ghost_sweep_write_budget: 1)
+    Contact.create!(email: "d1@example.com", sources: ["xxix:"], ghost_id: "m53")
+    Contact.create!(email: "d2@example.com", sources: ["xxix:"], ghost_id: "m54")
+
+    ghost = mock("ghost")
+    ghost.stubs(:all_newsletters).returns(active_nl("nl-xxix"))
+    ghost.expects(:all_members).returns([
+      member(id: "m53", email: "d1@example.com", labels: ["xxix:"]),
+      member(id: "m54", email: "d2@example.com", labels: ["xxix:"])])
+    ghost.expects(:newsletter_events_for).once.returns([])
+
+    sync = sync_with(ghost)
+    sync.sync_all!
+    assert_equal 1, sync.summary[:grants_deferred],
+      "a planned grant consumes budget exactly as a real one does"
+  end
+
+  test "an exhausted budget defers label-only updates" do
+    enable_sources("newsletter", "fundraising")
+    sys!(ghost_sweep_write_budget: 1)
+    Contact.create!(email: "l1@example.com", sources: %w[newsletter fundraising], ghost_id: "m55")
+    Contact.create!(email: "l2@example.com", sources: %w[newsletter fundraising], ghost_id: "m56")
+
+    ghost = mock("ghost")
+    ghost.expects(:all_members).returns([
+      member(id: "m55", email: "l1@example.com", labels: ["newsletter"]),
+      member(id: "m56", email: "l2@example.com", labels: ["newsletter"])])
+    ghost.expects(:update_member).once.returns(
+      member(id: "m55", email: "l1@example.com", labels: %w[newsletter fundraising]))
+
+    sync = sync_with(ghost)
+    sync.sync_all!
+    assert_equal 1, sync.summary[:updates_deferred]
+  end
 end

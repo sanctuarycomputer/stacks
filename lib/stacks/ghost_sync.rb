@@ -18,6 +18,10 @@ class Stacks::GhostSync
   # any stable int works — must only avoid colliding with other app locks).
   ADVISORY_LOCK_KEY = 728534291
 
+  # Ceiling on the per-sweep allowance reserved for already-linked contacts, so a large
+  # linked population can never starve the create backfill.
+  LINKED_RESERVE_CAP = 500
+
   def self.source_prefix(source)
     source.to_s.split(":", 2).first.to_s.downcase
   end
@@ -75,13 +79,23 @@ class Stacks::GhostSync
     # Outbound legs only run when at least one source is enabled: an empty
     # checkbox set means "sync off", not "remove every label in Ghost".
     if enabled.any?
-      Contact.where("sources && ARRAY[?]::varchar[]", enabled).find_each do |contact|
-        capture_errors(contact) do
-          next skip_invalid(contact) unless contact.email.match?(Devise.email_regexp)
-          updated = sync_contact!(contact, enabled, members_by_id, members_by_email)
-          if updated
-            members_by_id[updated["id"]] = updated
-            members_by_email[updated["email"].to_s.downcase] = updated
+      eligible = Contact.where("sources && ARRAY[?]::varchar[]", enabled)
+      # Size the reservation to the linked population, not to a fraction of the budget.
+      # A flat 50% would halve create throughput and double the 19k backfill from ~8
+      # sweeps to ~16, contradicting "each sweep creates up to 2,500 members".
+      linked_budget = [[eligible.synced_to_ghost.count, LINKED_RESERVE_CAP].min, 1].max
+
+      [[eligible.synced_to_ghost, linked_budget], [eligible.not_synced_to_ghost, nil]].each do |scope, cap|
+        spent_before = @summary[:writes_used]
+        scope.find_each do |contact|
+          break if cap && (@summary[:writes_used] - spent_before) >= cap
+          capture_errors(contact) do
+            next skip_invalid(contact) unless contact.email.match?(Devise.email_regexp)
+            updated = sync_contact!(contact, enabled, members_by_id, members_by_email)
+            if updated
+              members_by_id[updated["id"]] = updated
+              members_by_email[updated["email"].to_s.downcase] = updated
+            end
           end
         end
       end
@@ -110,6 +124,11 @@ class Stacks::GhostSync
       # Finding C: do not re-create members that were explicitly deleted.
       if contact.ghost_data.dig("snapshot", "deleted_at").present?
         @summary[:suppressed_deleted] += 1
+        return nil
+      end
+
+      unless reserve_write!
+        @summary[:creates_deferred] += 1
         return nil
       end
 
@@ -201,7 +220,7 @@ class Stacks::GhostSync
       .compact.uniq
   end
 
-  # Decision steps 1, 2, 3, 5 and 6. Returns the newsletter ids this member has
+  # Decision steps 1, 2, 3, 4, 5 and 6. Returns the newsletter ids this member has
   # provably never been subscribed to. Writes observed/history ledger entries in
   # memory; the caller persists them.
   #
@@ -244,6 +263,15 @@ class Stacks::GhostSync
         next
       end
 
+      # Step 4: the budget check comes before the history read, so a deferred member
+      # costs zero API calls, not one. A planned grant (grants flag off) consumes budget
+      # exactly as a real one does, so a dry-run sweep previews the same shape and API
+      # cost as the real run it stands in for.
+      unless writes_available?
+        @summary[:grants_deferred] += 1
+        return candidates
+      end
+
       begin
         events ||= @ghost.newsletter_events_for(member["id"], current_newsletter_ids: current_ids)
       rescue Stacks::Ghost::UntrustworthyHistory, Stacks::Ghost::RequestError => e
@@ -272,6 +300,20 @@ class Stacks::GhostSync
   end
 
   private
+
+  # One unit per Ghost member mutation, not per newsletter: a contact with two
+  # candidates is a single PUT. Deferral is always safe, because it never grants
+  # and never writes a ledger entry.
+  def writes_available?
+    @writes_remaining > 0
+  end
+
+  def reserve_write!
+    return false unless writes_available?
+    @writes_remaining -= 1
+    @summary[:writes_used] += 1
+    true
+  end
 
   # One /newsletters/ fetch per sweep, shared by the push leg's prefix-map validation
   # (load_newsletter_config!) and the pull leg's slug resolution. Keep the RAW list here:
@@ -377,6 +419,10 @@ class Stacks::GhostSync
   def update_member_labels(contact, member, desired, enabled)
     attrs = label_attrs_for(contact, member, desired, enabled)
     return nil if attrs.nil?
+    unless reserve_write!
+      @summary[:updates_deferred] += 1
+      return nil
+    end
 
     updated = @ghost.update_member(member["id"], attrs)
     @summary[:updated] += 1
@@ -433,6 +479,12 @@ class Stacks::GhostSync
     end
 
     unless @grants_enabled
+      # A planned grant consumes budget exactly as a real one does: otherwise a dry-run
+      # sweep would preview a different shape (and a different API cost) than the real
+      # run it stands in for. grant_candidates_for's step 4 already confirmed a unit was
+      # available moments ago, so this reserve always succeeds here; the guard just keeps
+      # this site symmetric with the real grant PUT below.
+      return update_member_labels(contact, member, desired, enabled) unless reserve_write!
       @summary[:grants_planned] += candidates.length
       candidates.each { |id| @summary[:grants_planned_by_newsletter][id] += 1 }
       return update_member_labels(contact, member, desired, enabled)
@@ -455,6 +507,8 @@ class Stacks::GhostSync
     attrs = label_attrs_for(contact, fresh, desired, enabled) || {}
     attrs[:newsletters] = (current_ids | candidates).map { |id| { id: id } }
 
+    return update_member_labels(contact, fresh, desired, enabled) unless reserve_write!
+
     updated = @ghost.update_member(fresh["id"], attrs)
     @summary[:updated] += 1
     # A 2xx with an empty members array yields nil. update_member_labels already
@@ -474,6 +528,10 @@ class Stacks::GhostSync
 
   def delabel_member!(contact, member, enabled)
     return member if managed_label_names(member, enabled).empty?
+    unless reserve_write!
+      @summary[:updates_deferred] += 1
+      return member
+    end
     enabled_downcased = enabled.map(&:downcase)
     updated = @ghost.update_member(
       member["id"],
