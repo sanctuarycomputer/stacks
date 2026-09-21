@@ -15,7 +15,7 @@ module Mcp
     annotations(read_only_hint: true, destructive_hint: false, idempotent_hint: true)
 
     def self.call(name: nil, client: nil, server_context:)
-      trackers = ProjectTracker.all
+      trackers = ProjectTracker.includes(:project_tracker_links)
       if client.present?
         client_ids = ForecastClient.where("lower(name) = ?", client.strip.downcase).select(:forecast_id)
         fp_ids = ForecastProject.where(client_id: client_ids).select(:forecast_id)

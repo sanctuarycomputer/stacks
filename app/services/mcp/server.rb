@@ -40,6 +40,7 @@ module Mcp
       Mcp::GetClientRevenueTool,
       Mcp::ListSurveysTool,
       Mcp::GetSurveyResultsTool,
+      Mcp::ListWeeklyShipsTool,
     ].freeze
 
     def self.build

@@ -19,6 +19,20 @@ class ProjectTracker < ApplicationRecord
     greater_than_or_equal_to: :budget_low_end,
     if: :validate_budgets?
 
+  # Monthly budget (retainers): a low/high range like the overall band, but
+  # entering one side mirrors it to the other so a fixed monthly budget is one
+  # number typed once. A tracker can carry both a monthly budget and an overall
+  # band ("stay under X per month; the whole engagement is Y").
+  before_validation :mirror_one_sided_monthly_budget
+  validates_numericality_of :monthly_budget_low_end,
+    greater_than: 0,
+    less_than_or_equal_to: :monthly_budget_high_end,
+    if: :monthly_budget?
+  validates_numericality_of :monthly_budget_high_end,
+    greater_than: 0,
+    greater_than_or_equal_to: :monthly_budget_low_end,
+    if: :monthly_budget?
+
   has_one :project_capsule, dependent: :delete, inverse_of: :project_tracker
   has_many :weekly_ships, dependent: :destroy
   has_many :project_tracker_links, dependent: :delete_all
@@ -197,14 +211,109 @@ class ProjectTracker < ApplicationRecord
     transaction { project_tracker_forecast_projects.create!(forecast_project_id: project["id"]) }
   end
 
-  def update_details!(name: nil, budget_low_end: nil, budget_high_end: nil, msa_url: nil, sow_url: nil)
+  # Monthly budget semantics for callers that pass fields piecemeal (the MCP
+  # tool): exactly one end given means a FIXED monthly budget at that number,
+  # both given means a range, clear_monthly_budget removes it. nil = unchanged.
+  def update_details!(name: nil, budget_low_end: nil, budget_high_end: nil, msa_url: nil, sow_url: nil,
+                      monthly_budget_low_end: nil, monthly_budget_high_end: nil,
+                      clear_monthly_budget: false, twist_channel_url: nil, notion_homepage_url: nil)
     self.name = name if name.present?
     self.budget_low_end = budget_low_end unless budget_low_end.nil?
     self.budget_high_end = budget_high_end unless budget_high_end.nil?
+    if clear_monthly_budget
+      if !monthly_budget_low_end.nil? || !monthly_budget_high_end.nil?
+        raise ArgumentError, "clear_monthly_budget cannot be combined with a monthly budget value"
+      end
+      self.monthly_budget_low_end = nil
+      self.monthly_budget_high_end = nil
+    elsif !monthly_budget_low_end.nil? || !monthly_budget_high_end.nil?
+      low = monthly_budget_low_end.nil? ? monthly_budget_high_end : monthly_budget_low_end
+      high = monthly_budget_high_end.nil? ? monthly_budget_low_end : monthly_budget_high_end
+      self.monthly_budget_low_end = low
+      self.monthly_budget_high_end = high
+    end
     upsert_link!(:msa, "MSA", msa_url) unless msa_url.nil?
     upsert_link!(:sow, "SOW", sow_url) unless sow_url.nil?
+    upsert_link!(:twist_channel, "Twist Channel", twist_channel_url) unless twist_channel_url.nil?
+    upsert_link!(:notion_homepage, "Notion Homepage", notion_homepage_url) unless notion_homepage_url.nil?
     save!
     self
+  end
+
+  def monthly_budget?
+    monthly_budget_low_end.present? && monthly_budget_high_end.present?
+  end
+
+  def overall_budget?
+    budget_low_end.present? && budget_high_end.present?
+  end
+
+  # Trailing 7 days of recorded hours, tracker-wide: the same window
+  # make_adhoc_snapshot(7.days) and the contributors tool's hours_7d use.
+  def hours_trailing_7_days
+    total_hours_during_range(Date.today - 6.days, Date.today).to_f
+  end
+
+  # The four live figures the weekly ship block prints. Computed once so the
+  # burnup tool can report hours_7d and render the block from the same pass
+  # (trailing_7_days_value covers the same window as hours_trailing_7_days).
+  def weekly_ship_numbers
+    invoiced = income.to_f
+    total = spend.to_f
+    {
+      hours_7d: hours_trailing_7_days,
+      spend_7d: trailing_7_days_value.to_f,
+      invoiced: invoiced,
+      running_spend: total - invoiced,
+      total_spend: total,
+    }
+  end
+
+  # The "✨ Weekly Ship Gmail Autoformatter ✨" text, as the tracker page's copy
+  # button pastes it and as get_project_burnup returns it. One implementation so
+  # the email, the admin page, and Stacksbot's draft can't drift apart. Contains
+  # no user-supplied text (the view embeds it in a script tag).
+  #
+  # Total Spend to Date and the band print only when the tracker has an overall
+  # budget: a retainer's lifetime spend is not a number the client tracks. A
+  # monthly budget prints its own line(s) whenever it's set. Both may appear.
+  def weekly_ship_block(numbers = weekly_ship_numbers)
+    money = ->(n) { ActionController::Base.helpers.number_to_currency(n) }
+
+    lines = [
+      "⏳ Hours Progress",
+      "Trailing 7 days: #{format('%.1f', numbers[:hours_7d])} hours (#{money.call(numbers[:spend_7d])})",
+      "",
+      "💹 Budgetary Progress",
+      "Invoiced: #{money.call(numbers[:invoiced])}",
+      "Spend this Month: #{money.call(numbers[:running_spend])}",
+    ]
+    if monthly_budget?
+      if monthly_budget_low_end == monthly_budget_high_end
+        lines << "Monthly Budget: #{money.call(monthly_budget_high_end)}"
+      else
+        lines << "Monthly Budget Low End: #{money.call(monthly_budget_low_end)}"
+        lines << "Monthly Budget High End: #{money.call(monthly_budget_high_end)}"
+      end
+    end
+    if overall_budget?
+      lines << "Total Spend to Date: #{money.call(numbers[:total_spend])}"
+      if budget_low_end == budget_high_end
+        lines << "Budget: #{money.call(budget_high_end)}"
+      else
+        lines << "Budget Low End: #{money.call(budget_low_end)}"
+        lines << "Budget High End: #{money.call(budget_high_end)}"
+      end
+    end
+    lines.join("\n")
+  end
+
+  private def mirror_one_sided_monthly_budget
+    if monthly_budget_low_end.present? && monthly_budget_high_end.blank?
+      self.monthly_budget_high_end = monthly_budget_low_end
+    elsif monthly_budget_high_end.present? && monthly_budget_low_end.blank?
+      self.monthly_budget_low_end = monthly_budget_high_end
+    end
   end
 
   def mark_work_completed!(at:)
