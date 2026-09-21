@@ -221,6 +221,9 @@ class ProjectTracker < ApplicationRecord
     self.budget_low_end = budget_low_end unless budget_low_end.nil?
     self.budget_high_end = budget_high_end unless budget_high_end.nil?
     if clear_monthly_budget
+      if !monthly_budget_low_end.nil? || !monthly_budget_high_end.nil?
+        raise ArgumentError, "clear_monthly_budget cannot be combined with a monthly budget value"
+      end
       self.monthly_budget_low_end = nil
       self.monthly_budget_high_end = nil
     elsif !monthly_budget_low_end.nil? || !monthly_budget_high_end.nil?

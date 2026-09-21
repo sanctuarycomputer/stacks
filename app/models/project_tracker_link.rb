@@ -5,6 +5,7 @@ class ProjectTrackerLink < ApplicationRecord
   # one (URI::regexp matched "javascript:alert(1)//https://x"). These render as
   # clickable pills for admins and are writable over MCP, so no other schemes
   # and no embedded credentials.
+  before_validation { self.url = url.strip if url.is_a?(String) }
   validate :url_is_plain_http
   enum link_type: {
     other: 0,
@@ -28,7 +29,7 @@ class ProjectTrackerLink < ApplicationRecord
 
   def url_is_plain_http
     parsed = begin
-      URI.parse(url.to_s.strip)
+      URI.parse(url.to_s)
     rescue URI::InvalidURIError
       nil
     end
@@ -36,6 +37,8 @@ class ProjectTrackerLink < ApplicationRecord
       errors.add(:url, "must be an http or https URL")
       return
     end
-    errors.add(:url, "must not embed credentials") if parsed.userinfo.present?
+    # Ruby's URI drops an empty userinfo ("https://@host") rather than
+    # reporting it, so look at the authority text, not the parsed field.
+    errors.add(:url, "must not embed credentials") if url.match?(%r{\A[a-z][a-z0-9+.-]*://[^/?#]*@}i)
   end
 end

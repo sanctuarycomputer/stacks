@@ -100,6 +100,20 @@ class ProjectTrackerMonthlyBudgetTest < ActiveSupport::TestCase
     assert_not pt.monthly_budget?
   end
 
+  test "update_details! refuses clear_monthly_budget combined with a value" do
+    pt = with_links!(tracker!(monthly_budget_low_end: 5000, monthly_budget_high_end: 5000))
+    assert_raises(ArgumentError) { pt.update_details!(clear_monthly_budget: true, monthly_budget_low_end: 7000) }
+    assert_equal 5000, pt.reload.monthly_budget_low_end
+  end
+
+  test "link URLs are stripped before validation and storage" do
+    pt = tracker!
+    link = pt.project_tracker_links.create!(name: "T", url: "  https://twist.com/a/1/ch/2  ", link_type: :twist_channel)
+    assert_equal "https://twist.com/a/1/ch/2", link.reload.url
+    empty_userinfo = pt.project_tracker_links.build(name: "T", url: "https://@x.example/", link_type: :other)
+    assert_not empty_userinfo.valid?
+  end
+
   test "update_details! leaves the monthly budget alone when neither end is passed" do
     pt = with_links!(tracker!(monthly_budget_low_end: 5000, monthly_budget_high_end: 8000))
     pt.update_details!(name: "Renamed (ongoing)")
