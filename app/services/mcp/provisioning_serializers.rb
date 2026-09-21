@@ -14,10 +14,16 @@ module Mcp
         # comment — coerce to Float so these come back as JSON numbers.
         budget_low_end: tracker.budget_low_end&.to_f,
         budget_high_end: tracker.budget_high_end&.to_f,
+        monthly_budget_low_end: tracker.monthly_budget_low_end&.to_f,
+        monthly_budget_high_end: tracker.monthly_budget_high_end&.to_f,
+        considered_ongoing: tracker.considered_ongoing?,
         work_completed_at: tracker.work_completed_at,
         completed: tracker.work_completed_at.present?,
         msa_url: link_url(tracker, :msa),
         sow_url: link_url(tracker, :sow),
+        # Every link, not just MSA/SOW: twist_channel and notion_homepage are
+        # how Stacksbot finds a project's conversation without name-matching.
+        links: tracker.project_tracker_links.map { |l| { name: l.name, url: l.url, link_type: l.link_type } },
         account_lead: lead_json(tracker.account_lead_periods),
         project_lead: lead_json(tracker.project_lead_periods),
         workstreams: tracker.project_tracker_forecast_projects.map { |ws| workstream_json(ws) },

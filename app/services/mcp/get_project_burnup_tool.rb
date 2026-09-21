@@ -7,7 +7,10 @@ module Mcp
                 'cumulative income/spend/cost/hours series against the budget band, money ' \
                 'totals (invoiced, running spend, estimated cost, profit, margin, commissions), ' \
                 'overage vs each budget end, and the estimated weeks/months of budget left at ' \
-                'the trailing 7/30-day spend rate. Series come from the nightly tracker snapshot.'
+                'the trailing 7/30-day spend rate. Series come from the nightly tracker snapshot. ' \
+                'Also returns the weekly-ship inputs: monthly_budget {low, high}, hours_7d, ' \
+                'considered_ongoing, weekly_ship_block (the exact "Weekly Ship Gmail Autoformatter" ' \
+                'text the tracker page copies, print it verbatim in a ship), and last_weekly_ship.'
     input_schema(
       properties: {
         tracker: { type: 'string', description: 'ProjectTracker id or exact name (case-insensitive). Required.' },
@@ -36,6 +39,14 @@ module Mcp
         id: t.id,
         url: t.external_link,
         budget: { low: budget_low, high: budget_high },
+        monthly_budget: { low: t.monthly_budget_low_end&.to_f, high: t.monthly_budget_high_end&.to_f },
+        # The name predicate the app uses ("ongoing"/"retainer" in the name);
+        # a tracker can be ongoing and still carry an overall band.
+        considered_ongoing: t.considered_ongoing?,
+        # Live (Forecast), tracker-wide, same trailing window as the contributors tool.
+        hours_7d: t.hours_trailing_7_days.round(2),
+        weekly_ship_block: t.weekly_ship_block,
+        last_weekly_ship: ListWeeklyShipsTool.ship_json(t.last_weekly_ship),
         series: {
           income: income_series[:income],
           spend: Array(t.snapshot['spend']),

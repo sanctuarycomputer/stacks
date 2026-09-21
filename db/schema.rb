@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_09_16_000001) do
+ActiveRecord::Schema.define(version: 2026_09_21_220000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -1039,6 +1039,8 @@ ActiveRecord::Schema.define(version: 2026_09_16_000001) do
     t.string "name"
     t.decimal "budget_low_end"
     t.decimal "budget_high_end"
+    t.decimal "monthly_budget_low_end"
+    t.decimal "monthly_budget_high_end"
     t.text "notes"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false

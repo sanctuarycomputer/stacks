@@ -13,5 +13,10 @@ class ProjectTrackerLink < ApplicationRecord
     operator_manual: 7,
     sow: 8,
     msa: 9,
+    # Where the project's conversation lives, so Stacksbot can find the channel
+    # and the homepage by id instead of by name-matching. Settable over MCP via
+    # update_project_tracker (twist_channel_url / notion_homepage_url).
+    twist_channel: 10,
+    notion_homepage: 11,
   }
 end
