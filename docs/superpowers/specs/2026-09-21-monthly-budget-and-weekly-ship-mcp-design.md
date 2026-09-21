@@ -43,14 +43,19 @@ by extending the tracker tools that already exist rather than adding a weekly-sh
 3. **MCP read surface.** `get_project_burnup` gains `monthly_budget {low, high}`, `hours_7d`
    (tracker-wide, same window as the contributors tool), `considered_ongoing`,
    `weekly_ship_block`, and `last_weekly_ship {document_id, sent_at, sent_by, url}`.
-   `list_project_trackers` gains `monthly_budget_low_end/high_end`, `considered_ongoing`,
-   `last_weekly_ship_at`, and `links[] {name, url, link_type}` (every row, not just MSA/SOW;
-   `msa_url`/`sow_url` stay for compatibility). New tool `list_weekly_ships(tracker, limit)`
-   returns the tracker's ships newest first with the document id, so `get_document` can fetch
-   the body. Read-only, no LLM calls.
+   `list_project_trackers` gains `monthly_budget_low_end/high_end`, `considered_ongoing`, and
+   `links[] {name, url, link_type}` (every row, not just MSA/SOW; `msa_url`/`sow_url` stay for
+   compatibility; any embedded credentials are stripped). New tool
+   `list_weekly_ships(tracker, limit)` returns the tracker's ships newest first with the
+   document id, so `get_document` can fetch the body. Both it and `last_weekly_ship` skip
+   ships whose document was excluded from the corpus, the same wall `get_document` enforces.
+   Read-only, no LLM calls.
 4. **MCP write surface.** `update_project_tracker` accepts `monthly_budget_low_end`,
-   `monthly_budget_high_end`, `twist_channel_url`, `notion_homepage_url`. Two new
-   `ProjectTrackerLink` types: `twist_channel` (10), `notion_homepage` (11).
+   `monthly_budget_high_end` (one alone = fixed, both = range), `clear_monthly_budget`,
+   `twist_channel_url`, `notion_homepage_url`. Two new `ProjectTrackerLink` types:
+   `twist_channel` (10), `notion_homepage` (11). Link URLs are now validated as anchored
+   http(s) URLs with a host and no credentials (the old `URI::regexp` matched a substring,
+   so `javascript:alert(1)//https://x` passed); no existing row violates the new rule.
 5. **Admin.** Monthly budget inputs on the tracker form; Monthly Budget rows in the money
    table; the copy button reads the shared block.
 

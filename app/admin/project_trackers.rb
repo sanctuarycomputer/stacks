@@ -510,7 +510,7 @@ ActiveAdmin.register ProjectTracker do
       f.input :name
       f.input :budget_low_end
       f.input :budget_high_end
-      f.input :monthly_budget_low_end, hint: "Retainers: the monthly budget the client tracks against. Enter one end for a fixed monthly budget; it mirrors to the other. Can coexist with the overall band above."
+      f.input :monthly_budget_low_end, hint: "Retainers: the monthly budget the client tracks against. Enter one end for a fixed monthly budget (it mirrors to the other); clear both to remove it. Can coexist with the overall band above."
       f.input :monthly_budget_high_end
 
       if current_admin_user.is_admin?

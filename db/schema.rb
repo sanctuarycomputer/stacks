@@ -1039,8 +1039,6 @@ ActiveRecord::Schema.define(version: 2026_09_21_220000) do
     t.string "name"
     t.decimal "budget_low_end"
     t.decimal "budget_high_end"
-    t.decimal "monthly_budget_low_end"
-    t.decimal "monthly_budget_high_end"
     t.text "notes"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
@@ -1050,6 +1048,8 @@ ActiveRecord::Schema.define(version: 2026_09_21_220000) do
     t.decimal "target_profit_margin", default: "0.0"
     t.bigint "runn_project_id"
     t.string "billing_model", default: "new_deal_v1", null: false
+    t.decimal "monthly_budget_low_end"
+    t.decimal "monthly_budget_high_end"
     t.index ["runn_project_id"], name: "index_project_trackers_on_runn_project_id", unique: true
   end
 

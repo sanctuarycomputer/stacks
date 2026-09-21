@@ -8,17 +8,19 @@ module Mcp
     extend TrackerResolution
 
     DEFAULT_LIMIT = 5
+    MIN_LIMIT = 1
     MAX_LIMIT = 50
 
     tool_name 'list_weekly_ships'
     description 'READ: weekly ship emails linked to a project tracker (by the nightly ships@ ' \
                 'sweep or a human), newest first: sent_at, sender, subject, Google Groups ' \
                 'permalink, and the corpus document_id to pass to get_document for the full ' \
-                'body. Use it to read the previous ship before drafting the next one.'
+                'body. Use it to read the previous ship before drafting the next one. Ships ' \
+                'whose document was excluded from the corpus are omitted.'
     input_schema(
       properties: {
         tracker: { type: 'string', description: 'ProjectTracker id or exact name (case-insensitive). Required.' },
-        limit: { type: 'integer', description: "How many ships, newest first. Default #{DEFAULT_LIMIT}, max #{MAX_LIMIT}." },
+        limit: { type: 'integer', description: "How many ships, newest first. Default #{DEFAULT_LIMIT}, clamped to #{MIN_LIMIT}..#{MAX_LIMIT}." },
       },
       required: ['tracker']
     )
@@ -28,33 +30,17 @@ module Mcp
       t = resolve_tracker(tracker)
       return unknown_tracker_error(tracker) unless t
 
-      n = [[limit.to_i, 1].max, MAX_LIMIT].min
-      ships = t.weekly_ships.includes(:document).order(sent_at: :desc).limit(n)
+      n = (limit.presence || DEFAULT_LIMIT).to_i.clamp(MIN_LIMIT, MAX_LIMIT)
+      ships = t.weekly_ships.corpus_eligible.includes(:document).order(sent_at: :desc).limit(n)
       Responses.ok({
         tracker: t.name,
         id: t.id,
-        ships: ships.map { |s| ship_json(s) },
+        ships: ships.map { |s| ProvisioningSerializers.weekly_ship_json(s) },
       })
     rescue StandardError => e
       Rails.logger.warn("[Mcp::ListWeeklyShipsTool] #{e.class}: #{e.message}")
       Sentry.capture_exception(e) if defined?(Sentry)
       Responses.error('list_weekly_ships failed; the error was logged')
-    end
-
-    # Shared with get_project_burnup's last_weekly_ship.
-    def self.ship_json(ship)
-      return nil if ship.nil?
-      doc = ship.document
-      {
-        id: ship.id,
-        document_id: doc&.id,
-        subject: doc&.title,
-        sent_at: ship.sent_at,
-        sent_by: ship.sent_by_name.presence || ship.sent_by_email,
-        url: doc&.google_groups_permalink,
-        matched_by: ship.matched_by,
-        confidence: ship.confidence,
-      }
     end
   end
 end

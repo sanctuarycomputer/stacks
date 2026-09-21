@@ -12,6 +12,12 @@ class WeeklyShip < ApplicationRecord
   validates :project_tracker_id, uniqueness: { scope: :document_id }
   validate :document_must_be_ships_group
 
+  # Ships whose document is still inside the ETL corpus wall. A ships@ document
+  # can be manually excluded after it was linked (the sweep never removes
+  # links), and the MCP read tools must not surface its title or permalink,
+  # matching what get_document already refuses to return.
+  scope :corpus_eligible, -> { joins(:document).merge(Document.corpus_eligible) }
+
   # Set by the sweep so pipeline writes skip the human-lock callbacks.
   attr_accessor :via_sweep
 

@@ -7,6 +7,12 @@ class ProjectTrackerMonthlyBudgetTest < ActiveSupport::TestCase
     pt
   end
 
+  def with_links!(pt)
+    pt.project_tracker_links.create!(name: "MSA", url: "https://x/msa", link_type: :msa)
+    pt.project_tracker_links.create!(name: "SOW", url: "https://x/sow", link_type: :sow)
+    pt
+  end
+
   # ---- mirroring + validation --------------------------------------------
 
   test "entering only the low end mirrors it to the high end" do
@@ -33,6 +39,16 @@ class ProjectTrackerMonthlyBudgetTest < ActiveSupport::TestCase
     assert_not_empty bad.errors[:monthly_budget_low_end]
   end
 
+  test "zero and negative monthly budgets are rejected" do
+    zero = ProjectTracker.new(name: "X", monthly_budget_low_end: 0)
+    zero.valid?
+    assert_not_empty zero.errors[:monthly_budget_low_end]
+
+    neg = ProjectTracker.new(name: "X", monthly_budget_high_end: -500)
+    neg.valid?
+    assert_not_empty neg.errors[:monthly_budget_high_end]
+  end
+
   test "no monthly budget stays nil on both sides" do
     pt = ProjectTracker.new(name: "X")
     pt.valid?
@@ -50,10 +66,10 @@ class ProjectTrackerMonthlyBudgetTest < ActiveSupport::TestCase
     assert_equal 4000, pt.monthly_budget_high_end
   end
 
-  test "update_details! sets the monthly budget and the new link types" do
-    pt = tracker!
-    pt.project_tracker_links.create!(name: "MSA", url: "https://x/msa", link_type: :msa)
-    pt.project_tracker_links.create!(name: "SOW", url: "https://x/sow", link_type: :sow)
+  # ---- update_details! (the MCP path) --------------------------------------
+
+  test "update_details! sets a fixed monthly budget from one end and the new link types" do
+    pt = with_links!(tracker!)
     pt.update_details!(monthly_budget_low_end: 6000,
                        twist_channel_url: "https://twist.com/a/1/ch/2",
                        notion_homepage_url: "https://app.notion.com/p/home")
@@ -64,12 +80,39 @@ class ProjectTrackerMonthlyBudgetTest < ActiveSupport::TestCase
     assert_equal "https://app.notion.com/p/home", pt.project_tracker_links.find { |l| l.notion_homepage? }.url
   end
 
+  test "update_details! with one end on an EXISTING budget replaces it with a fixed budget" do
+    pt = with_links!(tracker!(monthly_budget_low_end: 5000, monthly_budget_high_end: 8000))
+    pt.update_details!(monthly_budget_low_end: 7000)
+    assert_equal [7000, 7000], [pt.reload.monthly_budget_low_end, pt.monthly_budget_high_end]
+
+    pt.update_details!(monthly_budget_high_end: 4000)
+    assert_equal [4000, 4000], [pt.reload.monthly_budget_low_end, pt.monthly_budget_high_end]
+  end
+
+  test "update_details! with both ends sets a range, and clear_monthly_budget removes it" do
+    pt = with_links!(tracker!(monthly_budget_low_end: 5000, monthly_budget_high_end: 5000))
+    pt.update_details!(monthly_budget_low_end: 6000, monthly_budget_high_end: 9000)
+    assert_equal [6000, 9000], [pt.reload.monthly_budget_low_end, pt.monthly_budget_high_end]
+
+    pt.update_details!(clear_monthly_budget: true)
+    assert_nil pt.reload.monthly_budget_low_end
+    assert_nil pt.monthly_budget_high_end
+    assert_not pt.monthly_budget?
+  end
+
+  test "update_details! leaves the monthly budget alone when neither end is passed" do
+    pt = with_links!(tracker!(monthly_budget_low_end: 5000, monthly_budget_high_end: 8000))
+    pt.update_details!(name: "Renamed (ongoing)")
+    assert_equal [5000, 8000], [pt.reload.monthly_budget_low_end, pt.monthly_budget_high_end]
+  end
+
   # ---- weekly_ship_block ---------------------------------------------------
 
   def stub_money(pt, income:, spend:, hours_7d:, spend_7d:)
     pt.stubs(:income).returns(income)
     pt.stubs(:spend).returns(spend)
-    pt.stubs(:make_adhoc_snapshot).returns({ hours_total: hours_7d, spend_total: spend_7d })
+    pt.stubs(:hours_trailing_7_days).returns(hours_7d.to_f)
+    pt.stubs(:trailing_7_days_value).returns(spend_7d)
   end
 
   test "block for an overall band prints total spend to date and both ends" do
@@ -139,5 +182,38 @@ class ProjectTrackerMonthlyBudgetTest < ActiveSupport::TestCase
     assert_not_includes block, "Budget:"
     assert_not_includes block, "Budget Low End"
     assert_not_includes block, "Monthly Budget"
+  end
+
+  test "block carries no HTML-special characters (it is embedded raw in a script tag)" do
+    pt = tracker!(budget_low_end: 1000, budget_high_end: 2000, monthly_budget_low_end: 500, monthly_budget_high_end: 900)
+    stub_money(pt, income: 100, spend: 600, hours_7d: 2, spend_7d: 300)
+    assert_no_match(/[<>&"']/, pt.weekly_ship_block)
+  end
+
+  test "weekly_ship_block accepts precomputed numbers so callers compute the live figures once" do
+    pt = tracker!(monthly_budget_low_end: 6000, monthly_budget_high_end: 6000)
+    pt.expects(:hours_trailing_7_days).never
+    numbers = { hours_7d: 3.0, spend_7d: 450.0, invoiced: 100.0, running_spend: 50.0, total_spend: 150.0 }
+    assert_includes pt.weekly_ship_block(numbers), "Trailing 7 days: 3.0 hours ($450.00)"
+  end
+
+  # ---- link URL validation ---------------------------------------------------
+
+  test "links must be anchored http(s) URLs with a host and no credentials" do
+    pt = tracker!
+    ok = pt.project_tracker_links.build(name: "T", url: "https://twist.com/a/1/ch/2", link_type: :twist_channel)
+    assert ok.valid?, ok.errors.full_messages.inspect
+
+    [
+      "javascript:alert(1)//https://x",
+      "data:text/html,https://",
+      "ftp://example.com/x",
+      "not a url",
+      "https://",
+      "https://user:pass@staging.example.com/",
+    ].each do |bad_url|
+      link = pt.project_tracker_links.build(name: "T", url: bad_url, link_type: :other)
+      assert_not link.valid?, "expected #{bad_url.inspect} to be rejected"
+    end
   end
 end

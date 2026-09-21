@@ -33,6 +33,7 @@ module Mcp
       over_budget_overage = budget_high ? [spend - budget_high, 0].max : 0
       invoiced = t.income
       income_series = ProjectTrackers::IncomeSeries.call(t)
+      ship_numbers = t.weekly_ship_numbers
 
       Responses.ok({
         tracker: t.name,
@@ -43,10 +44,13 @@ module Mcp
         # The name predicate the app uses ("ongoing"/"retainer" in the name);
         # a tracker can be ongoing and still carry an overall band.
         considered_ongoing: t.considered_ongoing?,
-        # Live (Forecast), tracker-wide, same trailing window as the contributors tool.
-        hours_7d: t.hours_trailing_7_days.round(2),
-        weekly_ship_block: t.weekly_ship_block,
-        last_weekly_ship: ListWeeklyShipsTool.ship_json(t.last_weekly_ship),
+        # Live (Forecast), tracker-wide, same trailing window as the contributors
+        # tool; the block below is rendered from this same pass.
+        hours_7d: ship_numbers[:hours_7d].round(2),
+        weekly_ship_block: t.weekly_ship_block(ship_numbers),
+        last_weekly_ship: ProvisioningSerializers.weekly_ship_json(
+          t.weekly_ships.corpus_eligible.includes(:document).order(sent_at: :desc).first
+        ),
         series: {
           income: income_series[:income],
           spend: Array(t.snapshot['spend']),

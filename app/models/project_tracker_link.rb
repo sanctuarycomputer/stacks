@@ -1,7 +1,11 @@
 class ProjectTrackerLink < ApplicationRecord
   belongs_to :project_tracker
   validates :name, presence: :true
-  validates :url, format: URI::regexp(%w[http https])
+  # Anchored: the URL must BE an http(s) URL with a host, not merely contain
+  # one (URI::regexp matched "javascript:alert(1)//https://x"). These render as
+  # clickable pills for admins and are writable over MCP, so no other schemes
+  # and no embedded credentials.
+  validate :url_is_plain_http
   enum link_type: {
     other: 0,
     proposal: 1,
@@ -19,4 +23,19 @@ class ProjectTrackerLink < ApplicationRecord
     twist_channel: 10,
     notion_homepage: 11,
   }
+
+  private
+
+  def url_is_plain_http
+    parsed = begin
+      URI.parse(url.to_s.strip)
+    rescue URI::InvalidURIError
+      nil
+    end
+    unless parsed.is_a?(URI::HTTP) && parsed.host.present?
+      errors.add(:url, "must be an http or https URL")
+      return
+    end
+    errors.add(:url, "must not embed credentials") if parsed.userinfo.present?
+  end
 end
