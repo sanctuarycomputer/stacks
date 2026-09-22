@@ -257,6 +257,10 @@ class ProjectTracker < ApplicationRecord
   # The four live figures the weekly ship block prints. Computed once so the
   # burnup tool can report hours_7d and render the block from the same pass
   # (trailing_7_days_value covers the same window as hours_trailing_7_days).
+  # The live figures plus the budget fields the block prints, as one hash, so a
+  # block can be rendered per tracker (this) or summed across an engagement's
+  # trackers (ProjectTracker.weekly_ship_summary). Budget keys are nil when the
+  # tracker has no budget of that kind.
   def weekly_ship_numbers
     invoiced = income.to_f
     total = spend.to_f
@@ -266,46 +270,94 @@ class ProjectTracker < ApplicationRecord
       invoiced: invoiced,
       running_spend: total - invoiced,
       total_spend: total,
+      budget_low_end: overall_budget? ? budget_low_end.to_f : nil,
+      budget_high_end: overall_budget? ? budget_high_end.to_f : nil,
+      monthly_budget_low_end: monthly_budget? ? monthly_budget_low_end.to_f : nil,
+      monthly_budget_high_end: monthly_budget? ? monthly_budget_high_end.to_f : nil,
     }
   end
 
   # The "✨ Weekly Ship Gmail Autoformatter ✨" text, as the tracker page's copy
   # button pastes it and as get_project_burnup returns it. One implementation so
-  # the email, the admin page, and Stacksbot's draft can't drift apart. Contains
-  # no user-supplied text (the view embeds it in a script tag).
-  #
-  # Total Spend to Date and the band print only when the tracker has an overall
-  # budget: a retainer's lifetime spend is not a number the client tracks. A
-  # monthly budget prints its own line(s) whenever it's set. Both may appear.
+  # the email, the admin page, and Stacksbot's draft can't drift apart.
   def weekly_ship_block(numbers = weekly_ship_numbers)
+    self.class.render_weekly_ship_block(numbers)
+  end
+
+  # One set of numbers for a whole engagement (say a Design and a Development
+  # tracker for the same client): every hours and money figure summed. A budget
+  # kind prints only when EVERY tracker carries it, so one tracker's band is
+  # never presented as the band for all of them.
+  def self.weekly_ship_summary(trackers)
+    list = Array(trackers)
+    raise ArgumentError, "weekly_ship_summary needs at least one tracker" if list.empty?
+    per = list.map(&:weekly_ship_numbers)
+    sum = ->(key) { per.sum { |n| n[key].to_f } }
+    band = list.all?(&:overall_budget?)
+    monthly = list.all?(&:monthly_budget?)
+    {
+      hours_7d: sum[:hours_7d],
+      spend_7d: sum[:spend_7d],
+      invoiced: sum[:invoiced],
+      running_spend: sum[:running_spend],
+      total_spend: sum[:total_spend],
+      budget_low_end: band ? sum[:budget_low_end] : nil,
+      budget_high_end: band ? sum[:budget_high_end] : nil,
+      monthly_budget_low_end: monthly ? sum[:monthly_budget_low_end] : nil,
+      monthly_budget_high_end: monthly ? sum[:monthly_budget_high_end] : nil,
+    }
+  end
+
+  # Renders a numbers hash (per tracker or summed) as the Autoformatter text.
+  # Contains no user-supplied text (the view embeds it in a script tag).
+  #
+  # Total Spend to Date and the band print only with an overall budget: a
+  # retainer's lifetime spend is not a number the client tracks. A monthly
+  # budget prints its own line(s) whenever it's set. Both may appear.
+  def self.render_weekly_ship_block(numbers)
     money = ->(n) { ActionController::Base.helpers.number_to_currency(n) }
+    m_low, m_high = numbers[:monthly_budget_low_end], numbers[:monthly_budget_high_end]
+    b_low, b_high = numbers[:budget_low_end], numbers[:budget_high_end]
 
     lines = [
       "⏳ Hours Progress",
-      "Trailing 7 days: #{format('%.1f', numbers[:hours_7d])} hours (#{money.call(numbers[:spend_7d])})",
+      "Trailing 7 days: #{format('%.1f', numbers[:hours_7d].to_f)} hours (#{money.call(numbers[:spend_7d])})",
       "",
       "💹 Budgetary Progress",
       "Invoiced: #{money.call(numbers[:invoiced])}",
       "Spend this Month: #{money.call(numbers[:running_spend])}",
     ]
-    if monthly_budget?
-      if monthly_budget_low_end == monthly_budget_high_end
-        lines << "Monthly Budget: #{money.call(monthly_budget_high_end)}"
+    if m_low && m_high
+      if m_low == m_high
+        lines << "Monthly Budget: #{money.call(m_high)}"
       else
-        lines << "Monthly Budget Low End: #{money.call(monthly_budget_low_end)}"
-        lines << "Monthly Budget High End: #{money.call(monthly_budget_high_end)}"
+        lines << "Monthly Budget Low End: #{money.call(m_low)}"
+        lines << "Monthly Budget High End: #{money.call(m_high)}"
       end
     end
-    if overall_budget?
+    if b_low && b_high
       lines << "Total Spend to Date: #{money.call(numbers[:total_spend])}"
-      if budget_low_end == budget_high_end
-        lines << "Budget: #{money.call(budget_high_end)}"
+      if b_low == b_high
+        lines << "Budget: #{money.call(b_high)}"
       else
-        lines << "Budget Low End: #{money.call(budget_low_end)}"
-        lines << "Budget High End: #{money.call(budget_high_end)}"
+        lines << "Budget Low End: #{money.call(b_low)}"
+        lines << "Budget High End: #{money.call(b_high)}"
       end
     end
     lines.join("\n")
+  end
+
+  # Weeks of budget left at the trailing 7-day pace, for a numbers hash. Mirrors
+  # the tracker page: under the low end the low end is the reference, between
+  # the ends the high end is, over the high end (or no band, or no recent
+  # spend) there is no estimate.
+  def self.weekly_ship_weeks_left(numbers)
+    low, high = numbers[:budget_low_end], numbers[:budget_high_end]
+    total, pace = numbers[:total_spend].to_f, numbers[:spend_7d].to_f
+    return nil unless low && high && pace.positive?
+    reference = if total < low then low elsif total <= high then high end
+    return nil if reference.nil?
+    ((reference - total) / pace).round(1)
   end
 
   private def mirror_one_sided_monthly_budget
