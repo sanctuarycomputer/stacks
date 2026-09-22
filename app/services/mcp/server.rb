@@ -41,6 +41,7 @@ module Mcp
       Mcp::ListSurveysTool,
       Mcp::GetSurveyResultsTool,
       Mcp::ListWeeklyShipsTool,
+      Mcp::GetWeeklyShipBlockTool,
     ].freeze
 
     def self.build
