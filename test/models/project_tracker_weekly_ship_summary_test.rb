@@ -80,6 +80,8 @@ class ProjectTrackerWeeklyShipSummaryTest < ActiveSupport::TestCase
     base = { hours_7d: 1, spend_7d: 1000.0, invoiced: 0, running_spend: 0 }
     under = base.merge(total_spend: 5000.0, budget_low_end: 10_000.0, budget_high_end: 12_000.0)
     assert_equal 5.0, ProjectTracker.weekly_ship_weeks_left(under)
+    at_low = base.merge(total_spend: 10_000.0, budget_low_end: 10_000.0, budget_high_end: 12_000.0)
+    assert_equal 0.0, ProjectTracker.weekly_ship_weeks_left(at_low)
     between = base.merge(total_spend: 11_000.0, budget_low_end: 10_000.0, budget_high_end: 12_000.0)
     assert_equal 1.0, ProjectTracker.weekly_ship_weeks_left(between)
     over = base.merge(total_spend: 13_000.0, budget_low_end: 10_000.0, budget_high_end: 12_000.0)

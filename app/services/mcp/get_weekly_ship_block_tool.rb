@@ -8,16 +8,18 @@ module Mcp
 
     tool_name 'get_weekly_ship_block'
     description 'READ: the "Weekly Ship Gmail Autoformatter" block for an engagement as ONE ' \
-                'block: pass trackers (ids or exact names) or a client (every open tracker ' \
-                'for that client). Hours and money are summed across the trackers; a budget ' \
-                'band or monthly budget prints only when every tracker carries it. Returns the ' \
-                'block text to print verbatim, the summed numbers, weeks_left at the trailing ' \
-                '7-day pace, considered_ongoing (any tracker), and the newest linked weekly ' \
-                'ship. Use this for the "How we\'re tracking" section of a weekly ship.'
+                'block. Prefer trackers (ids or exact names: the engagement you mean); client ' \
+                'is a fallback that takes every open tracker for that client, which can mix ' \
+                'unrelated engagements. Hours and money are summed; a budget band or monthly ' \
+                'budget prints only when EVERY tracker carries it, and each tracker entry ' \
+                'says whether it has one so a dropped band is visible. Returns the block text ' \
+                'to print verbatim, the summed numbers, weeks_left at the trailing 7-day pace, ' \
+                'considered_ongoing (any tracker), and the newest linked weekly ship. Errors ' \
+                'if any tracker has no nightly snapshot yet (its money would read as $0).'
     input_schema(
       properties: {
-        trackers: { type: 'array', items: { type: 'string' }, description: 'ProjectTracker ids or exact names (case-insensitive).' },
-        client: { type: 'string', description: 'Client name (exact, case-insensitive); uses every open tracker for that client. Ignored when trackers is given.' },
+        trackers: { type: 'array', items: { type: 'string' }, description: 'ProjectTracker ids or exact names (case-insensitive). Preferred.' },
+        client: { type: 'string', description: 'Client name (exact, case-insensitive); every open tracker for that client. Ignored when trackers is given.' },
       },
       required: []
     )
@@ -27,12 +29,25 @@ module Mcp
       list = resolve(trackers, client)
       return list if list.is_a?(MCP::Tool::Response)
 
+      unsnapshotted = list.find { |t| t.snapshot.blank? }
+      if unsnapshotted
+        return Responses.error("Tracker '#{unsnapshotted.name}' has no generated snapshot yet; its invoiced and " \
+                               'spend figures would read as $0. Wait for the nightly sync or leave it out of trackers.')
+      end
+
       numbers = ProjectTracker.weekly_ship_summary(list)
       last_ship = WeeklyShip.corpus_eligible
                             .where(project_tracker_id: list.map(&:id))
                             .includes(:document).order(sent_at: :desc).first
       Responses.ok({
-        trackers: list.map { |t| { id: t.id, name: t.name, url: t.external_link, considered_ongoing: t.considered_ongoing? } },
+        trackers: list.map do |t|
+          {
+            id: t.id, name: t.name, url: t.external_link,
+            considered_ongoing: t.considered_ongoing?,
+            has_budget: t.overall_budget?,
+            has_monthly_budget: t.monthly_budget?,
+          }
+        end,
         combined: {
           hours_7d: numbers[:hours_7d].round(2),
           spend_7d: numbers[:spend_7d].round(2),
@@ -42,6 +57,10 @@ module Mcp
           budget: { low: numbers[:budget_low_end], high: numbers[:budget_high_end] },
           monthly_budget: { low: numbers[:monthly_budget_low_end], high: numbers[:monthly_budget_high_end] },
         },
+        # True when the band or monthly budget was dropped because only SOME
+        # trackers carry it; the agent should narrow `trackers` or say so.
+        budget_dropped: list.any?(&:overall_budget?) && !list.all?(&:overall_budget?),
+        monthly_budget_dropped: list.any?(&:monthly_budget?) && !list.all?(&:monthly_budget?),
         weekly_ship_block: ProjectTracker.render_weekly_ship_block(numbers),
         weeks_left: ProjectTracker.weekly_ship_weeks_left(numbers),
         considered_ongoing: list.any?(&:considered_ongoing?),
@@ -63,7 +82,14 @@ module Mcp
       end
       name = client.to_s.strip
       return Responses.error('Pass trackers (ids or names) or a client name.') if name.empty?
-      open = ProjectTracker.where(work_completed_at: nil).to_a.select { |t| t.derived_client&.name&.casecmp?(name) }
+      # Same membership rule as list_project_trackers: a tracker belongs to the
+      # client when ANY of its Forecast projects does (derived_client would use
+      # only the first one and disagree with the list tool).
+      client_ids = ForecastClient.where('lower(name) = ?', name.downcase).select(:forecast_id)
+      fp_ids = ForecastProject.where(client_id: client_ids).select(:forecast_id)
+      open = ProjectTracker.where(work_completed_at: nil)
+                           .where(id: ProjectTrackerForecastProject.where(forecast_project_id: fp_ids).select(:project_tracker_id))
+                           .order(:id).to_a
       return Responses.error("No open tracker for client '#{client}'. Use list_project_trackers to find one.") if open.empty?
       open
     end

@@ -254,9 +254,6 @@ class ProjectTracker < ApplicationRecord
     total_hours_during_range(Date.today - 6.days, Date.today).to_f
   end
 
-  # The four live figures the weekly ship block prints. Computed once so the
-  # burnup tool can report hours_7d and render the block from the same pass
-  # (trailing_7_days_value covers the same window as hours_trailing_7_days).
   # The live figures plus the budget fields the block prints, as one hash, so a
   # block can be rendered per tracker (this) or summed across an engagement's
   # trackers (ProjectTracker.weekly_ship_summary). Budget keys are nil when the
@@ -355,7 +352,8 @@ class ProjectTracker < ApplicationRecord
     low, high = numbers[:budget_low_end], numbers[:budget_high_end]
     total, pace = numbers[:total_spend].to_f, numbers[:spend_7d].to_f
     return nil unless low && high && pace.positive?
-    reference = if total < low then low elsif total <= high then high end
+    # At exactly the low end the page still references the low end (0.0 weeks).
+    reference = if total <= low then low elsif total <= high then high end
     return nil if reference.nil?
     ((reference - total) / pace).round(1)
   end
