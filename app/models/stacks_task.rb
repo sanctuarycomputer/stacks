@@ -1,5 +1,5 @@
 class StacksTask
-  attr_reader :type, :subject, :owners
+  attr_reader :type, :subject, :owners, :ledger
 
   # Explicit labels for every issue type. Pattern: "<subject> <action phrase>"
   # so the issue is unambiguous on its own without context from a column header.
@@ -54,6 +54,7 @@ class StacksTask
     missing_qbo_vendor_for_contributor: "Contributor needs a QBO vendor for this enterprise's ledger",
     legacy_ledger_needs_qbo_migration: "Legacy ledger needs migration to QBO-bound",
     auto_paused_recurring_on_qbo_bound: "Recurring deduction auto-paused on QBO-bound ledger (would never deduct)",
+    unaccepted_payouts: "Contributor has unaccepted payout(s)",
 
     # Runn mirror / projection issues
     runn_project_not_linked_to_project_tracker: "Runn project has forward hours but no project tracker (cannot be projected)",
@@ -68,10 +69,11 @@ class StacksTask
   # owners  — Array of AdminUsers who can act on the task. MUST contain at least
   #           one user; routing rules guarantee a fallback to AdminUser.admin
   #           when no natural owner exists.
-  def initialize(type:, subject:, owners:)
+  def initialize(type:, subject:, owners:, ledger: nil)
     @type = type.to_sym
     @subject = subject
     @owners = Array(owners).compact.uniq
+    @ledger = ledger
     raise ArgumentError, "StacksTask requires at least one owner (subject=#{subject.inspect}, type=#{type.inspect})" if @owners.empty?
     freeze
   end
@@ -113,6 +115,7 @@ class StacksTask
     when ForecastPerson then subject.try(:display_name).presence || subject.try(:name).presence || subject.try(:email).presence || "Forecast Person ##{subject.forecast_id}"
     when ForecastAssignment then subject.try(:name).presence || "Forecast Assignment ##{subject.forecast_id}"
     when AdminUser then subject.email
+    when Contributor then subject.forecast_person&.email || "Contributor ##{subject.id}"
     when Reimbursement
       if redact_amounts
         "Reimbursement ##{subject.id}"
@@ -175,6 +178,7 @@ class StacksTask
     when Stacks::Notion::Lead then subject.try(:notion_link) || subject.try(:external_link)
     when Stacks::Notion::HumanOperatingManual then Stacks::Notion::HumanOperatingManual::ASSESSMENT_GUIDE_URL
     when PayCycle then helpers.admin_enterprise_pay_cycle_path(subject.enterprise, subject)
+    when Contributor then helpers.admin_contributor_path(subject, ledger: ledger.id)
     when Ledger
       if type == :legacy_ledger_needs_qbo_migration
         helpers.admin_ledger_path(subject)
