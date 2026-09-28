@@ -12,8 +12,8 @@ It also re-applies the rules to documents already stored.
 | gemini notes | 1,004 | 589 (all as 1:1) |
 | google groups | 51,754 | **0** |
 
-- No document has ever been walled off by a title rule. The Groups connector never runs the rules, so about 84 threads
-  with subjects about salary, HR, PIP, termination, bonus or promotion are eligible today (admin@, jobs@, nyc@, dev@, hello@…).
+- No document has ever been walled off by a title rule. The Groups connector never runs the rules, so 93 threads
+  with subjects about salary, HR, PIP, termination, bonus, payroll or promotion are eligible today (admin@, jobs@, nyc@, dev@, hello@…).
 - 646 eligible notes have no transcript joined, so nobody knows who actually attended.
 
 ## Leak paths found in the current code (fixed here)
@@ -22,7 +22,8 @@ It also re-applies the rules to documents already stored.
 2. **`get_document` on a notes doc returns the linked transcript's segments.** Notes and transcript share one `Meeting`,
    and the tool reads `meeting.segments`. If the transcript is walled off and the notes are not, the transcript text leaks.
 3. **The Reindexer does the same.** "Include & index" on a notes doc indexes the transcript's segments into the notes' chunks.
-4. **Inherited human locks.** A notes doc copies its transcript's state verbatim, including `manually_included`.
+4. **The old 1:1 title rule matched a bare "11"** ("Sprint 11", "Sep 11"). It was harmless while Groups skipped the rules; once applied it would have walled off 328 group threads, including 17 weekly ships. It now needs `1:1`, `1-1`, `1 on 1` or `one-on-one`.
+5. **Inherited human locks.** A notes doc copies its transcript's state verbatim, including `manually_included`.
    If a human later excludes the transcript, the notes stay locked to "included" forever.
 
 ## Design
@@ -62,7 +63,7 @@ Reclassify reads those and falls back to Meeting and contact rows only for legac
 - It runs nightly inside `stacks:etl:sync_all`, after the syncs and before weekly-ship matching. That makes it the one mechanism for the first
   backfill, for retrying `unreviewed` docs, and for applying future rule changes retroactively.
 
-**Expected first run:** ~646 notes and ~84+ group threads walled off. ~400 transcripts get content-reviewed once, costing roughly $5 of Haiku.
+**Expected first run** (prod SQL estimate, 2026-09-28): 646 notes and 93 group threads walled off; 0 weekly ships affected; 0 transcripts change on head-count; 404 transcripts (13.6M characters) content-reviewed once, roughly $3–4 of Haiku, then cents per night.
 Walled-off notes lose their chunks. To recover one, a human includes it and the next Drive backfill re-indexes it.
 
 **No migration.** The new reasons are integer enum values (9 `sensitive_content`, 10 `unreviewed`, 11 `attendance_unknown`).
