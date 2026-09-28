@@ -117,4 +117,11 @@ class Mcp::StudioHealthToolTest < ActiveSupport::TestCase
     assert_includes err['error'], "gradation 'month'"
     assert_includes err['error'], 'malformed'
   end
+
+  test 'an explicit null accounting_method is accrual, not an error (the MCP client sends null for "not set")' do
+    studio!(name: 'Null Basis', mini_name: 'nullb')
+    s = mcp_payload(Mcp::GetStudioHealthTool.call(studio: 'nullb', accounting_method: nil, server_context: {}))['studios'].first
+    assert_equal 'accrual', s['accounting_method']
+  end
+
 end
