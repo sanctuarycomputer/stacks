@@ -113,7 +113,7 @@ class Stacks::Etl::ReclassifierTest < ActiveSupport::TestCase
     Document.create!(source: :google_groups, external_id: '<x@x>', title: 'Payroll', excluded: :not_excluded)
     ok = Document.create!(source: :google_groups, external_id: '<y@x>', title: 'Severance', excluded: :not_excluded)
     calls = 0
-    Stacks::Etl::Groups::Connector.any_instance.stubs(:exclusion_for).with do |*|
+    Stacks::Etl::Classifier.stubs(:title_exclusion).with do |*|
       (calls += 1) == 1 ? raise('boom') : true
     end.returns([:auto_excluded, :compensation])
 
@@ -156,5 +156,51 @@ class Stacks::Etl::ReclassifierTest < ActiveSupport::TestCase
     Stacks::AI.expects(:extract).never
     R.call
     assert d.reload.reason_unreviewed?
+  end
+
+  def admin_thread!(id, content: 'the office wifi password changed')
+    d = Document.create!(source: :google_groups, external_id: "<#{id}@x>", title: 'Re: office', content_hash: "g-#{id}",
+                         excluded: :not_excluded, raw_metadata: { 'group_email' => 'admin@sanctuary.computer' })
+    d.chunks.create!(source: :google_groups, position: 0, content: content)
+    d
+  end
+
+  test 'sensitive-group mail is content-reviewed from its stored chunks' do
+    t = admin_thread!('a1', content: 'Sam asked about their bonus')
+    Stacks::AI.expects(:extract).with { |a| a[:prompt].include?('Sam asked about their bonus') }.once.returns(ai(true))
+    R.call
+    assert t.reload.reason_sensitive_content?
+  end
+
+  test 'the mail review budget holds the overflow as unreviewed (fail closed, chunks kept) and drains it next run' do
+    a = admin_thread!('b1'); b = admin_thread!('b2')
+    Stacks::AI.stubs(:extract).returns(ai(false))
+
+    stats = R.call(mail_review_budget: 1)
+    held = [a, b].map(&:reload).find(&:reason_unreviewed?)
+    assert held, 'one thread over the budget is held'
+    assert_equal 1, held.chunks.count, 'its chunks are kept (hidden) so it needs no re-fetch'
+    assert_equal 1, stats[:mail_reviews_deferred]
+
+    R.call(mail_review_budget: 1)
+    assert [a, b].map(&:reload).all?(&:not_excluded?)
+  end
+
+  test 'notes-only meetings use the attendance recorded from the Meet API' do
+    n = Document.create!(source: :gemini_notes, external_id: 'NO1', title: 'Team sync', content_hash: 'no1', excluded: :auto_excluded,
+                         excluded_reason: :attendance_unknown,
+                         raw_metadata: { Stacks::Etl::Meet::Connector::ATTENDANCE_KEY => { 'participants' => 2 } })
+    R.call
+    assert n.reload.reason_one_on_one?
+  end
+
+  test 'a screened thread with no stored text keeps its state and spends no budget' do
+    d = Document.create!(source: :google_groups, external_id: '<e@x>', title: 'Re: invoice', content_hash: 'e',
+                         excluded: :not_excluded, raw_metadata: { 'group_email' => 'accounting@sanctuary.computer' })
+    Stacks::AI.expects(:extract).never
+    stats = R.call(mail_review_budget: 0)
+    assert d.reload.not_excluded?
+    assert_equal 1, stats[:mail_without_stored_text]
+    assert_equal 0, stats[:mail_reviews_deferred]
   end
 end

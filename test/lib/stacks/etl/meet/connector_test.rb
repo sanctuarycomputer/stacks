@@ -154,6 +154,59 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
                  conn.exclusion_for({ source: :gemini_notes, transcript_doc_id: "CLEAN2", title: "Comp review - Alex", contacts: [] })
   end
 
+  test "notes-only meetings are classified on REAL attendance from the Meet API (G2 follow-up)" do
+    conn = Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :api)
+    att = ->(n) { { Stacks::Etl::Meet::Connector::ATTENDANCE_KEY => { "participants" => n, "conference_record" => "cr/x" } } }
+    notes = ->(meta) { { source: :gemini_notes, transcript_doc_id: nil, title: "Team sync", contacts: [], raw_metadata: meta,
+                         content_hash: "nh", segments: [{ speaker_name: nil, text: "we planned the launch" }] } }
+
+    assert_equal [:auto_excluded, :one_on_one], conn.exclusion_for(notes.(att.(2)))
+    assert_equal [:auto_excluded, :one_on_one], conn.exclusion_for(notes.(att.(0)))
+    assert_equal [:auto_excluded, :attendance_unknown], conn.exclusion_for(notes.({}))
+
+    Stacks::Etl::ContentReview.expects(:call).with(has_entries(text: "we planned the launch")).returns([:not_excluded, :none])
+    assert_equal [:not_excluded, :none], conn.exclusion_for(notes.(att.(3))), "3+ real attendees -> eligible after the content review"
+  end
+
+  test "attendance recorded on the stored doc is used when a later source (Drive notes sync) does not send it" do
+    conn = Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :gemini_notes)
+    doc = Document.new(source: :gemini_notes, external_id: "NA",
+                       raw_metadata: { Stacks::Etl::Meet::Connector::ATTENDANCE_KEY => { "participants" => 2 } })
+    assert_equal [:auto_excluded, :one_on_one],
+                 conn.exclusion_for({ source: :gemini_notes, transcript_doc_id: nil, title: "Sync", contacts: [] }, doc)
+  end
+
+  test "attendance survives a re-ingest by a source that does not send it, and a source that does send it wins" do
+    skip_without_pgvector
+    key = Stacks::Etl::Meet::Connector::ATTENDANCE_KEY
+    base = { source: :gemini_notes, external_id: "NS", title: "Team sync", url: "u", occurred_at: Time.utc(2026, 1, 1),
+             content_hash: "ns", transcript_doc_id: nil, contacts: [], build_source_record: ->(_d) { nil },
+             segments: [{ speaker_name: nil, text: "roadmap notes" }] }
+    run = lambda do |n|
+      src = mock("src"); src.stubs(:each_meeting).yields(n)
+      Stacks::Etl::Meet::MeetApiSource.stubs(:new).returns(src)
+      Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :api).run(track: false)
+    end
+
+    run.(base.merge(raw_metadata: { key => { "participants" => 4 } }))           # Meet API: 4 attended
+    run.(base.merge(raw_metadata: { "gemini_notes_doc_id" => "NS" }))            # Drive notes sync: no attendance
+    doc = Document.find_by!(external_id: "NS")
+    assert_equal 4, doc.raw_metadata[key]["participants"]
+    assert doc.not_excluded?, "still eligible: the Drive pass did not flip it back to attendance_unknown"
+
+    run.(base.merge(raw_metadata: { key => { "participants" => 2 } }))           # a newer API read wins
+    assert doc.reload.reason_one_on_one?
+  end
+
+  test "two conference records writing one notes doc keep the SMALLER attendance" do
+    conn = Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :api)
+    key = Stacks::Etl::Meet::Connector::ATTENDANCE_KEY
+    kept = { key => { "participants" => 2, "conference_record" => "cr/a" } }
+    assert_equal 2, conn.send(:merge_metadata, kept, { key => { "participants" => 5, "conference_record" => "cr/b" } })[key]["participants"]
+    assert_equal 5, conn.send(:merge_metadata, kept, { key => { "participants" => 5, "conference_record" => "cr/a" } })[key]["participants"],
+                 "a newer read of the SAME conference record replaces the old one"
+  end
+
   test "records the head-counts it decided on, for the nightly Reclassifier" do
     conn = Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :api)
     doc = Document.new(source: :meet, external_id: "rec", raw_metadata: {})
@@ -236,6 +289,7 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
             .returns(OpenStruct.new(participants: parts_g, next_page_token: nil))
     meet_svc.stubs(:list_conference_record_participants).with('conferenceRecords/oo1', page_token: nil)
             .returns(OpenStruct.new(participants: parts_oo, next_page_token: nil))
+    meet_svc.stubs(:list_conference_record_smart_notes).returns(OpenStruct.new(smart_notes: [], next_page_token: nil))
     Stacks::Etl::Meet::Auth.stubs(:meet_service).returns(meet_svc)
     Stacks::Etl::Meet::CalendarEnricher.any_instance.stubs(:enrich).returns(title: 'Team Sync', attendees: [])
 
@@ -310,6 +364,7 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
     meet_svc.stubs(:list_conference_record_transcripts).returns(OpenStruct.new(transcripts: [tx], next_page_token: nil))
     meet_svc.stubs(:list_conference_record_transcript_entries).returns(OpenStruct.new(transcript_entries: [entry], next_page_token: nil))
     meet_svc.stubs(:list_conference_record_participants).returns(OpenStruct.new(participants: parts, next_page_token: nil))
+    meet_svc.stubs(:list_conference_record_smart_notes).returns(OpenStruct.new(smart_notes: [], next_page_token: nil))
     Stacks::Etl::Meet::Auth.stubs(:meet_service).returns(meet_svc)
     Stacks::Etl::Meet::CalendarEnricher.any_instance.stubs(:enrich).returns(title: 'Sync', attendees: [])
     drive_svc = mock('drive')
