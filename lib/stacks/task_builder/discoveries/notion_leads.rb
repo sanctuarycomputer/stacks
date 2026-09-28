@@ -2,6 +2,10 @@ module Stacks
   class TaskBuilder
     module Discoveries
       class NotionLeads < Base
+        # Loss surveys are owed only for leads lost on or after this date, so
+        # rolling the task out doesn't dump years of history on the sellers.
+        LOSS_SURVEYS_FROM = Date.new(2026, 8, 1)
+
         def tasks
           all_leads = NotionPage.lead.map(&:as_lead)
 
@@ -41,7 +45,19 @@ module Stacks
 
           out << :needs_budget_estimate if lead.open? && lead.estimated_budget.nil?
 
+          out << :loss_survey_needed if loss_survey_needed?(lead)
+
           out
+        end
+
+        # A Lost lead (the client chose someone else) that saw a proposal and
+        # hasn't had its survey dealt with. Passed leads are excluded: we
+        # declined those, and the survey asks why they went with another vendor.
+        def loss_survey_needed?(lead)
+          return false unless lead.lead_status == "Lost"
+          return false if lead.lost_at.blank? || Date.parse(lead.lost_at) < LOSS_SURVEYS_FROM
+          return false if lead.proposal_sent_at.blank? || lead.no_proposal_sent?
+          !lead.loss_survey_handled?
         end
       end
     end

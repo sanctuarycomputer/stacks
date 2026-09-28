@@ -42,6 +42,7 @@ class StacksTask
     needs_settling: "Notion lead needs settling",
     no_studios_set: "Notion lead needs studios assigned",
     needs_budget_estimate: "Notion lead needs an estimated budget",
+    loss_survey_needed: "Notion lead needs its loss survey sent (or Loss Survey Status set to Not sending)",
 
     # Survey issues
     survey: "Studio survey response required",
