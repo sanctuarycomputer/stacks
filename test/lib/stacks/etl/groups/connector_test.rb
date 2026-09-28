@@ -75,6 +75,22 @@ class Stacks::Etl::Groups::ConnectorTest < ActiveSupport::TestCase
     assert_equal [:auto_excluded, :compensation], conn.exclusion_for(doc)
   end
 
+  test 'a thread cross-posted to jobs@ and another list stays screened whichever crawl runs last' do
+    skip_without_pgvector
+    Stacks::Etl::ContentReview.stubs(:call).returns([:auto_excluded, :sensitive_content])
+    run = lambda do |group|
+      src = mock('source')
+      src.stubs(:each_thread).multiple_yields([thread_doc(root: '<x@x>', bodies: ['offer details'], subject: 'Re: next steps', group: group)])
+      Stacks::Etl::Groups::GroupsSource.stubs(:new).returns(src)
+      Stacks::Etl::Groups::Connector.new(admin_email: 'hugh@sanctuary.computer').run(track: false)
+    end
+    run.('jobs@xxix.co')          # a screened list, on another of the org's domains
+    run.('team@sanctuary.computer')
+    doc = Document.find_by!(external_id: '<x@x>')
+    assert doc.reason_sensitive_content?, 'the later, unscreened crawl must not undo the screening'
+    assert_equal 0, doc.chunks.count
+  end
+
   test 'a new reply changes content_hash and re-indexes the same Document' do
     one = mock('s1')
     one.stubs(:each_thread).multiple_yields([thread_doc(root: '<a@x>', bodies: ['down'])])

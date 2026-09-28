@@ -34,6 +34,10 @@ module Stacks
       # raw_metadata keys that survive a re-ingest by a source that doesn't send them.
       def preserved_metadata_keys = [ContentReview::MEMO_KEY]
 
+      # How kept keys and the source's fresh raw_metadata combine: by default a key the source
+      # sends wins. Connectors override this for facts that must only ever get stricter.
+      def merge_metadata(kept, incoming) = kept.merge(incoming)
+
       def exclusion_for(_normalized, _doc = nil)
         raise MissingPrivacyPolicy, "#{self.class} must implement #exclusion_for — the privacy wall is default-deny"
       end
@@ -85,7 +89,7 @@ module Stacks
         doc.assign_attributes(
           title: normalized[:title], url: normalized[:url],
           occurred_at: normalized[:occurred_at], content_hash: normalized[:content_hash],
-          raw_metadata: kept.merge(normalized[:raw_metadata] || {})
+          raw_metadata: merge_metadata(kept, normalized[:raw_metadata] || {})
         )
         # Decide BEFORE opening the transaction: the content review is a model call (seconds,
         # with retries) and must not hold a transaction open.

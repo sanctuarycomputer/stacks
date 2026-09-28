@@ -198,6 +198,15 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
     assert doc.reload.reason_one_on_one?
   end
 
+  test "two conference records writing one notes doc keep the SMALLER attendance" do
+    conn = Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :api)
+    key = Stacks::Etl::Meet::Connector::ATTENDANCE_KEY
+    kept = { key => { "participants" => 2, "conference_record" => "cr/a" } }
+    assert_equal 2, conn.send(:merge_metadata, kept, { key => { "participants" => 5, "conference_record" => "cr/b" } })[key]["participants"]
+    assert_equal 5, conn.send(:merge_metadata, kept, { key => { "participants" => 5, "conference_record" => "cr/a" } })[key]["participants"],
+                 "a newer read of the SAME conference record replaces the old one"
+  end
+
   test "records the head-counts it decided on, for the nightly Reclassifier" do
     conn = Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :api)
     doc = Document.new(source: :meet, external_id: "rec", raw_metadata: {})
@@ -280,6 +289,7 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
             .returns(OpenStruct.new(participants: parts_g, next_page_token: nil))
     meet_svc.stubs(:list_conference_record_participants).with('conferenceRecords/oo1', page_token: nil)
             .returns(OpenStruct.new(participants: parts_oo, next_page_token: nil))
+    meet_svc.stubs(:list_conference_record_smart_notes).returns(OpenStruct.new(smart_notes: [], next_page_token: nil))
     Stacks::Etl::Meet::Auth.stubs(:meet_service).returns(meet_svc)
     Stacks::Etl::Meet::CalendarEnricher.any_instance.stubs(:enrich).returns(title: 'Team Sync', attendees: [])
 
@@ -354,6 +364,7 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
     meet_svc.stubs(:list_conference_record_transcripts).returns(OpenStruct.new(transcripts: [tx], next_page_token: nil))
     meet_svc.stubs(:list_conference_record_transcript_entries).returns(OpenStruct.new(transcript_entries: [entry], next_page_token: nil))
     meet_svc.stubs(:list_conference_record_participants).returns(OpenStruct.new(participants: parts, next_page_token: nil))
+    meet_svc.stubs(:list_conference_record_smart_notes).returns(OpenStruct.new(smart_notes: [], next_page_token: nil))
     Stacks::Etl::Meet::Auth.stubs(:meet_service).returns(meet_svc)
     Stacks::Etl::Meet::CalendarEnricher.any_instance.stubs(:enrich).returns(title: 'Sync', attendees: [])
     drive_svc = mock('drive')

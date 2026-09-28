@@ -193,4 +193,14 @@ class Stacks::Etl::ReclassifierTest < ActiveSupport::TestCase
     R.call
     assert n.reload.reason_one_on_one?
   end
+
+  test 'a screened thread with no stored text keeps its state and spends no budget' do
+    d = Document.create!(source: :google_groups, external_id: '<e@x>', title: 'Re: invoice', content_hash: 'e',
+                         excluded: :not_excluded, raw_metadata: { 'group_email' => 'accounting@sanctuary.computer' })
+    Stacks::AI.expects(:extract).never
+    stats = R.call(mail_review_budget: 0)
+    assert d.reload.not_excluded?
+    assert_equal 1, stats[:mail_without_stored_text]
+    assert_equal 0, stats[:mail_reviews_deferred]
+  end
 end

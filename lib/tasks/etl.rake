@@ -134,6 +134,7 @@ namespace :stacks do
     desc 'Re-apply the privacy wall to stored documents ([dry_run] to preview, [unbounded] to drain)'
     task :reclassify_privacy, [:mode] => :environment do |_t, args|
       mode = args[:mode].to_s
+      raise ArgumentError, "unknown mode #{mode.inspect}: use dry_run, unbounded, or nothing" unless ['', 'dry_run', 'unbounded'].include?(mode)
       dry_run = mode == 'dry_run'
       budget = mode == 'unbounded' ? nil : Stacks::Etl::Reclassifier::NIGHTLY_MAIL_REVIEW_BUDGET
       system_task = SystemTask.create!(name: 'stacks:etl:reclassify_privacy') unless dry_run

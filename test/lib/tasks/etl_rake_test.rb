@@ -57,4 +57,10 @@ class EtlRakeTest < ActiveSupport::TestCase
     Rake::Task['stacks:etl:reclassify_privacy'].reenable
     assert_output(//) { Rake::Task['stacks:etl:reclassify_privacy'].invoke('unbounded') }
   end
+
+  test 'reclassify_privacy refuses an unknown mode instead of doing a real run' do
+    Stacks::Etl::Reclassifier.expects(:call).never
+    Rake::Task['stacks:etl:reclassify_privacy'].reenable
+    assert_raises(ArgumentError) { Rake::Task['stacks:etl:reclassify_privacy'].invoke('dryrun') }
+  end
 end

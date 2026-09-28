@@ -59,7 +59,7 @@ module Stacks
           fresh.excluded, fresh.excluded_reason = after
           # Persist only what we computed (recorded head-counts, review memo), not stale fields.
           fresh.raw_metadata = (fresh.raw_metadata || {}).merge(
-            doc.raw_metadata.to_h.slice(ContentReview::MEMO_KEY, Meet::Connector::INPUTS_KEY)
+            doc.raw_metadata.to_h.slice(ContentReview::MEMO_KEY, Meet::Connector::INPUTS_KEY, Groups::Connector::SCREENED_KEY)
           )
           fresh.save! if fresh.changed?
           if !fresh.corpus_eligible?
@@ -94,6 +94,14 @@ module Stacks
         return [:not_excluded, :none] unless Groups::Connector.screened?(doc.raw_metadata)
         return @groups.exclusion_for(group_normalized(doc, []), doc) if ContentReview.fresh_memo(doc)
 
+        # A thread's only stored text is its own chunks. None (an attachment-only mail, or chunks
+        # already dropped): nothing to review here, so keep the current decision and don't spend
+        # budget on it; its next re-crawl reviews it with the real text.
+        text = doc.chunks.order(:position).pluck(:content).map { |c| { text: c } }
+        if text.empty?
+          stats[:mail_without_stored_text] += 1
+          return [doc.excluded.to_sym, doc.excluded_reason.to_sym]
+        end
         if @dry_run
           stats[:would_content_review] += 1
           return [doc.excluded.to_sym, doc.excluded_reason.to_sym]
@@ -105,8 +113,6 @@ module Stacks
           end
           @mail_reviews_left -= 1
         end
-        # A thread's only stored text is its own chunks (none once walled off -> unreviewed).
-        text = doc.chunks.order(:position).pluck(:content).map { |c| { text: c } }
         @groups.exclusion_for(group_normalized(doc, text), doc)
       end
 

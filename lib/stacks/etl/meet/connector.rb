@@ -26,6 +26,18 @@ module Stacks
 
         def preserved_metadata_keys = super + [ATTENDANCE_KEY]
 
+        # One notes Doc can be the destination of more than one conference record (a call that
+        # was ended and restarted). Their attendance counts must not overwrite each other; keep
+        # the SMALLER one, since fewer people means more gets walled off.
+        def merge_metadata(kept, incoming)
+          merged = super
+          old, new = kept[ATTENDANCE_KEY], incoming[ATTENDANCE_KEY]
+          if old && new && old['conference_record'] != new['conference_record']
+            merged[ATTENDANCE_KEY] = [old, new].min_by { |a| a['participants'].to_i }
+          end
+          merged
+        end
+
         # The privacy wall for meetings: the deterministic rules first, then — for whatever they
         # let through (a 3+ person meeting with an innocuous title) — the LLM content review of
         # the document's OWN text. Notes are reviewed too: notes and transcription are separate

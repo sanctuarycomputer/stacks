@@ -16,7 +16,9 @@ module Stacks
       MEMO_KEY = 'privacy_review'.freeze
       # Bump when SYSTEM or CATEGORIES change: every stored verdict is then re-reviewed by the
       # nightly Reclassifier, so a stricter prompt reaches old transcripts too.
-      VERSION = 2 # v2: also screens email threads (jobs@/admin@/accounting@)
+      # (Adding email wording on 2026-09-28 did NOT change what counts for meetings, so it stayed 1:
+      # a bump re-reads every meeting doc in one nightly run.)
+      VERSION = 1
       WINDOW_CHARS = 40_000 # ~10k tokens per call
       OVERLAP_CHARS = 1_000 # so a passage on a window boundary is seen whole by one window
 
