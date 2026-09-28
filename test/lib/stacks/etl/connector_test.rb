@@ -113,7 +113,7 @@ class Stacks::Etl::ConnectorTest < ActiveSupport::TestCase
   end
 
   test 'a source without an explicit exclusion policy raises and writes nothing (default-deny)' do
-    assert_raises(NotImplementedError) { NoPolicyConnector.new([normalized(external_id: 'np', hash: 'h')]).run(track: false) }
+    assert_raises(Stacks::Etl::Connector::MissingPrivacyPolicy) { NoPolicyConnector.new([normalized(external_id: 'np', hash: 'h')]).run(track: false) }
     assert_nil Document.find_by(external_id: 'np')
   end
 
@@ -139,5 +139,40 @@ class Stacks::Etl::ConnectorTest < ActiveSupport::TestCase
     assert_equal memo, doc.raw_metadata[Stacks::Etl::ContentReview::MEMO_KEY]
     assert_equal 2, doc.raw_metadata['b']
     assert_nil doc.raw_metadata['a']
+  end
+
+  test 'a missing policy is an ordinary error, so the per-user/per-task rescues still catch it' do
+    assert Stacks::Etl::Connector::MissingPrivacyPolicy < StandardError
+  end
+
+  test 'a human decision made WHILE the classifier was deciding wins' do
+    FakeConnector.new([normalized(external_id: 'race', hash: 'h1')]).run
+    doc = Document.find_by!(external_id: 'race')
+    conn = FakeConnector.new([normalized(external_id: 'race', hash: 'h2')])
+    # Simulate an admin clicking Exclude during the (slow) content review.
+    conn.define_singleton_method(:exclusion_for) do |_n, _d = nil|
+      Document.find(doc.id).exclude!(by: 'hugh@sanctuary.computer')
+      [:not_excluded, :none]
+    end
+    conn.run
+
+    doc.reload
+    assert doc.manually_excluded?
+    assert_equal 'hugh@sanctuary.computer', doc.excluded_by
+    assert_equal 0, doc.chunks.count
+  end
+
+  test 'a transient unreviewed hold keeps (hidden) chunks when content is unchanged; a real exclusion drops them' do
+    FakeConnector.new([normalized(external_id: 'hold', hash: 'h1')]).run
+    doc = Document.find_by!(external_id: 'hold')
+    assert_equal 1, doc.chunks.count
+
+    FakeConnector.new([normalized(external_id: 'hold', hash: 'h1')], exclusion: [:auto_excluded, :unreviewed]).run
+    assert_equal 1, doc.reload.chunks.count, 'kept: notes/threads cannot be re-indexed without a re-fetch'
+    refute doc.corpus_eligible?
+    assert_empty Stacks::Etl::Search.call(query: 'ship', mode: :keyword), 'but never searchable'
+
+    FakeConnector.new([normalized(external_id: 'hold', hash: 'h2')], exclusion: [:auto_excluded, :unreviewed]).run
+    assert_equal 0, doc.reload.chunks.count, 'changed content under a hold drops the stale chunks'
   end
 end

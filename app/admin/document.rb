@@ -30,7 +30,7 @@ ActiveAdmin.register Document do
   member_action :include_and_index, method: :put do
     resource.update!(excluded: :manually_included, excluded_reason: :none, excluded_by: current_admin_user.email)
     indexed = Stacks::Etl::Reindexer.call(resource)
-    notice = indexed ? "Included & indexed (#{resource.chunks.count} chunks)." : 'Included. Nothing stored to index now; the next sync indexes it.'
+    notice = indexed ? "Included & indexed (#{resource.chunks.count} chunks)." : 'Included. Its text is not stored here, so it becomes searchable when it is next re-fetched from Google (the daily sync for recent items, or rake stacks:etl:backfill_meet_all).'
     redirect_to admin_document_path(resource), notice: notice
   end
 

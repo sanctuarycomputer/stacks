@@ -89,7 +89,7 @@ class PrivacyWallTest < ActiveSupport::TestCase
   # A NEW tool that touches these models fails this test until someone reviews it and adds it
   # here. That review is the point: the wall only holds if every read path scopes through
   # Document.corpus_eligible (or a scope built on it).
-  CORPUS_TOUCHING = /\b(Document|Chunk|Embedding|Meeting|MeetingTranscriptSegment|MeetingParticipant|Mention|DocumentContact|WeeklyShip|ShipScan|GoogleGroupThread)\b|\.(chunks|segments|weekly_ships|document_contacts|mentions)\b|Stacks::Etl::Search/
+  CORPUS_TOUCHING = /\b(Document|Chunk|Embedding|Meeting|MeetingTranscriptSegment|MeetingParticipant|Mention|DocumentContact|WeeklyShip|ShipScan|GoogleGroupThread)\b|\.(chunks|segments|weekly_ships?|last_weekly_ship|documents?|document_contacts|mentions|source_record|participants|ship_scans?)\b|:(chunks|weekly_ships?|documents?|document_contacts|mentions|ship_scans?)\b|Stacks::Etl::/
 
   REVIEWED = {
     'search_tool.rb' => 'Stacks::Etl::Search, which starts from Chunk.corpus_eligible',
@@ -102,7 +102,7 @@ class PrivacyWallTest < ActiveSupport::TestCase
   }.freeze
 
   test 'tripwire: every MCP file that touches corpus data has been reviewed for the wall' do
-    touching = Dir[Rails.root.join('app/services/mcp/*.rb')].select { |f| File.read(f).match?(CORPUS_TOUCHING) }
+    touching = Dir[Rails.root.join('app/services/mcp/**/*.rb')].select { |f| File.read(f).match?(CORPUS_TOUCHING) }
                                                             .map { |f| File.basename(f) }.sort
     # The JSON API is the other agent-reachable surface; today nothing there touches the corpus.
     api = Dir[Rails.root.join('app/controllers/**/*.rb')].select { |f| File.read(f).match?(CORPUS_TOUCHING) }

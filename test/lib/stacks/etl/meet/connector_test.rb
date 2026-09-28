@@ -129,12 +129,29 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
     assert_equal [:auto_excluded, :sensitive_content], conn.exclusion_for(group)
   end
 
-  test "rule-excluded transcripts and all notes skip the content review" do
+  test "rule-excluded docs skip the content review" do
     conn = Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :api)
     Stacks::Etl::ContentReview.expects(:call).never
     conn.exclusion_for({ title: "Sync", participant_count: 2, contacts: [] })
     conn.exclusion_for({ title: "Payroll run", participant_count: 9, contacts: [] })
     conn.exclusion_for({ source: :gemini_notes, transcript_doc_id: nil, title: "Roadmap", contacts: [] })
+  end
+
+  test "notes of an eligible meeting get their OWN content review (notes can cover what the transcript missed)" do
+    conn = Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :api)
+    Document.create!(source: :meet, external_id: "CLEAN", excluded: :not_excluded, excluded_reason: :none)
+    Stacks::Etl::ContentReview.expects(:call).with(has_entries(text: "Alex asked for a raise"))
+                              .returns([:auto_excluded, :sensitive_content])
+    notes = { source: :gemini_notes, transcript_doc_id: "CLEAN", title: "Team sync", contacts: [],
+              segments: [{ speaker_name: nil, text: "Alex asked for a raise" }] }
+    assert_equal [:auto_excluded, :sensitive_content], conn.exclusion_for(notes)
+  end
+
+  test "the notes' own title is checked even when a clean transcript exists" do
+    conn = Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :api)
+    Document.create!(source: :meet, external_id: "CLEAN2", excluded: :not_excluded, excluded_reason: :none)
+    assert_equal [:auto_excluded, :compensation],
+                 conn.exclusion_for({ source: :gemini_notes, transcript_doc_id: "CLEAN2", title: "Comp review - Alex", contacts: [] })
   end
 
   test "records the head-counts it decided on, for the nightly Reclassifier" do

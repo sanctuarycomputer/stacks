@@ -30,13 +30,13 @@ class Stacks::Etl::ContentReviewTest < ActiveSupport::TestCase
   end
 
   test 'a memo for the same content is reused (no second model call)' do
-    d = doc(raw: { R::MEMO_KEY => { 'content_hash' => 'h1', 'sensitive' => true, 'category' => 'hr' } })
+    d = doc(raw: { R::MEMO_KEY => { 'content_hash' => 'h1', 'version' => R::VERSION, 'sensitive' => true, 'category' => 'hr' } })
     Stacks::AI.expects(:extract).never
     assert_equal [:auto_excluded, :sensitive_content], R.call(doc: d, text: 'x')
   end
 
   test 'changed content invalidates the memo' do
-    d = doc(hash: 'h2', raw: { R::MEMO_KEY => { 'content_hash' => 'h1', 'sensitive' => false } })
+    d = doc(hash: 'h2', raw: { R::MEMO_KEY => { 'content_hash' => 'h1', 'version' => R::VERSION, 'sensitive' => false } })
     Stacks::AI.expects(:extract).once.returns(result(true, 'hr'))
     assert_equal [:auto_excluded, :sensitive_content], R.call(doc: d, text: 'x')
   end
@@ -73,9 +73,17 @@ class Stacks::Etl::ContentReviewTest < ActiveSupport::TestCase
     assert_equal [:auto_excluded, :sensitive_content], R.call(doc: doc, text: 'anything')
   end
 
-  test 'empty text has nothing to leak' do
+  test 'a memo from an older prompt version is re-reviewed' do
+    d = doc(raw: { R::MEMO_KEY => { 'content_hash' => 'h1', 'version' => R::VERSION - 1, 'sensitive' => false } })
+    Stacks::AI.expects(:extract).once.returns(result(true, 'hr'))
+    assert_equal [:auto_excluded, :sensitive_content], R.call(doc: d, text: 'x')
+    assert_equal R::VERSION, d.raw_metadata[R::MEMO_KEY]['version']
+  end
+
+  test 'no text to read fails CLOSED (missing is not the same as clean)' do
     Stacks::AI.expects(:extract).never
-    assert_equal [:not_excluded, :none], R.call(doc: doc, text: '')
+    assert_equal [:auto_excluded, :unreviewed], R.call(doc: doc, text: '')
+    assert_equal [:auto_excluded, :unreviewed], R.call(doc: doc, text: "  \n ")
   end
 
   test 'works without a doc (no memo)' do

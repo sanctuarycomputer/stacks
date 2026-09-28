@@ -21,13 +21,13 @@ module Stacks
 
         INPUTS_KEY = 'privacy_inputs'.freeze
 
-        # The privacy wall for meetings: the deterministic rules first, then — only for a
-        # transcript they let through (a 3+ person meeting with an innocuous title) — the LLM
-        # content review. Notes are never reviewed themselves: they inherit their transcript's
-        # decision, or are walled off when there is no transcript to inherit from.
+        # The privacy wall for meetings: the deterministic rules first, then — for whatever they
+        # let through (a 3+ person meeting with an innocuous title) — the LLM content review of
+        # the document's OWN text. Notes are reviewed too: notes and transcription are separate
+        # switches in Meet, so notes can cover a part of the meeting the transcript never saw.
         def exclusion_for(normalized, doc = nil)
           decision = deterministic_exclusion(normalized, doc)
-          return decision unless decision == [:not_excluded, :none] && !notes?(normalized)
+          return decision unless decision == [:not_excluded, :none]
           Stacks::Etl::ContentReview.call(doc: doc, text: review_text(normalized[:segments]),
                                           content_hash: normalized[:content_hash] || doc&.content_hash)
         end
@@ -58,12 +58,15 @@ module Stacks
 
         # G2: notes are classified by their transcript, because only the transcript knows who
         # actually attended. No transcript Document -> attendance unknown -> default-deny (a human
-        # can include it; it re-inherits automatically once its transcript is ingested).
+        # can include it; it re-inherits automatically once its transcript is ingested). The notes'
+        # own title is checked first: an API transcript's title can fall back to the Meet code.
         def notes_exclusion(normalized)
+          titled = Stacks::Etl::Classifier.title_exclusion(normalized[:title])
+          return titled if titled
           tid = normalized[:transcript_doc_id]
           transcripts = tid.present? ? Document.for_drive_doc(tid).to_a : []
           return inherited_from(transcripts) if transcripts.any?
-          Stacks::Etl::Classifier.title_exclusion(normalized[:title]) || [:auto_excluded, :attendance_unknown]
+          [:auto_excluded, :attendance_unknown]
         end
 
         # Strictest transcript wins (the Drive + API rows of one meeting could disagree). Human

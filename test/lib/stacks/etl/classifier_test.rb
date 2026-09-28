@@ -48,7 +48,13 @@ class Stacks::Etl::ClassifierTest < ActiveSupport::TestCase
     'Skiplevel chat' => :one_on_one,
     'Drew / Hugh 1-1' => :one_on_one,
     'Drew 1 on 1' => :one_on_one,
-    'One-on-one' => :one_on_one
+    'One-on-one' => :one_on_one,
+    'Drew 1-on-1' => :one_on_one,
+    'Drew 1on1' => :one_on_one,
+    '1:1s with the team' => :one_on_one,
+    'Perf review' => :performance_review,
+    'Offer letter for Sam' => :compensation,
+    'Rate increase' => :compensation
   }.each do |title, reason|
     test "lexicon: #{title.inspect} -> #{reason}" do
       assert_equal [:auto_excluded, reason], C.call(title: title, participant_count: 6)

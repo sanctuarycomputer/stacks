@@ -11,9 +11,9 @@ module Stacks
       RULES = [
         # "1:1", "1-1", "1 on 1" — but NOT a bare "11" ("Sprint 11", "Sep 11": the old optional
         # separator matched those, 328 group threads in prod).
-        [:one_on_one,         /\b1\s*[:\-]\s*1\b|\b1\s+on\s+1\b|\bone[\s-]on[\s-]one\b|\bskip[\s-]?levels?\b/i],
-        [:performance_review, /\bperformance reviews?\b|\bpromotions?\b|\b(peer|360|upward|downward|performance|career) feedback\b|\b360s?\b/i],
-        [:compensation,       /\bsalar(y|ies)\b|\bcomp(ensation)?\b|\braises?\b|\bbonus(es)?\b|\bequity\b|\bpayroll\b|\bpay (reviews?|bands?|increases?|equity|cuts?)\b|\bseverance\b/i],
+        [:one_on_one,         /\b1\s*[:\-]\s*1s?\b|\b1\s*-?\s*on\s*-?\s*1s?\b|\bone[\s-]on[\s-]ones?\b|\bskip[\s-]?levels?\b/i],
+        [:performance_review, /\b(performance|perf) reviews?\b|\bpromotions?\b|\b(peer|360|upward|downward|performance|career) feedback\b|\b360s?\b/i],
+        [:compensation,       /\bsalar(y|ies)\b|\bcomp(ensation)?\b|\braises?\b|\bbonus(es)?\b|\bequity\b|\bpayroll\b|\bpay (reviews?|bands?|increases?|equity|cuts?)\b|\brate increases?\b|\boffer letters?\b|\bseverance\b/i],
         [:hr,                 /\bhr\b|\bdisciplinary\b|\bgrievances?\b|\binvestigations?\b|\bharass(ment|ed|ing)?\b|\b(medical|parental|maternity|paternity|sick|bereavement) leave\b|\bleave of absence\b/i],
         [:offboarding,        /\boffboarding\b|\btermination\b|\blay[\s-]?offs?\b|\bresign(ation|ing|ed)?\b|\bexit interviews?\b/i],
         [:pip,                /\bpip\b/i]

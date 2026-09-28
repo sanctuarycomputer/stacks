@@ -21,7 +21,8 @@ class Stacks::Etl::ReclassifierTest < ActiveSupport::TestCase
   end
 
   def fresh_memo(doc, sensitive: false)
-    doc.update!(raw_metadata: doc.raw_metadata.merge(MEMO => { 'content_hash' => doc.content_hash, 'sensitive' => sensitive }))
+    doc.update!(raw_metadata: doc.raw_metadata.merge(MEMO => { 'content_hash' => doc.content_hash, 'version' => Stacks::Etl::ContentReview::VERSION,
+                                                              'sensitive' => sensitive }))
     doc
   end
 
@@ -119,5 +120,41 @@ class Stacks::Etl::ReclassifierTest < ActiveSupport::TestCase
     stats = R.call
     assert_equal 1, stats[:errored]
     assert ok.reload.auto_excluded?
+  end
+
+  test 'eligible notes are content-reviewed from their own stored chunks' do
+    fresh_memo(transcript!('t8', participants: 5, raw: { 'drive_doc_id' => 'D8' }))
+    notes = Document.create!(source: :gemini_notes, external_id: 'N8', title: 'Team sync', content_hash: 'n8',
+                             excluded: :not_excluded, raw_metadata: { 'transcript_doc_id' => 'D8' })
+    notes.chunks.create!(source: :gemini_notes, position: 0, content: 'Alex asked for a raise')
+    Stacks::AI.expects(:extract).with { |a| a[:prompt].include?('Alex asked for a raise') }.once.returns(ai(true))
+
+    R.call
+
+    assert notes.reload.reason_sensitive_content?
+    assert_equal 0, notes.chunks.count
+  end
+
+  test 'a human decision made while the model was thinking is not overwritten' do
+    tx = transcript!('t9', participants: 5, excluded: :auto_excluded, reason: :unreviewed)
+    Stacks::AI.expects(:extract).once.with do |*|
+      Document.find(tx.id).exclude!(by: 'hugh@sanctuary.computer') # admin clicks Exclude mid-review
+      true
+    end.returns(ai(false))
+
+    stats = R.call
+
+    assert tx.reload.manually_excluded?
+    assert_equal 1, stats[:skipped_human_decided_meanwhile]
+    assert_equal 0, tx.chunks.count
+  end
+
+  test 'a missing transcript text fails closed instead of flipping to eligible' do
+    d = Document.create!(source: :meet, external_id: 'orphan', title: 'Team sync', content_hash: 'o',
+                         excluded: :auto_excluded, excluded_reason: :unreviewed,
+                         raw_metadata: { 'privacy_inputs' => { 'participant_count' => 5, 'invite_count' => 5 } })
+    Stacks::AI.expects(:extract).never
+    R.call
+    assert d.reload.reason_unreviewed?
   end
 end

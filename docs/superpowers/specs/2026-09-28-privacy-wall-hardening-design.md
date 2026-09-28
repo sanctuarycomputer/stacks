@@ -33,20 +33,20 @@ raise, bonus, equity, payroll, pay review/band, severance (compensation); promot
 disciplinary, grievance, investigation, harassment, medical/parental leave (HR); layoff, resignation, exit interview (offboarding);
 skip-level (1:1). Bare "feedback" and "review" are **not** title rules. Prod has 129 group threads titled "feedback", mostly client
 design feedback. The content review below catches the personal kind.
-Then a new `Stacks::Etl::ContentReview` runs on every meeting transcript that passes the deterministic rules. By then the meeting
+Then a new `Stacks::Etl::ContentReview` reads every meeting transcript **and notes doc** that passes the deterministic rules. Notes are reviewed on their own text because notes and transcription are separate switches in Meet. By then the meeting
 has 3+ people, because anything with 2 or fewer has already been excluded. It sends the transcript in 40k-character windows to
 `Stacks::AI.extract` (fast tier) and asks: is there personal discussion of one individual's pay, performance, discipline,
 HR matter, departure, health or family, or a candidate evaluation? Any flagged window walls the whole doc off (`sensitive_content`).
-The verdict is memoised in `raw_metadata["privacy_review"]` against the content hash, so nightly re-scans don't pay twice.
-**Fails closed:** no API key or an API error means the doc is excluded as `unreviewed`. It is retried on the next run.
+The verdict is memoised in `raw_metadata["privacy_review"]` against the content hash and a prompt `VERSION`. Nightly re-scans don't pay twice, and bumping the version re-reviews everything.
+**Fails closed:** no API key, an API error, an answer other than an explicit `false`, or no text to read all mean the doc is excluded as `unreviewed` (or `sensitive_content`). It is retried on the next run. The model call happens **outside** the ingest transaction. The write then re-checks, under a row lock, that no human decided in the meantime. An `unreviewed` hold on unchanged content keeps its chunks, hidden by every read path, because notes and threads can't be re-indexed without a re-fetch.
 
-**G2 — attendance.** A notes doc with no transcript Document is walled off as `attendance_unknown`, or by its title reason if a title rule matched.
+**G2 — attendance.** The notes' own title is checked first (an API transcript's title can fall back to the Meet code). A notes doc with no transcript Document is walled off as `attendance_unknown`.
 When the transcript arrives, the notes inherit its decision. Human states are mapped on inheritance:
 included → `not_excluded`, excluded → `auto_excluded/manual`. That way a later human change on the transcript still propagates.
 If several transcript rows match, the strictest one wins. The July invite-count rule for **transcripts** is unchanged.
 A transcript invited to 3+ where only 2 turned up is now backstopped by the content review.
 
-**G3 — default-deny.** `Connector#exclusion_for` raises `NotImplementedError` in the base class, so a new source ingests nothing
+**G3 — default-deny.** `Connector#exclusion_for` raises `Connector::MissingPrivacyPolicy` (a StandardError, so the per-user and per-task rescues still contain it) in the base class, so a new source ingests nothing
 until it states a policy. A test asserts that every `Connector` subclass defines it. Groups gets an explicit policy: title rules,
 otherwise eligible.
 
@@ -56,7 +56,7 @@ touches corpus models; a new tool that touches them fails the test until someone
 (e) Canary tests seed walled-off content and assert that no corpus MCP tool returns it.
 
 **Backfill.** `Stacks::Etl::Reclassifier` re-derives every non-human-locked document's state from **stored** data
-(Meeting, segments, contacts, title), with no Google re-fetch. Ingest and reclassify must not disagree, or a doc would
+(Meeting, segments, a notes doc's own chunks, contacts, title), with no Google re-fetch. Ingest and reclassify must not disagree, or a doc would
 flip every night. So the Meet connector records the head-counts it classified on in `raw_metadata["privacy_inputs"]`.
 Reclassify reads those and falls back to Meeting and contact rows only for legacy docs. It drops chunks for newly excluded docs and re-indexes transcripts that become eligible.
 - `rake stacks:etl:reclassify_privacy[dry_run]` prints the transitions and makes no writes or LLM calls.
