@@ -388,4 +388,74 @@ class ResourcingProjectedAssignmentsTest < ActionDispatch::IntegrationTest
     assert_equal Date.new(2030, 5, 31), row.end_date, "the row must not be mutated"
   end
 
+  # --- preview never persists (2026-09-28: previews left 17 stray stacksbot rows in production) ---
+
+  def table_snapshot
+    ProjectedAssignment.order(:source_key).map { |r| r.attributes.except("created_at", "updated_at") }
+  end
+
+  def existing_row(key)
+    ProjectedAssignment.create!(source_key: key, contributor_id: @contributor.id, project_tracker_id: @tr.id,
+      start_date: "2030-05-01", end_date: "2030-05-31", minutes_per_day: 480, managed_by: "observe")
+  end
+
+  test "PUT ?preview=true persists nothing: no new row, no edit to an existing row" do
+    existing_row("preview:existing")
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns(prior_assignment_stub)
+    Stacks::Runn.any_instance.stubs(:get_people).returns(people_stub(10))
+    Stacks::Runn.any_instance.expects(:create_assignment).never
+    before = table_snapshot
+    put "/api/v1/projected_assignments/preview:new?preview=true", headers: auth_headers, params: body.to_json
+    assert_equal "preview", JSON.parse(response.body)["status"]
+    put "/api/v1/projected_assignments/preview:existing?preview=true", headers: auth_headers, params: body(end_date: "2030-06-30").to_json
+    assert_equal "preview", JSON.parse(response.body)["status"]
+    assert_equal before, table_snapshot
+  end
+
+  test "POST batch?preview=true persists nothing" do
+    existing_row("batch:existing")
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns(prior_assignment_stub)
+    Stacks::Runn.any_instance.stubs(:get_people).returns(people_stub(10))
+    Stacks::Runn.any_instance.expects(:create_assignment).never
+    before = table_snapshot
+    items = [body.merge(source_key: "batch:new"), body(end_date: "2030-06-30").merge(source_key: "batch:existing")]
+    post "/api/v1/projected_assignments/batch?preview=true", headers: auth_headers, params: { items: items }.to_json
+    assert_response :success
+    assert_equal %w[preview preview], JSON.parse(response.body)["results"].map { |r| r["status"] }
+    assert_equal before, table_snapshot
+  end
+
+  test "POST adopt?preview=true persists nothing and touches no Runn assignment" do
+    snapshot = { "id" => 9001, "personId" => 10, "projectId" => 91_100, "roleId" => 7,
+      "startDate" => "2030-01-01", "endDate" => "2030-12-31", "minutesPerDay" => 480, "note" => "hand-authored" }
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns([snapshot])
+    Stacks::Runn.any_instance.stubs(:get_people).returns(people_stub(10))
+    Stacks::Runn.any_instance.expects(:create_assignment).never
+    Stacks::Runn.any_instance.expects(:delete_assignment).never
+    before = table_snapshot
+    segments = [
+      body(start_date: "2030-01-01", end_date: "2030-08-31").merge(source_key: "adopt:preview:1"),
+      body(start_date: "2030-10-01", end_date: "2030-12-31").merge(source_key: "adopt:preview:2"),
+    ]
+    post "/api/v1/projected_assignments/adopt?preview=true",
+      headers: auth_headers, params: { adopt_expected: snapshot, segments: segments }.to_json
+    assert_response :success
+    assert_equal %w[preview preview], JSON.parse(response.body)["results"].map { |r| r["status"] }
+    assert_equal before, table_snapshot
+  end
+
+  test "a preview that would relinquish reports it but keeps the row managed" do
+    marker = Resourcing::WriteThrough.provenance_marker("preview:owned")
+    row = existing_row("preview:owned")
+    row.update!(runn_assignment_id: 7001, last_synced_runn_state: { "id" => 7001, "personId" => 10, "projectId" => 91_100, "roleId" => 7,
+      "startDate" => "2030-05-01", "endDate" => "2030-05-31", "minutesPerDay" => 480 })
+    human_edit = { "id" => 7001, "personId" => 10, "projectId" => 91_100, "roleId" => 7,
+      "startDate" => "2030-05-01", "endDate" => "2030-05-15", "minutesPerDay" => 480, "note" => marker }
+    Stacks::Runn.any_instance.stubs(:get_assignments).returns([human_edit])
+    Stacks::Runn.any_instance.stubs(:get_people).returns(people_stub(10))
+    before = table_snapshot
+    put "/api/v1/projected_assignments/preview:owned?preview=true", headers: auth_headers, params: body.to_json
+    assert_equal "relinquished", JSON.parse(response.body)["status"]
+    assert_equal before, table_snapshot
+  end
 end
