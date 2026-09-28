@@ -64,3 +64,36 @@ class StacksNotificationsOptixDeactivationTest < ActiveSupport::TestCase
     assert_includes content, "+1 more"
   end
 end
+
+# Stacksbot's Observe sensor skips any Twist post that opens with `# <Producer> via [Stacksbot](<url>)`.
+# Without it, every exception backtrace and Optix run in the exceptions thread was re-read as new signal.
+class StacksNotificationsProvenanceHeaderTest < ActiveSupport::TestCase
+  HEADER_RE = /\A# .+ via \[Stacksbot\]\(https:\/\/app\.notion\.com\/p\/[0-9a-f]{32}\)\n/
+
+  test "the Optix run post opens with the provenance header" do
+    r = Stacks::Optix::DeactivateInactiveMembers::Result.new(
+      deactivated: [{ user_id: "50", member_id: 1050, email: "a@b.c", name: "A B", invoice_total: 0.0 }], skipped: [], errors: [],
+    )
+    content = nil
+    twist = mock
+    twist.expects(:add_comment_to_thread).with { |_t, c, _r| content = c; true }.returns(stub(code: 200))
+    Stacks::Notifications.stubs(:twist).returns(twist)
+    Stacks::Notifications.report_optix_deactivation_run(r)
+    assert_match HEADER_RE, content
+    assert_match(/\A# Optix Deactivation Run via \[Stacksbot\]/, content)
+  end
+
+  test "the exception post opens with the provenance header; the stored notification body is unchanged" do
+    content = nil
+    twist = mock
+    twist.expects(:add_comment_to_thread).with { |_t, c, _r| content = c; true }
+    Stacks::Notifications.stubs(:twist).returns(twist)
+    Sentry.stubs(:capture_exception)
+    SystemExceptionNotification.any_instance.stubs(:deliver)
+    notification = Stacks::Notifications.report_exception(RuntimeError.new("boom"))
+    assert_match HEADER_RE, content
+    assert_match(/\A# Stacks Exception via \[Stacksbot\]/, content)
+    assert_includes content, "RuntimeError: boom"
+    refute_match(/via \[Stacksbot\]/, notification.body, "the admin UI copy keeps its own format")
+  end
+end
