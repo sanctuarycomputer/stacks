@@ -21,7 +21,15 @@ module Mcp
     annotations(read_only_hint: true, destructive_hint: false, idempotent_hint: true)
 
     def self.call(name: nil, client: nil, in_progress: nil, server_context:)
-      trackers = ProjectTracker.includes(:project_tracker_links)
+      # Preload what tracker_json, internal_client? and the lead columns read, so an unfiltered
+      # call (the checklist workflows list every tracker) stays a handful of queries.
+      trackers = ProjectTracker.includes(
+        :project_tracker_links,
+        { forecast_projects: :forecast_client },
+        { project_tracker_forecast_projects: { forecast_project: :forecast_client } },
+        { account_lead_periods: :admin_user },
+        { project_lead_periods: :admin_user },
+      )
       trackers = trackers.where(id: ProjectTracker.in_progress.select(:id)) if in_progress == true
       if client.present?
         client_ids = ForecastClient.where("lower(name) = ?", client.strip.downcase).select(:forecast_id)
