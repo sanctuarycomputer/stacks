@@ -1,9 +1,17 @@
 class Stacks::Notifications
   TWIST_EXCEPTIONS_THREAD_ID = "7718844"
   TWIST_EXCEPTION_NOTIFY_USER_ID = 427_360
+  # Stacksbot's Observe sensor skips any Twist post whose first line is `# <Producer> via [Stacksbot](<url>)`
+  # (its self-recursion guard). Stacks' own posts to the exceptions thread carry it too, so a backtrace
+  # or an Optix run summary is never re-read as new signal. The link is the Stacksbot control page.
+  STACKSBOT_PAGE_URL = "https://app.notion.com/p/329131fea2c780718aa8f222b25c76e8"
 
   class << self
     include Rails.application.routes.url_helpers
+
+    def twist_header(producer)
+      "# #{producer} via [Stacksbot](#{STACKSBOT_PAGE_URL})"
+    end
 
     def twist
       @_twist ||= Stacks::Twist.new
@@ -33,7 +41,7 @@ class Stacks::Notifications
       unless exception.is_a?(Stacks::Errors::Skipped)
         twist.add_comment_to_thread(
           TWIST_EXCEPTIONS_THREAD_ID,
-          notification.body,
+          "#{twist_header("Stacks Exception")}\n\n#{notification.body}",
           [TWIST_EXCEPTION_NOTIFY_USER_ID]
         )
       end
@@ -73,6 +81,7 @@ class Stacks::Notifications
 
     def optix_deactivation_body(result)
       lines = []
+      lines << twist_header("Optix Deactivation Run")
       lines << "**Optix inactive-member deactivation run**"
       lines << "#{result.deactivated.length} deactivated, #{result.skipped.length} skipped, #{result.errors.length} errored."
 
