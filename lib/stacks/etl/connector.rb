@@ -25,7 +25,13 @@ module Stacks
         sync
       end
 
-      def exclusion_for(_normalized) = [:not_excluded, :none]
+      # The privacy wall is DEFAULT-DENY: every source must state, explicitly, how it walls off
+      # 1:1 / HR / comp content. A new source that forgets raises here on its first document and
+      # ingests nothing, rather than silently flowing everything into the agent's corpus.
+      # Returns [excluded, excluded_reason]; `doc` is the Document being (re)classified.
+      def exclusion_for(_normalized, _doc = nil)
+        raise NotImplementedError, "#{self.class} must implement #exclusion_for — the privacy wall is default-deny"
+      end
 
       # Chunk + embed + resolve speakers for one document from the given segments.
       # A class method so the Reindexer can index from STORED segments (no connector,
@@ -68,11 +74,14 @@ module Stacks
         ActiveRecord::Base.transaction do
           doc = Document.find_or_initialize_by(source: normalized[:source] || source, external_id: normalized[:external_id])
           changed = doc.new_record? || doc.content_hash != normalized[:content_hash]
+          # Carry the content-review memo across re-ingests (it is keyed by content hash, so a
+          # changed transcript is re-reviewed); everything else in raw_metadata is the source's.
+          review_memo = doc.raw_metadata.to_h.slice(ContentReview::MEMO_KEY)
 
           doc.assign_attributes(
             title: normalized[:title], url: normalized[:url],
             occurred_at: normalized[:occurred_at], content_hash: normalized[:content_hash],
-            raw_metadata: normalized[:raw_metadata] || {}
+            raw_metadata: (normalized[:raw_metadata] || {}).merge(review_memo)
           )
           doc.source_record = normalized[:build_source_record]&.call(doc) if changed
           apply_exclusion(doc, normalized) unless doc.human_locked?
@@ -91,7 +100,7 @@ module Stacks
       end
 
       def apply_exclusion(doc, normalized)
-        excluded, reason = exclusion_for(normalized)
+        excluded, reason = exclusion_for(normalized, doc)
         doc.excluded = excluded
         doc.excluded_reason = reason
       end

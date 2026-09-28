@@ -7,7 +7,7 @@ class Stacks::Etl::ConnectorTest < ActiveSupport::TestCase
     end
     def source = :meet
     def extract(since:) = @docs
-    def exclusion_for(_n) = @exclusion
+    def exclusion_for(_n, _doc = nil) = @exclusion
   end
 
   def normalized(external_id:, hash:)
@@ -103,5 +103,41 @@ class Stacks::Etl::ConnectorTest < ActiveSupport::TestCase
     doc = Document.find_by!(external_id: 'gn1')
     assert doc.gemini_notes?
     assert doc.chunks.all?(&:gemini_notes?)
+  end
+
+  # G3: default-deny. A source that never states a privacy policy must ingest NOTHING.
+  class NoPolicyConnector < Stacks::Etl::Connector
+    def initialize(docs) = (@docs = docs)
+    def source = :meet
+    def extract(since:) = @docs
+  end
+
+  test 'a source without an explicit exclusion policy raises and writes nothing (default-deny)' do
+    assert_raises(NotImplementedError) { NoPolicyConnector.new([normalized(external_id: 'np', hash: 'h')]).run(track: false) }
+    assert_nil Document.find_by(external_id: 'np')
+  end
+
+  test 'every production connector states its own exclusion policy' do
+    Dir[Rails.root.join('lib/stacks/etl/**/connector.rb')].sort.each { |f| require_dependency f }
+    production = Stacks::Etl::Connector.descendants.reject { |k| k.name.to_s.start_with?('Stacks::Etl::ConnectorTest') }
+    assert_includes production.map(&:name), 'Stacks::Etl::Meet::Connector'
+    assert_includes production.map(&:name), 'Stacks::Etl::Groups::Connector'
+    production.each do |klass|
+      refute_equal Stacks::Etl::Connector, klass.instance_method(:exclusion_for).owner,
+                   "#{klass} must define #exclusion_for (the privacy wall is default-deny)"
+    end
+  end
+
+  test 'the content-review memo survives a re-ingest; the rest of raw_metadata is the source\'s' do
+    memo = { 'content_hash' => 'h1', 'sensitive' => false }
+    FakeConnector.new([normalized(external_id: 'mm', hash: 'h1').merge(raw_metadata: { 'a' => 1 })]).run
+    doc = Document.find_by!(external_id: 'mm')
+    doc.update!(raw_metadata: doc.raw_metadata.merge(Stacks::Etl::ContentReview::MEMO_KEY => memo))
+
+    FakeConnector.new([normalized(external_id: 'mm', hash: 'h1').merge(raw_metadata: { 'b' => 2 })]).run
+    doc.reload
+    assert_equal memo, doc.raw_metadata[Stacks::Etl::ContentReview::MEMO_KEY]
+    assert_equal 2, doc.raw_metadata['b']
+    assert_nil doc.raw_metadata['a']
   end
 end

@@ -10,7 +10,13 @@ class Document < ApplicationRecord
   enum excluded: { not_excluded: 0, auto_excluded: 1, manually_excluded: 2, manually_included: 3 }
   enum excluded_reason: {
     none: 0, one_on_one: 1, performance_review: 2, compensation: 3,
-    hr: 4, offboarding: 5, pip: 6, title_keyword: 7, manual: 8
+    hr: 4, offboarding: 5, pip: 6, title_keyword: 7, manual: 8,
+    # The LLM content review flagged a personal conversation (Stacks::Etl::ContentReview).
+    sensitive_content: 9,
+    # The content review could not run (no key / API error); walled off until a retry succeeds.
+    unreviewed: 10,
+    # Notes with no transcript joined: nobody knows who actually attended, so default-deny.
+    attendance_unknown: 11
   }, _prefix: :reason
 
   SHIPS_GROUP_EMAIL = "ships@sanctuary.computer".freeze

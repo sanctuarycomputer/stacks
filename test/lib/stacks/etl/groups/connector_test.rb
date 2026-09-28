@@ -39,10 +39,23 @@ class Stacks::Etl::Groups::ConnectorTest < ActiveSupport::TestCase
     Stacks::Etl::Groups::Connector.new(admin_email: 'hugh@sanctuary.computer').run(track: false)
 
     doc = Document.find_by!(source: :google_groups, external_id: '<a@x>')
-    assert doc.not_excluded?, 'public group mail is never auto-excluded'
+    assert doc.not_excluded?, 'an ordinary list thread is eligible'
     assert doc.chunks.any?, 'eligible thread must be chunked/embedded'
     assert_equal 'GoogleGroupThread', doc.source_record_type
     assert_equal 'dev@sanctuary.computer', doc.source_record.group_email
+  end
+
+  test 'a thread whose subject names a sensitive topic is walled off like a meeting title' do
+    src = mock('source')
+    src.stubs(:each_thread).multiple_yields([thread_doc(root: '<s@x>', bodies: ['numbers inside'], subject: 'Re: 2027 salary bands')])
+    Stacks::Etl::Groups::GroupsSource.stubs(:new).returns(src)
+
+    Stacks::Etl::Groups::Connector.new(admin_email: 'hugh@sanctuary.computer').run(track: false)
+
+    doc = Document.find_by!(source: :google_groups, external_id: '<s@x>')
+    assert doc.auto_excluded?
+    assert doc.reason_compensation?
+    assert_equal 0, doc.chunks.count
   end
 
   test 'a new reply changes content_hash and re-indexes the same Document' do
