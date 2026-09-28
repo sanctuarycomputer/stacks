@@ -73,8 +73,8 @@ class Stacks::Etl::ContentReviewTest < ActiveSupport::TestCase
     assert_equal [:auto_excluded, :sensitive_content], R.call(doc: doc, text: 'anything')
   end
 
-  test 'a memo from an older prompt version is re-reviewed' do
-    d = doc(raw: { R::MEMO_KEY => { 'content_hash' => 'h1', 'version' => R::VERSION - 1, 'sensitive' => false } })
+  test 'a memo from an unknown older prompt version is re-reviewed' do
+    d = doc(raw: { R::MEMO_KEY => { 'content_hash' => 'h1', 'version' => 0, 'sensitive' => false } })
     Stacks::AI.expects(:extract).once.returns(result(true, 'hr'))
     assert_equal [:auto_excluded, :sensitive_content], R.call(doc: d, text: 'x')
     assert_equal R::VERSION, d.raw_metadata[R::MEMO_KEY]['version']
@@ -89,5 +89,22 @@ class Stacks::Etl::ContentReviewTest < ActiveSupport::TestCase
   test 'works without a doc (no memo)' do
     Stacks::AI.expects(:extract).once.returns(result(false))
     assert_equal [:not_excluded, :none], R.call(doc: nil, text: 'hello', content_hash: 'z')
+  end
+
+  # 2026-09-28, Hugh: assessments of job candidates are hiring work (Creative Network grading),
+  # not private personnel matters. v2 stopped walling them.
+  test 'the prompt no longer treats candidate assessments as sensitive' do
+    refute_includes R::CATEGORIES, 'candidate_evaluation'
+    assert_match(/assessments? of job candidates/i, R::SYSTEM)
+    refute_match(/\(category: candidate_evaluation\)/, R::SYSTEM)
+  end
+
+  test 'a v1 verdict stays valid under v2 unless it walled a candidate assessment' do
+    v1 = ->(sensitive, category) { doc(raw: { R::MEMO_KEY => { 'content_hash' => 'h1', 'version' => 1,
+                                                                 'sensitive' => sensitive, 'category' => category } }) }
+    Stacks::AI.expects(:extract).once.returns(result(false)) # only the candidate one is re-read
+    assert_equal [:not_excluded, :none], R.call(doc: v1.(false, 'none'), text: 'x')
+    assert_equal [:auto_excluded, :sensitive_content], R.call(doc: v1.(true, 'compensation'), text: 'x')
+    assert_equal [:not_excluded, :none], R.call(doc: v1.(true, 'candidate_evaluation'), text: 'x')
   end
 end

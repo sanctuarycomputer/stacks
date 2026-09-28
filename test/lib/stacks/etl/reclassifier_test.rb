@@ -203,4 +203,18 @@ class Stacks::Etl::ReclassifierTest < ActiveSupport::TestCase
     assert_equal 1, stats[:mail_without_stored_text]
     assert_equal 0, stats[:mail_reviews_deferred]
   end
+
+  test 'a transcript walled only as a candidate assessment is re-read under v2 and re-opened' do
+    skip_without_pgvector
+    tx = transcript!('cand', participants: 5, excluded: :auto_excluded, reason: :sensitive_content,
+                     text: 'Pat interviewed well; strong portfolio')
+    tx.update!(raw_metadata: { MEMO => { 'content_hash' => tx.content_hash, 'version' => 1,
+                                         'sensitive' => true, 'category' => 'candidate_evaluation' } })
+    Stacks::AI.expects(:extract).once.returns(ai(false))
+
+    R.call
+
+    assert tx.reload.not_excluded?
+    assert_equal 1, tx.chunks.count, 're-indexed from the stored transcript'
+  end
 end
