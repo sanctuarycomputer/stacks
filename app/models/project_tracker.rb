@@ -111,7 +111,7 @@ class ProjectTracker < ApplicationRecord
   }
 
   def last_weekly_ship
-    weekly_ships.order(sent_at: :desc).first
+    weekly_ships.corpus_eligible.order(sent_at: :desc).first
   end
 
   # Staleness for the "Last Ship" index pill, anchored to the project's last

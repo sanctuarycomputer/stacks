@@ -9,6 +9,10 @@ module Stacks
       # Returns true if it indexed, false if there was nothing to index.
       def self.call(document)
         return false unless document.corpus_eligible?
+        # Stored segments are the TRANSCRIPT's (notes share its Meeting row). Indexing them into a
+        # notes doc would copy a possibly walled-off transcript into the corpus. Notes content
+        # lives only in Drive, so an included notes doc is re-indexed by its next sync instead.
+        return false unless document.meet?
         meeting = document.source_record
         return false unless meeting.is_a?(Meeting)
 

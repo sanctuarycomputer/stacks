@@ -18,8 +18,13 @@ module Stacks
           Enumerator.new { |y| src.each_thread { |n| y << n } }
         end
 
-        # No exclusion override: public list addresses -> inherit the base default
-        # [:not_excluded, :none]. Manual include/exclude still works via human_locked?.
+        # Explicit privacy policy (the base connector is default-deny). Group mail goes to a list,
+        # so it is never a 1:1, but a thread whose SUBJECT names a sensitive topic (salary, HR,
+        # termination, …) is walled off exactly as a meeting with that title would be. Bodies are
+        # not content-reviewed (51k threads); manual include/exclude still works via human_locked?.
+        def exclusion_for(normalized, _doc = nil)
+          Stacks::Etl::Classifier.title_exclusion(normalized[:title]) || [:not_excluded, :none]
+        end
       end
     end
   end

@@ -25,7 +25,15 @@ module Stacks
         sync
       end
 
-      def exclusion_for(_normalized) = [:not_excluded, :none]
+      # The privacy wall is DEFAULT-DENY: every source must state, explicitly, how it walls off
+      # 1:1 / HR / comp content. A new source that forgets raises here on its first document and
+      # ingests nothing, rather than silently flowing everything into the agent's corpus.
+      # Returns [excluded, excluded_reason]; `doc` is the Document being (re)classified.
+      class MissingPrivacyPolicy < StandardError; end
+
+      def exclusion_for(_normalized, _doc = nil)
+        raise MissingPrivacyPolicy, "#{self.class} must implement #exclusion_for — the privacy wall is default-deny"
+      end
 
       # Chunk + embed + resolve speakers for one document from the given segments.
       # A class method so the Reindexer can index from STORED segments (no connector,
@@ -65,17 +73,27 @@ module Stacks
       private
 
       def ingest(normalized)
-        ActiveRecord::Base.transaction do
-          doc = Document.find_or_initialize_by(source: normalized[:source] || source, external_id: normalized[:external_id])
-          changed = doc.new_record? || doc.content_hash != normalized[:content_hash]
+        doc = Document.find_or_initialize_by(source: normalized[:source] || source, external_id: normalized[:external_id])
+        changed = doc.new_record? || doc.content_hash != normalized[:content_hash]
+        # Carry the content-review memo across re-ingests (it is keyed by content hash, so a
+        # changed transcript is re-reviewed); everything else in raw_metadata is the source's.
+        review_memo = doc.raw_metadata.to_h.slice(ContentReview::MEMO_KEY)
 
-          doc.assign_attributes(
-            title: normalized[:title], url: normalized[:url],
-            occurred_at: normalized[:occurred_at], content_hash: normalized[:content_hash],
-            raw_metadata: normalized[:raw_metadata] || {}
-          )
+        doc.assign_attributes(
+          title: normalized[:title], url: normalized[:url],
+          occurred_at: normalized[:occurred_at], content_hash: normalized[:content_hash],
+          raw_metadata: (normalized[:raw_metadata] || {}).merge(review_memo)
+        )
+        # Decide BEFORE opening the transaction: the content review is a model call (seconds,
+        # with retries) and must not hold a transaction open.
+        decision = exclusion_for(normalized, doc) unless doc.human_locked?
+
+        ActiveRecord::Base.transaction do
+          # A human decision always wins, including one made while we were deciding above:
+          # re-read the wall state under a row lock before writing ours.
+          decision = nil if keep_human_decision!(doc)
           doc.source_record = normalized[:build_source_record]&.call(doc) if changed
-          apply_exclusion(doc, normalized) unless doc.human_locked?
+          doc.excluded, doc.excluded_reason = decision if decision
           doc.save!
 
           sync_document_contacts(doc, normalized[:contacts])
@@ -84,16 +102,22 @@ module Stacks
           # (self-heal: e.g. a doc just re-included by a human gets indexed on the next sweep).
           if doc.corpus_eligible? && (changed || doc.chunks.empty?)
             self.class.index_chunks!(doc, normalized[:segments])
-          elsif !doc.corpus_eligible?
+          elsif !doc.corpus_eligible? && (changed || !doc.reason_unreviewed?)
+            # Walled off: drop the chunks. The one exception is a transient `unreviewed` hold on
+            # unchanged content — its chunks stay (every read path hides them via corpus_eligible)
+            # because notes and group threads cannot be re-indexed without a Google re-fetch.
             doc.chunks.destroy_all
           end
         end
       end
 
-      def apply_exclusion(doc, normalized)
-        excluded, reason = exclusion_for(normalized)
-        doc.excluded = excluded
-        doc.excluded_reason = reason
+      # True (and the in-memory doc synced to the DB) when a human has decided on this doc.
+      def keep_human_decision!(doc)
+        return false unless doc.persisted?
+        fresh = Document.lock.select(:id, :excluded, :excluded_reason, :excluded_by).find(doc.id)
+        return false unless fresh.human_locked?
+        doc.excluded, doc.excluded_reason, doc.excluded_by = fresh.excluded, fresh.excluded_reason, fresh.excluded_by
+        true
       end
 
       def sync_document_contacts(doc, contacts)
