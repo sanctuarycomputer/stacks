@@ -15,21 +15,31 @@ admin@ and accounting@ mail, which #189 only screened by subject.
 ## Design
 1. **Notes-only meetings in the Meet API sync.** `MeetApiSource#records_for` used to skip a conference record with no
    transcript. Now it lists that record's smart notes and emits each notes Doc as a `gemini_notes` record carrying
-   `raw_metadata["meet_attendance"] = {participants: N, conference_record: name}`. N is the Meet API participant count,
-   which is real attendance.
+   `raw_metadata["meet_attendance"]`. Attendance **errs low**, because fewer people means more gets walled:
+   - only people present for at least 60 seconds count, so a wrong-room joiner doesn't turn a 1:1 into a group;
+   - it's capped by the notes' Invited list when there is one, so one person on a laptop plus a phone is still one person;
+   - no session times at all counts as 0, which is walled.
+   If one notes Doc is written by two conference records (a call ended and restarted), the smaller count is kept.
+   When a transcript later lands, a separate smart-notes Doc is re-emitted linked to it and inherits its decision.
 2. **Classifier.** A notes doc with no transcript but a recorded attendance is classified on that attendance with the usual
    1:1 rule (≤2 → `one_on_one`), then the content review. No attendance → `attendance_unknown`, as before.
    The notes' title rule and transcript inheritance are unchanged and still come first.
 3. **The attendance sticks.** Ingest keeps `meet_attendance` when a later source (the Drive notes sync) re-ingests the same
    file without it. Otherwise the nightly Drive pass would flip the doc back to "unknown". Keys a source does send
    still win (`preserved.merge(new)`).
-4. **Mail screening.** `Groups::Connector` runs the content review on threads to jobs@, admin@ and accounting@ that pass
-   the subject rules. The prompt now covers email and says vendor, billing and invoice notices to the company are not
-   personal. That changes the prompt, so `ContentReview::VERSION` goes to 2 and meetings are re-reviewed once (~$4).
+4. **Mail screening.** `Groups::Connector` runs the content review on threads that pass the subject rules and were sent
+   to a screened list. A list counts as screened by its local part (jobs, admin, accounting, payroll, hr, people, hiring)
+   in any of the org's domains, so jobs@xxix.co is included. Screening is **sticky** per thread: a thread cross-posted to
+   jobs@ and another list is one Document, and a later crawl of the other list must not undo it.
+   The prompt now covers email and says vendor, billing and invoice notices to the company are not personal.
+   `ContentReview::VERSION` stays 1: the change doesn't touch what counts for meetings, and a bump would re-read every
+   meeting doc in one unbudgeted night.
 5. **Nightly budget.** Those groups hold ~11k threads (~23M characters, ~$6 once). Reviewing them all at ~1–2s each would
    stretch the nightly run by hours. So the Reclassifier reviews at most 1,500 group threads per run. Threads past the
    budget are held `unreviewed` (fail closed; chunks kept, hidden) and drained on later runs, or at once with
-   `rake "stacks:etl:reclassify_privacy[unbounded]"` on a detached dyno.
+   `rake "stacks:etl:reclassify_privacy[unbounded]"` on a detached dyno. A thread with no stored text (attachment-only
+   mail) keeps its state and spends no budget; its next re-crawl reviews it. An unknown rake mode raises instead of
+   doing a real run.
 
 ## Backfill
 - `rake "stacks:etl:sync_meet_all[30]"` once: re-reads the last ~30 days of conference records (the most Google keeps)
