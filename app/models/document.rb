@@ -44,6 +44,21 @@ class Document < ApplicationRecord
     not_excluded? || manually_included?
   end
 
+  # A human walls this document off. Every other document of the same meeting (transcript <->
+  # notes) goes with it: a person excluding "this meeting" means all of it, and waiting for the
+  # nightly re-inherit would leave the notes searchable in the meantime. Inclusion does NOT
+  # cascade (least privilege). Chunks go; the Meeting + segments stay, so this is reversible.
+  def exclude!(by:)
+    transaction do
+      siblings = source_record.is_a?(Meeting) ? Document.where(source_record: source_record) : Document.where(id: id)
+      siblings.find_each do |d|
+        d.update!(excluded: :manually_excluded, excluded_reason: :manual, excluded_by: by)
+        d.chunks.destroy_all
+      end
+    end
+    reload
+  end
+
   def human_locked?
     manually_excluded? || manually_included?
   end
