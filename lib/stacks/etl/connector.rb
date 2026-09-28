@@ -31,6 +31,9 @@ module Stacks
       # Returns [excluded, excluded_reason]; `doc` is the Document being (re)classified.
       class MissingPrivacyPolicy < StandardError; end
 
+      # raw_metadata keys that survive a re-ingest by a source that doesn't send them.
+      def preserved_metadata_keys = [ContentReview::MEMO_KEY]
+
       def exclusion_for(_normalized, _doc = nil)
         raise MissingPrivacyPolicy, "#{self.class} must implement #exclusion_for — the privacy wall is default-deny"
       end
@@ -75,14 +78,14 @@ module Stacks
       def ingest(normalized)
         doc = Document.find_or_initialize_by(source: normalized[:source] || source, external_id: normalized[:external_id])
         changed = doc.new_record? || doc.content_hash != normalized[:content_hash]
-        # Carry the content-review memo across re-ingests (it is keyed by content hash, so a
-        # changed transcript is re-reviewed); everything else in raw_metadata is the source's.
-        review_memo = doc.raw_metadata.to_h.slice(ContentReview::MEMO_KEY)
+        # Carry privacy facts across re-ingests (e.g. the content-review memo, keyed by content
+        # hash). Everything else in raw_metadata is the source's, and a key the source DOES send wins.
+        kept = doc.raw_metadata.to_h.slice(*preserved_metadata_keys)
 
         doc.assign_attributes(
           title: normalized[:title], url: normalized[:url],
           occurred_at: normalized[:occurred_at], content_hash: normalized[:content_hash],
-          raw_metadata: (normalized[:raw_metadata] || {}).merge(review_memo)
+          raw_metadata: kept.merge(normalized[:raw_metadata] || {})
         )
         # Decide BEFORE opening the transaction: the content review is a model call (seconds,
         # with retries) and must not hold a transaction open.

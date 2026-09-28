@@ -127,15 +127,18 @@ namespace :stacks do
     end
 
     # Re-applies the privacy wall (Stacks::Etl::Reclassifier) to every stored document that a
-    # human hasn't decided on. Nightly, it retries `unreviewed` transcripts and carries rule
-    # changes back over old documents. Preview first with:
-    #   rake "stacks:etl:reclassify_privacy[dry_run]"   (no writes, no model calls)
-    desc 'Re-apply the privacy wall to stored documents (pass dry_run to preview)'
-    task :reclassify_privacy, [:dry_run] => :environment do |_t, args|
-      dry_run = args[:dry_run].present?
+    # human hasn't decided on. Nightly, it retries `unreviewed` docs and carries rule changes back
+    # over old documents, reading at most NIGHTLY_MAIL_REVIEW_BUDGET group-mail threads per run.
+    #   rake "stacks:etl:reclassify_privacy[dry_run]"    preview: no writes, no model calls
+    #   rake "stacks:etl:reclassify_privacy[unbounded]"  drain the whole mail backlog (use run:detached)
+    desc 'Re-apply the privacy wall to stored documents ([dry_run] to preview, [unbounded] to drain)'
+    task :reclassify_privacy, [:mode] => :environment do |_t, args|
+      mode = args[:mode].to_s
+      dry_run = mode == 'dry_run'
+      budget = mode == 'unbounded' ? nil : Stacks::Etl::Reclassifier::NIGHTLY_MAIL_REVIEW_BUDGET
       system_task = SystemTask.create!(name: 'stacks:etl:reclassify_privacy') unless dry_run
       begin
-        stats = Stacks::Etl::Reclassifier.call(dry_run: dry_run)
+        stats = Stacks::Etl::Reclassifier.call(dry_run: dry_run, mail_review_budget: budget)
         stats.sort_by { |k, _| k.to_s }.each { |k, v| puts "#{k}: #{v}" }
         if system_task && stats[:errored].positive?
           system_task.mark_as_error(StandardError.new("#{stats[:errored]} documents failed: #{stats.inspect}"))

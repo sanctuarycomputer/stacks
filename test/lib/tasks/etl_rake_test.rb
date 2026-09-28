@@ -36,7 +36,7 @@ class EtlRakeTest < ActiveSupport::TestCase
     Stacks::Etl::Groups::Connector.any_instance.stubs(:run)
     Stacks::WeeklyShips::Sweep.stubs(:run!).returns(Hash.new(0))
     # The privacy wall is re-applied after the syncs, for real (not a dry run).
-    Stacks::Etl::Reclassifier.expects(:call).with(dry_run: false).in_sequence(seq).returns(Hash.new(0))
+    Stacks::Etl::Reclassifier.expects(:call).with(dry_run: false, mail_review_budget: Stacks::Etl::Reclassifier::NIGHTLY_MAIL_REVIEW_BUDGET).in_sequence(seq).returns(Hash.new(0))
     Rake::Task['stacks:etl:sync_meet_all'].reenable
     Rake::Task['stacks:etl:reclassify_privacy'].reenable
     Rake::Task['stacks:etl:sync_gemini_notes_all'].reenable
@@ -45,10 +45,16 @@ class EtlRakeTest < ActiveSupport::TestCase
   end
 
   test 'reclassify_privacy[dry_run] previews without a SystemTask' do
-    Stacks::Etl::Reclassifier.expects(:call).with(dry_run: true).returns(Hash.new(0).merge(checked: 3))
+    Stacks::Etl::Reclassifier.expects(:call).with(dry_run: true, mail_review_budget: Stacks::Etl::Reclassifier::NIGHTLY_MAIL_REVIEW_BUDGET).returns(Hash.new(0).merge(checked: 3))
     Rake::Task['stacks:etl:reclassify_privacy'].reenable
     assert_no_difference('SystemTask.count') do
       assert_output(/checked: 3/) { Rake::Task['stacks:etl:reclassify_privacy'].invoke('dry_run') }
     end
+  end
+
+  test 'reclassify_privacy[unbounded] drains the whole mail backlog in one run' do
+    Stacks::Etl::Reclassifier.expects(:call).with(dry_run: false, mail_review_budget: nil).returns(Hash.new(0))
+    Rake::Task['stacks:etl:reclassify_privacy'].reenable
+    assert_output(//) { Rake::Task['stacks:etl:reclassify_privacy'].invoke('unbounded') }
   end
 end

@@ -13,13 +13,19 @@ module Stacks
       # Transcripts first, so notes inherit decisions made earlier in the same run.
       ORDER = %w[meet gemini_notes google_groups].freeze
       HUMAN = [Document.excludeds[:manually_included], Document.excludeds[:manually_excluded]].freeze
+      # Group-mail content reviews per nightly run (~1–2s each). The first run after screening was
+      # switched on has ~11k threads to read; past the budget they are held `unreviewed` (fail
+      # closed, chunks kept) and drained on later nights, or at once with [unbounded].
+      NIGHTLY_MAIL_REVIEW_BUDGET = 1_500
 
-      def self.call(dry_run: false, scope: Document.all)
-        new(dry_run: dry_run).call(scope)
+      # mail_review_budget: max group-mail reviews this run; nil = unbounded.
+      def self.call(dry_run: false, scope: Document.all, mail_review_budget: nil)
+        new(dry_run: dry_run, mail_review_budget: mail_review_budget).call(scope)
       end
 
-      def initialize(dry_run:)
+      def initialize(dry_run:, mail_review_budget: nil)
         @dry_run = dry_run
+        @mail_reviews_left = mail_review_budget
         @meet = Meet::Connector.new(admin_email: nil)
         @groups = Groups::Connector.new(admin_email: nil)
       end
@@ -70,7 +76,7 @@ module Stacks
       end
 
       def decide(doc, stats)
-        return @groups.exclusion_for({ title: doc.title }, doc) if doc.google_groups?
+        return decide_group(doc, stats) if doc.google_groups?
 
         normalized = stored_normalized(doc)
         return @meet.exclusion_for(normalized, doc) unless @dry_run
@@ -82,6 +88,32 @@ module Stacks
         decision
       end
 
+      def decide_group(doc, stats)
+        titled = Classifier.title_exclusion(doc.title)
+        return titled if titled
+        return [:not_excluded, :none] unless Groups::Connector.screened?(doc.raw_metadata)
+        return @groups.exclusion_for(group_normalized(doc, []), doc) if ContentReview.fresh_memo(doc)
+
+        if @dry_run
+          stats[:would_content_review] += 1
+          return [doc.excluded.to_sym, doc.excluded_reason.to_sym]
+        end
+        if @mail_reviews_left
+          if @mail_reviews_left <= 0
+            stats[:mail_reviews_deferred] += 1
+            return ContentReview::UNREVIEWED
+          end
+          @mail_reviews_left -= 1
+        end
+        # A thread's only stored text is its own chunks (none once walled off -> unreviewed).
+        text = doc.chunks.order(:position).pluck(:content).map { |c| { text: c } }
+        @groups.exclusion_for(group_normalized(doc, text), doc)
+      end
+
+      def group_normalized(doc, segments)
+        { title: doc.title, raw_metadata: doc.raw_metadata, content_hash: doc.content_hash, segments: segments }
+      end
+
       def stored_normalized(doc)
         meta = doc.raw_metadata || {}
         inputs = meta[Meet::Connector::INPUTS_KEY]
@@ -89,6 +121,7 @@ module Stacks
         {
           source: doc.source.to_sym,
           title: doc.title,
+          raw_metadata: meta, # carries the Meet API attendance of notes-only meetings
           transcript_doc_id: meta['transcript_doc_id'],
           # Prefer the head-counts ingest recorded; legacy docs fall back to stored rows.
           participant_count: inputs ? inputs['participant_count'] : meeting&.participant_count.to_i,

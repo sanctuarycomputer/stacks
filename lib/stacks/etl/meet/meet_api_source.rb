@@ -34,9 +34,9 @@ module Stacks
         def records_for(cr)
           participants = fetch_participants(cr.name)
           segments, drive_doc_id = fetch_segments(cr.name, participants)
-          # No transcript yet (still generating, or none): skip. The cursor LOOKBACK
-          # re-checks recent meetings on later runs, so we pick it up once it's ready.
-          return [] if segments.empty?
+          # No transcript (transcription off, or still generating): the notes are all there is.
+          # The cursor LOOKBACK re-checks recent meetings, so a late transcript is still picked up.
+          return notes_only_records(cr, participants) if segments.empty?
 
           text = segments.map { |s| s[:text] }.join("\n")
           code, uri = space_label(cr.space)
@@ -73,7 +73,34 @@ module Stacks
           [transcript, notes].compact
         end
 
-        def build_api_notes_record(cr, drive_doc_id, title, participants)
+        # A meeting with Gemini notes but no transcript. The Meet API still knows who ACTUALLY
+        # attended, which is what the privacy wall needs to tell a 1:1 from a group meeting
+        # (without it, notes are walled off as attendance_unknown). smartNotes names the notes Doc
+        # exactly, so there is no guessing. Any API error yields nothing for this record.
+        def notes_only_records(cr, participants)
+          doc_ids = smart_note_doc_ids(cr.name)
+          return [] if doc_ids.empty?
+          code, _uri = space_label(cr.space)
+          title = @enricher.enrich(started_at: cr.start_time, meeting_code: code, fallback_title: code || cr.space)[:title]
+          doc_ids.filter_map { |id| build_api_notes_record(cr, id, title, participants, transcript_doc_id: nil) }
+        end
+
+        def smart_note_doc_ids(cr_name)
+          ids = []
+          page = nil
+          loop do
+            resp = @service.list_conference_record_smart_notes(cr_name, page_token: page)
+            Array(resp.smart_notes).each { |n| ids << n.docs_destination&.document }
+            page = resp.next_page_token
+            break unless page
+          end
+          ids.compact.uniq
+        rescue StandardError => e
+          Rails.logger.warn("[meet_api] smart notes lookup failed for #{cr_name}: #{e.class}: #{e.message.to_s[0, 140]}")
+          []
+        end
+
+        def build_api_notes_record(cr, drive_doc_id, title, participants, transcript_doc_id: drive_doc_id)
           return nil unless drive_doc_id
           notes_export = @drive_service.export_file(drive_doc_id, "text/markdown")
           notes_md = split_transcript(notes_export).first
@@ -91,9 +118,13 @@ module Stacks
             # transcript_doc_id = drive_doc_id: the notes doc IS the docsDestination doc,
             # so for_drive_doc(drive_doc_id) finds the transcript Document at ingest time
             # and Connector#exclusion_for inherits its privacy decision verbatim.
-            transcript_doc_id: drive_doc_id,
+            transcript_doc_id: transcript_doc_id,
             participant_count: participants.size, # fallback; connector prefers the join
-            raw_metadata: { "gemini_notes_doc_id" => drive_doc_id, "transcript_doc_id" => drive_doc_id },
+            raw_metadata: {
+              "gemini_notes_doc_id" => drive_doc_id, "transcript_doc_id" => transcript_doc_id,
+              # Real attendance (Meet API participants), for notes with no transcript to inherit from.
+              Connector::ATTENDANCE_KEY => { "participants" => participants.size, "conference_record" => cr.name }
+            },
             build_source_record: ->(doc) {
               # Ingest-time join: transcript Document ingested just above us in this sweep.
               joined = Document.for_drive_doc(drive_doc_id).first&.source_record

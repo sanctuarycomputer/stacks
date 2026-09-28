@@ -20,6 +20,11 @@ module Stacks
         end
 
         INPUTS_KEY = 'privacy_inputs'.freeze
+        # Real attendance of a notes-only meeting, from the Meet API (MeetApiSource). Kept across
+        # re-ingests: the Drive notes sync re-reads the same file later and doesn't know it.
+        ATTENDANCE_KEY = 'meet_attendance'.freeze
+
+        def preserved_metadata_keys = super + [ATTENDANCE_KEY]
 
         # The privacy wall for meetings: the deterministic rules first, then — for whatever they
         # let through (a 3+ person meeting with an innocuous title) — the LLM content review of
@@ -28,13 +33,13 @@ module Stacks
         def exclusion_for(normalized, doc = nil)
           decision = deterministic_exclusion(normalized, doc)
           return decision unless decision == [:not_excluded, :none]
-          Stacks::Etl::ContentReview.call(doc: doc, text: review_text(normalized[:segments]),
+          Stacks::Etl::ContentReview.call(doc: doc, text: Stacks::Etl::ContentReview.text_of(normalized[:segments]),
                                           content_hash: normalized[:content_hash] || doc&.content_hash)
         end
 
         # Rules only (no model call). Public so the Reclassifier's dry run can preview it.
         def deterministic_exclusion(normalized, doc = nil)
-          return notes_exclusion(normalized) if notes?(normalized)
+          return notes_exclusion(normalized, doc) if notes?(normalized)
 
           # 1:1 POLICY (transcripts): privacy is defined by the INTENDED AUDIENCE (the invite
           # count), not only by who showed up — take the LARGER of actual attendance and the
@@ -57,16 +62,24 @@ module Stacks
         def notes?(normalized) = normalized[:source].to_s == 'gemini_notes'
 
         # G2: notes are classified by their transcript, because only the transcript knows who
-        # actually attended. No transcript Document -> attendance unknown -> default-deny (a human
-        # can include it; it re-inherits automatically once its transcript is ingested). The notes'
-        # own title is checked first: an API transcript's title can fall back to the Meet code.
-        def notes_exclusion(normalized)
+        # actually attended. With no transcript, a notes-only meeting seen by the Meet API is
+        # classified on its REAL attendance; otherwise attendance is unknown -> default-deny (a
+        # human can include it; it re-inherits once a transcript is ingested). The notes' own title
+        # is checked first: an API transcript's title can fall back to the Meet code.
+        def notes_exclusion(normalized, doc = nil)
           titled = Stacks::Etl::Classifier.title_exclusion(normalized[:title])
           return titled if titled
           tid = normalized[:transcript_doc_id]
           transcripts = tid.present? ? Document.for_drive_doc(tid).to_a : []
           return inherited_from(transcripts) if transcripts.any?
+          attended = attendance(normalized, doc)
+          return Stacks::Etl::Classifier.call(title: normalized[:title], participant_count: attended) if attended
           [:auto_excluded, :attendance_unknown]
+        end
+
+        def attendance(normalized, doc)
+          meta = normalized.dig(:raw_metadata, ATTENDANCE_KEY) || doc&.raw_metadata&.dig(ATTENDANCE_KEY)
+          meta && meta['participants'].to_i
         end
 
         # Strictest transcript wins (the Drive + API rows of one meeting could disagree). Human
@@ -78,9 +91,6 @@ module Stacks
           [:auto_excluded, walled.manually_excluded? ? :manual : walled.excluded_reason.to_sym]
         end
 
-        def review_text(segments)
-          Array(segments).map { |s| [s[:speaker_name].presence, s[:text]].compact.join(': ') }.join("\n")
-        end
 
         def source_object(since)
           case @mode
