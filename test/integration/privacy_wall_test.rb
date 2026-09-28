@@ -84,6 +84,22 @@ class PrivacyWallTest < ActiveSupport::TestCase
     refute_includes out.content.first[:text], 'zebracanary'
   end
 
+  test "list_project_trackers shows a walled ship's date but never its subject or link" do
+    tracker = ProjectTracker.new(name: 'Wall Tracker 2')
+    tracker.save!(validate: false)
+    doc = Document.create!(source: :google_groups, external_id: '<w2@x>', title: CANARY, occurred_at: Time.zone.now,
+                           excluded: :auto_excluded, excluded_reason: :compensation,
+                           raw_metadata: { 'group_email' => 'ships@sanctuary.computer', 'gmail_message_ids' => ['w2@x'] })
+    ship = WeeklyShip.new(document: doc, project_tracker: tracker, sent_at: 1.day.ago, matched_by: :llm, confidence: 0.9)
+    ship.via_sweep = true
+    ship.save!
+
+    out = Mcp::ListProjectTrackersTool.call(name: 'Wall Tracker 2', server_context: {}).content.first[:text]
+    refute_includes out, 'zebracanary'
+    refute_includes out, 'w2%40x'
+    assert_includes out, 'last_weekly_ship', 'the ship itself (its date) is still reported'
+  end
+
   # ---- Tripwire -----------------------------------------------------------------------------
   # Every MCP tool file that touches corpus-derived data, and how it stays behind the wall.
   # A NEW tool that touches these models fails this test until someone reviews it and adds it
@@ -98,7 +114,8 @@ class PrivacyWallTest < ActiveSupport::TestCase
     'list_weekly_ships_tool.rb' => 'weekly_ships.corpus_eligible',
     'get_weekly_ship_block_tool.rb' => 'WeeklyShip.corpus_eligible',
     'get_project_burnup_tool.rb' => 'weekly_ships.corpus_eligible',
-    'provisioning_serializers.rb' => 'serializes ships its callers already scoped with corpus_eligible'
+    'provisioning_serializers.rb' => 'serializes ships its callers already scoped with corpus_eligible',
+    'list_project_trackers_tool.rb' => "a walled ship's date/sender only; subject + permalink gated on Document.corpus_eligible"
   }.freeze
 
   test 'tripwire: every MCP file that touches corpus data has been reviewed for the wall' do
