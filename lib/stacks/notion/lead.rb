@@ -15,11 +15,11 @@ class Stacks::Notion::Lead < Stacks::Notion::Base
   end
 
   def received_at
-    get_prop_value("✨ Lead Received").dig("start")
+    date_start("✨ Lead Received")
   end
 
   def reactivate_at
-    get_prop_value("Reactivate Date").dig("start")
+    date_start("Reactivate Date")
   end
 
   def age
@@ -32,11 +32,48 @@ class Stacks::Notion::Lead < Stacks::Notion::Base
   end
 
   def proposal_sent_at
-    get_prop_value("✨ Proposal Sent").dig("start")
+    date_start("✨ Proposal Sent")
   end
 
   def won_at
-    get_prop_value("✨ Status: Won").dig("start")
+    date_start("✨ Status: Won")
+  end
+
+  def lost_at
+    date_start("✨ Status: Lost")
+  end
+
+  # Notion sends an empty date property as {"date": nil}, so the prop value is
+  # nil, not a Hash. Read every date through here so one blank date can't
+  # raise and take the whole NotionLeads discovery down with it.
+  def date_start(prop)
+    value = get_prop_value(prop)
+    value.is_a?(Hash) ? value["start"] : nil
+  end
+
+  def no_proposal_sent?
+    get_prop_value("✨ No Proposal Sent?") == true
+  end
+
+  # True once a Loss Surveys list response is linked to this lead (the form's
+  # "(Internal) Lead" relation, mirrored as the lead's "Loss Survey" relation).
+  def loss_survey_linked?
+    value = get_prop_value("Loss Survey")
+    value.is_a?(Array) && value.any?
+  end
+
+  # "Sent" or "Not sending" once the Account Lead has dealt with the survey;
+  # nil while it is still owed. A response can take weeks, so sending is what
+  # clears the task, not the reply.
+  LOSS_SURVEY_DONE_STATUSES = ["Sent", "Not sending"].freeze
+
+  def loss_survey_status
+    value = get_prop_value("Loss Survey Status")
+    value.is_a?(Hash) ? value["name"] : nil
+  end
+
+  def loss_survey_handled?
+    loss_survey_linked? || LOSS_SURVEY_DONE_STATUSES.include?(loss_survey_status)
   end
 
   def considered_successful?

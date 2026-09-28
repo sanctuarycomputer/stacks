@@ -160,6 +160,44 @@ class Mcp::WeeklyShipToolsTest < ActiveSupport::TestCase
     assert_no_match(/secret/, row.to_json)
   end
 
+  test 'list_project_trackers carries the last ship and a ship status anchored to the last recorded hour' do
+    shipped = tracker!(name: 'Shipped Recently')
+    make_ship(shipped, sent_at: Date.new(2026, 9, 18).noon, title: 'Weekly Ship: Sep 18')
+    lapsed = tracker!(name: 'Lapsed')
+    make_ship(lapsed, sent_at: Date.new(2026, 9, 1).noon, title: 'Weekly Ship: Sep 1', excluded: :manually_excluded)
+    tracker!(name: 'Never Shipped')
+
+    rows = mcp_payload(Mcp::ListProjectTrackersTool.call(server_context: {})).index_by { |r| r['name'] }
+
+    # SNAPSHOT's last recorded hour is 2026-09-20: 2 days after the Sep 18 ship, 19 after Sep 1.
+    assert_equal 'fresh', rows['Shipped Recently']['ship_status']
+    assert_equal 'Weekly Ship: Sep 18', rows['Shipped Recently']['last_weekly_ship']['subject']
+    assert_equal 'stale', rows['Lapsed']['ship_status']
+    # An excluded document never leaks its title or permalink, but the date still counts.
+    assert_nil rows['Lapsed']['last_weekly_ship']['subject']
+    assert_nil rows['Lapsed']['last_weekly_ship']['url']
+    assert rows['Lapsed']['last_weekly_ship']['sent_at'].present?
+    assert_equal 'never', rows['Never Shipped']['ship_status']
+    assert_nil rows['Never Shipped']['last_weekly_ship']
+  end
+
+  test 'list_project_trackers marks internal-only trackers so nobody is chased for a ship' do
+    tracker!(name: 'Internal Only')
+    ProjectTracker.any_instance.stubs(:internal_client?).returns(true)
+    row = mcp_payload(Mcp::ListProjectTrackersTool.call(name: 'Internal Only', server_context: {})).first
+    assert_equal true, row['internal']
+    assert_equal 'internal', row['ship_status']
+  end
+
+  test 'list_project_trackers in_progress: true keeps only the Active-tab trackers' do
+    active = tracker!(name: 'Active One')
+    tracker!(name: 'Done One')
+    ProjectTracker.stubs(:in_progress).returns(ProjectTracker.where(id: active.id))
+    names = mcp_payload(Mcp::ListProjectTrackersTool.call(in_progress: true, server_context: {})).map { |r| r['name'] }
+    assert_includes names, 'Active One'
+    refute_includes names, 'Done One'
+  end
+
   test 'update_project_tracker sets a fixed monthly budget from one end and the new links' do
     tracker = with_links!(tracker!(name: 'Updatable'))
 
