@@ -104,6 +104,10 @@ class PrivacyWallTest < ActiveSupport::TestCase
   test 'tripwire: every MCP file that touches corpus data has been reviewed for the wall' do
     touching = Dir[Rails.root.join('app/services/mcp/*.rb')].select { |f| File.read(f).match?(CORPUS_TOUCHING) }
                                                             .map { |f| File.basename(f) }.sort
+    # The JSON API is the other agent-reachable surface; today nothing there touches the corpus.
+    api = Dir[Rails.root.join('app/controllers/**/*.rb')].select { |f| File.read(f).match?(CORPUS_TOUCHING) }
+    assert_empty api, "An API controller now touches corpus data (#{api.join(', ')}): scope it through " \
+                      'corpus_eligible and add a canary test here.'
     unreviewed = touching - REVIEWED.keys
     assert_empty unreviewed, "New MCP code touches corpus data: #{unreviewed.join(', ')}. Scope it through " \
                              'Document.corpus_eligible (or a scope built on it), add a canary test above, then list it in REVIEWED.'
