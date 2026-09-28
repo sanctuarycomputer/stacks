@@ -153,6 +153,8 @@ class Mcp::ExecutiveDashboardToolTest < ActiveSupport::TestCase
     assert_equal 3, money['months_used'], 'all three trailing months were cached'
     assert_equal (95_000.0 / 150.0).round(2), money['runway_months']
     assert_equal false, money['degraded']
+    assert_equal 'cash', money['accounting_method'], 'the money block states its basis instead of leaving it implicit'
+    assert_match(/cash by nature/, money['basis_note'])
     assert_equal [
       { 'name' => 'Chase Checking', 'classification' => 'Asset', 'balance' => 100_000.0 },
       { 'name' => 'Amex', 'classification' => 'Liability', 'balance' => -5_000.0 },
@@ -211,6 +213,7 @@ class Mcp::ExecutiveDashboardToolTest < ActiveSupport::TestCase
     payload = mcp_payload(Mcp::GetExecutiveDashboardTool.call(include_money: true, server_context: {}))
     money = payload['money']
     assert_equal true, money['degraded']
+    assert_equal 'cash', money['accounting_method'], 'a degraded money block still states its basis'
     assert_equal 0.0, money['net_cash']
     assert_equal 0.0, money['avg_burn_3mo']
     assert_equal 0, money['months_used']

@@ -7,27 +7,24 @@ module Mcp
                 'cost-of-living index, shares, amount, acceptance). Person-level figures are ' \
                 'deliberate (transparency policy). Defaults to the latest generated report.'
     STUDIO_TABS = PeriodicReport::STUDIO_TAB_KEYS
-    ACCOUNTING_METHODS = %w[cash accrual].freeze
 
     input_schema(
       properties: {
         period_label: { type: 'string', description: "A report's period label, e.g. 'Q2, 2026'. Default: the latest generated report." },
         studio: { type: 'string', description: "Studio tab: #{PeriodicReport::STUDIO_TAB_KEYS.join(' | ')} (default g3d)" },
-        accounting_method: { type: 'string', description: 'accrual (default) | cash' },
+        accounting_method: Mcp::AccountingBasis::SCHEMA,
       },
       required: []
     )
     annotations(read_only_hint: true, destructive_hint: false, idempotent_hint: true)
 
-    def self.call(period_label: nil, studio: 'g3d', accounting_method: 'accrual', server_context:)
+    def self.call(period_label: nil, studio: 'g3d', accounting_method: nil, server_context:)
       tab = studio.to_s.downcase.strip
       unless STUDIO_TABS.include?(tab)
         return Responses.error("Invalid studio '#{studio}'. Valid studio tabs: #{STUDIO_TABS.join(', ')}")
       end
-      method = accounting_method.to_s
-      unless ACCOUNTING_METHODS.include?(method)
-        return Responses.error("Invalid accounting_method '#{method}'. Valid: #{ACCOUNTING_METHODS.join(', ')}")
-      end
+      method, basis_error = Mcp::AccountingBasis.resolve(accounting_method)
+      return Responses.error(basis_error) if basis_error
 
       reports = PeriodicReport.order(period_starts_at: :desc).to_a
       return Responses.error('No quarterly reports exist yet.') if reports.empty?

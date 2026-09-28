@@ -8,14 +8,13 @@ module Mcp
                 'COGS - expenses) that exclude below-the-line Other Income/Expense, so ' \
                 "they may differ from QBO's Net Income."
     GRADATIONS = Studio::SNAPSHOT_GRADATIONS.map(&:to_s).freeze
-    ACCOUNTING_METHODS = %w[cash accrual].freeze
 
     input_schema(
       properties: {
         entity: { type: 'string', description: 'One of the four Enterprise names. Required.' },
         gradation: { type: 'string', description: "#{GRADATIONS.join(', ')} (default month)" },
         vertical: { type: 'string', description: 'A vertical tag (see available_verticals in output); default All' },
-        accounting_method: { type: 'string', description: 'accrual (default) | cash' },
+        accounting_method: Mcp::AccountingBasis::SCHEMA,
         periods: { type: 'integer', description: 'How many trailing periods, default 6, max 24' },
         raw_rows: { type: 'boolean', description: 'Include the raw cached P&L rows for the most recent period (label/value pairs). Default false.' },
       },
@@ -23,7 +22,7 @@ module Mcp
     )
     annotations(read_only_hint: true, destructive_hint: false, idempotent_hint: true)
 
-    def self.call(entity:, gradation: 'month', vertical: 'All', accounting_method: 'accrual', periods: 6, raw_rows: false, server_context:)
+    def self.call(entity:, gradation: 'month', vertical: 'All', accounting_method: nil, periods: 6, raw_rows: false, server_context:)
       ent = Enterprise.find_by(name: entity)
       unless ent
         return Responses.error("Unknown entity '#{entity}'. Valid entities: #{Enterprise.order(:name).pluck(:name).join(', ')}")
@@ -32,10 +31,8 @@ module Mcp
       unless GRADATIONS.include?(gradation)
         return Responses.error("Invalid gradation '#{gradation}'. Valid gradations: #{GRADATIONS.join(', ')}")
       end
-      method = accounting_method.to_s
-      unless ACCOUNTING_METHODS.include?(method)
-        return Responses.error("Invalid accounting_method '#{method}'. Valid: #{ACCOUNTING_METHODS.join(', ')}")
-      end
+      method, basis_error = Mcp::AccountingBasis.resolve(accounting_method)
+      return Responses.error(basis_error) if basis_error
 
       entries = Array(ent.snapshot.presence && ent.snapshot[gradation])
       if entries.empty?
