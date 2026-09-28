@@ -45,7 +45,10 @@ class Stacks::Etl::ClassifierTest < ActiveSupport::TestCase
     'Exit interview' => :offboarding,
     'Skip-level with Hugh' => :one_on_one,
     'Skip level' => :one_on_one,
-    'Skiplevel chat' => :one_on_one
+    'Skiplevel chat' => :one_on_one,
+    'Drew / Hugh 1-1' => :one_on_one,
+    'Drew 1 on 1' => :one_on_one,
+    'One-on-one' => :one_on_one
   }.each do |title, reason|
     test "lexicon: #{title.inspect} -> #{reason}" do
       assert_equal [:auto_excluded, reason], C.call(title: title, participant_count: 6)
@@ -57,7 +60,8 @@ class Stacks::Etl::ClassifierTest < ActiveSupport::TestCase
   # group threads titled "feedback", mostly client design feedback). The content review
   # (Stacks::Etl::ContentReview) catches the personal kind in meetings.
   ['Design feedback session', 'Client feedback on comps', 'Homepage comps', 'Quarterly review',
-   'Fundraise sync', 'Code review', 'Weekly check-in', 'Gateway redesign kickoff'].each do |title|
+   'Fundraise sync', 'Code review', 'Weekly check-in', 'Gateway redesign kickoff',
+   'Sprint 11 planning', 'Weekly Ship: Sep 11', '[Acme] Ship 11/14'].each do |title|
     test "not a title rule: #{title.inspect}" do
       assert_equal [:not_excluded, :none], C.call(title: title, participant_count: 6)
       assert_nil C.title_exclusion(title)
