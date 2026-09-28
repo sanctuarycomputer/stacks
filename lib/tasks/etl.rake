@@ -126,13 +126,35 @@ namespace :stacks do
       end
     end
 
+    # Re-applies the privacy wall (Stacks::Etl::Reclassifier) to every stored document that a
+    # human hasn't decided on. Nightly, it retries `unreviewed` transcripts and carries rule
+    # changes back over old documents. Preview first with:
+    #   rake "stacks:etl:reclassify_privacy[dry_run]"   (no writes, no model calls)
+    desc 'Re-apply the privacy wall to stored documents (pass dry_run to preview)'
+    task :reclassify_privacy, [:dry_run] => :environment do |_t, args|
+      dry_run = args[:dry_run].present?
+      system_task = SystemTask.create!(name: 'stacks:etl:reclassify_privacy') unless dry_run
+      begin
+        stats = Stacks::Etl::Reclassifier.call(dry_run: dry_run)
+        stats.sort_by { |k, _| k.to_s }.each { |k, v| puts "#{k}: #{v}" }
+        if system_task && stats[:errored].positive?
+          system_task.mark_as_error(StandardError.new("#{stats[:errored]} documents failed: #{stats.inspect}"))
+        else
+          system_task&.mark_as_success
+        end
+      rescue => e
+        raise unless system_task
+        system_task.mark_as_error(e)
+      end
+    end
+
     # The nightly ETL entry point. Runs the ongoing sync for EVERY source; today that's
     # Meet transcripts, Gemini notes + Google Groups, but new sources (Notion, Gmail, …) get added here
     # so the Scheduler job never has to change. Each source is invoked independently so
     # one source failing doesn't stop the others.
     desc 'Nightly ETL sync across ALL sources (currently Meet transcripts, Gemini notes + Google Groups)'
     task sync_all: :environment do
-      %w[stacks:etl:sync_meet_all stacks:etl:sync_gemini_notes_all stacks:etl:sync_google_groups stacks:etl:match_weekly_ships].each do |task_name|
+      %w[stacks:etl:sync_meet_all stacks:etl:sync_gemini_notes_all stacks:etl:sync_google_groups stacks:etl:reclassify_privacy stacks:etl:match_weekly_ships].each do |task_name|
         Rake::Task[task_name].invoke
       rescue => e
         Rails.logger.error("stacks:etl:sync_all — #{task_name} failed: #{e.class}: #{e.message}")
