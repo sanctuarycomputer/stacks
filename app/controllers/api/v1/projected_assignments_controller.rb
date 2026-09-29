@@ -7,7 +7,7 @@ class Api::V1::ProjectedAssignmentsController < ApiController
 
   def upsert
     adopt = params[:adopt_expected]&.permit!&.to_h  # the human snapshot, if this is an adopt
-    result = apply_one(params.permit(:source_key, *ATTRS), adopt: adopt)
+    result = preview_safely { apply_one(params.permit(:source_key, *ATTRS), adopt: adopt) }
     render json: result, status: http_status(result[:status])
   rescue Mcp::WriteGuard::CapExceeded => e
     render json: { status: "error", error: e.message }, status: :unprocessable_entity
@@ -33,7 +33,7 @@ class Api::V1::ProjectedAssignmentsController < ApiController
 
   def batch
     deferred = false
-    results = Array(params[:items]).map do |item|
+    results = preview_safely { Array(params[:items]).map do |item|
       permitted = item.permit(:source_key, *ATTRS)
       adopt = item[:adopt_expected]&.permit!&.to_h  # the human snapshot, if this item is an adopt
       next { status: "deferred", source_key: permitted[:source_key] } if deferred
@@ -46,7 +46,7 @@ class Api::V1::ProjectedAssignmentsController < ApiController
       rescue Resourcing::WriteThrough::UnresolvedContributor, Resourcing::WriteThrough::UnresolvableRole => e
         { status: "error", source_key: permitted[:source_key], error: e.message }
       end
-    end
+    end }
     render json: { results: results }, status: :ok
   end
 
@@ -63,6 +63,18 @@ class Api::V1::ProjectedAssignmentsController < ApiController
         status: :unprocessable_entity
     end
 
+    body, status = preview_safely { adopt_rows(segments, adopt_expected) }
+    render json: body, status: status
+  rescue Mcp::WriteGuard::CapExceeded => e
+    render json: { status: "error", error: e.message }, status: :unprocessable_entity
+  rescue Resourcing::WriteThrough::UnresolvedContributor, Resourcing::WriteThrough::UnresolvableRole => e
+    render json: { status: "error", error: e.message }, status: :unprocessable_entity
+  end
+
+  private
+
+  # The body of #adopt: builds, validates and saves the segment rows, then adopts. Returns [json, status].
+  def adopt_rows(segments, adopt_expected)
     rows = segments.map do |seg|
       permitted = seg.permit(:source_key, *ATTRS)
       r = ProjectedAssignment.find_or_initialize_by(source_key: permitted[:source_key])
@@ -73,23 +85,32 @@ class Api::V1::ProjectedAssignmentsController < ApiController
     end
     invalid = rows.reject(&:valid?)
     if invalid.any?
-      return render json: { results: invalid.map { |r| { status: "invalid", source_key: r.source_key, errors: r.errors.full_messages } } },
-        status: :unprocessable_entity
+      return [{ results: invalid.map { |r| { status: "invalid", source_key: r.source_key, errors: r.errors.full_messages } } },
+        :unprocessable_entity]
     end
 
     rows.each(&:save!)
     results = write_through.adopt_into(rows: rows, adopt_expected: adopt_expected, preview: preview?)
-    render json: { results: rows.zip(results).map { |r, res|
+    [{ results: rows.zip(results).map { |r, res|
       { status: res.status.to_s, source_key: r.source_key, before: res.before,
         after: res.after, runn_assignment_id: res.runn_assignment_id, conflict: res.conflict }.compact
-    } }, status: :ok
-  rescue Mcp::WriteGuard::CapExceeded => e
-    render json: { status: "error", error: e.message }, status: :unprocessable_entity
-  rescue Resourcing::WriteThrough::UnresolvedContributor, Resourcing::WriteThrough::UnresolvableRole => e
-    render json: { status: "error", error: e.message }, status: :unprocessable_entity
+    } }, :ok]
   end
 
-  private
+  # A preview must never persist anything. The real code path saves rows before it knows whether this is a
+  # preview (upsert/batch/adopt all save! first), so a preview runs inside a transaction that is ALWAYS rolled
+  # back: no code path, today's or a future one, can leave a row behind or edit an existing one. Runn is
+  # untouched either way (WriteThrough returns :preview before any Runn write).
+  # 2026-09-28: without this, previews had left 33 stray rows in production and edited one owned row.
+  def preview_safely
+    return yield unless preview?
+    result = nil
+    ActiveRecord::Base.transaction(requires_new: true) do
+      result = yield
+      raise ActiveRecord::Rollback
+    end
+    result
+  end
 
   # Applies a single upsert. Returns a Hash whose :status is a String
   # ("applied"|"noop"|"conflict"|"preview"|"invalid"). Raises WriteGuard::CapExceeded,

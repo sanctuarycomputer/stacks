@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_09_16_000001) do
+ActiveRecord::Schema.define(version: 2026_09_21_220000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -1048,6 +1048,8 @@ ActiveRecord::Schema.define(version: 2026_09_16_000001) do
     t.decimal "target_profit_margin", default: "0.0"
     t.bigint "runn_project_id"
     t.string "billing_model", default: "new_deal_v1", null: false
+    t.decimal "monthly_budget_low_end"
+    t.decimal "monthly_budget_high_end"
     t.index ["runn_project_id"], name: "index_project_trackers_on_runn_project_id", unique: true
   end
 

@@ -10,7 +10,13 @@ class Document < ApplicationRecord
   enum excluded: { not_excluded: 0, auto_excluded: 1, manually_excluded: 2, manually_included: 3 }
   enum excluded_reason: {
     none: 0, one_on_one: 1, performance_review: 2, compensation: 3,
-    hr: 4, offboarding: 5, pip: 6, title_keyword: 7, manual: 8
+    hr: 4, offboarding: 5, pip: 6, title_keyword: 7, manual: 8,
+    # The LLM content review flagged a personal conversation (Stacks::Etl::ContentReview).
+    sensitive_content: 9,
+    # The content review could not run (no key / API error); walled off until a retry succeeds.
+    unreviewed: 10,
+    # Notes with no transcript joined: nobody knows who actually attended, so default-deny.
+    attendance_unknown: 11
   }, _prefix: :reason
 
   SHIPS_GROUP_EMAIL = "ships@sanctuary.computer".freeze
@@ -36,6 +42,21 @@ class Document < ApplicationRecord
 
   def corpus_eligible?
     not_excluded? || manually_included?
+  end
+
+  # A human walls this document off. Every other document of the same meeting (transcript <->
+  # notes) goes with it: a person excluding "this meeting" means all of it, and waiting for the
+  # nightly re-inherit would leave the notes searchable in the meantime. Inclusion does NOT
+  # cascade (least privilege). Chunks go; the Meeting + segments stay, so this is reversible.
+  def exclude!(by:)
+    transaction do
+      siblings = source_record.is_a?(Meeting) ? Document.where(source_record: source_record) : Document.where(id: id)
+      siblings.find_each do |d|
+        d.update!(excluded: :manually_excluded, excluded_reason: :manual, excluded_by: by)
+        d.chunks.destroy_all
+      end
+    end
+    reload
   end
 
   def human_locked?

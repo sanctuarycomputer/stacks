@@ -17,6 +17,7 @@ class Stacks::Etl::Meet::MeetApiSourceTest < ActiveSupport::TestCase
     svc.stubs(:list_conference_record_transcripts).returns(OpenStruct.new(transcripts: [transcript], next_page_token: nil))
     svc.stubs(:list_conference_record_transcript_entries).returns(OpenStruct.new(transcript_entries: [entry], next_page_token: nil))
     svc.stubs(:list_conference_record_participants).returns(OpenStruct.new(participants: [participant], next_page_token: nil))
+    svc.stubs(:list_conference_record_smart_notes).returns(OpenStruct.new(smart_notes: [], next_page_token: nil))
     Stacks::Etl::Meet::Auth.stubs(:meet_service).returns(svc)
     drive_svc = mock('drive')
     drive_svc.stubs(:export_file).raises(StandardError, "stubbed: no notes in this test")
@@ -48,6 +49,7 @@ class Stacks::Etl::Meet::MeetApiSourceTest < ActiveSupport::TestCase
     svc.stubs(:list_conference_record_transcripts).returns(OpenStruct.new(transcripts: [transcript], next_page_token: nil))
     svc.stubs(:list_conference_record_transcript_entries).returns(OpenStruct.new(transcript_entries: [entry], next_page_token: nil))
     svc.stubs(:list_conference_record_participants).returns(OpenStruct.new(participants: parts, next_page_token: nil))
+    svc.stubs(:list_conference_record_smart_notes).returns(OpenStruct.new(smart_notes: [], next_page_token: nil))
     Stacks::Etl::Meet::Auth.stubs(:meet_service).returns(svc)
     drive_svc = mock('drive')
     drive_svc.stubs(:export_file).raises(StandardError, "stubbed: no notes in this test")
@@ -77,6 +79,7 @@ class Stacks::Etl::Meet::MeetApiSourceTest < ActiveSupport::TestCase
     svc.stubs(:list_conference_record_transcripts).returns(OpenStruct.new(transcripts: [transcript], next_page_token: nil))
     svc.stubs(:list_conference_record_transcript_entries).returns(OpenStruct.new(transcript_entries: [entry], next_page_token: nil))
     svc.stubs(:list_conference_record_participants).returns(OpenStruct.new(participants: [participant], next_page_token: nil))
+    svc.stubs(:list_conference_record_smart_notes).returns(OpenStruct.new(smart_notes: [], next_page_token: nil))
     Stacks::Etl::Meet::Auth.stubs(:meet_service).returns(svc)
     drive_svc = mock('drive')
     drive_svc.stubs(:export_file).raises(StandardError, "stubbed: no notes in this test")
@@ -104,6 +107,7 @@ class Stacks::Etl::Meet::MeetApiSourceTest < ActiveSupport::TestCase
     svc.stubs(:list_conference_record_transcripts).returns(OpenStruct.new(transcripts: [transcript], next_page_token: nil))
     svc.stubs(:list_conference_record_transcript_entries).returns(OpenStruct.new(transcript_entries: [entry], next_page_token: nil))
     svc.stubs(:list_conference_record_participants).returns(OpenStruct.new(participants: [participant], next_page_token: nil))
+    svc.stubs(:list_conference_record_smart_notes).returns(OpenStruct.new(smart_notes: [], next_page_token: nil))
     Stacks::Etl::Meet::Auth.stubs(:meet_service).returns(svc)
     drive_svc = mock('drive')
     drive_svc.stubs(:export_file).raises(StandardError, "stubbed: no notes in this test")
@@ -115,12 +119,13 @@ class Stacks::Etl::Meet::MeetApiSourceTest < ActiveSupport::TestCase
     assert_equal ['conferenceRecords/self'], yielded.map { |n| n[:external_id] } # re-yielded, not self-skipped
   end
 
-  test 'skips a conference record whose transcript has no entries yet' do
+  test 'skips a conference record with neither a transcript nor smart notes' do
     cr = OpenStruct.new(name: 'conferenceRecords/empty', start_time: '2026-01-01T09:00:00Z', end_time: '2026-01-01T09:30:00Z', space: 'spaces/abc')
     svc = mock('svc')
     svc.stubs(:list_conference_records).returns(OpenStruct.new(conference_records: [cr], next_page_token: nil))
     svc.stubs(:list_conference_record_transcripts).returns(OpenStruct.new(transcripts: [], next_page_token: nil))
     svc.stubs(:list_conference_record_participants).returns(OpenStruct.new(participants: [], next_page_token: nil))
+    svc.stubs(:list_conference_record_smart_notes).returns(OpenStruct.new(smart_notes: [], next_page_token: nil))
     Stacks::Etl::Meet::Auth.stubs(:meet_service).returns(svc)
     drive_svc = mock('drive')
     drive_svc.stubs(:export_file).raises(StandardError, "stubbed: no notes in this test")
@@ -131,6 +136,86 @@ class Stacks::Etl::Meet::MeetApiSourceTest < ActiveSupport::TestCase
     assert_empty yielded
   end
 
+  def notes_only_svc(cr, participants, smart_notes)
+    svc = mock('svc')
+    svc.stubs(:list_conference_records).returns(OpenStruct.new(conference_records: [cr], next_page_token: nil))
+    svc.stubs(:get_space).returns(OpenStruct.new(meeting_code: 'abc-defg-hjk', meeting_uri: 'https://meet.google.com/abc-defg-hjk'))
+    svc.stubs(:list_conference_record_transcripts).returns(OpenStruct.new(transcripts: [], next_page_token: nil))
+    svc.stubs(:list_conference_record_participants).returns(OpenStruct.new(participants: participants, next_page_token: nil))
+    svc.stubs(:list_conference_record_smart_notes).returns(OpenStruct.new(smart_notes: smart_notes, next_page_token: nil))
+    Stacks::Etl::Meet::Auth.stubs(:meet_service).returns(svc)
+    Stacks::Etl::Meet::CalendarEnricher.any_instance.stubs(:enrich).returns(title: 'Team Sync', attendees: [])
+    svc
+  end
+
+  def person(name, minutes)
+    OpenStruct.new(name: name, signedin_user: OpenStruct.new(display_name: name),
+                   earliest_start_time: '2026-01-01T09:00:00Z',
+                   latest_end_time: (Time.utc(2026, 1, 1, 9) + minutes * 60).iso8601)
+  end
+
+  def four_invited_md = NOTES_MD.sub('[Bob](mailto:bob@x.co)', '[Bob](mailto:bob@x.co) [Cy](mailto:cy@x.co) [Di](mailto:di@x.co)')
+
+  def notes_only_yield(people, md: four_invited_md)
+    cr = OpenStruct.new(name: 'conferenceRecords/n1', start_time: '2026-01-01T09:00:00Z', end_time: '2026-01-01T09:30:00Z', space: 'spaces/abc')
+    notes_only_svc(cr, people, [OpenStruct.new(docs_destination: OpenStruct.new(document: 'NOTES_ONLY_1'))])
+    drive_svc = mock('drive')
+    drive_svc.stubs(:export_file).with('NOTES_ONLY_1', 'text/markdown').returns(md)
+    Stacks::Etl::Meet::Auth.stubs(:drive_service).returns(drive_svc)
+    yielded = []
+    Stacks::Etl::Meet::MeetApiSource.new('hugh@sanctuary.computer').each_meeting { |n| yielded << n }
+    yielded
+  end
+
+  test 'a notes-only meeting (no transcript) yields its notes with the REAL attendance from the Meet API' do
+    yielded = notes_only_yield([person('p1', 30), person('p2', 30), person('p3', 25)])
+    assert_equal 1, yielded.size
+    notes = yielded.first
+    assert_equal :gemini_notes, notes[:source]
+    assert_equal 'NOTES_ONLY_1', notes[:external_id]
+    assert_nil notes[:transcript_doc_id], 'there is no transcript to inherit from'
+    att = notes[:raw_metadata][Stacks::Etl::Meet::Connector::ATTENDANCE_KEY]
+    assert_equal({ 'participants' => 3, 'present' => 3, 'invited' => 4, 'conference_record' => 'conferenceRecords/n1' }, att)
+  end
+
+  test 'attendance errs low: a 10-second joiner does not count, and never more than the Invited list' do
+    att = ->(people, md = four_invited_md) { notes_only_yield(people, md: md).first[:raw_metadata][Stacks::Etl::Meet::Connector::ATTENDANCE_KEY] }
+    short = OpenStruct.new(name: 'p3', signedin_user: nil, earliest_start_time: '2026-01-01T09:05:00Z', latest_end_time: '2026-01-01T09:05:10Z')
+    assert_equal 2, att.([person('p1', 30), person('p2', 30), short])['participants']
+    # 2 invited (NOTES_MD); 3 "participants" = one person on laptop + phone -> still a 1:1
+    assert_equal 2, att.([person('p1', 30), person('p2', 30), person('p2-phone', 30)], NOTES_MD)['participants']
+    # no session times reported -> not counted (fail closed)
+    assert_equal 0, att.([OpenStruct.new(name: 'p1', signedin_user: nil)])['participants']
+  end
+
+  test 'when the transcript lands, a separate smart-notes doc is re-emitted linked to it (so it inherits)' do
+    cr = OpenStruct.new(name: 'conferenceRecords/t1', start_time: '2026-01-01T09:00:00Z', end_time: '2026-01-01T09:30:00Z', space: 'spaces/abc')
+    transcript = OpenStruct.new(name: 'conferenceRecords/t1/transcripts/1', docs_destination: OpenStruct.new(document: 'TX_DOC'))
+    entry = OpenStruct.new(participant: 'p1', text: 'hello', start_time: '2026-01-01T09:01:00Z', end_time: '2026-01-01T09:01:05Z')
+    svc = meet_svc_for(cr, transcript, entry, [person('p1', 30)])
+    svc.stubs(:list_conference_record_smart_notes).returns(OpenStruct.new(smart_notes: [OpenStruct.new(docs_destination: OpenStruct.new(document: 'NOTES_X'))], next_page_token: nil))
+    drive_svc = mock('drive')
+    drive_svc.stubs(:export_file).returns(NOTES_MD)
+    Stacks::Etl::Meet::Auth.stubs(:drive_service).returns(drive_svc)
+
+    yielded = []
+    Stacks::Etl::Meet::MeetApiSource.new('hugh@sanctuary.computer').each_meeting { |n| yielded << n }
+    x = yielded.find { |n| n[:external_id] == 'NOTES_X' }
+    assert x, 'the separate notes doc is emitted'
+    assert_equal 'TX_DOC', x[:transcript_doc_id]
+  end
+
+  test 'a smart-notes API error yields nothing for that record (logged, never guessed)' do
+    cr = OpenStruct.new(name: 'conferenceRecords/n2', start_time: '2026-01-01T09:00:00Z', end_time: '2026-01-01T09:30:00Z', space: 'spaces/abc')
+    svc = notes_only_svc(cr, [], [])
+    svc.stubs(:list_conference_record_smart_notes).raises(Google::Apis::ClientError.new('forbidden'))
+    Stacks::Etl::Meet::Auth.stubs(:drive_service).returns(mock('drive'))
+
+    yielded = []
+    Stacks::Etl::Meet::MeetApiSource.new('hugh@sanctuary.computer').each_meeting { |n| yielded << n }
+    assert_empty yielded
+  end
+
   def meet_svc_for(cr, transcript, entry, participants)
     svc = mock('svc')
     svc.stubs(:list_conference_records).returns(OpenStruct.new(conference_records: [cr], next_page_token: nil))
@@ -138,6 +223,7 @@ class Stacks::Etl::Meet::MeetApiSourceTest < ActiveSupport::TestCase
     svc.stubs(:list_conference_record_transcripts).returns(OpenStruct.new(transcripts: [transcript], next_page_token: nil))
     svc.stubs(:list_conference_record_transcript_entries).returns(OpenStruct.new(transcript_entries: [entry], next_page_token: nil))
     svc.stubs(:list_conference_record_participants).returns(OpenStruct.new(participants: participants, next_page_token: nil))
+    svc.stubs(:list_conference_record_smart_notes).returns(OpenStruct.new(smart_notes: [], next_page_token: nil))
     Stacks::Etl::Meet::Auth.stubs(:meet_service).returns(svc)
     Stacks::Etl::Meet::CalendarEnricher.any_instance.stubs(:enrich).returns(title: 'Team Sync', attendees: [])
     svc

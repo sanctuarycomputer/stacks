@@ -7,7 +7,10 @@ module Mcp
                 'cumulative income/spend/cost/hours series against the budget band, money ' \
                 'totals (invoiced, running spend, estimated cost, profit, margin, commissions), ' \
                 'overage vs each budget end, and the estimated weeks/months of budget left at ' \
-                'the trailing 7/30-day spend rate. Series come from the nightly tracker snapshot.'
+                'the trailing 7/30-day spend rate. Series come from the nightly tracker snapshot. ' \
+                'Also returns the weekly-ship inputs: monthly_budget {low, high}, hours_7d, ' \
+                'considered_ongoing, weekly_ship_block (the exact "Weekly Ship Gmail Autoformatter" ' \
+                'text the tracker page copies, print it verbatim in a ship), and last_weekly_ship.'
     input_schema(
       properties: {
         tracker: { type: 'string', description: 'ProjectTracker id or exact name (case-insensitive). Required.' },
@@ -30,12 +33,24 @@ module Mcp
       over_budget_overage = budget_high ? [spend - budget_high, 0].max : 0
       invoiced = t.income
       income_series = ProjectTrackers::IncomeSeries.call(t)
+      ship_numbers = t.weekly_ship_numbers
 
       Responses.ok({
         tracker: t.name,
         id: t.id,
         url: t.external_link,
         budget: { low: budget_low, high: budget_high },
+        monthly_budget: { low: t.monthly_budget_low_end&.to_f, high: t.monthly_budget_high_end&.to_f },
+        # The name predicate the app uses ("ongoing"/"retainer" in the name);
+        # a tracker can be ongoing and still carry an overall band.
+        considered_ongoing: t.considered_ongoing?,
+        # Live (Forecast), tracker-wide, same trailing window as the contributors
+        # tool; the block below is rendered from this same pass.
+        hours_7d: ship_numbers[:hours_7d].round(2),
+        weekly_ship_block: t.weekly_ship_block(ship_numbers),
+        last_weekly_ship: ProvisioningSerializers.weekly_ship_json(
+          t.weekly_ships.corpus_eligible.includes(:document).order(sent_at: :desc).first
+        ),
         series: {
           income: income_series[:income],
           spend: Array(t.snapshot['spend']),

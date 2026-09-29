@@ -5,6 +5,8 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
   setup do
     skip_without_pgvector # ingest creates Embedding records, which need the pgvector column
     Stacks::Etl::Embedder.stubs(:embed).returns(vectors: [[0.5] * 1024], total_tokens: 1)
+    # The LLM content review has its own tests; here every transcript it sees is ordinary.
+    Stacks::Etl::ContentReview.stubs(:call).returns([:not_excluded, :none])
   end
 
   def normalized(id, title, pcount)
@@ -42,28 +44,177 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
     assert Document.find_by!(external_id: 'm3').not_excluded?
   end
 
-  test "exclusion_for inherits a joined transcript's decision at ingest, else classifies on count" do
+  test "notes inherit a joined transcript's decision; with no transcript they are walled off (G2)" do
     m = Meeting.create!(meet_source: :meet_api, meet_conference_record_id: "cr/inh")
     Document.create!(source: :meet, external_id: "TX1", source_record: m,
                      excluded: :auto_excluded, excluded_reason: :one_on_one)
     conn = Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :gemini_notes)
+    notes = ->(**n) { { source: :gemini_notes, contacts: [] }.merge(n) }
 
-    # joined: resolves TX1 via for_drive_doc and inherits verbatim
-    joined = conn.exclusion_for(transcript_doc_id: "TX1", title: "Anything", participant_count: 9, contacts: [])
+    # joined: resolves TX1 via for_drive_doc and inherits
+    joined = conn.exclusion_for(notes.(transcript_doc_id: "TX1", title: "Anything", participant_count: 9))
     assert_equal [:auto_excluded, :one_on_one], joined
 
-    # standalone: genuine notes-only (no transcript link, nil) -> classify on the count
-    standalone = conn.exclusion_for(transcript_doc_id: nil, title: "Team Weekly", participant_count: 5, contacts: [])
-    assert_equal [:not_excluded, :none], standalone
+    # standalone notes: the invite list says 5, but nobody knows who ATTENDED -> default-deny
+    standalone = conn.exclusion_for(notes.(transcript_doc_id: nil, title: "Team Weekly", participant_count: 5))
+    assert_equal [:auto_excluded, :attendance_unknown], standalone
+
+    # a transcript referenced but not ingested yet is still "attendance unknown"
+    pending = conn.exclusion_for(notes.(transcript_doc_id: "NOT_INGESTED_YET", title: "Roadmap", participant_count: 5))
+    assert_equal [:auto_excluded, :attendance_unknown], pending
+
+    # a sensitive title keeps its more specific reason
+    titled = conn.exclusion_for(notes.(transcript_doc_id: nil, title: "Bonus pool", participant_count: 5))
+    assert_equal [:auto_excluded, :compensation], titled
 
     # API-keyed transcript: for_drive_doc must resolve via raw_metadata->>'drive_doc_id'
     # (MeetApiSource keys external_id on the conference-record id, not the Drive doc id).
     Document.create!(source: :meet, external_id: "confRec/1",
                      raw_metadata: { "drive_doc_id" => "DRV1" },
                      excluded: :auto_excluded, excluded_reason: :one_on_one)
-    api = conn.exclusion_for(transcript_doc_id: "DRV1", title: "Benign Title", participant_count: 9, contacts: [])
+    api = conn.exclusion_for(notes.(transcript_doc_id: "DRV1", title: "Benign Title", participant_count: 9))
     assert_equal [:auto_excluded, :one_on_one], api,
                  "API-ingested transcript (drive_doc_id in raw_metadata) must still inherit its exclusion"
+  end
+
+  test "notes never inherit a human LOCK: included -> not_excluded, excluded -> auto_excluded/manual" do
+    conn = Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :gemini_notes)
+    Document.create!(source: :meet, external_id: "INC", excluded: :manually_included, excluded_reason: :none)
+    Document.create!(source: :meet, external_id: "EXC", excluded: :manually_excluded, excluded_reason: :manual)
+
+    assert_equal [:not_excluded, :none],
+                 conn.exclusion_for({ source: :gemini_notes, transcript_doc_id: "INC", title: "T", contacts: [] })
+    assert_equal [:auto_excluded, :manual],
+                 conn.exclusion_for({ source: :gemini_notes, transcript_doc_id: "EXC", title: "T", contacts: [] })
+  end
+
+  test "a human excluding the transcript later reaches notes that were once included through it" do
+    skip_without_pgvector
+    tx = Document.create!(source: :meet, external_id: "TXL", excluded: :manually_included, excluded_reason: :none)
+    n = { source: :gemini_notes, external_id: "NL", title: "Sync", url: "u", occurred_at: Time.utc(2026, 1, 1),
+          content_hash: "nl", transcript_doc_id: "TXL", contacts: [], raw_metadata: {},
+          segments: [{ speaker_name: nil, text: "summary of the meeting" }], build_source_record: ->(_d) { nil } }
+    source = mock("source")
+    source.stubs(:each_meeting).yields(n)
+    Stacks::Etl::Meet::GeminiNotesSource.stubs(:new).returns(source)
+    conn = Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :gemini_notes)
+
+    conn.run(track: false)
+    notes = Document.find_by!(source: :gemini_notes, external_id: "NL")
+    assert notes.not_excluded?, "included through the transcript, but NOT human-locked"
+
+    tx.update!(excluded: :manually_excluded, excluded_reason: :manual)
+    conn.run(track: false)
+    notes.reload
+    refute notes.corpus_eligible?, "the transcript's later exclusion must propagate to its notes"
+    assert_equal 0, notes.chunks.count
+  end
+
+  test "the strictest of several transcript rows for one meeting wins" do
+    conn = Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :gemini_notes)
+    Document.create!(source: :meet, external_id: "DUP", excluded: :not_excluded, excluded_reason: :none)
+    Document.create!(source: :meet, external_id: "cr/dup", raw_metadata: { "drive_doc_id" => "DUP" },
+                     excluded: :auto_excluded, excluded_reason: :sensitive_content)
+    assert_equal [:auto_excluded, :sensitive_content],
+                 conn.exclusion_for({ source: :gemini_notes, transcript_doc_id: "DUP", title: "T", contacts: [] })
+  end
+
+  test "only an eligible TRANSCRIPT goes to the content review, and its verdict is final" do
+    conn = Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :api)
+    group = { title: "Leadership sync", participant_count: 5, contacts: [], content_hash: "c1",
+              segments: [{ speaker_name: "A", text: "your raise is approved" }] }
+
+    Stacks::Etl::ContentReview.expects(:call).with(has_entries(text: "A: your raise is approved", content_hash: "c1"))
+                              .returns([:auto_excluded, :sensitive_content])
+    assert_equal [:auto_excluded, :sensitive_content], conn.exclusion_for(group)
+  end
+
+  test "rule-excluded docs skip the content review" do
+    conn = Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :api)
+    Stacks::Etl::ContentReview.expects(:call).never
+    conn.exclusion_for({ title: "Sync", participant_count: 2, contacts: [] })
+    conn.exclusion_for({ title: "Payroll run", participant_count: 9, contacts: [] })
+    conn.exclusion_for({ source: :gemini_notes, transcript_doc_id: nil, title: "Roadmap", contacts: [] })
+  end
+
+  test "notes of an eligible meeting get their OWN content review (notes can cover what the transcript missed)" do
+    conn = Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :api)
+    Document.create!(source: :meet, external_id: "CLEAN", excluded: :not_excluded, excluded_reason: :none)
+    Stacks::Etl::ContentReview.expects(:call).with(has_entries(text: "Alex asked for a raise"))
+                              .returns([:auto_excluded, :sensitive_content])
+    notes = { source: :gemini_notes, transcript_doc_id: "CLEAN", title: "Team sync", contacts: [],
+              segments: [{ speaker_name: nil, text: "Alex asked for a raise" }] }
+    assert_equal [:auto_excluded, :sensitive_content], conn.exclusion_for(notes)
+  end
+
+  test "the notes' own title is checked even when a clean transcript exists" do
+    conn = Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :api)
+    Document.create!(source: :meet, external_id: "CLEAN2", excluded: :not_excluded, excluded_reason: :none)
+    assert_equal [:auto_excluded, :compensation],
+                 conn.exclusion_for({ source: :gemini_notes, transcript_doc_id: "CLEAN2", title: "Comp review - Alex", contacts: [] })
+  end
+
+  test "notes-only meetings are classified on REAL attendance from the Meet API (G2 follow-up)" do
+    conn = Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :api)
+    att = ->(n) { { Stacks::Etl::Meet::Connector::ATTENDANCE_KEY => { "participants" => n, "conference_record" => "cr/x" } } }
+    notes = ->(meta) { { source: :gemini_notes, transcript_doc_id: nil, title: "Team sync", contacts: [], raw_metadata: meta,
+                         content_hash: "nh", segments: [{ speaker_name: nil, text: "we planned the launch" }] } }
+
+    assert_equal [:auto_excluded, :one_on_one], conn.exclusion_for(notes.(att.(2)))
+    assert_equal [:auto_excluded, :one_on_one], conn.exclusion_for(notes.(att.(0)))
+    assert_equal [:auto_excluded, :attendance_unknown], conn.exclusion_for(notes.({}))
+
+    Stacks::Etl::ContentReview.expects(:call).with(has_entries(text: "we planned the launch")).returns([:not_excluded, :none])
+    assert_equal [:not_excluded, :none], conn.exclusion_for(notes.(att.(3))), "3+ real attendees -> eligible after the content review"
+  end
+
+  test "attendance recorded on the stored doc is used when a later source (Drive notes sync) does not send it" do
+    conn = Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :gemini_notes)
+    doc = Document.new(source: :gemini_notes, external_id: "NA",
+                       raw_metadata: { Stacks::Etl::Meet::Connector::ATTENDANCE_KEY => { "participants" => 2 } })
+    assert_equal [:auto_excluded, :one_on_one],
+                 conn.exclusion_for({ source: :gemini_notes, transcript_doc_id: nil, title: "Sync", contacts: [] }, doc)
+  end
+
+  test "attendance survives a re-ingest by a source that does not send it, and a source that does send it wins" do
+    skip_without_pgvector
+    key = Stacks::Etl::Meet::Connector::ATTENDANCE_KEY
+    base = { source: :gemini_notes, external_id: "NS", title: "Team sync", url: "u", occurred_at: Time.utc(2026, 1, 1),
+             content_hash: "ns", transcript_doc_id: nil, contacts: [], build_source_record: ->(_d) { nil },
+             segments: [{ speaker_name: nil, text: "roadmap notes" }] }
+    run = lambda do |n|
+      src = mock("src"); src.stubs(:each_meeting).yields(n)
+      Stacks::Etl::Meet::MeetApiSource.stubs(:new).returns(src)
+      Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :api).run(track: false)
+    end
+
+    run.(base.merge(raw_metadata: { key => { "participants" => 4 } }))           # Meet API: 4 attended
+    run.(base.merge(raw_metadata: { "gemini_notes_doc_id" => "NS" }))            # Drive notes sync: no attendance
+    doc = Document.find_by!(external_id: "NS")
+    assert_equal 4, doc.raw_metadata[key]["participants"]
+    assert doc.not_excluded?, "still eligible: the Drive pass did not flip it back to attendance_unknown"
+
+    run.(base.merge(raw_metadata: { key => { "participants" => 2 } }))           # a newer API read wins
+    assert doc.reload.reason_one_on_one?
+  end
+
+  test "two conference records writing one notes doc keep the SMALLER attendance" do
+    conn = Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :api)
+    key = Stacks::Etl::Meet::Connector::ATTENDANCE_KEY
+    kept = { key => { "participants" => 2, "conference_record" => "cr/a" } }
+    assert_equal 2, conn.send(:merge_metadata, kept, { key => { "participants" => 5, "conference_record" => "cr/b" } })[key]["participants"]
+    assert_equal 5, conn.send(:merge_metadata, kept, { key => { "participants" => 5, "conference_record" => "cr/a" } })[key]["participants"],
+                 "a newer read of the SAME conference record replaces the old one"
+  end
+
+  test "records the head-counts it decided on, for the nightly Reclassifier" do
+    conn = Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :api)
+    doc = Document.new(source: :meet, external_id: "rec", raw_metadata: {})
+    conn.deterministic_exclusion({ title: "Roadmap", participant_count: 2, contacts: [{}, {}, {}, {}] }, doc)
+    assert_equal({ "participant_count" => 2, "invite_count" => 4 }, doc.raw_metadata["privacy_inputs"])
+    # a stored invite_count (from privacy_inputs) is used as-is
+    assert_equal [:not_excluded, :none],
+                 conn.deterministic_exclusion({ title: "Roadmap", participant_count: 2, invite_count: 4, contacts: [] })
   end
 
   test "notes for an eligible meeting are ingested, chunked, and searchable; a 1:1's notes are walled off" do
@@ -138,6 +289,7 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
             .returns(OpenStruct.new(participants: parts_g, next_page_token: nil))
     meet_svc.stubs(:list_conference_record_participants).with('conferenceRecords/oo1', page_token: nil)
             .returns(OpenStruct.new(participants: parts_oo, next_page_token: nil))
+    meet_svc.stubs(:list_conference_record_smart_notes).returns(OpenStruct.new(smart_notes: [], next_page_token: nil))
     Stacks::Etl::Meet::Auth.stubs(:meet_service).returns(meet_svc)
     Stacks::Etl::Meet::CalendarEnricher.any_instance.stubs(:enrich).returns(title: 'Team Sync', attendees: [])
 
@@ -172,8 +324,8 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
     assert_equal 0, nt_oo.chunks.count
   end
 
-  test "exclusion_for 1:1 policy: a meeting invited to >2 is never a 1:1, regardless of attendance" do
-    conn = Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :gemini_notes)
+  test "transcript 1:1 policy: a meeting invited to >2 is never a 1:1, regardless of attendance" do
+    conn = Stacks::Etl::Meet::Connector.new(admin_email: "a@x.co", mode: :api)
     mk = ->(n) { n.times.map { |i| { email: "p#{i}@x.co", name: "P#{i}", role: "attendee" } } }
 
     # >2 INVITED but only 2 actually attended -> NOT a 1:1 (the invited count governs).
@@ -190,9 +342,6 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
     unk_oo = conn.exclusion_for(transcript_doc_id: nil, title: "Sync", participant_count: 2, contacts: [])
     assert_equal [:auto_excluded, :one_on_one], unk_oo, "unknown invited falls back to actual attendance"
 
-    # A referenced-but-not-yet-ingested transcript classifies on the count now (no conservative hold).
-    ref = conn.exclusion_for(transcript_doc_id: "NOT_INGESTED_YET", title: "Roadmap", participant_count: 2, contacts: mk.(5))
-    assert_equal [:not_excluded, :none], ref, "a referenced-but-unresolved transcript classifies on the invited/attendance count"
   end
 
   test "API transcript absorbs a pre-existing standalone notes Meeting (heals the split)" do
@@ -215,6 +364,7 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
     meet_svc.stubs(:list_conference_record_transcripts).returns(OpenStruct.new(transcripts: [tx], next_page_token: nil))
     meet_svc.stubs(:list_conference_record_transcript_entries).returns(OpenStruct.new(transcript_entries: [entry], next_page_token: nil))
     meet_svc.stubs(:list_conference_record_participants).returns(OpenStruct.new(participants: parts, next_page_token: nil))
+    meet_svc.stubs(:list_conference_record_smart_notes).returns(OpenStruct.new(smart_notes: [], next_page_token: nil))
     Stacks::Etl::Meet::Auth.stubs(:meet_service).returns(meet_svc)
     Stacks::Etl::Meet::CalendarEnricher.any_instance.stubs(:enrich).returns(title: 'Sync', attendees: [])
     drive_svc = mock('drive')

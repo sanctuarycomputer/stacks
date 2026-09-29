@@ -154,6 +154,10 @@ module Mcp
           balance: cached[:aggregated_new_deal_balance][:balance],
           unsettled: cached[:aggregated_new_deal_balance][:unsettled],
         },
+        # Bank balances and burn are cash-flow figures, so this block is cash by nature (the OKR tiles
+        # above are accrual). Saying so in the payload lets a reader label every money figure it prints.
+        accounting_method: MONEY_ACCOUNTING_METHOD,
+        basis_note: 'Net cash, burn and runway are cash by nature (bank balances and cash spent). Profit and margin elsewhere are accrual.',
         degraded: false,
       }
     rescue StandardError => e
@@ -166,6 +170,7 @@ module Mcp
         runway_months: nil,
         accounts: [],
         new_deal: { balance: 0.0, unsettled: 0.0 },
+        accounting_method: MONEY_ACCOUNTING_METHOD,
         degraded: true,
       }
     end

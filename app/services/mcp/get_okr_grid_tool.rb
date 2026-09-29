@@ -7,28 +7,25 @@ module Mcp
                 'value was measurable for the period; synthetic rows carry no tolerance. The grid ' \
                 'transposition (okr_names x periods) is left to the consumer.'
     GRADATIONS = Studio::SNAPSHOT_GRADATIONS.map(&:to_s).freeze
-    ACCOUNTING_METHODS = %w[cash accrual].freeze
 
     input_schema(
       properties: {
         studio: { type: 'string', description: 'Studio name or mini_name (case-insensitive). Required.' },
         gradation: { type: 'string', description: "#{GRADATIONS.join(', ')} (default month)" },
-        accounting_method: { type: 'string', description: 'accrual (default) or cash' },
+        accounting_method: Mcp::AccountingBasis::SCHEMA,
         periods: { type: 'integer', description: 'Most recent N periods (default 6, clamped 1..24)' },
       },
       required: ['studio']
     )
     annotations(read_only_hint: true, destructive_hint: false, idempotent_hint: true)
 
-    def self.call(studio:, gradation: 'month', accounting_method: 'accrual', periods: 6, server_context:)
+    def self.call(studio:, gradation: 'month', accounting_method: nil, periods: 6, server_context:)
       gradation = gradation.to_s
       unless GRADATIONS.include?(gradation)
         return Responses.error("Invalid gradation '#{gradation}'. Valid gradations: #{GRADATIONS.join(', ')}")
       end
-      method = accounting_method.to_s
-      unless ACCOUNTING_METHODS.include?(method)
-        return Responses.error("Invalid accounting_method '#{method}'. Valid: #{ACCOUNTING_METHODS.join(', ')}")
-      end
+      method, basis_error = Mcp::AccountingBasis.resolve(accounting_method)
+      return Responses.error(basis_error) if basis_error
 
       resolved = resolve_studio(studio, gradation)
       return resolved if resolved.is_a?(MCP::Tool::Response) # an error Response

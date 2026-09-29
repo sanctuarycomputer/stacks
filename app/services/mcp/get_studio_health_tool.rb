@@ -6,28 +6,25 @@ module Mcp
                 'satisfaction scores, and OKR health per period. Pure read of the persisted rollup — ' \
                 'figures always match Stacks\' own reporting. Never regenerates, never calls live APIs.'
     GRADATIONS = Studio::SNAPSHOT_GRADATIONS.map(&:to_s).freeze
-    ACCOUNTING_METHODS = %w[cash accrual].freeze
 
     input_schema(
       properties: {
         studio: { type: 'string', description: 'Optional studio name or mini_name (case-insensitive). Default: all studios with a snapshot.' },
         gradation: { type: 'string', description: "#{GRADATIONS.join(', ')} (default month)" },
-        accounting_method: { type: 'string', description: 'accrual (default) or cash' },
+        accounting_method: Mcp::AccountingBasis::SCHEMA,
         periods: { type: 'integer', description: 'Most recent N periods (default 6, clamped 1..24)' },
       },
       required: []
     )
     annotations(read_only_hint: true, destructive_hint: false, idempotent_hint: true)
 
-    def self.call(studio: nil, gradation: 'month', accounting_method: 'accrual', periods: 6, server_context:)
+    def self.call(studio: nil, gradation: 'month', accounting_method: nil, periods: 6, server_context:)
       gradation = gradation.to_s
       unless GRADATIONS.include?(gradation)
         return Responses.error("Invalid gradation '#{gradation}'. Valid gradations: #{GRADATIONS.join(', ')}")
       end
-      method = accounting_method.to_s
-      unless ACCOUNTING_METHODS.include?(method)
-        return Responses.error("Invalid accounting_method '#{method}'. Valid: #{ACCOUNTING_METHODS.join(', ')}")
-      end
+      method, basis_error = Mcp::AccountingBasis.resolve(accounting_method)
+      return Responses.error(basis_error) if basis_error
       recent = periods.to_i.clamp(1, 24)
 
       all_studios = Studio.all.to_a
