@@ -43,7 +43,7 @@ module Mcp
 
       period, capped_from = period(from, to)
       return Responses.error('Dates must be YYYY-MM-DD, with from on or before to.') unless period
-      compare = compare_period(period, compare_from, compare_to)
+      compare, capped_compare_from = compare_period(period, compare_from, compare_to)
       return Responses.error('Comparison dates must be YYYY-MM-DD, with compare_from on or before compare_to.') unless compare
 
       by = BY.include?(by.to_s) ? by.to_s : 'campaign'
@@ -61,7 +61,7 @@ module Mcp
         daily_sessions: daily(ids, period, campaign),
         by: by,
         top_movers: movers(ids, period, compare, by, campaign),
-        notes: notes(props, period, compare, capped_from),
+        notes: notes(props, period, compare, capped_from, capped_compare_from),
       })
     rescue StandardError => e
       Rails.logger.warn("[Mcp::GetSiteAnalyticsTool] #{e.class}: #{e.message}")
@@ -86,12 +86,13 @@ module Mcp
       if compare_from.present? || compare_to.present?
         a = date(compare_from)
         b = date(compare_to)
-        return nil unless a && b && a <= b
+        return [nil, nil] unless a && b && a <= b
+        return [(b - (MAX_DAYS - 1))..b, a] if (b - a).to_i >= MAX_DAYS
 
-        return a..b
+        return [a..b, nil]
       end
       days = (period.last - period.first).to_i + 1
-      (period.first - days)..(period.first - 1)
+      [(period.first - days)..(period.first - 1), nil]
     end
 
     def self.date(str)
@@ -161,8 +162,9 @@ module Mcp
       }
     end
 
-    def self.notes(props, period, compare, capped_from = nil)
+    def self.notes(props, period, compare, capped_from = nil, capped_compare_from = nil)
       out = []
+      out << "The comparison period is capped at #{MAX_DAYS} days: it starts #{compare.first.iso8601}, not the requested #{capped_compare_from.iso8601}." if capped_compare_from
       out << "The period is capped at #{MAX_DAYS} days: it starts #{period.first.iso8601}, not the requested #{capped_from.iso8601}." if capped_from
       stale = props.select { |p| p.data_through.nil? || p.data_through < period.last }
       out << "Data only runs through #{stale.map { |p| "#{p.name}: #{p.data_through&.iso8601 || 'none yet'}" }.join(', ')}; later days read as zero." if stale.any?

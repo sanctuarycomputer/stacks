@@ -41,7 +41,7 @@ ActiveAdmin.register AnalyticsProperty do
     f.inputs do
       f.input :name, hint: "How people will ask for it, e.g. \"garden3d.net\"."
       f.input :site_url
-      f.input :ga4_property_id, label: "GA4 property id", hint: "Numeric: GA Admin → Property settings → Property details (not the G- measurement id)."
+      f.input :ga4_property_id, label: "GA4 property id", hint: "Numeric: GA Admin → Property settings → Property details (not the G- measurement id). Changing it deletes this site's stored data; the next daily run backfills."
       f.input :active
     end
     f.actions

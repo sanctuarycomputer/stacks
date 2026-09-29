@@ -10,6 +10,17 @@ class AnalyticsProperty < ApplicationRecord
 
   scope :active, -> { where(active: true) }
 
+  # A new GA4 property id is a different site's data: drop the old rows and start over (the next daily run
+  # backfills), so the old property's numbers never mix with the new one's.
+  before_update :reset_data_for_new_property, if: :will_save_change_to_ga4_property_id?
+
+  def reset_data_for_new_property
+    analytics_daily_metrics.delete_all
+    self.data_through = nil
+    self.last_synced_at = nil
+    self.last_sync_error = nil
+  end
+
   # A site by name, URL fragment or property id (case-insensitive), for the MCP tool.
   def self.matching(query)
     q = query.to_s.strip.downcase

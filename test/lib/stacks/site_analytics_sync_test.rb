@@ -139,4 +139,15 @@ class Stacks::SiteAnalyticsSyncTest < ActiveSupport::TestCase
       AnalyticsDailyMetric.create!(analytics_property: @prop, date: Date.new(2026, 9, 27), breakdown: 'traffic', source: 'a', medium: 'b', campaign: 'c', sessions: 1)
     end
   end
+
+  test 'changing the GA4 property id drops the old property rows and restarts from a backfill' do
+    AnalyticsDailyMetric.create!(analytics_property: @prop, date: Date.new(2026, 9, 27), breakdown: 'total', sessions: 5)
+    @prop.update!(data_through: Date.new(2026, 9, 28), last_sync_error: 'x')
+    @prop.update!(name: 'garden3d (renamed)')
+    assert_equal 1, @prop.analytics_daily_metrics.count, 'a rename keeps the data'
+    @prop.update!(ga4_property_id: '654321')
+    assert_equal 0, @prop.analytics_daily_metrics.count
+    assert_nil @prop.reload.data_through
+    assert_nil @prop.last_sync_error
+  end
 end

@@ -81,4 +81,10 @@ class Mcp::SiteAnalyticsToolTest < ActiveSupport::TestCase
     assert_equal '2025-08-25', r['period']['from']
     assert r['notes'].any? { |n| n.include?('capped at 400 days') && n.include?('2024-01-01') }
   end
+
+  test 'a comparison period longer than 400 days is capped, and the notes say so' do
+    r = call(site: 'garden3d.net', compare_from: '2023-01-01', compare_to: '2025-08-31')
+    assert_equal({ 'from' => '2024-07-28', 'to' => '2025-08-31' }, r['compare'])
+    assert r['notes'].any? { |n| n.include?('comparison period is capped') && n.include?('2023-01-01') }
+  end
 end
