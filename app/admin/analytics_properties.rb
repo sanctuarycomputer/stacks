@@ -7,7 +7,9 @@ ActiveAdmin.register AnalyticsProperty do
 
   sidebar "Google Analytics", only: :index do
     if Stacks::GoogleAnalytics.configured?
-      para "Synced daily (stacks:daily_enterprise_tasks). A new site backfills 13 months on the next daily run."
+      email = (Stacks::GoogleAnalytics.new.client_email rescue nil)
+      para "Synced daily (stacks:daily_enterprise_tasks). Every GA4 property #{email || 'the service account'} can read is added here automatically; a new site backfills 13 months on the next daily run. Uncheck Active to stop syncing one."
+      para "Key: #{Stacks::GoogleAnalytics.key_source}."
     else
       para "Not configured: set GOOGLE_ANALYTICS_SERVICE_ACCOUNT_JSON in Heroku config. Until then nothing syncs."
     end

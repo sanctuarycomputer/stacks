@@ -150,4 +150,28 @@ class Stacks::SiteAnalyticsSyncTest < ActiveSupport::TestCase
     assert_nil @prop.reload.data_through
     assert_nil @prop.last_sync_error
   end
+
+  test 'discover! adds every visible property once, never touches existing sites, and names collisions' do
+    client = FakeClient.new(DAY)
+    client.define_singleton_method(:account_summaries) do
+      [{ property_id: '123456', display_name: 'garden3d.net (GA)', account: 'accounts/1' },
+       { property_id: '777', display_name: 'Index Space', account: 'accounts/1' },
+       { property_id: '888', display_name: 'garden3d.net', account: 'accounts/2' }]
+    end
+    client.define_singleton_method(:web_stream_uri) { |id| id == '777' ? 'https://index-space.org' : raise('no streams') }
+    @prop.update!(active: false)
+    sync = Stacks::SiteAnalyticsSync.new(client)
+    assert_equal ['Index Space', 'garden3d.net (888)'], sync.discover!
+    assert_equal 'https://index-space.org', AnalyticsProperty.find_by(ga4_property_id: '777').site_url
+    refute @prop.reload.active, 'an existing site is never re-enabled or edited'
+    assert_equal [], sync.discover!, 'idempotent'
+  end
+
+  test 'a failing discovery never stops the daily sync' do
+    client = FakeClient.new(DAY)
+    client.define_singleton_method(:account_summaries) { raise Stacks::GoogleAnalytics::Error, 'GA4 403: Analytics Admin API has not been used' }
+    result = Stacks::SiteAnalyticsSync.sync_all_with_lock!(client: client, today: Date.new(2026, 9, 29))
+    assert_equal({ error: 'Stacks::GoogleAnalytics::Error' }, result[:discovered])
+    assert_equal ['garden3d.net'], result[:synced]
+  end
 end

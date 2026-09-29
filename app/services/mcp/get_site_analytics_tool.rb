@@ -38,7 +38,7 @@ module Mcp
       props = site.present? ? AnalyticsProperty.matching(site).to_a : AnalyticsProperty.active.order(:name).to_a
       if props.empty?
         names = AnalyticsProperty.active.order(:name).pluck(:name)
-        return Responses.error(names.empty? ? 'No sites are set up in Stacks yet (Site Analytics → Properties).' : "No site matches \"#{site}\". Sites: #{names.join(', ')}.")
+        return Responses.error(names.empty? ? 'Google Analytics is not connected yet: Stacks can see no GA4 sites (it adds every property its service account can read, daily).' : "No site matches \"#{site}\". Sites: #{names.join(', ')}.")
       end
 
       period, capped_from = period(from, to)

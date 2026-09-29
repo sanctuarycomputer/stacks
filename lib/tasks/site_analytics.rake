@@ -5,6 +5,11 @@ namespace :site_analytics do
     puts(result.nil? ? "skipped: another sync holds the lock" : result.inspect)
   end
 
+  desc "Add every GA4 property the service account can see as a site (never deletes)"
+  task discover: :environment do
+    puts "created: #{Stacks::SiteAnalyticsSync.new(Stacks::GoogleAnalytics.new).discover!.inspect}"
+  end
+
   desc "Re-backfill one site: rake site_analytics:backfill[<ga4 property id>,<months, default 13>]"
   task :backfill, [:property_id, :months] => :environment do |_t, args|
     prop = AnalyticsProperty.find_by!(ga4_property_id: args[:property_id].to_s)
