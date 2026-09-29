@@ -10,17 +10,12 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_09_29_120000) do
+ActiveRecord::Schema.define(version: 2026_09_29_180000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_stat_statements"
   enable_extension "plpgsql"
-  # The "vector" (pgvector) extension and the embeddings.embedding vector column + HNSW
-  # index are intentionally omitted here so db:schema:load works on a Postgres without
-  # pgvector (e.g. Heroku CI's in-dyno Postgres). They are created by migrations in
-  # development/production, and re-established idempotently for tests/seeds in
-  # test/test_helper.rb and db/seeds.rb. Keep them out of this dumped schema.
 
   create_table "account_lead_periods", force: :cascade do |t|
     t.bigint "project_tracker_id", null: false
@@ -89,6 +84,40 @@ ActiveRecord::Schema.define(version: 2026_09_29_120000) do
     t.index ["reset_password_token"], name: "index_admin_users_on_reset_password_token", unique: true
   end
 
+  create_table "analytics_daily_metrics", force: :cascade do |t|
+    t.bigint "analytics_property_id", null: false
+    t.date "date", null: false
+    t.string "breakdown", null: false
+    t.string "source", default: "", null: false
+    t.string "medium", default: "", null: false
+    t.string "campaign", default: "", null: false
+    t.string "landing_page", default: "", null: false
+    t.integer "sessions", default: 0, null: false
+    t.integer "total_users", default: 0, null: false
+    t.integer "new_users", default: 0, null: false
+    t.integer "views", default: 0, null: false
+    t.integer "engaged_sessions", default: 0, null: false
+    t.decimal "key_events", precision: 14, scale: 2, default: "0.0", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["analytics_property_id", "breakdown", "date"], name: "index_analytics_daily_metrics_lookup"
+    t.index ["analytics_property_id"], name: "index_analytics_daily_metrics_on_analytics_property_id"
+  end
+
+  create_table "analytics_properties", force: :cascade do |t|
+    t.string "name", null: false
+    t.string "ga4_property_id", null: false
+    t.string "site_url"
+    t.boolean "active", default: true, null: false
+    t.date "data_through"
+    t.datetime "last_synced_at"
+    t.text "last_sync_error"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["ga4_property_id"], name: "index_analytics_properties_on_ga4_property_id", unique: true
+    t.index ["name"], name: "index_analytics_properties_on_name", unique: true
+  end
+
   create_table "api_tokens", force: :cascade do |t|
     t.string "name", null: false
     t.string "token_digest", null: false
@@ -127,10 +156,6 @@ ActiveRecord::Schema.define(version: 2026_09_29_120000) do
     t.datetime "occurred_at"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
-    # content_tsv (tsvector GENERATED ALWAYS AS) and its GIN index are intentionally
-    # omitted here: Rails 6.1 dumps generated columns as DEFAULT expressions, which
-    # PostgreSQL rejects on schema:load. They are added idempotently in test_helper.rb
-    # and exist in the development/production DBs via the CreateChunks migration.
     t.index ["document_id", "position"], name: "index_chunks_on_document_id_and_position", unique: true
     t.index ["document_id"], name: "index_chunks_on_document_id"
     t.index ["speaker_contact_id"], name: "index_chunks_on_speaker_contact_id"
@@ -307,8 +332,6 @@ ActiveRecord::Schema.define(version: 2026_09_29_120000) do
     t.string "owner_type", null: false
     t.bigint "owner_id", null: false
     t.string "model", null: false
-    # embedding vector(1024) + its HNSW index are added outside this schema (see the
-    # pgvector note at the top of the file) so schema:load works without pgvector.
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.index ["owner_type", "owner_id", "model"], name: "index_embeddings_on_owner_and_model", unique: true
@@ -848,6 +871,19 @@ ActiveRecord::Schema.define(version: 2026_09_29_120000) do
     t.index ["review_id"], name: "index_peer_reviews_on_review_id"
   end
 
+  create_table "periodic_reports", force: :cascade do |t|
+    t.integer "period_gradation", default: 0, null: false
+    t.date "period_starts_at", null: false
+    t.string "period_label", null: false
+    t.jsonb "blueprint", default: {}, null: false
+    t.bigint "notification_id"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.string "report_url"
+    t.index ["notification_id"], name: "index_periodic_reports_on_notification_id"
+    t.index ["period_gradation", "period_starts_at"], name: "index_periodic_reports_on_period_gradation_and_period_starts_at", unique: true
+  end
+
   create_table "permission_grants", force: :cascade do |t|
     t.bigint "admin_user_id", null: false
     t.string "permission", null: false
@@ -862,19 +898,6 @@ ActiveRecord::Schema.define(version: 2026_09_29_120000) do
     t.index ["admin_user_id"], name: "index_permission_grants_on_admin_user_id"
     t.index ["granted_by_id"], name: "index_permission_grants_on_granted_by_id"
     t.index ["subject_type", "subject_id"], name: "index_permission_grants_on_subject_type_and_subject_id"
-  end
-
-  create_table "periodic_reports", force: :cascade do |t|
-    t.integer "period_gradation", default: 0, null: false
-    t.date "period_starts_at", null: false
-    t.string "period_label", null: false
-    t.jsonb "blueprint", default: {}, null: false
-    t.bigint "notification_id"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.string "report_url"
-    t.index ["notification_id"], name: "index_periodic_reports_on_notification_id"
-    t.index ["period_gradation", "period_starts_at"], name: "index_periodic_reports_on_period_gradation_and_period_starts_at", unique: true
   end
 
   create_table "pre_profit_share_purchases", force: :cascade do |t|
@@ -1522,8 +1545,8 @@ ActiveRecord::Schema.define(version: 2026_09_29_120000) do
   add_foreign_key "account_lead_periods", "project_trackers"
   add_foreign_key "adhoc_invoice_trackers", "project_trackers"
   add_foreign_key "adhoc_invoice_trackers", "qbo_accounts"
-  # Composite FK fk_adhoc_invoice_trackers_qbo_invoice managed by migration (not expressible in schema.rb)
   add_foreign_key "admin_user_salary_windows", "admin_users"
+  add_foreign_key "analytics_daily_metrics", "analytics_properties", on_delete: :cascade
   add_foreign_key "api_tokens", "admin_users", column: "created_by_id"
   add_foreign_key "associates_award_agreements", "admin_users"
   add_foreign_key "chunks", "contacts", column: "speaker_contact_id"
@@ -1532,7 +1555,6 @@ ActiveRecord::Schema.define(version: 2026_09_29_120000) do
   add_foreign_key "commissions", "project_trackers"
   add_foreign_key "contributor_adjustments", "ledgers"
   add_foreign_key "contributor_adjustments", "qbo_accounts"
-  # Composite FK fk_contributor_adjustments_qbo_invoice managed by migration (not expressible in schema.rb)
   add_foreign_key "contributor_payouts", "admin_users", column: "created_by_id"
   add_foreign_key "contributor_payouts", "invoice_trackers"
   add_foreign_key "contributor_payouts", "ledgers"
@@ -1553,7 +1575,6 @@ ActiveRecord::Schema.define(version: 2026_09_29_120000) do
   add_foreign_key "invoice_trackers", "admin_users"
   add_foreign_key "invoice_trackers", "invoice_passes"
   add_foreign_key "invoice_trackers", "qbo_accounts"
-  # Composite FK fk_invoice_trackers_qbo_invoice managed by migration (not expressible in schema.rb)
   add_foreign_key "ledgers", "contributors"
   add_foreign_key "ledgers", "enterprises"
   add_foreign_key "mailing_list_subscribers", "mailing_lists"
@@ -1588,9 +1609,9 @@ ActiveRecord::Schema.define(version: 2026_09_29_120000) do
   add_foreign_key "pay_stubs", "pay_cycles"
   add_foreign_key "peer_reviews", "admin_users"
   add_foreign_key "peer_reviews", "reviews"
+  add_foreign_key "periodic_reports", "notifications"
   add_foreign_key "permission_grants", "admin_users"
   add_foreign_key "permission_grants", "admin_users", column: "granted_by_id"
-  add_foreign_key "periodic_reports", "notifications"
   add_foreign_key "pre_profit_share_purchases", "admin_users"
   add_foreign_key "profit_share_payments", "admin_users"
   add_foreign_key "profit_share_payments", "profit_share_passes"

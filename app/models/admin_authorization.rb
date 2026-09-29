@@ -76,6 +76,11 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
     # API tokens grant machine access to write surfaces: admins only, never leads.
     return user.is_admin? if subject.is_a?(ApiToken) || subject == ApiToken
 
+    # The list of Google Analytics sites Stacks syncs: admins edit it; leads may read it.
+    if subject.is_a?(AnalyticsProperty) || subject == AnalyticsProperty
+      return user.is_admin? unless action == :read
+    end
+
     return true if (user.is_admin? || user.can_act_as_lead?)
 
     # Project-scoped "lead" grants (leads-in-training limited to specific

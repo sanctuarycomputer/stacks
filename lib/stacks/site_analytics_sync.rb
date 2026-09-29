@@ -1,0 +1,136 @@
+# Daily Google Analytics (GA4) sync for each active AnalyticsProperty (Stacks::GoogleAnalytics).
+#
+# Per property and day it stores three breakdowns in analytics_daily_metrics:
+#   total        — the day's totals (the exact daily users figure);
+#   traffic      — by session source / medium / campaign, top TRAFFIC_TOP_N per day;
+#   landing_page — by landing page, top PAGES_TOP_N per day.
+# Rows past a day's top N fold into one "(other)" row, so each breakdown still sums to the day's total.
+#
+# A property with no data yet is backfilled BACKFILL_MONTHS (month by month); after that each run
+# re-fetches the last REFRESH_DAYS (GA4 keeps revising the last ~48h) plus any gap since data_through.
+# Inert without the key: sync_all! returns { skipped: "not configured" } and calls nothing.
+class Stacks::SiteAnalyticsSync
+  ADVISORY_LOCK_KEY = 7_311_904_552_118
+  BACKFILL_MONTHS = 13
+  REFRESH_DAYS = 3
+  TRAFFIC_TOP_N = 200
+  PAGES_TOP_N = 100
+  LANDING_PAGE_MAX = 500
+  METRICS = %w[sessions totalUsers newUsers screenPageViews engagedSessions keyEvents].freeze
+  COLUMNS = %i[sessions total_users new_users views engaged_sessions key_events].freeze
+  BREAKDOWNS = {
+    "total" => { dimensions: [], columns: [] },
+    "traffic" => { dimensions: %w[sessionSource sessionMedium sessionCampaignName], columns: %i[source medium campaign] },
+    "landing_page" => { dimensions: %w[landingPage], columns: %i[landing_page] },
+  }.freeze
+
+  def self.sync_all_with_lock!(client: nil, today: Date.current)
+    return { skipped: "not configured" } unless client || Stacks::GoogleAnalytics.configured?
+
+    conn = ActiveRecord::Base.connection
+    return nil unless conn.select_value("SELECT pg_try_advisory_lock(#{ADVISORY_LOCK_KEY})")
+
+    begin
+      new(client || Stacks::GoogleAnalytics.new).sync_all!(today: today)
+    ensure
+      conn.execute("SELECT pg_advisory_unlock(#{ADVISORY_LOCK_KEY})")
+    end
+  end
+
+  def initialize(client, traffic_top_n: TRAFFIC_TOP_N, pages_top_n: PAGES_TOP_N)
+    @client = client
+    @top_n = { "total" => nil, "traffic" => traffic_top_n, "landing_page" => pages_top_n }
+  end
+
+  # { properties: n, synced: [names], failed: { name => error } }. One property's failure never stops the rest.
+  def sync_all!(today: Date.current)
+    result = { properties: 0, synced: [], failed: {} }
+    AnalyticsProperty.active.order(:name).each do |prop|
+      result[:properties] += 1
+      sync_property!(prop, today: today)
+      result[:synced] << prop.name
+    rescue StandardError => e
+      result[:failed][prop.name] = "#{e.class}: #{e.message}"[0, 500]
+      prop.update_columns(last_sync_error: result[:failed][prop.name], updated_at: Time.current)
+      Rails.logger.error("[Stacks::SiteAnalyticsSync] #{prop.name} (#{prop.ga4_property_id}) failed: #{e.class}: #{e.message}")
+      Sentry.capture_exception(e) if defined?(Sentry)
+    end
+    SourceSync.for("google_analytics").advance!(stats: result, status: result[:failed].empty? ? "success" : "partial")
+    result
+  end
+
+  # Backfill when there is no data yet; otherwise refresh the recent days (and any gap).
+  def sync_property!(prop, today: Date.current)
+    yesterday = today - 1
+    if prop.data_through.nil?
+      backfill!(prop, months: BACKFILL_MONTHS, today: today)
+    else
+      from = [prop.data_through + 1, today - REFRESH_DAYS].min
+      sync_range!(prop, from, yesterday)
+    end
+  end
+
+  def backfill!(prop, months: BACKFILL_MONTHS, today: Date.current)
+    yesterday = today - 1
+    start = (yesterday << months) + 1
+    while start <= yesterday
+      finish = [start.end_of_month, yesterday].min
+      sync_range!(prop, start, finish)
+      start = finish + 1
+    end
+  end
+
+  def sync_range!(prop, from, to)
+    return if from > to
+
+    batches = BREAKDOWNS.to_h do |breakdown, spec|
+      raw = @client.run_report(prop.ga4_property_id, date_from: from, date_to: to,
+                               dimensions: ["date", *spec[:dimensions]], metrics: METRICS)
+      [breakdown, rows_for(prop, breakdown, spec, raw)]
+    end
+
+    now = Time.current
+    AnalyticsDailyMetric.transaction do
+      AnalyticsDailyMetric.where(analytics_property_id: prop.id, date: from..to).delete_all
+      batches.each_value do |rows|
+        rows.each_slice(1_000) { |slice| AnalyticsDailyMetric.insert_all!(slice.map { |r| r.merge(created_at: now, updated_at: now) }) }
+      end
+      prop.update!(data_through: [prop.data_through, to].compact.max, last_synced_at: now, last_sync_error: nil)
+    end
+  end
+
+  private
+
+  # GA rows → our rows: truncated dimension values merged, then each day's top N kept and the rest
+  # folded into "(other)".
+  def rows_for(prop, breakdown, spec, raw)
+    by_day = Hash.new { |h, k| h[k] = {} }
+    raw.each do |r|
+      date = Date.strptime(r[:dimensions].first, "%Y%m%d")
+      dims = spec[:columns].zip(r[:dimensions].drop(1)).to_h { |col, v| [col, clean(col, v)] }
+      metrics = COLUMNS.zip(r[:metrics]).to_h
+      acc = by_day[date][dims] ||= COLUMNS.to_h { |c| [c, 0] }
+      COLUMNS.each { |c| acc[c] += metrics[c].to_f }
+    end
+
+    by_day.flat_map do |date, groups|
+      ranked = groups.sort_by { |dims, m| [-m[:sessions], dims.values.join("\u0000")] }
+      top_n = @top_n[breakdown]
+      kept, rest = top_n ? [ranked.first(top_n), ranked.drop(top_n)] : [ranked, []]
+      if rest.any?
+        other = COLUMNS.to_h { |c| [c, rest.sum { |_d, m| m[c] }] }
+        kept += [[spec[:columns].to_h { |c| [c, AnalyticsDailyMetric::OTHER] }, other]]
+      end
+      kept.map do |dims, m|
+        { analytics_property_id: prop.id, date: date, breakdown: breakdown, source: "", medium: "", campaign: "", landing_page: "" }
+          .merge(dims)
+          .merge(COLUMNS.to_h { |c| [c, c == :key_events ? m[c].round(2) : m[c].round] })
+      end
+    end
+  end
+
+  def clean(col, value)
+    v = value.to_s
+    col == :landing_page ? v[0, LANDING_PAGE_MAX] : v[0, 255]
+  end
+end
