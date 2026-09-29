@@ -492,11 +492,25 @@ ActiveAdmin.register ProjectTracker do
           column("Sent") { |ws| "#{time_ago_in_words(ws.sent_at)} ago" }
           column("Subject") { |ws| ws.document.title }
           column("Sender") { |ws| ws.sent_by_name || ws.sent_by_email }
+          # Coaching for the sender from the nightly grader (Stacks::WeeklyShips::Grader).
+          column("Grade") do |ws|
+            if (g = ws.grade)
+              span WeeklyShip.stars_label(g["stars"]), title: "#{g["stars"]} of 5", style: "white-space: nowrap;"
+            end
+          end
+          column("Feedback for the sender") do |ws|
+            if (g = ws.grade)
+              div g["summary"]
+              ul(style: "margin: 4px 0 0 16px;") { Array(g["suggestions"]).each { |s| li s } }
+            end
+          end
           column("") do |ws|
             url = ws.document.google_groups_permalink
             link_to("Open ↗", url, target: "_blank", rel: "noopener") if url
           end
         end
+        para em("Grades are coaching for the sender, scored nightly by a model against the weekly ship rubric. Never share them with the client."),
+             style: "margin: 8px 12px; opacity: 0.6; font-size: 0.85em;"
       else
         para em("No weekly ships linked yet.")
       end

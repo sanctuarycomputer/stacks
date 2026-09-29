@@ -45,6 +45,10 @@ ActiveAdmin.register ShipScan do
         span "—", style: "opacity: 0.4;"
       end
     end
+    column("Grade") do |scan|
+      g = scan.document.weekly_ships.map(&:grade).compact.first
+      span WeeklyShip.stars_label(g["stars"]), style: "white-space: nowrap;" if g
+    end
     column("Status") do |scan|
       pill_class = scan.linked? ? "pill exceptional" : "pill"
       span scan.outcome.humanize, class: pill_class

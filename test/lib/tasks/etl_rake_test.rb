@@ -35,6 +35,7 @@ class EtlRakeTest < ActiveSupport::TestCase
     # and could hang the suite).
     Stacks::Etl::Groups::Connector.any_instance.stubs(:run)
     Stacks::WeeklyShips::Sweep.stubs(:run!).returns(Hash.new(0))
+    Stacks::WeeklyShips::Grader.stubs(:run!).returns(Hash.new(0))
     # The privacy wall is re-applied after the syncs, for real (not a dry run).
     Stacks::Etl::Reclassifier.expects(:call).with(dry_run: false, mail_review_budget: Stacks::Etl::Reclassifier::NIGHTLY_MAIL_REVIEW_BUDGET).in_sequence(seq).returns(Hash.new(0))
     Rake::Task['stacks:etl:sync_meet_all'].reenable
@@ -56,6 +57,24 @@ class EtlRakeTest < ActiveSupport::TestCase
     Stacks::Etl::Reclassifier.expects(:call).with(dry_run: false, mail_review_budget: nil).returns(Hash.new(0))
     Rake::Task['stacks:etl:reclassify_privacy'].reenable
     assert_output(//) { Rake::Task['stacks:etl:reclassify_privacy'].invoke('unbounded') }
+  end
+
+  test 'match_weekly_ships grades after matching, and a grading failure marks the task errored' do
+    seq = sequence('ships')
+    Stacks::WeeklyShips::Sweep.expects(:run!).in_sequence(seq).returns(Hash.new(0))
+    Stacks::WeeklyShips::Grader.expects(:run!).in_sequence(seq).returns(Hash.new(0).merge(errored: 1))
+    SystemTask.any_instance.expects(:mark_as_error).with { |e| e.message.include?('1 failed to grade') }
+    SystemTask.any_instance.expects(:mark_as_success).never
+    Rake::Task['stacks:etl:match_weekly_ships'].reenable
+    Rake::Task['stacks:etl:match_weekly_ships'].invoke
+  end
+
+  test 'grade_weekly_ships_preview never writes' do
+    Stacks::WeeklyShips::Grader.expects(:run!).with(dry_run: true, limit: 3).returns(Hash.new(0).merge(results: []))
+    Rake::Task['stacks:etl:grade_weekly_ships_preview'].reenable
+    assert_no_difference('SystemTask.count') do
+      assert_output(/graded/) { Rake::Task['stacks:etl:grade_weekly_ships_preview'].invoke('3') }
+    end
   end
 
   test 'reclassify_privacy refuses an unknown mode instead of doing a real run' do

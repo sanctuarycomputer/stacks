@@ -13,13 +13,17 @@ class Stacks::AI::Providers::Anthropic
       api_key.present?
     end
 
-    def extract(system:, prompt:, schema:, tier:)
-      model = TIER_MODELS.fetch(tier) { raise ArgumentError, "Unknown Stacks::AI tier: #{tier}" }
+    def model_for(tier)
+      TIER_MODELS.fetch(tier) { raise ArgumentError, "Unknown Stacks::AI tier: #{tier}" }
+    end
+
+    def extract(system:, prompt:, schema:, tier:, max_tokens: nil)
+      model = model_for(tier)
       raise Stacks::AI::Error, "Anthropic API key not configured" unless configured?
 
       response = post_with_retries(
         model: model,
-        max_tokens: MAX_TOKENS,
+        max_tokens: max_tokens || MAX_TOKENS,
         system: system,
         messages: [{ role: "user", content: prompt }],
         # Native structured outputs — the deprecated top-level `output_format`

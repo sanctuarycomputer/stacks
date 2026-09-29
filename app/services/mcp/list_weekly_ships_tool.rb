@@ -15,7 +15,9 @@ module Mcp
     description 'READ: weekly ship emails linked to a project tracker (by the nightly ships@ ' \
                 'sweep or a human), newest first: sent_at, sender, subject, Google Groups ' \
                 'permalink, and the corpus document_id to pass to get_document for the full ' \
-                'body. Use it to read the previous ship before drafting the next one. Ships ' \
+                'body, plus the nightly grade (stars 1-5, summary, up to three suggestions for ' \
+                'the sender; null until graded). Use it to read the previous ship, and its ' \
+                'suggestions, before drafting the next one. Ships ' \
                 'whose document was excluded from the corpus are omitted.'
     input_schema(
       properties: {

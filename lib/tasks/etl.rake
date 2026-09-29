@@ -111,19 +111,40 @@ namespace :stacks do
       )
     end
 
-    desc "Match ships@ emails to project trackers"
+    # Links new ships@ emails to trackers, then grades the newly linked ones
+    # (Stacks::WeeklyShips::Grader: one cheap model call per email, stored on the ship).
+    desc "Match ships@ emails to project trackers, then grade the new ships"
     task match_weekly_ships: :environment do
       system_task = SystemTask.create!(name: "stacks:etl:match_weekly_ships")
       begin
         stats = Stacks::WeeklyShips::Sweep.run!
-        if stats[:errored].positive?
-          system_task.mark_as_error(StandardError.new("#{stats[:errored]} documents failed: #{stats.inspect}"))
+        grades = Stacks::WeeklyShips::Grader.run!
+        if stats[:errored].positive? || grades[:errored].positive?
+          system_task.mark_as_error(StandardError.new(
+            "#{stats[:errored]} documents failed to match, #{grades[:errored]} failed to grade: " \
+            "match #{stats.inspect}, grade #{grades.inspect}"
+          ))
         else
           system_task.mark_as_success
         end
       rescue => e
         system_task.mark_as_error(e)
       end
+    end
+
+    # Preview grades for ungraded recent ships without writing anything (calibration).
+    #   rake "stacks:etl:grade_weekly_ships_preview[10]"
+    desc 'Preview weekly ship grades without saving them ([limit], default 10)'
+    task :grade_weekly_ships_preview, [:limit] => :environment do |_t, args|
+      stats = Stacks::WeeklyShips::Grader.run!(dry_run: true, limit: (args[:limit] || 10).to_i)
+      Array(stats[:results]).each do |r|
+        s = r[:scoring]
+        puts "#{"★" * s["stars"]}#{"☆" * (5 - s["stars"])}  #{r[:subject]} (document #{r[:document_id]})"
+        s["dimensions"].each { |k, d| puts "    #{k}: #{d["score"]}  #{d["why"]}" }
+        puts "    summary: #{s["summary"]}"
+        s["suggestions"].each { |t| puts "    - #{t}" }
+      end
+      puts "graded #{stats[:graded]}, errored #{stats[:errored]}, tokens in #{stats[:input_tokens]} / out #{stats[:output_tokens]} (nothing saved)"
     end
 
     # Re-applies the privacy wall (Stacks::Etl::Reclassifier) to every stored document that a

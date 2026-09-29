@@ -12,8 +12,16 @@ module Stacks
 
     class << self
       # tier: :fast (cheap classification) — :smart reserved, unmapped for now.
-      def extract(system:, prompt:, schema:, tier: :fast)
-        provider.extract(system: system, prompt: prompt, schema: schema, tier: tier)
+      # max_tokens: nil keeps the provider's default output cap.
+      def extract(system:, prompt:, schema:, tier: :fast, max_tokens: nil)
+        opts = { system: system, prompt: prompt, schema: schema, tier: tier }
+        opts[:max_tokens] = max_tokens if max_tokens
+        provider.extract(**opts)
+      end
+
+      # The provider model a tier maps to, so a stored result can say which model made it.
+      def model_for(tier = :fast)
+        provider.model_for(tier)
       end
 
       def configured?

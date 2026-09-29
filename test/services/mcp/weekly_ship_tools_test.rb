@@ -110,6 +110,24 @@ class Mcp::WeeklyShipToolsTest < ActiveSupport::TestCase
     assert p['ships'].all? { |s| s['url'].to_s.start_with?('https://groups.google.com/') }, p['ships'].inspect
   end
 
+  test 'ship rows carry the grade (coaching only), null until graded' do
+    tracker = tracker!
+    make_ship(tracker, sent_at: 9.days.ago, title: 'Ungraded')
+    graded = make_ship(tracker, sent_at: 2.days.ago, title: 'Graded')
+    graded.update_columns(metadata: { 'scoring' => {
+      'rubric_version' => 1, 'stars' => 5, 'summary' => 'Concrete and clear.', 'suggestions' => ['Name the launch date.'],
+      'dimensions' => { 'shipped' => { 'score' => 2, 'why' => 'x' } }, 'graded_at' => '2026-09-28T06:00:00Z'
+    } })
+
+    ships = mcp_payload(Mcp::ListWeeklyShipsTool.call(tracker: tracker.id.to_s, server_context: {}))['ships']
+    assert_equal({ 'stars' => 5, 'summary' => 'Concrete and clear.', 'suggestions' => ['Name the launch date.'],
+                   'rubric_version' => 1, 'graded_at' => '2026-09-28T06:00:00Z' }, ships.first['grade'])
+    assert_nil ships.last['grade']
+
+    row = mcp_payload(Mcp::ListProjectTrackersTool.call(name: tracker.name, server_context: {})).first
+    assert_equal 5, row['last_weekly_ship']['grade']['stars']
+  end
+
   test 'list_weekly_ships omits ships whose document was excluded from the corpus' do
     tracker = tracker!
     make_ship(tracker, sent_at: 7.days.ago, title: 'Public')

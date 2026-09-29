@@ -62,6 +62,7 @@ module Mcp
         url: doc&.google_groups_permalink,
         matched_by: ship.matched_by,
         confidence: ship.confidence,
+        grade: ship.grade_json,
       }
     end
 

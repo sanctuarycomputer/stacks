@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_09_21_220000) do
+ActiveRecord::Schema.define(version: 2026_09_28_120000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -1482,6 +1482,7 @@ ActiveRecord::Schema.define(version: 2026_09_21_220000) do
     t.integer "matched_by", null: false
     t.float "confidence"
     t.text "rationale"
+    t.jsonb "metadata", default: {}, null: false
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.index ["document_id", "project_tracker_id"], name: "index_weekly_ships_on_document_id_and_project_tracker_id", unique: true

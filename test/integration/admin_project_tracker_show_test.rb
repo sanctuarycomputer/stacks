@@ -55,4 +55,22 @@ class AdminProjectTrackerShowTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Monthly Budget Low End"
     assert_not_includes response.body, "Total Spend to Date: \\$"
   end
+
+  test "the Weekly Ships panel shows each ship's grade and the feedback for the sender" do
+    pt = make_tracker!(notes: nil)
+    doc = Document.create!(source: :google_groups, external_id: "<g#{SecureRandom.hex(3)}@m>", title: "Graded ship",
+                           occurred_at: 2.days.ago,
+                           raw_metadata: { "group_email" => "ships@sanctuary.computer", "gmail_message_ids" => [] })
+    ws = WeeklyShip.new(document: doc, project_tracker: pt, sent_at: 2.days.ago, matched_by: :llm, sent_by_name: "Sam",
+                        metadata: { "scoring" => { "stars" => 4, "summary" => "Clear asks with owners.",
+                                                   "suggestions" => ["Say when the ticketing decision is due."] } })
+    ws.via_sweep = true
+    ws.save!
+
+    get admin_project_tracker_path(pt)
+    assert_response :success
+    assert_includes response.body, "★★★★☆"
+    assert_includes response.body, "Clear asks with owners."
+    assert_includes response.body, "Say when the ticketing decision is due."
+  end
 end

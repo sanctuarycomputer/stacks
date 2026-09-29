@@ -5,7 +5,9 @@ module Mcp
                 '(both exact, case-insensitive), or to the Active tab with in_progress: true ' \
                 '(not complete, not dormant). Each tracker includes its nested ' \
                 'workstreams (id, name, code, rates), its last weekly ship (sent_at, sent_by, ' \
-                'subject, url; subject/url are null when that email is walled from the corpus), ' \
+                'subject, url, grade; subject/url/grade are null when that email is walled from ' \
+                'the corpus; grade is null until the nightly grader has scored it: stars 1-5, ' \
+                'summary, suggestions for the sender), ' \
                 'and ship_status: fresh (last ship within 10 days of the last recorded hour), ' \
                 'stale (over 10), overdue (over 30), never, or internal (our own companies, ' \
                 'which do not send client ships). Use to find a tracker id, to inspect existing ' \
@@ -68,6 +70,8 @@ module Mcp
         sent_by: ship.sent_by_name.presence || ship.sent_by_email,
         subject: visible ? ship.document&.title : nil,
         url: visible ? ship.document&.google_groups_permalink : nil,
+        # The grade is read from the email's text, so it is walled with it.
+        grade: visible ? ship.grade_json : nil,
       }
     end
   end
