@@ -3,7 +3,8 @@ module Mcp
     tool_name 'list_overdue_invoices'
     description 'Overdue (unpaid or partially-paid) QBO invoices with days overdue, sorted ' \
                 'most-overdue first, from already-synced rows. Never calls QBO live. Late fees ' \
-                'are a per-client human decision — this tool exposes the data only.'
+                'are a per-client human decision — this tool exposes the data only. project_trackers: the ' \
+                'project trackers each invoice bills (via its invoice tracker); empty for ad hoc invoices.'
     input_schema(
       properties: {
         enterprise: { type: 'string', description: 'Optional enterprise name filter, e.g. "Sanctuary Computer Inc"' },
@@ -22,6 +23,7 @@ module Mcp
       enterprise_names = enterprises.index_by(&:id)
 
       rows = QboReceivables.receivables(enterprises, as_of: as_of, details: true, min_days_overdue: min_days)
+      trackers = project_trackers_by_invoice(rows.map(&:invoice_id))
 
       invoices = rows
         .map do |r|
@@ -37,6 +39,7 @@ module Mcp
             status: r.status,
             qbo_invoice_link: r.qbo_invoice_link,
             display_name: r.display_name,
+            project_trackers: trackers.fetch(r.invoice_id, []),
           }
         end
         .sort_by { |row| [-row[:days_overdue], row[:doc_number].to_s] }
@@ -44,5 +47,22 @@ module Mcp
       payload = { as_of: as_of.iso8601, count: invoices.length, invoices: invoices }
       Responses.ok(payload)
     end
+
+    # QboInvoice row id → [{ id, name }] of the project trackers it bills: the InvoiceTracker holding the
+    # invoice's exact (qbo_account_id, qbo_id) pair, then that tracker's blueprint forecast projects. An ad hoc
+    # invoice (no InvoiceTracker) maps to nothing. Read-only, a fixed number of queries whatever the row count.
+    def self.project_trackers_by_invoice(invoice_ids)
+      pairs = QboInvoice.where(id: invoice_ids).pluck(:id, :qbo_account_id, :qbo_id)
+      return {} if pairs.empty?
+
+      id_by_pair = pairs.to_h { |id, qa, qid| [[qa, qid], id] }
+      candidates = InvoiceTracker.where(qbo_invoice_id: pairs.map(&:last).uniq, qbo_account_id: pairs.map { |p| p[1] }.uniq).to_a
+      invoice_trackers = candidates.select { |t| id_by_pair.key?([t.qbo_account_id, t.qbo_invoice_id]) }
+      InvoiceTracker.batch_preload_project_trackers!(invoice_trackers)
+      invoice_trackers.each_with_object(Hash.new { |h, k| h[k] = [] }) do |t, out|
+        out[id_by_pair[[t.qbo_account_id, t.qbo_invoice_id]]].concat(t.project_trackers.map { |pt| { id: pt.id, name: pt.name } })
+      end.transform_values(&:uniq)
+    end
+    private_class_method :project_trackers_by_invoice
   end
 end
