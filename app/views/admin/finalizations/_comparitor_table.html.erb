@@ -10,10 +10,10 @@
           <fieldset class="inline_fieldset inputs has_many_fields">
             <ol>
               <li class="string input optional stringish <%= score[:band_all_agree?] ? "agree" : "disagree" %>">
-                <input readonly="readonly" type="text" value="<%= score[:band].titleize.capitalize %>">
+                <input readonly="readonly" type="text" value="<%= score[:band].try(:titleize).try(:capitalize) %>">
               </li>
               <li class="string input optional stringish <%= score[:consistency_all_agree?] ? "agree" : "disagree" %>">
-                <input readonly="readonly" type="text" value="<%= score[:consistency].titleize.capitalize %>">
+                <input readonly="readonly" type="text" value="<%= score[:consistency].try(:titleize).try(:capitalize) %>">
               </li>
             </ol>
           </fieldset>

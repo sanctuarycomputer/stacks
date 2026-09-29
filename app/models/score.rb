@@ -34,8 +34,11 @@ class Score < ApplicationRecord
     score_tree.workspace.reviewable_type == "Finalization"
   end
 
+  # Until every reviewer has scored this trait (e.g. a peer review is still
+  # pending for someone with no prior review to pre-fill from), there is no
+  # spread to narrow the choice to, so every option stays available.
   def possible_bands
-    if is_finalization_workspace?
+    if is_finalization_workspace? && all_reviewers_scored?(:band)
       sorted_ints = score_tree.workspace.review.score_table[trait_id][:band].map { |s| Score.bands[s] }.sort
       spread = *(sorted_ints.min..sorted_ints.max)
       spread.map { |i| Score.bands.key(i) }
@@ -46,6 +49,8 @@ class Score < ApplicationRecord
 
   def possible_consistencies
     if (is_finalization_workspace? &&
+        all_reviewers_scored?(:band) &&
+        all_reviewers_scored?(:consistency) &&
         score_tree.workspace.review.score_table[trait_id][:band].uniq.length == 1)
       sorted_ints = score_tree.workspace.review.score_table[trait_id][:consistency].map { |s| Score.consistencies[s] }.sort
       spread = *(sorted_ints.min..sorted_ints.max)
@@ -53,5 +58,12 @@ class Score < ApplicationRecord
     else
       Score.consistencies.keys
     end
+  end
+
+  private
+
+  def all_reviewers_scored?(attribute)
+    scores = score_tree.workspace.review.score_table.dig(trait_id, attribute)
+    scores.present? && scores.none?(&:nil?)
   end
 end
