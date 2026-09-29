@@ -1,6 +1,8 @@
 class Api::ProjectTrackersController < ApiController
   skip_before_action :verify_authenticity_token
-  before_action :check_private_api_key!
+  include ApiTokenAuth
+  before_action :check_private_api_key!, only: :index
+  before_action -> { require_api_scope!("mcp:write:trackers") }, only: :create
 
   def index
     trackers = ProjectTracker.all

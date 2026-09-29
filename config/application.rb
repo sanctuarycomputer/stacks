@@ -6,6 +6,8 @@ require 'rails/all'
 # you've limited to :test, :development, or :production.
 Bundler.require(*Rails.groups)
 
+require_relative 'middleware/api_key_vault'
+
 Sentry.init do |config|
   config.environment = (Rails.env.production? ? "production" : "development")
   config.enabled_environments = ["production"]
@@ -28,6 +30,8 @@ module Stacks
     config.load_defaults 6.0
 
     config.autoload_paths << Rails.root.join('lib')
+    # First in the stack: the API key leaves the headers before Sentry or anything else can record it.
+    config.middleware.insert_before 0, ApiKeyVault
     config.eager_load_paths << Rails.root.join('lib')
 
     # Settings in config/environments/* take precedence over those specified here.

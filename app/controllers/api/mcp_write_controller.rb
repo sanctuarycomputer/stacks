@@ -1,13 +1,14 @@
 class Api::McpWriteController < ApiController
   skip_before_action :verify_authenticity_token
-  before_action :check_mcp_key_configured!
-  before_action :check_private_api_key!
+  include ApiTokenAuth
+  # Scoped tokens (ApiToken) or the legacy shared key; see ApiTokenAuth.
+  before_action -> { require_api_scope!(Mcp::WriteServer::WRITE_SCOPES) }
 
   def handle
-    Rails.logger.info("[Mcp::WriteServer] #{request.method} /api/mcp/write from #{request.remote_ip}")
+    Rails.logger.info("[Mcp::WriteServer] #{request.method} /api/mcp/write from #{request.remote_ip} as #{api_principal_label}")
 
     transport = MCP::Server::Transports::StreamableHTTPTransport.new(
-      Mcp::WriteServer.build,
+      Mcp::WriteServer.build(scopes: api_principal.scopes),
       stateless: true,
       enable_json_response: true
     )
@@ -24,11 +25,4 @@ class Api::McpWriteController < ApiController
     end
   end
 
-  private
-
-  def check_mcp_key_configured!
-    if Stacks::Utils.config.dig(:stacks, :private_api_key).to_s.strip.empty?
-      raise Stacks::Errors::Unauthorized.new('MCP API key not configured')
-    end
-  end
 end
