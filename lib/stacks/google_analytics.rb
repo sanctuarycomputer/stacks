@@ -18,7 +18,12 @@ class Stacks::GoogleAnalytics
   def initialize(json: ENV[ENV_KEY], sleeper: ->(s) { sleep(s) })
     raise NotConfigured, "#{ENV_KEY} is not set" if json.blank?
 
-    @credentials = Google::Auth::ServiceAccountCredentials.make_creds(json_key_io: StringIO.new(json), scope: SCOPE)
+    @credentials = begin
+      Google::Auth::ServiceAccountCredentials.make_creds(json_key_io: StringIO.new(json), scope: SCOPE)
+    rescue StandardError, ScriptError => e
+      # Never pass e.message on: a JSON parse error echoes the input, which is the private key.
+      raise NotConfigured, "#{ENV_KEY} is not a valid service-account JSON key (#{e.class})"
+    end
     @sleeper = sleeper
   end
 

@@ -8,7 +8,7 @@ module Mcp
                 'medium, or by landing page. Defaults: the last 28 complete days vs the 28 days before. ' \
                 'Filter to one campaign with `campaign` (case-insensitive substring of the GA campaign name). ' \
                 'Users are the sum of daily users (not unique across days). "(other)" folds each day\'s traffic ' \
-                'beyond the top 200 sources/campaigns or top 100 landing pages. Aggregate counts only.'
+                'beyond the top 200 sources/campaigns or top 300 landing-page/campaign pairs. Aggregate counts only.'
 
     DEFAULT_DAYS = 28
     MAX_DAYS = 400
@@ -41,7 +41,7 @@ module Mcp
         return Responses.error(names.empty? ? 'No sites are set up in Stacks yet (Site Analytics → Properties).' : "No site matches \"#{site}\". Sites: #{names.join(', ')}.")
       end
 
-      period = period(from, to)
+      period, capped_from = period(from, to)
       return Responses.error('Dates must be YYYY-MM-DD, with from on or before to.') unless period
       compare = compare_period(period, compare_from, compare_to)
       return Responses.error('Comparison dates must be YYYY-MM-DD, with compare_from on or before compare_to.') unless compare
@@ -61,7 +61,7 @@ module Mcp
         daily_sessions: daily(ids, period, campaign),
         by: by,
         top_movers: movers(ids, period, compare, by, campaign),
-        notes: notes(props, period, compare),
+        notes: notes(props, period, compare, capped_from),
       })
     rescue StandardError => e
       Rails.logger.warn("[Mcp::GetSiteAnalyticsTool] #{e.class}: #{e.message}")
@@ -72,10 +72,14 @@ module Mcp
     def self.period(from, to)
       finish = date(to) || (Date.current - 1)
       start = date(from) || (finish - (DEFAULT_DAYS - 1))
-      return nil if (from.present? && !date(from)) || (to.present? && !date(to)) || start > finish
+      return [nil, nil] if (from.present? && !date(from)) || (to.present? && !date(to)) || start > finish
 
-      start = finish - (MAX_DAYS - 1) if (finish - start).to_i >= MAX_DAYS
-      start..finish
+      capped = nil
+      if (finish - start).to_i >= MAX_DAYS
+        capped = start
+        start = finish - (MAX_DAYS - 1)
+      end
+      [start..finish, capped]
     end
 
     def self.compare_period(period, compare_from, compare_to)
@@ -140,7 +144,7 @@ module Mcp
       key_cols = { 'campaign' => %i[campaign], 'source' => %i[source medium], 'page' => %i[landing_page] }[by]
       grouped = lambda do |range|
         rel = AnalyticsDailyMetric.where(analytics_property_id: ids, date: range, breakdown: breakdown)
-        rel = rel.where('campaign ILIKE ?', "%#{AnalyticsDailyMetric.sanitize_sql_like(campaign)}%") if campaign.present? && breakdown == 'traffic'
+        rel = rel.where('campaign ILIKE ?', "%#{AnalyticsDailyMetric.sanitize_sql_like(campaign)}%") if campaign.present?
         rel.group(*key_cols).sum(:sessions).transform_keys { |k| Array(k).join(' / ') }
       end
       cur = grouped.call(period)
@@ -157,8 +161,9 @@ module Mcp
       }
     end
 
-    def self.notes(props, period, compare)
+    def self.notes(props, period, compare, capped_from = nil)
       out = []
+      out << "The period is capped at #{MAX_DAYS} days: it starts #{period.first.iso8601}, not the requested #{capped_from.iso8601}." if capped_from
       stale = props.select { |p| p.data_through.nil? || p.data_through < period.last }
       out << "Data only runs through #{stale.map { |p| "#{p.name}: #{p.data_through&.iso8601 || 'none yet'}" }.join(', ')}; later days read as zero." if stale.any?
       earliest = AnalyticsDailyMetric.where(analytics_property_id: props.map(&:id)).minimum(:date)

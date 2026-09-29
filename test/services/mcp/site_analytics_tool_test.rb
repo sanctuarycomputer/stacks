@@ -68,4 +68,17 @@ class Mcp::SiteAnalyticsToolTest < ActiveSupport::TestCase
     @site.update!(data_through: Date.new(2026, 9, 20))
     assert_match(/garden3d.net: 2026-09-20/, call(site: 'garden3d.net').dig('notes', 0))
   end
+
+  test 'by page honours the campaign filter' do
+    row!(@site, Date.new(2026, 9, 20), 'landing_page', 40, landing_page: '/launch', campaign: 'fall-launch')
+    row!(@site, Date.new(2026, 9, 20), 'landing_page', 90, landing_page: '/', campaign: '(organic)')
+    r = call(site: 'garden3d.net', by: 'page', campaign: 'fall')
+    assert_equal ['/launch'], r['top_movers']['top'].map { |x| x['key'] }
+  end
+
+  test 'a period longer than 400 days is capped, and the notes say so' do
+    r = call(site: 'garden3d.net', from: '2024-01-01', to: '2026-09-28')
+    assert_equal '2025-08-25', r['period']['from']
+    assert r['notes'].any? { |n| n.include?('capped at 400 days') && n.include?('2024-01-01') }
+  end
 end

@@ -7,7 +7,7 @@ ActiveAdmin.register AnalyticsProperty do
 
   sidebar "Google Analytics", only: :index do
     if Stacks::GoogleAnalytics.configured?
-      para "Synced daily (stacks:daily_enterprise_tasks). A new site backfills 13 months on its first sync."
+      para "Synced daily (stacks:daily_enterprise_tasks). A new site backfills 13 months on the next daily run."
     else
       para "Not configured: set GOOGLE_ANALYTICS_SERVICE_ACCOUNT_JSON in Heroku config. Until then nothing syncs."
     end
@@ -52,10 +52,18 @@ ActiveAdmin.register AnalyticsProperty do
       redirect_to resource_path, alert: "Not configured: GOOGLE_ANALYTICS_SERVICE_ACCOUNT_JSON is not set."
       next
     end
-    Stacks::SiteAnalyticsSync.new(Stacks::GoogleAnalytics.new).sync_property!(resource)
-    redirect_to resource_path, notice: "Synced: data through #{resource.reload.data_through}"
+    # Refresh only: a new site's 13-month backfill runs in the daily task (or rake site_analytics:backfill),
+    # never inside this web request.
+    outcome = Stacks::SiteAnalyticsSync.new(Stacks::GoogleAnalytics.new).sync_property!(resource, refresh_only: true)
+    if outcome == :needs_backfill
+      redirect_to resource_path, notice: "No data yet: the next daily run backfills 13 months (or run rake site_analytics:backfill[#{resource.ga4_property_id}])."
+    else
+      redirect_to resource_path, notice: "Synced: data through #{resource.reload.data_through}"
+    end
+  rescue Stacks::SiteAnalyticsSync::Busy
+    redirect_to resource_path, alert: "Another sync of this site is running; try again in a few minutes."
   rescue StandardError => e
-    redirect_to resource_path, alert: "Sync failed: #{e.message.truncate(300)}"
+    redirect_to resource_path, alert: "Sync failed (#{e.class}): #{e.message.truncate(300)}"
   end
 
   action_item :sync_now, only: :show do

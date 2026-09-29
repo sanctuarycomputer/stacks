@@ -17,9 +17,9 @@ class CreateSiteAnalytics < ActiveRecord::Migration[6.1]
     add_index :analytics_properties, :name, unique: true
 
     # One row per property × date × breakdown × dimension values. breakdown is "total" (no dimensions),
-    # "traffic" (source / medium / campaign) or "landing_page". Rows past each day's top N fold into one
-    # "(other)" row, so every breakdown still sums to the day's total. Rewritten per (property, date,
-    # breakdown) by delete + insert, so there is no unique index over the (long) dimension values.
+    # "traffic" (source / medium / campaign) or "landing_page" (landing page / campaign). Rows past each day's
+    # top N fold into one "(other)" row, so every breakdown still sums to the day's total. dims_key is a digest
+    # of the dimension values: the unique index on it is the backstop against a double-counted day.
     create_table :analytics_daily_metrics do |t|
       t.references :analytics_property, null: false, foreign_key: { on_delete: :cascade }
       t.date :date, null: false
@@ -28,6 +28,7 @@ class CreateSiteAnalytics < ActiveRecord::Migration[6.1]
       t.string :medium, null: false, default: ""
       t.string :campaign, null: false, default: ""
       t.string :landing_page, null: false, default: ""
+      t.string :dims_key, null: false
       t.integer :sessions, null: false, default: 0
       t.integer :total_users, null: false, default: 0
       t.integer :new_users, null: false, default: 0
@@ -37,5 +38,6 @@ class CreateSiteAnalytics < ActiveRecord::Migration[6.1]
       t.timestamps
     end
     add_index :analytics_daily_metrics, [:analytics_property_id, :breakdown, :date], name: "index_analytics_daily_metrics_lookup"
+    add_index :analytics_daily_metrics, [:analytics_property_id, :date, :breakdown, :dims_key], unique: true, name: "index_analytics_daily_metrics_unique_row"
   end
 end

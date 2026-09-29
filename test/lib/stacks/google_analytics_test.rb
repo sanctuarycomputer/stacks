@@ -33,4 +33,12 @@ class Stacks::GoogleAnalyticsTest < ActiveSupport::TestCase
     err = assert_raises(Stacks::GoogleAnalytics::Error) { client.run_report('123', date_from: Date.current, date_to: Date.current, dimensions: %w[date], metrics: %w[sessions]) }
     assert_match(/403: User does not have sufficient permissions/, err.message)
   end
+
+  test 'a malformed key never echoes its content (the private key) in the error' do
+    secret = '{"type":"service_account","private_key":"-----BEGIN PRIVATE KEY-----SECRETKEYMATERIAL'
+    err = assert_raises(Stacks::GoogleAnalytics::NotConfigured) { Stacks::GoogleAnalytics.new(json: secret) }
+    refute_includes err.message, 'SECRETKEYMATERIAL'
+    refute_includes err.message, 'private_key'
+    assert_match(/not a valid service-account JSON key \(/, err.message)
+  end
 end

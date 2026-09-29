@@ -11,5 +11,7 @@ namespace :site_analytics do
     months = (args[:months] || Stacks::SiteAnalyticsSync::BACKFILL_MONTHS).to_i
     Stacks::SiteAnalyticsSync.new(Stacks::GoogleAnalytics.new).backfill!(prop, months: months)
     puts "#{prop.name}: data through #{prop.reload.data_through}"
+  rescue Stacks::SiteAnalyticsSync::Busy => e
+    puts "skipped: #{e.message}"
   end
 end

@@ -31,7 +31,7 @@ class Stacks::SiteAnalyticsSyncTest < ActiveSupport::TestCase
       '20260927' => [['google', 'cpc', 'fall-launch', 50, 40, 20, 120, 35, 3], ['(direct)', '(none)', '(direct)', 30, 25, 5, 80, 15, 1],
                      ['news', 'email', 'digest', 12, 10, 3, 30, 7, 0], ['x', 'social', '(not set)', 8, 5, 2, 20, 3, 0]],
     },
-    %w[landingPage] => { '20260927' => [['/', 70, 55, 20, 150, 40, 2], ['/work', 30, 25, 10, 100, 20, 2]] },
+    %w[landingPage sessionCampaignName] => { '20260927' => [['/', 'fall-launch', 50, 40, 15, 100, 30, 2], ['/', '(direct)', 20, 15, 5, 50, 10, 0], ['/work', '(direct)', 30, 25, 10, 100, 20, 2]] },
   }.freeze
 
   setup do
@@ -103,5 +103,40 @@ class Stacks::SiteAnalyticsSyncTest < ActiveSupport::TestCase
     assert_match(/403/, result[:failed]['sanctuary.computer'])
     assert_match(/403/, AnalyticsProperty.find_by(name: 'sanctuary.computer').last_sync_error)
     assert_equal 'partial', SourceSync.find_by(source: 'google_analytics').status
+  end
+
+  test 'landing pages carry their campaign, so a campaign filter works on pages' do
+    @prop.update!(data_through: Date.new(2026, 9, 28))
+    Stacks::SiteAnalyticsSync.new(FakeClient.new(DAY)).sync_property!(@prop, today: Date.new(2026, 9, 29))
+    pages = AnalyticsDailyMetric.where(breakdown: 'landing_page')
+    assert_equal 100, pages.sum(:sessions)
+    assert_equal 50, pages.find_by(landing_page: '/', campaign: 'fall-launch').sessions
+  end
+
+  test 'refresh_only (the admin Sync now) never backfills a site with no data' do
+    client = FakeClient.new(DAY)
+    assert_equal :needs_backfill, Stacks::SiteAnalyticsSync.new(client).sync_property!(@prop, today: Date.new(2026, 9, 29), refresh_only: true)
+    assert_empty client.calls
+  end
+
+  test 'a site another run is syncing is Busy (no interleaved delete + insert), and sync_all! skips it' do
+    # Tests share one AR connection across threads, so hold the lock from a separate raw PG session.
+    cfg = ActiveRecord::Base.connection_db_config.configuration_hash
+    other = PG.connect(dbname: cfg[:database], host: cfg[:host], port: cfg[:port], user: cfg[:username], password: cfg[:password])
+    other.exec("SELECT pg_advisory_lock(#{Stacks::SiteAnalyticsSync::SITE_LOCK_NAMESPACE}, #{@prop.id})")
+    sync = Stacks::SiteAnalyticsSync.new(FakeClient.new(DAY))
+    assert_raises(Stacks::SiteAnalyticsSync::Busy) { sync.sync_property!(@prop, today: Date.new(2026, 9, 29)) }
+    assert_raises(Stacks::SiteAnalyticsSync::Busy) { sync.backfill!(@prop, today: Date.new(2026, 9, 29)) }
+    assert_equal ['garden3d.net'], sync.sync_all!(today: Date.new(2026, 9, 29))[:busy]
+    assert_equal 0, AnalyticsDailyMetric.count
+  ensure
+    other&.close
+  end
+
+  test 'the unique index refuses a second copy of the same row (backstop against double counts)' do
+    AnalyticsDailyMetric.create!(analytics_property: @prop, date: Date.new(2026, 9, 27), breakdown: 'traffic', source: 'a', medium: 'b', campaign: 'c', sessions: 1)
+    assert_raises(ActiveRecord::RecordNotUnique) do
+      AnalyticsDailyMetric.create!(analytics_property: @prop, date: Date.new(2026, 9, 27), breakdown: 'traffic', source: 'a', medium: 'b', campaign: 'c', sessions: 1)
+    end
   end
 end
