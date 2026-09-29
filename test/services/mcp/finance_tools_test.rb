@@ -368,6 +368,42 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     assert_equal 400.0, partial['total']
   end
 
+  test 'list_overdue_invoices names the project trackers each invoice bills, through its invoice tracker' do
+    billed = invoice!(doc: '60', due: @today - 10, balance: 500.0)
+    invoice!(doc: '61', due: @today - 5, balance: 100.0) # ad hoc: no invoice tracker, so no trackers
+    fc = ForecastClient.create!(forecast_id: 960001, name: 'Acme Co')
+    fp_a = ForecastProject.create!(forecast_id: 970001, name: 'Acme Site', code: 'ACME-1', forecast_client: fc)
+    fp_b = ForecastProject.create!(forecast_id: 970002, name: 'Acme App', code: 'ACME-2', forecast_client: fc)
+    site = ProjectTracker.new(name: 'Acme Website'); site.save!(validate: false)
+    app = ProjectTracker.new(name: 'Acme App'); app.save!(validate: false)
+    ProjectTrackerForecastProject.create!(project_tracker: site, forecast_project: fp_a)
+    ProjectTrackerForecastProject.create!(project_tracker: app, forecast_project: fp_b)
+    InvoiceTracker.create!(invoice_pass: InvoicePass.create!(start_of_month: Date.new(2031, 2, 1)), forecast_client: fc,
+      qbo_account: @account, qbo_invoice_id: billed.qbo_id,
+      blueprint: { 'lines' => { '0' => { 'forecast_project' => fp_a.id }, '1' => { 'forecast_project' => fp_b.id } } })
+
+    rows = mcp_payload(Mcp::ListOverdueInvoicesTool.call(server_context: {}))['invoices'].index_by { |i| i['doc_number'] }
+    assert_equal [[site.id, 'Acme Website'], [app.id, 'Acme App']].sort,
+                 rows['60']['project_trackers'].map { |t| [t['id'], t['name']] }.sort
+    assert_equal [], rows['61']['project_trackers']
+  end
+
+  test 'list_overdue_invoices never joins an invoice tracker from another QBO account with the same qbo id' do
+    invoice!(doc: '62', due: @today - 10, balance: 500.0)
+    other = QboAccount.where.not(id: @account.id).first
+    skip 'fixtures have a single QBO account' unless other
+    QboInvoice.create!(qbo_account: other, qbo_id: 'inv-62', data: { 'doc_number' => 'x', 'balance' => 1, 'due_date' => @today.iso8601 })
+    fc = ForecastClient.create!(forecast_id: 960002, name: 'Other Co')
+    fp = ForecastProject.create!(forecast_id: 970003, name: 'Other', code: 'OTH-1', forecast_client: fc)
+    pt = ProjectTracker.new(name: 'Other Project'); pt.save!(validate: false)
+    ProjectTrackerForecastProject.create!(project_tracker: pt, forecast_project: fp)
+    InvoiceTracker.create!(invoice_pass: InvoicePass.create!(start_of_month: Date.new(2031, 3, 1)), forecast_client: fc,
+      qbo_account: other, qbo_invoice_id: 'inv-62', blueprint: { 'lines' => { '0' => { 'forecast_project' => fp.id } } })
+
+    rows = mcp_payload(Mcp::ListOverdueInvoicesTool.call(server_context: {}))['invoices'].index_by { |i| i['doc_number'] }
+    assert_equal [], rows['62']['project_trackers']
+  end
+
   test 'list_overdue_invoices honors min_days_overdue' do
     invoice!(doc: '20', due: @today - 5, balance: 100.0)
     invoice!(doc: '21', due: @today - 40, balance: 200.0)
