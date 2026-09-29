@@ -1,6 +1,7 @@
 class Api::V1::ProjectedAssignmentsController < ApiController
   skip_before_action :verify_authenticity_token
-  before_action :check_private_api_key!
+  include ApiTokenAuth
+  before_action -> { require_api_scope!("api:write:projections") }
 
   ATTRS = %i[contributor_id project_tracker_id start_date end_date
              minutes_per_day note managed_by].freeze

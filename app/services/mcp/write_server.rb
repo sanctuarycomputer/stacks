@@ -28,11 +28,35 @@ module Mcp
       Mcp::SetProjectTrackerRoleAssigneeTool,
     ].freeze
 
-    def self.build
+    # Each write tool needs one scope (ApiToken::SCOPES). A caller only ever SEES the tools its scopes allow:
+    # tools/list lists them, and a call to any other tool is "Tool not found".
+    TOOL_SCOPES = {
+      "create_assignment" => "mcp:write:resourcing",
+      "delete_assignment" => "mcp:write:resourcing",
+      "create_placeholder" => "mcp:write:resourcing",
+      "create_recurring_assignment" => "mcp:write:resourcing",
+      "manage_recurring_assignment" => "mcp:write:resourcing",
+      "create_tentative_project" => "mcp:write:projects",
+      "archive_project" => "mcp:write:projects",
+      "ensure_project_tracker" => "mcp:write:trackers",
+      "update_project_tracker" => "mcp:write:trackers",
+      "ensure_workstream" => "mcp:write:trackers",
+      "remove_workstream_rate" => "mcp:write:trackers",
+      "set_project_tracker_work_completed_at" => "mcp:write:trackers",
+      "set_project_tracker_role_assignee" => "mcp:write:trackers",
+    }.freeze
+    WRITE_SCOPES = TOOL_SCOPES.values.uniq.freeze
+
+    def self.tools_for(scopes)
+      TOOLS.select { |t| scopes.include?(TOOL_SCOPES.fetch(t.name_value)) }
+    end
+
+    # scopes is required: a forgotten argument must not fail open to every write tool.
+    def self.build(scopes:)
       MCP::Server.new(
         name: "stacks-write",
         version: "1.0.0",
-        tools: TOOLS
+        tools: tools_for(scopes)
       )
     end
   end

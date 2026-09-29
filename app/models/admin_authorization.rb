@@ -73,6 +73,9 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
       return user.is_admin? if [:close_survey, :reopen_survey].include?(action)
     end
 
+    # API tokens grant machine access to write surfaces: admins only, never leads.
+    return user.is_admin? if subject.is_a?(ApiToken) || subject == ApiToken
+
     return true if (user.is_admin? || user.can_act_as_lead?)
 
     # Project-scoped "lead" grants (leads-in-training limited to specific

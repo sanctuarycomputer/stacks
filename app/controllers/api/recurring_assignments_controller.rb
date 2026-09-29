@@ -1,6 +1,7 @@
 class Api::RecurringAssignmentsController < ApiController
   skip_before_action :verify_authenticity_token
-  before_action :check_private_api_key!
+  include ApiTokenAuth
+  before_action -> { require_api_scope!("mcp:write:resourcing") }
 
   def create
     contributor = Contributor.find(params.require(:contributor_id))

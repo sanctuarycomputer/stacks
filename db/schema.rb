@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_09_28_120000) do
+ActiveRecord::Schema.define(version: 2026_09_29_120000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -87,6 +87,21 @@ ActiveRecord::Schema.define(version: 2026_09_28_120000) do
     t.boolean "ignore", default: false
     t.index ["email"], name: "index_admin_users_on_email", unique: true
     t.index ["reset_password_token"], name: "index_admin_users_on_reset_password_token", unique: true
+  end
+
+  create_table "api_tokens", force: :cascade do |t|
+    t.string "name", null: false
+    t.string "token_digest", null: false
+    t.string "token_prefix", null: false
+    t.string "scopes", default: [], null: false, array: true
+    t.bigint "created_by_id"
+    t.datetime "last_used_at"
+    t.datetime "revoked_at"
+    t.datetime "expires_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["created_by_id"], name: "index_api_tokens_on_created_by_id"
+    t.index ["token_digest"], name: "index_api_tokens_on_token_digest", unique: true
   end
 
   create_table "associates_award_agreements", force: :cascade do |t|
@@ -1509,6 +1524,7 @@ ActiveRecord::Schema.define(version: 2026_09_28_120000) do
   add_foreign_key "adhoc_invoice_trackers", "qbo_accounts"
   # Composite FK fk_adhoc_invoice_trackers_qbo_invoice managed by migration (not expressible in schema.rb)
   add_foreign_key "admin_user_salary_windows", "admin_users"
+  add_foreign_key "api_tokens", "admin_users", column: "created_by_id"
   add_foreign_key "associates_award_agreements", "admin_users"
   add_foreign_key "chunks", "contacts", column: "speaker_contact_id"
   add_foreign_key "chunks", "documents"

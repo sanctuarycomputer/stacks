@@ -1,6 +1,7 @@
 class Api::WorkstreamsController < ApiController
   skip_before_action :verify_authenticity_token
-  before_action :check_private_api_key!
+  include ApiTokenAuth
+  before_action -> { require_api_scope!("mcp:write:trackers") }
 
   def create
     tracker = ProjectTracker.find(params[:project_tracker_id])
