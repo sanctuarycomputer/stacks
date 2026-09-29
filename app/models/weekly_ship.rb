@@ -29,6 +29,27 @@ class WeeklyShip < ApplicationRecord
       .transform_values(&:first)
   end
 
+  # The grade Stacks::WeeklyShips::Grader stored for this email, or nil.
+  def grade
+    # Deploys land before migrations on Heroku: without the column, no grade (not a crash).
+    return nil unless has_attribute?(:metadata)
+    scoring = (metadata || {})["scoring"]
+    scoring.is_a?(Hash) && scoring["stars"].is_a?(Integer) ? scoring : nil
+  end
+
+  # The grade as the MCP tools return it: the coaching, not the rubric internals.
+  def grade_json
+    g = grade
+    return nil if g.nil?
+    { stars: g["stars"], summary: g["summary"], suggestions: g["suggestions"],
+      rubric_version: g["rubric_version"], graded_at: g["graded_at"] }
+  end
+
+  def self.stars_label(stars)
+    n = stars.to_i.clamp(0, 5)
+    ("★" * n) + ("☆" * (5 - n))
+  end
+
   before_validation { self.matched_by ||= :human unless via_sweep }
 
   after_save    :human_lock_scan!, unless: :via_sweep

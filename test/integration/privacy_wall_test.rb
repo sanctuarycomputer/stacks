@@ -90,7 +90,9 @@ class PrivacyWallTest < ActiveSupport::TestCase
     doc = Document.create!(source: :google_groups, external_id: '<w2@x>', title: CANARY, occurred_at: Time.zone.now,
                            excluded: :auto_excluded, excluded_reason: :compensation,
                            raw_metadata: { 'group_email' => 'ships@sanctuary.computer', 'gmail_message_ids' => ['w2@x'] })
-    ship = WeeklyShip.new(document: doc, project_tracker: tracker, sent_at: 1.day.ago, matched_by: :llm, confidence: 0.9)
+    ship = WeeklyShip.new(document: doc, project_tracker: tracker, sent_at: 1.day.ago, matched_by: :llm, confidence: 0.9,
+                          # a grade is read from the email's text, so it is walled with it
+                          metadata: { 'scoring' => { 'stars' => 4, 'summary' => CANARY, 'suggestions' => [CANARY] } })
     ship.via_sweep = true
     ship.save!
 

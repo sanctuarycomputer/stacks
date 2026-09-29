@@ -50,6 +50,18 @@ ActiveAdmin.register WeeklyShip do
       row(:matched_by)
       row(:confidence)
       row(:rationale)
+      row("Grade") { |ws| WeeklyShip.stars_label(ws.grade["stars"]) if ws.grade }
+      row("Feedback for the sender") do |ws|
+        if (g = ws.grade)
+          div g["summary"]
+          ul { Array(g["suggestions"]).each { |s| li s } }
+        end
+      end
+      row("Rubric scores") do |ws|
+        if (g = ws.grade)
+          ul { g["dimensions"].each { |k, d| li "#{k.humanize}: #{d["score"]}/2, #{d["why"]}" } }
+        end
+      end
       row("Google Groups") do |ws|
         url = ws.document.google_groups_permalink
         link_to("Open in Google Groups ↗", url, target: "_blank", rel: "noopener") if url
