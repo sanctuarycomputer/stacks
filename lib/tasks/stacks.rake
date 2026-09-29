@@ -155,6 +155,17 @@ namespace :stacks do
         Rails.logger.error("[stacks:daily_enterprise_tasks] Ghost sync failed: #{e.class}: #{e.message}")
         Sentry.capture_exception(e) if defined?(Sentry)
       end
+
+      # Google Analytics (GA4) for our own sites. Inert until GOOGLE_ANALYTICS_SERVICE_ACCOUNT_JSON is set
+      # (returns { skipped: "not configured" }); per-site failures are isolated inside, and a total failure
+      # is isolated here so it never fails the rest of the daily pass.
+      begin
+        ga = Stacks::SiteAnalyticsSync.sync_all_with_lock!
+        Rails.logger.info("[stacks:daily_enterprise_tasks] Site analytics: #{ga.nil? ? 'skipped (lock held)' : ga.inspect}")
+      rescue => e
+        Rails.logger.error("[stacks:daily_enterprise_tasks] Site analytics failed: #{e.class}: #{e.message}")
+        Sentry.capture_exception(e) if defined?(Sentry)
+      end
     rescue => e
       system_task.mark_as_error(e)
     else

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_09_29_120000) do
+ActiveRecord::Schema.define(version: 2026_09_29_180000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -87,6 +87,42 @@ ActiveRecord::Schema.define(version: 2026_09_29_120000) do
     t.boolean "ignore", default: false
     t.index ["email"], name: "index_admin_users_on_email", unique: true
     t.index ["reset_password_token"], name: "index_admin_users_on_reset_password_token", unique: true
+  end
+
+  create_table "analytics_daily_metrics", force: :cascade do |t|
+    t.bigint "analytics_property_id", null: false
+    t.date "date", null: false
+    t.string "breakdown", null: false
+    t.string "source", default: "", null: false
+    t.string "medium", default: "", null: false
+    t.string "campaign", default: "", null: false
+    t.string "landing_page", default: "", null: false
+    t.string "dims_key", null: false
+    t.integer "sessions", default: 0, null: false
+    t.integer "total_users", default: 0, null: false
+    t.integer "new_users", default: 0, null: false
+    t.integer "views", default: 0, null: false
+    t.integer "engaged_sessions", default: 0, null: false
+    t.decimal "key_events", precision: 14, scale: 2, default: "0.0", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["analytics_property_id", "breakdown", "date"], name: "index_analytics_daily_metrics_lookup"
+    t.index ["analytics_property_id", "date", "breakdown", "dims_key"], name: "index_analytics_daily_metrics_unique_row", unique: true
+    t.index ["analytics_property_id"], name: "index_analytics_daily_metrics_on_analytics_property_id"
+  end
+
+  create_table "analytics_properties", force: :cascade do |t|
+    t.string "name", null: false
+    t.string "ga4_property_id", null: false
+    t.string "site_url"
+    t.boolean "active", default: true, null: false
+    t.date "data_through"
+    t.datetime "last_synced_at"
+    t.text "last_sync_error"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["ga4_property_id"], name: "index_analytics_properties_on_ga4_property_id", unique: true
+    t.index ["name"], name: "index_analytics_properties_on_name", unique: true
   end
 
   create_table "api_tokens", force: :cascade do |t|
@@ -1524,6 +1560,7 @@ ActiveRecord::Schema.define(version: 2026_09_29_120000) do
   add_foreign_key "adhoc_invoice_trackers", "qbo_accounts"
   # Composite FK fk_adhoc_invoice_trackers_qbo_invoice managed by migration (not expressible in schema.rb)
   add_foreign_key "admin_user_salary_windows", "admin_users"
+  add_foreign_key "analytics_daily_metrics", "analytics_properties", on_delete: :cascade
   add_foreign_key "api_tokens", "admin_users", column: "created_by_id"
   add_foreign_key "associates_award_agreements", "admin_users"
   add_foreign_key "chunks", "contacts", column: "speaker_contact_id"
