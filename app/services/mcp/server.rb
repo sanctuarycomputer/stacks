@@ -37,6 +37,7 @@ module Mcp
       Mcp::GetCapacityTool,
       Mcp::GetMembershipStatsTool,
       Mcp::GetSiteAnalyticsTool,
+      Mcp::GetFinancialOutlookTool,
       Mcp::GetInvoicePassesTool,
       Mcp::GetClientRevenueTool,
       Mcp::ListSurveysTool,
