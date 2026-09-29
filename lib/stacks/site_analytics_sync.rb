@@ -34,10 +34,40 @@ class Stacks::SiteAnalyticsSync
     return nil unless conn.select_value("SELECT pg_try_advisory_lock(#{ADVISORY_LOCK_KEY})")
 
     begin
-      new(client || Stacks::GoogleAnalytics.new).sync_all!(today: today)
+      sync = new(client || Stacks::GoogleAnalytics.new)
+      discovered = begin
+        sync.discover!
+      rescue StandardError => e
+        # Discovery failing (Admin API off, no access) never stops the sync of the sites we already have.
+        Rails.logger.warn("[Stacks::SiteAnalyticsSync] property discovery failed: #{e.class}: #{e.message.to_s[0, 300]}")
+        Sentry.capture_exception(e) if defined?(Sentry)
+        { error: e.class.name }
+      end
+      sync.sync_all!(today: today).merge(discovered: discovered)
     ensure
       conn.execute("SELECT pg_advisory_unlock(#{ADVISORY_LOCK_KEY})")
     end
+  end
+
+  # Creates an AnalyticsProperty for every GA4 property the service account can see that Stacks doesn't have
+  # yet (name = GA display name, site_url = its web stream). Never deletes or edits an existing site: admins
+  # rename or deactivate them. Returns the names created.
+  def discover!
+    created = []
+    @client.account_summaries.each do |summary|
+      next if summary[:property_id].blank? || AnalyticsProperty.exists?(ga4_property_id: summary[:property_id])
+
+      name = summary[:display_name].presence || summary[:property_id]
+      name = "#{name} (#{summary[:property_id]})" if AnalyticsProperty.exists?(name: name)
+      url = begin
+        @client.web_stream_uri(summary[:property_id])
+      rescue StandardError
+        nil
+      end
+      AnalyticsProperty.create!(name: name, ga4_property_id: summary[:property_id], site_url: url)
+      created << name
+    end
+    created
   end
 
   def initialize(client, traffic_top_n: TRAFFIC_TOP_N, pages_top_n: PAGES_TOP_N)
