@@ -167,4 +167,57 @@ class StacksTaskBuilderDiscoveriesHumanOperatingManualsTest < ActiveSupport::Tes
     tasks = discover([untitled])
     assert_equal admin.email.downcase, tasks.find { |t| t.type == :missing_superpowers_pdf }.subject_display_name
   end
+
+  test "an admin exempt from the assessment whose manual lacks a PDF gets no tasks" do
+    admin = build_admin!
+    admin.update!(requires_superpowers_assessment: false)
+
+    assert_empty discover([manual_page("Email" => email_prop(admin.email))])
+  end
+
+  test "an admin exempt from the assessment with no manual still gets missing_human_operating_manual" do
+    admin = build_admin!
+    admin.update!(requires_superpowers_assessment: false)
+
+    tasks = discover([manual_page("Email" => email_prop("someone.else@sanctuary.computer"))])
+
+    task = tasks.find { |t| t.type == :missing_human_operating_manual }
+    assert task, "expected the manual requirement to survive an assessment exemption"
+    assert_equal admin, task.subject
+    assert_equal [admin], task.owners
+  end
+
+  test "an admin exempt from the manual with no manual gets no tasks, even though the assessment is still required" do
+    admin = build_admin!
+    admin.update!(requires_human_operating_manual: false)
+    assert admin.requires_superpowers_assessment?,
+      "this test is only meaningful while the assessment is still required"
+
+    assert_empty discover([manual_page("Email" => email_prop("someone.else@sanctuary.computer"))])
+  end
+
+  test "an admin exempt from the manual who has one anyway is still nagged for the assessment" do
+    admin = build_admin!
+    admin.update!(requires_human_operating_manual: false)
+
+    tasks = discover([manual_page("Email" => email_prop(admin.email))])
+
+    task = tasks.find { |t| t.type == :missing_superpowers_pdf }
+    assert task, "a manual exemption must not imply an assessment exemption"
+    assert_equal [admin], task.owners
+  end
+
+  test "an admin exempt from both with no manual gets no tasks" do
+    admin = build_admin!
+    admin.update!(requires_human_operating_manual: false, requires_superpowers_assessment: false)
+
+    assert_empty discover([manual_page("Email" => email_prop("someone.else@sanctuary.computer"))])
+  end
+
+  test "an admin exempt from both whose manual lacks a PDF gets no tasks" do
+    admin = build_admin!
+    admin.update!(requires_human_operating_manual: false, requires_superpowers_assessment: false)
+
+    assert_empty discover([manual_page("Email" => email_prop(admin.email))])
+  end
 end
