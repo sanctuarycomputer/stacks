@@ -254,7 +254,7 @@ admin-conditional.
 
 The repo already knows this. There is a comment and a controller override
 documenting exactly this trap for permission grants
-(`app/admin/admin_users.rb:116-131`):
+(`app/admin/admin_users.rb:117-133`):
 
 > Permission grants are admin-managed only. The form hides them from
 > non-admins, but leads pass the authorization adapter for AdminUser
@@ -272,7 +272,7 @@ silently exempt themselves — or anyone else — from the nag, with no audit tr
 1. Add `:requires_human_operating_manual` and `:requires_superpowers_assessment`
    to `permit_params` (`:2-5`, alongside `:ignore`).
 
-2. **Extend the existing `def update` override** (`:121-131`) to strip both keys
+2. **Extend the existing `def update` override** (`:121-133`) to strip both keys
    for non-admins, following the shape already there for
    `permission_grants_attributes`:
 

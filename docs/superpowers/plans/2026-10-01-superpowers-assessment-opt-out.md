@@ -16,7 +16,7 @@
 - Column names exactly: `requires_human_operating_manual`, `requires_superpowers_assessment`. Both `:boolean, null: false, default: true`.
 - Run all tests with `RAILS_ENV=test bundle exec rails test …` from the worktree root.
 - **Never run `bundle exec rails db:migrate` against the development database.** `config.active_record.dump_schema_after_migration = false` is set only in `config/environments/production.rb:90`, so a development migrate auto-dumps `db/schema.rb` and clobbers its deliberately hand-curated omissions (the pgvector extension, `embeddings.embedding`, its HNSW index, the `chunks.content_tsv` generated column — see `db/schema.rb:19-23`). Edit `db/schema.rb` by hand instead; the test DB reloads from it automatically.
-- If a test run fails with `ActiveRecord::EnvironmentMismatchError`, run `RAILS_ENV=test bundle exec rails db:environment:set` once and retry.
+- If a test run fails with `ActiveRecord::PendingMigrationError`, scroll up in the output: Rails shells out to `bin/rails db:test:prepare` and ignores its exit status, so the real cause (commonly `ActiveRecord::EnvironmentMismatchError`) is printed by that subprocess earlier in the run. For the environment mismatch, run `RAILS_ENV=test bundle exec rails db:environment:set` once and retry.
 - Never run `test/lib/tasks/etl_rake_test.rb` — its `sync_meet` test makes a live Google API call and can hang for ~73 minutes.
 - `AdminUserTest`'s salary-window test fails between 20:00 and 24:00 ET for reasons unrelated to this work. If it fails, check the clock before investigating.
 - Baseline before any change (excluding `etl_rake_test.rb`): **1765 runs, 5650 assertions, 0 failures, 0 errors, 2 skips.**
@@ -33,7 +33,7 @@
 | `lib/stacks/task_builder/discoveries/human_operating_manuals.rb` | Modify (`:20-31`) | Two early-outs that suppress the tasks |
 | `test/lib/stacks/task_builder/discoveries/human_operating_manuals_test.rb` | Modify (append) | Pins all four flag combinations |
 | `app/admin/admin_users.rb` | Modify (`:2-5`, `:121-133`, `:185`) | permit_params, server-side strip, two checkboxes |
-| `test/integration/admin_permission_grants_test.rb` | Modify (append) | Pins that non-admin leads cannot set the flags |
+| `test/integration/admin_permission_grants_test.rb` | Modify (append) | Pins that non-admin leads cannot set the flags, that admins can, and that the form renders |
 
 ---
 
@@ -69,10 +69,12 @@ Append to `test/models/admin_user_test.rb`, immediately before the file's final 
 - [ ] **Step 2: Run the test to verify it fails**
 
 ```bash
-RAILS_ENV=test bundle exec rails test test/models/admin_user_test.rb -n "/default/"
+RAILS_ENV=test bundle exec rails test test/models/admin_user_test.rb -n "/required to have a Human Operating Manual/"
 ```
 
-Expected: FAIL with `NoMethodError: undefined method 'requires_human_operating_manual?' for #<AdminUser…>`.
+Expected: `1 runs, 0 assertions, 0 failures, 1 errors` — a Minitest **error** (not a failure): `NoMethodError: undefined method 'requires_human_operating_manual?' for #<AdminUser…>`.
+
+Use this exact filter. Do **not** filter on `/default/` — that also matches the pre-existing `test "#default_skill_level returns the expected value"` (`test/models/admin_user_test.rb:313`), which would make every count below wrong.
 
 - [ ] **Step 3: Create the migration**
 
@@ -115,7 +117,7 @@ Rails dumps columns in physical order, so this is the placement a real dump woul
 - [ ] **Step 5: Run the test to verify it passes**
 
 ```bash
-RAILS_ENV=test bundle exec rails test test/models/admin_user_test.rb -n "/default/"
+RAILS_ENV=test bundle exec rails test test/models/admin_user_test.rb -n "/required to have a Human Operating Manual/"
 ```
 
 Expected: PASS, `1 runs, 2 assertions, 0 failures, 0 errors, 0 skips`.
@@ -318,7 +320,7 @@ EOF
 
 **Files:**
 - Modify: `app/admin/admin_users.rb:2-5` (permit_params), `:121-133` (the `update` override), `:185` (the form block)
-- Test: `test/integration/admin_permission_grants_test.rb` (append two tests before the final `end`)
+- Test: `test/integration/admin_permission_grants_test.rb` (append three tests before the final `end`)
 
 **Interfaces:**
 - Consumes: `AdminUser#requires_human_operating_manual` and `#requires_superpowers_assessment` from Task 1.
@@ -326,7 +328,7 @@ EOF
 
 **Why a server-side strip is mandatory.** Hiding the inputs enforces nothing in this app. `AdminAuthorization` returns `true` for every action on every not-explicitly-carved-out subject when `user.is_admin? || user.can_act_as_lead?` (`app/models/admin_authorization.rb:84`), and `can_act_as_lead?` is `has_led_projects? || <global "lead" grant>` (`app/models/admin_user.rb:566-568`) — anyone who has ever led a project. That check is not record-scoped, and `actions :index, :show, :edit, :update` (`app/admin/admin_users.rb:43`) means such a user can `PUT /admin/admin_users/:id` for *any* person, with `permit_params` applying globally. Without the strip, every past project lead could silently exempt themselves — or anyone — from their nag tasks, and the spec deliberately includes no audit trail that would reveal it. The repo already solved this exact problem for permission grants in the `update` override you are about to extend.
 
-- [ ] **Step 1: Write the two failing tests**
+- [ ] **Step 1: Write the three failing tests**
 
 Append to `test/integration/admin_permission_grants_test.rb`, immediately before the file's final `end`. The `setup` block already provides `@admin` (an admin) and `@trainee` (no roles); `Devise::Test::IntegrationHelpers` provides `sign_in`.
 
@@ -366,9 +368,21 @@ Note the `PermissionGrant.create!` in the first test is load-bearing: a bare `@t
     refute @trainee.requires_human_operating_manual?
     refute @trainee.requires_superpowers_assessment?
   end
+
+  test "the exemption checkboxes render on the edit form for admins" do
+    sign_in @admin
+
+    get edit_admin_admin_user_path(@trainee)
+
+    assert_response :success
+    assert_includes response.body, "admin_user_requires_human_operating_manual"
+    assert_includes response.body, "admin_user_requires_superpowers_assessment"
+  end
 ```
 
 The second test is what stops the first from passing vacuously — without it, never wiring the params up at all would look like success.
+
+The third test exists because **no test in the entire suite currently renders the AdminUser edit form.** `grep -rn "edit_admin_admin_user" test/` returns nothing, and the neighbouring test named "…from the edit form" only issues a `put` — `test/integration/admin_permission_grants_test.rb:95` GETs the *show* page, not edit. So without this test the two `f.input` lines added in Step 6 would be completely unexercised, which is exactly the Formtastic render path the spec identifies as the change's largest blast radius (§1, Deploy ordering). A render assertion is cheap and closes that gap.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -376,7 +390,13 @@ The second test is what stops the first from passing vacuously — without it, n
 RAILS_ENV=test bundle exec rails test test/integration/admin_permission_grants_test.rb
 ```
 
-Expected: the **admin** test FAILS (the flags are not in `permit_params`, so they are ignored and stay `true`). The non-admin test passes for the wrong reason — the params are not permitted yet. Both must pass for the right reasons by Step 5.
+Expected: `13 runs` with **2 failures**:
+
+- the **admin** test fails — the flags are not in `permit_params` yet, so they are silently ignored and stay `true`. (`action_on_unpermitted_parameters` is unset in this repo, so the default `:log` applies in test: unpermitted params are logged, never raised.)
+- the **form-render** test fails on `assert_includes` — the inputs don't exist yet.
+- the **non-admin** test passes, but for the wrong reason: the params aren't permitted yet, so nothing was going to change anyway. It only becomes meaningful after Step 3.
+
+All three must pass for the right reasons by Step 7.
 
 - [ ] **Step 3: Add the two params to `permit_params`**
 
@@ -393,21 +413,9 @@ In `app/admin/admin_users.rb`, extend the `permit_params` list at the top of the
 
 - [ ] **Step 4: Strip the params for non-admins in the existing `update` override**
 
-In `app/admin/admin_users.rb`, the `controller do … end` block already contains an `update` override (`:121-133`). Add the constant just above the existing comment that begins `# Permission grants are admin-managed only.`, and add the strip inside `update` just before `super`, so the whole region reads:
+In `app/admin/admin_users.rb`, the `controller do … end` block already contains an `update` override (`:121-133`). Add the strip inside `update`, just before `super`, so the whole region reads:
 
 ```ruby
-    # Nag exemptions are admin-managed only, for the same reason permission
-    # grants are: leads pass the authorization adapter for AdminUser updates
-    # (AdminAuthorization#authorized? returns true for anyone who can act as a
-    # lead, and the check is not record-scoped), so hiding the checkboxes in
-    # the form is not enforcement. Without this strip any past project lead
-    # could exempt themselves from their own nag tasks, and there is
-    # deliberately no audit trail that would show it.
-    HUMAN_OPERATING_MANUAL_FLAGS = %i[
-      requires_human_operating_manual
-      requires_superpowers_assessment
-    ].freeze
-
     # Permission grants are admin-managed only. The form hides them from
     # non-admins, but leads pass the authorization adapter for AdminUser
     # updates, so strip the params server-side too. New grants get
@@ -424,21 +432,31 @@ In `app/admin/admin_users.rb`, the `controller do … end` block already contain
         end
       end
 
+      # Nag exemptions are admin-managed only, for the same reason as above:
+      # hiding the checkboxes in the form is not enforcement, because
+      # AdminAuthorization grants every action to anyone who can act as a lead
+      # and that check is not record-scoped. Without this strip any past
+      # project lead could exempt themselves from their own nag tasks, and
+      # there is deliberately no audit trail that would show it.
       unless current_admin_user.is_admin?
-        HUMAN_OPERATING_MANUAL_FLAGS.each { |flag| params[:admin_user]&.delete(flag) }
+        %i[requires_human_operating_manual requires_superpowers_assessment].each do |flag|
+          params[:admin_user]&.delete(flag)
+        end
       end
 
       super
     end
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+Inline the array rather than extracting a constant. A constant assigned inside an ActiveAdmin DSL block lands on `Object` (the lexical cref for a top-level-`load`ed file), not on the controller class, and since `cache_classes` is false in dev/test ActiveAdmin reloads `app/admin`, so each reload re-assigns it and Ruby warns `already initialized constant`. Two symbols inline avoid the whole question.
+
+- [ ] **Step 5: Run the tests to verify the two param tests now pass**
 
 ```bash
 RAILS_ENV=test bundle exec rails test test/integration/admin_permission_grants_test.rb
 ```
 
-Expected: PASS, 0 failures, 0 errors. Every pre-existing test in the file must still pass.
+Expected: `13 runs` with **1 failure** — the form-render test, which still fails because Step 6 hasn't added the inputs yet. The admin and non-admin tests must both pass now, and both are meaningful: the admin one proves the params are wired up, the non-admin one proves the strip blocks them. Every pre-existing test in the file must still pass.
 
 - [ ] **Step 6: Add the two checkboxes to the form**
 
@@ -456,15 +474,13 @@ In `app/admin/admin_users.rb`, inside the `f.inputs(class: "admin_inputs")` bloc
 
 Formtastic renders `:boolean` columns as checkboxes automatically, so no `as:` option is needed.
 
-- [ ] **Step 7: Verify the form renders**
-
-The integration test file already signs in and hits admin routes, so render errors surface there. Confirm the edit page itself renders for an admin:
+- [ ] **Step 7: Verify all three tests pass**
 
 ```bash
 RAILS_ENV=test bundle exec rails test test/integration/admin_permission_grants_test.rb
 ```
 
-Expected: PASS. (`test "an admin can create a global lead grant from the edit form"` performs a `get` on the edit page, so a Formtastic error in the new inputs would fail here.)
+Expected: PASS, `13 runs, … 0 failures, 0 errors, 0 skips`. The form-render test added in Step 1 now finds both checkbox ids, which also proves Formtastic renders the new `:boolean` inputs without raising.
 
 - [ ] **Step 8: Commit**
 
@@ -505,7 +521,7 @@ EOF
 RAILS_ENV=test bundle exec rails test $(find test -name '*_test.rb' -not -path 'test/lib/tasks/etl_rake_test.rb' | tr '\n' ' ')
 ```
 
-Expected: `1774 runs, …, 0 failures, 0 errors, 2 skips` — the 1765 baseline plus the 9 new tests (1 defaults + 6 discovery + 2 integration). The hard requirements are `0 failures, 0 errors` and a run count of exactly 1774.
+Expected: `1775 runs, …, 0 failures, 0 errors, 2 skips` — the 1765 baseline plus the 10 new tests (1 defaults + 6 discovery + 3 integration). The hard requirements are `0 failures, 0 errors` and a run count of exactly 1775.
 
 - [ ] **Step 2: Confirm no stray changes**
 
@@ -543,6 +559,7 @@ Expected: the migration, `db/schema.rb`, the discovery, its test, `app/admin/adm
 | Testing — 15 existing discovery tests unchanged | Task 2 Step 4 |
 | Testing — defaults | Task 1 Step 1 |
 | Testing — authorization (both directions) | Task 3 Step 1 |
+| Testing — the edit form actually renders the checkboxes | Task 3 Step 1 (third test) |
 | Testing — full suite, etl_rake excluded, db:environment:set | Task 4, Global Constraints |
 
 No gaps. The only spec content without a task is the deploy-ordering discussion, which is operational guidance rather than code — it belongs in the PR description so whoever merges runs the migration promptly.
