@@ -69,12 +69,12 @@ Append to `test/models/admin_user_test.rb`, immediately before the file's final 
 - [ ] **Step 2: Run the test to verify it fails**
 
 ```bash
-RAILS_ENV=test bundle exec rails test test/models/admin_user_test.rb -n "/required to have a Human Operating Manual/"
+RAILS_ENV=test bundle exec rails test test/models/admin_user_test.rb -n "/required_to_have_a_Human_Operating_Manual/"
 ```
 
 Expected: `1 runs, 0 assertions, 0 failures, 1 errors` — a Minitest **error** (not a failure): `NoMethodError: undefined method 'requires_human_operating_manual?' for #<AdminUser…>`.
 
-Use this exact filter. Do **not** filter on `/default/` — that also matches the pre-existing `test "#default_skill_level returns the expected value"` (`test/models/admin_user_test.rb:313`), which would make every count below wrong.
+Note the underscores: Minitest derives method names from `test "…"` strings by replacing spaces, so a filter containing literal spaces matches nothing. Use this exact filter, and do **not** filter on `/default/` — that also matches the pre-existing `test "#default_skill_level returns the expected value"` (`test/models/admin_user_test.rb:313`), which would make every count below wrong.
 
 - [ ] **Step 3: Create the migration**
 
@@ -117,7 +117,7 @@ Rails dumps columns in physical order, so this is the placement a real dump woul
 - [ ] **Step 5: Run the test to verify it passes**
 
 ```bash
-RAILS_ENV=test bundle exec rails test test/models/admin_user_test.rb -n "/required to have a Human Operating Manual/"
+RAILS_ENV=test bundle exec rails test test/models/admin_user_test.rb -n "/required_to_have_a_Human_Operating_Manual/"
 ```
 
 Expected: PASS, `1 runs, 2 assertions, 0 failures, 0 errors, 0 skips`.
