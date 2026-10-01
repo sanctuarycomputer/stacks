@@ -575,5 +575,17 @@ class AdminUserTest < ActiveSupport::TestCase
     assert AdminUser.new(email: "hugh@sanctuary.computer").can_access_etl_admin?
     refute AdminUser.new(email: "someone.else@sanctuary.computer").can_access_etl_admin?
   end
+
+  test "a new AdminUser is required to have a Human Operating Manual and a Superpowers assessment by default" do
+    admin_user = AdminUser.create!({
+      email: "defaults@sanctuary.computer",
+      password: "passw0rd",
+    })
+
+    assert admin_user.requires_human_operating_manual?,
+      "expected requires_human_operating_manual to default to true"
+    assert admin_user.requires_superpowers_assessment?,
+      "expected requires_superpowers_assessment to default to true"
+  end
 end
 
