@@ -200,7 +200,7 @@ ActiveAdmin.register AdminUser do
         f.input :ignore, hint: "Check this box if this account is a dummy email address, bot or duplicate."
         f.input :requires_human_operating_manual,
           label: "Requires a Human Operating Manual",
-          hint: "Leave checked for everyone normally. Uncheck to exempt this person — they won't be asked to create a Human Operating Manual, and the task won't appear for them or for admins following up. Can take up to 24h to clear everywhere."
+          hint: "Leave checked for everyone normally. Uncheck to exempt this person — they won't be asked to create a Human Operating Manual, and the task won't appear for them or for admins following up. If they have no manual at all, this also silences the Superpowers assessment nag, since there would be no page to attach the PDF to. Can take up to 24h to clear everywhere."
         f.input :requires_superpowers_assessment,
           label: "Requires a Pigment.is Superpowers assessment",
           hint: "Leave checked for everyone normally. Uncheck to exempt this person from attaching a Pigment.is Superpowers PDF to their Human Operating Manual. Can take up to 24h to clear everywhere."

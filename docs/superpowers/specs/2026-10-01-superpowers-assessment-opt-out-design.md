@@ -160,34 +160,50 @@ the person actually has (matching
 `HumanOperatingManual::ASSESSMENT_GUIDE_URL`) instead of the artifact that
 proves it.
 
-#### Deploy ordering — run the migration promptly
+#### Deploy ordering — migrate BEFORE deploying
 
 Migrations in this repo are manual: the `Procfile` contains only `web:` and
-`app.json` has no release script. So there is a window between merge and
-migration in which the columns don't exist. What breaks in that window is **not
-primarily the nag job**:
+`app.json` has no release script, so the default sequence is deploy-then-migrate.
+**Do not use that sequence here.** Run the migration *first*, then deploy.
 
-- **The nag job degrades silently.** `TaskBuilder#build_tasks` wraps every
-  discovery in a blanket rescue (`lib/stacks/task_builder.rb:192-201`) that logs,
-  reports to Sentry, and substitutes `[]`. So a missing column means HOM tasks
-  quietly vanish rather than raising. Worse, that HOM-less descriptor list is
-  then written to the cache with a 24h TTL, so **running the migration does not
-  by itself restore the nags** — they stay gone until something busts the cache
-  or `stacks:daily_tasks` calls `refresh!`.
-- **The admin edit form 500s.** This is the real blast radius. Formtastic
-  resolves `f.input :requires_human_operating_manual` by calling the attribute
-  on the record, so with no column `/admin/admin_users/:id/edit` raises for
-  **every** admin.
+Both columns are purely additive with a `default: true`, and no code on `main`
+reads them, so migrating ahead of the deploy is safe and gives a zero-length
+exposure window. Deploying first does not, and the damage does not end when the
+migration finishes:
 
-Decision: **no defensive `column_exists?` guard.** It would add permanent
-complexity to paper over a few minutes of deploy skew, and the repo has no
-precedent for it. Instead the migration must be run immediately after the merge
-deploys, and whoever deploys should expect to run `stacks:daily_tasks` (or
-otherwise bust the task cache) afterwards if HOM tasks are missing.
+- **The admin edit form 500s, and keeps 500ing after the migration.**
+  Production runs `cache_classes = true` / `eager_load = true`
+  (`config/environments/production.rb:5,11`), and ActiveRecord memoizes a
+  model's column set per process behind a `schema_loaded?` guard. `admin_users`
+  is queried on essentially every request (Devise), so every web dyno caches
+  `AdminUser`'s columns *without* the new ones as soon as it boots.
+  `heroku run rails db:migrate` does not restart web dynos, so Formtastic keeps
+  raising `undefined method 'requires_human_operating_manual'` on
+  `/admin/admin_users/:id/edit` for **every** admin until the dynos restart.
+  There is no `db/schema_cache.yml` to make this deterministic either way.
+- **The nag job degrades silently, and `stacks:daily_tasks` cannot fix it.**
+  `TaskBuilder#build_tasks` wraps every discovery in a blanket rescue
+  (`lib/stacks/task_builder.rb:192-201`) that logs, reports to Sentry and
+  substitutes `[]`, so a missing column makes HOM tasks vanish rather than
+  raise — and that HOM-less list is cached. On a stale dyno this repeats on
+  every rebuild, so it is permanent rather than 24h-bounded. `stacks:daily_tasks`
+  calls `refresh!` (`lib/tasks/stacks.rake:628`) in a *separate* dyno and writes
+  to that dyno's `:memory_store`, so it can never restore the web dynos' nags.
 
-This paragraph exists because an earlier draft of this spec claimed the
-discovery "raises rather than silently mis-behaving". That was wrong, and the
-wrong conclusion followed from it.
+If the deploy has already gone out ahead of the migration, the recovery is
+`heroku restart` after migrating — not `stacks:daily_tasks`. A restart fixes the
+per-process column cache and clears the per-process task cache in one step.
+
+Decision: **no defensive `column_exists?` guard.** With migrate-first ordering
+the window is zero, so a guard would be permanent complexity for no benefit, and
+the repo has no precedent for one.
+
+This section has been wrong twice, which is worth recording. An early draft
+claimed the discovery would raise on a missing column; it does not, because of
+the blanket rescue. The correction then claimed the window was "a few minutes of
+deploy skew" fixable with `stacks:daily_tasks`; that was also wrong, because the
+column cache is per-process and the task cache is per-dyno. Both errors pointed
+the same way — treating a process-local cache as if it were shared.
 
 ### 2. Discovery changes
 
@@ -305,7 +321,7 @@ end
 ```ruby
 f.input :requires_human_operating_manual,
   label: "Requires a Human Operating Manual",
-  hint: "Leave checked for everyone normally. Uncheck to exempt this person — they won't be asked to create a Human Operating Manual, and the task won't appear for them or for admins following up. Can take up to 24h to clear everywhere."
+  hint: "Leave checked for everyone normally. Uncheck to exempt this person — they won't be asked to create a Human Operating Manual, and the task won't appear for them or for admins following up. If they have no manual at all, this also silences the Superpowers assessment nag, since there would be no page to attach the PDF to. Can take up to 24h to clear everywhere."
 f.input :requires_superpowers_assessment,
   label: "Requires a Pigment.is Superpowers assessment",
   hint: "Leave checked for everyone normally. Uncheck to exempt this person from attaching a Pigment.is Superpowers PDF to their Human Operating Manual. Can take up to 24h to clear everywhere."
