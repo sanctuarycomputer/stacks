@@ -135,4 +135,48 @@ class AdminPermissionGrantsTest < ActionDispatch::IntegrationTest
     assert_redirected_to admin_root_path
     assert_equal "You are not authorized to perform this action.", flash[:error]
   end
+
+  test "a non-admin lead cannot exempt themselves from the Human Operating Manual nag" do
+    PermissionGrant.create!(admin_user: @trainee, permission: "lead", granted_by: @admin)
+    sign_in @trainee
+
+    put admin_admin_user_path(@trainee), params: {
+      admin_user: {
+        profit_share_notes: "hi",
+        requires_human_operating_manual: "0",
+        requires_superpowers_assessment: "0"
+      }
+    }
+
+    @trainee.reload
+    assert @trainee.requires_human_operating_manual?,
+      "a non-admin lead must not be able to drop their own manual requirement"
+    assert @trainee.requires_superpowers_assessment?,
+      "a non-admin lead must not be able to drop their own assessment requirement"
+  end
+
+  test "an admin can exempt someone from the Human Operating Manual nag" do
+    sign_in @admin
+
+    put admin_admin_user_path(@trainee), params: {
+      admin_user: {
+        requires_human_operating_manual: "0",
+        requires_superpowers_assessment: "0"
+      }
+    }
+
+    @trainee.reload
+    refute @trainee.requires_human_operating_manual?
+    refute @trainee.requires_superpowers_assessment?
+  end
+
+  test "the exemption checkboxes render on the edit form for admins" do
+    sign_in @admin
+
+    get edit_admin_admin_user_path(@trainee)
+
+    assert_response :success
+    assert_includes response.body, "admin_user_requires_human_operating_manual"
+    assert_includes response.body, "admin_user_requires_superpowers_assessment"
+  end
 end
