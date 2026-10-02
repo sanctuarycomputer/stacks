@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_09_29_180000) do
+ActiveRecord::Schema.define(version: 2026_10_01_120000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -85,6 +85,8 @@ ActiveRecord::Schema.define(version: 2026_09_29_180000) do
     t.text "profit_share_notes"
     t.jsonb "info", default: {}
     t.boolean "ignore", default: false
+    t.boolean "requires_human_operating_manual", default: true, null: false
+    t.boolean "requires_superpowers_assessment", default: true, null: false
     t.index ["email"], name: "index_admin_users_on_email", unique: true
     t.index ["reset_password_token"], name: "index_admin_users_on_reset_password_token", unique: true
   end

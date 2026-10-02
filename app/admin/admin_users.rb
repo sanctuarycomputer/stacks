@@ -1,6 +1,8 @@
 ActiveAdmin.register AdminUser do
   permit_params :show_skill_tree_data,
     :ignore,
+    :requires_human_operating_manual,
+    :requires_superpowers_assessment,
     :old_skill_tree_level,
     :profit_share_notes,
     full_time_periods_attributes: [
@@ -129,6 +131,19 @@ ActiveAdmin.register AdminUser do
           params[:admin_user].delete(:permission_grants_attributes)
         end
       end
+
+      # Nag exemptions are admin-managed only, for the same reason as above:
+      # hiding the checkboxes in the form is not enforcement, because
+      # AdminAuthorization grants every action to anyone who can act as a lead
+      # and that check is not record-scoped. Without this strip any past
+      # project lead could exempt themselves from their own nag tasks, and
+      # there is deliberately no audit trail that would show it.
+      unless current_admin_user.is_admin?
+        %i[requires_human_operating_manual requires_superpowers_assessment].each do |flag|
+          params[:admin_user]&.delete(flag)
+        end
+      end
+
       super
     end
   end
@@ -183,6 +198,12 @@ ActiveAdmin.register AdminUser do
     if current_admin_user.is_admin?
       f.inputs(class: "admin_inputs") do
         f.input :ignore, hint: "Check this box if this account is a dummy email address, bot or duplicate."
+        f.input :requires_human_operating_manual,
+          label: "Requires a Human Operating Manual",
+          hint: "Leave checked for everyone normally. Uncheck to exempt this person — they won't be asked to create a Human Operating Manual, and the task won't appear for them or for admins following up. If they have no manual at all, this also silences the Superpowers assessment nag, since there would be no page to attach the PDF to. Can take up to 24h to clear everywhere."
+        f.input :requires_superpowers_assessment,
+          label: "Requires a Pigment.is Superpowers assessment",
+          hint: "Leave checked for everyone normally. Uncheck to exempt this person from attaching a Pigment.is Superpowers PDF to their Human Operating Manual. Can take up to 24h to clear everywhere."
         f.input :old_skill_tree_level,
           as: :select, collection: AdminUser.old_skill_tree_levels.keys,
           label: "Starting skill tree level"
