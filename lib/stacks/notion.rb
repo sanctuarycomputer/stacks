@@ -12,6 +12,20 @@ class Stacks::Notion
     PROJECTS: "713b28db4f8a45c68126e9723c65349e",
   }
 
+  # Stacksbot's tables, read by the filtered sync (Stacks::Notion::FilteredSync)
+  # for the project log. They are NOT in DATABASE_IDS and must never be:
+  # sync_database deletes every row under a database that it did not see, and
+  # these are only ever read in part.
+  FILTERED_DATABASES = {
+    OBSERVATIONS: { id: "390131fea2c7808bb216c38b46c3ba55", project_property: "Projects" },
+    PROBLEMS: { id: "18d6276a12aa4e0a957f013a69d5bb9a", project_property: "Project" },
+  }.freeze
+
+  # notion_pages.notion_parent_id of a filtered database's rows.
+  def self.filtered_parent_id(key)
+    Stacks::Utils.dashify_uuid(FILTERED_DATABASES.fetch(key)[:id])
+  end
+
   def initialize()
     @headers = {
       "Authorization": "Bearer #{Stacks::Utils.config[:notion][:token]}",
@@ -98,6 +112,9 @@ class Stacks::Notion
   end
 
   def sync_database(database_id)
+    if FILTERED_DATABASES.values.any? { |d| d[:id] == database_id.to_s.delete("-") }
+      raise ArgumentError, "#{database_id} is read by the filtered sync only: a whole-database sync would delete its rows"
+    end
     database_entries_touched = []
     next_cursor = nil
     loop do
