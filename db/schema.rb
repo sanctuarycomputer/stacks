@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_10_12_100000) do
+ActiveRecord::Schema.define(version: 2026_10_13_000001) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -379,6 +379,8 @@ ActiveRecord::Schema.define(version: 2026_10_12_100000) do
     t.datetime "updated_at", precision: 6, null: false
     t.string "deel_legal_entity_id"
     t.string "pay_cycle_cadence"
+    t.boolean "management_fee_payer", default: false, null: false
+    t.string "g3d_qbo_customer_id"
     t.index ["deel_legal_entity_id"], name: "index_enterprises_on_deel_legal_entity_id", unique: true, where: "(deel_legal_entity_id IS NOT NULL)"
   end
 

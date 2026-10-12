@@ -21,6 +21,20 @@ class Enterprise < ApplicationRecord
   accepts_nested_attributes_for :qbo_account, allow_destroy: true
   VERTICAL_MATCHER = /\[(.+)\](.*)/
 
+  scope :management_fee_payers, -> { where(management_fee_payer: true) }
+
+  # garden3d issues the management fee; it can never also pay it.
+  #
+  # The has_attribute? guard matters: migrations are run by hand on production,
+  # after the deploy. Until the column exists this validation must not run, or
+  # every Enterprise save -- including the nightly generate_snapshot! -- raises.
+  validate :garden3d_is_never_a_management_fee_payer, if: -> { has_attribute?(:management_fee_payer) }
+
+  def garden3d_is_never_a_management_fee_payer
+    return unless is_garden3d? && management_fee_payer?
+    errors.add(:management_fee_payer, "cannot be set on #{GARDEN3D_NAME}: it issues the management fee")
+  end
+
   # When a new enterprise is created, every existing contributor immediately
   # gets a ledger for it. Pairs with Contributor.after_create so the
   # (contributor, enterprise) grid stays full on a long enough timeline.
@@ -59,6 +73,10 @@ class Enterprise < ApplicationRecord
 
   def is_index?
     name == INDEX_SPACE_NAME
+  end
+
+  def is_garden3d?
+    name == GARDEN3D_NAME
   end
 
   # Per-enterprise daily automation, dispatched by stacks:daily_enterprise_tasks.
