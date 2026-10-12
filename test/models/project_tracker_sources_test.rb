@@ -232,4 +232,91 @@ class ProjectTrackerSourcesTest < ActiveSupport::TestCase
     assert_nil bare[:twist_channel_id]
     assert_nil bare[:notion_project_id]
   end
+
+  # ---- can the Stacksbot account see the channel? ----------------------------
+
+  def fake_twist(code: 200, body: [{ "id" => 794756 }, { "id" => 11 }])
+    stub(get_channels: stub(code: code, parsed_response: body))
+  end
+
+  test "sync_twist_channel_access! records, per tracker with a Twist link, whether Stacksbot is in the channel" do
+    inside = tracker!
+    twist_link!(inside)
+    outside = tracker!
+    twist_link!(outside, "https://twist.com/a/133876/ch/5/")
+    unlinked = with_links!(tracker!)
+    now = Time.zone.parse("2026-10-12T09:00:00Z")
+
+    stats = ProjectTracker.sync_twist_channel_access!(twist: fake_twist, now: now)
+
+    assert_equal({ checked: 2, accessible: 1, inaccessible: 1 }, stats)
+    assert_equal true, inside.reload.twist_channel_accessible
+    assert_equal now, inside.twist_channel_checked_at
+    assert_equal false, outside.reload.twist_channel_accessible
+    assert_equal now, outside.twist_channel_checked_at
+    assert_nil unlinked.reload.twist_channel_accessible
+    assert_nil unlinked.twist_channel_checked_at
+  end
+
+  test "sync_twist_channel_access! skips completed trackers" do
+    done = tracker!
+    twist_link!(done)
+    done.update_columns(work_completed_at: 1.day.ago)
+
+    stats = ProjectTracker.sync_twist_channel_access!(twist: fake_twist)
+
+    assert_equal({ checked: 0, accessible: 0, inaccessible: 0 }, stats)
+    assert_nil done.reload.twist_channel_accessible
+    assert_nil done.twist_channel_checked_at
+  end
+
+  test "a failed Twist call raises and changes no tracker" do
+    pt = tracker!
+    twist_link!(pt, "https://twist.com/a/133876/ch/5/")
+    checked = Time.zone.parse("2026-10-01T09:00:00Z")
+    pt.update_columns(twist_channel_accessible: true, twist_channel_checked_at: checked)
+
+    [
+      fake_twist(code: 500, body: []),
+      fake_twist(code: 200, body: { "error_code" => 200, "error_string" => "Invalid token" }),
+      fake_twist(code: 403, body: { "error_string" => "Forbidden" }),
+    ].each do |twist|
+      error = assert_raises(Stacks::Twist::Error) { ProjectTracker.sync_twist_channel_access!(twist: twist) }
+      assert_match(/channels\/get failed/, error.message)
+      assert_equal true, pt.reload.twist_channel_accessible
+      assert_equal checked, pt.twist_channel_checked_at
+    end
+  end
+
+  test "the access answer is written without running the tracker's validations" do
+    pt = tracker!
+    twist_link!(pt)
+    assert_not pt.reload.valid?, "the tracker has no MSA or SOW link"
+
+    ProjectTracker.sync_twist_channel_access!(twist: fake_twist)
+
+    assert_equal true, pt.reload.twist_channel_accessible
+  end
+
+  test "sync_twist_channel_access! clears the task cache once, after the answers are written" do
+    pt = tracker!
+    twist_link!(pt)
+    Stacks::TaskBuilder.expects(:clear_cache!).once.with do
+      pt.reload.twist_channel_accessible == true
+    end
+
+    ProjectTracker.sync_twist_channel_access!(twist: fake_twist)
+  end
+
+  test "a failed Twist call does not clear the task cache" do
+    Stacks::TaskBuilder.expects(:clear_cache!).never
+    assert_raises(Stacks::Twist::Error) do
+      ProjectTracker.sync_twist_channel_access!(twist: fake_twist(code: 500, body: []))
+    end
+  end
+
+  test "get_channels asks Twist for the channels in our workspace" do
+    Stacks::Twist.expects(:get).with("/channels/get", has_entry(query: { workspace_id: 133876 })).returns(:response)
+    assert_equal :response, Stacks::Twist.new.get_channels
+  end
 end

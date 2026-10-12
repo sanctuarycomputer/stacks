@@ -396,6 +396,29 @@ class ProjectTracker < ApplicationRecord
     project_tracker_links.find(&:twist_channel?)&.twist_channel_id
   end
 
+  # Stacks's Twist token is the Stacksbot account, so the channels it belongs
+  # to are the channels Stacksbot can read. Records, per open tracker with a
+  # Twist link, whether its channel is one of them. A failed call changes
+  # nothing: an old answer is better than a wrong one.
+  def self.sync_twist_channel_access!(twist: Stacks::Twist.new, now: Time.zone.now)
+    response = twist.get_channels
+    unless response.code == 200 && response.parsed_response.is_a?(Array)
+      raise Stacks::Twist::Error, "Twist channels/get failed (#{response.code})"
+    end
+    member_ids = response.parsed_response.map { |c| c["id"].to_i }.to_set
+    stats = { checked: 0, accessible: 0, inaccessible: 0 }
+    where(work_completed_at: nil).includes(:project_tracker_links).find_each do |tracker|
+      channel_id = tracker.twist_channel_id
+      next if channel_id.nil?
+      accessible = member_ids.include?(channel_id)
+      tracker.update_columns(twist_channel_accessible: accessible, twist_channel_checked_at: now)
+      stats[:checked] += 1
+      stats[accessible ? :accessible : :inaccessible] += 1
+    end
+    Stacks::TaskBuilder.clear_cache!
+    stats
+  end
+
   # The Notion Projects page this tracker belongs to, or nil when none is
   # chosen or the page has since been removed from Notion.
   def notion_project
