@@ -30,6 +30,7 @@ projects can be read off Stacks without asking anyone.
 
 ## Decisions made with Hugh
 
+7. A tracker may name one or many Twist channels and one or many Notion projects; at least one of each (2026-10-12).
 1. Twist channel is a full URL, `https://twist.com/a/133876/ch/<id>/`. Only `<id>` may vary.
 2. The tracker's Notion Project page is chosen from a dropdown, and is the join key.
 3. An Observation reaches a tracker through its Project. No second attribution path.
@@ -70,37 +71,42 @@ who can read the tracker.
 
 ## Part 1. A tracker names its sources (Stacks)
 
-- **Twist channel.** Stays a `project_tracker_links` row of type `twist_channel`.
+- **Twist channels.** Each stays a `project_tracker_links` row of type `twist_channel`. A tracker has
+  one or many.
   - Stored shape: `https://twist.com/a/<workspace>/ch/<id>/`, where `<workspace>` is the configured
     Twist workspace id (133876) and only `<id>` varies.
   - People paste what the browser shows, so the link is tidied before it is checked: a thread URL
     (`…/ch/355509/t/6877281/`) or a missing trailing slash is cut back to the channel. Anything that
     is not a channel in our workspace is refused, with a message that shows the expected shape.
-  - At most one per tracker, validated on the tracker over links not marked for removal, so replacing
-    the link in one form submit works.
+  - One or many per tracker. The same channel twice on one tracker is refused, validated on the
+    tracker over links not marked for removal, so replacing a link in one form submit works.
   - Several trackers may name the same channel (one client, two trackers). Part 3 then sets every
     such tracker's Project on the observation.
-  - `ProjectTracker#twist_channel_id` returns the id as an Integer, or nil.
+  - `ProjectTracker#twist_channel_ids` returns the ids as a sorted Array of Integers, empty when
+    there is none.
   - `ProjectTrackerLink` busts the task cache when it changes, as `ProjectTracker` does.
-- **Notion project.** New column `project_trackers.notion_project_id`: the Notion page id, dashed, as
-  `notion_pages.notion_id` stores it.
-  - The edit form shows a dropdown of Projects pages that are live, labelled "Title · Stage" because
-    14 live titles repeat, plus the tracker's current page whatever its state.
+- **Notion projects.** New column `project_trackers.notion_project_ids`, an array: the Notion page
+  ids, dashed, as `notion_pages.notion_id` stores them. A tracker has one or many. (It replaces the
+  single `notion_project_id`, which stays in the table, ignored, until a follow-up drops it.)
+  - The edit form shows a multiple select of Projects pages that are live, labelled "Title · Stage"
+    because 14 live titles repeat, plus the tracker's current pages whatever their state.
   - Live means `Stage` is one of: Active, Ongoing/Maintenance, Upcoming/Legal Review, On Hold, Paused,
     Project Capsule Needed, Introduction, Pre-proposal Questions Needed, Proposal Needed, Proposal
     Sent, Following Up; or Completed and edited in the last 90 days. Pages ticked "🔴 Duplicated" are
     left out. This is Stacksbot's own list (`LIVE_STAGES`), copied so the two agree.
   - Several trackers may pick the same project.
-  - If the chosen page is later removed from Notion, the tracker keeps the id, the form shows it as
-    "(removed from Notion)", and the tracker counts as having no Notion project.
+  - Only an id being added is checked against the synced pages. If a chosen page is later removed
+    from Notion, the tracker keeps the id and stays saveable, the form shows it as "(removed from
+    Notion)", and the tracker counts as having no Notion project once none of its pages exists.
   - The unused `notion_homepage` link type is left alone.
 - **Sync.** Add the Projects database (`713b28db…`, about 760 rows) back to the nightly Notion sync.
   Stacks still holds 698 rows from when it was last synced, in February 2025. Before building, fetch
   one live page with the Stacks client to confirm the `Stage` select reads as expected under the
   Notion API version Stacks uses.
-- **MCP.** `list_project_trackers` returns `twist_channel_id` and `notion_project_id`, so Stacksbot
-  reads the mapping from Stacks and stops matching by name. The `update_project_tracker` tool's
-  `twist_channel_url` description states the shape.
+- **MCP.** `list_project_trackers` returns `twist_channel_ids` and `notion_project_ids` (arrays, empty
+  when there is none), so Stacksbot reads the mapping from Stacks and stops matching by name. The
+  `update_project_tracker` tool's `twist_channel_url` description states the shape; it adds a channel
+  beside the ones the tracker has and does nothing for one it already has.
 
 ## Part 2. Admin tasks (Stacks)
 
@@ -111,8 +117,8 @@ clears itself when its condition ends.
 
 | Task | Condition | Owner |
 |---|---|---|
-| Project tracker needs its Twist channel and Notion project linked | either is missing | project leads, else admins |
-| Stacksbot needs inviting to this project's Twist channel | the last check found Stacksbot is not in it | admins |
+| Project tracker needs its Twist channel and Notion project linked | it has no Twist channel, or none of its Notion projects is a page that still exists | project leads, else admins |
+| Stacksbot needs inviting to this project's Twist channel | the last check found Stacksbot is not in at least one of its channels | admins |
 
 One task covers both missing links, so a tracker raises one task, not two. On day one that is about
 28 tasks (the in-progress trackers), spread across their project leads. They also appear in
@@ -121,10 +127,11 @@ Stacksbot's weekly action-items list, which is the nudge we want.
 The second task needs to know what Stacksbot can see. Stacks can answer that itself: its Twist token
 is the Stacksbot account (checked 2026-10-12: user "Stacksbot", workspace 133876, 31 channels). A
 daily task `stacks:sync_twist_channel_access` lists the channels that account belongs to once, and
-stores on each tracker with a Twist link `twist_channel_accessible` and `twist_channel_checked_at`.
-A tracker never checked raises no task; only a checked "no" does. Changing or removing the link
-clears both, so a stale answer never outlives the link it was about. If the Twist call fails,
-nothing is changed and the system task is marked as an error.
+stores on each tracker with a Twist link `twist_channels_inaccessible` (the ids among its channels
+that the account is not in) and `twist_channel_checked_at`. Access is per channel, and one task
+covers however many are missing. A tracker never checked raises no task; only a checked "no" does.
+Adding, changing or removing a link clears both, so a stale answer never outlives the links it was
+about. If the Twist call fails, nothing is changed and the system task is marked as an error.
 
 ## Part 3. Observations carry what the log needs (Stacksbot)
 
