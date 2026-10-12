@@ -1,0 +1,172 @@
+# Syncs part of a large Notion database into notion_pages: the rows edited in
+# a window, upserted one by one. It NEVER deletes a row it did not see (the
+# whole-database sync, Stacks::Notion#sync_database, does, which is why these
+# databases must never go through it).
+#
+# Observations: the first run reads 90 days of rows that have a project. Every
+# later run reads every row edited since the last run, stores a new row only
+# when it has a project, and updates a row only when Stacks already holds it.
+# That second rule is how a row whose project was removed leaves the log.
+#
+# Problems: every row is kept, with or without a project, so the problems an
+# observation was folded into are always here for the log to read.
+class Stacks::Notion::FilteredSync
+  FIRST_RUN_WINDOW = 90.days
+  MIN_WINDOW = 3.days
+  OVERLAP = 1.day
+  # Where a database that is read whole starts from. Sent in the same filter
+  # shape as every other run, so there is one query shape per database.
+  EVERYTHING_SINCE = Time.utc(2000, 1, 1)
+  MAX_CALLS = 500 # a runaway cursor stops here: 50,000 rows in one run is not real
+  SORTS = [{ timestamp: "last_edited_time", direction: "descending" }].freeze
+  WRAPPERS = { OBSERVATIONS: Stacks::Notion::Observation, PROBLEMS: Stacks::Notion::Problem }.freeze
+  # Whether a row must be filed under a project to be stored.
+  REQUIRES_PROJECT = { OBSERVATIONS: true, PROBLEMS: false }.freeze
+  # A fallback, off. Later runs of Observations ask for every row edited in
+  # the window. Set this to true to ask only for rows that have a project, as
+  # the first run does; a row that lost its project is then noticed by the
+  # recheck instead of by the query.
+  INCREMENTAL_KEEPS_PROJECT_CLAUSE = false
+
+  # What the wrappers read and the type Notion held for each on 2026-10-12.
+  # The preview prints the type found beside these, so a property renamed or
+  # retyped in Notion is seen before a real run.
+  EXPECTED_PROPERTIES = {
+    OBSERVATIONS: {
+      "Name" => "title", "Observation" => "rich_text", "Source" => "select", "Source Ref" => "url",
+      "Observed At" => "date", "Salience" => "select", "Type" => "select", "Status" => "select",
+      "Projects" => "relation", "Problems" => "relation", Stacks::Notion::Observation::VALENCE_PROPERTY => "select",
+    }.freeze,
+    PROBLEMS: {
+      "Problem" => "title", "Kind" => "select", "Severity" => "select", "Status" => "select", "Owner" => "people",
+      "Owner Name" => "rich_text", "Project" => "relation", "Source Observations" => "relation",
+      "Occurrences" => "number", "First Seen" => "date", "Last Seen" => "date",
+    }.freeze,
+  }.freeze
+
+  def self.marks
+    raw = System.first&.notion_filtered_sync_marks
+    raw.is_a?(Hash) ? raw : {}
+  end
+
+  # The start time of the last run of this database that reached the end.
+  def self.last_synced_at(key)
+    Stacks::Notion::Props.parse_time(marks[key.to_s])
+  end
+
+  def initialize(client:, now: Time.zone.now)
+    @client = client
+    @now = now
+    @unchanged_ids = []
+  end
+
+  # [since, mode]. mode is forced only by a dry run that wants to try the
+  # later runs' query before there is a mark.
+  def window_for(key, mode: nil)
+    mark = self.class.last_synced_at(key)
+    floor = REQUIRES_PROJECT.fetch(key) ? @now - FIRST_RUN_WINDOW : EVERYTHING_SINCE
+    return [floor, :backfill] if mode == :backfill || (mode.nil? && mark.nil?)
+    return [@now - MIN_WINDOW, :incremental] if mark.nil?
+    [[[mark - OVERLAP, @now - MIN_WINDOW].min, floor].max, :incremental]
+  end
+
+  def sync(key, dry_run: false, mode: nil)
+    config = Stacks::Notion::FILTERED_DATABASES.fetch(key)
+    since, mode = window_for(key, mode: mode)
+    stats = { database: key.to_s, mode: mode.to_s, since: since.utc.iso8601, dry_run: dry_run, calls: 0, seen: 0,
+              created: 0, updated: 0, unchanged: 0, skipped_without_project: 0, trashed: 0, truncated_relations: 0 }
+    stats[:properties] = {} if dry_run
+    cursor = nil
+    loop do
+      raise Stacks::Notion::Error.new("Notion sync of #{key} did not end after #{MAX_CALLS} calls") if stats[:calls] >= MAX_CALLS
+      response = @client.query_database_filtered(config[:id], filter: filter_for(key, since, mode), sorts: SORTS, start_cursor: cursor)
+      stats[:calls] += 1
+      results = response.is_a?(Hash) && response["results"].is_a?(Array) ? response["results"] : []
+      rows = results.select { |r| r.is_a?(Hash) && r["id"].is_a?(String) && r["id"].present? }
+      stats[:properties] = property_types(rows.first, key) if dry_run && stats[:properties].empty? && rows.any?
+      upsert_all(rows, key, stats, dry_run)
+      cursor = response.is_a?(Hash) ? response["next_cursor"] : nil
+      break if cursor.blank?
+    end
+    write_mark(key) unless dry_run
+    stats
+  end
+
+  # Stores one row. `stored` is the NotionPage Stacks holds for it (deleted or
+  # not), or nil. Never deletes anything but this row, and only when Notion
+  # says this row is in the trash.
+  def upsert(r, key, stored, stats, dry_run:, keep_without_project: false)
+    config = Stacks::Notion::FILTERED_DATABASES.fetch(key)
+    wrapper = WRAPPERS.fetch(key)
+
+    if r["archived"] == true || r["in_trash"] == true
+      return if stored.nil? || stored.deleted?
+      stats[:trashed] += 1
+      stored.destroy unless dry_run
+      return
+    end
+
+    project_ids = wrapper.project_ids_in(r)
+    stats[:truncated_relations] += 1 if Stacks::Notion::Props.relation_truncated?(r, config[:project_property])
+    if stored.nil? && project_ids.empty? && REQUIRES_PROJECT.fetch(key) && !keep_without_project
+      stats[:skipped_without_project] += 1
+      return
+    end
+
+    parent_id = Stacks::Notion.filtered_parent_id(key)
+    title = Stacks::Notion.normalize_page!(r)
+    attrs = { notion_parent_type: "database_id", notion_parent_id: parent_id, data: r, page_title: title,
+              project_ids: project_ids, occurred_at: wrapper.occurred_at_in(r) || @now, synced_at: @now }
+
+    if stored.nil?
+      stats[:created] += 1
+      NotionPage.create!(attrs.merge(notion_id: r["id"])) unless dry_run
+    elsif stored.deleted? || stored.project_ids != project_ids || stored.notion_parent_id != parent_id ||
+          Hashdiff.diff(r, stored.data).any?
+      stats[:updated] += 1
+      return if dry_run
+      stored.recover! if stored.deleted?
+      stored.update!(attrs)
+    else
+      stats[:unchanged] += 1
+      @unchanged_ids << stored.id unless dry_run
+    end
+  end
+
+  private
+
+  def filter_for(key, since, mode)
+    config = Stacks::Notion::FILTERED_DATABASES.fetch(key)
+    clauses = []
+    if REQUIRES_PROJECT.fetch(key) && (mode == :backfill || INCREMENTAL_KEEPS_PROJECT_CLAUSE)
+      clauses << { property: config[:project_property], relation: { is_not_empty: true } }
+    end
+    clauses << { timestamp: "last_edited_time", last_edited_time: { on_or_after: since.utc.iso8601 } }
+    { and: clauses }
+  end
+
+  # { property name => the type Notion sent, or "missing" } for one row.
+  def property_types(row, key)
+    props = row["properties"].is_a?(Hash) ? row["properties"] : {}
+    EXPECTED_PROPERTIES.fetch(key).keys.to_h do |name|
+      prop = props[name]
+      [name, prop.is_a?(Hash) && prop["type"].is_a?(String) ? prop["type"] : "missing"]
+    end
+  end
+
+  def upsert_all(results, key, stats, dry_run)
+    stored = NotionPage.with_deleted.where(notion_id: results.map { |r| r["id"] }).index_by(&:notion_id)
+    @unchanged_ids = []
+    results.each do |r|
+      stats[:seen] += 1
+      upsert(r, key, stored[r["id"]], stats, dry_run: dry_run)
+    end
+    # Unchanged rows are not rewritten; one statement records that they were seen.
+    NotionPage.where(id: @unchanged_ids).update_all(synced_at: @now) if @unchanged_ids.any?
+  end
+
+  def write_mark(key)
+    system = System.first || System.create!(settings: {})
+    system.update!(notion_filtered_sync_marks: self.class.marks.merge(key.to_s => @now.utc.iso8601))
+  end
+end

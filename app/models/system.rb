@@ -25,6 +25,11 @@ class System < ApplicationRecord
     # System.first, not System.instance (process-memoized).
     runn_synced_at DateTime, default: nil
 
+    # When each filtered Notion database (Stacks::Notion::FILTERED_DATABASES)
+    # last synced to the end: {"OBSERVATIONS" => iso8601, "PROBLEMS" => iso8601}.
+    # The next run reads from here less an overlap. Read via System.first.
+    notion_filtered_sync_marks Hash, default: {}
+
     # How many of Sanctuary's top earners are averaged into the MSO benchmark.
     # Read it through System.mso_top_n, never directly.
     mso_top_n Integer, default: 3
