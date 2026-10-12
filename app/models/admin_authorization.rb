@@ -15,6 +15,7 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
   # On a management fee invoice tracker, :update attaches or detaches a
   # QuickBooks invoice and :attempt_generate writes one to QuickBooks.
   MANAGEMENT_FEE_TRACKER_ADMIN_ACTIONS = [:update, :attempt_generate].freeze
+  MANAGEMENT_FEE_PASS_ADMIN_ACTIONS = [:create_management_fee_drafts, :refresh_management_fee_invoices].freeze
 
   # Narrows index pages for users whose only access comes from
   # project-scoped "lead" grants. Admins and (actual or granted) leads see
@@ -84,6 +85,10 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
     # for every action including read. Must stay above the blanket lead grant.
     return user.is_admin? if subject.is_a?(MsoRolePeriod) || subject == MsoRolePeriod
 
+    if subject.is_a?(InvoicePass) && MANAGEMENT_FEE_PASS_ADMIN_ACTIONS.include?(action)
+      return user.is_admin?
+    end
+
     # garden3d's management fee invoices are written to QuickBooks only by an
     # explicit admin act. Must stay above the blanket lead grant: hiding the
     # button in the page enforces nothing. management_fee_invoice? (not
@@ -110,7 +115,13 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
       scoped_ids = user.lead_scoped_project_tracker_ids
       if scoped_ids.any?
         return true if [ProjectTracker, InvoiceTracker, InvoicePass].include?(subject)
-        return true if subject.is_a?(InvoicePass)
+        # A scoped grantee needs passes as containers to reach their own
+        # trackers. They bill nothing on garden3d's management fee pass, which
+        # holds what the operating companies pay garden3d. (garden3d's 2025
+        # passes holding a legacy Forecast tracker stay readable, as before.)
+        if subject.is_a?(InvoicePass)
+          return true if !subject.management_fee? || subject.legacy_forecast_trackers?
+        end
         return true if subject.is_a?(ProjectTracker) && scoped_ids.include?(subject.id)
         return true if subject.is_a?(InvoiceTracker) && (subject.project_trackers.map(&:id) & scoped_ids).any?
       end

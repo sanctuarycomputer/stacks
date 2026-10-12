@@ -31,6 +31,9 @@ module Mso
     # ensure_month!. Awaiting the owner's confirmation of the date.
     MANAGEMENT_FEE_START = Date.new(2026, 10, 1)
 
+    DraftRun = Struct.new(:created, :already_drafted, :failed, keyword_init: true)
+    RefreshRun = Struct.new(:attempted, :succeeded, :detached, :failed, keyword_init: true)
+
     class << self
       # One tracker per management-fee payer on garden3d's pass. Idempotent.
       # Database only: no QuickBooks call of any kind.
@@ -117,6 +120,63 @@ module Mso
                               "again is safe: Stacks will find that invoice and refuse to make another."
           end
         end
+      end
+
+      # The admin's one click: makes sure the pass has its trackers, then
+      # pushes a draft for each one that has no invoice. WRITES TO QUICKBOOKS.
+      # One payer failing is reported and does not stop the others.
+      def create_drafts!(invoice_pass:)
+        assert_management_fee_pass!(invoice_pass)
+        assert_draftable!(invoice_pass) # before ensure_trackers!, so a refusal leaves nothing behind
+        run = DraftRun.new(created: [], already_drafted: [], failed: [])
+
+        ensure_trackers!(invoice_pass: invoice_pass).each do |tracker|
+          if tracker.qbo_invoice_id.present?
+            run.already_drafted << tracker
+            next
+          end
+
+          begin
+            push_invoice!(invoice_tracker: tracker)
+            run.created << tracker
+          rescue StandardError => e
+            run.failed << [tracker, e.message]
+          end
+        end
+
+        run
+      end
+
+      # Re-reads each attached invoice from QuickBooks so its status, total
+      # and balance are current. A QuickBooks READ; it writes nothing there.
+      #
+      # QboInvoice#sync! swallows every error and returns false, so its return
+      # value alone cannot be trusted:
+      #   - true-ish: the mirror now holds what QuickBooks says   -> succeeded
+      #   - false, mirror row gone: QuickBooks no longer has the invoice; the
+      #     row was destroyed and the tracker detached             -> detached
+      #   - false, mirror row still there: the read failed and the
+      #     row is STALE                                           -> failed
+      def refresh!(invoice_pass:)
+        assert_management_fee_pass!(invoice_pass)
+        run = RefreshRun.new(attempted: 0, succeeded: 0, detached: 0, failed: [])
+
+        InvoiceTracker.where(invoice_pass_id: invoice_pass.id).where.not(qbo_invoice_id: nil).order(:id).each do |tracker|
+          # By the (account, id) pair, never through the association.
+          mirror = QboInvoice.find_by(qbo_account_id: tracker.qbo_account_id, qbo_id: tracker.qbo_invoice_id)
+          next if mirror.nil?
+
+          run.attempted += 1
+          if mirror.sync!
+            run.succeeded += 1
+          elsif QboInvoice.exists?(mirror.id)
+            run.failed << tracker
+          else
+            run.detached += 1
+          end
+        end
+
+        run
       end
 
       private

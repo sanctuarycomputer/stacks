@@ -52,4 +52,36 @@ class AdminAuthorizationManagementFeeTest < ActiveSupport::TestCase
     assert auth_for(@lead).authorized?(:update, legacy)
     assert auth_for(@lead).authorized?(:attempt_generate, legacy)
   end
+
+  test "only an admin may create drafts or refresh on a pass" do
+    %i[create_management_fee_drafts refresh_management_fee_invoices].each do |action|
+      assert auth_for(@admin).authorized?(action, @pass), "admin should #{action}"
+      refute auth_for(@lead).authorized?(action, @pass), "a lead must not #{action}"
+    end
+    assert auth_for(@lead).authorized?(:read, @pass), "a full lead's read is unchanged"
+  end
+
+  def trainee_auth
+    trainee = AdminUser.create!(email: "fee-trainee@sanctuary.computer", password: "password12345")
+    project = ProjectTracker.new(name: "Training Project")
+    project.save!(validate: false)
+    PermissionGrant.create!(admin_user: trainee, permission: "lead", subject: project)
+    auth_for(trainee)
+  end
+
+  test "a project-scoped grantee can list passes but cannot open garden3d's management fee pass" do
+    sanctuary_pass = InvoicePass.create!(start_of_month: Date.new(2094, 6, 1),
+                                         enterprise: enterprises(:sanctuary), data: {})
+
+    auth = trainee_auth
+    assert auth.authorized?(:read, InvoicePass), "class-level read keeps the menu and index working"
+    assert auth.authorized?(:read, sanctuary_pass)
+    refute auth.authorized?(:read, @pass)
+  end
+
+  test "a project-scoped grantee can still open a legacy garden3d pass, as today" do
+    @fee_tracker.update!(blueprint: { "lines" => {} })
+
+    assert trainee_auth.authorized?(:read, @pass)
+  end
 end
