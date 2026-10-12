@@ -13,6 +13,14 @@ module ManagementFeeFixtures
     enterprises(:garden3d)
   end
 
+  # The database between a deploy and the hand-run migration: the two
+  # enterprises columns are not there yet. (The test database always has
+  # them, so every pre-migration guard needs this to be exercised at all.)
+  def stub_management_fee_columns_missing
+    columns = Enterprise.column_names - %w[management_fee_payer g3d_qbo_customer_id]
+    Enterprise.stubs(:column_names).returns(columns)
+  end
+
   def garden3d_qbo_account
     @garden3d_qbo_account ||= QboAccount.create!(
       enterprise: garden3d, realm_id: "g3d-#{SecureRandom.hex(4)}", client_id: "x", client_secret: "y",

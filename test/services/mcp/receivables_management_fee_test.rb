@@ -103,7 +103,7 @@ class Mcp::ReceivablesManagementFeeTest < ActiveSupport::TestCase
   end
 
   test "before the migration has run nothing is excluded, and the new columns are never read" do
-    QboInvoice.stubs(:management_fee_schema_ready?).returns(false)
+    stub_management_fee_columns_missing
     Enterprise.expects(:management_fee_payers).never
     receivable!(@qbo_account, "FEE-3", customer_id: "2", balance: 135_000.0)
 

@@ -37,6 +37,21 @@ class EnterpriseManagementFeePayerTest < ActiveSupport::TestCase
     assert enterprises(:garden3d).update(pay_cycle_cadence: "monthly")
   end
 
+  # Migrations are run by hand on production, after the deploy. Until then the
+  # row has no such attribute, and the validation must not run at all: every
+  # Enterprise save, the nightly generate_snapshot! included, would raise.
+  test "an enterprise saves while the management_fee_payer column does not exist yet" do
+    garden3d = enterprises(:garden3d)
+    garden3d.define_singleton_method(:has_attribute?) do |name|
+      name.to_s == "management_fee_payer" ? false : super(name)
+    end
+    # What reading the flag does on a row that has no such column.
+    garden3d.stubs(:management_fee_payer?).raises(NoMethodError, "undefined method `management_fee_payer?'")
+
+    assert garden3d.update(pay_cycle_cadence: "monthly")
+    assert_equal "monthly", Enterprise.find(garden3d.id).pay_cycle_cadence
+  end
+
   test "the migration seeds the three payers and the two verified customer ids" do
     sanctuary = enterprises(:sanctuary)
     index = Enterprise.find_or_create_by!(name: Enterprise::INDEX_SPACE_NAME)

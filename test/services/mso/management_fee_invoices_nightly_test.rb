@@ -115,6 +115,51 @@ class Mso::ManagementFeeInvoicesNightlyTest < ActiveSupport::TestCase
     assert_equal 0, InvoiceTracker.where(invoice_pass_id: sanctuary_pass.id).count
   end
 
+  # --- before the migration has run ------------------------------------------
+  # Migrations are run by hand on production, after the deploy.
+
+  test "the nightly run is a no-op until the management fee columns exist" do
+    stub_management_fee_columns_missing
+    forbid_quickbooks
+    Enterprise.expects(:management_fee_payers).never
+
+    assert_no_difference [-> { InvoicePass.count }, -> { InvoiceTracker.count }] do
+      assert_nil Mso::ManagementFeeInvoices.ensure_previous_month!(today: TODAY)
+    end
+  end
+
+  test "creating drafts before the columns exist raises a clear error, before any QuickBooks call" do
+    pass = garden3d_pass(LAST_MONTH)
+    assert Mso::ManagementFeeInvoices.draftable?(pass), "sanity: nothing else refuses this pass"
+    stub_management_fee_columns_missing
+    forbid_quickbooks
+    Mso::ManagementFeeInvoices.unstub(:push_invoice!, :create_drafts!)
+    Enterprise.expects(:management_fee_payers).never
+
+    error = assert_raises(Mso::ManagementFeeInvoices::Misconfigured) do
+      Mso::ManagementFeeInvoices.create_drafts!(invoice_pass: pass)
+    end
+
+    assert_match(/management fee columns are not on this database yet/, error.message)
+    assert_match(/Run migration 20261013000001/, error.message)
+    assert_equal 0, InvoiceTracker.where(invoice_pass_id: pass.id).count
+  end
+
+  test "pushing one draft before the columns exist raises a clear error, before any QuickBooks call" do
+    pass = garden3d_pass(LAST_MONTH)
+    tracker = fee_tracker(pass, Enterprise.find_by!(name: Enterprise::SANCTUARY_NAME))
+    stub_management_fee_columns_missing
+    forbid_quickbooks
+    Mso::ManagementFeeInvoices.unstub(:push_invoice!, :create_drafts!)
+
+    error = assert_raises(Mso::ManagementFeeInvoices::Misconfigured) do
+      Mso::ManagementFeeInvoices.push_invoice!(invoice_tracker: tracker)
+    end
+
+    assert_match(/Run migration 20261013000001/, error.message)
+    assert_nil tracker.reload.qbo_invoice_id
+  end
+
   # --- the hook --------------------------------------------------------------
 
   test "garden3d's daily tasks run it, without QuickBooks" do
