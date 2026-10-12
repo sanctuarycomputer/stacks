@@ -353,6 +353,10 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
     notes_doc = Document.create!(source: :gemini_notes, external_id: "NOTES_DOC_X", source_record: standalone,
                                  excluded: :not_excluded, excluded_reason: :none,
                                  content_hash: Digest::SHA256.hexdigest(export))
+    # A person had already said which project the notes meeting was about.
+    tracker = ProjectTracker.new(name: "Harvey").tap { |t| t.save!(validate: false) }
+    standalone.link_project!(tracker)
+    standalone.meeting_scan.update!(rationale: "WRITTEN-FROM-THE-NOTES-ALONE", confidence: 0.9)
     # Night 2: the API transcript for the SAME meeting arrives (docsDestination = NOTES_DOC_X).
     cr = OpenStruct.new(name: 'conferenceRecords/x1', start_time: '2026-01-01T09:00:00Z', end_time: '2026-01-01T09:30:00Z', space: 'spaces/x')
     tx = OpenStruct.new(name: 'conferenceRecords/x1/transcripts/1', docs_destination: OpenStruct.new(document: 'NOTES_DOC_X'))
@@ -378,6 +382,15 @@ class Stacks::Etl::Meet::ConnectorTest < ActiveSupport::TestCase
     assert_equal tx_doc.source_record_id, notes_doc.source_record_id, "notes must be re-homed onto the transcript's Meeting"
     assert_equal 0, Meeting.where(id: standalone.id).count, "the standalone notes Meeting must be absorbed (deleted)"
     assert_equal 1, Meeting.where(meet_conference_record_id: 'conferenceRecords/x1').count, "exactly one Meeting for the meeting"
+    # The project match follows the documents: the tracker, and the person's lock, without the old reason.
+    survivor = Meeting.find(tx_doc.source_record_id)
+    assert_equal [tracker.id], survivor.project_trackers.pluck(:id)
+    scan = survivor.meeting_scan
+    assert scan.human_locked?
+    assert scan.linked?
+    assert_nil scan.rationale
+    assert_nil scan.scanned_hash
+    assert_equal 1, MeetingScan.count
   end
 
   test "combined doc ingests as a meet transcript + gemini_notes doc on one meeting; 1:1 walled by invited count" do

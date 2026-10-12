@@ -41,6 +41,17 @@ class ProjectTracker < ApplicationRecord
 
   has_one :project_capsule, dependent: :delete, inverse_of: :project_tracker
   has_many :weekly_ships, dependent: :destroy
+  # Meetings that were about this tracker (Stacks::Meetings::Sweep, or a person).
+  has_and_belongs_to_many :meetings
+  # Destroying a tracker removes its rows in the join. A meeting left with no
+  # tracker says no_match again, so it shows under Needs Review; whatever lock
+  # its scan had stays.
+  before_destroy { @meeting_ids_before_destroy = meeting_ids }
+  after_destroy do
+    MeetingScan.linked.where(meeting_id: @meeting_ids_before_destroy)
+               .where.not(meeting_id: Meeting.joins(:project_trackers).select(:id))
+               .update_all(outcome: MeetingScan.outcomes[:no_match])
+  end
   has_many :project_tracker_links, dependent: :delete_all
   accepts_nested_attributes_for :project_tracker_links, allow_destroy: true
 
@@ -805,6 +816,29 @@ class ProjectTracker < ApplicationRecord
 
   def total_free_hours
     snapshot["hours_free"].to_f
+  end
+
+  # The people a meeting about this project would plausibly include, for the
+  # meeting sweep's prompt: current project and account leads, and everyone
+  # with Forecast hours on its projects lately. "First Last <email>" strings
+  # (AdminUser#name and ForecastPerson#display_name are the email). No rates, no hours.
+  def matcher_people
+    leads = (current_project_lead_periods + current_account_lead_periods)
+      .map { |period| period.admin_user&.forecast_person }
+    project_ids = forecast_projects.map(&:forecast_id)
+    team = if project_ids.empty?
+      []
+    else
+      ForecastPerson.joins(:forecast_assignments)
+        .where(forecast_assignments: { project_id: project_ids })
+        .where("forecast_assignments.end_date >= ? AND forecast_assignments.start_date <= ?",
+               Stacks::Meetings::Sweep::RECENT_PEOPLE.ago.to_date, Date.today)
+        .distinct.to_a
+    end
+    (leads + team).compact.map do |person|
+      name = [person.first_name, person.last_name].map { |part| part.to_s.strip }.reject(&:blank?).join(" ")
+      [name.presence, person.email.present? ? "<#{person.email}>" : nil].compact.join(" ")
+    end.reject(&:blank?).uniq
   end
 
   def all_contributors

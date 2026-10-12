@@ -28,4 +28,25 @@ class Mcp::GetDocumentToolTest < ActiveSupport::TestCase
     assert_nil payload['root_message_id'], 'root_message_id is google_groups-only'
     assert_equal md.source_record.id, payload['meeting_key']
   end
+
+  test 'a meeting transcript and its notes both return the meeting tracker ids, sorted' do
+    m = Meeting.create!(meet_source: :meet_api, meet_conference_record_id: 'cr/pt')
+    transcript = Document.create!(source: :meet, external_id: 'cr/pt', source_record: m, excluded: :not_excluded, title: 'Harvey sync')
+    notes = Document.create!(source: :gemini_notes, external_id: 'notes/pt', source_record: m, excluded: :not_excluded, title: 'Harvey sync notes')
+    trackers = %w[Harvey Acme].map { |n| ProjectTracker.new(name: n).tap { |t| t.save!(validate: false) } }
+    m.project_trackers << trackers.reverse
+    MeetingScan.create!(meeting: m, outcome: :linked, scanned_at: 1.hour.ago, confidence: 0.9, rationale: 'r')
+    ids = trackers.map(&:id).sort
+
+    [transcript, notes].each do |doc|
+      payload = mcp_payload(Mcp::GetDocumentTool.call(id: doc.id, server_context: {}))
+      assert_equal ids, payload['project_tracker_ids']
+    end
+  end
+
+  test 'a document that is not a meeting has no project_tracker_ids' do
+    gg = Document.create!(source: :google_groups, external_id: '<root2@x>', excluded: :not_excluded, title: 'Deploy chatter')
+    payload = mcp_payload(Mcp::GetDocumentTool.call(id: gg.id, server_context: {}))
+    assert_equal [], payload['project_tracker_ids']
+  end
 end
