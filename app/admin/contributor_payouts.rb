@@ -13,6 +13,21 @@ ActiveAdmin.register ContributorPayout do
       data: { confirm: "Are you sure you want to re-calculate the payouts for this invoice? This will delete/overwrite any custom payouts previously configured." }
   end
 
+  # The breakdown shown after make_payouts refused to write. It re-runs the
+  # check here rather than carrying the result across the redirect; the modal
+  # is position: fixed, so it covers the page from wherever it is rendered.
+  action_item :margin_breach, only: :index, if: proc { params[:margin_breach].present? && current_admin_user.is_admin? } do
+    check =
+      begin
+        candidate = InvoicePayouts::MarginCheck.new(InvoicePayouts::Build.new(invoice_tracker)) if invoice_tracker.qbo_invoice.present?
+        candidate if candidate&.breached? && candidate.rows
+      rescue StandardError => e
+        Rails.logger.error("[contributor_payouts_margin_breach] it=#{invoice_tracker.id}: #{e.class}: #{e.message}")
+        nil
+      end
+    render(partial: "admin/contributor_payouts/margin_breach", locals: { check: check, invoice_tracker: invoice_tracker }) if check
+  end
+
   action_item :toggle_acceptance, only: :show do
     if current_admin_user == resource.contributor.forecast_person.admin_user || current_admin_user.is_admin?
       link_to resource.accepted? ? "Unaccept" : "Accept", toggle_contributor_payout_acceptance_admin_invoice_pass_invoice_tracker_path(resource.invoice_tracker.invoice_pass.id, resource.invoice_tracker, {contributor_payout_id: resource.id}),

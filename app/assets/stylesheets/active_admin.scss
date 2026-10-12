@@ -169,6 +169,55 @@
   }
 }
 
+.full-screen-modal.margin-breach {
+  text-align: left;
+  font-weight: normal;
+
+  h2 {
+    font-size: 20px;
+    line-height: 1.3;
+    font-weight: 700;
+  }
+
+  .margin-breach__alert {
+    color: $color-red;
+  }
+
+  .full-screen-modal__contents__body {
+    padding: 0 20px;
+  }
+
+  tr.margin-breach__line.over td {
+    color: $color-red;
+  }
+
+  tr.margin-breach__entry td {
+    padding-top: 4px;
+    padding-bottom: 4px;
+    padding-left: 30px;
+    border-bottom: none;
+  }
+
+  form.margin-breach__override {
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+
+    textarea {
+      flex-grow: 1;
+      margin-bottom: 0;
+    }
+
+    .margin-breach__actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      white-space: nowrap;
+    }
+  }
+}
+
 hr {
   border: 1px solid $color-light-grey;
   box-shadow: none;

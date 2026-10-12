@@ -1,0 +1,112 @@
+<%# app/views/admin/contributor_payouts/_margin_breach.html.erb %>
+<%
+  role_labels = {
+    "IndividualContributor" => "IC",
+    "AccountLead" => "AL",
+    "ProjectLead" => "PL",
+    "Commission" => "Commission",
+    "AccountLeadSurplus" => "AL surplus",
+    "ProjectLeadSurplus" => "PL surplus",
+  }
+  index_path = admin_invoice_tracker_contributor_payouts_path(invoice_tracker)
+%>
+<div class="full-screen-modal margin-breach">
+  <div class="full-screen-modal__contents">
+    <div class="full-screen-modal__contents__title">
+      <% if flash[:alert].present? %><p class="margin-breach__alert"><%= flash[:alert] %></p><% end %>
+      <h2>The generated payouts would be <%= check.payout_percentage %>% of gross earnings. The cap for this invoice is <%= check.cap_percentage %>%.</h2>
+      <p>
+        Nothing has been written. Billed after commissions: <strong><%= number_to_currency check.post_commission_total %></strong>.
+        Generated payouts: <strong><%= number_to_currency check.pool %></strong>.
+        Allowed: <strong><%= number_to_currency check.cap %></strong>.
+        Over by: <strong><%= number_to_currency check.over_by %></strong>.
+      </p>
+    </div>
+
+    <div class="full-screen-modal__contents__body">
+      <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+        <thead>
+          <tr>
+            <th class="col">Invoice Item</th>
+            <th class="col text-right">Billed</th>
+            <th class="col text-right">Payouts</th>
+            <th class="col text-right">Payout %</th>
+            <th class="col text-right">Margin %</th>
+            <th class="col text-right">Allowed</th>
+            <th class="col text-right">Over</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% check.rows.each do |row| %>
+            <tr class="margin-breach__line <%= "over" if row.over? %>">
+              <td class="col"><strong><%= row.line.qbo_line_item["description"] %></strong></td>
+              <td class="col text-right"><%= number_to_currency row.billed %></td>
+              <td class="col text-right"><%= number_to_currency row.payouts %></td>
+              <td class="col text-right"><%= row.payout_percentage %>%</td>
+              <td class="col text-right"><%= row.margin_percentage %>%</td>
+              <td class="col text-right"><%= number_to_currency row.allowed %></td>
+              <td class="col text-right"><%= row.over? ? "+ #{number_to_currency(row.over)}" : "—" %></td>
+            </tr>
+            <% row.entries.each do |entry| %>
+              <tr class="margin-breach__entry">
+                <td class="col">
+                  <%= role_labels.fetch(entry.role, entry.role) %> · <%= entry.payee.email %>
+                  <% if entry.rate_override %><span class="pill error">rate override</span><% end %>
+                  <% unless check.build.paid?(entry.payee) %><span class="pill">not paid out</span><% end %>
+                  <% if entry.description_line.present? %><br><small><%= entry.description_line %></small><% end %>
+                </td>
+                <td class="col"></td>
+                <td class="col text-right"><%= number_to_currency entry.amount %></td>
+                <td class="col" colspan="4"></td>
+              </tr>
+            <% end %>
+          <% end %>
+
+          <% if check.retained_orphans.any? %>
+            <tr class="margin-breach__other">
+              <td class="col"><strong>Earlier payouts that can't be removed (QBO bill already paid)</strong></td>
+              <td class="col"></td>
+              <td class="col text-right"><%= number_to_currency check.retained_total %></td>
+              <td class="col" colspan="4"></td>
+            </tr>
+          <% end %>
+
+          <% if check.other_billed.abs > 0.01 || check.other_allowed.abs > 0.01 %>
+            <tr class="margin-breach__other">
+              <td class="col"><strong>Unmapped / other invoice lines</strong></td>
+              <td class="col text-right"><%= number_to_currency check.other_billed %></td>
+              <td class="col text-right">—</td>
+              <td class="col" colspan="2"></td>
+              <td class="col text-right"><%= number_to_currency check.other_allowed %></td>
+              <td class="col"></td>
+            </tr>
+          <% end %>
+
+          <tr class="margin-breach__total">
+            <td class="col"><strong>TOTAL</strong> <small>(billed is before commissions)</small></td>
+            <td class="col text-right"><%= number_to_currency invoice_tracker.total %></td>
+            <td class="col text-right"><%= number_to_currency check.pool %></td>
+            <td class="col text-right"><%= check.payout_percentage %>%</td>
+            <td class="col text-right"><%= (100 - check.payout_percentage).round(1) %>%</td>
+            <td class="col text-right"><%= number_to_currency check.cap %></td>
+            <td class="col text-right">+ <%= number_to_currency check.over_by %></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <%= form_tag make_payouts_admin_invoice_tracker_contributor_payouts_path(invoice_tracker), method: :post, class: "margin-breach__override" do %>
+      <%= hidden_field_tag :force, "1" %>
+      <%= text_area_tag :override_reason, nil, required: true, rows: 2, placeholder: "Why should this invoice pay out more than its cap? Saved to the invoice's notes." %>
+      <div class="margin-breach__actions">
+        <%= link_to "Close", index_path %>
+        <%= submit_tag "Generate anyway" %>
+      </div>
+    <% end %>
+  </div>
+</div>
+<script>
+  // Rendered inside the title bar, which is its own stacking context
+  // (z-index: 800): move it to <body> so it sits above the nav badges too.
+  document.body.appendChild(document.querySelector(".full-screen-modal.margin-breach"));
+</script>

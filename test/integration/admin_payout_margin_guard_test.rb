@@ -170,6 +170,66 @@ class AdminPayoutMarginGuardTest < ActionDispatch::IntegrationTest
     assert_match(/may not exceed/, response.body, "the cap validation, not something else, must be what blocked it")
   end
 
+  test "the overlay lists every line with its roles and the override form" do
+    it = breaching_tracker
+    get admin_invoice_tracker_contributor_payouts_path(it, margin_breach: 1)
+    assert_response :success
+
+    assert_select ".full-screen-modal.margin-breach" do
+      assert_select "h2", text: /The generated payouts would be 103\.0% of gross earnings\. The cap for this invoice is 70\.0%\./
+      assert_select "tr.margin-breach__line", 1
+      assert_select "tr.margin-breach__line.over", 1
+      assert_select "tr.margin-breach__entry", 3
+      assert_select "tr.margin-breach__entry", text: /rate override/
+      assert_select "tr.margin-breach__entry", text: /#{Regexp.escape(@ic.email)}/
+      assert_select "form[action=?][method=post]", make_payouts_admin_invoice_tracker_contributor_payouts_path(it) do
+        assert_select "input[name=force][value='1']"
+        assert_select "textarea[name=override_reason][required]"
+        assert_select "input[type=submit][value='Generate anyway']"
+      end
+      assert_select "a[href=?]", admin_invoice_tracker_contributor_payouts_path(it), text: /Close/
+    end
+    assert_select ".margin-breach tr.margin-breach__entry", text: /not paid out/, count: 0
+    assert_match "$10,300.00", response.body
+    assert_match "$7,000.00", response.body
+    assert_match "$3,300.00", response.body
+  end
+
+  test "no overlay when the invoice is within its cap, even with the flag" do
+    it = within_cap_tracker
+    get admin_invoice_tracker_contributor_payouts_path(it, margin_breach: 1)
+    assert_response :success
+    assert_select ".margin-breach", 0
+  end
+
+  test "no overlay without the flag" do
+    it = breaching_tracker
+    get admin_invoice_tracker_contributor_payouts_path(it)
+    assert_response :success
+    assert_select ".margin-breach", 0
+  end
+
+  test "no overlay, and no error, when the build cannot be computed" do
+    it = breaching_tracker
+    ProjectTrackerForecastProject.delete_all
+    get admin_invoice_tracker_contributor_payouts_path(it, margin_breach: 1)
+    assert_response :success
+    assert_select ".margin-breach", 0
+  end
+
+  test "non-admins never see the overlay" do
+    it = breaching_tracker
+    delete destroy_admin_user_session_path
+    viewer = AdminUser.create!(email: "viewer-guard@example.com", password: "password123", password_confirmation: "password123")
+    PermissionGrant.create!(admin_user: viewer, permission: "lead") # a lead can read the index; a bare user is redirected
+    sign_in viewer
+
+    get admin_invoice_tracker_contributor_payouts_path(it, margin_breach: 1)
+    assert_response :success
+    assert_select ".margin-breach", 0
+    assert_no_match(/rate override/, response.body)
+  end
+
   private
 
   def sign_in(admin)
