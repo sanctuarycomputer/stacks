@@ -24,6 +24,10 @@ class System < ApplicationRecord
     # Last time Stacks::Runn#sync_all! completed every table. Read via
     # System.first, not System.instance (process-memoized).
     runn_synced_at DateTime, default: nil
+
+    # How many of Sanctuary's top earners are averaged into the MSO benchmark.
+    # Read it through System.mso_top_n, never directly.
+    mso_top_n Integer, default: 3
   end
 
   def display_name
@@ -43,6 +47,20 @@ class System < ApplicationRecord
     ghost_newsletter_prefix_map.to_h
       .transform_keys { |k| k.to_s.downcase }
       .reject { |_, v| v.to_s.blank? }
+  end
+
+  MSO_TOP_N_DEFAULT = 3
+
+  # Storext hands back whatever was stored ("" or "5" for an Integer
+  # attribute), so coerce, and fall back rather than average over zero people.
+  def mso_top_n_clamped
+    n = mso_top_n.to_s.to_i
+    n >= 1 ? n : MSO_TOP_N_DEFAULT
+  end
+
+  # Uses `first`, not `instance`: `instance` is memoized per process.
+  def self.mso_top_n
+    (first || new(settings: {})).mso_top_n_clamped
   end
 
   private
