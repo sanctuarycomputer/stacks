@@ -66,6 +66,7 @@ class Contributor < ApplicationRecord
   end
 
   has_many :ledgers
+  has_many :mso_role_periods, dependent: :destroy
 
   has_many :reimbursements, through: :ledgers
   has_many :contributor_payouts, through: :ledgers

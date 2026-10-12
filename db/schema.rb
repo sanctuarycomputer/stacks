@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_10_12_000002) do
+ActiveRecord::Schema.define(version: 2026_10_12_100000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -648,6 +648,17 @@ ActiveRecord::Schema.define(version: 2026_10_12_000002) do
     t.bigint "contributor_id", null: false
     t.index ["contributor_id"], name: "index_misc_payments_on_contributor_id"
     t.index ["deleted_at"], name: "index_misc_payments_on_deleted_at"
+  end
+
+  create_table "mso_role_periods", force: :cascade do |t|
+    t.bigint "contributor_id", null: false
+    t.integer "tier", null: false
+    t.string "title", null: false
+    t.date "started_at", null: false
+    t.date "ended_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["contributor_id"], name: "index_mso_role_periods_on_contributor_id"
   end
 
   create_table "notifications", force: :cascade do |t|
@@ -1607,6 +1618,7 @@ ActiveRecord::Schema.define(version: 2026_10_12_000002) do
   add_foreign_key "mentions", "chunks"
   add_foreign_key "mentions", "contacts"
   add_foreign_key "misc_payments", "contributors"
+  add_foreign_key "mso_role_periods", "contributors"
   add_foreign_key "okr_period_studios", "okr_periods"
   add_foreign_key "okr_period_studios", "studios"
   add_foreign_key "okr_periods", "okrs"
