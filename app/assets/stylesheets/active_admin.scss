@@ -211,9 +211,10 @@
     color: $color-red;
   }
 
+  // !important because the app's own `table.index_table td` padding is.
   tr.margin-breach__entry td {
-    padding-top: 4px;
-    padding-bottom: 4px;
+    padding-top: 6px !important;
+    padding-bottom: 6px !important;
     border-bottom: none;
   }
 
