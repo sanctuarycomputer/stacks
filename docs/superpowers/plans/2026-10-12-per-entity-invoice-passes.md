@@ -880,7 +880,7 @@ Expected: PASS, 3 runs, 0 failures.
 bin/rails test --exclude "sync_meet runs the connector inside a SystemTask"
 ```
 
-Expected: 1797 runs, 0 failures, 0 errors, 2 skips.
+Expected: 1798 runs, 0 failures, 0 errors, 2 skips.
 
 - [ ] **Step 7: Commit**
 
@@ -1030,7 +1030,7 @@ Expected: PASS, 3 runs, 0 failures.
 bin/rails test --exclude "sync_meet runs the connector inside a SystemTask"
 ```
 
-Expected: 1800 runs, 0 failures, 0 errors, 2 skips.
+Expected: 1801 runs, 0 failures, 0 errors, 2 skips.
 
 - [ ] **Step 7: Commit**
 
@@ -1155,7 +1155,7 @@ Expected: PASS, 0 failures.
 bin/rails test --exclude "sync_meet runs the connector inside a SystemTask"
 ```
 
-Expected: 1802 runs, 0 failures, 0 errors, 2 skips.
+Expected: 1803 runs, 0 failures, 0 errors, 2 skips.
 
 - [ ] **Step 8: Commit**
 
@@ -1219,7 +1219,7 @@ Expected: `ok`, no `RecordInvalid`. This is the blast-radius check from Task 4 �
 bin/rails test --exclude "sync_meet runs the connector inside a SystemTask"
 ```
 
-Expected: 1802 runs, 0 failures, 0 errors, 2 skips.
+Expected: 1803 runs, 0 failures, 0 errors, 2 skips.
 
 - [ ] **Step 5: Push and open the PR**
 
@@ -1312,6 +1312,6 @@ Expected: Heroku CI green. This repo only deploys `main` once `main`'s own CI go
 
 **Known coverage gap.** §12's "`sync_founder_trueups!` writes exactly one founder true-up with two passes present" is covered only by the pass-selection test, not by asserting a `Trueup` count. Building the payouts that would make the stronger assertion possible requires defeating `contributor_payouts_within_seventy_percent` and `only_after_new_deal` plus an `AdminUser` for `created_by`, which buys a brittle test; Task 7 Step 2's real-data check covers the outcome instead.
 
-**Placeholders.** None. Every code step carries the actual code; every command carries its expected output, with run counts increasing monotonically (1783 → 1787 → 1792 → 1794 → 1797 → 1800 → 1802).
+**Placeholders.** None. Every code step carries the actual code; every command carries its expected output, with run counts increasing monotonically (1783 → 1787 → 1792 → 1795 → 1798 → 1801 → 1803; Task 3 contributes 3, one of which came from the tie-break flake fix).
 
 **Type consistency.** `InvoicePass#enterprise` (association), `InvoiceTracker#source` (string from the enum, asserted as `"forecast"`), `Enterprise.sanctuary` / `.garden3d` (thread-memoized, cleared in teardown everywhere they are used). `BackfillInvoicePassEnterprises` matches its filename in both the `require` and the instantiation. MCP assertions use string keys via `mcp_payload`, matching the existing file.
