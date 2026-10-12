@@ -11,9 +11,9 @@ class Mcp::ClientRevenueToolTest < ActiveSupport::TestCase
     @reactor = ForecastClient.create!(forecast_id: 9201, name: 'Reactor')
     @replit = ForecastClient.create!(forecast_id: 9202, name: 'Replit')
 
-    @may = InvoicePass.create!(start_of_month: Date.new(2026, 5, 1))
-    @june = InvoicePass.create!(start_of_month: Date.new(2026, 6, 1))
-    @july = InvoicePass.create!(start_of_month: Date.new(2026, 7, 1))
+    @may = InvoicePass.create!(start_of_month: Date.new(2026, 5, 1), enterprise: Enterprise.sanctuary)
+    @june = InvoicePass.create!(start_of_month: Date.new(2026, 6, 1), enterprise: Enterprise.sanctuary)
+    @july = InvoicePass.create!(start_of_month: Date.new(2026, 7, 1), enterprise: Enterprise.sanctuary)
 
     # ClientRevenue's own guard skips blank-data mirrors; nothing here may
     # ever fire QboInvoice's lazy live sync.
@@ -50,7 +50,7 @@ class Mcp::ClientRevenueToolTest < ActiveSupport::TestCase
                            qbo_account: @qa, qbo_invoice_id: 'cr-blank', blueprint: { 'lines' => {} })
 
     # Outside every window this test uses.
-    old = InvoicePass.create!(start_of_month: Date.new(2024, 1, 1))
+    old = InvoicePass.create!(start_of_month: Date.new(2024, 1, 1), enterprise: Enterprise.sanctuary)
     invoiced_tracker!(old, @reactor, 'cr-old', 77_777.0)
   end
 

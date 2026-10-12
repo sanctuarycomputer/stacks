@@ -1,4 +1,9 @@
 class InvoicePass < ApplicationRecord
+  # A pass belongs to the enterprise that ISSUES its invoices, not to the
+  # clients being billed. A tracker lives on the pass of its qbo_account's
+  # enterprise. Before this was modelled, garden3d's invoices rode on
+  # Sanctuary's pass (7 mixed passes, 2025-06 .. 2025-12).
+  belongs_to :enterprise
   has_many :invoice_trackers
 
   def complete?

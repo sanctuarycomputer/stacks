@@ -17,9 +17,9 @@ class Mcp::InvoicePassesToolTest < ActiveSupport::TestCase
     @client_d = ForecastClient.create!(forecast_id: 9104, name: 'Left Field')
     @client_e = ForecastClient.create!(forecast_id: 9105, name: 'Koto')
 
-    @june = InvoicePass.create!(start_of_month: Date.new(2026, 6, 1), completed_at: Time.zone.parse('2026-07-03 10:00:00'))
-    @july = InvoicePass.create!(start_of_month: Date.new(2026, 7, 1))
-    @ancient = InvoicePass.create!(start_of_month: Date.new(2023, 1, 1))
+    @june = InvoicePass.create!(start_of_month: Date.new(2026, 6, 1), completed_at: Time.zone.parse('2026-07-03 10:00:00'), enterprise: Enterprise.sanctuary)
+    @july = InvoicePass.create!(start_of_month: Date.new(2026, 7, 1), enterprise: Enterprise.sanctuary)
+    @ancient = InvoicePass.create!(start_of_month: Date.new(2023, 1, 1), enterprise: Enterprise.sanctuary)
 
     # QboInvoice#data lazily live-syncs (and can DESTROY the row) when the
     # stored jsonb is blank — the tool must only ever read stored attributes.
@@ -107,7 +107,7 @@ class Mcp::InvoicePassesToolTest < ActiveSupport::TestCase
 
   test 'future passes are excluded from passes and the mom series' do
     seed_july!
-    future = InvoicePass.create!(start_of_month: Date.new(2026, 9, 1))
+    future = InvoicePass.create!(start_of_month: Date.new(2026, 9, 1), enterprise: Enterprise.sanctuary)
     invoice!('inv-future', { 'total' => 5555.0, 'balance' => 0.0, 'email_status' => 'EmailSent', 'due_date' => '2026-10-15' })
     tracker!(future, @client, qbo_invoice_id: 'inv-future', blueprint: { 'lines' => {} })
 

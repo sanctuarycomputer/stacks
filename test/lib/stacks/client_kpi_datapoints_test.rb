@@ -18,7 +18,7 @@ class StacksClientKpiDatapointsTest < ActiveSupport::TestCase
     tracker = InvoiceTracker.new
     tracker.stubs(:qbo_invoice).returns(invoice)
     tracker.stubs(:forecast_client).returns(acme)
-    tracker.stubs(:invoice_pass).returns(InvoicePass.new(start_of_month: Date.new(2025, 2, 1)))
+    tracker.stubs(:invoice_pass).returns(InvoicePass.new(start_of_month: Date.new(2025, 2, 1), enterprise: Enterprise.sanctuary))
     tracker.stubs(:blueprint).returns(nil)
 
     client_revenue = Stacks::ClientRevenue.new(studio, [studio], [tracker])

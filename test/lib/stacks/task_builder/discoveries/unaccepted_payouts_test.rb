@@ -10,7 +10,7 @@ class Stacks::TaskBuilder::Discoveries::UnacceptedPayoutsTest < ActiveSupport::T
 
     fc = ForecastClient.create!(forecast_id: rand(1..2_000_000_000), name: "PayoutClient-#{SecureRandom.hex(2)}")
     qbo_account = QboAccount.create!(enterprise: @enterprise, client_id: "c#{SecureRandom.hex(2)}", client_secret: "s", realm_id: SecureRandom.hex(6))
-    ip = InvoicePass.create!(start_of_month: Date.current.beginning_of_month)
+    ip = InvoicePass.create!(start_of_month: Date.current.beginning_of_month, enterprise: Enterprise.sanctuary)
     # blueprint gives the tracker a non-zero `total` (no qbo_invoice in this
     # test) — without it, InvoiceTracker#total is 0 and every payout above $0
     # trips the 70% cap validation (ContributorPayout#contributor_payouts_within_seventy_percent).

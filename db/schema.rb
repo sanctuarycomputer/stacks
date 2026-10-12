@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_10_01_120000) do
+ActiveRecord::Schema.define(version: 2026_10_12_000002) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -515,12 +515,14 @@ ActiveRecord::Schema.define(version: 2026_10_01_120000) do
   end
 
   create_table "invoice_passes", force: :cascade do |t|
-    t.date "start_of_month"
+    t.date "start_of_month", null: false
     t.datetime "completed_at"
     t.jsonb "data"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
-    t.index ["start_of_month"], name: "index_invoice_passes_on_start_of_month", unique: true
+    t.bigint "enterprise_id", null: false
+    t.index ["enterprise_id", "start_of_month"], name: "index_invoice_passes_on_enterprise_and_month", unique: true
+    t.index ["enterprise_id"], name: "index_invoice_passes_on_enterprise_id"
   end
 
   create_table "invoice_trackers", force: :cascade do |t|
@@ -536,6 +538,7 @@ ActiveRecord::Schema.define(version: 2026_10_01_120000) do
     t.decimal "company_treasury_split", default: "0.3"
     t.datetime "reviewers_last_notified_at"
     t.bigint "qbo_account_id", null: false
+    t.integer "source", default: 0, null: false
     t.index ["admin_user_id"], name: "index_invoice_trackers_on_admin_user_id"
     t.index ["forecast_client_id", "invoice_pass_id"], name: "idx_invoice_trackers_on_forecast_client_id_and_invoice_pass_id", unique: true
     t.index ["forecast_client_id"], name: "index_invoice_trackers_on_forecast_client_id"
@@ -1589,6 +1592,7 @@ ActiveRecord::Schema.define(version: 2026_10_01_120000) do
   add_foreign_key "finalizations", "reviews"
   add_foreign_key "full_time_periods", "admin_users"
   add_foreign_key "gifted_profit_shares", "admin_users"
+  add_foreign_key "invoice_passes", "enterprises"
   add_foreign_key "invoice_trackers", "admin_users"
   add_foreign_key "invoice_trackers", "invoice_passes"
   add_foreign_key "invoice_trackers", "qbo_accounts"

@@ -48,7 +48,7 @@ class ProjectTrackers::IncomeSeriesTest < ActiveSupport::TestCase
     })
     InvoiceTracker.create!(
       forecast_client: forecast_client,
-      invoice_pass: InvoicePass.find_or_create_by!(start_of_month: Date.new(2026, 5, 1)),
+      invoice_pass: InvoicePass.find_or_create_by!(start_of_month: Date.new(2026, 5, 1), enterprise: Enterprise.sanctuary),
       qbo_account: qbo_account,
       qbo_invoice_id: generated_invoice.qbo_id,
       blueprint: { "lines" => {

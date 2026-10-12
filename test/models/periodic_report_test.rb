@@ -42,7 +42,7 @@ class PeriodicReportTest < ActiveSupport::TestCase
   end
 
   def pay_trueup!(contributor, enterprise, month_start, amount)
-    pass = InvoicePass.find_or_create_by!(start_of_month: month_start) { |ip| ip.data = {} }
+    pass = InvoicePass.find_or_create_by!(start_of_month: month_start, enterprise: Enterprise.sanctuary) { |ip| ip.data = {} }
     ledger = Ledger.find_or_create_for(enterprise: enterprise, contributor: contributor)
     Trueup.create!(ledger: ledger, invoice_pass: pass, amount: amount, description: "test trueup")
   end

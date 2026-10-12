@@ -177,7 +177,7 @@ class InvoiceTrackerQboInvoiceScopingTest < ActiveSupport::TestCase
   # invoice_month is a computed method on InvoicePass (start_of_month.strftime), not a column.
   def build_tracker_with_invoice_id(inv_id)
     fc = ForecastClient.create!(forecast_id: rand(1..2_000_000_000), name: "TestClient-#{SecureRandom.hex(2)}")
-    ip = InvoicePass.create!(start_of_month: Date.new(2030, 7, 1))
+    ip = InvoicePass.create!(start_of_month: Date.new(2030, 7, 1), enterprise: Enterprise.sanctuary)
     tracker = InvoiceTracker.create!(forecast_client: fc, invoice_pass: ip, qbo_account: @sanctuary_qa)
     tracker.update_columns(qbo_invoice_id: inv_id)
     tracker
@@ -185,7 +185,7 @@ class InvoiceTrackerQboInvoiceScopingTest < ActiveSupport::TestCase
 
   test "qbo_invoice returns nil when qbo_invoice_id is blank" do
     fc = ForecastClient.create!(forecast_id: rand(1..2_000_000_000), name: "TC-#{SecureRandom.hex(2)}")
-    ip = InvoicePass.create!(start_of_month: Date.new(2030, 8, 1))
+    ip = InvoicePass.create!(start_of_month: Date.new(2030, 8, 1), enterprise: Enterprise.sanctuary)
     tracker = InvoiceTracker.create!(forecast_client: fc, invoice_pass: ip, qbo_account: @sanctuary_qa)
     assert_nil tracker.qbo_invoice_id
     assert_nil tracker.qbo_invoice

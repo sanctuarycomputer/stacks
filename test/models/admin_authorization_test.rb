@@ -88,7 +88,7 @@ class AdminAuthorizationTest < ActiveSupport::TestCase
     ProjectTrackerForecastProject.create!(project_tracker: pt, forecast_project: fp)
     PermissionGrant.create!(admin_user: user, permission: "lead", subject: pt)
 
-    ip = InvoicePass.create!(start_of_month: Date.new(2031, 1, 1))
+    ip = InvoicePass.create!(start_of_month: Date.new(2031, 1, 1), enterprise: Enterprise.sanctuary)
     fc_mine = ForecastClient.create!(forecast_id: 910001, name: "Client Mine")
     fc_other = ForecastClient.create!(forecast_id: 910002, name: "Client Other")
     qbo = qbo_accounts(:one)
