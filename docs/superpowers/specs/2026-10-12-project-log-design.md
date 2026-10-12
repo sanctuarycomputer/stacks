@@ -151,40 +151,40 @@ nothing is changed and the system task is marked as an error.
 
 ## Part 3a. Stacks matches meetings to trackers
 
-Stacks ingests the transcripts, so it matches them, in the nightly ETL beside the ship matcher.
+Stacks ingests the transcripts, so it matches them, in the nightly ETL beside the ship matcher. The
+two matchers are siblings and behave the same; the differences are listed at the end.
 
-- **Keyed on the meeting, not the document.** A meeting has one to three documents (a transcript,
-  Gemini notes, or both), all pointing at one `Meeting` row. The match belongs to the meeting.
-  - `meeting_project_trackers`: `meeting_id`, `project_tracker_id`, `matched_by` (llm or human),
-    `confidence`, `rationale`. Unique on the pair.
-  - `meeting_project_scans`: one per meeting, with `outcome` (linked, no_match), `scanned_hash`,
-    `scanned_at`, `human_locked`. A meeting is matched once, and again only when the content of its
-    eligible documents changes.
-- **`Stacks::Meetings::ProjectMatcher`**, modelled on `Stacks::WeeklyShips::Sweep`. One cheap model
-  call per meeting from the last 14 days that has at least one corpus-eligible document.
-  - About the meeting: its title, the names of its participants and speakers, and the opening of its
-    eligible documents (first chunks, 2,000 characters). Text from an excluded document is never sent.
-  - About each in-progress tracker: its name, its Forecast project names, its client's name, and the
-    names of its current leads and of people with hours on it in the last 60 days.
-  - Matching is by name; the meeting data carries no emails.
-  - The answer is zero or more trackers, a confidence and a reason. A link is made at 0.6 or above.
-    Most internal meetings match nothing, and that is a normal answer.
-- **Rematching.** A no-match meeting inside the window is tried again when a tracker has been created
-  since its scan (a kickoff call often comes before the tracker).
-- **Exclusion.** The scan remembers which eligible documents it read. When one is later excluded, the
-  next nightly run rematches the meeting from whatever is still eligible, and removes the model's
-  links and the scan when nothing is. In between, a meeting with no eligible document is not listed
-  on the Meeting Matches page and returns nothing over MCP.
-- **Off until switched on.** The matcher runs only when `MEETING_MATCHING=on`, like the ship grader.
-  A dry-run preview task ignores the switch and writes nothing.
-- **Volume.** About 100 eligible meetings a fortnight, so roughly seven calls a night.
+- **A project tracker has many meetings.** `ProjectTracker has_and_belongs_to_many :meetings`, through
+  a plain join table with no model of its own.
+- **`MeetingScan`**, the sibling of `ShipScan`: one per meeting, holding the outcome (linked, no match,
+  out of scope), the model's confidence and reason for that meeting, a hash of what it read, and
+  whether a person has locked it.
+- **`Stacks::Meetings::Sweep`**, the sibling of `Stacks::WeeklyShips::Sweep`.
+  - Always on, like the ship sweep. No switch. A preview task runs it without writing.
+  - One cheap model call per meeting that has a corpus-eligible document and has not been scanned, or
+    whose eligible content has changed since. Meetings older than 90 days are marked out of scope
+    without a call.
+  - A link is made at confidence 0.6 or above. The sweep adds links and never removes them.
+  - A meeting a person has touched is locked and never rescanned.
+- **What the model sees.** The meeting's title, the people present or speaking (by name or email),
+  and the opening of its eligible documents. For each open client tracker: its names, its client, and
+  its leads and recent team. Text from an excluded document is never sent, and the title is taken
+  from an eligible document.
 - **MCP.** `list_documents` and `get_document` return `project_tracker_ids` for a meeting's documents.
-  The rationale is never returned over MCP.
-- **Correcting a match.** A "Meeting Matches" page under Projects, for admins and leads, modelled on
-  the Weekly Ships page: the meeting, its date, the matched trackers with confidence and reason, and
-  a default "Needs review" view of low-confidence and unmatched client-looking meetings. A person can
-  add or remove a link; a meeting a person has touched is never rematched.
-- Ship emails keep their own matcher and table.
+  The reason and confidence never leave Stacks.
+- **Meeting Matches page** under Projects, for admins and leads, the sibling of the Weekly Ships page:
+  a default "Needs Review" view, and add or remove a project on a meeting.
+- **Volume.** About 330 eligible meetings in the 90-day window on the first night, then about ten a
+  weekday. Roughly 4,000 input tokens each on the fast model.
+
+Where it differs from the ship matcher, and why:
+
+| | Ships | Meetings | Why |
+|---|---|---|---|
+| A match belongs to | the email | the meeting | a transcript and its Gemini notes are two documents of one meeting |
+| Candidate trackers | every open tracker | open client trackers | a preview filed hiring interviews under internal trackers |
+| What the model is told about a tracker | its names | its names, client and team | a meeting's title often names nobody; the people are the evidence |
+| Cleanup | none | a scan and its links are removed when every document of the meeting has been excluded | an email is one document; a meeting can lose all of its |
 
 ## Part 4. Stacks reads the Notion tables
 
@@ -248,10 +248,9 @@ Each is its own PR. Step 1 is useful alone: it produces the list of projects wit
   channel check and clears when the link changes; a failed Twist call changes nothing; MCP fields.
 - Stacks, later parts: filtered sync never
   deletes; each view's gate; a scoped reader is refused; empty states.
-- Stacks, Part 3a: a match at and under the threshold; no match; a meeting with two documents is
-  matched once; text from an excluded document is never sent; excluding a document removes the
-  model's links; a no-match is retried after a new tracker; a human correction is kept; MCP fields
-  without the rationale.
+- Stacks, Part 3a: a match at and under the threshold; no match; out of scope past 90 days; a meeting
+  with two documents is matched once; text from an excluded document is never sent; a rescan never
+  removes a link; a human correction is kept; MCP fields without the reason.
 - Stacksbot: registry join from tracker fields; channel attribution; Meet Project taken from Stacks;
   valence set only for project signal.
 
