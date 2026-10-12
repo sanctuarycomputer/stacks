@@ -257,8 +257,7 @@ class AdminPayoutMarginGuardTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     assert_select ".full-screen-modal.margin-breach" do
-      assert_select ".full-screen-modal__contents__title p", text: /\AError generating payouts\s+✕\z/
-      assert_select ".full-screen-modal__contents__title hr", 1
+      assert_select ".full-screen-modal__contents__title p", text: "Error generating payouts"
       assert_select ".full-screen-modal__contents__title a.margin-breach__close[href=?]", admin_invoice_tracker_contributor_payouts_path(it)
       assert_select "tr.margin-breach__total td", text: "103.0%"
       assert_select "tr.margin-breach__total td", text: "$7,000.00"

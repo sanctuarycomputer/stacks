@@ -177,12 +177,26 @@
     color: $color-red;
   }
 
-  // Same title block as the studio KPI comment modal (a line of text over an
-  // <hr>), plus a close link on the right.
-  a.margin-breach__close {
-    float: right;
-    text-decoration: none;
-    color: inherit;
+  // The title block borrows the standard module header
+  // (.dashboard-module .module-header): title left, link right, dashed rule.
+  .full-screen-modal__contents__title {
+    padding: 20px;
+    display: flex;
+    justify-content: space-between;
+    border-bottom: 1px dashed $color-light-grey;
+
+    p {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 0;
+      color: $color-grey;
+    }
+
+    a.margin-breach__close {
+      font-size: 18px;
+      font-weight: 700;
+      text-decoration: none;
+    }
   }
 
   tr.margin-breach__total td {
@@ -229,7 +243,7 @@
 
   form.margin-breach__override {
     padding: 20px;
-    border-top: 1px solid $color-light-grey;
+    border-top: 1px dashed $color-light-grey;
     display: flex;
     align-items: center;
     gap: 20px;
