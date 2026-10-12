@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_10_13_090000) do
+ActiveRecord::Schema.define(version: 2026_10_13_100000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -706,8 +706,13 @@ ActiveRecord::Schema.define(version: 2026_10_13_090000) do
     t.jsonb "data", default: {}, null: false
     t.string "page_title", default: "", null: false
     t.datetime "deleted_at"
+    t.string "project_ids", default: [], null: false, array: true
+    t.datetime "occurred_at"
+    t.datetime "synced_at"
     t.index ["deleted_at"], name: "index_notion_pages_on_deleted_at"
     t.index ["notion_id"], name: "index_notion_pages_on_notion_id", unique: true
+    t.index ["notion_parent_id", "occurred_at"], name: "index_notion_pages_on_parent_and_occurred_at"
+    t.index ["project_ids"], name: "index_notion_pages_on_project_ids", using: :gin
   end
 
   create_table "okr_period_studios", force: :cascade do |t|
