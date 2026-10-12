@@ -128,7 +128,7 @@ class ProjectTrackerTest < ActiveSupport::TestCase
   test "monthly_cosr attributes a shared client payout to each tracker by forecast project" do
     enterprise = Enterprise.find_by!(name: Enterprise::SANCTUARY_NAME)
     forecast_client = ForecastClient.create!(forecast_id: 90_100_001, name: "Split Client")
-    invoice_pass = InvoicePass.find_or_create_by!(start_of_month: Date.new(2026, 6, 1))
+    invoice_pass = InvoicePass.find_or_create_by!(start_of_month: Date.new(2026, 6, 1), enterprise: Enterprise.sanctuary)
     qbo_account = enterprise.qbo_account || QboAccount.create!(
       enterprise: enterprise,
       client_id: "test_client",

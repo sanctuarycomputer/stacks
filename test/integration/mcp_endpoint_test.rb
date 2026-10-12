@@ -364,7 +364,7 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
 
   test "tools/call round-trip for get_invoice_passes attributes entities from stored data" do
     travel_to Time.zone.parse("2026-08-04 12:00:00")
-    pass = InvoicePass.create!(start_of_month: Date.new(2026, 7, 1))
+    pass = InvoicePass.create!(start_of_month: Date.new(2026, 7, 1), enterprise: Enterprise.sanctuary)
     client = ForecastClient.create!(forecast_id: 88_200_001, name: "Endpoint Client")
     qa = Enterprise.find(enterprises(:sanctuary).id).qbo_account
     QboInvoice.create!(qbo_account: qa, qbo_id: "ep-inv",
@@ -388,7 +388,7 @@ class McpEndpointTest < ActionDispatch::IntegrationTest
   test "tools/call round-trip for get_client_revenue returns client x month rows" do
     travel_to Time.zone.parse("2026-08-04 12:00:00")
     make_studio!
-    pass = InvoicePass.create!(start_of_month: Date.new(2026, 7, 1))
+    pass = InvoicePass.create!(start_of_month: Date.new(2026, 7, 1), enterprise: Enterprise.sanctuary)
     client = ForecastClient.create!(forecast_id: 88_300_001, name: "Endpoint Revenue Client")
     qa = Enterprise.find(enterprises(:sanctuary).id).qbo_account
     QboInvoice.create!(qbo_account: qa, qbo_id: "ep-rev",

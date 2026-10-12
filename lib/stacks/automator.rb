@@ -61,6 +61,19 @@ class Stacks::Automator
     end
 
     def attempt_invoicing_for_invoice_pass(invoice_pass, send_twist_reminders = true)
+      # Only the forecast-invoicing enterprise may run a pass. This method runs
+      # make_trackers! then make_invoice! on every tracker, and is reachable from
+      # two action_items on every pass show page -- on garden3d's pass that would
+      # create trackers for Sanctuary's entire external book and push a second
+      # full set of real QBO invoices for the month.
+      unless invoice_pass.enterprise == Enterprise.sanctuary
+        Rails.logger.warn(
+          "[Automator] refusing forecast invoicing for InvoicePass #{invoice_pass.id} " \
+          "(#{invoice_pass.enterprise.name}); only #{Enterprise::SANCTUARY_NAME} runs it"
+        )
+        return
+      end
+
       needed_reminding = remind_people_to_record_hours_prior_to_invoicing(
         invoice_pass.start_of_month,
         send_twist_reminders
@@ -143,12 +156,22 @@ class Stacks::Automator
     # until everyone has accounted for business_days * 8hrs in the
     # given month.
     def attempt_invoicing_for_previous_month
+      # Forecast-driven invoicing is Sanctuary's. Scope both the lookup and the
+      # create: passes are unique per [enterprise, start_of_month], so an
+      # unscoped find_by could return garden3d's pass for the month, and a
+      # create! without an enterprise raises RecordInvalid -- which, from
+      # stacks:daily_tasks, aborts every later step in the task.
+      sanctuary = Enterprise.sanctuary
+      start_of_month = (Date.today - 1.month).beginning_of_month
+
       invoice_pass = InvoicePass.find_by(
-        start_of_month: (Date.today - 1.month).beginning_of_month
+        start_of_month: start_of_month,
+        enterprise: sanctuary,
       )
       unless invoice_pass.present?
         invoice_pass = InvoicePass.create!(
-          start_of_month: (Date.today - 1.month).beginning_of_month,
+          start_of_month: start_of_month,
+          enterprise: sanctuary,
           data: {}
         )
       end

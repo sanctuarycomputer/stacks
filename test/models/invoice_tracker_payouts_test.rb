@@ -6,7 +6,7 @@ require "test_helper"
 class InvoiceTrackerPayoutsTest < ActiveSupport::TestCase
   setup do
     Thread.current[:sanctuary_enterprise] = nil
-    @pass = InvoicePass.find_or_create_by!(start_of_month: Date.new(2026, 8, 1)) { |ip| ip.data = {} }
+    @pass = InvoicePass.find_or_create_by!(start_of_month: Date.new(2026, 8, 1), enterprise: Enterprise.sanctuary) { |ip| ip.data = {} }
     @client = ForecastClient.create!(forecast_id: 700_001, name: "Payout Split Client")
     @project = ForecastProject.create!(forecast_id: 700_001, client_id: @client.forecast_id, name: "Split Proj", code: "SPL-1", tags: ["200p/h"])
 

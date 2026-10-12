@@ -56,7 +56,13 @@ class PeriodicReport < ApplicationRecord
   end
 
   def invoice_passes
-    @_invoice_passes ||= InvoicePass.includes(:invoice_trackers).where(start_of_month: period.starts_at..period.ends_at)
+    # Forecast-driven invoicing is Sanctuary's. Without the enterprise scope
+    # this unions every enterprise's trackers for the period and #surplus
+    # silently widens from Sanctuary to company-wide.
+    @_invoice_passes ||= InvoicePass
+      .includes(:invoice_trackers)
+      .where(enterprise: Enterprise.sanctuary)
+      .where(start_of_month: period.starts_at..period.ends_at)
   end
 
   def invoice_trackers

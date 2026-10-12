@@ -48,7 +48,7 @@ class QboInvoiceTest < ActiveSupport::TestCase
     fc_internal = ForecastClient.create!(forecast_id: rand(1..2_000_000_000), name: "Int-#{SecureRandom.hex(2)}")
     EnterpriseForecastClient.create!(enterprise: @other_ent, forecast_client_id: fc_internal.forecast_id)
 
-    ip = InvoicePass.find_or_create_by!(start_of_month: Date.new(2098, 1, 1))
+    ip = InvoicePass.find_or_create_by!(start_of_month: Date.new(2098, 1, 1), enterprise: Enterprise.sanctuary)
     tracker_sanctuary = InvoiceTracker.create!(invoice_pass: ip, forecast_client: fc_external, qbo_invoice_id: shared_qbo_id, qbo_account: @sanctuary_qa)
     tracker_other = InvoiceTracker.create!(invoice_pass: ip, forecast_client: fc_internal, qbo_invoice_id: shared_qbo_id, qbo_account: @other_qa)
 
@@ -86,7 +86,7 @@ class InvoiceTrackerQboInvoiceLookupTest < ActiveSupport::TestCase
 
   test "qbo_invoice returns nil when no matching row exists for this qa (no phantom row created)" do
     fc = ForecastClient.create!(forecast_id: rand(1..2_000_000_000), name: "FC-#{SecureRandom.hex(2)}")
-    ip = InvoicePass.find_or_create_by!(start_of_month: Date.new(2097, 1, 1))
+    ip = InvoicePass.find_or_create_by!(start_of_month: Date.new(2097, 1, 1), enterprise: Enterprise.sanctuary)
     tracker = InvoiceTracker.create!(invoice_pass: ip, forecast_client: fc, qbo_account: @sanctuary_qa)
     tracker.update_columns(qbo_invoice_id: "GONE#{SecureRandom.hex(3)}")
 
@@ -97,7 +97,7 @@ class InvoiceTrackerQboInvoiceLookupTest < ActiveSupport::TestCase
 
   test "qbo_invoice returns the row when one exists in this qa" do
     fc = ForecastClient.create!(forecast_id: rand(1..2_000_000_000), name: "FC-#{SecureRandom.hex(2)}")
-    ip = InvoicePass.find_or_create_by!(start_of_month: Date.new(2097, 2, 1))
+    ip = InvoicePass.find_or_create_by!(start_of_month: Date.new(2097, 2, 1), enterprise: Enterprise.sanctuary)
     qbo_id = "INV#{SecureRandom.hex(3)}"
     inv = QboInvoice.create!(qbo_id: qbo_id, qbo_account: @sanctuary_qa, data: { "x" => 1 })
     tracker = InvoiceTracker.create!(invoice_pass: ip, forecast_client: fc, qbo_account: @sanctuary_qa, qbo_invoice_id: qbo_id)
@@ -112,7 +112,7 @@ class InvoiceTrackerQboInvoiceLookupTest < ActiveSupport::TestCase
     )
     fc = ForecastClient.create!(forecast_id: rand(1..2_000_000_000), name: "FC-#{SecureRandom.hex(2)}")
     EnterpriseForecastClient.create!(enterprise: other_ent, forecast_client_id: fc.forecast_id)
-    ip = InvoicePass.find_or_create_by!(start_of_month: Date.new(2097, 3, 1))
+    ip = InvoicePass.find_or_create_by!(start_of_month: Date.new(2097, 3, 1), enterprise: Enterprise.sanctuary)
 
     # Existing QboInvoice is in Sanctuary, but tracker's qbo_account is other_qa.
     qbo_id = "INV#{SecureRandom.hex(3)}"
