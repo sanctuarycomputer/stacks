@@ -4820,7 +4820,7 @@ Two behaviours change at deploy whether or not the migration has run:
 
 **Drafting a month (October 2026 onward).** An admin opens garden3d's pass and clicks **Create management fee drafts** once. For each payer Stacks first asks QuickBooks whether that customer already has an invoice dated in the month, and skips it with a message if so. Finance edits the amounts in QuickBooks and sends them. **Refresh from QuickBooks** brings statuses and totals back.
 
-**A month that was invoiced by hand (every month before the start, and any later month Finance does by hand).** Stacks will not draft it. To have its existing invoices attached, so that `reconcile` and the collection gate can see them:
+**A month that was invoiced by hand (every month before the start except June–December 2025, and any later month Finance does by hand).** Stacks will not draft it. To have its existing invoices attached, so that `reconcile` and the collection gate can see them:
 
 1. Fill garden3d's invoice mirror. Console, by the owner; a QuickBooks **read** that upserts mirror rows:
    ```ruby
@@ -4832,6 +4832,7 @@ Two behaviours change at deploy whether or not the migration has run:
    ```ruby
    Mso::ManagementFeeInvoices.ensure_month!(Date.new(2026, 9, 1))
    ```
+   **Not for June–December 2025.** Those seven passes each hold a legacy Forecast tracker; their page is rendered as it always was and cannot manage fee trackers, so `ensure_month!` raises `LegacyPass` and adds nothing. Their fee invoices cannot be attached, and the collection gate answers "not collected" for those months.
 3. In the admin, open that pass (Money → Invoicing), open each tracker, **Edit**, pick the month's invoice from the dropdown (it lists garden3d's unattached invoices only) and save.
 4. Click **Refresh from QuickBooks** on the pass.
 

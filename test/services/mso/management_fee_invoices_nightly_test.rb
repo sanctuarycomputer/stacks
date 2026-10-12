@@ -65,6 +65,24 @@ class Mso::ManagementFeeInvoicesNightlyTest < ActiveSupport::TestCase
     end
   end
 
+  test "ensure_month! refuses a month whose garden3d pass holds a legacy Forecast tracker" do
+    # The pass page renders such a pass as it always has and offers no way to
+    # manage fee trackers, so adding them would strand them.
+    forbid_quickbooks
+    pass = garden3d_pass(Date.new(2090, 6, 1))
+    ForecastClient.create!(forecast_id: 993_050, name: "garden3d internal")
+    legacy = InvoiceTracker.create!(invoice_pass: pass, forecast_client_id: 993_050, qbo_account: @qbo_account,
+                                    blueprint: { "lines" => {} })
+
+    error = assert_raises(Mso::ManagementFeeInvoices::LegacyPass) do
+      Mso::ManagementFeeInvoices.ensure_month!(Date.new(2090, 6, 17))
+    end
+
+    assert_match(/June 2090/, error.message)
+    assert_match(/InvoicePass #{pass.id}/, error.message)
+    assert_equal [legacy.id], InvoiceTracker.where(invoice_pass_id: pass.id).pluck(:id)
+  end
+
   # --- ensure_previous_month! ------------------------------------------------
 
   test "the nightly run creates last month's pass and never touches QuickBooks" do

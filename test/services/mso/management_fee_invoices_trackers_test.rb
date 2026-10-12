@@ -59,6 +59,41 @@ class Mso::ManagementFeeInvoicesTrackersTest < ActiveSupport::TestCase
     end
   end
 
+  # Runs `rival` once, after ensure_trackers! has looked for a tracker and
+  # found none but before it inserts its own: what a second request (a double
+  # click, or the click racing the nightly run) does to the first.
+  def with_rival_insert(rival)
+    service = Mso::ManagementFeeInvoices.singleton_class
+    original = service.instance_method(:create_or_find_tracker!)
+    raced = false
+    service.send(:define_method, :create_or_find_tracker!) do |*args|
+      unless raced
+        raced = true
+        rival.call
+      end
+      original.bind(self).call(*args)
+    end
+    yield
+  ensure
+    service.send(:define_method, :create_or_find_tracker!, original)
+    service.send(:private, :create_or_find_tracker!)
+  end
+
+  test "losing a first-time race to another request uses its tracker instead of raising" do
+    rival = nil
+
+    trackers = with_rival_insert(-> { rival = fee_tracker(@pass, @sanctuary) }) do
+      Mso::ManagementFeeInvoices.ensure_trackers!(invoice_pass: @pass)
+    end
+
+    assert_includes trackers.map(&:id), rival.id
+    assert_equal [950_001, 950_002], trackers.map(&:forecast_client_id).sort
+    # The refused insert did not poison the transaction: the other payer's
+    # tracker was still created, and there is exactly one per payer.
+    assert_equal trackers.map(&:id).sort, trackers_on(@pass).pluck(:id)
+    assert_equal 2, trackers_on(@pass).count
+  end
+
   test "it never calls QuickBooks" do
     QboAccount.any_instance.expects(:make_and_refresh_qbo_access_token).never
     QboAccount.any_instance.expects(:fetch_all_customers).never

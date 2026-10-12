@@ -15,6 +15,7 @@ module Mso
     class Misconfigured < Error; end
     class PushFailed < Error; end
     class NotDraftable < Error; end
+    class LegacyPass < Error; end
     class AlreadyInvoiced < Error; end
     class RefreshFailed < Error; end
 
@@ -36,8 +37,9 @@ module Mso
     RefreshRun = Struct.new(:attempted, :succeeded, :detached, :failed, keyword_init: true)
 
     class << self
-      # One tracker per management-fee payer on garden3d's pass. Idempotent.
-      # Database only: no QuickBooks call of any kind.
+      # One tracker per management-fee payer on garden3d's pass. Idempotent,
+      # and safe to run twice at once. Database only: no QuickBooks call of
+      # any kind.
       def ensure_trackers!(invoice_pass:)
         assert_management_fee_pass!(invoice_pass)
         assert_schema_ready!
@@ -54,14 +56,7 @@ module Mso
           planned.map do |_payer, client_ids|
             # A payer can have several internal Forecast clients. Reuse a
             # tracker on any of them, so remapping clients never doubles up.
-            existing = InvoiceTracker
-              .where(invoice_pass_id: invoice_pass.id, forecast_client_id: client_ids)
-              .order(:id).first
-            existing || InvoiceTracker.create!(
-              invoice_pass: invoice_pass,
-              forecast_client_id: client_ids.first,
-              qbo_account: qbo_account,
-            )
+            find_tracker(invoice_pass, client_ids) || create_or_find_tracker!(invoice_pass, client_ids, qbo_account)
           end
         end
       end
@@ -222,12 +217,22 @@ module Mso
       # Works for ANY month, including ones before MANAGEMENT_FEE_START: a
       # month invoiced by hand needs a pass and trackers so those invoices can
       # be attached. It never makes a pass draftable; see draftable?.
+      #
+      # The exception: a month whose pass holds a legacy Forecast tracker
+      # (garden3d's seven 2025 passes). That pass's page is rendered as it
+      # always was and cannot manage fee trackers, so none are added: it raises.
       def ensure_month!(date)
         assert_schema_ready!
 
         month = date.to_date.beginning_of_month
         pass = InvoicePass.find_or_create_by!(enterprise: Enterprise.garden3d, start_of_month: month) do |new_pass|
           new_pass.data = {}
+        end
+        if pass.legacy_forecast_trackers?
+          raise LegacyPass, "#{Enterprise::GARDEN3D_NAME}'s pass for #{pass.invoice_month} (InvoicePass " \
+                            "#{pass.id}) holds a Forecast-driven tracker from before passes were " \
+                            "per-company. Stacks leaves that pass as it is and adds no management fee " \
+                            "trackers to it."
         end
         ensure_trackers!(invoice_pass: pass)
         pass
@@ -289,6 +294,29 @@ module Mso
                                "to hang its invoice tracker on"
         end
         ids
+      end
+
+      def find_tracker(invoice_pass, client_ids)
+        InvoiceTracker
+          .where(invoice_pass_id: invoice_pass.id, forecast_client_id: client_ids)
+          .order(:id).first
+      end
+
+      # Two first-time calls at once (a double click on Create drafts, or the
+      # click racing the nightly run) both find no tracker and both insert; the
+      # unique index on (forecast_client_id, invoice_pass_id) refuses the
+      # second. The row that won is the other caller's tracker: use it. The
+      # savepoint keeps the surrounding transaction usable after the refusal.
+      def create_or_find_tracker!(invoice_pass, client_ids, qbo_account)
+        InvoiceTracker.transaction(requires_new: true) do
+          InvoiceTracker.create!(
+            invoice_pass: invoice_pass,
+            forecast_client_id: client_ids.first,
+            qbo_account: qbo_account,
+          )
+        end
+      rescue ActiveRecord::RecordNotUnique
+        find_tracker(invoice_pass, client_ids) || raise
       end
 
       def assert_draftable!(invoice_pass)
