@@ -231,28 +231,24 @@ ActiveAdmin.register ProjectTracker do
         stars = grade&.dig("stars")
         # First name, or the part of the address before the @ when there is no name.
         who = ship.sender&.split(/[\s@]/)&.first
-        label = "#{time_ago_in_words(ship.sent_at)} ago#{" by #{who}" if who} ↗"
-        url = ship.document&.google_groups_permalink
+        when_and_who = "#{time_ago_in_words(ship.sent_at)} ago#{" by #{who}" if who}"
+        label = [(WeeklyShip.stars_label(stars) if grade), when_and_who].compact.join(" · ")
         # font-size: the global `a` rule would otherwise size the pill's text at 18px.
         link_style = "text-decoration: none; color: inherit; font-size: inherit;"
         # Arbre `a`, not block-form link_to — Rails' capture doesn't see Arbre
         # elements, which renders the content OUTSIDE an empty anchor.
-        # Every title says why the pill is orange or red: the links cover most
-        # of the pill, so the pill's own title alone would rarely show.
+        # The link's title also says why the pill is orange or red: it covers
+        # the whole pill, so the pill's own title alone would rarely show.
         reason = WeeklyShip.pill_reason(staleness: staleness, stars: stars)
         span(class: WeeklyShip.pill_class(staleness: staleness, stars: stars), title: reason) do
-          if grade
-            if can_open_ships
-              # The stars open the coaching page; the rest opens the email.
-              a(WeeklyShip.stars_label(stars), href: admin_weekly_ship_path(ship), style: link_style,
-                title: [grade["summary"].presence, "Open the coaching for this ship.", reason].compact.join(" "))
-            else
-              text_node WeeklyShip.stars_label(stars)
-            end
-            text_node " · "
-          end
-          if url
-            a(label, href: url, target: "_blank", rel: "noopener", title: ["Open the email.", reason].compact.join(" "), style: link_style)
+          if can_open_ships
+            # One link, to the coaching page. The email is a click away from there.
+            a(label, href: admin_weekly_ship_path(ship), style: link_style,
+              title: [grade && grade["summary"].presence, "Open the coaching for this ship.", reason].compact.join(" "))
+          elsif (url = ship.document&.google_groups_permalink)
+            # A reader who cannot open the coaching page still gets the email.
+            a("#{label} ↗", href: url, target: "_blank", rel: "noopener",
+              title: ["Open the email.", reason].compact.join(" "), style: link_style)
           else
             text_node label
           end

@@ -64,9 +64,11 @@ class AdminWeeklyShipCoachingTest < ActionDispatch::IntegrationTest
     page.css("#project_tracker_#{@tracker.id} td.col-last_ship .pill").first
   end
 
-  # The panel with this exact title, or nil.
+  # The panel or dashboard module with this exact title, or nil. (The ship page
+  # is built from the same modules as the Project Tracker page.)
   def panel(title)
-    page.css(".panel").find { |p| p.at_css("h3")&.text&.strip == title }
+    page.css(".dashboard-module").find { |m| m.at_css(".module-header p")&.text&.strip == title } ||
+      page.css(".panel").find { |p| p.at_css("h3")&.text&.strip == title }
   end
 
   def scoped_grantee!
@@ -113,23 +115,34 @@ class AdminWeeklyShipCoachingTest < ActionDispatch::IntegrationTest
     assert_equal "pill at_risk", WeeklyShip.pill_class(staleness: :stale, stars: 2.0)
   end
 
-  test "Last Ship shows the stars first, then when and who, linked to the coaching page" do
+  test "Last Ship shows the stars first, then when and who, as one link to the coaching page" do
     ws = make_ship!(sent_at: 2.days.ago, scoring: scoring(stars: 3))
     get admin_project_trackers_path(scope: "all")
     assert_response :success
     pill = last_ship_pill
     assert pill, "expected a Last Ship pill for the tracker"
-    assert_match(/\A★★★☆☆ · 2 days ago by Sam ↗/, pill.text.squish)
+    assert_equal "★★★☆☆ · 2 days ago by Sam", pill.text.squish
     assert_includes pill["class"], "at_risk" # fresh, but three stars
     assert_equal "Orange: the last ship scored 3 of 5.", pill["title"]
-    stars, email = pill.css("a").to_a
-    assert_equal admin_weekly_ship_path(ws), stars["href"]
-    # Both links say why the pill is orange: they cover most of it.
-    assert_equal "Clear asks with owners. Open the coaching for this ship. Orange: the last ship scored 3 of 5.", stars["title"]
-    assert_equal "Open the email. Orange: the last ship scored 3 of 5.", email["title"]
-    assert_match %r{\Ahttps://groups\.google\.com/}, email["href"]
+    links = pill.css("a").to_a
+    assert_equal 1, links.size, "the pill is one link, not a split one"
+    link = links.first
+    assert_equal admin_weekly_ship_path(ws), link["href"]
+    assert_equal pill.text.squish, link.text.squish
+    # The link covers the pill, so it also says why the pill is orange.
+    assert_equal "Clear asks with owners. Open the coaching for this ship. Orange: the last ship scored 3 of 5.", link["title"]
+    # The email is reached from the coaching page, not from the index.
+    assert_no_match %r{groups\.google\.com}, pill.to_html
     # The global `a` rule would otherwise size the pill's text at 18px.
-    [stars, email].each { |a| assert_includes a["style"], "font-size: inherit" }
+    assert_includes link["style"], "font-size: inherit"
+  end
+
+  test "an ungraded Last Ship also links to the coaching page" do
+    ws = make_ship!(sent_at: 2.days.ago)
+    get admin_project_trackers_path(scope: "all")
+    link = last_ship_pill.at_css("a")
+    assert_equal admin_weekly_ship_path(ws), link["href"]
+    assert_equal "Open the coaching for this ship.", link["title"]
   end
 
   test "Last Ship for an ungraded ship has no stars and is coloured by staleness alone" do
@@ -147,7 +160,7 @@ class AdminWeeklyShipCoachingTest < ActionDispatch::IntegrationTest
     make_ship!(sent_at: 2.days.ago, scoring: scoring(stars: 5), sent_by_name: nil)
     get admin_project_trackers_path(scope: "all")
     assert_response :success
-    assert_equal "★★★★★ · 2 days ago ↗", last_ship_pill.text.squish
+    assert_equal "★★★★★ · 2 days ago", last_ship_pill.text.squish
   end
 
   test "an admin gets the stars as links on the trackers index and the tracker page" do
@@ -175,9 +188,13 @@ class AdminWeeklyShipCoachingTest < ActionDispatch::IntegrationTest
       assert_not_includes response.body, admin_weekly_ship_path(ws)
     end
 
-    # The pill still says why it is orange, with no link to carry the title.
+    # They cannot open the coaching page, so their pill opens the email instead.
     get admin_project_trackers_path(scope: "all")
     assert_equal "Orange: the last ship scored 3 of 5.", last_ship_pill["title"]
+    email = last_ship_pill.at_css("a")
+    assert_match %r{\Ahttps://groups\.google\.com/}, email["href"]
+    assert_equal "★★★☆☆ · 2 days ago by Sam ↗", email.text.squish
+    assert_equal "Open the email. Orange: the last ship scored 3 of 5.", email["title"]
   end
 
   test "the ship page coaches in our words: what worked, next time, and each dimension" do
@@ -188,14 +205,22 @@ class AdminWeeklyShipCoachingTest < ActionDispatch::IntegrationTest
     assert_response :success
     body = response.body
     assert_equal "This week's ship", page.at_css("#page_title").text
-    assert panel("This ship"), "the top table is titled in our words"
+    assert panel("This ship"), "the top module is titled in our words"
+    # Laid out in the Project Tracker page's modules, not ActiveAdmin's default panels.
+    assert_empty page.css("#main_content .panel, #main_content .attributes_table")
+    assert_includes panel("This ship").at_css(".module-header a")["href"], admin_project_tracker_path(@tracker)
+    # The original email is the page's top-right action.
+    action = page.css("#titlebar_right .action_item a").find { |a| a.text.include?("Open in Google Groups") }
+    assert action, "expected an Open in Google Groups action"
+    assert_match %r{\Ahttps://groups\.google\.com/}, action["href"]
+    assert_equal "_blank", action["target"]
+    assert_not_includes body, "Open the email"
     assert_not_includes body, "Weekly Ship Details"
     assert_includes body, "★★★★☆"
     assert_includes body, "What this ship does well"
     assert_includes body, "Clear asks with owners."
     next_time = panel("For next time")
     assert_includes next_time.text, "Say when the ticketing decision is due."
-    assert_includes next_time.at_css("ol")["style"], "font-size: 16px"
     # The admin reset strips list numbers, so each item asks for them back.
     assert_includes next_time.at_css("ol li")["style"], "list-style: decimal"
     assert_includes body, "Shipped, not busy"
@@ -206,7 +231,9 @@ class AdminWeeklyShipCoachingTest < ActionDispatch::IntegrationTest
     assert_includes body, "No date is stated."
     assert_not_includes body, "0/2"
     assert_not_includes body, "Next week:"
-    assert_includes panel("Previous ship").text.squish, "Last week's ship, 9 days ago ★★★★★"
+    previous_ship = panel("Previous ship").text.squish
+    assert_includes previous_ship, "Last week's ship, 9 days ago"
+    assert_includes previous_ship, "★★★★★"
     assert_includes body, admin_weekly_ship_path(previous)
     assert_includes body, "This is coaching for the Project Lead who sent the ship. Stacks scores each ship " \
                           "overnight against what a great ship does. Never share it with the client."
@@ -268,7 +295,7 @@ class AdminWeeklyShipCoachingTest < ActionDispatch::IntegrationTest
     make_ship!(sent_at: 2.days.ago, scoring: scoring(stars: 4), tracker: other, document: ws.document)
     get admin_weekly_ship_path(ws)
     assert_response :success
-    assert_includes panel("Previous ship").text.squish, "Sister's last ship, 9 days ago, on #{other.name} ★★★★★"
+    assert_includes panel("Previous ship").text.squish, "Sister's last ship, 9 days ago, on #{other.name}"
   end
 
   test "the previous ship does not name the project when it is this ship's project" do
@@ -319,13 +346,7 @@ class AdminWeeklyShipCoachingTest < ActionDispatch::IntegrationTest
     assert_equal "Unknown sender", WeeklyShip.new.sender_label
     # The pill shows the part before the @, not the whole address.
     get admin_project_trackers_path(scope: "all")
-    assert_match(/\A2 days ago by sam ↗/, last_ship_pill.text.squish)
-  end
-
-  test "the coaching text is set at a readable size" do
-    ws = make_ship!(sent_at: 2.days.ago, scoring: scoring(stars: 4))
-    get admin_weekly_ship_path(ws)
-    assert_includes panel("What this ship does well").at_css("p")["style"], "font-size: 16px"
+    assert_equal "2 days ago by sam", last_ship_pill.text.squish
   end
 
   test "dimensions that are not a set of scores leave How it scored off the page" do
@@ -381,7 +402,6 @@ class AdminWeeklyShipCoachingTest < ActionDispatch::IntegrationTest
     get admin_weekly_ship_path(ws)
     assert_response :success
     text = panel("Not graded").text.squish
-    assert_includes panel("Not graded").at_css("p")["style"], "font-size: 16px"
     [EXCLUDED_COPY, PENDING_COPY, TOO_OLD_COPY].each do |sentence|
       if sentence == copy
         assert_includes text, sentence

@@ -31,14 +31,15 @@ with matcher internals. Two changes make the grade visible and useful.
 
 `app/admin/project_trackers.rb`, the "Last Ship" index column.
 
-- Text: `★★★★☆ · 3 days ago by Leyna ↗`. An ungraded ship has no stars and no separator. A ship
+- Text: `★★★★☆ · 3 days ago by Leyna`. An ungraded ship has no stars and no separator. A ship
   with no sender name or address drops the "by ..." part.
-- The stars are a link to the ship's page (`admin_weekly_ship_path`). Its hover title is the grade's
-  one-line summary, then "Open the coaching for this ship." The rest of the pill links to the email
-  in Google Groups, as before, with the title "Open the email."
+- The whole pill is one link to the ship's page (`admin_weekly_ship_path`), graded or not. Its hover
+  title is the grade's one-line summary, then "Open the coaching for this ship." The email is reached
+  from the ship page ("Open in Google Groups", top right), not from the index.
 - A reader who cannot open the ship page (`authorized?(:read, WeeklyShip)`, asked once per request,
-  never per row) sees the same stars as plain text.
-- Both links set `font-size: inherit`, because the global `a` rule would size them at 18px.
+  never per row) gets the same text with "↗", linked to the email in Google Groups instead, with the
+  title "Open the email."
+- The link sets `font-size: inherit`, because the global `a` rule would size it at 18px.
 - Colour is the worse of staleness and grade, from `WeeklyShip.pill_class(staleness:, stars:)`:
 
   | | ★4 to ★5, or ungraded | ★3 | ★1 to ★2 |
@@ -64,24 +65,27 @@ with matcher internals. Two changes make the grade visible and useful.
 
 ## 2. The ship page
 
-`app/admin/weekly_ships.rb`, `show`. Page title is the email subject (`WeeklyShip#display_title`).
-Top to bottom:
+`app/admin/weekly_ships.rb`, `show`, laid out in `app/views/admin/weekly_ships/_show.html.erb` with
+the same modules as the Project Tracker page (`.dashboard-modules`, `.dashboard-module`,
+`.module-header`, `.module-body`, `.factoid`), not ActiveAdmin's default panels. Page title is the
+email subject (`WeeklyShip#display_title`). The top-right actions include "Open in Google Groups ↗"
+(the original email, in a new tab) when the email has a Groups link. Top to bottom:
 
-1. Table "This ship": Project (linked), Sent (sender, time ago, date), Grade (stars, "n of 5"), the
-   email link.
-2. Panel "What this ship does well": the grade's summary.
-3. Panel "For next time": the one to three suggestions, numbered.
-4. Panel "How it scored": one row per rubric dimension, with
+1. Module "This ship": the project (linked, in the header), and two factoids: the stars with
+   "n of 5", and how long ago it was sent with the sender and date.
+2. Side by side: module "What this ship does well" (the grade's summary) and module "For next time"
+   (the one to three suggestions, numbered).
+3. Module "How it scored": one row per rubric dimension, with
    - the dimension's label and a line on what a great ship does (`Grader::GUIDE`),
    - a pill from `Grader::SCORE_LABELS`: 2 "Nailed it" green, 1 "Partly" orange, 0 "Missing" red,
    - the grader's reason.
    When `continuity_counted` is false the continuity row shows a grey pill and no reason: "First
    ship, not counted" when there is no previous ship, otherwise "Not counted".
-5. Panel "Previous ship": the previous ship, linked to its own page, with how long ago it was sent
-   and its stars. Omitted when there is none.
-6. A line: "This is coaching for the Project Lead who sent the ship. Stacks scores each ship
-   overnight against what a great ship does. Never share it with the client."
-7. Muted panel "How this email was linked to the project": Linked By ("Stacks (automatic)" or
+4. Side by side: module "Previous ship" (the previous ship, linked to its own page, with how long ago
+   it was sent and its stars; omitted when there is none) and a note module: "This is coaching for
+   the Project Lead who sent the ship. Stacks scores each ship overnight against what a great ship
+   does. Never share it with the client."
+5. Muted module "How this email was linked to the project": Linked By ("Stacks (automatic)" or
    "A person"), Confidence as a whole percent (the row is left out when there is none), Rationale.
 
 ### Previous ship
@@ -103,7 +107,7 @@ when it is not the project of the row being viewed.
 
 The page reads the grade from this row, or from another row for the same email (a project linked
 after the email was graded gets its own copy only if the grader runs while the ship is inside its 14-day window, so the page reads the grade from any row of the email; the index pill does not, and shows such a row without stars). With no grade at all, a "Not
-graded" panel replaces 2 to 4 and says one of:
+graded" module replaces 2 and 3 and says one of:
 
 - the email is excluded from Stacks search: "This ship is not graded because its email is excluded
   from Stacks search."
