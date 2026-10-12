@@ -36,7 +36,7 @@ module InvoicePayouts
     end
 
     def override
-      @invoice_tracker.margin_override
+      @invoice_tracker.target_margin_override
     end
 
     def default_rules

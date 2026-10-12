@@ -25,18 +25,6 @@ class InvoiceTracker < ApplicationRecord
 
   delegate :billing_enterprise, to: :forecast_client
 
-  # The share the company keeps on this invoice, when set by hand. nil means
-  # "derive the cap from each project's billing model" (InvoicePayouts::Cap).
-  # The only reader of the column: migrations here run by hand after the
-  # deploy, so until then the row still carries company_treasury_split.
-  def margin_override
-    if has_attribute?(:target_margin_override)
-      target_margin_override
-    else
-      self[:company_treasury_split]
-    end
-  end
-
   def display_name
     "#{qbo_invoice.try(:display_name) || forecast_client.name} (#{status})"
   end
@@ -342,18 +330,11 @@ class InvoiceTracker < ApplicationRecord
     ActionController::Base.helpers.number_to_currency(*args, **kwargs, &b)
   end
 
-  # The override columns arrive with a migration that is run by hand after
-  # the deploy; until then there is nowhere to record one.
-  def payout_cap_override_recordable?
-    has_attribute?(:payout_cap_override_by_id)
-  end
-
   def payout_cap_overridden?
-    payout_cap_override_recordable? && payout_cap_override_at.present?
+    payout_cap_override_at.present?
   end
 
   def record_payout_cap_override!(admin_user:, reason:, check:)
-    return unless payout_cap_override_recordable?
     update!(
       payout_cap_override_by: admin_user,
       payout_cap_override_at: Time.current,
