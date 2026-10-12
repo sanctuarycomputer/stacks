@@ -515,12 +515,14 @@ ActiveRecord::Schema.define(version: 2026_10_12_130000) do
   end
 
   create_table "invoice_passes", force: :cascade do |t|
-    t.date "start_of_month"
+    t.date "start_of_month", null: false
     t.datetime "completed_at"
     t.jsonb "data"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
-    t.index ["start_of_month"], name: "index_invoice_passes_on_start_of_month", unique: true
+    t.bigint "enterprise_id", null: false
+    t.index ["enterprise_id", "start_of_month"], name: "index_invoice_passes_on_enterprise_and_month", unique: true
+    t.index ["enterprise_id"], name: "index_invoice_passes_on_enterprise_id"
   end
 
   create_table "invoice_trackers", force: :cascade do |t|
@@ -652,6 +654,17 @@ ActiveRecord::Schema.define(version: 2026_10_12_130000) do
     t.bigint "contributor_id", null: false
     t.index ["contributor_id"], name: "index_misc_payments_on_contributor_id"
     t.index ["deleted_at"], name: "index_misc_payments_on_deleted_at"
+  end
+
+  create_table "mso_role_periods", force: :cascade do |t|
+    t.bigint "contributor_id", null: false
+    t.integer "tier", null: false
+    t.string "title", null: false
+    t.date "started_at", null: false
+    t.date "ended_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["contributor_id"], name: "index_mso_role_periods_on_contributor_id"
   end
 
   create_table "notifications", force: :cascade do |t|
@@ -1595,6 +1608,7 @@ ActiveRecord::Schema.define(version: 2026_10_12_130000) do
   add_foreign_key "finalizations", "reviews"
   add_foreign_key "full_time_periods", "admin_users"
   add_foreign_key "gifted_profit_shares", "admin_users"
+  add_foreign_key "invoice_passes", "enterprises"
   add_foreign_key "invoice_trackers", "admin_users"
   add_foreign_key "invoice_trackers", "admin_users", column: "payout_cap_override_by_id", on_delete: :nullify
   add_foreign_key "invoice_trackers", "invoice_passes"
@@ -1611,6 +1625,7 @@ ActiveRecord::Schema.define(version: 2026_10_12_130000) do
   add_foreign_key "mentions", "chunks"
   add_foreign_key "mentions", "contacts"
   add_foreign_key "misc_payments", "contributors"
+  add_foreign_key "mso_role_periods", "contributors"
   add_foreign_key "okr_period_studios", "okr_periods"
   add_foreign_key "okr_period_studios", "studios"
   add_foreign_key "okr_periods", "okrs"

@@ -88,7 +88,7 @@ class AdminAuthorizationTest < ActiveSupport::TestCase
     ProjectTrackerForecastProject.create!(project_tracker: pt, forecast_project: fp)
     PermissionGrant.create!(admin_user: user, permission: "lead", subject: pt)
 
-    ip = InvoicePass.create!(start_of_month: Date.new(2031, 1, 1))
+    ip = InvoicePass.create!(start_of_month: Date.new(2031, 1, 1), enterprise: Enterprise.sanctuary)
     fc_mine = ForecastClient.create!(forecast_id: 910001, name: "Client Mine")
     fc_other = ForecastClient.create!(forecast_id: 910002, name: "Client Other")
     qbo = qbo_accounts(:one)
@@ -192,5 +192,21 @@ class AdminAuthorizationTest < ActiveSupport::TestCase
     admin_auth = auth_for(admin)
     assert admin_auth.authorized?(:close_survey, survey)
     assert admin_auth.authorized?(:reopen_survey, survey)
+  end
+
+  test "only admins may touch the MSO roster, including reading it" do
+    admin = AdminUser.create!(email: "mso-admin@sanctuary.computer", password: "password12345", roles: ["admin"])
+    lead = make_user("mso-lead@sanctuary.computer")
+    PermissionGrant.create!(admin_user: lead, permission: "lead")
+    nobody = make_user("mso-nobody@sanctuary.computer")
+
+    %i[read create update destroy].each do |action|
+      assert auth_for(admin).authorized?(action, MsoRolePeriod), "admin should #{action}"
+      assert auth_for(admin).authorized?(action, MsoRolePeriod.new), "admin should #{action} a record"
+      refute auth_for(lead).authorized?(action, MsoRolePeriod), "lead must not #{action}"
+      refute auth_for(lead).authorized?(action, MsoRolePeriod.new), "lead must not #{action} a record"
+      refute auth_for(nobody).authorized?(action, MsoRolePeriod), "non-lead must not #{action}"
+      refute auth_for(nobody).authorized?(action, MsoRolePeriod.new), "non-lead must not #{action} a record"
+    end
   end
 end

@@ -204,6 +204,9 @@ ActiveAdmin.register ProjectTracker do
       span(resource.work_status.to_s.humanize.capitalize, class: "pill #{resource.work_status}")
     end
 
+    # Asked once, not per row: whether a reader may open a ship's page depends
+    # only on who they are (project-scoped lead grants cannot).
+    can_open_ships = authorized?(:read, WeeklyShip)
     column "Last Ship" do |pt|
       # Completed projects aren't expected to ship — show a muted dash.
       if params[:scope] == "complete"
@@ -222,24 +225,33 @@ ActiveAdmin.register ProjectTracker do
           span "No ships yet", class: "pill", style: "background-color: #1a1a1a; color: #fff;"
         end
       else
-        pill_class =
-          case staleness
-          when :overdue then "pill error"
-          when :stale then "pill at_risk"
-          # NOT "pill complete" — .complete is re-declared purple later in the
-          # stylesheet cascade; .exceptional is the stable green.
-          else "pill exceptional"
+        # Stars first, then when and who. The colour is the worse of staleness
+        # and grade (WeeklyShip.pill_class); an ungraded ship has no stars.
+        grade = ship.grade
+        stars = grade&.dig("stars")
+        # First name, or the part of the address before the @ when there is no name.
+        who = ship.sender&.split(/[\s@]/)&.first
+        when_and_who = "#{time_ago_in_words(ship.sent_at)} ago#{" by #{who}" if who}"
+        label = [(WeeklyShip.stars_label(stars) if grade), when_and_who].compact.join(" · ")
+        # font-size: the global `a` rule would otherwise size the pill's text at 18px.
+        link_style = "text-decoration: none; color: inherit; font-size: inherit;"
+        # Arbre `a`, not block-form link_to — Rails' capture doesn't see Arbre
+        # elements, which renders the content OUTSIDE an empty anchor.
+        # The link's title also says why the pill is orange or red: it covers
+        # the whole pill, so the pill's own title alone would rarely show.
+        reason = WeeklyShip.pill_reason(staleness: staleness, stars: stars)
+        span(class: WeeklyShip.pill_class(staleness: staleness, stars: stars), title: reason) do
+          if can_open_ships
+            # One link, to the coaching page. The email is a click away from there.
+            a(label, href: admin_weekly_ship_path(ship), style: link_style,
+              title: [grade && grade["summary"].presence, "Open the coaching for this ship.", reason].compact.join(" "))
+          elsif (url = ship.document&.google_groups_permalink)
+            # A reader who cannot open the coaching page still gets the email.
+            a("#{label} ↗", href: url, target: "_blank", rel: "noopener",
+              title: ["Open the email.", reason].compact.join(" "), style: link_style)
+          else
+            text_node label
           end
-        label = "#{time_ago_in_words(ship.sent_at)} ago by #{(ship.sent_by_name || ship.sent_by_email).to_s.split(" ").first} ↗"
-        url = ship.document&.google_groups_permalink
-        if url
-          # Arbre `a`, not block-form link_to — Rails' capture doesn't see
-          # Arbre elements, which renders the pill OUTSIDE an empty anchor.
-          a(href: url, target: "_blank", rel: "noopener", style: "text-decoration: none;") do
-            span label, class: pill_class
-          end
-        else
-          span label, class: pill_class
         end
       end
     end
@@ -488,17 +500,25 @@ ActiveAdmin.register ProjectTracker do
     panel "Weekly Ships" do
       ships = resource.weekly_ships.includes(:document).order(sent_at: :desc).limit(20)
       if ships.any?
+        # Asked once, not per row; readers who cannot open a ship's page get plain stars.
+        can_open_ships = authorized?(:read, WeeklyShip)
         table_for ships do
           column("Sent") { |ws| "#{time_ago_in_words(ws.sent_at)} ago" }
-          column("Subject") { |ws| ws.document.title }
-          column("Sender") { |ws| ws.sent_by_name || ws.sent_by_email }
-          # Coaching for the sender from the nightly grader (Stacks::WeeklyShips::Grader).
+          column("Subject") { |ws| ws.display_title }
+          column("Sender") { |ws| ws.sender_label }
+          # Coaching for the Project Lead from the nightly grader (Stacks::WeeklyShips::Grader).
           column("Grade") do |ws|
             if (g = ws.grade)
-              span WeeklyShip.stars_label(g["stars"]), title: "#{g["stars"]} of 5", style: "white-space: nowrap;"
+              if can_open_ships
+                a(WeeklyShip.stars_label(g["stars"]), href: admin_weekly_ship_path(ws),
+                  title: "#{g["stars"]} of 5. Open the coaching for this ship.",
+                  style: "white-space: nowrap; text-decoration: none; font-size: inherit;")
+              else
+                span WeeklyShip.stars_label(g["stars"]), title: "#{g["stars"]} of 5", style: "white-space: nowrap;"
+              end
             end
           end
-          column("Feedback for the sender") do |ws|
+          column("Feedback for the Project Lead") do |ws|
             if (g = ws.grade)
               div g["summary"]
               ul(style: "margin: 4px 0 0 16px;") { Array(g["suggestions"]).each { |s| li s } }
@@ -506,11 +526,11 @@ ActiveAdmin.register ProjectTracker do
           end
           column("") do |ws|
             url = ws.document.google_groups_permalink
-            link_to("Open ↗", url, target: "_blank", rel: "noopener") if url
+            link_to("Open ↗", url, target: "_blank", rel: "noopener", style: "white-space: nowrap;") if url
           end
         end
-        para em("Grades are coaching for the sender, scored nightly by a model against the weekly ship rubric. Never share them with the client."),
-             style: "margin: 8px 12px; opacity: 0.6; font-size: 0.85em;"
+        para "Grades are coaching for the Project Lead who sent the ship, scored overnight by a model. Never share them with the client.",
+             style: "margin: 8px 12px; font-size: 13px;"
       else
         para em("No weekly ships linked yet.")
       end

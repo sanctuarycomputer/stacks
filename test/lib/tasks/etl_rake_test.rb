@@ -77,6 +77,16 @@ class EtlRakeTest < ActiveSupport::TestCase
     end
   end
 
+  test 'grade_weekly_ships_backfill passes the since date and limit, and refuses a bad date' do
+    Stacks::WeeklyShips::Grader.expects(:run!).with(since: Time.zone.local(2026, 5, 1), limit: 50).returns(Hash.new(0))
+    Rake::Task['stacks:etl:grade_weekly_ships_backfill'].reenable
+    assert_output(/\{/) { Rake::Task['stacks:etl:grade_weekly_ships_backfill'].invoke('2026-05-01', '50') }
+
+    Stacks::WeeklyShips::Grader.expects(:run!).never
+    Rake::Task['stacks:etl:grade_weekly_ships_backfill'].reenable
+    assert_raises(Date::Error) { Rake::Task['stacks:etl:grade_weekly_ships_backfill'].invoke('soon') }
+  end
+
   test 'reclassify_privacy refuses an unknown mode instead of doing a real run' do
     Stacks::Etl::Reclassifier.expects(:call).never
     Rake::Task['stacks:etl:reclassify_privacy'].reenable

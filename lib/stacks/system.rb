@@ -76,7 +76,10 @@ class Stacks::System
 
     def sync_founder_trueups!
       founder_trueup_months.each do |working_date|
-        invoice_pass = InvoicePass.includes(invoice_trackers: :contributor_payouts).where(start_of_month: working_date).first
+        invoice_pass = InvoicePass
+          .includes(invoice_trackers: :contributor_payouts)
+          .where(start_of_month: working_date, enterprise: Enterprise.sanctuary)
+          .first
         raise "No invoice pass found for #{working_date}" unless invoice_pass.present?
 
         contributor_payouts_by_contributor = invoice_pass.invoice_trackers.reduce({}) do |acc, invoice_tracker|

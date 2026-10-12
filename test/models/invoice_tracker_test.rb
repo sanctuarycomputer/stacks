@@ -218,7 +218,7 @@ class InvoiceTrackerBillingEnterpriseTest < ActiveSupport::TestCase
     Thread.current[:sanctuary_enterprise] = nil
     sanctuary = Enterprise.find_by!(name: Enterprise::SANCTUARY_NAME)
     fc = ForecastClient.create!(forecast_id: rand(1..2_000_000_000), name: "Acme-#{SecureRandom.hex(2)}")
-    ip = InvoicePass.find_or_create_by!(start_of_month: Date.new(2030, 1, 1))
+    ip = InvoicePass.find_or_create_by!(start_of_month: Date.new(2030, 1, 1), enterprise: Enterprise.sanctuary)
     it = InvoiceTracker.new(invoice_pass: ip, forecast_client: fc)
     # No explicit enterprise mapping → forecast_client.billing_enterprise falls
     # back to Sanctuary, which means the IT's billing_enterprise is Sanctuary.
@@ -230,7 +230,7 @@ class InvoiceTrackerBillingEnterpriseTest < ActiveSupport::TestCase
     sanctuary = Enterprise.find_by!(name: Enterprise::SANCTUARY_NAME)
     qa = sanctuary.qbo_account
     fc = ForecastClient.create!(forecast_id: rand(1..2_000_000_000), name: "Acme-QA-#{SecureRandom.hex(2)}")
-    ip = InvoicePass.find_or_create_by!(start_of_month: Date.new(2030, 2, 1))
+    ip = InvoicePass.find_or_create_by!(start_of_month: Date.new(2030, 2, 1), enterprise: Enterprise.sanctuary)
     it = InvoiceTracker.new(invoice_pass: ip, forecast_client: fc, qbo_account: qa)
     assert_equal qa, it.qbo_account
   end
@@ -242,7 +242,7 @@ class InvoiceTrackerBillingEnterpriseTest < ActiveSupport::TestCase
     EnterpriseForecastClient.create!(enterprise: ent, forecast_client_id: fc.forecast_id)
     assert fc.reload.is_internal?, "fixture sanity: mapped client should be internal"
 
-    ip = InvoicePass.find_or_create_by!(start_of_month: Date.new(2031, 1, 1))
+    ip = InvoicePass.find_or_create_by!(start_of_month: Date.new(2031, 1, 1), enterprise: Enterprise.sanctuary)
     it = InvoiceTracker.new(invoice_pass: ip, forecast_client: fc)
     # Guard runs after configuration_errors / qbo_invoice early returns;
     # stub those so the internal-client check is what trips.

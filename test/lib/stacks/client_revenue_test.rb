@@ -22,7 +22,7 @@ class StacksClientRevenueTest < ActiveSupport::TestCase
     end
     client.stubs(:is_internal?).returns(true) if internal
     tracker.stubs(:forecast_client).returns(client)
-    tracker.stubs(:invoice_pass).returns(InvoicePass.new(start_of_month: month))
+    tracker.stubs(:invoice_pass).returns(InvoicePass.new(start_of_month: month, enterprise: Enterprise.sanctuary))
     tracker.stubs(:blueprint).returns(blueprint)
     tracker
   end
@@ -167,7 +167,7 @@ class StacksClientRevenueTest < ActiveSupport::TestCase
     bad_tracker = InvoiceTracker.new
     bad_tracker.stubs(:qbo_invoice).returns(bad_invoice)
     bad_tracker.stubs(:forecast_client).returns(@acme)
-    bad_tracker.stubs(:invoice_pass).returns(InvoicePass.new(start_of_month: Date.new(2025, 1, 1)))
+    bad_tracker.stubs(:invoice_pass).returns(InvoicePass.new(start_of_month: Date.new(2025, 1, 1), enterprise: Enterprise.sanctuary))
     bad_tracker.stubs(:blueprint).returns(nil)
 
     healthy_tracker = make_tracker(client: @globex, month: Date.new(2025, 2, 1), total: 5_000)
@@ -189,7 +189,7 @@ class StacksClientRevenueTest < ActiveSupport::TestCase
     blank_tracker = InvoiceTracker.new
     blank_tracker.stubs(:qbo_invoice).returns(blank_invoice)
     blank_tracker.stubs(:forecast_client).returns(@acme)
-    blank_tracker.stubs(:invoice_pass).returns(InvoicePass.new(start_of_month: Date.new(2025, 1, 1)))
+    blank_tracker.stubs(:invoice_pass).returns(InvoicePass.new(start_of_month: Date.new(2025, 1, 1), enterprise: Enterprise.sanctuary))
     blank_tracker.stubs(:blueprint).returns(nil)
 
     healthy_tracker = make_tracker(client: @globex, month: Date.new(2025, 2, 1), total: 5_000)

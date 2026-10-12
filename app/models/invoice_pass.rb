@@ -1,4 +1,9 @@
 class InvoicePass < ApplicationRecord
+  # A pass belongs to the enterprise that ISSUES its invoices, not to the
+  # clients being billed. A tracker lives on the pass of its qbo_account's
+  # enterprise. Before this was modelled, garden3d's invoices rode on
+  # Sanctuary's pass (7 mixed passes, 2025-06 .. 2025-12).
+  belongs_to :enterprise
   has_many :invoice_trackers
 
   def complete?
@@ -37,16 +42,21 @@ class InvoicePass < ApplicationRecord
   end
 
   def make_trackers!
+    # Everything below is Forecast-driven invoicing, which only Sanctuary does.
+    # Every non-internal client bills through Sanctuary, so on any other
+    # enterprise's pass there is nothing for this to create.
+    unless enterprise == Enterprise.sanctuary
+      raise "make_trackers! is Forecast invoicing and only runs on #{Enterprise::SANCTUARY_NAME}'s passes (this pass belongs to #{enterprise.name})"
+    end
     return if statuses == :missing_hours
+
+    qa = enterprise.qbo_account
+    raise "#{enterprise.name} has no connected QboAccount" if qa.nil?
+
     # Internal clients (mapped via enterprise_forecast_clients) generate pay
     # stubs against their enterprise's pay cycles instead of being invoiced.
     # Skip them here so they never enter the InvoiceTracker pipeline.
     clients_served.reject(&:is_internal?).each do |c|
-      # Default the tracker's qa to the client's billing_enterprise qa.
-      # External clients fall through to Sanctuary. Admins can override in
-      # the form for cross-billing (e.g. garden3d invoicing its own external
-      # client, or Sanctuary issuing a one-off for a sub-enterprise).
-      qa = c.billing_enterprise&.qbo_account || Enterprise.sanctuary.qbo_account
       InvoiceTracker.find_or_create_by!(
         forecast_client_id: c.forecast_id,
         invoice_pass: self,

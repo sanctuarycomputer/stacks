@@ -28,8 +28,8 @@ ActiveAdmin.register WeeklyShip do
 
   index do
     selectable_column
-    column("Subject") { |ws| ws.document.title }
-    column("Sender") { |ws| ws.sent_by_name || ws.sent_by_email }
+    column("Subject") { |ws| ws.display_title }
+    column("Sender") { |ws| ws.sender_label }
     column :sent_at
     column :project_tracker
     column("Matched By") { |ws| span ws.matched_by, class: "pill" }
@@ -41,32 +41,31 @@ ActiveAdmin.register WeeklyShip do
     actions
   end
 
-  show do
-    attributes_table do
-      row("Subject") { |ws| ws.document.title }
-      row(:project_tracker)
-      row("Sender") { |ws| "#{ws.sent_by_name} <#{ws.sent_by_email}>" }
-      row(:sent_at)
-      row(:matched_by)
-      row(:confidence)
-      row(:rationale)
-      row("Grade") { |ws| WeeklyShip.stars_label(ws.grade["stars"]) if ws.grade }
-      row("Feedback for the sender") do |ws|
-        if (g = ws.grade)
-          div g["summary"]
-          ul { Array(g["suggestions"]).each { |s| li s } }
-        end
-      end
-      row("Rubric scores") do |ws|
-        if (g = ws.grade)
-          ul { g["dimensions"].each { |k, d| li "#{k.humanize}: #{d["score"]}/2, #{d["why"]}" } }
-        end
-      end
-      row("Google Groups") do |ws|
-        url = ws.document.google_groups_permalink
-        link_to("Open in Google Groups ↗", url, target: "_blank", rel: "noopener") if url
-      end
+  # The coaching page for a ship's sender: what worked, what to add next time,
+  # then how it scored against the rubric (Stacks::WeeklyShips::Grader), in the
+  # words a Project Lead would use. Never shown to the client.
+  show title: proc { |ws| ws.display_title } do
+    grader = Stacks::WeeklyShips::Grader
+    # Laid out in app/views/admin/weekly_ships/_show.html.erb, in the same
+    # modules as the Project Tracker page.
+    # A link added after the email was graded has no grade of its own (the
+    # grader copies it over only inside its window), so read the email's grade
+    # from any row.
+    grade = resource.grade || WeeklyShip.where(document_id: resource.document_id).filter_map(&:grade).first
+    previous = resource.previous_ship
+    # Stored grades are model output: show only the parts that have the right shape.
+    suggestions = grade ? Array(grade["suggestions"]).select { |s| s.is_a?(String) && s.present? } : []
+    dimensions = grade && grade["dimensions"].is_a?(Hash) ? grade["dimensions"] : {}
+    scored_rows = grader::GUIDE.filter_map do |key, guide|
+      scored = dimensions[key]
+      [key, guide, scored] if scored.is_a?(Hash) && scored["score"].is_a?(Integer) && scored["score"].between?(0, 2)
     end
+    continuity_not_counted = grade && grade["continuity_counted"] == false
+
+    render(partial: "show", locals: {
+      weekly_ship: resource, grade: grade, previous: previous, suggestions: suggestions,
+      scored_rows: scored_rows, continuity_not_counted: continuity_not_counted,
+    })
   end
 
   form do |f|

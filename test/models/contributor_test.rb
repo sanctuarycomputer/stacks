@@ -426,7 +426,7 @@ class ContributorElevatedServiceAdminUserIdsTest < ActiveSupport::TestCase
   # used elsewhere in this suite) while still satisfying the NOT NULL
   # `ledger_id` / `created_by_id` columns.
   def create_payout!(period, amount, ledger, created_by)
-    ip = InvoicePass.create!(start_of_month: period.starts_at)
+    ip = InvoicePass.create!(start_of_month: period.starts_at, enterprise: Enterprise.sanctuary)
     it = InvoiceTracker.create!(invoice_pass: ip, forecast_client: @fc, qbo_account: @sanctuary_qa)
     ContributorPayout.new(
       invoice_tracker: it,

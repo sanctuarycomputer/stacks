@@ -14,6 +14,7 @@ ActiveAdmin.register InvoicePass do
       # payout. Production showed /admin/invoice_passes index at 4s for
       # 12 rows.
       super.includes(
+        :enterprise,
         invoice_trackers: [
           :qbo_invoice,
           { contributor_payouts: { ledger: { contributor: :forecast_person } } },
@@ -36,28 +37,39 @@ ActiveAdmin.register InvoicePass do
     end
   end
 
-  action_item :rerun_invoice_pass, only: :show do
+  action_item :rerun_invoice_pass, only: :show,
+    if: proc { resource.enterprise == Enterprise.sanctuary } do
     link_to 'Send Reminders',
       rerun_invoice_pass_admin_invoice_pass_path(resource), method: :post
   end
 
-  action_item :rerun_invoice_pass_without_reminders, only: :show do
+  action_item :rerun_invoice_pass_without_reminders, only: :show,
+    if: proc { resource.enterprise == Enterprise.sanctuary } do
     link_to 'Generate Invoices',
       rerun_invoice_pass_without_reminders_admin_invoice_pass_path(resource), method: :post
   end
 
   member_action :rerun_invoice_pass_without_reminders, method: :post do
+    unless resource.enterprise == Enterprise.sanctuary
+      return redirect_to admin_invoice_pass_path(resource),
+        alert: "Forecast invoicing only runs on #{Enterprise::SANCTUARY_NAME}'s passes."
+    end
     Stacks::Automator.attempt_invoicing_for_invoice_pass(resource, false)
     redirect_to admin_invoice_pass_path(resource), notice: "Done!"
   end
 
   member_action :rerun_invoice_pass, method: :post do
+    unless resource.enterprise == Enterprise.sanctuary
+      return redirect_to admin_invoice_pass_path(resource),
+        alert: "Forecast invoicing only runs on #{Enterprise::SANCTUARY_NAME}'s passes."
+    end
     Stacks::Automator.attempt_invoicing_for_invoice_pass(resource)
     redirect_to admin_invoice_pass_path(resource), notice: "Done!"
   end
 
   index download_links: false, title: "Monthly Invoicing" do
     column :start_of_month
+    column :enterprise
 
     # Aggregate financials/statuses expose company-wide revenue data.
     # Project-scoped grantees only get :read on InvoicePass so they can

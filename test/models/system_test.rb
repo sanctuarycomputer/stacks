@@ -43,4 +43,31 @@ class SystemModelTest < ActiveSupport::TestCase
     sys.save!
     assert_equal({ "index" => "nl-1" }, sys.reload.ghost_newsletter_prefix_map)
   end
+
+  test "mso_top_n defaults to 3" do
+    System.first_or_create!(settings: {})
+    assert_equal 3, System.mso_top_n
+  end
+
+  test "mso_top_n defaults to 3 when no System row exists" do
+    System.delete_all
+    assert_equal 3, System.mso_top_n
+  end
+
+  test "mso_top_n reads a stored value, coercing strings" do
+    system = System.first_or_create!(settings: {})
+    system.update!(mso_top_n: 5)
+    assert_equal 5, System.mso_top_n
+
+    system.update_column(:settings, system.settings.merge("mso_top_n" => "4"))
+    assert_equal 4, System.mso_top_n
+  end
+
+  test "mso_top_n falls back to 3 for blank, zero or negative values" do
+    system = System.first_or_create!(settings: {})
+    ["", "0", "-2", "abc"].each do |bad|
+      system.update_column(:settings, system.settings.merge("mso_top_n" => bad))
+      assert_equal 3, System.mso_top_n, "expected fallback for #{bad.inspect}"
+    end
+  end
 end

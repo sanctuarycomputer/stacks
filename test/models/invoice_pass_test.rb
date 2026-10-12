@@ -5,7 +5,7 @@ class InvoicePassTest < ActiveSupport::TestCase
     Thread.current[:sanctuary_enterprise] = nil
     # Far-future month to avoid colliding with any other test's InvoicePass
     # row (start_of_month has a unique index).
-    @pass = InvoicePass.create!(start_of_month: Date.new(2099, 1, 1))
+    @pass = InvoicePass.create!(start_of_month: Date.new(2099, 1, 1), enterprise: Enterprise.sanctuary)
   end
 
   # NOTE on queries: `make_trackers!` calls `statuses`, which calls

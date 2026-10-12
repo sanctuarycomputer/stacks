@@ -378,7 +378,7 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     app = ProjectTracker.new(name: 'Acme App'); app.save!(validate: false)
     ProjectTrackerForecastProject.create!(project_tracker: site, forecast_project: fp_a)
     ProjectTrackerForecastProject.create!(project_tracker: app, forecast_project: fp_b)
-    InvoiceTracker.create!(invoice_pass: InvoicePass.create!(start_of_month: Date.new(2031, 2, 1)), forecast_client: fc,
+    InvoiceTracker.create!(invoice_pass: InvoicePass.create!(start_of_month: Date.new(2031, 2, 1), enterprise: Enterprise.sanctuary), forecast_client: fc,
       qbo_account: @account, qbo_invoice_id: billed.qbo_id,
       blueprint: { 'lines' => { '0' => { 'forecast_project' => fp_a.id }, '1' => { 'forecast_project' => fp_b.id } } })
 
@@ -397,7 +397,7 @@ class Mcp::FinanceToolsTest < ActiveSupport::TestCase
     fp = ForecastProject.create!(forecast_id: 970003, name: 'Other', code: 'OTH-1', forecast_client: fc)
     pt = ProjectTracker.new(name: 'Other Project'); pt.save!(validate: false)
     ProjectTrackerForecastProject.create!(project_tracker: pt, forecast_project: fp)
-    InvoiceTracker.create!(invoice_pass: InvoicePass.create!(start_of_month: Date.new(2031, 3, 1)), forecast_client: fc,
+    InvoiceTracker.create!(invoice_pass: InvoicePass.create!(start_of_month: Date.new(2031, 3, 1), enterprise: Enterprise.sanctuary), forecast_client: fc,
       qbo_account: other, qbo_invoice_id: 'inv-62', blueprint: { 'lines' => { '0' => { 'forecast_project' => fp.id } } })
 
     rows = mcp_payload(Mcp::ListOverdueInvoicesTool.call(server_context: {}))['invoices'].index_by { |i| i['doc_number'] }

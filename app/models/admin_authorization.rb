@@ -76,6 +76,10 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
     # API tokens grant machine access to write surfaces: admins only, never leads.
     return user.is_admin? if subject.is_a?(ApiToken) || subject == ApiToken
 
+    # The MSO roster decides who is paid executive compensation: admins only,
+    # for every action including read. Must stay above the blanket lead grant.
+    return user.is_admin? if subject.is_a?(MsoRolePeriod) || subject == MsoRolePeriod
+
     # The list of Google Analytics sites Stacks syncs: admins edit it; leads may read it.
     if subject.is_a?(AnalyticsProperty) || subject == AnalyticsProperty
       return user.is_admin? unless action == :read

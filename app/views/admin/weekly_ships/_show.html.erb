@@ -1,0 +1,174 @@
+<%# The coaching page for a ship's sender, in the same modules as the Project
+    Tracker page. Locals come from the show block in app/admin/weekly_ships.rb. %>
+<% grader = Stacks::WeeklyShips::Grader %>
+<% tracker = weekly_ship.project_tracker %>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>This ship</p>
+      <%= link_to "#{tracker.name} →", admin_project_tracker_path(tracker) %>
+    </div>
+    <%# height: the factoid body is sized for a module with no header. %>
+    <div class="module-body factoid-parent" style="flex-direction: row; justify-content: space-around; height: auto; padding: 30px 20px;">
+      <div class="factoid">
+        <% if grade %>
+          <h2 style="white-space: nowrap;"><%= WeeklyShip.stars_label(grade["stars"]) %></h2>
+          <p><%= grade["stars"] %> of 5</p>
+        <% else %>
+          <h2>Not graded</h2>
+          <p>No score for this ship</p>
+        <% end %>
+      </div>
+      <div class="factoid">
+        <h2><%= time_ago_in_words(weekly_ship.sent_at) %> ago</h2>
+        <%# The way to the original email: opens Google Groups in a new tab. %>
+        <% sent_line = "Sent by #{weekly_ship.sender_label} on #{weekly_ship.sent_at.strftime("%B %-d, %Y")}" %>
+        <% email_url = weekly_ship.document.google_groups_permalink %>
+        <p><%= email_url ? link_to("#{sent_line} ↗", email_url, target: "_blank", rel: "noopener") : sent_line %></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<% if grade %>
+  <% if grade["summary"].present? || suggestions.any? %>
+    <div class="dashboard-modules table index_table index">
+      <% if grade["summary"].present? %>
+        <div class="dashboard-module">
+          <div class="module-header">
+            <p>What this ship does well</p>
+          </div>
+          <div class="module-body">
+            <p><%= grade["summary"] %></p>
+          </div>
+        </div>
+      <% end %>
+
+      <% if suggestions.any? %>
+        <div class="dashboard-module">
+          <div class="module-header">
+            <p>For next time</p>
+          </div>
+          <div class="module-body">
+            <ol style="margin-left: 24px; font-size: 18px; line-height: 1.4;">
+              <%# list-style on each item: the admin reset strips the numbers off an ol. %>
+              <% suggestions.each do |suggestion| %>
+                <li style="list-style: decimal; margin-bottom: 8px;"><%= suggestion %></li>
+              <% end %>
+            </ol>
+          </div>
+        </div>
+      <% end %>
+    </div>
+  <% end %>
+
+  <% if scored_rows.any? %>
+    <div class="dashboard-modules table index_table index">
+      <div class="dashboard-module">
+        <div class="module-header">
+          <p>How it scored</p>
+        </div>
+        <div class="module-body">
+          <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+            <tbody>
+              <% scored_rows.each_with_index do |(key, guide, scored), i| %>
+                <% not_counted = key == "continuity" && continuity_not_counted %>
+                <tr class="<%= i.even? ? "odd" : "even" %>">
+                  <td class="col" style="width: 34%;">
+                    <strong><%= guide[:label] %></strong>
+                    <div style="font-size: 13px; color: #5E6469;"><%= guide[:good] %></div>
+                  </td>
+                  <td class="col" style="white-space: nowrap;">
+                    <% if not_counted %>
+                      <%# A bare .pill has no background, so the grey is set here. %>
+                      <span class="pill" style="background-color: #cfd3d7;"
+                            <% if previous %>title="The previous ship was not available when this one was scored."<% end %>><%= previous ? "Not counted" : "First ship, not counted" %></span>
+                    <% else %>
+                      <% words, pill = grader::SCORE_LABELS.fetch(scored["score"]) %>
+                      <span class="pill <%= pill %>"><%= words %></span>
+                    <% end %>
+                  </td>
+                  <td class="col"><%= scored["why"] unless not_counted %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  <% end %>
+<% else %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-header">
+        <p>Not graded</p>
+      </div>
+      <div class="module-body">
+        <p>
+          <% if !weekly_ship.document.corpus_eligible? %>
+            This ship is not graded because its email is excluded from Stacks search.
+          <% elsif weekly_ship.sent_at >= grader::WINDOW.ago %>
+            This ship has not been graded yet. Ships are usually graded overnight once they are linked to a project.
+          <% else %>
+            This ship has no grade. Only ships sent in the last <%= grader::WINDOW.in_days.to_i %> days are graded, and this one was older than that when it was linked or when grading began.
+          <% end %>
+        </p>
+      </div>
+    </div>
+  </div>
+<% end %>
+
+<div class="dashboard-modules table index_table index">
+  <% if previous %>
+    <div class="dashboard-module">
+      <div class="module-header">
+        <p>Previous ship</p>
+        <% if (previous_grade = previous.grade) %>
+          <p style="white-space: nowrap;"><%= WeeklyShip.stars_label(previous_grade["stars"]) %></p>
+        <% end %>
+      </div>
+      <div class="module-body">
+        <%# The previous ship can be on another project this email is linked to. %>
+        <p><%= link_to previous.display_title, admin_weekly_ship_path(previous) %>, <%= time_ago_in_words(previous.sent_at) %> ago<%= ", on #{previous.project_tracker.name}" if previous.project_tracker_id != weekly_ship.project_tracker_id %></p>
+      </div>
+    </div>
+  <% end %>
+
+  <div class="dashboard-module">
+    <div class="module-body factoid-parent">
+      <p>🤫 This is coaching for the Project Lead who sent the ship. Stacks scores each ship overnight against what a great ship does. Never share it with the client.</p>
+    </div>
+  </div>
+</div>
+
+<div class="dashboard-modules table index_table index" style="opacity: 0.6;">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>How this email was linked to the project</p>
+    </div>
+    <div class="module-body">
+      <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+        <tbody>
+          <tr class="odd">
+            <td class="col"><strong>Linked By</strong></td>
+            <td class="col text-right"><%= weekly_ship.human? ? "A person" : "Stacks (automatic)" %></td>
+          </tr>
+          <%# Only the nightly sweep records a confidence. %>
+          <% unless weekly_ship.confidence.nil? %>
+            <tr class="even">
+              <td class="col"><strong>Confidence</strong></td>
+              <td class="col text-right"><%= (weekly_ship.confidence * 100).round %>%</td>
+            </tr>
+          <% end %>
+          <% if weekly_ship.rationale.present? %>
+            <tr class="odd">
+              <td class="col"><strong>Rationale</strong></td>
+              <td class="col"><%= weekly_ship.rationale %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

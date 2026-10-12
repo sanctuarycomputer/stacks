@@ -35,7 +35,7 @@ module Mcp
       passes = InvoicePass
         .where(start_of_month: window_start..current_month)
         .order(:start_of_month)
-        .includes(invoice_trackers: { qbo_account: :enterprise })
+        .includes(:enterprise, invoice_trackers: { qbo_account: :enterprise })
         .map { |pass| pass_block(pass) }
 
       # Zero-fill the MoM series across the whole window (consistent with
@@ -70,6 +70,7 @@ module Mcp
         missing_hours: missing_hours?(pass),
         total_invoiced: entities.sum { |e| e[:invoiced_total] }.round(2),
         entities: entities,
+        enterprise: pass.enterprise.name,
       }
     end
 

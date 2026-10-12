@@ -4,7 +4,7 @@
 module PayoutFixtures
   def setup_payout_people
     Thread.current[:sanctuary_enterprise] = nil
-    @pass = InvoicePass.find_or_create_by!(start_of_month: Date.new(2026, 8, 1)) { |ip| ip.data = {} }
+    @pass = InvoicePass.find_or_create_by!(start_of_month: Date.new(2026, 8, 1), enterprise: Enterprise.sanctuary) { |ip| ip.data = {} }
     @client = ForecastClient.create!(forecast_id: 710_001, name: "Margin Guard Client")
     @project = ForecastProject.create!(forecast_id: 710_001, client_id: @client.forecast_id, name: "Guard Proj", code: "MG-1", tags: ["100p/h"])
     @ic = ForecastPerson.create!(forecast_id: 710_001, email: "ic-guard@example.com", data: {})
