@@ -65,6 +65,18 @@ class Mso::MonthlyRunTest < ActiveSupport::TestCase
     mso_person("earner-#{tag}").tap { |contributor| pay(contributor, amount) }
   end
 
+  # Takes someone off the roster for MONTH after it has been run. The model
+  # refuses that edit once a snapshot names the period (MsoRolePeriod's
+  # months_already_run_are_not_changed), so this writes the column directly,
+  # as a console correction would. The run must still cope with it.
+  def end_role_before_month(role)
+    MsoRolePeriod.where(id: role.id).update_all(ended_at: Date.new(2093, 4, 30))
+  end
+
+  def reopen_role(role)
+    MsoRolePeriod.where(id: role.id).update_all(ended_at: nil)
+  end
+
   def run!(pass: @pass, today: TODAY, **opts)
     Mso::MonthlyRun.call(invoice_pass: pass, today: today, **opts)
   end
@@ -279,7 +291,7 @@ class Mso::MonthlyRunTest < ActiveSupport::TestCase
                     "billed_amount" => "20000.0", "computed_amount" => "19000.0" }], snapshot.drift
 
     # And a locked true-up is not removed when its executive leaves the roster.
-    @chief_role.update!(ended_at: Date.new(2093, 4, 30))
+    end_role_before_month(@chief_role)
     after_leaving = run!
     assert_equal BigDecimal("20000"), MsoTrueup.find(locked.id).amount
     assert_equal ["0.0"], after_leaving.drift.map { |entry| entry["computed_amount"] }
@@ -289,7 +301,7 @@ class Mso::MonthlyRunTest < ActiveSupport::TestCase
     run!
     original = trueup_for(@chief)
     original.toggle_acceptance!
-    @chief_role.update!(ended_at: Date.new(2093, 4, 30))
+    end_role_before_month(@chief_role)
 
     without = run!
 
@@ -297,7 +309,7 @@ class Mso::MonthlyRunTest < ActiveSupport::TestCase
     assert MsoTrueup.with_deleted.find(original.id).deleted_at.present?
     assert_equal [@principal.id], without.lines.map { |line| line["contributor_id"] }
 
-    @chief_role.update!(ended_at: nil)
+    reopen_role(@chief_role)
     run!
 
     restored = trueup_for(@chief)
@@ -311,11 +323,11 @@ class Mso::MonthlyRunTest < ActiveSupport::TestCase
   test "a restored true-up never comes back carrying a QuickBooks bill id" do
     run!
     original = trueup_for(@chief)
-    @chief_role.update!(ended_at: Date.new(2093, 4, 30))
+    end_role_before_month(@chief_role)
     run!
     # However it got there: a soft-deleted row that still names a bill.
     MsoTrueup.with_deleted.where(id: original.id).update_all(qbo_bill_id: "77", accepted_at: Time.current)
-    @chief_role.update!(ended_at: nil)
+    reopen_role(@chief_role)
 
     snapshot = run!
 

@@ -8,6 +8,11 @@ class Trueup < ApplicationRecord
   validates :amount, presence: true
   validates :description, presence: true
 
+  # As ProfitShare and PayStub. Without this, deleting a founder true-up left
+  # its bill open in QuickBooks, still payable. Reads the bill first and
+  # raises SyncsAsQboBill::PaidQboBillError if it has any payment.
+  before_destroy :detach_and_destroy_qbo_bill
+
   def payment_date
     invoice_pass.start_of_month.end_of_month
   end

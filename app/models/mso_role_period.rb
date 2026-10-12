@@ -24,6 +24,8 @@ class MsoRolePeriod < ApplicationRecord
   validates :started_at, presence: true
   validates :title, presence: true
   validate :full_months_only
+  validate :months_already_run_are_not_changed, on: :update
+  before_destroy :refuse_destroy_once_run
 
   # CALLERS: one period per contributor per month is enforced by a model
   # validation only (no database constraint), so two can exist after a
@@ -60,6 +62,50 @@ class MsoRolePeriod < ApplicationRecord
     # Fresh query: loading the association here would cache a stale list on
     # the shared Contributor instance.
     MsoRolePeriod.where(contributor_id: contributor.id)
+  end
+
+  # The first day of every month whose MSO run used this role period, from
+  # any snapshot, current or superseded. A run records the period's id on
+  # each line it writes.
+  def months_run
+    return [] if new_record? || !MsoTrueup.schema_ready?
+
+    MsoSnapshot.joins(:invoice_pass)
+      .where("mso_snapshots.lines @> ?", [{ mso_role_period_id: id }].to_json)
+      .distinct.pluck("invoice_passes.start_of_month").sort
+  end
+
+  # Once a month has been run with this period, what it says about that month
+  # is history. Changing it would change a past month on its next re-run, and
+  # would let the nightly founder true-up come back for a month already paid
+  # through the MSO. Ending the period going forward stays possible; a
+  # promotion is "end this period and start a new one".
+  def months_already_run_are_not_changed
+    months = months_run
+    return if months.empty?
+
+    span = "#{months.first.strftime('%B %Y')} to #{months.last.strftime('%B %Y')}"
+    advice = "MSO compensation has been run with this role period (#{span}). To change someone's tier, " \
+             "end this period and start a new one."
+    errors.add(:tier, advice) if tier_changed?
+    errors.add(:contributor, advice) if contributor_id_changed?
+    if started_at_changed? && started_at && started_at > months.first
+      errors.add(:started_at, "cannot move past #{months.first.strftime('%B %Y')}, which has been run. #{advice}")
+    end
+    if ended_at_changed? && ended_at && ended_at < months.last.end_of_month
+      errors.add(:ended_at, "cannot be before the end of #{months.last.strftime('%B %Y')}, which has been run. " \
+                            "#{advice}")
+    end
+  end
+
+  def refuse_destroy_once_run
+    months = months_run
+    return if months.empty?
+
+    errors.add(:base, "MSO compensation has been run with this role period " \
+                      "(#{months.map { |month| month.strftime('%B %Y') }.join(', ')}), so it cannot be deleted. " \
+                      "Give it an end date instead.")
+    throw :abort
   end
 
   def full_months_only
