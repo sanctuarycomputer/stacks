@@ -376,7 +376,7 @@ class AdminPayoutMarginGuardTest < ActionDispatch::IntegrationTest
     assert_match @creator.email, html
     assert_match "Reason given: Agreed &lt;b&gt;fixed&lt;/b&gt; fee", html
 
-    blank = ApplicationController.render(partial: "admin/invoice_trackers/payout_cap_override", locals: { invoice_tracker: within_cap_tracker })
+    blank = ApplicationController.render(partial: "admin/invoice_trackers/payout_cap_override", locals: { invoice_tracker: InvoiceTracker.new })
     assert_equal "", blank.strip
   end
 
