@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_10_12_180000) do
+ActiveRecord::Schema.define(version: 2026_10_13_090000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -1145,6 +1145,8 @@ ActiveRecord::Schema.define(version: 2026_10_12_180000) do
     t.string "notion_project_id"
     t.boolean "twist_channel_accessible"
     t.datetime "twist_channel_checked_at"
+    t.string "notion_project_ids", default: [], null: false, array: true
+    t.bigint "twist_channels_inaccessible", default: [], null: false, array: true
     t.index ["notion_project_id"], name: "index_project_trackers_on_notion_project_id"
     t.index ["runn_project_id"], name: "index_project_trackers_on_runn_project_id", unique: true
   end
