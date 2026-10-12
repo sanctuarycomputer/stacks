@@ -3,7 +3,8 @@ module Mcp
     tool_name 'get_ar_aging'
     description 'AR aging buckets (current = not yet due, then 1-30/31-60/61-90/over-90 days ' \
                 'overdue) per customer per enterprise, computed from already-synced QBO ' \
-                'invoices. Never calls QBO live.'
+                'invoices. Never calls QBO live. garden3d\'s intercompany management fee ' \
+                'invoices are left out.'
     input_schema(
       properties: {
         enterprise: { type: 'string', description: 'Optional enterprise name filter, e.g. "Sanctuary Computer Inc"' },
