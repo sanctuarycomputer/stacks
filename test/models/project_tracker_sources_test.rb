@@ -70,6 +70,9 @@ class ProjectTrackerSourcesTest < ActiveSupport::TestCase
     pt = tracker!
     [
       "https://example.com/a/133876/ch/2/",
+      "https://twist.com.evil.com/a/133876/ch/2/",
+      "https://eviltwist.com/a/133876/ch/2/",
+      "https://twist.com/a/133876/ch/0/",
       "http://twist.com/a/133876/ch/2/",
       "https://twist.com/a/133876/ch/abc/",
       "https://twist.com/a/133876/",
@@ -137,7 +140,8 @@ class ProjectTrackerSourcesTest < ActiveSupport::TestCase
     assert_forgotten pt, "after changing the URL"
 
     answered!(pt)
-    link.destroy!
+    # A fresh instance: the one above still remembers its URL change.
+    ProjectTrackerLink.find(link.id).destroy!
     assert_forgotten pt, "after destroying the link"
 
     answered!(pt)
@@ -323,7 +327,7 @@ class ProjectTrackerSourcesTest < ActiveSupport::TestCase
   test "choosing a Notion project busts the task cache; an unrelated save does not" do
     tracker = with_links!(tracker!)
     Stacks::TaskBuilder.expects(:clear_cache!).once
-    tracker.update!(notion_project_id: SecureRandom.uuid)
+    tracker.update!(notion_project_id: project_page!.notion_id)
     tracker.update!(notes: "Unrelated change")
   end
 
@@ -337,5 +341,29 @@ class ProjectTrackerSourcesTest < ActiveSupport::TestCase
     client = Stacks::Twist.new
     assert_equal "#<Stacks::Twist>", client.inspect
     assert_not_includes client.inspect, "Bearer"
+  end
+
+  test "an uppercase host and a zero-padded id are tidied to the one shape" do
+    pt = tracker!
+    link = pt.project_tracker_links.create!(name: "Twist Channel", link_type: :twist_channel, url: "HTTPS://Twist.com/a/133876/ch/00012")
+    assert_equal "https://twist.com/a/133876/ch/12/", link.reload.url
+    assert_equal 12, link.twist_channel_id
+  end
+
+  test "the Notion project must be a synced Projects page; blank is stored as nil" do
+    pt = with_links!(tracker!)
+    pt.notion_project_id = "anything-at-all"
+    assert_not pt.valid?
+    assert_includes pt.errors[:notion_project_id], "must be a page in the Notion Projects database"
+
+    pt.notion_project_id = ""
+    assert pt.valid?
+    assert_nil pt.notion_project_id
+  end
+
+  test "a tracker whose Notion page was removed can still be saved" do
+    pt = with_links!(tracker!)
+    pt.update_columns(notion_project_id: SecureRandom.uuid)
+    assert pt.reload.update(notes: "Still editable")
   end
 end

@@ -424,6 +424,13 @@ class ProjectTracker < ApplicationRecord
     stats
   end
 
+  # The form's blank option arrives as "", and the id travels to Stacksbot
+  # over MCP, so only a page Stacks has synced may be chosen. Checked when
+  # the value changes: a page later removed from Notion must not make the
+  # tracker unsaveable.
+  before_validation { self.notion_project_id = notion_project_id.presence }
+  validate :notion_project_is_a_synced_page, if: :will_save_change_to_notion_project_id?
+
   # The Notion Projects page this tracker belongs to, or nil when none is
   # chosen or the page has since been removed from Notion.
   def notion_project
@@ -433,6 +440,12 @@ class ProjectTracker < ApplicationRecord
 
   def notion_project_linked?
     notion_project.present?
+  end
+
+  private def notion_project_is_a_synced_page
+    return if notion_project_id.nil?
+    return if NotionPage.projects.exists?(notion_id: notion_project_id)
+    errors.add(:notion_project_id, "must be a page in the Notion Projects database")
   end
 
   # Checked on the tracker, over links not marked for removal, so replacing

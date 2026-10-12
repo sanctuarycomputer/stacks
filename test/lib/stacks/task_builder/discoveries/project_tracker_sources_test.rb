@@ -10,6 +10,18 @@ class StacksTaskBuilderDiscoveriesProjectTrackerSourcesTest < ActiveSupport::Tes
   def setup
     @admin = AdminUser.create!(email: "admin@sanctuary.computer", password: "passw0rd", roles: ["admin"])
     @lead = AdminUser.create!(email: "lead@sanctuary.computer", password: "passw0rd")
+    # The Projects database has been synced: there is something to choose from.
+    @synced = projects_page!("Some Other Project")
+  end
+
+  def projects_page!(title, stage: "Active")
+    NotionPage.create!(
+      notion_id: SecureRandom.uuid, notion_parent_type: "database_id",
+      notion_parent_id: Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:PROJECTS]),
+      page_title: title,
+      data: { "last_edited_time" => Time.zone.now.iso8601,
+              "properties" => { "Stage" => { "type" => "select", "select" => { "name" => stage } } } }
+    )
   end
 
   def discover
@@ -69,6 +81,14 @@ class StacksTaskBuilderDiscoveriesProjectTrackerSourcesTest < ActiveSupport::Tes
     assert_equal 1, tasks_for(twist_only, SOURCES).size
     assert_equal 1, tasks_for(notion_only, SOURCES).size
     assert_empty tasks_for(both, SOURCES)
+  end
+
+  test "before the Projects database is first synced, only the Twist channel is asked for" do
+    @synced.destroy
+    linked = tracker!
+    twist_link!(linked)
+    assert_empty tasks_for(linked, SOURCES), "nothing to choose from yet, so no Notion project is not a task"
+    assert_equal 1, tasks_for(tracker!, SOURCES).size, "a missing Twist channel still is"
   end
 
   test "a blank Notion project id counts as missing" do

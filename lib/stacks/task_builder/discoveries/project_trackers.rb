@@ -39,7 +39,10 @@ module Stacks
             # channel and files it under the project's Notion page. Asked only
             # of live client work: a dormant tracker has nothing to watch.
             if in_progress_ids.include?(pt.id) && !pt.internal_client?
-              out << :project_sources_not_linked if pt.twist_channel_id.nil? || !notion_project_ids.include?(pt.notion_project_id)
+              # Until the Projects database has been synced there is nothing
+              # to choose from, so the Notion half is not asked for yet.
+              notion_missing = notion_project_ids.any? && !notion_project_ids.include?(pt.notion_project_id)
+              out << :project_sources_not_linked if pt.twist_channel_id.nil? || notion_missing
               out << :stacksbot_not_in_twist_channel if pt.twist_channel_id.present? && pt.twist_channel_accessible == false
             end
           else

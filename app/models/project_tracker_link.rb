@@ -56,7 +56,7 @@ class ProjectTrackerLink < ApplicationRecord
   # The channel id, or nil when this is not a well-formed channel link.
   def twist_channel_id
     return nil unless twist_channel?
-    m = url.to_s.match(%r{\Ahttps://twist\.com/a/#{Regexp.escape(self.class.twist_workspace_id)}/ch/(\d+)/\z})
+    m = url.to_s.match(%r{\Ahttps://twist\.com/a/#{Regexp.escape(self.class.twist_workspace_id)}/ch/([1-9]\d*)/\z})
     m && m[1].to_i
   end
 
@@ -68,10 +68,11 @@ class ProjectTrackerLink < ApplicationRecord
 
   def tidy_twist_channel_url
     parsed = URI.parse(url.to_s) rescue nil
-    return unless parsed.is_a?(URI::HTTPS) && parsed.host == "twist.com" && parsed.userinfo.nil?
+    return unless parsed.is_a?(URI::HTTPS) && parsed.host.to_s.downcase == "twist.com" && parsed.userinfo.nil?
     m = parsed.path.to_s.match(TWIST_CHANNEL_PATH)
-    return unless m && m[1] == self.class.twist_workspace_id
-    self.url = self.class.twist_channel_url(m[2])
+    # to_i: "ch/00012/" is channel 12, and channel 0 does not exist.
+    return unless m && m[1] == self.class.twist_workspace_id && m[2].to_i.positive?
+    self.url = self.class.twist_channel_url(m[2].to_i)
   end
 
   def url_is_our_twist_channel
