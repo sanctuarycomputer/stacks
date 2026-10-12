@@ -116,18 +116,108 @@ class MsoTrueup < ApplicationRecord
       snapshot.all_expected_trueups_accepted?
   end
 
-  # sync_qbo_bill! has no payable guard of its own, and the nightly
-  # stacks:sync_contributor_qbo_bills task pushes every row it is given.
-  # MsoTrueup is deliberately not in that task; this makes sure nothing
-  # unaccepted or uncollected can reach QuickBooks even if it is added.
-  # (Task 8 replaces this with the full set of checks.)
+  # Creating the bill is what locks this true-up's amount, so the last checks
+  # happen here. sync_qbo_bill! itself has no guard of any kind, returns nil
+  # without a word when the contributor has no vendor, and is called for every
+  # row by the nightly stacks:sync_contributor_qbo_bills task. MsoTrueup is
+  # deliberately not in that task; this makes sure nothing wrong can reach
+  # QuickBooks even if it is ever added.
+  #
+  # For the FIRST bill this makes QuickBooks reads (the chart of accounts and
+  # one per management fee invoice) and one full computation of the month.
+  # It is an admin's click on the Money page.
   def sync_qbo_bill!(accounts_cache: nil)
-    unless payable?
-      raise NotPayable, "MsoTrueup #{id} is not payable yet: it needs its executive's acceptance, every " \
-                        "other executive's acceptance for the month, and a confirmed fee collection. " \
-                        "No bill was written."
+    accounts_cache ||= Qbo::AccountsCache.new
+
+    # Outside the lock and its transaction: a stamp these checks withdraw
+    # must stay withdrawn when the sync is then refused.
+    assert_can_be_billed!(accounts_cache)
+    assert_first_bill_is_still_right! unless locked?
+
+    # The row lock makes a double click safe: the second caller waits here,
+    # reloads, finds the bill the first one created and updates it instead
+    # of creating another. Mso::MonthlyRun takes the same lock.
+    with_lock do
+      raise NotPayable, not_payable_message unless payable?
+
+      begin
+        super(accounts_cache: accounts_cache)
+      rescue Quickbooks::IntuitRequestException => e
+        # The bill is dated the last day of the fee month. Once that month is
+        # closed in QuickBooks a bill dated in it is rejected. Recognised by
+        # the wording of QuickBooks' message; anything else is passed on.
+        raise unless e.message.to_s.match?(/period has closed|books (are|is) closed|closing date/i)
+
+        raise BooksClosed, "#{enterprise.name}'s books are closed for #{bill_txn_date.strftime('%m/%d/%Y')}, " \
+                           "the date this bill must carry. Finance has to reopen the period (or move the " \
+                           "closing date) in QuickBooks; then sync again. MSO bills need creating before " \
+                           "the month is closed. No bill was written. (QuickBooks said: #{e.message})"
+      end
     end
-    super
+  end
+
+  # An admin's way to unfreeze a true-up whose figure needs to change. Reads
+  # the bill from QuickBooks, refuses if it has any payment
+  # (SyncsAsQboBill::PaidQboBillError), deletes it. The acceptance is cleared
+  # and the snapshot invalidated, so the row cannot be synced again at the old
+  # amount: the month has to be run again first.
+  def remove_qbo_bill!
+    detach_and_destroy_qbo_bill
+    update_columns(accepted_at: nil)
+    mso_snapshot.invalidate!("The QuickBooks bill for MsoTrueup #{id} was removed. Run the month again.")
+  end
+
+  # READ ONLY. Brings the stored copy of this true-up's bill up to date so a
+  # bill paid in QuickBooks is seen as paid here. The nightly bill sync does
+  # this for other ledger items by re-writing each bill; this only reads.
+  # It can never create or change a bill.
+  def refresh_qbo_bill_mirror!
+    return :no_bill unless locked?
+
+    qbo_account = qbo_account_for_bill
+    return :no_account if qbo_account.nil?
+
+    begin
+      remote = qbo_account.fetch_bill_by_id(qbo_bill_id)
+    rescue => e
+      raise unless e.message.to_s.start_with?("Object Not Found:")
+
+      # Someone deleted the bill in QuickBooks. delete_all, not destroy:
+      # QboBill#destroy would call QuickBooks to delete it again.
+      QboBill.where(qbo_account_id: qbo_account.id, qbo_id: qbo_bill_id).delete_all
+      gone = qbo_bill_id
+      update_columns(qbo_bill_id: nil, accepted_at: nil)
+      mso_snapshot.invalidate!("QuickBooks bill #{gone} for MsoTrueup #{id} no longer exists. Run the month again.")
+      return :bill_gone
+    end
+
+    # By the (account, id) pair: a bill id is unique only within one account.
+    mirrors = QboBill.where(qbo_account_id: qbo_account.id, qbo_id: qbo_bill_id)
+    if mirrors.exists?
+      # update_all: no callbacks. (qbo_bills has no timestamp columns.)
+      mirrors.update_all(data: remote.as_json)
+    else
+      QboBill.create!(qbo_id: qbo_bill_id, qbo_account_id: qbo_account.id, data: remote.as_json,
+                      qbo_vendor_id: remote.vendor_ref&.value)
+    end
+    :refreshed
+  end
+
+  # Nightly, from garden3d's daily step. QuickBooks READS only. Bills already
+  # settled are skipped. One failure does not stop the rest.
+  def self.refresh_bill_mirrors!
+    return [] unless schema_ready?
+
+    failures = []
+    where.not(qbo_bill_id: nil).find_each do |trueup|
+      next if trueup.qbo_bill&.paid?
+
+      trueup.refresh_qbo_bill_mirror!
+    rescue => e
+      failures << [trueup.id, "#{e.class}: #{e.message}"]
+      Rails.logger.error("[mso] bill mirror refresh failed for MsoTrueup #{trueup.id}: #{e.class}: #{e.message}")
+    end
+    failures
   end
 
   # SyncsAsQboBill contract. The bill's txn_date AND its due_date are both
@@ -146,6 +236,62 @@ class MsoTrueup < ApplicationRecord
   end
 
   private
+
+  def not_payable_message
+    "MsoTrueup #{id} is not payable yet: it needs its executive's acceptance, every other executive's " \
+      "acceptance for the month, and a confirmed fee collection. No bill was written."
+  end
+
+  def assert_can_be_billed!(accounts_cache)
+    raise NotPayable, not_payable_message unless payable?
+
+    qbo_account = qbo_account_for_bill
+    if qbo_account.nil?
+      raise SyncRefused, "#{enterprise.name} has no connected QuickBooks account. No bill was written."
+    end
+    if contributor.qbo_vendor_for(qbo_account).nil?
+      raise MissingVendor, "Contributor #{contributor.id} has no vendor in #{enterprise.name}'s QuickBooks. " \
+                           "Create the vendor there, map it on their Contributor record (Team → " \
+                           "Contributors → Edit), then sync again. No bill was written."
+    end
+
+    begin
+      Qbo::BillRouter.new(self, accounts_cache: accounts_cache).lines
+    rescue RuntimeError => e
+      raise AccountNotConfigured, "#{enterprise.name} has no MSO compensation account that Stacks can " \
+                                  "post to (concept mso_compensation). Finance creates the account in " \
+                                  "QuickBooks; its account number then replaces the placeholder in " \
+                                  "app/services/qbo/bill_router.rb. No bill was written. (#{e.message})"
+    end
+  end
+
+  # Only before the FIRST bill. Afterwards the amount is in QuickBooks and
+  # these questions are the snapshot's drift, not a reason to refuse an update.
+  def assert_first_bill_is_still_right!
+    collected =
+      begin
+        mso_snapshot.check_collection!
+      rescue Mso::ManagementFeeInvoices::Error, MsoSnapshot::Unusable => e
+        raise NotCollected, "#{e.message}. No bill was written."
+      end
+    unless collected
+      raise NotCollected, "The management fee for #{payment_date.strftime('%B %Y')} has not been collected " \
+                          "in full, as of a check with QuickBooks just now. No bill was written."
+    end
+
+    fresh =
+      begin
+        Mso::MonthlyRun.preview(invoice_pass: invoice_pass).fetch(ledger_id, BigDecimal("0"))
+      rescue Mso::MonthlyRun::Refused => e
+        raise FiguresChanged, "The month can no longer be computed as it was run (#{e.message}). " \
+                              "Run the month again. No bill was written."
+      end
+    return if fresh == amount
+
+    raise FiguresChanged, "This true-up is #{amount.to_s('F')} but a fresh computation gives " \
+                          "#{fresh.to_s('F')}: figures changed since the run. Run the month again. " \
+                          "No bill was written."
+  end
 
   def lives_on_garden3d
     garden3d_id = Enterprise.garden3d.id

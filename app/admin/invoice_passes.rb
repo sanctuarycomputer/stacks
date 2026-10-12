@@ -165,6 +165,10 @@ ActiveAdmin.register InvoicePass do
       return redirect_to admin_invoice_pass_path(resource), alert: e.message
     end
 
+    # What Stacks holds for these invoices has just changed. Whether the fee
+    # is collected has to be confirmed again (Check collection, or a run).
+    MsoSnapshot.unconfirm_collection!(resource.id)
+
     summary = "Refreshed #{run.succeeded} of #{run.attempted} invoice(s) from QuickBooks."
     if run.detached.positive?
       summary += " #{run.detached} no longer exist(s) in QuickBooks and was detached."

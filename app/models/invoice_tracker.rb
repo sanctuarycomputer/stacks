@@ -23,6 +23,17 @@ class InvoiceTracker < ApplicationRecord
   # generation lands within the cap; not editable through the form.
   belongs_to :payout_cap_override_by, class_name: "AdminUser", optional: true
 
+  # "The management fee was collected" was confirmed against the invoices
+  # attached at the time. Attach or detach one on garden3d's pass and that
+  # confirmation no longer describes the pass; an admin confirms again.
+  after_save :withdraw_mso_collection_stamp,
+    if: -> { saved_change_to_qbo_invoice_id? || saved_change_to_qbo_account_id? }
+
+  def withdraw_mso_collection_stamp
+    return unless invoice_pass&.management_fee?
+    MsoSnapshot.unconfirm_collection!(invoice_pass_id)
+  end
+
   delegate :billing_enterprise, to: :forecast_client
 
   # A tracker on garden3d's pass bills a paying company its management fee.

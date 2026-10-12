@@ -83,10 +83,18 @@ class Enterprise < ApplicationRecord
   # Add new per-enterprise behaviors here rather than as new rake steps.
   def daily_tasks
     Stacks::Optix.deactivate_inactive_members! if is_index?
+    return unless is_garden3d?
+
     # Database only: garden3d's pass and trackers for last month, and for any
     # earlier month since the start that has none. Nothing here may write to
     # QuickBooks; an admin creates the drafts by hand.
-    Mso::ManagementFeeInvoices.ensure_previous_month! if is_garden3d?
+    Mso::ManagementFeeInvoices.ensure_previous_month!
+    # Database only: a snapshot whose fee income no longer matches the stored
+    # P&L is invalidated, so nothing computed from the old fee stays payable.
+    Mso::MonthlyRun.invalidate_snapshots_whose_fee_moved!
+    # QuickBooks READS only: refresh the stored copy of MSO bills that already
+    # exist, so a paid one is seen as paid. Cannot create or change a bill.
+    MsoTrueup.refresh_bill_mirrors!
   end
 
   def discover_verticals

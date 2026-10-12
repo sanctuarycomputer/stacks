@@ -115,7 +115,8 @@ ActiveAdmin.register_page "Money" do
       end
 
     if failures.any?
-      preview = failures.first(3).map { |host, e| "#{host.class.name}##{host.id} (#{e.class})" }.join(", ")
+      # The message, not just the class: a refused MSO true-up says what to do.
+      preview = failures.first(3).map { |host, e| "#{host.class.name}##{host.id}: #{e.message.to_s.truncate(220)}" }.join(" | ")
       flash[:alert] = "#{failures.size} bill#{"s" if failures.size != 1} failed to sync — see logs. Examples: #{preview}#{"…" if failures.size > 3}"
     else
       flash[:notice] = "Synced all bills on this view."
