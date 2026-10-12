@@ -217,10 +217,10 @@
     border-bottom: none;
   }
 
-  // Role rows sit against the Payouts column, so each amount reads as a
-  // part of the line's payout figure above it.
+  // Role rows hang well inside their invoice line, so each amount reads as
+  // a part of the line's payout figure above it.
   tr.margin-breach__entry td.margin-breach__entry-label {
-    text-align: right;
+    padding-left: 64px;
   }
 
   form.margin-breach__override {
