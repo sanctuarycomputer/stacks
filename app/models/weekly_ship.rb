@@ -56,25 +56,71 @@ class WeeklyShip < ApplicationRecord
   # ("exceptional", not "complete": .complete is re-declared purple later in the
   # stylesheet cascade; .exceptional is the stable green.)
   PILL_CLASSES = %w[exceptional at_risk error].freeze
+  PILL_COLOURS = [nil, "Orange", "Red"].freeze
   STALENESS_SEVERITY = { fresh: 0, stale: 1, overdue: 2 }.freeze
+  # The day counts ProjectTracker.ship_staleness cuts at, by severity.
+  STALENESS_DAYS = { 1 => 10, 2 => 30 }.freeze
 
   def self.pill_class(staleness:, stars: nil)
-    grade_severity =
-      case stars
-      when nil then 0
-      when 4.. then 0
-      when 3 then 1
-      else 2
-      end
-    "pill #{PILL_CLASSES[[STALENESS_SEVERITY.fetch(staleness, 0), grade_severity].max]}"
+    "pill #{PILL_CLASSES[pill_severities(staleness, stars).max]}"
   end
 
-  # The newest earlier ship (a different email) on this tracker, for the trend.
+  # Why the pill is orange or red, for its hover title; nil when it is green.
+  # Names whichever of staleness and grade set the colour, or both when tied.
+  def self.pill_reason(staleness:, stars: nil)
+    stale, graded = pill_severities(staleness, stars)
+    worst = [stale, graded].max
+    return nil if worst.zero?
+    behind = "the last ship is more than #{STALENESS_DAYS[worst]} days behind the project's last scheduled hours"
+    reason =
+      if stale == graded then "#{behind}, and it scored #{stars} of 5"
+      elsif stale == worst then behind
+      else "the last ship scored #{stars} of 5"
+      end
+    "#{PILL_COLOURS[worst]}: #{reason}."
+  end
+
+  # [staleness, grade] as 0 green, 1 orange, 2 red. Stars that are not a whole
+  # number count as ungraded, like a ship with no grade.
+  def self.pill_severities(staleness, stars)
+    grade_severity =
+      if !stars.is_a?(Integer) || stars >= 4 then 0
+      elsif stars == 3 then 1
+      else 2
+      end
+    [STALENESS_SEVERITY.fetch(staleness, 0), grade_severity]
+  end
+  private_class_method :pill_severities
+
+  # The ship before the email these rows link: the newest earlier ship (a
+  # different email, still inside the corpus wall) on any of its trackers. One
+  # definition, so the coaching page shows the ship the grader compared against.
+  def self.previous_to(ships)
+    ships = Array(ships)
+    return nil if ships.empty?
+    corpus_eligible.includes(:document)
+      .where(project_tracker_id: ships.map(&:project_tracker_id))
+      .where.not(document_id: ships.first.document_id)
+      .where("weekly_ships.sent_at < ?", ships.map(&:sent_at).min)
+      .order(sent_at: :desc, id: :desc).first
+  end
+
   def previous_ship
-    WeeklyShip.where(project_tracker_id: project_tracker_id)
-      .where.not(document_id: document_id)
-      .where("sent_at < ?", sent_at)
-      .order(sent_at: :desc).first
+    WeeklyShip.previous_to(WeeklyShip.where(document_id: document_id).to_a)
+  end
+
+  # The email's subject, or a stand-in when it has none.
+  def display_title
+    document.title.presence || "Weekly ship, #{sent_at.strftime("%B %-d, %Y")}"
+  end
+
+  # Who sent the ship, or nil when the email recorded neither a name nor an address.
+  def sender
+    sent_by_name.presence || sent_by_email.presence
+  end
+
+  def sender_label
+    sender || "Unknown sender"
   end
 
   before_validation { self.matched_by ||= :human unless via_sweep }

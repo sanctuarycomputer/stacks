@@ -204,6 +204,9 @@ ActiveAdmin.register ProjectTracker do
       span(resource.work_status.to_s.humanize.capitalize, class: "pill #{resource.work_status}")
     end
 
+    # Asked once, not per row: whether a reader may open a ship's page depends
+    # only on who they are (project-scoped lead grants cannot).
+    can_open_ships = authorized?(:read, WeeklyShip)
     column "Last Ship" do |pt|
       # Completed projects aren't expected to ship — show a muted dash.
       if params[:scope] == "complete"
@@ -225,20 +228,29 @@ ActiveAdmin.register ProjectTracker do
         # Stars first, then when and who. The colour is the worse of staleness
         # and grade (WeeklyShip.pill_class); an ungraded ship has no stars.
         grade = ship.grade
-        label = "#{time_ago_in_words(ship.sent_at)} ago by #{(ship.sent_by_name || ship.sent_by_email).to_s.split(" ").first} ↗"
+        stars = grade&.dig("stars")
+        who = ship.sender&.split(" ")&.first
+        label = "#{time_ago_in_words(ship.sent_at)} ago#{" by #{who}" if who} ↗"
         url = ship.document&.google_groups_permalink
-        link_style = "text-decoration: none; color: inherit;"
+        # font-size: the global `a` rule would otherwise size the pill's text at 18px.
+        link_style = "text-decoration: none; color: inherit; font-size: inherit;"
         # Arbre `a`, not block-form link_to — Rails' capture doesn't see Arbre
         # elements, which renders the content OUTSIDE an empty anchor.
-        span(class: WeeklyShip.pill_class(staleness: staleness, stars: grade&.dig("stars"))) do
+        # The pill's own title says why it is orange or red, links or no links.
+        span(class: WeeklyShip.pill_class(staleness: staleness, stars: stars),
+             title: WeeklyShip.pill_reason(staleness: staleness, stars: stars)) do
           if grade
-            # The stars open the coaching page; the rest opens the email.
-            a(WeeklyShip.stars_label(grade["stars"]), href: admin_weekly_ship_path(ship),
-              title: grade["summary"], style: link_style)
+            if can_open_ships
+              # The stars open the coaching page; the rest opens the email.
+              a(WeeklyShip.stars_label(stars), href: admin_weekly_ship_path(ship), style: link_style,
+                title: [grade["summary"].presence, "Open the coaching for this ship."].compact.join(" "))
+            else
+              text_node WeeklyShip.stars_label(stars)
+            end
             text_node " · "
           end
           if url
-            a(label, href: url, target: "_blank", rel: "noopener", style: link_style)
+            a(label, href: url, target: "_blank", rel: "noopener", title: "Open the email.", style: link_style)
           else
             text_node label
           end
@@ -490,18 +502,25 @@ ActiveAdmin.register ProjectTracker do
     panel "Weekly Ships" do
       ships = resource.weekly_ships.includes(:document).order(sent_at: :desc).limit(20)
       if ships.any?
+        # Asked once, not per row; readers who cannot open a ship's page get plain stars.
+        can_open_ships = authorized?(:read, WeeklyShip)
         table_for ships do
           column("Sent") { |ws| "#{time_ago_in_words(ws.sent_at)} ago" }
-          column("Subject") { |ws| ws.document.title }
-          column("Sender") { |ws| ws.sent_by_name || ws.sent_by_email }
-          # Coaching for the sender from the nightly grader (Stacks::WeeklyShips::Grader).
+          column("Subject") { |ws| ws.display_title }
+          column("Sender") { |ws| ws.sender_label }
+          # Coaching for the Project Lead from the nightly grader (Stacks::WeeklyShips::Grader).
           column("Grade") do |ws|
             if (g = ws.grade)
-              a(WeeklyShip.stars_label(g["stars"]), href: admin_weekly_ship_path(ws),
-                title: "#{g["stars"]} of 5. Open the coaching page.", style: "white-space: nowrap; text-decoration: none;")
+              if can_open_ships
+                a(WeeklyShip.stars_label(g["stars"]), href: admin_weekly_ship_path(ws),
+                  title: "#{g["stars"]} of 5. Open the coaching for this ship.",
+                  style: "white-space: nowrap; text-decoration: none; font-size: inherit;")
+              else
+                span WeeklyShip.stars_label(g["stars"]), title: "#{g["stars"]} of 5", style: "white-space: nowrap;"
+              end
             end
           end
-          column("Feedback for the sender") do |ws|
+          column("Feedback for the Project Lead") do |ws|
             if (g = ws.grade)
               div g["summary"]
               ul(style: "margin: 4px 0 0 16px;") { Array(g["suggestions"]).each { |s| li s } }
@@ -509,10 +528,10 @@ ActiveAdmin.register ProjectTracker do
           end
           column("") do |ws|
             url = ws.document.google_groups_permalink
-            link_to("Open ↗", url, target: "_blank", rel: "noopener") if url
+            link_to("Open ↗", url, target: "_blank", rel: "noopener", style: "white-space: nowrap;") if url
           end
         end
-        para em("Grades are coaching for the sender, scored nightly by a model against the weekly ship rubric. Never share them with the client."),
+        para em("Grades are coaching for the Project Lead who sent the ship, scored overnight by a model. Never share them with the client."),
              style: "margin: 8px 12px; opacity: 0.6; font-size: 0.85em;"
       else
         para em("No weekly ships linked yet.")

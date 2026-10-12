@@ -49,7 +49,8 @@ ActiveAdmin.register ShipScan do
       graded = scan.document.weekly_ships.find(&:grade)
       if graded
         a(WeeklyShip.stars_label(graded.grade["stars"]), href: admin_weekly_ship_path(graded),
-          title: "Open the coaching page", style: "white-space: nowrap; text-decoration: none;")
+          title: "Open the coaching for this ship.",
+          style: "white-space: nowrap; text-decoration: none; font-size: inherit;")
       end
     end
     column("Status") do |scan|

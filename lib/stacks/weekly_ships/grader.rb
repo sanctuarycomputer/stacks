@@ -259,11 +259,7 @@ module Stacks
 
       # The newest earlier ship (any document) on any of this email's trackers.
       def previous_ship(ships)
-        WeeklyShip.corpus_eligible.includes(:document)
-          .where(project_tracker_id: ships.map(&:project_tracker_id))
-          .where.not(document_id: ships.first.document_id)
-          .where("weekly_ships.sent_at < ?", ships.map(&:sent_at).min)
-          .order(sent_at: :desc).first
+        WeeklyShip.previous_to(ships)
       end
 
       # Validates the model's output (a malformed grade is an error, never stored)
