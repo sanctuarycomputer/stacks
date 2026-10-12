@@ -87,9 +87,9 @@ models".
 
 Deploy ordering: migrations here are run manually and there is no release
 phase, so code reading `target_margin_override` will fail between deploy and
-migration. The model will `alias_attribute`-free fall back by checking
-`has_attribute?(:target_margin_override)` and reading the old column otherwise,
-in one private reader. That fallback is removed in a follow-up once the
+migration. To cover that window, one private reader on the model checks
+`has_attribute?(:target_margin_override)` and falls back to the old column
+(treating `0.3` as "no override") when the new one isn't there yet. That fallback is removed in a follow-up once the
 migration has run. `db/schema.rb` is hand-curated and gets the matching edit.
 
 ## Code shape
