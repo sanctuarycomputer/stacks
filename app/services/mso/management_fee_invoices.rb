@@ -97,14 +97,19 @@ module Mso
         term = net_15_term!(qbo_account)
         customer = resolve_customer!(payer, qbo_account)
 
+        already_in_quickbooks = []
         # The row lock makes a double click wait, then fail on the re-check,
         # instead of creating two drafts.
-        invoice_tracker.with_lock do
+        mirror = invoice_tracker.with_lock do
           assert_no_invoice!(invoice_tracker)
           # The last thing before the write: does QuickBooks already have this
           # month's invoice for this customer? A hand-made one, or our own
           # from an attempt whose response never arrived.
-          assert_not_already_invoiced!(qbo_account, customer, pass, payer)
+          already_in_quickbooks = invoices_already_in_quickbooks(qbo_account, customer, pass, payer)
+          # Refused below, OUTSIDE the lock: with_lock is a transaction, and
+          # raising in here would roll back the mirror rows the refusal makes.
+          next if already_in_quickbooks.any?
+
           created = create_draft!(qbo_account, pass, customer, item, term)
 
           begin
@@ -117,10 +122,14 @@ module Mso
             mirror
           rescue ActiveRecord::ActiveRecordError => e
             raise PushFailed, "QuickBooks invoice #{created.id} was created for #{payer.name} but Stacks could " \
-                              "not record it (#{e.message}). Attach it from the tracker's edit page. Trying " \
-                              "again is safe: Stacks will find that invoice and refuse to make another."
+                              "not record it (#{e.message}). Try again: Stacks will find that invoice in " \
+                              "QuickBooks, refuse to make another, and list it on the tracker's edit page " \
+                              "for you to attach."
           end
         end
+        return mirror if already_in_quickbooks.empty?
+
+        refuse_already_invoiced!(qbo_account, already_in_quickbooks, pass, payer)
       end
 
       # The admin's one click: makes sure the pass has its trackers, then
@@ -293,8 +302,13 @@ module Mso
             "#{invoice_pass.invoice_month}'s pass holds a Forecast-driven tracker from before passes were " \
               "per-company"
           end
-        raise NotDraftable, "#{reason}. Attach the existing QuickBooks invoice from the tracker's edit page " \
-                            "instead of creating a draft."
+        # No "attach it from the edit page" on its own: that dropdown lists
+        # mirror rows, and for a month Stacks never drafts nothing makes them
+        # unless garden3d's invoices are synced by hand.
+        raise NotDraftable, "#{reason}. Stacks will not create a draft. To attach the existing QuickBooks " \
+                            "invoice instead, garden3d's invoices must first be synced into Stacks " \
+                            "(QboAccount#sync_all_invoices!, from the console); it is then listed on the " \
+                            "tracker's edit page."
       end
 
       def assert_no_invoice!(invoice_tracker)
@@ -304,10 +318,10 @@ module Mso
                           "creating another."
       end
 
-      # One QuickBooks READ. Any invoice for this customer dated in the pass
-      # month stops the push -- including a voided one, which a person should
-      # look at rather than Stacks guess about.
-      def assert_not_already_invoiced!(qbo_account, customer, pass, payer)
+      # One QuickBooks READ: every invoice for this customer dated in the pass
+      # month. Any of them stops the push -- including a voided one, which a
+      # person should look at rather than Stacks guess about.
+      def invoices_already_in_quickbooks(qbo_account, customer, pass, payer)
         customer_id = customer.id.to_s
         unless customer_id.match?(/\A\d+\z/)
           raise Misconfigured, "#{payer.name}'s QuickBooks customer id (#{customer_id.inspect}) is not numeric"
@@ -323,14 +337,36 @@ module Mso
           "AND TxnDate >= '#{first_day.iso8601}' AND TxnDate <= '#{last_day.iso8601}'",
           per_page: 100,
         )
-        existing = Array(found&.entries)
-        return if existing.empty?
+        Array(found&.entries)
+      end
 
+      # Always raises AlreadyInvoiced. First it records the invoices QuickBooks
+      # already holds as mirror rows on garden3d's account, so the admin can
+      # attach the right one from the tracker's edit page: garden3d has no
+      # invoice mirror of its own, and refresh! only re-reads ATTACHED
+      # invoices, so nothing else would ever put them in that dropdown.
+      #
+      # Must run outside any transaction, or the raise undoes the rows.
+      def refuse_already_invoiced!(qbo_account, existing, pass, payer)
         listed = existing.map { |invoice| "#{invoice.id} (total #{invoice.total.to_f})" }.join(", ")
-        raise AlreadyInvoiced, "#{qbo_account.enterprise.name}'s QuickBooks already holds #{existing.size} " \
-                               "invoice(s) for #{payer.name} dated in #{pass.invoice_month}: #{listed}. Stacks " \
-                               "will not create another. Attach the right one from the tracker's edit page " \
-                               "(Refresh from QuickBooks first if it is not listed there)."
+        refusal = "#{qbo_account.enterprise.name}'s QuickBooks already holds #{existing.size} invoice(s) for " \
+                  "#{payer.name} dated in #{pass.invoice_month}: #{listed}. Stacks will not create another."
+
+        begin
+          existing.each do |invoice|
+            # Same shape push_invoice! stores. An existing row is brought up
+            # to date; an attached one stays attached.
+            row = QboInvoice.find_or_initialize_by(qbo_id: invoice.id.to_s, qbo_account: qbo_account)
+            row.data = invoice.as_json
+            row.save!
+          end
+        rescue ActiveRecord::ActiveRecordError => e
+          raise AlreadyInvoiced, "#{refusal} Stacks could not record them for attaching (#{e.message}); " \
+                                 "try again."
+        end
+
+        raise AlreadyInvoiced, "#{refusal} They are now listed on the tracker's edit page: attach the right " \
+                               "one there."
       end
 
       # The payer is the enterprise the tracker's Forecast client is internal to.

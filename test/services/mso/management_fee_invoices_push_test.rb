@@ -232,6 +232,58 @@ class Mso::ManagementFeeInvoicesPushTest < ActiveSupport::TestCase
     assert unattached?
   end
 
+  test "a refused push leaves the invoices it found attachable from the tracker's edit page" do
+    # garden3d has no invoice mirror of its own, and Refresh only re-reads
+    # attached invoices: without these rows the dropdown could never offer them.
+    sanctuary_qa = Enterprise.find(enterprises(:sanctuary).id).qbo_account
+    stub_garden3d_qbo(customers: @customers,
+                      invoices_in_month: [qbo_created_invoice("4411", total: "135000", balance: "135000"),
+                                          qbo_created_invoice("4412")])
+    forbid_writes
+
+    error = assert_raises(Mso::ManagementFeeInvoices::AlreadyInvoiced) { push }
+
+    mirrors = QboInvoice.where(qbo_id: %w[4411 4412]).order(:qbo_id).to_a
+    assert_equal %w[4411 4412], mirrors.map(&:qbo_id)
+    assert_equal [@qbo_account.id], mirrors.map(&:qbo_account_id).uniq
+    assert_equal BigDecimal("135000"), BigDecimal(mirrors.first.read_attribute(:data)["total"])
+    assert_equal "NotSet", mirrors.last.read_attribute(:data)["email_status"]
+    assert_equal %w[4411 4412], QboInvoice.orphans.where(qbo_account_id: @qbo_account.id).pluck(:qbo_id).sort
+    assert_equal 0, QboInvoice.where(qbo_account_id: sanctuary_qa.id, qbo_id: %w[4411 4412]).count
+    assert_match(/listed on the tracker's edit page/, error.message)
+    assert_no_match(/Refresh/, error.message)
+    assert unattached?
+  end
+
+  test "a second refused push does not duplicate the mirrored invoices, and stores what QuickBooks says now" do
+    stub_garden3d_qbo(customers: @customers, invoices_in_month: [qbo_created_invoice("4411", total: "135000")])
+    assert_raises(Mso::ManagementFeeInvoices::AlreadyInvoiced) { push }
+
+    stub_garden3d_qbo(customers: @customers,
+                      invoices_in_month: [qbo_created_invoice("4411", total: "140000", email_status: "EmailSent")])
+    forbid_writes
+
+    assert_no_difference -> { QboInvoice.count } do
+      assert_raises(Mso::ManagementFeeInvoices::AlreadyInvoiced) { push }
+    end
+
+    stored = QboInvoice.find_by!(qbo_account_id: @qbo_account.id, qbo_id: "4411").read_attribute(:data)
+    assert_equal BigDecimal("140000"), BigDecimal(stored["total"])
+    assert_equal "EmailSent", stored["email_status"]
+  end
+
+  test "an invoice found by the pre-flight that is already attached elsewhere stays attached" do
+    other = make_payer("Other Payer #{SecureRandom.hex(3)}")
+    elsewhere = attach_invoice(fee_tracker(@pass, other), qbo_id: "4411", total: "0.0", balance: "0.0", sent: false)
+    stub_garden3d_qbo(customers: @customers, invoices_in_month: [qbo_created_invoice("4411", total: "135000")])
+    forbid_writes
+
+    assert_raises(Mso::ManagementFeeInvoices::AlreadyInvoiced) { push }
+
+    assert_equal "4411", InvoiceTracker.find(elsewhere.id).qbo_invoice_id
+    assert_equal 1, QboInvoice.where(qbo_account_id: @qbo_account.id, qbo_id: "4411").count
+  end
+
   test "the pre-flight asks QuickBooks about this customer and this month only" do
     queries = []
     Quickbooks::Service::Invoice.any_instance.stubs(:query)

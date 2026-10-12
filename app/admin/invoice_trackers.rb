@@ -13,7 +13,7 @@ ActiveAdmin.register InvoiceTracker do
       options[:data] = {
         confirm: "Create a $0.00 draft invoice in garden3d's QuickBooks for " \
                  "#{resource.invoice_pass.invoice_month}? If Finance already invoiced this month by hand, " \
-                 "cancel and attach that invoice from Edit instead.",
+                 "Stacks will find that invoice, create nothing, and list it under Edit for you to attach.",
       }
     end
     link_to(
@@ -226,8 +226,8 @@ ActiveAdmin.register InvoiceTracker do
         return redirect_to(
           tracker_page,
           alert: "QuickBooks did not confirm the draft (#{e.class}: #{e.message}). Check garden3d's " \
-                 "QuickBooks for a new invoice before trying again. If one is there, attach it from Edit; " \
-                 "Stacks will also refuse to create a second."
+                 "QuickBooks for a new invoice. If one is there, Regenerate again: Stacks will find it, " \
+                 "refuse to create a second, and list it under Edit for you to attach."
         )
       end
       return redirect_to(

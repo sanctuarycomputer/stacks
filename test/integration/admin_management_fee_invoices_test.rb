@@ -75,6 +75,25 @@ class AdminManagementFeeInvoicesTest < ActionDispatch::IntegrationTest
     assert_nil tracker.reload.qbo_invoice_id
   end
 
+  test "a Regenerate refused because QuickBooks already has the invoice offers it on the Edit page" do
+    tracker = fee_tracker(@pass, @payer)
+    stub_garden3d_qbo(customers: [qbo_customer("2", "Sanctuary Computer Inc")],
+                      invoices_in_month: [qbo_created_invoice("4500", total: "135000", balance: "135000")])
+    Quickbooks::Service::Invoice.any_instance.expects(:create).never
+    sign_in @admin
+
+    post attempt_generate_path(tracker)
+
+    assert_redirected_to tracker_path(tracker)
+    assert_match(/4500/, flash[:alert])
+    assert_nil tracker.reload.qbo_invoice_id
+
+    get edit_admin_invoice_pass_invoice_tracker_path(@pass, tracker)
+
+    assert_response :success
+    assert_select "select#invoice_tracker_qbo_invoice_id option[value=?]", "#{@qbo_account.id}:4500", count: 1
+  end
+
   test "a lead cannot Regenerate a management fee invoice tracker by posting directly" do
     tracker = fee_tracker(@pass, @payer)
     Quickbooks::Service::Invoice.any_instance.expects(:create).never
