@@ -1,7 +1,8 @@
 require 'test_helper'
 
 # The tracker edit form offers the live Notion Projects pages, and saves the
-# one or many that were picked.
+# one or many that were picked. The trackers index links to each project's
+# Twist channels and Notion pages.
 class AdminProjectTrackerSourcesTest < ActionDispatch::IntegrationTest
   include Devise::Test::IntegrationHelpers
 
@@ -112,5 +113,193 @@ class AdminProjectTrackerSourcesTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_includes response.body, "must be pages in the Notion Projects database"
     assert_equal [], pt.reload.notion_project_ids
+  end
+
+  # ---- the trackers index: where each project's conversation lives ----------
+
+  def twist_link!(pt, channel_id, name: "Twist Channel")
+    pt.project_tracker_links.create!(name: name, url: "https://twist.com/a/133876/ch/#{channel_id}/", link_type: :twist_channel)
+  end
+
+  def page
+    Nokogiri::HTML(response.body)
+  end
+
+  def cell(pt, column)
+    found = page.css("#project_tracker_#{pt.id} td.col-#{column}")
+    assert_equal 1, found.size, "expected one #{column} cell for tracker #{pt.id}"
+    found.first
+  end
+
+  def count_queries
+    count = 0
+    counter = ->(*, payload) { count += 1 unless %w[SCHEMA TRANSACTION].include?(payload[:name]) }
+    ActiveSupport::Notifications.subscribed(counter, "sql.active_record") { yield }
+    count
+  end
+
+  def complete!(pt)
+    pt.update_column(:work_completed_at, 2.months.ago)
+    ProjectCapsule.create!(
+      project_tracker: pt,
+      client_feedback_survey_status: :opt_out_of_sending_client_feedback_survey,
+      internal_marketing_status: :case_study_scheduled_with_communications_team,
+      capsule_status: :project_capsule_shared_with_garden3d_on_twist,
+      project_satisfaction_survey_status: :opt_out_of_internal_project_team_satisfaction_survey,
+      client_satisfaction_status: :satisfied,
+    )
+    pt
+  end
+
+  test "the index shows each Twist channel as a link, in channel-id order" do
+    pt = tracker!
+    twist_link!(pt, 794756, name: "Harvey Internal")
+    twist_link!(pt, 5, name: "Harvey Client")
+
+    get admin_project_trackers_path(scope: "all")
+    assert_response :success
+    links = cell(pt, "twist").css("a")
+    assert_equal ["Harvey Client ↗", "Harvey Internal ↗"], links.map(&:text)
+    assert_equal ["https://twist.com/a/133876/ch/5/", "https://twist.com/a/133876/ch/794756/"], links.map { |a| a["href"] }
+    links.each do |a|
+      assert_equal "_blank", a["target"]
+      assert_equal "block", a["class"]
+      assert_equal "white-space:nowrap", a["style"]
+    end
+    assert_empty cell(pt, "twist").css(".pill")
+  end
+
+  test "the index says Stacksbot is not invited beside a channel it cannot read, and only that one" do
+    pt = tracker!
+    twist_link!(pt, 5, name: "Harvey Client")
+    twist_link!(pt, 794756, name: "Harvey Internal")
+    pt.update_columns(twist_channels_inaccessible: [794756], twist_channel_checked_at: Time.zone.now)
+
+    get admin_project_trackers_path(scope: "all")
+    twist = cell(pt, "twist")
+    assert_equal ["Stacksbot not invited"], twist.css("span.pill.error").map(&:text)
+    # Element order in the cell: the readable channel, the unreadable one, its pill.
+    assert_equal ["Harvey Client ↗", "Harvey Internal ↗", "Stacksbot not invited"], twist.css("a, span.pill").map(&:text)
+  end
+
+  test "the index flags a tracker with no Twist channel and no Notion project" do
+    pt = with_links!(tracker!)
+
+    get admin_project_trackers_path(scope: "all")
+    assert_equal ["No Twist Channel"], cell(pt, "twist").css("span.pill.error").map(&:text)
+    assert_empty cell(pt, "twist").css("a")
+    assert_equal ["No Notion Project"], cell(pt, "notion").css("span.pill.error").map(&:text)
+    assert_empty cell(pt, "notion").css("a")
+  end
+
+  test "the index shows each Notion project as a link to its page" do
+    a = project_page!(title: "Harvey", stage: "Active")
+    b = project_page!(title: "Harvey Retainer", stage: "Completed")
+    pt = tracker!(notion_project_ids: [b.notion_id, a.notion_id])
+
+    get admin_project_trackers_path(scope: "all")
+    links = cell(pt, "notion").css("a")
+    assert_equal ["Harvey Retainer ↗", "Harvey ↗"], links.map(&:text)
+    assert_equal [b.notion_link, a.notion_link], links.map { |l| l["href"] }
+    links.each do |l|
+      assert_equal "_blank", l["target"]
+      assert_equal "block", l["class"]
+      assert_equal "white-space:nowrap", l["style"]
+    end
+    assert_empty cell(pt, "notion").css(".pill")
+  end
+
+  test "the index says so when a chosen Notion page has been removed" do
+    kept = project_page!(title: "Harvey", stage: "Active")
+    gone = project_page!(title: "Longgone", stage: "Active")
+    pt = tracker!(notion_project_ids: [kept.notion_id, gone.notion_id])
+    gone.destroy
+    assert gone.reload.deleted?, "the page is soft-deleted"
+
+    get admin_project_trackers_path(scope: "all")
+    notion = cell(pt, "notion")
+    assert_equal ["Harvey ↗"], notion.css("a").map(&:text)
+    assert_equal ["Removed from Notion"], notion.css("span.pill.error").map(&:text)
+    assert_not_includes notion.text, "Longgone"
+  end
+
+  test "an internal-client tracker with nothing linked shows a dash, not an error" do
+    pt = with_links!(tracker!)
+    ProjectTracker.any_instance.stubs(:internal_client?).returns(true)
+
+    get admin_project_trackers_path(scope: "all")
+    %w[twist notion].each do |column|
+      assert_equal "—", cell(pt, column).text.strip
+      assert_empty cell(pt, column).css(".pill")
+    end
+  end
+
+  test "an internal-client tracker that does have links shows them" do
+    project = project_page!(title: "Index", stage: "Active")
+    pt = tracker!(notion_project_ids: [project.notion_id])
+    twist_link!(pt, 5, name: "Index Space")
+    ProjectTracker.any_instance.stubs(:internal_client?).returns(true)
+
+    get admin_project_trackers_path(scope: "all")
+    assert_equal ["Index Space ↗"], cell(pt, "twist").css("a").map(&:text)
+    assert_equal ["Index ↗"], cell(pt, "notion").css("a").map(&:text)
+  end
+
+  test "the Complete tab shows a dash for a tracker with nothing linked, and links when it has them" do
+    bare = complete!(with_links!(tracker!))
+    project = project_page!(title: "Wrapped", stage: "Completed")
+    linked = complete!(tracker!(notion_project_ids: [project.notion_id]))
+    twist_link!(linked, 5, name: "Wrapped Client")
+
+    get admin_project_trackers_path(scope: "complete")
+    assert_response :success
+    %w[twist notion].each do |column|
+      assert_equal "—", cell(bare, column).text.strip
+      assert_empty cell(bare, column).css(".pill")
+    end
+    assert_equal ["Wrapped Client ↗"], cell(linked, "twist").css("a").map(&:text)
+    assert_equal ["Wrapped ↗"], cell(linked, "notion").css("a").map(&:text)
+  end
+
+  test "a channel name is shown as text, never as markup" do
+    pt = tracker!
+    twist_link!(pt, 5, name: "<script>alert(1)</script> & co")
+
+    get admin_project_trackers_path(scope: "all")
+    assert_not_includes response.body, "<script>alert(1)</script>"
+    assert_includes response.body, "&lt;script&gt;alert(1)&lt;/script&gt; &amp; co ↗"
+    assert_equal ["<script>alert(1)</script> & co ↗"], cell(pt, "twist").css("a").map(&:text)
+    assert_empty cell(pt, "twist").css("script")
+  end
+
+  test "the Runn.io Project column is still there, ahead of Twist and Notion" do
+    pt = tracker!
+    get admin_project_trackers_path(scope: "all")
+    assert_equal ["No Runn.io Project Connected"], cell(pt, "runn_io_project").css("span.pill.error").map(&:text)
+    headers = page.css("table.index_table thead th").map { |th| th.text.strip }
+    at = headers.index("Runn.io Project")
+    assert_equal ["Runn.io Project", "Twist", "Notion"], headers[at, 3]
+  end
+
+  test "the index issues the same number of queries for 2 trackers as for 6" do
+    sourced = lambda do |i|
+      a = project_page!(title: "Project #{i}", stage: "Active")
+      b = project_page!(title: "Project #{i} Retainer", stage: "Active")
+      pt = with_links!(tracker!(notion_project_ids: [a.notion_id, b.notion_id]))
+      twist_link!(pt, 1000 + i, name: "Channel #{i}")
+      twist_link!(pt, 2000 + i, name: "Channel #{i} Client")
+      pt
+    end
+    2.times { |i| sourced.call(i) }
+    get admin_project_trackers_path(scope: "all") # warm up
+    at_2 = count_queries { get admin_project_trackers_path(scope: "all") }
+    assert_equal 2, page.css("tr[id^='project_tracker_']").size
+    assert_includes response.body, "Channel 1 Client ↗"
+
+    (2...6).each { |i| sourced.call(i) }
+    at_6 = count_queries { get admin_project_trackers_path(scope: "all") }
+    assert_equal 6, page.css("tr[id^='project_tracker_']").size
+    assert_includes response.body, "Project 5 Retainer ↗"
+    assert_equal at_2, at_6, "the page issues a query per row"
   end
 end

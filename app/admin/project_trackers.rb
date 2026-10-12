@@ -109,12 +109,22 @@ ActiveAdmin.register ProjectTracker do
       @last_ships_by_tracker_id || {}
     end
 
+    # The Notion Projects pages the rendered trackers point at, by Notion id,
+    # loaded once for the whole table. A page removed from Notion is absent.
+    helper_method :notion_project_pages_by_notion_id
+    def notion_project_pages_by_notion_id
+      @notion_project_pages_by_notion_id || {}
+    end
+
     def collection
       c = super
       if action_name == "index" && !@_preloaded_for_render
         arr = c.to_a
         ProjectTracker.preload_for_render(arr)
         @last_ships_by_tracker_id = WeeklyShip.includes(:document).latest_by_tracker(arr.map(&:id))
+        notion_ids = arr.flat_map { |pt| Array(pt.notion_project_ids) }.uniq
+        @notion_project_pages_by_notion_id =
+          notion_ids.empty? ? {} : NotionPage.projects.where(notion_id: notion_ids).index_by(&:notion_id)
         @_preloaded_for_render = true
         # Group by account lead on the Active and Dormant tabs (and on the
         # default unfiltered view). Within each lead, fall back to the
@@ -289,6 +299,52 @@ ActiveAdmin.register ProjectTracker do
         a("#{resource.runn_project.name} ↗", { href: resource.runn_project.link, target: "_blank", class: "block", style: "white-space:nowrap" })
       else
         span("No Runn.io Project Connected", class: "pill error")
+      end
+    end
+
+    # One line per channel, in channel-id order. The name is plain text from
+    # Twist or from whoever typed it: Arbre escapes it, so never html_safe.
+    column "Twist" do |pt|
+      links = pt.project_tracker_links.select(&:twist_channel_id).sort_by(&:twist_channel_id)
+      if links.empty?
+        if params[:scope] == "complete" || pt.internal_client?
+          # Finished and internal projects aren't expected to have a channel.
+          span "—", style: "opacity: 0.4;"
+        else
+          span("No Twist Channel", class: "pill error")
+        end
+        next
+      end
+      unreadable = Array(pt.twist_channels_inaccessible)
+      div do
+        links.each do |link|
+          a("#{link.name} ↗", href: link.url, target: "_blank", class: "block", style: "white-space:nowrap")
+          # Stacksbot can only file what it sees in a channel it belongs to.
+          span("Stacksbot not invited", class: "pill error") if unreadable.include?(link.twist_channel_id)
+        end
+      end
+    end
+
+    # One line per chosen page, in the order they were chosen.
+    column "Notion" do |pt|
+      ids = Array(pt.notion_project_ids)
+      if ids.empty?
+        if params[:scope] == "complete" || pt.internal_client?
+          span "—", style: "opacity: 0.4;"
+        else
+          span("No Notion Project", class: "pill error")
+        end
+        next
+      end
+      pages = notion_project_pages_by_notion_id
+      div do
+        ids.each do |id|
+          if (page = pages[id])
+            a("#{page.as_project.title} ↗", href: page.notion_link, target: "_blank", class: "block", style: "white-space:nowrap")
+          else
+            span("Removed from Notion", class: "pill error")
+          end
+        end
       end
     end
 

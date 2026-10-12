@@ -529,6 +529,90 @@ class ProjectTrackerSourcesTest < ActiveSupport::TestCase
     end
   end
 
+  # ---- the channel's real name ----------------------------------------------
+
+  def named_twist(*channels)
+    fake_twist(body: channels.map { |id, name| { "id" => id, "name" => name } })
+  end
+
+  def link_updates
+    count = 0
+    counter = ->(*, payload) { count += 1 if payload[:sql] =~ /\AUPDATE "project_tracker_links"/ }
+    ActiveSupport::Notifications.subscribed(counter, "sql.active_record") { yield }
+    count
+  end
+
+  test "the sync gives a link still named Twist Channel the channel's real name" do
+    pt = tracker!
+    link = twist_link!(pt)
+
+    ProjectTracker.sync_twist_channel_access!(twist: named_twist([794756, "Harvey Client"]))
+
+    assert_equal "Harvey Client", link.reload.name
+  end
+
+  test "the sync names a link whose name is blank" do
+    pt = tracker!
+    link = twist_link!(pt)
+    # The model refuses a blank name; a row written around it still gets one.
+    link.update_columns(name: "")
+
+    ProjectTracker.sync_twist_channel_access!(twist: named_twist([794756, "Harvey Client"]))
+
+    assert_equal "Harvey Client", link.reload.name
+  end
+
+  test "the sync never replaces a name a person typed" do
+    pt = tracker!
+    link = twist_link!(pt)
+    link.update_columns(name: "Where the client talks")
+
+    assert_equal 0, link_updates { ProjectTracker.sync_twist_channel_access!(twist: named_twist([794756, "Harvey Client"])) }
+
+    assert_equal "Where the client talks", link.reload.name
+  end
+
+  test "naming a link does not forget the access answer the same sync has just written" do
+    pt = tracker!
+    twist_link!(pt)
+    twist_link!(pt, "https://twist.com/a/133876/ch/5/")
+    now = Time.zone.parse("2026-10-12T09:00:00Z")
+
+    ProjectTracker.sync_twist_channel_access!(twist: named_twist([794756, "Harvey Client"]), now: now)
+
+    assert_equal [5], pt.reload.twist_channels_inaccessible
+    assert_equal now, pt.twist_channel_checked_at
+    assert_equal ["Harvey Client", "Twist Channel"], pt.project_tracker_links.sort_by { |l| -l.twist_channel_id }.map(&:name)
+  end
+
+  test "the sync writes no link whose name is already right, or whose channel Twist does not name" do
+    pt = tracker!
+    link = twist_link!(pt)
+    twist = named_twist([794756, "Harvey Client"])
+    assert_equal 1, link_updates { ProjectTracker.sync_twist_channel_access!(twist: twist) }
+    before = link.reload.updated_at
+
+    assert_equal 0, link_updates { ProjectTracker.sync_twist_channel_access!(twist: twist) }
+    assert_equal before, link.reload.updated_at
+
+    # A channel that comes back with no name, or the placeholder itself, changes nothing.
+    link.update_columns(name: "Twist Channel")
+    [fake_twist, named_twist([794756, " "]), named_twist([794756, "Twist Channel"])].each do |unnamed|
+      assert_equal 0, link_updates { ProjectTracker.sync_twist_channel_access!(twist: unnamed) }
+    end
+    assert_equal "Twist Channel", link.reload.name
+  end
+
+  test "the sync leaves a completed tracker's link name alone" do
+    done = tracker!
+    link = twist_link!(done)
+    done.update_columns(work_completed_at: 1.day.ago)
+
+    ProjectTracker.sync_twist_channel_access!(twist: named_twist([794756, "Harvey Client"]))
+
+    assert_equal "Twist Channel", link.reload.name
+  end
+
   test "get_channels asks Twist for the channels in our workspace" do
     Stacks::Twist.expects(:get).with("/channels/get", has_entry(query: { workspace_id: 133876 })).returns(:response)
     assert_equal :response, Stacks::Twist.new.get_channels
