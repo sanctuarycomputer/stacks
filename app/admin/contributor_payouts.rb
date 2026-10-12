@@ -110,6 +110,10 @@ ActiveAdmin.register ContributorPayout do
 
   collection_action :make_payouts, method: :post do
     invoice_tracker = InvoiceTracker.find(params["invoice_tracker_id"])
+    if invoice_tracker.management_fee_invoice?
+      return redirect_to admin_invoice_tracker_contributor_payouts_path(invoice_tracker),
+        alert: "A management fee invoice has no contributor payouts."
+    end
     invoice_tracker.make_contributor_payouts!(current_admin_user)
     redirect_to admin_invoice_tracker_contributor_payouts_path(invoice_tracker), notice: "Payouts processed!"
   end

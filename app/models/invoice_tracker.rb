@@ -760,6 +760,18 @@ class InvoiceTracker < ApplicationRecord
   end
 
   def make_invoice!
+    # Which pipeline this tracker belongs to is decided by its pass's issuer.
+    # invoicing_kind raises for a pass that is neither Sanctuary's nor
+    # garden3d's. A management fee invoice tracker must leave here BEFORE the
+    # Forecast path's two guards below: the first is a silent no-op, and the
+    # second refuses internal clients, which every paying company is.
+    #
+    # blueprint.nil? keeps garden3d's legacy Forecast trackers (2025, each
+    # with a blueprint) on the path they have always taken.
+    if invoice_pass.invoicing_kind == :management_fee && blueprint.nil?
+      return Mso::ManagementFeeInvoices.push_invoice!(invoice_tracker: self)
+    end
+
     return if configuration_errors.any?
     return if qbo_invoice.present?
     # Defense-in-depth: InvoicePass#make_trackers! now filters internal

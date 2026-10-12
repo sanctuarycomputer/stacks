@@ -12,6 +12,10 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
   ].freeze
   OWN_LEDGER_ITEM_DENY = [:update, :destroy].freeze
 
+  # On a management fee invoice tracker, :update attaches or detaches a
+  # QuickBooks invoice and :attempt_generate writes one to QuickBooks.
+  MANAGEMENT_FEE_TRACKER_ADMIN_ACTIONS = [:update, :attempt_generate].freeze
+
   # Narrows index pages for users whose only access comes from
   # project-scoped "lead" grants. Admins and (actual or granted) leads see
   # everything. ActiveAdmin calls this automatically for every index via
@@ -79,6 +83,16 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
     # The MSO roster decides who is paid executive compensation: admins only,
     # for every action including read. Must stay above the blanket lead grant.
     return user.is_admin? if subject.is_a?(MsoRolePeriod) || subject == MsoRolePeriod
+
+    # garden3d's management fee invoices are written to QuickBooks only by an
+    # explicit admin act. Must stay above the blanket lead grant: hiding the
+    # button in the page enforces nothing. management_fee_invoice? (not
+    # management_fee?) so the legacy Forecast trackers on garden3d's 2025
+    # passes keep the access they have always had.
+    if subject.is_a?(InvoiceTracker) && MANAGEMENT_FEE_TRACKER_ADMIN_ACTIONS.include?(action) &&
+       subject.management_fee_invoice?
+      return user.is_admin?
+    end
 
     # The list of Google Analytics sites Stacks syncs: admins edit it; leads may read it.
     if subject.is_a?(AnalyticsProperty) || subject == AnalyticsProperty

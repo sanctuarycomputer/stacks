@@ -7,10 +7,19 @@ ActiveAdmin.register InvoiceTracker do
   permit_params :notes, :allow_early_contributor_payouts_on, :company_treasury_split, :qbo_invoice_id, :qbo_account_id
 
   action_item :attempt_generate, only: :show, if: proc { current_admin_user.is_admin? } do
+    options = { method: :post }
+    if resource.management_fee_invoice?
+      # On a management fee invoice this writes to QuickBooks.
+      options[:data] = {
+        confirm: "Create a $0.00 draft invoice in garden3d's QuickBooks for " \
+                 "#{resource.invoice_pass.invoice_month}? If Finance already invoiced this month by hand, " \
+                 "cancel and attach that invoice from Edit instead.",
+      }
+    end
     link_to(
       "Regenerate",
       attempt_generate_admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource),
-      method: :post
+      options
     )
   end
 
@@ -203,6 +212,30 @@ ActiveAdmin.register InvoiceTracker do
   end
 
   member_action :attempt_generate, method: :post do
+    # A management fee invoice tracker's make_invoice! returns a QboInvoice or
+    # raises; the checks below are for the Forecast path.
+    if resource.management_fee_invoice?
+      tracker_page = admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource)
+      begin
+        resource.make_invoice!
+      rescue Mso::ManagementFeeInvoices::Error => e
+        return redirect_to(tracker_page, alert: e.message)
+      rescue StandardError => e
+        # QuickBooks timed out, refused, or answered something unexpected. The
+        # invoice may or may not exist there.
+        return redirect_to(
+          tracker_page,
+          alert: "QuickBooks did not confirm the draft (#{e.class}: #{e.message}). Check garden3d's " \
+                 "QuickBooks for a new invoice before trying again. If one is there, attach it from Edit; " \
+                 "Stacks will also refuse to create a second."
+        )
+      end
+      return redirect_to(
+        tracker_page,
+        notice: "Management fee draft created in QuickBooks. Set the amount there and send it."
+      )
+    end
+
     if resource.qbo_invoice_id.present?
       return redirect_to(
         admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource),
@@ -355,13 +388,24 @@ ActiveAdmin.register InvoiceTracker do
   form do |f|
     f.inputs(class: "admin_inputs") do
       f.input :forecast_client, input_html: { disabled: true }
-      # Single select across every realm's orphan invoices. Value packs
-      # "qa_id:qbo_id" so the controller can set both columns in one shot;
-      # composite FK on the DB blocks any (qa, qbo_id) pair that doesn't
-      # reference a real row.
+      # Unattached invoices from THIS tracker's QuickBooks account only. A
+      # tracker lives on the pass of its account's enterprise, so an invoice
+      # from another company's books is never the right one -- and because the
+      # value packs "qa_id:qbo_id", picking one would silently re-point the
+      # tracker at that company's account.
+      #
+      # A non-admin cannot change this field (it is disabled below), so they
+      # are given no list: other invoices' customers and totals, garden3d's
+      # management fee invoices among them, are not theirs to browse.
+      orphan_invoices =
+        if current_admin_user.is_admin?
+          QboInvoice.orphans.where(qbo_account_id: f.object.qbo_account_id).includes(qbo_account: :enterprise)
+        else
+          QboInvoice.none
+        end
       f.input :qbo_invoice,
         as: :select,
-        collection: QboInvoice.orphans.includes(qbo_account: :enterprise).map { |inv|
+        collection: orphan_invoices.map { |inv|
           ent_name = inv.qbo_account&.enterprise&.name || "?"
           ["[#{ent_name}] #{inv.display_name}", "#{inv.qbo_account_id}:#{inv.qbo_id}"]
         },
