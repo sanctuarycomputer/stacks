@@ -150,22 +150,96 @@ class AdminPayoutMarginGuardTest < ActionDispatch::IntegrationTest
     assert_equal [{ "amount" => 5000 }], cp.reload.blueprint["Commission"], "an admin can still edit it"
   end
 
-  test "an unremovable stale payout that leaves the invoice over its cap writes nothing" do
-    it = within_cap_tracker
+  # A leftover payout for someone this invoice no longer pays. Its IC chunk
+  # on line "1" is cheap enough to generate lead surplus while it stays:
+  # margin 0.90 - 0.43 = 4,700, and 705 of it to each lead.
+  def add_stale_payout(it)
     stranger = ForecastPerson.create!(forecast_id: 700_099, email: "stale-guard@example.com", data: {})
     stranger.ensure_contributor_exists!
     ledger = Ledger.find_or_create_for(enterprise: @client.billing_enterprise, contributor: stranger.reload.contributor)
-    stale = ContributorPayout.new(invoice_tracker: it, ledger: ledger, amount: 9000.0, blueprint: {}, created_by: @creator)
+    stale = ContributorPayout.new(
+      invoice_tracker: it,
+      ledger: ledger,
+      amount: 1000.0,
+      blueprint: { "IndividualContributor" => [{ "amount" => 1000.0, "blueprint_metadata" => { "id" => "1", "forecast_project" => @project.forecast_id, "forecast_person" => stranger.forecast_id } }] },
+      created_by: @creator,
+    )
     stale.skip_seventy_percent_check = true
     stale.save!
-    ContributorPayout.any_instance.stubs(:destroy).raises(SyncsAsQboBill::PaidQboBillError, "cannot verify")
+    stale
+  end
+
+  test "an unremovable stale payout that leaves the invoice over its cap writes nothing" do
+    it = within_cap_tracker
+    it.make_contributor_payouts!(@creator)
+    stale = add_stale_payout(it)
+    # A successful write would now pay the IC 100 hrs * $50, not 5700.
+    @project.update!(notes: "#{@ic.email}:50p/h")
+    before = it.contributor_payouts.reload.map { |cp| [cp.id, cp.amount.to_f, cp.deleted_at] }.sort
+    assert_equal [500.0, 800.0, 1000.0, 5700.0], before.map { |row| row[1] }.sort
+    ContributorPayout.any_instance.stubs(:detach_and_destroy_qbo_bill).raises(SyncsAsQboBill::PaidQboBillError, "cannot verify")
 
     assert_no_difference "ContributorPayout.with_deleted.count" do
       post make_payouts_admin_invoice_tracker_contributor_payouts_path(it)
     end
     assert_redirected_to admin_invoice_tracker_contributor_payouts_path(it)
-    assert_match(/could not be removed/, flash[:alert])
-    assert_equal [stale.id], it.contributor_payouts.reload.map(&:id)
+    assert_match(/\ACould not generate payouts: Payouts would exceed the cap because an earlier payout \(##{stale.id}\) could not be removed/, flash[:alert])
+    assert_not_equal "Payouts processed!", flash[:notice]
+    assert_equal before, it.contributor_payouts.reload.map { |cp| [cp.id, cp.amount.to_f, cp.deleted_at] }.sort
+    assert_nil it.reload.notes
+  end
+
+  # The cache said the stale payout's bill was paid, so the pre-flight judged
+  # the invoice over its cap and the admin forced it. The delete then went
+  # through: what was written is within the cap, and nothing was overridden.
+  test "a forced generate that turns out within the cap records no override" do
+    it = within_cap_tracker
+    it.update!(notes: "Existing note")
+    stale = add_stale_payout(it)
+    bill = mock("qbo_bill")
+    bill.stubs(:has_payments?).returns(true)
+    ContributorPayout.any_instance.stubs(:qbo_bill).returns(bill)
+    assert InvoicePayouts::MarginCheck.new(InvoicePayouts::Build.new(it)).breached?, "fixture must breach before the write"
+
+    post make_payouts_admin_invoice_tracker_contributor_payouts_path(it)
+    assert_redirected_to admin_invoice_tracker_contributor_payouts_path(it, margin_breach: 1)
+    assert ContributorPayout.exists?(stale.id), "unforced, the pre-flight still stops it"
+
+    post make_payouts_admin_invoice_tracker_contributor_payouts_path(it), params: { force: "1", override_reason: "Agreed fixed fee with the contractor" }
+
+    assert_redirected_to admin_invoice_tracker_contributor_payouts_path(it)
+    assert_equal "Payouts processed!", flash[:notice]
+    assert_not ContributorPayout.exists?(stale.id)
+    assert_equal [500.0, 800.0, 5700.0], it.contributor_payouts.reload.map { |cp| cp.amount.to_f }.sort
+    assert_equal 7000.0, it.contributor_payouts.sum { |cp| cp.amount.to_f }
+    assert_equal "Existing note", it.reload.notes
+  end
+
+  # Forced on a prediction that was wrong the other way: the note quotes what
+  # was written, survivor and its surplus included, not the pre-flight.
+  test "a forced generate records the figures that were written, not the ones predicted" do
+    it = breaching_tracker # 9000 + 800 + 500 = 10,300
+    add_stale_payout(it)
+    ContributorPayout.any_instance.stubs(:detach_and_destroy_qbo_bill).raises(SyncsAsQboBill::PaidQboBillError, "cannot verify")
+
+    post make_payouts_admin_invoice_tracker_contributor_payouts_path(it), params: { force: "1", override_reason: "Agreed fee" }
+
+    assert_redirected_to admin_invoice_tracker_contributor_payouts_path(it)
+    # 10,300 + the survivor's 1000 + 2 * 705 surplus = 12,710
+    assert_in_delta 12_710.0, it.contributor_payouts.reload.sum { |cp| cp.amount.to_f }, 0.01
+    assert_match(/generated payouts over the cap \(127\.1% vs 70\.0%\): Agreed fee/, it.reload.notes)
+  end
+
+  test "with nothing billed after commissions the overlay quotes dollars, not percentages" do
+    recipient = ForecastPerson.create!(forecast_id: 710_004, email: "comm-guard@example.com", data: {})
+    recipient.ensure_contributor_exists!
+    PercentageCommission.create!(project_tracker: ProjectTracker.last, contributor: recipient.reload.contributor, rate: 1.0)
+    it = breaching_tracker # the whole 10,000 goes to commission; the IC is still paid 100 hrs * $90
+
+    get admin_invoice_tracker_contributor_payouts_path(it, margin_breach: 1)
+    assert_response :success
+    assert_select ".full-screen-modal.margin-breach h2", text: "The generated payouts would be $9,000.00 against a cap of $0.00."
+    assert_select ".full-screen-modal.margin-breach h2", text: /%/, count: 0
   end
 
   test "a multi-line exception is flashed as its first line" do

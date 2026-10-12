@@ -75,6 +75,12 @@ module InvoicePayouts
       [(pool - cap).round(2), 0.0].max
     end
 
+    # With nothing billed after commissions there is no total to take a
+    # percentage of: the overlay and the override note quote dollars instead.
+    def percentages?
+      post_commission_total > 0
+    end
+
     def payout_percentage
       percentage_of_total(pool)
     end
@@ -114,7 +120,7 @@ module InvoicePayouts
     private
 
     def percentage_of_total(amount)
-      post_commission_total > 0 ? (amount / post_commission_total * 100).round(1) : 0.0
+      percentages? ? (amount / post_commission_total * 100).round(1) : 0.0
     end
   end
 end

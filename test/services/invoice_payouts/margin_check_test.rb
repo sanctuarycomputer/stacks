@@ -129,6 +129,30 @@ class InvoicePayoutsMarginCheckTest < ActiveSupport::TestCase
     assert_in_delta 0.0, check.retained_total, 0.01
   end
 
+  # Everything billed went out as commission: there is no total to take a
+  # percentage of, so the figures fall back to 0.0 and the overlay to dollars.
+  test "with nothing billed after commissions there are no percentages to quote" do
+    pt = build_tracker("new_deal_v1")
+    recipient = ForecastPerson.create!(forecast_id: 710_004, email: "comm-guard@example.com", data: {})
+    recipient.ensure_contributor_exists!
+    PercentageCommission.create!(project_tracker: pt, contributor: recipient.reload.contributor, rate: 1.0)
+    @project.update!(notes: "#{@ic.email}:90p/h")
+    check = check_for([{ id: "1", person: @ic, hours: 100.0, rate: 100.0 }])
+
+    assert_in_delta 0.0, check.post_commission_total, 0.01
+    assert_not check.percentages?
+    assert_in_delta 9000.0, check.pool, 0.01
+    assert_in_delta 0.0, check.cap, 0.01
+    assert check.breached?
+    assert_equal 0.0, check.payout_percentage
+    assert_equal 0.0, check.cap_percentage
+  end
+
+  test "an ordinary invoice has percentages to quote" do
+    build_tracker("new_deal_v2")
+    assert check_for([{ id: "1", person: @ic, hours: 100.0, rate: 100.0 }]).percentages?
+  end
+
   test "a breach needs more than the dollar of slack" do
     build_tracker("new_deal_v2")
     check = check_for([{ id: "1", person: @ic, hours: 100.0, rate: 100.0 }])

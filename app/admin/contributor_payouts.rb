@@ -146,10 +146,17 @@ ActiveAdmin.register ContributorPayout do
         reason = params[:override_reason].to_s.strip
         return redirect_to(breach_path, alert: "A reason is required to generate payouts over the cap.") if reason.blank?
 
-        override_note = "[#{Date.today.iso8601}] #{current_admin_user.email} generated payouts over the cap (#{check.payout_percentage}% vs #{check.cap_percentage}%): #{reason}"
         ActiveRecord::Base.transaction do
           invoice_tracker.make_contributor_payouts!(current_admin_user, build: build, allow_over_cap: true)
-          invoice_tracker.update!(notes: [invoice_tracker.notes.presence, override_note].compact.join("\n\n"))
+          # The note quotes what was written, which is not always what the
+          # pre-flight judged: generation finds out for real which earlier
+          # payouts it can remove. Within the cap after all, nothing was
+          # overridden, so there is nothing to note.
+          written = InvoicePayouts::MarginCheck.new(invoice_tracker.written_payout_build)
+          if written.breached?
+            override_note = "[#{Date.today.iso8601}] #{current_admin_user.email} generated payouts over the cap (#{written.payout_percentage}% vs #{written.cap_percentage}%): #{reason}"
+            invoice_tracker.update!(notes: [invoice_tracker.notes.presence, override_note].compact.join("\n\n"))
+          end
         end
       else
         invoice_tracker.make_contributor_payouts!(current_admin_user, build: build)

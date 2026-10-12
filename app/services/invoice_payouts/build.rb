@@ -32,8 +32,12 @@ module InvoicePayouts
       end
     end
 
-    def initialize(invoice_tracker)
+    # retained_orphan_ids: the write passes the ids of the payouts it tried
+    # and failed to remove, so the retained set is what actually happened
+    # rather than a prediction from the cached QBO bill.
+    def initialize(invoice_tracker, retained_orphan_ids: nil)
       @invoice_tracker = invoice_tracker
+      @retained_orphan_ids = retained_orphan_ids&.map(&:to_i)
     end
 
     attr_reader :invoice_tracker
@@ -62,6 +66,22 @@ module InvoicePayouts
       @paid_commissions_by_line ||= paid_payees.flat_map(&:entries).select { |e| e.role == "Commission" }.each_with_object(Hash.new(0.0)) do |e, h|
         h[e.metadata["id"].to_s] += e.amount
       end
+    end
+
+    # Existing payouts the write will try to delete: those on a ledger no
+    # payee is paid a base share on. Asked before the surplus pass, so a lead
+    # paid through surplus alone is still a candidate here.
+    def orphan_candidates
+      compute
+      @orphan_candidates
+    end
+
+    # The candidates expected to survive that delete, because their QBO bill
+    # has payments against it. A prediction from the cached bill unless the
+    # ids were given; the write compares it with what it could really remove.
+    def retained_orphans_before_surplus
+      compute
+      @retained_orphans
     end
 
     # Existing payouts the write would normally delete as no longer earned,
@@ -140,6 +160,7 @@ module InvoicePayouts
       # full_time_period_at can be nil for someone with no period this month.
       @payees.each_value { |p| p.payable = p.amount != 0 && payable?(p.forecast_person) }
 
+      @orphan_candidates = find_orphan_candidates
       @retained_orphans = find_retained_orphans
       compute_surplus
       @computed = true
@@ -147,11 +168,14 @@ module InvoicePayouts
 
     # Asked before the surplus pass, so "kept" means paid a base share: a
     # payout on any other ledger is one the write will try to delete.
-    def find_retained_orphans
+    def find_orphan_candidates
       kept_ledger_ids = ledger_ids_for(@payees.values.select(&:payable))
-      invoice_tracker.contributor_payouts.reload.reject { |cp| kept_ledger_ids.include?(cp.ledger_id) }.select do |cp|
-        cp.qbo_bill&.has_payments?
-      end
+      invoice_tracker.contributor_payouts.reload.reject { |cp| kept_ledger_ids.include?(cp.ledger_id) }
+    end
+
+    def find_retained_orphans
+      return @orphan_candidates.select { |cp| @retained_orphan_ids.include?(cp.id) } if @retained_orphan_ids
+      @orphan_candidates.select { |cp| cp.qbo_bill&.has_payments? }
     end
 
     # Read-only: a person with no ledger yet simply has none to match.

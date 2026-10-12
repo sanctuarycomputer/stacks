@@ -14,7 +14,11 @@
   <div class="full-screen-modal__contents">
     <div class="full-screen-modal__contents__title">
       <% if flash[:alert].present? %><p class="margin-breach__alert"><%= flash[:alert] %></p><% end %>
-      <h2>The generated payouts would be <%= check.payout_percentage %>% of gross earnings. The cap for this invoice is <%= check.cap_percentage %>%.</h2>
+      <% if check.percentages? %>
+        <h2>The generated payouts would be <%= check.payout_percentage %>% of gross earnings. The cap for this invoice is <%= check.cap_percentage %>%.</h2>
+      <% else %>
+        <h2>The generated payouts would be <%= number_to_currency check.pool %> against a cap of <%= number_to_currency check.cap %>.</h2>
+      <% end %>
       <p>
         Nothing has been written. Billed after commissions: <strong><%= number_to_currency check.post_commission_total %></strong>.
         Generated payouts: <strong><%= number_to_currency check.pool %></strong>.

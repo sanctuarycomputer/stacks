@@ -200,6 +200,58 @@ class InvoicePayoutsBuildTest < ActiveSupport::TestCase
     assert_empty build.retained_orphans
   end
 
+  def stale_payout_for(it, forecast_id:, amount:, blueprint: {})
+    stranger = ForecastPerson.create!(forecast_id: forecast_id, email: "stale-#{forecast_id}@example.com", data: {})
+    stranger.ensure_contributor_exists!
+    ledger = Ledger.find_or_create_for(enterprise: @client.billing_enterprise, contributor: stranger.reload.contributor)
+    cp = ContributorPayout.new(invoice_tracker: it, ledger: ledger, amount: amount, blueprint: blueprint, created_by: @creator)
+    cp.skip_seventy_percent_check = true
+    cp.save!
+    cp
+  end
+
+  test "orphan_candidates are the existing payouts on ledgers this run pays no base share on" do
+    build_tracker("new_deal_v1")
+    it = build_invoice_tracker([{ id: "1", person: @ic, hours: 100.0, rate: 100.0 }])
+    it.make_contributor_payouts!(@creator)
+    stale = stale_payout_for(it, forecast_id: 710_011, amount: 100.0)
+    gone = stale_payout_for(it, forecast_id: 710_012, amount: 100.0)
+    gone.destroy
+
+    build = InvoicePayouts::Build.new(it.reload)
+    assert_equal 4, it.contributor_payouts.length
+    assert_equal [stale.id], build.orphan_candidates.map(&:id), "not the three kept ledgers, nor a deleted payout"
+    assert_empty build.retained_orphans_before_surplus
+  end
+
+  # The write passes the payouts it really could not remove; the cached bill
+  # has nothing more to say, and must not be asked.
+  test "given retained_orphan_ids, exactly those candidates are retained and the cached bill is not consulted" do
+    build_tracker("new_deal_v1")
+    it = build_invoice_tracker([{ id: "1", person: @ic, hours: 100.0, rate: 100.0 }])
+    ic_chunk = { "IndividualContributor" => [{ "amount" => 1000.0, "blueprint_metadata" => { "id" => "1", "forecast_project" => @project.forecast_id, "forecast_person" => @ic.forecast_id } }] }
+    kept = stale_payout_for(it, forecast_id: 710_011, amount: 1000.0, blueprint: ic_chunk)
+    removed = stale_payout_for(it, forecast_id: 710_012, amount: 1000.0, blueprint: ic_chunk)
+    on_kept_ledger = ContributorPayout.new(invoice_tracker: it, ledger: Ledger.find_or_create_for(enterprise: @client.billing_enterprise, contributor: @ic.reload.contributor), amount: 5700.0, blueprint: {}, created_by: @creator)
+    on_kept_ledger.skip_seventy_percent_check = true
+    on_kept_ledger.save!
+    ContributorPayout.any_instance.stubs(:qbo_bill).raises(RuntimeError, "the cached bill must not be consulted")
+
+    build = InvoicePayouts::Build.new(it.reload, retained_orphan_ids: [kept.id, on_kept_ledger.id])
+    assert_equal [kept.id, removed.id].sort, build.orphan_candidates.map(&:id).sort
+    assert_equal [kept.id], build.retained_orphans_before_surplus.map(&:id), "an id that is not a candidate is not retained"
+    assert_equal [kept.id], build.retained_orphans.map(&:id)
+    # One retained chunk: margin 0.90 - 0.43 = 4700 → 705 to each lead, once.
+    assert_in_delta 800.0 + 705.0, payee(build, @al).amount, 0.001
+    assert_in_delta 500.0 + 705.0, payee(build, @pl).amount, 0.001
+
+    none = InvoicePayouts::Build.new(it.reload, retained_orphan_ids: [])
+    assert_empty none.retained_orphans
+    assert_in_delta 800.0, payee(none, @al).amount, 0.001
+
+    assert_raises(RuntimeError) { InvoicePayouts::Build.new(it.reload).retained_orphans }
+  end
+
   test "a tracker with no QBO invoice raises rather than computing nothing" do
     build_tracker("new_deal_v1")
     it = build_invoice_tracker([{ id: "1", person: @ic, hours: 100.0, rate: 100.0 }])

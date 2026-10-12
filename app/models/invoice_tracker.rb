@@ -337,7 +337,11 @@ class InvoiceTracker < ApplicationRecord
     ActionController::Base.helpers.number_to_currency(*args, **kwargs, &b)
   end
 
-  class UnexpectedOrphanOverCapError < StandardError; end
+  class PayoutsOverCapError < StandardError; end
+
+  # The build the last make_contributor_payouts! saved, which is not always
+  # the one it was handed (see below).
+  attr_reader :written_payout_build
 
   # Saves exactly what InvoicePayouts::Build computed. The per-payout cap
   # validation is skipped on every save here: it sums the tracker's payouts
@@ -345,13 +349,48 @@ class InvoiceTracker < ApplicationRecord
   # caller is expected to have run InvoicePayouts::MarginCheck on the build
   # first (the admin action does); called bare, this writes whatever the
   # build says, over the cap or not.
+  #
+  # The one thing a build cannot know in advance is which earlier payouts
+  # the write can remove: it predicts that from the cached QBO bill, and the
+  # delete then asks QBO. So the deletes go first, and if they disagree with
+  # the prediction the build is recomputed from what actually survived
+  # before anything is saved. A recomputed build that is over the cap raises
+  # unless allow_over_cap.
   def make_contributor_payouts!(created_by, build: nil, allow_over_cap: false)
     raise "Payment splits are not supported for this invoice pass" unless invoice_pass.allows_payment_splits?
     return [] if qbo_invoice.nil?
 
+    @written_payout_build = nil
     build ||= InvoicePayouts::Build.new(self)
 
     ActiveRecord::Base.transaction do
+      # Per-row rescue around obsolete CP destroys: ContributorPayout's
+      # before_destroy chain runs SyncsAsQboBill#detach_and_destroy_qbo_bill
+      # which raises PaidQboBillError on a paid bill. Without this rescue
+      # the exception would roll back the whole transaction. Skip the one
+      # paid-bill orphan with a log; the rest of the tracker still updates.
+      survivors = []
+      build.orphan_candidates.each do |orphan|
+        begin
+          orphan.destroy
+        rescue SyncsAsQboBill::PaidQboBillError => e
+          survivors << orphan
+          Rails.logger.error("[invoice_tracker_make_payouts] ##{id} cannot destroy orphan CP ##{orphan.id}: #{e.message}")
+        end
+      end
+
+      predicted_ids = build.retained_orphans_before_surplus.map(&:id)
+      survivor_ids = survivors.map(&:id)
+      if survivor_ids.sort != predicted_ids.sort
+        build = InvoicePayouts::Build.new(self, retained_orphan_ids: survivor_ids)
+        if !allow_over_cap && InvoicePayouts::MarginCheck.new(build).breached?
+          # Normally the unpredicted survivors are what tipped it over.
+          blamed = (survivor_ids - predicted_ids).presence || survivor_ids
+          raise PayoutsOverCapError,
+            "Payouts would exceed the cap because an earlier payout (##{blamed.join(", #")}) could not be removed: its QBO bill has payments or could not be checked. No payouts were changed, though QBO bills of other removed payouts may already have been deleted and will be recreated on the next sync. Retry once QBO is reachable, or generate with a reason."
+        end
+      end
+
       # Everyone who earned something on this invoice gets a Contributor,
       # paid per invoice or not, as before.
       build.payees.each { |payee| payee.forecast_person.ensure_contributor_exists! if payee.amount != 0 }
@@ -384,30 +423,14 @@ class InvoiceTracker < ApplicationRecord
         cp
       end
 
-      # Per-row rescue around obsolete CP destroys: ContributorPayout's
-      # before_destroy chain runs SyncsAsQboBill#detach_and_destroy_qbo_bill
-      # which raises PaidQboBillError on a paid bill. Without this rescue
-      # the exception would roll back the whole transaction. Skip the one
-      # paid-bill orphan with a log; the rest of the tracker still updates.
-      survivors = []
-      (contributor_payouts.reload.to_a - synced).each do |orphan|
+      # Anything still here that is neither paid nor a known survivor was not
+      # a candidate when the build was computed (a payout added since). It
+      # goes the same way; one that cannot is outside what the build counted.
+      (contributor_payouts.reload.to_a - synced - survivors).each do |orphan|
         begin
           orphan.destroy
         rescue SyncsAsQboBill::PaidQboBillError => e
-          survivors << orphan
-          Rails.logger.error("[invoice_tracker_make_payouts] ##{id} cannot destroy orphan CP ##{orphan.id}: #{e.message}")
-        end
-      end
-
-      # The pre-flight predicted survivors from the cached bill; the live
-      # fetch above can disagree. An unpredicted one may leave the invoice
-      # over its cap, which the pre-flight never ruled on: roll back.
-      unexpected = survivors.reject { |cp| build.retained_orphans.any? { |r| r.id == cp.id } }
-      if unexpected.any? && !allow_over_cap
-        cap, pool = ContributorPayout.cap_and_pool(self, contributor_payouts.reload.to_a)
-        if pool > cap.cap + 1
-          raise UnexpectedOrphanOverCapError,
-            "Payouts would exceed the cap: an earlier payout (##{unexpected.map(&:id).join(", #")}) could not be removed because its QBO bill has payments or could not be checked. Nothing was written. Refresh the bill from QBO and try again."
+          Rails.logger.error("[invoice_tracker_make_payouts] ##{id} cannot destroy orphan CP ##{orphan.id}, which the build did not count: #{e.message}")
         end
       end
 
@@ -439,6 +462,7 @@ class InvoiceTracker < ApplicationRecord
         cp.update!(description: description)
       end
 
+      @written_payout_build = build
       contributor_payouts.reload
     end
   end
