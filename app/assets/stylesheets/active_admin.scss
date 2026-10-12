@@ -189,7 +189,16 @@
   }
 
   .full-screen-modal__contents__body {
-    padding: 0 20px;
+    padding: 16px 20px;
+  }
+
+  // Each invoice line reads as a band, with its role rows hanging beneath it.
+  tr.margin-breach__line td,
+  tr.margin-breach__other td,
+  tr.margin-breach__total td {
+    background-color: #f4f5f5;
+    border-top: 1px solid $color-light-grey;
+    border-bottom: 1px solid $color-light-grey;
   }
 
   // Headers and figures stay on one line; only the description column wraps.
