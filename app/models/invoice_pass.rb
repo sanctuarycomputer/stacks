@@ -69,7 +69,6 @@ class InvoicePass < ApplicationRecord
         invoice_pass: self,
       ) do |t|
         t.qbo_account = qa
-        t.source = :forecast
       end
     end
   end

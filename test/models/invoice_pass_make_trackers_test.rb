@@ -39,6 +39,5 @@ class InvoicePassMakeTrackersTest < ActiveSupport::TestCase
     tracker = pass.invoice_trackers.reload.first
     assert_equal @external_client.forecast_id, tracker.forecast_client_id
     assert_equal @sanctuary.id, tracker.qbo_account.enterprise_id
-    assert_equal "forecast", tracker.source
   end
 end

@@ -28,8 +28,4 @@ class InvoicePassEnterpriseTest < ActiveSupport::TestCase
       InvoicePass.create!(start_of_month: month, enterprise: enterprises(:sanctuary))
     end
   end
-
-  test "a new invoice tracker defaults to the forecast source" do
-    assert_equal "forecast", InvoiceTracker.new.source
-  end
 end

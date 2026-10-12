@@ -538,7 +538,6 @@ ActiveRecord::Schema.define(version: 2026_10_12_000002) do
     t.decimal "company_treasury_split", default: "0.3"
     t.datetime "reviewers_last_notified_at"
     t.bigint "qbo_account_id", null: false
-    t.integer "source", default: 0, null: false
     t.index ["admin_user_id"], name: "index_invoice_trackers_on_admin_user_id"
     t.index ["forecast_client_id", "invoice_pass_id"], name: "idx_invoice_trackers_on_forecast_client_id_and_invoice_pass_id", unique: true
     t.index ["forecast_client_id"], name: "index_invoice_trackers_on_forecast_client_id"
