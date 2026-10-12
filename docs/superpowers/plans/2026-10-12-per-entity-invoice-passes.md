@@ -171,7 +171,7 @@ end
 bin/rails test test/models/invoice_pass_enterprise_test.rb
 ```
 
-Expected: **3 of 4 fail.** Test 1 fails its assertion (no `:enterprise` error exists yet). Tests 2 and 3 raise `ActiveModel::UnknownAttributeError: unknown attribute 'enterprise' for InvoicePass` — the association doesn't exist, so the keyword is rejected. Test 4 passes already (the column default is in schema.rb). This is the expected red state, not a problem.
+Expected: **all 4 fail.** Test 1 fails its assertion (no `:enterprise` error exists yet). Tests 2 and 3 raise `ActiveModel::UnknownAttributeError: unknown attribute 'enterprise' for InvoicePass` — the association doesn't exist, so the keyword is rejected. Test 4 fails because `InvoiceTracker.new.source` returns the raw integer `0` until the `enum` declaration in Step 7 installs the string API — the column default alone is not enough.
 
 - [ ] **Step 7: Add the association and the enum**
 
