@@ -20,6 +20,18 @@ class InvoiceTracker < ApplicationRecord
 
   delegate :billing_enterprise, to: :forecast_client
 
+  # The share the company keeps on this invoice, when set by hand. nil means
+  # "derive the cap from each project's billing model" (InvoicePayouts::Cap).
+  # The only reader of the column: migrations here run by hand after the
+  # deploy, so until then the row still carries company_treasury_split.
+  def margin_override
+    if has_attribute?(:target_margin_override)
+      target_margin_override
+    else
+      self[:company_treasury_split]
+    end
+  end
+
   def display_name
     "#{qbo_invoice.try(:display_name) || forecast_client.name} (#{status})"
   end

@@ -62,7 +62,7 @@ class ContributorPayoutTest < ActiveSupport::TestCase
     forecast_client.stubs(:is_internal?).returns(false)
     invoice_tracker.stubs(:forecast_client).returns(forecast_client)
     invoice_tracker.stubs(:total).returns(1000.0)
-    invoice_tracker.stubs(:company_treasury_split).returns(BigDecimal("0.30"))
+    invoice_tracker.stubs(:margin_override).returns(BigDecimal("0.30"))
 
     # Pretend there is a $100 commission CP and a $620 IC CP already on the invoice.
     commission_cp = ContributorPayout.new(amount: 100.0, blueprint: { "Commission" => [{ "amount" => 100.0 }] })
@@ -84,7 +84,7 @@ class ContributorPayoutTest < ActiveSupport::TestCase
     forecast_client.stubs(:is_internal?).returns(false)
     invoice_tracker.stubs(:forecast_client).returns(forecast_client)
     invoice_tracker.stubs(:total).returns(1000.0)
-    invoice_tracker.stubs(:company_treasury_split).returns(BigDecimal("0.30"))
+    invoice_tracker.stubs(:margin_override).returns(BigDecimal("0.30"))
 
     commission_cp = ContributorPayout.new(amount: 100.0, blueprint: { "Commission" => [{ "amount" => 100.0 }] })
     # 700 from contributor pool; cap is 630 post-commission

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_10_01_120000) do
+ActiveRecord::Schema.define(version: 2026_10_12_120000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -533,7 +533,7 @@ ActiveRecord::Schema.define(version: 2026_10_01_120000) do
     t.bigint "admin_user_id"
     t.text "notes"
     t.date "allow_early_contributor_payouts_on"
-    t.decimal "company_treasury_split", default: "0.3"
+    t.decimal "target_margin_override"
     t.datetime "reviewers_last_notified_at"
     t.bigint "qbo_account_id", null: false
     t.index ["admin_user_id"], name: "index_invoice_trackers_on_admin_user_id"
@@ -542,7 +542,7 @@ ActiveRecord::Schema.define(version: 2026_10_01_120000) do
     t.index ["invoice_pass_id"], name: "index_invoice_trackers_on_invoice_pass_id"
     t.index ["qbo_account_id", "qbo_invoice_id"], name: "index_invoice_trackers_on_qa_and_qbo_invoice"
     t.index ["qbo_account_id"], name: "index_invoice_trackers_on_qbo_account_id"
-    t.check_constraint "(company_treasury_split >= (0)::numeric) AND (company_treasury_split <= (1)::numeric)", name: "check_company_treasury_split_range"
+    t.check_constraint "(target_margin_override >= (0)::numeric) AND (target_margin_override <= (1)::numeric)", name: "check_target_margin_override_range"
   end
 
   create_table "ledgers", force: :cascade do |t|
