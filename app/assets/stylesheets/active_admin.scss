@@ -183,6 +183,11 @@
     color: $color-red;
   }
 
+  .full-screen-modal__contents__title {
+    padding-bottom: 12px;
+    border-bottom: 1px solid $color-light-grey;
+  }
+
   .full-screen-modal__contents__body {
     padding: 0 20px;
   }
@@ -206,6 +211,7 @@
 
   form.margin-breach__override {
     padding: 20px;
+    border-top: 1px solid $color-light-grey;
     display: flex;
     align-items: center;
     gap: 20px;
