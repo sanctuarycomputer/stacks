@@ -173,13 +173,16 @@ Replace the `if current_admin_user.is_admin?` block containing `f.input :company
 
 - [ ] **Step 8: Keep the existing validation working until Task 6**
 
-In `app/models/contributor_payout.rb`, inside `contributor_payouts_within_seventy_percent`, add as the first line of the `else` branch and use it in both places that read `invoice_tracker.company_treasury_split`:
+In `app/models/contributor_payout.rb`, inside `contributor_payouts_within_seventy_percent`, replace everything from `commissions_total = ...` down to (not including) `contributor_pool_sum = ...` with:
 
 ```ruby
-      split = invoice_tracker.margin_override || Stacks::BillingModel.for(Stacks::BillingModel::DEFAULT).treasury_share
+    commissions_total = cps.sum(&:as_commission)
+    split = invoice_tracker.margin_override || Stacks::BillingModel.for(Stacks::BillingModel::DEFAULT).treasury_share
+    post_commission_total = invoice_tracker.total - commissions_total
+    max_amount = invoice_tracker.forecast_client.is_internal? ? post_commission_total : post_commission_total * (1 - split)
 ```
 
-(so `max_amount = post_commission_total * (1 - split)`, and the message interpolates `#{100 * (1 - split)}`; hoist `split` above the `if` so the message can see it).
+and in the error message replace `invoice_tracker.company_treasury_split` with `split`.
 
 In `test/models/contributor_payout_test.rb` lines 65 and 87 change `stubs(:company_treasury_split)` to `stubs(:margin_override)`.
 
@@ -568,6 +571,27 @@ class InvoicePayoutsBuildTest < ActiveSupport::TestCase
     assert_in_delta 4860.0, payee(build, @ic).amount, 0.001 # 9000 * 0.54
   end
 
+  # The one case where a line's commission_total (everything deducted) and the
+  # commissions actually paid differ: surplus is then priced on the full line.
+  test "commission owed to a salaried recipient is deducted but not paid" do
+    pt = build_tracker("new_deal_v2")
+    recipient_admin = AdminUser.create!(email: "comm-salaried-guard@example.com", password: "password123", password_confirmation: "password123")
+    recipient = ForecastPerson.create!(forecast_id: 710_006, email: recipient_admin.email, data: {})
+    recipient.ensure_contributor_exists!
+    FullTimePeriod.create!(admin_user: recipient_admin, started_at: Date.new(2020, 1, 1), contributor_type: :five_day, expected_utilization: 0.8)
+    PercentageCommission.create!(project_tracker: pt, contributor: recipient.reload.contributor, rate: 0.10)
+    it = build_invoice_tracker([{ id: "1", person: @ic, hours: 100.0, rate: 100.0 }])
+    build = InvoicePayouts::Build.new(it)
+
+    assert_empty build.paid_commissions_by_line
+    assert_in_delta 9000.0, build.lines.first.working_amount, 0.001
+    assert_in_delta 4860.0, payee(build, @ic).amount, 0.001
+    # surplus priced on 10,000: margin 0.514 - 0.46 = 540 → 81 to each lead
+    assert_in_delta 720.0 + 81.0, payee(build, @al).amount, 0.001
+    assert_in_delta 450.0 + 81.0, payee(build, @pl).amount, 0.001
+    assert_not build.paid?(recipient)
+  end
+
   test "zero or multiple project trackers for a client project raises as generation does" do
     it = build_invoice_tracker([{ id: "1", person: @ic, hours: 100.0, rate: 100.0 }])
     err = assert_raises(RuntimeError) { InvoicePayouts::Build.new(it).lines }
@@ -583,7 +607,6 @@ class InvoicePayoutsBuildTest < ActiveSupport::TestCase
     paid = ContributorPayout.new(invoice_tracker: it, ledger: ledger, amount: 3000.0, blueprint: {}, created_by: @creator)
     paid.skip_seventy_percent_check = true
     paid.save!
-    unpaid_bill = ContributorPayout.any_instance
 
     bill = mock("qbo_bill")
     bill.stubs(:has_payments?).returns(true)
@@ -596,7 +619,7 @@ class InvoicePayoutsBuildTest < ActiveSupport::TestCase
 end
 ```
 
-Notes for the implementer: delete the stray `unpaid_bill = ContributorPayout.any_instance` line if it serves no purpose once the test runs; check `FullTimePeriod`'s required attributes in `app/models/full_time_period.rb` and adjust the `create!` call so the period is NOT `variable_hours?` and covers 2026-08-31; if `@client.billing_enterprise` is nil in tests, look at how `Ledger.find_or_create_for` is exercised in `test/models/invoice_tracker_payouts_test.rb` (generation there succeeds, so a billing enterprise resolves) and mirror it.
+Notes for the implementer: check `FullTimePeriod`'s required attributes in `app/models/full_time_period.rb` and adjust the `create!` call so the period is NOT `variable_hours?` and covers 2026-08-31; if `@client.billing_enterprise` is nil in tests, look at how `Ledger.find_or_create_for` is exercised in `test/models/invoice_tracker_payouts_test.rb` (generation there succeeds, so a billing enterprise resolves) and mirror it.
 
 - [ ] **Step 2: Run, confirm failure**
 
@@ -718,13 +741,13 @@ module InvoicePayouts
         metadata: ContributorPayout.slim_metadata(metadata || line.metadata),
       )
       line.entries << entry
-      @payees[payee] ||= Payee.new(forecast_person: payee, payable: payable?(payee), entries: [])
+      @payees[payee] ||= Payee.new(forecast_person: payee, payable: false, entries: [])
       @payees[payee].entries << entry
       entry
     end
 
     def compute
-      return if @lines
+      return if @computed
       @lines = []
       @payees = {}
       blueprint_lines = ((invoice_tracker.blueprint || {})["lines"] || {}).values
@@ -743,7 +766,12 @@ module InvoicePayouts
         end
       end
 
+      # Payability is only asked of people who are actually owed something:
+      # full_time_period_at can be nil for someone with no period this month.
+      @payees.each_value { |p| p.payable = p.amount != 0 && payable?(p.forecast_person) }
+
       compute_surplus
+      @computed = true
     end
 
     def new_line(line_item, metadata, project_tracker)
@@ -869,7 +897,7 @@ module InvoicePayouts
     # from saved payouts: the working amount is the billed line less the
     # commissions actually paid on it, and only paid ICs generate surplus.
     def compute_surplus
-      paid = @payees.values.select { |p| p.payable && p.amount != 0 }
+      paid = @payees.values.select(&:payable)
       paid_commissions = Hash.new(0.0)
       paid.flat_map(&:entries).each { |e| paid_commissions[e.metadata["id"]] += e.amount if e.role == "Commission" }
 
@@ -895,6 +923,7 @@ module InvoicePayouts
               amount: lead_share,
               metadata: ic.metadata,
               description_line: "- #{n2c(surplus)} * #{lead_pct} = #{n2c(lead_share)} (`#{description}` generated #{n2c(surplus)} surplus revenue, #{lead_pct} of which is shared with the Account Lead)")
+            @payees[account_lead].payable = true
           end
 
           project_lead = pt.project_lead_for_month(invoice_pass.start_of_month).try(:forecast_person)
@@ -905,6 +934,7 @@ module InvoicePayouts
               amount: lead_share,
               metadata: ic.metadata,
               description_line: "- #{n2c(surplus)} * #{lead_pct} = #{n2c(lead_share)} (`#{description}` generated #{n2c(surplus)} surplus revenue, #{lead_pct} of which is shared with the Project Lead)")
+            @payees[project_lead].payable = true
           end
         end
       end
@@ -918,7 +948,7 @@ end
 - [ ] **Step 4: Run, confirm pass**
 
 Run: `DATABASE_URL=postgres:///stacks_test_margin_guard bin/rails test test/services/invoice_payouts/build_test.rb`
-Expected: 6 runs, 0 failures.
+Expected: 7 runs, 0 failures.
 
 - [ ] **Step 5: Commit**
 
@@ -968,6 +998,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
     stale = ContributorPayout.new(invoice_tracker: it, ledger: ledger, amount: 900.0, blueprint: {}, created_by: @creator)
     stale.skip_seventy_percent_check = true
     stale.save!
+    it.contributor_payouts.reset # the tracker's association was loaded before the stale row existed
 
     assert_nothing_raised { it.make_contributor_payouts!(@creator) }
     assert_nil ContributorPayout.find_by(id: stale.id), "the stale payout should be removed"
@@ -994,8 +1025,10 @@ Replace the entire method (from `def make_contributor_payouts!(created_by)` to i
 ```ruby
   # Saves exactly what InvoicePayouts::Build computed. The per-payout cap
   # validation is skipped on every save here: it sums the tracker's payouts
-  # mid-write, while stale ones from the last generation still exist, and
-  # InvoicePayouts::MarginCheck has already ruled on the final state.
+  # mid-write, while stale ones from the last generation still exist. The
+  # caller is expected to have run InvoicePayouts::MarginCheck on the build
+  # first (the admin action does); called bare, this writes whatever the
+  # build says, over the cap or not.
   def make_contributor_payouts!(created_by, build: nil)
     raise "Payment splits are not supported for this invoice pass" unless invoice_pass.allows_payment_splits?
     return [] if qbo_invoice.nil?
@@ -1732,8 +1765,13 @@ In the `controller do` block, change `create` and add `update`:
     def strip_admin_only_params
       return if current_admin_user.is_admin?
       params[:contributor_payout]&.delete(:skip_seventy_percent_check)
+      # A hand-written Commission entry is subtracted from the pool the cap
+      # is checked against, so the raw blueprint is admin-only too.
+      params[:contributor_payout]&.delete(:blueprint) if action_name == "update"
     end
 ```
+
+Also in the `form do |f|` block change the checkbox label to `"Skip payout cap validation (one-time override, not persisted)"` and its hint's "would exceed 70% of the invoice total" to "would exceed the invoice's payout cap".
 
 - [ ] **Step 5: Run**
 
@@ -1789,6 +1827,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
       end
       assert_select "a[href=?]", admin_invoice_tracker_contributor_payouts_path(it), text: /Close/
     end
+    assert_select ".margin-breach tr.margin-breach__entry", text: /not paid out/, count: 0
     assert_match "$10,300.00", response.body
     assert_match "$7,000.00", response.body
     assert_match "$3,300.00", response.body
@@ -1820,11 +1859,11 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
     it = breaching_tracker
     delete destroy_admin_user_session_path
     viewer = AdminUser.create!(email: "viewer-guard@example.com", password: "password123", password_confirmation: "password123")
-    viewer_fp = ForecastPerson.create!(forecast_id: 710_020, email: viewer.email, data: {})
-    viewer_fp.ensure_contributor_exists!
+    PermissionGrant.create!(admin_user: viewer, permission: "lead") # a lead can read the index; a bare user is redirected
     sign_in viewer
 
     get admin_invoice_tracker_contributor_payouts_path(it, margin_breach: 1)
+    assert_response :success
     assert_select ".margin-breach", 0
     assert_no_match(/rate override/, response.body)
   end
@@ -1872,6 +1911,7 @@ Expected: "the overlay lists every line" fails; the "no overlay" tests pass alre
 <div class="full-screen-modal margin-breach">
   <div class="full-screen-modal__contents">
     <div class="full-screen-modal__contents__title">
+      <% if flash[:alert].present? %><p class="margin-breach__alert"><%= flash[:alert] %></p><% end %>
       <h2>The generated payouts would be <%= check.payout_percentage %>% of gross earnings. The cap for this invoice is <%= check.cap_percentage %>%.</h2>
       <p>
         Nothing has been written. Billed after commissions: <strong><%= number_to_currency check.post_commission_total %></strong>.
@@ -1963,6 +2003,11 @@ Expected: "the overlay lists every line" fails; the "no overlay" tests pass alre
     <% end %>
   </div>
 </div>
+<script>
+  // Rendered inside the title bar, which is its own stacking context
+  // (z-index: 800): move it to <body> so it sits above the nav badges too.
+  document.body.appendChild(document.querySelector(".full-screen-modal.margin-breach"));
+</script>
 ```
 
 - [ ] **Step 5: Add styles** (append after the `.full-screen-modal { ... }` block in `app/assets/stylesheets/active_admin.scss`)
@@ -1971,6 +2016,16 @@ Expected: "the overlay lists every line" fails; the "no overlay" tests pass alre
 .full-screen-modal.margin-breach {
   text-align: left;
   font-weight: normal;
+
+  h2 {
+    font-size: 20px;
+    line-height: 1.3;
+    font-weight: 700;
+  }
+
+  .margin-breach__alert {
+    color: $color-red;
+  }
 
   .full-screen-modal__contents__body {
     padding: 0 20px;
