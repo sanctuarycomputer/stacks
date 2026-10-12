@@ -180,4 +180,56 @@ class ProjectTrackerSourcesTest < ActiveSupport::TestCase
     Stacks::TaskBuilder.expects(:clear_cache!).once
     link.destroy!
   end
+
+  # ---- the Notion project ----------------------------------------------------
+
+  def project_page!(title: "Harvey", stage: "Active")
+    NotionPage.create!(
+      notion_id: SecureRandom.uuid, notion_parent_type: "database_id",
+      notion_parent_id: Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:PROJECTS]),
+      page_title: title,
+      data: { "last_edited_time" => Time.zone.now.iso8601,
+              "properties" => { "Stage" => { "type" => "select", "select" => { "name" => stage } } } }
+    )
+  end
+
+  test "notion_project_linked? needs a page that still exists, at any stage" do
+    pt = tracker!
+    assert_not pt.notion_project_linked?
+
+    pt.update_columns(notion_project_id: "")
+    assert_not pt.notion_project_linked?
+
+    passed = project_page!(stage: "Passed")
+    pt.update_columns(notion_project_id: passed.notion_id)
+    assert pt.notion_project_linked?
+
+    passed.destroy
+    assert passed.deleted?
+    assert_not pt.reload.notion_project_linked?
+    assert_equal passed.notion_id, pt.notion_project_id
+  end
+
+  test "notion_project wraps the chosen page" do
+    page = project_page!(title: "Harvey")
+    project = tracker!(notion_project_id: page.notion_id).notion_project
+    assert_instance_of Stacks::Notion::Project, project
+    assert_equal "Harvey", project.title
+    assert_nil tracker!.notion_project
+  end
+
+  test "the MCP serializer carries the Twist channel id and the Notion project id" do
+    page = project_page!
+    pt = tracker!(notion_project_id: page.notion_id)
+    twist_link!(pt)
+    json = Mcp::ProvisioningSerializers.tracker_json(pt.reload)
+    assert_equal 794756, json[:twist_channel_id]
+    assert_equal page.notion_id, json[:notion_project_id]
+
+    bare = Mcp::ProvisioningSerializers.tracker_json(tracker!(notion_project_id: ""))
+    assert bare.key?(:twist_channel_id)
+    assert bare.key?(:notion_project_id)
+    assert_nil bare[:twist_channel_id]
+    assert_nil bare[:notion_project_id]
+  end
 end

@@ -396,6 +396,17 @@ class ProjectTracker < ApplicationRecord
     project_tracker_links.find(&:twist_channel?)&.twist_channel_id
   end
 
+  # The Notion Projects page this tracker belongs to, or nil when none is
+  # chosen or the page has since been removed from Notion.
+  def notion_project
+    return nil if notion_project_id.blank?
+    NotionPage.projects.find_by(notion_id: notion_project_id)&.as_project
+  end
+
+  def notion_project_linked?
+    notion_project.present?
+  end
+
   # Checked on the tracker, over links not marked for removal, so replacing
   # the link in one form submit is not refused.
   private def at_most_one_twist_channel_link

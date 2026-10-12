@@ -31,6 +31,7 @@ ActiveAdmin.register ProjectTracker do
     :target_free_hours_percent,
     :notes,
     :runn_project_id,
+    :notion_project_id,
     adhoc_invoice_trackers_attributes: [
       :id,
       :qbo_invoice_id,
@@ -556,6 +557,13 @@ ActiveAdmin.register ProjectTracker do
         f.input :target_profit_margin, hint: "The target profit margin for the project. This is used to calculate the project's profit margin."
         f.input :target_free_hours_percent, hint: "The target free hours percent for the project. This is used to calculate the project's free hours ratio."
       end
+
+      f.input :notion_project_id,
+        as: :select,
+        label: "Notion Project",
+        collection: Stacks::Notion::Project.options_for(f.object),
+        include_blank: "No Notion project",
+        hint: "This project's page in the Notion Projects database. Stacksbot files what it sees about a project under that page."
 
       f.has_many :project_tracker_links, heading: false, allow_destroy: true, new_record: 'Add a Project URL' do |a|
         a.input(:name, {
