@@ -1,7 +1,8 @@
 require 'test_helper'
 
-# Two tasks about where a project's conversation lives: its Twist channel and
-# Notion project are linked, and the Stacksbot account can see the channel.
+# Two tasks about where a project's conversation lives: at least one Twist
+# channel and one Notion project are linked, and the Stacksbot account can see
+# every one of the channels.
 class StacksTaskBuilderDiscoveriesProjectTrackerSourcesTest < ActiveSupport::TestCase
   DISCOVERY = Stacks::TaskBuilder::Discoveries::ProjectTrackers
   SOURCES = :project_sources_not_linked
@@ -50,16 +51,15 @@ class StacksTaskBuilderDiscoveriesProjectTrackerSourcesTest < ActiveSupport::Tes
                                      url: "https://twist.com/a/133876/ch/#{channel}/")
   end
 
+  # Adds a Projects page to the tracker's Notion projects.
   def notion_project!(pt, stage: "Active")
-    page = NotionPage.create!(
-      notion_id: SecureRandom.uuid, notion_parent_type: "database_id",
-      notion_parent_id: Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:PROJECTS]),
-      page_title: "Harvey",
-      data: { "last_edited_time" => Time.zone.now.iso8601,
-              "properties" => { "Stage" => { "type" => "select", "select" => { "name" => stage } } } }
-    )
-    pt.update_columns(notion_project_id: page.notion_id)
+    page = projects_page!("Harvey", stage: stage)
+    pt.update_columns(notion_project_ids: pt.notion_project_ids + [page.notion_id])
     page
+  end
+
+  def not_in!(pt, *channels)
+    pt.update_columns(twist_channels_inaccessible: channels, twist_channel_checked_at: Time.zone.now)
   end
 
   # ---- project_sources_not_linked -------------------------------------------
@@ -91,11 +91,49 @@ class StacksTaskBuilderDiscoveriesProjectTrackerSourcesTest < ActiveSupport::Tes
     assert_equal 1, tasks_for(tracker!, SOURCES).size, "a missing Twist channel still is"
   end
 
-  test "a blank Notion project id counts as missing" do
+  test "no Notion project ids, or only ids of pages Stacks does not hold, count as missing" do
+    none = tracker!
+    twist_link!(none)
+    assert_equal [], none.reload.notion_project_ids
+    assert_equal 1, tasks_for(none, SOURCES).size
+
+    unknown = tracker!
+    twist_link!(unknown)
+    unknown.update_columns(notion_project_ids: [SecureRandom.uuid, SecureRandom.uuid])
+    assert_equal 1, tasks_for(unknown, SOURCES).size
+  end
+
+  test "with several Notion projects, one that still exists is enough" do
     pt = tracker!
     twist_link!(pt)
-    pt.update_columns(notion_project_id: "")
+    kept = notion_project!(pt)
+    removed = notion_project!(pt)
+    removed.destroy
+    assert removed.deleted?
+    assert_equal [kept.notion_id, removed.notion_id], pt.reload.notion_project_ids
+    assert_empty tasks_for(pt, SOURCES)
+
+    kept.destroy
+    assert_equal 1, tasks_for(pt, SOURCES).size, "none of the pages exists any more"
+  end
+
+  test "several Twist channels and several Notion projects raise no linking task" do
+    pt = tracker!
+    twist_link!(pt)
+    twist_link!(pt, 11)
+    2.times { notion_project!(pt) }
+    assert_empty tasks_for(pt, SOURCES)
+  end
+
+  test "what the old code left in the superseded columns does not settle either task" do
+    pt = tracker!
+    twist_link!(pt)
+    ProjectTracker.connection.exec_update(
+      "UPDATE project_trackers SET notion_project_id = $1, twist_channel_accessible = false WHERE id = $2", "SQL",
+      [@synced.notion_id, pt.id]
+    )
     assert_equal 1, tasks_for(pt, SOURCES).size
+    assert_empty tasks_for(pt, INVITE)
   end
 
   test "a Notion project at any stage counts as linked" do
@@ -142,25 +180,49 @@ class StacksTaskBuilderDiscoveriesProjectTrackerSourcesTest < ActiveSupport::Tes
 
   # ---- stacksbot_not_in_twist_channel ---------------------------------------
 
-  test "the invite task is raised only when the last check said no" do
+  test "the invite task is raised only when the last check found a channel Stacksbot is not in" do
     pt = tracker!
     twist_link!(pt)
 
-    assert_nil pt.reload.twist_channel_accessible
+    assert_equal [], pt.reload.twist_channels_inaccessible
+    assert_nil pt.twist_channel_checked_at
     assert_empty tasks_for(pt, INVITE), "not checked yet"
 
-    pt.update_columns(twist_channel_accessible: true)
+    not_in!(pt)
     assert_empty tasks_for(pt, INVITE), "Stacksbot is in the channel"
 
-    pt.update_columns(twist_channel_accessible: false)
+    not_in!(pt, 794756)
     invite = tasks_for(pt, INVITE)
     assert_equal 1, invite.size
     assert_equal [@admin], invite.first.owners, "admins manage Twist membership, even when there is a lead"
   end
 
+  test "with two channels, the access check stores only the one Stacksbot is not in and one invite task is raised" do
+    pt = tracker!
+    twist_link!(pt)
+    twist_link!(pt, 5)
+    in_first_only = stub(get_channels: stub(code: 200, parsed_response: [{ "id" => 794756 }]))
+    in_both = stub(get_channels: stub(code: 200, parsed_response: [{ "id" => 794756 }, { "id" => 5 }]))
+
+    ProjectTracker.sync_twist_channel_access!(twist: in_first_only)
+    assert_equal [5], pt.reload.twist_channels_inaccessible
+    assert_equal 1, tasks_for(pt, INVITE).size
+
+    ProjectTracker.sync_twist_channel_access!(twist: in_both)
+    assert_equal [], pt.reload.twist_channels_inaccessible
+    assert_empty tasks_for(pt, INVITE)
+  end
+
   test "no invite task without a Twist link, whatever the stored answer" do
     pt = tracker!
-    pt.update_columns(twist_channel_accessible: false)
+    not_in!(pt, 794756)
+    assert_empty tasks_for(pt, INVITE)
+  end
+
+  test "a stored answer about a channel the tracker no longer names raises no invite task" do
+    pt = tracker!
+    twist_link!(pt, 11)
+    not_in!(pt, 794756)
     assert_empty tasks_for(pt, INVITE)
   end
 
@@ -168,7 +230,7 @@ class StacksTaskBuilderDiscoveriesProjectTrackerSourcesTest < ActiveSupport::Tes
     make = lambda do |**opts|
       pt = tracker!(**opts)
       twist_link!(pt)
-      pt.update_columns(twist_channel_accessible: false)
+      not_in!(pt, 794756)
       pt
     end
 
@@ -196,7 +258,7 @@ class StacksTaskBuilderDiscoveriesProjectTrackerSourcesTest < ActiveSupport::Tes
   test "both tasks point at the tracker's admin page" do
     pt = tracker!
     twist_link!(pt)
-    pt.update_columns(twist_channel_accessible: false)
+    not_in!(pt, 794756)
     path = Rails.application.routes.url_helpers.admin_project_tracker_path(pt)
 
     assert_equal path, tasks_for(pt, SOURCES).first.subject_url
@@ -230,7 +292,9 @@ class StacksTaskBuilderDiscoveriesProjectTrackerSourcesTest < ActiveSupport::Tes
     make = lambda do
       pt = tracker!
       twist_link!(pt)
-      notion_project!(pt)
+      twist_link!(pt, 5)
+      2.times { notion_project!(pt) }
+      not_in!(pt, 5)
     end
 
     2.times { make.call }

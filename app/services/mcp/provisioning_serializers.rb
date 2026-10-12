@@ -24,10 +24,11 @@ module Mcp
         # Every link, not just MSA/SOW: twist_channel and notion_homepage are
         # how Stacksbot finds a project's conversation without name-matching.
         links: tracker.project_tracker_links.map { |l| { name: l.name, url: public_url(l.url), link_type: l.link_type } },
-        # The project's Twist channel and Notion Projects page, by id, so
-        # Stacksbot attributes what it sees by place instead of by name.
-        twist_channel_id: tracker.twist_channel_id,
-        notion_project_id: tracker.notion_project_id.presence,
+        # The project's Twist channels and Notion Projects pages, by id, so
+        # Stacksbot attributes what it sees by place instead of by name. A
+        # tracker may have one or many of each; none is an empty list.
+        twist_channel_ids: tracker.twist_channel_ids,
+        notion_project_ids: tracker.notion_project_ids,
         account_lead: lead_json(tracker.account_lead_periods),
         project_lead: lead_json(tracker.project_lead_periods),
         workstreams: tracker.project_tracker_forecast_projects.map { |ws| workstream_json(ws) },

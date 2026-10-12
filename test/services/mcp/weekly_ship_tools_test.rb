@@ -233,6 +233,63 @@ class Mcp::WeeklyShipToolsTest < ActiveSupport::TestCase
     assert_equal 'https://twist.com/a/133876/ch/9/', after['links'].find { |l| l['link_type'] == 'twist_channel' }['url']
   end
 
+  test 'list_project_trackers returns the Twist channel ids and Notion project ids, and neither singular key' do
+    a = SecureRandom.uuid
+    b = SecureRandom.uuid
+    tracker = tracker!(name: 'Two Of Each')
+    tracker.update_columns(notion_project_ids: [a, b])
+    tracker.project_tracker_links.create!(name: 'Twist', url: 'https://twist.com/a/133876/ch/9/', link_type: :twist_channel)
+    tracker.project_tracker_links.create!(name: 'Twist 2', url: 'https://twist.com/a/133876/ch/2/', link_type: :twist_channel)
+    tracker!(name: 'None Of Either')
+
+    rows = mcp_payload(Mcp::ListProjectTrackersTool.call(server_context: {})).index_by { |r| r['name'] }
+
+    assert_equal [2, 9], rows['Two Of Each']['twist_channel_ids']
+    assert_equal [a, b], rows['Two Of Each']['notion_project_ids']
+    assert_equal [], rows['None Of Either']['twist_channel_ids']
+    assert_equal [], rows['None Of Either']['notion_project_ids']
+    rows.each_value do |row|
+      assert_not row.key?('twist_channel_id')
+      assert_not row.key?('notion_project_id')
+    end
+  end
+
+  test 'update_project_tracker with a second channel URL adds a second Twist link' do
+    tracker = with_links!(tracker!(name: 'Two Channels'))
+    tracker.project_tracker_links.create!(name: 'Twist Channel', url: 'https://twist.com/a/133876/ch/9/', link_type: :twist_channel)
+
+    payload = mcp_payload(Mcp::UpdateProjectTrackerTool.call(
+      project_tracker_id: tracker.id, twist_channel_url: 'https://twist.com/a/133876/ch/2/t/77/', server_context: {}
+    ))
+
+    assert_equal [9], payload['before']['twist_channel_ids']
+    assert_equal [2, 9], payload['after']['twist_channel_ids']
+    assert_equal ['https://twist.com/a/133876/ch/2/', 'https://twist.com/a/133876/ch/9/'],
+                 tracker.reload.project_tracker_links.select(&:twist_channel?).map(&:url).sort
+  end
+
+  test 'update_project_tracker with a channel the tracker already has adds nothing' do
+    tracker = with_links!(tracker!(name: 'Same Channel'))
+    link = tracker.project_tracker_links.create!(name: 'Our Channel', url: 'https://twist.com/a/133876/ch/9/', link_type: :twist_channel)
+    tracker.update_columns(twist_channels_inaccessible: [9], twist_channel_checked_at: Time.zone.now)
+
+    # Pasted as a thread, without the trailing slash: still channel 9.
+    payload = mcp_payload(Mcp::UpdateProjectTrackerTool.call(
+      project_tracker_id: tracker.id, twist_channel_url: 'https://twist.com/a/133876/ch/9/t/77', server_context: {}
+    ))
+
+    assert_nil payload['error']
+    assert_equal [9], payload['after']['twist_channel_ids']
+    assert_equal [link.id], tracker.reload.project_tracker_links.select(&:twist_channel?).map(&:id)
+    assert_equal 'Our Channel', link.reload.name
+    assert_equal [9], tracker.twist_channels_inaccessible, 'an unchanged link keeps the stored access answer'
+  end
+
+  test 'update_project_tracker says a Twist channel is added, not replaced' do
+    assert_match(/adds/i, Mcp::UpdateProjectTrackerTool.input_schema.to_h.dig(:properties, :twist_channel_url, :description))
+    assert_no_match(%r{MSA/SOW/Twist-channel}, Mcp::UpdateProjectTrackerTool.description)
+  end
+
   test 'update_project_tracker replaces an existing range with one end, and clears on request' do
     tracker = with_links!(tracker!(name: 'Rebudget', monthly_budget_low_end: 5000, monthly_budget_high_end: 8000))
 

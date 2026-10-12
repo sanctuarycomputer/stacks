@@ -1,6 +1,7 @@
 # Wraps a NotionPage row from the Notion Projects database. A project tracker
-# names one of these as its project (project_trackers.notion_project_id), and
-# that is how Stacksbot's observations find their way to a tracker.
+# names one or many of these as its projects
+# (project_trackers.notion_project_ids), and that is how Stacksbot's
+# observations find their way to a tracker.
 class Stacks::Notion::Project < Stacks::Notion::Base
   # Stages that are live work or live pipeline. Copied from Stacksbot's
   # LIVE_STAGES (scripts/entities/registry.mjs) so the two agree on which
@@ -37,18 +38,23 @@ class Stacks::Notion::Project < Stacks::Notion::Base
   end
 
   # [label, notion_id] pairs for the tracker form: every live project, plus
-  # whatever this tracker already points at, so saving the form never drops it.
+  # everything this tracker already points at, so saving the form never drops
+  # one.
   def self.options_for(tracker)
     options = NotionPage.projects.map(&:as_project).select(&:live?).map { |p| [p.label, p.notion_id] }
-    current = tracker.notion_project_id.presence
-    if current && options.none? { |(_, id)| id == current }
-      page = NotionPage.with_deleted.projects.find_by(notion_id: current)
-      options << if page.nil?
-        ["Unknown page (removed from Notion)", current]
-      elsif page.deleted?
-        ["#{page.as_project.title} (removed from Notion)", current]
-      else
-        [page.as_project.label, current]
+    offered = options.map(&:last).to_set
+    others = Array(tracker.notion_project_ids).reject { |id| id.blank? || offered.include?(id) }.uniq
+    if others.any?
+      pages = NotionPage.with_deleted.projects.where(notion_id: others).index_by(&:notion_id)
+      others.each do |id|
+        page = pages[id]
+        options << if page.nil?
+          ["Unknown page (removed from Notion)", id]
+        elsif page.deleted?
+          ["#{page.as_project.title} (removed from Notion)", id]
+        else
+          [page.as_project.label, id]
+        end
       end
     end
     options.sort_by { |(label, _)| label.downcase }

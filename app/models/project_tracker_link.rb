@@ -48,6 +48,17 @@ class ProjectTrackerLink < ApplicationRecord
     "must be a Twist channel in our workspace, like #{twist_channel_url(794756)}"
   end
 
+  # The channel a pasted URL points at, or nil when it is not a channel in our
+  # workspace.
+  def self.twist_channel_id_in(url)
+    parsed = URI.parse(url.to_s.strip) rescue nil
+    return nil unless parsed.is_a?(URI::HTTPS) && parsed.host.to_s.downcase == "twist.com" && parsed.userinfo.nil?
+    m = parsed.path.to_s.match(TWIST_CHANNEL_PATH)
+    # to_i: "ch/00012/" is channel 12, and channel 0 does not exist.
+    return nil unless m && m[1] == twist_workspace_id && m[2].to_i.positive?
+    m[2].to_i
+  end
+
   # Declared below the strip above, so a padded URL is stripped first.
   before_validation :tidy_twist_channel_url, if: :twist_channel?
   validate :url_is_our_twist_channel, if: :twist_channel?
@@ -67,23 +78,19 @@ class ProjectTrackerLink < ApplicationRecord
   end
 
   def tidy_twist_channel_url
-    parsed = URI.parse(url.to_s) rescue nil
-    return unless parsed.is_a?(URI::HTTPS) && parsed.host.to_s.downcase == "twist.com" && parsed.userinfo.nil?
-    m = parsed.path.to_s.match(TWIST_CHANNEL_PATH)
-    # to_i: "ch/00012/" is channel 12, and channel 0 does not exist.
-    return unless m && m[1] == self.class.twist_workspace_id && m[2].to_i.positive?
-    self.url = self.class.twist_channel_url(m[2].to_i)
+    channel_id = self.class.twist_channel_id_in(url)
+    self.url = self.class.twist_channel_url(channel_id) if channel_id
   end
 
   def url_is_our_twist_channel
     errors.add(:url, self.class.twist_channel_shape) if twist_channel_id.nil?
   end
 
-  # The stored answer was about the old link. (update_all: no callbacks, no
-  # validations; the tracker may be mid-destroy.)
+  # The stored answer was about the old set of links. (update_all: no
+  # callbacks, no validations; the tracker may be mid-destroy.)
   def forget_twist_channel_access
     return unless destroyed? || saved_change_to_url? || saved_change_to_link_type? || saved_change_to_id?
-    ProjectTracker.where(id: project_tracker_id).update_all(twist_channel_accessible: nil, twist_channel_checked_at: nil)
+    ProjectTracker.where(id: project_tracker_id).update_all(twist_channels_inaccessible: [], twist_channel_checked_at: nil)
   end
 
   def url_is_plain_http

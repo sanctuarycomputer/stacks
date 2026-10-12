@@ -5,7 +5,8 @@ require 'rake'
 # see, and its ride on the daily Notion sync. Nothing here may reach Twist or
 # Notion: the model call, the Notion client and the error notifier are stubbed.
 class TwistChannelAccessRakeTest < ActiveSupport::TestCase
-  STATS = { checked: 2, accessible: 1, inaccessible: 1 }.freeze
+  # Trackers checked, then channels the account is and is not in.
+  STATS = { checked: 2, accessible: 3, inaccessible: 1 }.freeze
 
   setup do
     Stacks::Application.load_tasks if Rake::Task.tasks.empty?
