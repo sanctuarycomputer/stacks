@@ -107,7 +107,9 @@ module SyncsAsQboBill
   # - bill_doc_number_code   → Short 2-char tag in the QBO Bill doc_number
   #   (must be unique across all host models). Current mappings:
   #     CP = ContributorPayout, TU = Trueup, CA = ContributorAdjustment,
-  #     PS = ProfitShare, SB = PayStub.
+  #     PS = ProfitShare, SB = PayStub, RB = Reimbursement, MT = MsoTrueup.
+  #   A new code also needs a `when` arm in
+  #   QboAccount#cleanup_orphaned_qbo_objects!.
 
   def payable?
     false

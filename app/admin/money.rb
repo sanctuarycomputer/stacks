@@ -71,7 +71,7 @@ ActiveAdmin.register_page "Money" do
     # Guard the host_class lookup BEFORE constantize so an unknown string can't
     # raise NameError (which would surface as 500 instead of BadRequest).
     raw_class = params.require(:host_class).to_s
-    raise ActionController::BadRequest, "unsupported host class" unless Money::PayableQboBills::HOST_KLASSES.map(&:name).include?(raw_class)
+    raise ActionController::BadRequest, "unsupported host class" unless Money::PayableQboBills.host_klasses.map(&:name).include?(raw_class)
     klass = raw_class.constantize
     host = klass.find(params.require(:host_id))
     # Refuse to push an unapproved host to QBO. sync_qbo_bill! has no
