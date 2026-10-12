@@ -3,6 +3,13 @@ module Mso
   # each MSO executive's tier multiplier is applied to.
   #
   # Current month only; no smoothing across months.
+  #
+  # This is a live calculation, not a record: it reads today's roster and
+  # today's payouts, so a backdated roster change or a re-run payout changes
+  # the answer for a past month. Whatever pays people from it must store the
+  # members and the average it used. The average is unrounded — store it in
+  # full (average.to_s), not to two decimals, or a later recomputation from
+  # the stored figure can differ from what was paid by a cent.
   class Benchmark
     # Earnings only. A true-up is a top-up, not earnings: today every true-up
     # is the monthly founder true-up, which lifts one person to exactly the
@@ -33,7 +40,8 @@ module Mso
       # Having no login is a proxy for "outside party", and it also leaves out
       # ordinary contractors. Report anyone it removed who would have ranked.
       threshold = members.size < @top_n ? ZERO : members.last[:amount]
-      excluded = rank(without_login).select { |entry| entry[:amount] > threshold }
+      # >= so that someone who ties the last counted member is reported too.
+      excluded = rank(without_login).select { |entry| entry[:amount] >= threshold }
 
       Result.new(
         average: average,

@@ -13,6 +13,9 @@ module Ledger::QualifyingIncome
     PayStub => :pay_cycle,
   }.freeze
 
+  # Mso::Benchmark deliberately narrows this to payouts and pay stubs (its own
+  # KLASSES): a true-up is a top-up, not earnings. True-ups stay in here because
+  # they are money a person has already received.
   KLASSES = SOURCES.keys.freeze
 
   ZERO = BigDecimal("0")

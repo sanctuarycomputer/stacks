@@ -90,6 +90,13 @@ class Ledger::QualifyingIncomeTest < ActiveSupport::TestCase
     assert_equal BigDecimal("1000"), income
   end
 
+  test "a soft-deleted pay stub is not income" do
+    trueup(@march_pass, "1000")
+    pay_stub(Date.new(2090, 3, 31), 900).destroy
+
+    assert_equal BigDecimal("1000"), income
+  end
+
   test "differs from the ledger page's total_income by exactly the soft-deleted rows" do
     trueup(@march_pass, "1000")
     trueup(@march_pass, "10300").destroy

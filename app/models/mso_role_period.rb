@@ -25,6 +25,12 @@ class MsoRolePeriod < ApplicationRecord
   validates :title, presence: true
   validate :full_months_only
 
+  # CALLERS: one period per contributor per month is enforced by a model
+  # validation only (no database constraint), so two can exist after a
+  # validate: false save or two simultaneous creates. Anything that pays
+  # from this must check it has one row per contributor_id and refuse to
+  # run otherwise.
+  #
   # Periods that overlap the calendar month containing `date`. Written in SQL
   # rather than on top of period_ended_at, which is a Ruby-side sentinel.
   scope :active_during, ->(date) {

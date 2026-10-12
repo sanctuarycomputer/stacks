@@ -29,6 +29,42 @@ class AdminMsoRolePeriodsTest < ActionDispatch::IntegrationTest
     assert_equal Date.new(2026, 1, 1), period.started_at
   end
 
+  test "an admin can view, edit and end a role period" do
+    period = MsoRolePeriod.create!(contributor: @contributor, tier: :svp, title: "Finance",
+                                   started_at: Date.new(2026, 1, 1), ended_at: Date.new(2026, 6, 30))
+    sign_in @admin
+
+    get admin_mso_role_periods_path
+    assert_response :success
+    assert_match(/0\.85x/, response.body)
+    assert_match(/Finance/, response.body)
+
+    get new_admin_mso_role_period_path
+    assert_response :success
+
+    get edit_admin_mso_role_period_path(period)
+    assert_response :success
+
+    # Clearing the end date re-opens the role.
+    patch admin_mso_role_period_path(period), params: { mso_role_period: { ended_at: "" } }
+    assert_response :redirect
+    assert_nil period.reload.ended_at
+  end
+
+  test "a second open-ended period for the same person is a form error" do
+    MsoRolePeriod.create!(contributor: @contributor, tier: :chief, title: "Operations",
+                          started_at: Date.new(2026, 1, 1))
+    sign_in @admin
+
+    assert_no_difference -> { MsoRolePeriod.count } do
+      post admin_mso_role_periods_path, params: { mso_role_period: {
+        contributor_id: @contributor.id, tier: "principal", title: "Operations",
+        started_at: "2027-01-01",
+      } }
+    end
+    assert_match(/overlaps with another/, response.body)
+  end
+
   test "a lead cannot see the roster" do
     sign_in @lead
 

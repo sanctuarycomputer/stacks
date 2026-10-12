@@ -792,7 +792,7 @@ surfaces.
 | Executive out-earns target | True-up $0, no clawback, cap share **not** reassigned (§8.1). |
 | Future-dated promotion | Rejected as overlapping (§3.4). |
 | Nil `started_at` | Rejected by `null: false` + validation. |
-| Two lines for one contributor | Impossible once overlaps are rejected; `Mso::Compensation` still asserts one per contributor. |
+| Two lines for one contributor | **Possible.** One period per contributor per month is a model validation only, and `Mso::Compensation` checks only that line keys are unique. `Mso::MonthlyRun` (S4) must assert one active role period per `contributor_id` and refuse to run otherwise. |
 | USB Club has no QBO customer | Created once; id persisted. |
 | garden3d flagged as payer | Rejected by validation. |
 | Payer not charged | Unsent draft ignored; gate reads sent invoices only. |
@@ -906,6 +906,71 @@ concurrency to protect against — S4 owns those edits sequentially, including
 
 `S1` and `S0` both touch `app/models/invoice_tracker.rb` and
 `app/models/invoice_pass.rb`, sequenced across stages 1 and 2, never concurrent.
+
+## 13a. As built — S2 and S3
+
+S2 (roster, benchmark) and S3 (calculator) are built. Where the code differs
+from §7, §8, §10 and §12 above, **this section governs**; those sections are
+left as the record of the design.
+
+**Calculator (§8)**
+
+- Finals respect the cap **floored to cents** (`payable_cap`). 55% of a fee is
+  rarely a whole number of cents, so `Σ final <= cap` is otherwise unachievable.
+- Over the cap, lines are allocated by largest remainder to exactly that
+  ceiling. Under the cap each line is rounded on its own; largest remainder is
+  used only if rounding up would cross the ceiling.
+- Negative benchmark, fee income, cap percentage or multiplier raise
+  `ArgumentError`. Negative `already_earned` is treated as zero, so a true-up
+  never exceeds the final. `reduction` is floored at zero.
+- Line keys must be unique. Ties for the odd cent break numerically on numeric
+  keys.
+
+**Roster (§7.1, §10)**
+
+- No `BustsTaskCache`. The tier enum is `_prefix: :tier`; `tier` is validated.
+- `sibling_periods` queries fresh — going through `contributor.mso_role_periods`
+  cached an empty list and let overlapping periods save.
+- `Contributor has_many :mso_role_periods, dependent: :restrict_with_error`.
+- The roster page allows create, edit and destroy and is admin-only for every
+  action through one guard line above the blanket lead grant. No
+  `scope_collection` branch is needed: non-admins fail `authorized?` first.
+- One period per contributor per month is **not** enforced by the database.
+  An exclusion constraint (`btree_gist` is enabled) is a follow-up; the
+  hand-kept `schema.rb` cannot represent one.
+
+**Qualifying income (§7.2, §4.1)**
+
+- Signature: `Ledger::QualifyingIncome.for(ledger:, month:, excluding: [], klasses: KLASSES)`.
+- `KLASSES` is payouts, true-ups and pay stubs. S4 adds `MsoTrueup`.
+- `Ledger#items_grouped_by_month` is untouched.
+- A live row whose parent has gone missing raises rather than being skipped:
+  silently dropping income would enlarge someone's true-up.
+
+**Benchmark (§7.3)**
+
+- Counts **payouts and pay stubs only, not true-ups** (`Mso::Benchmark::KLASSES`).
+  Every live true-up is the monthly founder top-up, which mirrors the highest
+  earner; left in, it lifts the top-3 average by 4–22%.
+- Having no login is a proxy for "outside party" and also leaves out ordinary
+  contractors, so `Result` gains `excluded_without_login` listing anyone it
+  removed who would have ranked or tied.
+- "Ever held a role" means a role period starting on or before the month's end.
+- Reads the Sanctuary ledger only. Top N comes from `System.mso_top_n`
+  (default 3), which has no admin form: `System.first.update!(mso_top_n: 5)`.
+- It is a live calculation. A backdated roster edit or a re-run payout changes
+  a past month's answer, so S4 must store the members and the unrounded average
+  it used (`average.to_s`, not a two-decimal column).
+- Verified on production data: top-3 averages for May–July 2026 match the
+  finance workbook to the dollar, and May–September match an independent SQL
+  recomputation on every id and amount.
+
+**Open questions these raise for S4**
+
+- The founder true-up and the MSO true-up would both top up the same person.
+  Does the MSO true-up replace the founder true-up?
+- Should outside commission income be excluded as income, rather than by the
+  no-login proxy?
 
 ## 14. Out of scope
 

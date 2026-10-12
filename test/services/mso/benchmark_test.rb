@@ -112,6 +112,33 @@ class Mso::BenchmarkTest < ActiveSupport::TestCase
     assert_equal [contractor.id], result.excluded_without_login.map { |m| m[:contributor_id] }
   end
 
+  test "pay stubs count alongside payouts" do
+    salaried = person("salaried")
+    ledger = Ledger.find_or_create_for(enterprise: @sanctuary, contributor: salaried)
+    cycle = PayCycle.create!(enterprise: @sanctuary, starts_at: @month, ends_at: @month.end_of_month)
+    PayStub.create!(pay_cycle: cycle, ledger: ledger, amount: 12_000, blueprint: {
+      "lines" => [{ "forecast_project" => "p", "hours" => 1, "rate" => 12_000, "amount" => 12_000, "description" => "x" }],
+    })
+    pay(salaried, 8_000)
+    earner("a", 10_000)
+
+    result = Mso::Benchmark.for_month(@month, top_n: 2)
+
+    assert_equal salaried.id, result.members.first[:contributor_id]
+    assert_equal BigDecimal("20000"), result.members.first[:amount]
+    assert_equal BigDecimal("15000"), result.average
+  end
+
+  test "a payee with no login who ties the last counted member is reported" do
+    earner("a", 20_000)
+    earner("b", 10_000)
+    tied = earner("tied-contractor", 10_000, login: false)
+
+    result = Mso::Benchmark.for_month(@month, top_n: 2)
+
+    assert_equal [tied.id], result.excluded_without_login.map { |m| m[:contributor_id] }
+  end
+
   test "true-ups are not earnings and do not count" do
     earner("a", 20_000)
     earner("b", 10_000)

@@ -15,6 +15,9 @@ module Mso
     ZERO = BigDecimal("0")
     CENT = BigDecimal("0.01")
 
+    # `key` only has to be unique across the lines. If the caller keys by role
+    # period, two periods for one person become two lines and two payments —
+    # the caller must make sure there is one line per person.
     Line = Struct.new(:key, :multiplier, :already_earned, keyword_init: true)
     Output = Struct.new(:key, :calculated, :final, :reduction, :trueup, keyword_init: true)
     Result = Struct.new(:outputs, :cap, :total_calculated, :total_trueup, keyword_init: true)
