@@ -177,21 +177,12 @@
     color: $color-red;
   }
 
-  .full-screen-modal__contents__title {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding-bottom: 12px;
-    border-bottom: 1px solid $color-light-grey;
-
-    p {
-      margin: 0;
-    }
-
-    a.margin-breach__close {
-      text-decoration: none;
-      color: inherit;
-    }
+  // Same title block as the studio KPI comment modal (a line of text over an
+  // <hr>), plus a close link on the right.
+  a.margin-breach__close {
+    float: right;
+    text-decoration: none;
+    color: inherit;
   }
 
   tr.margin-breach__total td {
