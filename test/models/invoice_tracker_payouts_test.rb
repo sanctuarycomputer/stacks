@@ -127,4 +127,61 @@ class InvoiceTrackerPayoutsTest < ActiveSupport::TestCase
     assert_match(/\* 8\.0% =/, al_cp.blueprint["AccountLead"].first["description_line"])
     assert_match(/\* 5\.0% =/, pl_cp.blueprint["ProjectLead"].first["description_line"])
   end
+
+  test "a regenerate keeps acceptance on a payout whose surplus-inclusive amount is unchanged" do
+    build_tracker("new_deal_v2")
+    @project.update!(notes: "#{@ic.email}:80p/h")
+    it = build_invoice_tracker
+    it.make_contributor_payouts!(@creator)
+    al_cp = it.contributor_payouts.reload.find { |c| c.contributor.forecast_person == @al }
+    al_cp.update_columns(accepted_at: Time.current)
+
+    it.make_contributor_payouts!(@creator)
+    assert al_cp.reload.accepted_at.present?, "acceptance should survive an identical regenerate"
+    assert_equal 1, al_cp.blueprint["AccountLeadSurplus"].length, "surplus must not accumulate across regenerates"
+  end
+
+  test "a regenerate succeeds when stale payouts would have tripped the cap mid-write" do
+    build_tracker("new_deal_v1")
+    it = build_invoice_tracker
+    it.make_contributor_payouts!(@creator)
+    # A leftover payout from an earlier generation, for someone no longer on the invoice.
+    stranger = ForecastPerson.create!(forecast_id: 700_009, email: "stale-split@example.com", data: {})
+    stranger.ensure_contributor_exists!
+    ledger = Ledger.find_or_create_for(enterprise: @client.billing_enterprise, contributor: stranger.reload.contributor)
+    stale = ContributorPayout.new(invoice_tracker: it, ledger: ledger, amount: 900.0, blueprint: {}, created_by: @creator)
+    stale.skip_seventy_percent_check = true
+    stale.save!
+    it.contributor_payouts.reset # the tracker's association was loaded before the stale row existed
+
+    assert_nothing_raised { it.make_contributor_payouts!(@creator) }
+    assert_nil ContributorPayout.find_by(id: stale.id), "the stale payout should be removed"
+    assert_in_delta 1400.0, it.contributor_payouts.reload.sum { |cp| cp.amount.to_f }, 0.01
+  end
+
+  test "generation writes the prebuilt Build it is given, not a fresh one" do
+    build_tracker("new_deal_v1")
+    it = build_invoice_tracker
+    build = InvoicePayouts::Build.new(it)
+    build.payees # computed now, at 57%
+    @project.update!(notes: "#{@ic.email}:80p/h") # a fresh build would pay 10 hrs * $80
+    it.make_contributor_payouts!(@creator, build: build)
+    assert_in_delta 1140.0, amount_for(it, @ic), 0.01
+  end
+
+  test "a salaried payee still gets a Contributor, but no payout" do
+    build_tracker("new_deal_v1")
+    FullTimePeriod.create!(admin_user: @al_admin, started_at: Date.new(2020, 1, 1), contributor_type: :five_day, expected_utilization: 0.8)
+    # A Contributor is created with a Ledger per enterprise; clear those so it can go.
+    Ledger.where(contributor: @al.contributor).delete_all
+    @al.contributor.destroy
+    @al.reload
+    assert_nil @al.contributor
+    it = build_invoice_tracker
+    it.make_contributor_payouts!(@creator)
+
+    assert @al.reload.contributor.present?
+    assert_nil amount_for(it, @al)
+    assert_equal 2, it.contributor_payouts.reload.length # IC and Project Lead only
+  end
 end

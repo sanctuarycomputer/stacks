@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_10_12_100000) do
+ActiveRecord::Schema.define(version: 2026_10_12_130000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -535,16 +535,22 @@ ActiveRecord::Schema.define(version: 2026_10_12_100000) do
     t.bigint "admin_user_id"
     t.text "notes"
     t.date "allow_early_contributor_payouts_on"
-    t.decimal "company_treasury_split", default: "0.3"
+    t.decimal "target_margin_override"
     t.datetime "reviewers_last_notified_at"
     t.bigint "qbo_account_id", null: false
+    t.bigint "payout_cap_override_by_id"
+    t.datetime "payout_cap_override_at"
+    t.text "payout_cap_override_reason"
+    t.decimal "payout_cap_override_payout_percentage"
+    t.decimal "payout_cap_override_cap_percentage"
     t.index ["admin_user_id"], name: "index_invoice_trackers_on_admin_user_id"
     t.index ["forecast_client_id", "invoice_pass_id"], name: "idx_invoice_trackers_on_forecast_client_id_and_invoice_pass_id", unique: true
     t.index ["forecast_client_id"], name: "index_invoice_trackers_on_forecast_client_id"
     t.index ["invoice_pass_id"], name: "index_invoice_trackers_on_invoice_pass_id"
+    t.index ["payout_cap_override_by_id"], name: "index_invoice_trackers_on_payout_cap_override_by_id"
     t.index ["qbo_account_id", "qbo_invoice_id"], name: "index_invoice_trackers_on_qa_and_qbo_invoice"
     t.index ["qbo_account_id"], name: "index_invoice_trackers_on_qbo_account_id"
-    t.check_constraint "(company_treasury_split >= (0)::numeric) AND (company_treasury_split <= (1)::numeric)", name: "check_company_treasury_split_range"
+    t.check_constraint "(target_margin_override >= (0)::numeric) AND (target_margin_override <= (1)::numeric)", name: "check_target_margin_override_range"
   end
 
   create_table "ledgers", force: :cascade do |t|
@@ -1604,6 +1610,7 @@ ActiveRecord::Schema.define(version: 2026_10_12_100000) do
   add_foreign_key "gifted_profit_shares", "admin_users"
   add_foreign_key "invoice_passes", "enterprises"
   add_foreign_key "invoice_trackers", "admin_users"
+  add_foreign_key "invoice_trackers", "admin_users", column: "payout_cap_override_by_id", on_delete: :nullify
   add_foreign_key "invoice_trackers", "invoice_passes"
   add_foreign_key "invoice_trackers", "qbo_accounts"
   # Composite FK fk_invoice_trackers_qbo_invoice managed by migration (not expressible in schema.rb)

@@ -222,6 +222,8 @@
   <% end %>
 </div>
 
+<%= render partial: "admin/invoice_trackers/payout_cap_override", locals: { invoice_tracker: invoice_tracker } %>
+
 <% if invoice_tracker.contributor_payouts.any? %>
   <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
     <thead>

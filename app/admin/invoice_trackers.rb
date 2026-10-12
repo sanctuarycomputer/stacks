@@ -4,7 +4,14 @@ ActiveAdmin.register InvoiceTracker do
   config.paginate = false
   actions :index, :show, :edit, :update
   belongs_to :invoice_pass
-  permit_params :notes, :allow_early_contributor_payouts_on, :company_treasury_split, :qbo_invoice_id, :qbo_account_id
+  permit_params do
+    permitted = [:notes, :allow_early_contributor_payouts_on, :qbo_invoice_id, :qbo_account_id]
+    # Admin-only, and absent until the (manual) migration has run.
+    if current_admin_user.is_admin? && InvoiceTracker.column_names.include?("target_margin_override")
+      permitted << :target_margin_override
+    end
+    permitted
+  end
 
   action_item :attempt_generate, only: :show, if: proc { current_admin_user.is_admin? } do
     link_to(
@@ -369,8 +376,12 @@ ActiveAdmin.register InvoiceTracker do
           "#{f.object.qbo_account_id}:#{f.object.qbo_invoice_id}" : nil),
         include_blank: "None",
         input_html: { disabled: !current_admin_user.is_admin? }
-      if current_admin_user.is_admin?
-        f.input :company_treasury_split, as: :number, input_html: { step: 0.01 }
+      if current_admin_user.is_admin? && InvoiceTracker.column_names.include?("target_margin_override")
+        f.input :target_margin_override,
+          as: :number,
+          label: "Target margin override",
+          hint: "Blank = derive the cap from each project's billing model. 0.33 keeps 33% and caps payouts at 67%.",
+          input_html: { step: 0.01, min: 0, max: 1 }
       end
       f.input :allow_early_contributor_payouts_on, as: :date_picker
       f.input :notes, label: "❗Important Notes (accepts markdown)"
