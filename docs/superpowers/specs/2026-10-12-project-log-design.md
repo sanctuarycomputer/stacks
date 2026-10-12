@@ -84,11 +84,15 @@ reported "no" is. Open question 3 may make this simpler.
 - **Attribution by place.** A Twist message in a channel that a tracker names gets that tracker's
   Project, with no text matching. Mail gets its Project from the tracker Stacks already linked the
   ship to (`list_weekly_ships`). Meet keeps the text resolver for now; see open question 4.
-- **Valence.** New select property on Observations: Good, Bad, Ugly. Sensors set it for the signal
-  types only (below). Other rows leave it empty.
-  - Good: a win, praise, something delivered.
-  - Bad: a problem the team is already handling.
-  - Ugly: a risk to budget, timeline or the client relationship that nobody has owned yet.
+- **Valence.** New select property on Observations: Positive, Neutral, Negative. It says only which
+  way the news points. Sensors set it for the signal types only (below). Other rows leave it empty.
+  - Positive: a win, praise, something delivered.
+  - Neutral: a decision, a commitment or a change that is neither good nor bad news on its face.
+  - Negative: a problem, a slip, a complaint, a risk.
+  How serious it is stays where it already lives: `Salience` on the observation, and `Severity`,
+  `Status` and `Owner` on the Problem it is folded into. "Ugly" is not stored. It is derived:
+  a Negative observation that is High salience, or that belongs to a Problem nobody owns
+  (`Status` Open) of severity High or Critical.
 - **Problems inherit the Project** of their source observations when all of them agree.
 - **Channel check.** A weekly job compares each tracker's `twist_channel_id` with the channels
   Stacksbot is in, and calls `report_twist_channel_access` for each.
@@ -117,20 +121,20 @@ reported "no" is. Open question 3 may make this simpler.
 
 | View | Shows | Default |
 |---|---|---|
-| Needs attention | Open Problems for the project, then Ugly and Bad observations from the last 30 days | yes |
+| Needs attention | Open Problems for the project, then Negative observations from the last 30 days, the ugly ones first | yes |
 | Highlights | Every gated observation, all three valences, newest first, grouped by week | |
 | Everything | Every observation synced for the project, gated or not, including dismissed | |
 
 - **Gate** (Needs attention and Highlights): has a valence, type is one of Risk, Win, Decision,
   Commitment, Timeline Change, salience is Medium or High, status is not Dismissed.
-- **A row**: valence pill (green Good, orange Bad, red Ugly, grey when none), the observation's name
+- **A row**: valence pill (green Positive, grey Neutral or none, orange Negative, red when ugly), the observation's name
   and text, source and date, a link to the source, and the Problem it was folded into when there is
   one. Model-written text is escaped.
 - **Filters**: source (Twist, Meet, mail, Notion) and valence, as chips, combinable with any view.
 - **Empty states** say why: no Notion project chosen, no Twist channel, Stacksbot not in the channel,
   or nothing seen yet. Each links to the fix.
-- **Tracker page**: one module beside Weekly Ships with the count of open Problems, the count of Ugly
-  and Bad in the last 30 days, the latest three rows and "Open the log →".
+- **Tracker page**: one module beside Weekly Ships with the count of open Problems, the count of
+  Negative observations in the last 30 days (and how many are ugly), the latest three rows and "Open the log →".
 - **Trackers index**: out of scope for this pass. A risk column is the obvious next step once the log
   has earned trust.
 
@@ -154,10 +158,10 @@ Each is its own PR. Step 1 is useful alone: it produces the list of projects wit
 
 ## Open questions
 
-1. **Who sees the log?** Assumed: admins and leads only, like ship coaching. Internal channels are
-   blunt about clients and teammates.
-2. **Bad versus Ugly.** The definitions above are mine. Hugh said valence makes sense but has not
-   confirmed the line between the two.
+1. **Who sees the log?** Decided: whoever can read the project tracker. That is admins, leads, and a
+   lead-in-training for the trackers they hold a grant on. The page checks `authorized?(:read, tracker)`.
+2. **Valence.** Decided against Good / Bad / Ugly as stored values: it mixed direction with severity
+   and had no neutral. See Part 3.
 3. **Can Stacks check channel access itself?** Stacks has its own Twist token. If that is Stacksbot's
    account, Stacks can test the channel directly and `report_twist_channel_access` is not needed.
    To verify before building Part 2.
