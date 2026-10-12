@@ -55,7 +55,7 @@ Stacks too, as the weekly ship matcher already does.
 | Which way it points (valence) | Colours the pill |
 | How serious it is, and what folds into a Problem | Sorts by the fields Stacksbot wrote |
 | Which project a Twist message belongs to (by channel) | Matches the documents it ingests (Meet, ship mail) to trackers |
-| Which channels it can see | Turns a reported "no" into an admin task |
+| | Checks which project channels the Stacksbot account can see, and raises a task for a "no" |
 
 There are no privacy features specific to this feature. The corpus already excludes one-on-ones,
 reviews and the like before Stacksbot ever reads a transcript, and the log is shown only to people
@@ -95,10 +95,12 @@ Three new task types for trackers whose work is not complete, in the existing co
 
 Internal clients are exempt from all three.
 
-The third needs to know what Stacksbot can see. Stacksbot reports it: a new write tool
-`report_twist_channel_access(project_tracker_id, accessible, checked_at)` stores the result on the
-tracker (`twist_channel_accessible`, `twist_channel_checked_at`). Unknown is not a task; only a
-reported "no" is. Open question 3 may make this simpler.
+The third needs to know what Stacksbot can see. Stacks can answer that itself: its Twist token is
+the Stacksbot account (checked 2026-10-12: user "Stacksbot", workspace 133876, 31 channels). A daily
+task `stacks:sync_twist_channel_access` lists the channels that account belongs to once, and stores on
+each tracker with a Twist link `twist_channel_accessible` and `twist_channel_checked_at`. A tracker
+never checked raises no task; only a checked "no" does. Saving a new channel URL clears both, so a
+stale answer never outlives the link it was about. If the Twist call fails, nothing is changed.
 
 ## Part 3. Observations carry what the log needs (Stacksbot)
 
@@ -121,8 +123,6 @@ reported "no" is. Open question 3 may make this simpler.
   It is a plain filter over fields Stacksbot wrote: a Negative observation that is High salience, or
   that belongs to a Problem nobody owns (`Status` Open) of severity High or Critical.
 - **Problems inherit the Project** of their source observations when all of them agree.
-- **Channel check.** A weekly job compares each tracker's `twist_channel_id` with the channels
-  Stacksbot is in, and calls `report_twist_channel_access` for each.
 - The Observations `Type` select has stray options ("High", "Medium", "business"). Left alone.
 
 ## Part 3a. Stacks matches Meet transcripts to trackers
@@ -200,7 +200,7 @@ Each is its own PR. Step 1 is useful alone: it produces the list of projects wit
 - Stacks, Part 3a: a match at and under the threshold; no match; both documents of a meeting; a
   human correction is kept; an excluded document is never sent to the model; MCP fields.
 - Stacksbot: registry join from tracker fields; channel attribution; Meet Project taken from Stacks;
-  valence set only for project signal; the channel check with a fake Twist client.
+  valence set only for project signal.
 
 ## Open questions
 
@@ -208,9 +208,8 @@ Each is its own PR. Step 1 is useful alone: it produces the list of projects wit
    lead-in-training for the trackers they hold a grant on. The page checks `authorized?(:read, tracker)`.
 2. **Valence.** Decided against Good / Bad / Ugly as stored values: it mixed direction with severity
    and had no neutral. See Part 3.
-3. **Can Stacks check channel access itself?** Stacks has its own Twist token. If that is Stacksbot's
-   account, Stacks can test the channel directly and `report_twist_channel_access` is not needed.
-   To verify before building Part 2.
+3. **Can Stacks check channel access itself?** Yes. Stacks's Twist token is the Stacksbot account, so
+   Part 2 needs no write tool and nothing from Stacksbot.
 4. **Meet.** Decided: Stacks matches transcripts to trackers, because Stacks ingests them (Part 3a).
 5. **The Notion API version** Stacks uses is from 2021. The filtered query needs a relation filter and
    an edited-time filter. To verify against the real databases before Part 4 is planned.
