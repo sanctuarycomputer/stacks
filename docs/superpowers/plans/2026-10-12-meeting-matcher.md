@@ -515,3 +515,22 @@ Report the totals line. If anything outside this plan's files fails, check wheth
     - The new-link form's Cancel link must point at `admin_meeting_project_scans_path` (the resource has no index route).
 12. **Authorization needs no change.** Admins and leads pass `AdminAuthorization`'s blanket grant and a scoped grantee falls through to false, exactly as for `ShipScan` and `WeeklyShip`. The menu parent is `"project_trackers"`. Do not edit the adapter.
 13. **Hand-off note for the coordinator** (do not act on it): this PR has a migration; it is run on production before the PR is merged, and `MEETING_MATCHING` stays off until a dry-run preview has been read.
+
+---
+
+## Reworked to mirror the weekly ship matcher (2026-10-12)
+
+After review the owner decided the two matchers should behave the same and that a tracker simply has many meetings. This section supersedes the tasks and amendments above wherever they differ.
+
+- **Data.** `ProjectTracker has_and_belongs_to_many :meetings` (and the reverse) through the pure join table `meetings_project_trackers`: no join model, no `matched_by`, nothing stored per link. `MeetingScan` (`meeting_scans`, one per meeting) is the sibling of `ShipScan`: `outcome` (`linked`, `no_match`, `out_of_scope`), `confidence`, `rationale`, `scanned_hash`, `scanned_at`, `human_locked`. The model's one answer about a meeting lives on the scan. `MeetingProjectTracker` and `MeetingProjectScan` are gone; migration `20261012180000` now creates the two new tables.
+- **A person's changes.** `Meeting#link_project!(tracker)` and `#unlink_project!(tracker)` add or remove the tracker and lock the scan (`human_locked`, outcome from what is left, `scanned_hash` only on a new scan). `link_project!` raises `ActiveRecord::RecordInvalid` for a meeting with no corpus-eligible document. The sweep writes the join directly.
+- **Sweep.** `Stacks::Meetings::Sweep` (`lib/stacks/meetings/sweep.rb`) replaces `ProjectMatcher` and follows `Stacks::WeeklyShips::Sweep`: no environment switch (it runs whenever the nightly task runs), no per-run cap, `BACKFILL_WINDOW = 90.days`. A candidate is any meeting with an eligible document and either no scan, or an unlocked scan whose hash differs from the current eligible content. A candidate held more than 90 days ago gets an `out_of_scope` scan and no model call.
+- **Links are only added.** A rescan adds the valid trackers returned at confidence 0.6 or more and leaves existing ones alone. There is no kickoff retry of `no_match` scans. The outcome is `linked` when the meeting has any tracker, else `no_match`; the clamped confidence and the 300-character reason go on the scan.
+- **Kept on purpose:** the match is keyed on the Meeting, candidates are open trackers that are not `internal_client?`, the prompt carries each tracker's client and team, the system prompt rules, every privacy protection (eligible documents only, eligible title, hash from the loaded documents, per-meeting rescue, a mid-run lock wins), and the cleanup of an unlocked scan and its links once a meeting has no eligible document at all (the one time the sweep removes links).
+- **ETL absorb.** Trackers move to the survivor; the surviving scan (its own, or the other's when it had none) loses `rationale`, `confidence` and `scanned_hash`, keeps a lock from either side, and takes its outcome from the survivor's trackers.
+- **Destroy paths.** The join rows go with either side. A scan left with no trackers by a tracker's destroy becomes `no_match` and keeps its lock. No `table_exists?` guards there (the migration runs before the deploy); the MCP tools keep one, asked on every call.
+- **MCP.** `list_documents` and `get_document` still return sorted `project_tracker_ids`, never the reason or the confidence.
+- **Admin.** One page, `ActiveAdmin.register MeetingScan` ("Meeting Matches"), index only, with `add_project` (GET form, POST) and `remove_project` (DELETE) member actions that call the two model methods. Confidence and "Why" come from the scan. `out_of_scope` scans appear only under "All". The member actions authorize explicitly, because ActiveAdmin only authorizes a member action that loads `resource`.
+- **Rake.** `stacks:etl:match_meetings` (last in `sync_all`) and `stacks:etl:match_meetings_preview[limit]`; the limit applies to the preview only.
+- **Hand-off.** Run the migration on production before this deploys. There is no switch to turn on: the first nightly run after the deploy sends every readable meeting from the last 90 days to the model, so read a preview first.
+
