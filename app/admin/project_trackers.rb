@@ -565,6 +565,7 @@ ActiveAdmin.register ProjectTracker do
         a.input(:url, {
           label: "Link URL",
           prompt: "Add a name for this link",
+          hint: "For a Twist channel, paste the channel's link, like #{ProjectTrackerLink.twist_channel_url(794756)}",
         })
         a.input(:link_type, {
           label: "Link Type",

@@ -71,12 +71,12 @@ class ProjectTrackerMonthlyBudgetTest < ActiveSupport::TestCase
   test "update_details! sets a fixed monthly budget from one end and the new link types" do
     pt = with_links!(tracker!)
     pt.update_details!(monthly_budget_low_end: 6000,
-                       twist_channel_url: "https://twist.com/a/1/ch/2",
+                       twist_channel_url: "https://twist.com/a/133876/ch/2",
                        notion_homepage_url: "https://app.notion.com/p/home")
     pt.reload
     assert_equal 6000, pt.monthly_budget_low_end
     assert_equal 6000, pt.monthly_budget_high_end
-    assert_equal "https://twist.com/a/1/ch/2", pt.project_tracker_links.find { |l| l.twist_channel? }.url
+    assert_equal "https://twist.com/a/133876/ch/2/", pt.project_tracker_links.find { |l| l.twist_channel? }.url
     assert_equal "https://app.notion.com/p/home", pt.project_tracker_links.find { |l| l.notion_homepage? }.url
   end
 
@@ -108,8 +108,8 @@ class ProjectTrackerMonthlyBudgetTest < ActiveSupport::TestCase
 
   test "link URLs are stripped before validation and storage" do
     pt = tracker!
-    link = pt.project_tracker_links.create!(name: "T", url: "  https://twist.com/a/1/ch/2  ", link_type: :twist_channel)
-    assert_equal "https://twist.com/a/1/ch/2", link.reload.url
+    link = pt.project_tracker_links.create!(name: "T", url: "  https://twist.com/a/133876/ch/2  ", link_type: :twist_channel)
+    assert_equal "https://twist.com/a/133876/ch/2/", link.reload.url
     empty_userinfo = pt.project_tracker_links.build(name: "T", url: "https://@x.example/", link_type: :other)
     assert_not empty_userinfo.valid?
   end
@@ -215,7 +215,7 @@ class ProjectTrackerMonthlyBudgetTest < ActiveSupport::TestCase
 
   test "links must be anchored http(s) URLs with a host and no credentials" do
     pt = tracker!
-    ok = pt.project_tracker_links.build(name: "T", url: "https://twist.com/a/1/ch/2", link_type: :twist_channel)
+    ok = pt.project_tracker_links.build(name: "T", url: "https://twist.com/a/133876/ch/2/", link_type: :twist_channel)
     assert ok.valid?, ok.errors.full_messages.inspect
 
     [

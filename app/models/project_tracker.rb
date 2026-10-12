@@ -3,6 +3,7 @@ class ProjectTracker < ApplicationRecord
 
   validates :name, presence: :true
   validate :has_msa_and_sow_links
+  validate :at_most_one_twist_channel_link
   validate :no_forecast_projects_missing_project_code
   validate :no_forecast_project_code_collisions
   after_initialize :set_targets
@@ -388,6 +389,18 @@ class ProjectTracker < ApplicationRecord
     link = project_tracker_links.find { |l| l.link_type == type.to_s } ||
            project_tracker_links.build(name: label, link_type: type)
     link.url = url
+  end
+
+  # The id of this project's Twist channel, from its twist_channel link.
+  def twist_channel_id
+    project_tracker_links.find(&:twist_channel?)&.twist_channel_id
+  end
+
+  # Checked on the tracker, over links not marked for removal, so replacing
+  # the link in one form submit is not refused.
+  private def at_most_one_twist_channel_link
+    live = project_tracker_links.reject(&:marked_for_destruction?).select(&:twist_channel?)
+    errors.add(:base, "A project can have only one Twist channel link.") if live.size > 1
   end
 
   # Capsules the LEAD still has work to do on. Deliberately excludes capsules
