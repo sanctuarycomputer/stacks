@@ -175,7 +175,8 @@ A pass belongs to the **issuing** enterprise. A tracker lives on the pass of its
 
 `clients_served` must **not** be scoped by enterprise: external clients have no
 `enterprise_forecast_client`, so scoping that way strips the entire external book
-off Sanctuary's pass. Routing is by issuer instead.
+off Sanctuary's pass. Forecast invoicing stays Sanctuary-only instead:
+`make_trackers!` raises on any other enterprise's pass.
 
 ### 5.2 Schema
 
@@ -215,7 +216,7 @@ so `Trueup.invoice_pass_id` is unaffected.
 
 | Site | Breakage | Fix |
 | --- | --- | --- |
-| `app/models/invoice_pass.rb:39-57` `make_trackers!` | **Worst item in S0.** Resolves `qa` from the *client's* billing enterprise and creates the tracker on `self`, so a garden3d-billed client still lands on Sanctuary's pass — violating §5.1 on the first daily run. | Create a tracker only when the client's issuer enterprise == the pass's enterprise. garden3d's pass then yields zero `:forecast` trackers. |
+| `app/models/invoice_pass.rb:39-57` `make_trackers!` | **Worst item in S0.** Resolves `qa` from the *client's* billing enterprise and creates the tracker on `self`, so a garden3d-billed client still lands on Sanctuary's pass — violating §5.1 on the first daily run. | `make_trackers!` is Forecast-specific, so it raises unless the pass is Sanctuary's, and takes `qa` from the pass's own enterprise. (Every non-internal client bills through Sanctuary, so a per-client issuer check would be a constant.) |
 | `app/admin/invoice_passes.rb:39-56` | **Catastrophic.** Two unconditional `action_item`s call `Stacks::Automator.attempt_invoicing_for_invoice_pass`, which runs `make_trackers!` then `make_invoice!` on every tracker. Clicking "Generate Invoices" on garden3d's pass would create trackers for Sanctuary's entire external book (new rows — the unique index is per-pass) and **push a second full set of real QBO invoices**, plus a second Twist thread. | Guard both actions: refuse unless the pass's enterprise supports forecast invoicing. |
 | `lib/stacks/automator.rb:145-153` | `InvoicePass.create!` with no enterprise → `RecordInvalid`, raised at `lib/tasks/stacks.rake:588` inside the **single** `begin/rescue` of `stacks:daily_tasks`. Everything after stops: Runn, QBO, Deel, salary windows, every tracker/studio snapshot, notifications, task-cache warm. | Pass Sanctuary explicitly; scope the `find_by`. |
 | `lib/stacks/system.rb:79` | Unordered `.where(start_of_month:).first` may pick garden3d's pass → `NoMethodError` on nil `max_by`, or a **duplicate** founder true-up (`Trueup` has no uniqueness validation). | Scope to Sanctuary. |
@@ -228,8 +229,8 @@ so `Trueup.invoice_pass_id` is unaffected.
 `lib/stacks/client_revenue.rb` is **safe** — `build_rows` drops internal clients
 at line 100.
 
-`make_trackers!` needs no carve-out: its `issuer == enterprise` guard already
-confines it to Sanctuary's pass, so it can never produce a management-fee tracker.
+`make_trackers!` raises on a non-Sanctuary pass, so it can never produce a
+management-fee tracker.
 
 ### 5.6 The discriminator is the pass's enterprise, not a column
 

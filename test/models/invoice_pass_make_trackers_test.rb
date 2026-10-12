@@ -15,15 +15,15 @@ class InvoicePassMakeTrackersTest < ActiveSupport::TestCase
     Thread.current[:garden3d_enterprise] = nil
   end
 
-  test "a garden3d pass creates no forecast trackers for Sanctuary's clients" do
+  test "make_trackers! refuses to run on a non-Sanctuary pass" do
     pass = InvoicePass.create!(start_of_month: Date.new(2094, 1, 1),
                                enterprise: @garden3d, data: {})
-    pass.stubs(:clients_served).returns([@external_client])
+    pass.expects(:clients_served).never
 
-    pass.make_trackers!
+    error = assert_raises(RuntimeError) { pass.make_trackers! }
 
-    assert_equal 0, pass.invoice_trackers.count,
-      "garden3d's pass must not absorb clients issued by Sanctuary"
+    assert_match(/only runs on Sanctuary Computer Inc's passes/, error.message)
+    assert_equal 0, InvoiceTracker.where(invoice_pass_id: pass.id).count
   end
 
   test "a Sanctuary pass creates a tracker for an external client" do
