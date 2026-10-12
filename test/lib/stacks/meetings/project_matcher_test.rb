@@ -301,6 +301,19 @@ class StacksMeetingsProjectMatcherTest < ActiveSupport::TestCase
     Matcher.run!
   end
 
+  test "a tracker for one of our own companies is not a candidate" do
+    # Every open tracker reads as internal here; unstubbed, a tracker with no
+    # Forecast projects is client work, which is what every other test relies on.
+    ProjectTracker.any_instance.stubs(:internal_client?).returns(true)
+    meeting = meeting!
+    doc!(meeting)
+    Stacks::AI.expects(:extract).with { |args| @prompt = args[:prompt]; true }.returns(answer)
+    Stacks::Meetings::ProjectMatcher.run!
+    assert_not_includes @prompt, "id #{@tracker.id}:"
+    assert_equal 0, MeetingProjectTracker.count, "an internal tracker's id is not accepted either"
+    assert_equal "no_match", meeting.reload.meeting_project_scan.outcome
+  end
+
   test "a completed tracker is not a candidate" do
     done = tracker!("Finished Project", work_completed_at: 1.month.ago)
     doc!(meeting!)

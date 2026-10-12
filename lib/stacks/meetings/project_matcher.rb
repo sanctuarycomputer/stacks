@@ -36,6 +36,9 @@ module Stacks
         - Most meetings are internal (standups, one-off chats, company meetings, hiring,
           sales calls about work not yet won) and match NO project. Returning an empty
           list is the normal, correct answer for those.
+        - An interview or conversation with a job candidate, a contractor being
+          considered, or a prospective client never matches a project, whoever else
+          is in the room.
         - Match only when the meeting is clearly a working or client meeting about a
           specific candidate project: the title or the conversation names the client
           or the project, or the people present are that project's team and the talk
@@ -126,7 +129,11 @@ module Stacks
       end
 
       def candidate_trackers
-        ProjectTracker.where(work_completed_at: nil).includes(:forecast_projects).map do |pt|
+        # Client work only. Trackers for our own companies (internal_client?) are
+        # left out: a hiring interview or a company meeting would otherwise be
+        # filed under whichever internal tracker shares the most people.
+        open_trackers = ProjectTracker.where(work_completed_at: nil).includes(forecast_projects: :forecast_client)
+        open_trackers.reject(&:internal_client?).map do |pt|
           { id: pt.id, names: ([pt.name] + pt.forecast_projects.map(&:name)).compact.uniq,
             client: pt.derived_client&.name, people: pt.matcher_people }
         end
