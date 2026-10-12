@@ -16,6 +16,7 @@ module Mso
     class PushFailed < Error; end
     class NotDraftable < Error; end
     class AlreadyInvoiced < Error; end
+    class RefreshFailed < Error; end
 
     LINE_DESCRIPTION = "Management fee"
     # Resolved by name in garden3d's QuickBooks. The QBO default item
@@ -177,6 +178,28 @@ module Mso
         end
 
         run
+      end
+
+      # Has garden3d been paid the fee it charged for this pass's month?
+      # THE ENTRY POINT FOR ANY PAYABILITY DECISION.
+      #
+      # Reads every attached invoice from QuickBooks first, because the stored
+      # copy starts life as an unsent $0.00 draft and nothing else updates it.
+      # If any invoice cannot be read it RAISES: an answer from a stale copy
+      # could say "nobody was charged" about an invoice that is unpaid.
+      #
+      # Costs one QuickBooks read per attached invoice. Call it once per run
+      # or page and reuse the answer; do not call it per ledger row.
+      def collected?(invoice_pass:)
+        run = refresh!(invoice_pass: invoice_pass)
+        if run.failed.any?
+          raise RefreshFailed, "Could not read the QuickBooks invoice on InvoiceTracker " \
+                               "#{run.failed.map(&:id).join(', ')}; refusing to say whether " \
+                               "#{invoice_pass.invoice_month}'s management fee was collected"
+        end
+
+        # A fresh pass: refresh! may have detached a tracker.
+        InvoicePass.find(invoice_pass.id).management_fee_collected?
       end
 
       private
