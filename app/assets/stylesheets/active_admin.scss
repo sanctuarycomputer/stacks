@@ -219,8 +219,10 @@
 
   // Role rows hang well inside their invoice line, so each amount reads as
   // a part of the line's payout figure above it.
-  tr.margin-breach__entry td.margin-breach__entry-label {
-    padding-left: 64px;
+  // (A margin on an inner block: the admin theme's own cell padding wins
+  // over padding set on the td.)
+  .margin-breach__entry-label {
+    margin-left: 40px;
   }
 
   form.margin-breach__override {

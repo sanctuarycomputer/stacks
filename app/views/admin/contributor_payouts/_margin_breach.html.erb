@@ -53,11 +53,13 @@
             </tr>
             <% row.entries.each do |entry| %>
               <tr class="margin-breach__entry">
-                <td class="col margin-breach__entry-label" colspan="2">
+                <td class="col" colspan="2">
+                  <div class="margin-breach__entry-label">
                   <%= role_labels.fetch(entry.role, entry.role) %> · <%= entry.payee.email.presence || "Forecast person ##{entry.payee.forecast_id}" %>
                   <% if entry.rate_override %><span class="pill error">rate override</span><% end %>
                   <% unless check.build.paid?(entry.payee) %><span class="pill">not paid out</span><% end %>
                   <% if entry.description_line.present? %><br><small><%= entry.description_line %></small><% end %>
+                  </div>
                 </td>
                 <td class="col text-right"><%= number_to_currency entry.amount %></td>
                 <td class="col" colspan="4"></td>
