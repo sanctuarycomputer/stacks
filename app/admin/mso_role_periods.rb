@@ -29,8 +29,11 @@ ActiveAdmin.register MsoRolePeriod do
       f.input :tier, as: :select, collection: MsoRolePeriod.tiers.keys.map { |t| [t.titleize, t] },
         include_blank: false
       f.input :title, hint: "e.g. Operations — shown as \"Chief (Operations)\""
-      f.input :started_at, as: :date_select, hint: "Must be the first day of a month"
-      f.input :ended_at, as: :date_select, include_blank: true,
+      # One field per date, not three dropdowns: with year/month/day selects a
+      # blank year silently saves an empty end date, which makes the role
+      # open-ended and changes who counts as a current executive.
+      f.input :started_at, as: :datepicker, hint: "Must be the first day of a month"
+      f.input :ended_at, as: :datepicker,
         hint: "Leave blank while the role is held. Otherwise the last day of a month."
     end
     f.actions

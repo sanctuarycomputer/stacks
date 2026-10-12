@@ -206,6 +206,7 @@ class AdminAuthorizationTest < ActiveSupport::TestCase
       refute auth_for(lead).authorized?(action, MsoRolePeriod), "lead must not #{action}"
       refute auth_for(lead).authorized?(action, MsoRolePeriod.new), "lead must not #{action} a record"
       refute auth_for(nobody).authorized?(action, MsoRolePeriod), "non-lead must not #{action}"
+      refute auth_for(nobody).authorized?(action, MsoRolePeriod.new), "non-lead must not #{action} a record"
     end
   end
 end
