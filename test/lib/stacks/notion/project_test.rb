@@ -74,24 +74,54 @@ class StacksNotionProjectTest < ActiveSupport::TestCase
   test "options_for keeps the tracker's own page when it is no longer live" do
     live = page!(title: "Alpha", stage: "Active")
     passed = page!(title: "Zed", stage: "Passed")
-    options = Stacks::Notion::Project.options_for(tracker!(notion_project_id: passed.notion_id))
+    options = Stacks::Notion::Project.options_for(tracker!(notion_project_ids: [passed.notion_id]))
     assert_equal [["Alpha · Active", live.notion_id], ["Zed · Passed", passed.notion_id]], options
+  end
+
+  test "options_for keeps every one of the tracker's pages that is no longer live, each labelled for its state" do
+    live = page!(title: "Alpha", stage: "Active")
+    passed = page!(title: "Zed", stage: "Passed")
+    lost = page!(title: "Yak", stage: "Lost/Stale")
+    removed = page!(title: "Harvey", stage: "Active", deleted: true)
+    unknown = SecureRandom.uuid
+    pt = tracker!(notion_project_ids: [passed.notion_id, live.notion_id, removed.notion_id, unknown, lost.notion_id])
+
+    assert_equal [["Alpha · Active", live.notion_id],
+                  ["Harvey (removed from Notion)", removed.notion_id],
+                  ["Unknown page (removed from Notion)", unknown],
+                  ["Yak · Lost/Stale", lost.notion_id],
+                  ["Zed · Passed", passed.notion_id]],
+                 Stacks::Notion::Project.options_for(pt)
+  end
+
+  test "options_for looks the tracker's other pages up in one query, however many there are" do
+    page!(title: "Alpha", stage: "Active")
+    count = lambda do |pt|
+      queries = 0
+      counter = ->(*, payload) { queries += 1 unless payload[:name].to_s =~ /SCHEMA|TRANSACTION/ }
+      ActiveSupport::Notifications.subscribed(counter, "sql.active_record") { Stacks::Notion::Project.options_for(pt) }
+      queries
+    end
+    one = tracker!(notion_project_ids: [page!(title: "Zed", stage: "Passed").notion_id])
+    four = tracker!(notion_project_ids: 4.times.map { |i| page!(title: "Old #{i}", stage: "Passed").notion_id })
+
+    assert_equal count.call(one), count.call(four)
   end
 
   test "options_for does not repeat the tracker's own page when it is live" do
     live = page!(title: "Alpha", stage: "Active")
     assert_equal [["Alpha · Active", live.notion_id]],
-                 Stacks::Notion::Project.options_for(tracker!(notion_project_id: live.notion_id))
+                 Stacks::Notion::Project.options_for(tracker!(notion_project_ids: [live.notion_id]))
   end
 
   test "options_for marks a page that was removed from Notion" do
     removed = page!(title: "Harvey", stage: "Active", deleted: true)
     assert_equal [["Harvey (removed from Notion)", removed.notion_id]],
-                 Stacks::Notion::Project.options_for(tracker!(notion_project_id: removed.notion_id))
+                 Stacks::Notion::Project.options_for(tracker!(notion_project_ids: [removed.notion_id]))
 
     unknown = SecureRandom.uuid
     assert_equal [["Unknown page (removed from Notion)", unknown]],
-                 Stacks::Notion::Project.options_for(tracker!(notion_project_id: unknown))
+                 Stacks::Notion::Project.options_for(tracker!(notion_project_ids: [unknown]))
   end
 
   test "pages from other databases never appear" do
@@ -100,6 +130,6 @@ class StacksNotionProjectTest < ActiveSupport::TestCase
     assert_not_includes NotionPage.projects.pluck(:notion_id), lead.notion_id
     # Even when a tracker somehow points at it, it is not offered as a project.
     assert_equal [["Unknown page (removed from Notion)", lead.notion_id]],
-                 Stacks::Notion::Project.options_for(tracker!(notion_project_id: lead.notion_id))
+                 Stacks::Notion::Project.options_for(tracker!(notion_project_ids: [lead.notion_id]))
   end
 end

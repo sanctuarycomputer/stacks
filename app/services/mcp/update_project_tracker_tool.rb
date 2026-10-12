@@ -2,8 +2,10 @@ module Mcp
   class UpdateProjectTrackerTool < MCP::Tool
     tool_name 'update_project_tracker'
     description 'WRITE: update an existing project tracker — set name, the overall budget band, ' \
-                'the monthly budget (retainers), and/or replace the MSA/SOW/Twist-channel/' \
-                'Notion-homepage links (only provided fields change). Monthly budget: pass ONE ' \
+                'the monthly budget (retainers), replace the MSA/SOW/Notion-homepage links, ' \
+                'and/or add a Twist channel (only provided fields change). A tracker may have ' \
+                'several Twist channels: twist_channel_url adds one and never replaces or ' \
+                'removes another. Monthly budget: pass ONE ' \
                 'end for a fixed monthly budget at that number (it sets both ends), BOTH for a ' \
                 'range, or clear_monthly_budget: true to remove it. Use this to fix the ' \
                 'placeholder MSA/SOW links left by ensure_project_tracker. Returns {before, after}.'
@@ -18,7 +20,7 @@ module Mcp
         clear_monthly_budget: { type: 'boolean', description: 'true removes the monthly budget (both ends).' },
         msa_url: { type: 'string' },
         sow_url: { type: 'string' },
-        twist_channel_url: { type: 'string', description: "http(s) URL of the project's Twist channel. Must be the channel's link in our Twist workspace (https://twist.com/a/<workspace>/ch/<id>/); a thread link is cut back to its channel." },
+        twist_channel_url: { type: 'string', description: "http(s) URL of one of the project's Twist channels. Must be the channel's link in our Twist workspace (https://twist.com/a/<workspace>/ch/<id>/); a thread link is cut back to its channel. Adds the channel beside any the tracker already has; does nothing if the tracker already has it. See twist_channel_ids in the result." },
         notion_homepage_url: { type: 'string', description: "http(s) URL of the project's Notion homepage." },
       },
       required: %w[project_tracker_id]

@@ -449,6 +449,23 @@ namespace :stacks do
     end
   end
 
+  # One-off, for the deploy that moved a tracker from one Notion project to a
+  # list of them. The migration runs this same statement; run this after the
+  # deploy to pick up a project the code before it saved in between. Only
+  # fills an empty list, so it is safe to run again.
+  desc "Copy each tracker's old single Notion project into its list of Notion projects"
+  task :backfill_notion_project_ids => :environment do
+    copied = ActiveRecord::Base.connection.exec_update(<<~SQL, "Backfill notion_project_ids")
+      UPDATE project_trackers
+      SET notion_project_ids = ARRAY[btrim(notion_project_id)]
+      WHERE notion_project_id IS NOT NULL
+        AND btrim(notion_project_id) <> ''
+        AND cardinality(notion_project_ids) = 0
+    SQL
+    Stacks::TaskBuilder.clear_cache!
+    puts "Copied the Notion project of #{copied} #{copied == 1 ? "tracker" : "trackers"}."
+  end
+
   desc "Sync Contacts"
   task :sync_contacts => :environment do
     system_task = SystemTask.create!(name: "stacks:sync_contacts")

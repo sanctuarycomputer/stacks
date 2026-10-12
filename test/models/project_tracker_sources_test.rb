@@ -1,7 +1,7 @@
 require 'test_helper'
 
-# A tracker names where its conversation lives: one Twist channel link, in one
-# stored shape, and one Notion Projects page.
+# A tracker names where its conversation lives: one or many Twist channel
+# links, each in one stored shape, and one or many Notion Projects pages.
 class ProjectTrackerSourcesTest < ActiveSupport::TestCase
   CHANNEL = "https://twist.com/a/133876/ch/794756/".freeze
   SHAPE_ERROR = "must be a Twist channel in our workspace, like https://twist.com/a/133876/ch/794756/".freeze
@@ -33,7 +33,7 @@ class ProjectTrackerSourcesTest < ActiveSupport::TestCase
     link = twist_link!(pt)
     assert_equal CHANNEL, link.reload.url
     assert_equal 794756, link.twist_channel_id
-    assert_equal 794756, pt.reload.twist_channel_id
+    assert_equal [794756], pt.reload.twist_channel_ids
   end
 
   test "a channel URL without its trailing slash is saved in the canonical shape" do
@@ -93,17 +93,46 @@ class ProjectTrackerSourcesTest < ActiveSupport::TestCase
     assert_equal "https://example.com/a/1/ch/2", other.reload.url
   end
 
-  # ---- one per tracker -----------------------------------------------------
+  # ---- one or many per tracker ----------------------------------------------
 
-  test "a tracker with two Twist channel links is invalid" do
+  SAME_CHANNEL_ERROR = "This Twist channel is already linked to this project.".freeze
+
+  test "a tracker may have two different Twist channels, and twist_channel_ids returns both sorted" do
     pt = with_links!(tracker!)
     twist_link!(pt)
     twist_link(pt, "https://twist.com/a/133876/ch/11/")
-    assert_not pt.valid?
-    assert_includes pt.errors[:base], "A project can have only one Twist channel link."
+    assert pt.valid?, pt.errors.full_messages.to_sentence
+    pt.save!
+    assert_equal [11, 794756], pt.reload.twist_channel_ids
   end
 
-  test "replacing the Twist channel link in one save works" do
+  test "the same Twist channel twice on one tracker is refused" do
+    pt = with_links!(tracker!)
+    twist_link!(pt)
+    twist_link(pt, CHANNEL)
+    assert_not pt.valid?
+    assert_equal [SAME_CHANNEL_ERROR], pt.errors[:base]
+  end
+
+  test "the same channel pasted in another shape is still the same channel" do
+    pt = with_links!(tracker!)
+    twist_link!(pt)
+    # Not tidied yet: the tracker is checked before its links are.
+    twist_link(pt, "  https://twist.com/a/133876/ch/794756/t/6877281  ")
+    assert_not pt.valid?
+    assert_includes pt.errors[:base], SAME_CHANNEL_ERROR
+  end
+
+  test "a malformed Twist link is refused for its shape, not as a repeat" do
+    pt = with_links!(tracker!)
+    twist_link(pt, "https://twist.com/a/1/ch/2/")
+    twist_link(pt, "https://twist.com/a/1/ch/2/")
+    assert_not pt.valid?
+    assert_empty pt.errors[:base]
+    assert_includes pt.errors.full_messages.join, "must be a Twist channel in our workspace"
+  end
+
+  test "replacing a Twist channel link in one save works" do
     pt = with_links!(tracker!)
     old = twist_link!(pt)
     pt.reload.update!(project_tracker_links_attributes: [
@@ -112,22 +141,37 @@ class ProjectTrackerSourcesTest < ActiveSupport::TestCase
     ])
     links = pt.reload.project_tracker_links.select(&:twist_channel?)
     assert_equal ["https://twist.com/a/133876/ch/11/"], links.map(&:url)
-    assert_equal 11, pt.twist_channel_id
+    assert_equal [11], pt.twist_channel_ids
   end
 
-  test "twist_channel_id is nil with no Twist link" do
-    assert_nil with_links!(tracker!).twist_channel_id
+  test "removing a channel's link and adding the same channel back in one save works" do
+    pt = with_links!(tracker!)
+    old = twist_link!(pt)
+    pt.reload.update!(project_tracker_links_attributes: [
+      { id: old.id, _destroy: "1" },
+      { name: "Twist Channel", link_type: "twist_channel", url: CHANNEL },
+    ])
+    assert_equal [794756], pt.reload.twist_channel_ids
+    assert_equal 1, pt.project_tracker_links.count(&:twist_channel?)
+  end
+
+  test "twist_channel_ids is empty with no Twist link" do
+    assert_equal [], with_links!(tracker!).twist_channel_ids
+  end
+
+  test "there is no singular twist_channel_id on a tracker any more" do
+    assert_not tracker!.respond_to?(:twist_channel_id)
   end
 
   # ---- the stored access answer follows the link -----------------------------
 
   def answered!(pt)
-    pt.update_columns(twist_channel_accessible: false, twist_channel_checked_at: Time.zone.now)
+    pt.update_columns(twist_channels_inaccessible: [794756], twist_channel_checked_at: Time.zone.now)
   end
 
   def assert_forgotten(pt, message)
     pt.reload
-    assert_nil pt.twist_channel_accessible, message
+    assert_equal [], pt.twist_channels_inaccessible, message
     assert_nil pt.twist_channel_checked_at, message
   end
 
@@ -147,6 +191,10 @@ class ProjectTrackerSourcesTest < ActiveSupport::TestCase
     answered!(pt)
     twist_link!(pt)
     assert_forgotten pt, "after adding a link"
+
+    answered!(pt)
+    twist_link!(pt, "https://twist.com/a/133876/ch/12/")
+    assert_forgotten pt, "after adding a second channel"
   end
 
   test "a link that stops being a Twist channel link forgets the access answer" do
@@ -162,7 +210,7 @@ class ProjectTrackerSourcesTest < ActiveSupport::TestCase
     link = twist_link!(pt)
     answered!(pt)
     link.update!(name: "Renamed")
-    assert_equal false, pt.reload.twist_channel_accessible
+    assert_equal [794756], pt.reload.twist_channels_inaccessible
     assert_not_nil pt.twist_channel_checked_at
   end
 
@@ -171,7 +219,7 @@ class ProjectTrackerSourcesTest < ActiveSupport::TestCase
     twist_link!(pt)
     answered!(pt)
     pt.project_tracker_links.find(&:sow?).update!(url: "https://x/sow-v2")
-    assert_equal false, pt.reload.twist_channel_accessible
+    assert_equal [794756], pt.reload.twist_channels_inaccessible
     assert_not_nil pt.twist_channel_checked_at
   end
 
@@ -197,44 +245,180 @@ class ProjectTrackerSourcesTest < ActiveSupport::TestCase
     )
   end
 
-  test "notion_project_linked? needs a page that still exists, at any stage" do
+  # The column the code before this one wrote. ProjectTracker ignores it, so
+  # it can only be set in SQL.
+  def set_legacy_columns!(pt, notion_project_id: nil, twist_channel_accessible: nil)
+    ProjectTracker.connection.exec_update(
+      "UPDATE project_trackers SET notion_project_id = $1, twist_channel_accessible = $2 WHERE id = $3", "SQL",
+      [notion_project_id, twist_channel_accessible, pt.id]
+    )
+  end
+
+  test "two Notion projects are stored, in the order they were chosen" do
+    a = project_page!(title: "Harvey")
+    b = project_page!(title: "Harvey Retainer")
+    pt = with_links!(tracker!)
+    pt.update!(notion_project_ids: [b.notion_id, a.notion_id])
+    assert_equal [b.notion_id, a.notion_id], pt.reload.notion_project_ids
+  end
+
+  test "a new tracker has no Notion projects" do
+    assert_equal [], ProjectTracker.new.notion_project_ids
+    assert_equal [], tracker!.reload.notion_project_ids
+  end
+
+  test "blank and repeated Notion project ids are cleaned before saving" do
+    page = project_page!
+    pt = with_links!(tracker!)
+    # A multiple select posts a hidden blank first.
+    pt.update!(notion_project_ids: ["", " #{page.notion_id} ", page.notion_id, nil])
+    assert_equal [page.notion_id], pt.reload.notion_project_ids
+
+    pt.update!(notion_project_ids: [""])
+    assert_equal [], pt.reload.notion_project_ids
+
+    pt.notion_project_ids = nil
+    assert pt.valid?, pt.errors.full_messages.to_sentence
+    assert_equal [], pt.notion_project_ids
+  end
+
+  test "an id that is not a synced Projects page is refused when it is added" do
+    page = project_page!
+    pt = with_links!(tracker!)
+    pt.notion_project_ids = [page.notion_id, "anything-at-all"]
+    assert_not pt.valid?
+    assert_equal ["must be pages in the Notion Projects database"], pt.errors[:notion_project_ids]
+
+    pt.notion_project_ids = [page.notion_id]
+    assert pt.valid?, pt.errors.full_messages.to_sentence
+  end
+
+  test "a page from another Notion database is refused" do
+    lead = NotionPage.create!(
+      notion_id: SecureRandom.uuid, notion_parent_type: "database_id",
+      notion_parent_id: Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:LEADS]),
+      page_title: "A Lead", data: {}
+    )
+    pt = with_links!(tracker!)
+    pt.notion_project_ids = [lead.notion_id]
+    assert_not pt.valid?
+    assert_includes pt.errors[:notion_project_ids], "must be pages in the Notion Projects database"
+  end
+
+  test "an id stored before the change is not checked again, so a removed page does not block saving" do
+    gone = SecureRandom.uuid
+    pt = with_links!(tracker!)
+    pt.update_columns(notion_project_ids: [gone])
+    pt.reload
+    assert pt.update(notes: "Still editable")
+
+    # Adding a real page beside it is fine; the removed one stays.
+    page = project_page!
+    assert pt.update(notion_project_ids: [gone, page.notion_id]), pt.errors.full_messages.to_sentence
+    assert_equal [gone, page.notion_id], pt.reload.notion_project_ids
+
+    # Taking it off and putting it back is adding it.
+    pt.update!(notion_project_ids: [page.notion_id])
+    assert_not pt.update(notion_project_ids: [page.notion_id, gone])
+    assert_includes pt.errors[:notion_project_ids], "must be pages in the Notion Projects database"
+  end
+
+  test "notion_projects returns only the pages that still exist, in one query" do
+    a = project_page!(title: "Harvey")
+    b = project_page!(title: "Harvey Retainer", stage: "Passed")
+    removed = project_page!(title: "Gone")
+    pt = tracker!
+    pt.update_columns(notion_project_ids: [b.notion_id, removed.notion_id, SecureRandom.uuid, a.notion_id])
+    removed.destroy
+    assert removed.deleted?
+
+    queries = 0
+    counter = ->(*, payload) { queries += 1 unless payload[:name].to_s =~ /SCHEMA|TRANSACTION/ }
+    projects = ActiveSupport::Notifications.subscribed(counter, "sql.active_record") { pt.notion_projects }
+
+    assert_equal 1, queries
+    assert(projects.all? { |p| p.is_a?(Stacks::Notion::Project) })
+    assert_equal ["Harvey Retainer", "Harvey"], projects.map(&:title)
+    assert_equal [], tracker!.notion_projects
+    assert_not tracker!.respond_to?(:notion_project)
+  end
+
+  test "notion_project_linked? needs at least one page that still exists, at any stage" do
     pt = tracker!
     assert_not pt.notion_project_linked?
 
-    pt.update_columns(notion_project_id: "")
-    assert_not pt.notion_project_linked?
-
     passed = project_page!(stage: "Passed")
-    pt.update_columns(notion_project_id: passed.notion_id)
+    pt.update_columns(notion_project_ids: [SecureRandom.uuid, passed.notion_id])
     assert pt.notion_project_linked?
 
     passed.destroy
     assert passed.deleted?
     assert_not pt.reload.notion_project_linked?
-    assert_equal passed.notion_id, pt.notion_project_id
+    assert_includes pt.notion_project_ids, passed.notion_id
   end
 
-  test "notion_project wraps the chosen page" do
-    page = project_page!(title: "Harvey")
-    project = tracker!(notion_project_id: page.notion_id).notion_project
-    assert_instance_of Stacks::Notion::Project, project
-    assert_equal "Harvey", project.title
-    assert_nil tracker!.notion_project
-  end
-
-  test "the MCP serializer carries the Twist channel id and the Notion project id" do
-    page = project_page!
-    pt = tracker!(notion_project_id: page.notion_id)
+  test "the MCP serializer carries the Twist channel ids and the Notion project ids, and neither singular key" do
+    a = project_page!
+    b = project_page!(title: "Harvey Retainer")
+    pt = tracker!(notion_project_ids: [a.notion_id, b.notion_id])
     twist_link!(pt)
+    twist_link!(pt, "https://twist.com/a/133876/ch/11/")
     json = Mcp::ProvisioningSerializers.tracker_json(pt.reload)
-    assert_equal 794756, json[:twist_channel_id]
-    assert_equal page.notion_id, json[:notion_project_id]
+    assert_equal [11, 794756], json[:twist_channel_ids]
+    assert_equal [a.notion_id, b.notion_id], json[:notion_project_ids]
+    assert_not json.key?(:twist_channel_id)
+    assert_not json.key?(:notion_project_id)
 
-    bare = Mcp::ProvisioningSerializers.tracker_json(tracker!(notion_project_id: ""))
-    assert bare.key?(:twist_channel_id)
-    assert bare.key?(:notion_project_id)
-    assert_nil bare[:twist_channel_id]
-    assert_nil bare[:notion_project_id]
+    bare = Mcp::ProvisioningSerializers.tracker_json(tracker!)
+    assert_equal [], bare[:twist_channel_ids]
+    assert_equal [], bare[:notion_project_ids]
+  end
+
+  # ---- the columns this replaced ---------------------------------------------
+
+  test "the two superseded columns are still in the table but not on the model" do
+    columns = ProjectTracker.connection.columns(:project_trackers).map(&:name)
+    assert_includes columns, "notion_project_id"
+    assert_includes columns, "twist_channel_accessible"
+    assert_not_includes ProjectTracker.column_names, "notion_project_id"
+    assert_not_includes ProjectTracker.column_names, "twist_channel_accessible"
+    assert_not tracker!.respond_to?(:notion_project_id)
+    assert_not tracker!.respond_to?(:twist_channel_accessible)
+  end
+
+  test "what the old code left in the superseded columns changes nothing" do
+    page = project_page!
+    pt = with_links!(tracker!)
+    twist_link!(pt)
+    set_legacy_columns!(pt, notion_project_id: page.notion_id, twist_channel_accessible: false)
+    pt.reload
+    assert_equal [], pt.notion_project_ids
+    assert_not pt.notion_project_linked?
+    assert_equal [], pt.twist_channels_inaccessible
+    assert pt.update(notes: "Saves without touching them")
+    row = ProjectTracker.connection.select_one("SELECT notion_project_id, twist_channel_accessible FROM project_trackers WHERE id = #{pt.id}")
+    assert_equal page.notion_id, row["notion_project_id"]
+    assert_equal false, row["twist_channel_accessible"]
+  end
+
+  test "no code reads or writes the two superseded columns" do
+    allowed = lambda do |path, line, number, lines|
+      next true if path == "app/models/project_tracker.rb" && line.include?("ignored_columns")
+      next false unless path == "lib/tasks/stacks.rake"
+      # Only inside the backfill task.
+      first = lines.index { |l| l.include?("task :backfill_notion_project_ids") }
+      last = first && (first...lines.size).find { |i| lines[i] == "  end" }
+      first && last && number.between?(first, last)
+    end
+    hits = Dir.glob(Rails.root.join("{app,lib}/**/*.{rb,rake,erb,arb,haml,jbuilder}")).sort.flat_map do |file|
+      path = Pathname.new(file).relative_path_from(Rails.root).to_s
+      lines = File.read(file).split("\n")
+      lines.each_with_index.filter_map do |line, number|
+        next unless line =~ /\bnotion_project_id\b|twist_channel_accessible|at_most_one_twist/
+        "#{path}:#{number + 1}: #{line.strip}" unless allowed.call(path, line, number, lines)
+      end
+    end
+    assert_empty hits, "the superseded columns are still used:\n#{hits.join("\n")}"
   end
 
   # ---- can the Stacksbot account see the channel? ----------------------------
@@ -243,7 +427,7 @@ class ProjectTrackerSourcesTest < ActiveSupport::TestCase
     stub(get_channels: stub(code: code, parsed_response: body))
   end
 
-  test "sync_twist_channel_access! records, per tracker with a Twist link, whether Stacksbot is in the channel" do
+  test "sync_twist_channel_access! records, per tracker with a Twist link, the channels Stacksbot is not in" do
     inside = tracker!
     twist_link!(inside)
     outside = tracker!
@@ -254,23 +438,49 @@ class ProjectTrackerSourcesTest < ActiveSupport::TestCase
     stats = ProjectTracker.sync_twist_channel_access!(twist: fake_twist, now: now)
 
     assert_equal({ checked: 2, accessible: 1, inaccessible: 1 }, stats)
-    assert_equal true, inside.reload.twist_channel_accessible
+    assert_equal [], inside.reload.twist_channels_inaccessible
     assert_equal now, inside.twist_channel_checked_at
-    assert_equal false, outside.reload.twist_channel_accessible
+    assert_equal [5], outside.reload.twist_channels_inaccessible
     assert_equal now, outside.twist_channel_checked_at
-    assert_nil unlinked.reload.twist_channel_accessible
+    assert_equal [], unlinked.reload.twist_channels_inaccessible
     assert_nil unlinked.twist_channel_checked_at
+  end
+
+  test "access is per channel: with two channels and Stacksbot in one, only the other is stored" do
+    pt = tracker!
+    twist_link!(pt)
+    twist_link!(pt, "https://twist.com/a/133876/ch/5/")
+    twist_link!(pt, "https://twist.com/a/133876/ch/3/")
+
+    stats = ProjectTracker.sync_twist_channel_access!(twist: fake_twist)
+
+    # Trackers checked, then channels.
+    assert_equal({ checked: 1, accessible: 1, inaccessible: 2 }, stats)
+    assert_equal [3, 5], pt.reload.twist_channels_inaccessible
+    assert_not_nil pt.twist_channel_checked_at
+  end
+
+  test "once Stacksbot is in every channel the stored list is emptied" do
+    pt = tracker!
+    twist_link!(pt)
+    twist_link!(pt, "https://twist.com/a/133876/ch/11/")
+    pt.update_columns(twist_channels_inaccessible: [11], twist_channel_checked_at: 1.day.ago)
+
+    stats = ProjectTracker.sync_twist_channel_access!(twist: fake_twist)
+
+    assert_equal({ checked: 1, accessible: 2, inaccessible: 0 }, stats)
+    assert_equal [], pt.reload.twist_channels_inaccessible
   end
 
   test "sync_twist_channel_access! skips completed trackers" do
     done = tracker!
-    twist_link!(done)
+    twist_link!(done, "https://twist.com/a/133876/ch/5/")
     done.update_columns(work_completed_at: 1.day.ago)
 
     stats = ProjectTracker.sync_twist_channel_access!(twist: fake_twist)
 
     assert_equal({ checked: 0, accessible: 0, inaccessible: 0 }, stats)
-    assert_nil done.reload.twist_channel_accessible
+    assert_equal [], done.reload.twist_channels_inaccessible
     assert_nil done.twist_channel_checked_at
   end
 
@@ -278,7 +488,7 @@ class ProjectTrackerSourcesTest < ActiveSupport::TestCase
     pt = tracker!
     twist_link!(pt, "https://twist.com/a/133876/ch/5/")
     checked = Time.zone.parse("2026-10-01T09:00:00Z")
-    pt.update_columns(twist_channel_accessible: true, twist_channel_checked_at: checked)
+    pt.update_columns(twist_channels_inaccessible: [], twist_channel_checked_at: checked)
 
     [
       fake_twist(code: 500, body: []),
@@ -287,7 +497,7 @@ class ProjectTrackerSourcesTest < ActiveSupport::TestCase
     ].each do |twist|
       error = assert_raises(Stacks::Twist::Error) { ProjectTracker.sync_twist_channel_access!(twist: twist) }
       assert_match(/channels\/get failed/, error.message)
-      assert_equal true, pt.reload.twist_channel_accessible
+      assert_equal [], pt.reload.twist_channels_inaccessible
       assert_equal checked, pt.twist_channel_checked_at
     end
   end
@@ -299,14 +509,14 @@ class ProjectTrackerSourcesTest < ActiveSupport::TestCase
 
     ProjectTracker.sync_twist_channel_access!(twist: fake_twist)
 
-    assert_equal true, pt.reload.twist_channel_accessible
+    assert_not_nil pt.reload.twist_channel_checked_at
   end
 
   test "sync_twist_channel_access! clears the task cache once, after the answers are written" do
     pt = tracker!
     twist_link!(pt)
     Stacks::TaskBuilder.expects(:clear_cache!).once.with do
-      pt.reload.twist_channel_accessible == true
+      pt.reload.twist_channel_checked_at.present?
     end
 
     ProjectTracker.sync_twist_channel_access!(twist: fake_twist)
@@ -326,9 +536,13 @@ class ProjectTrackerSourcesTest < ActiveSupport::TestCase
 
   test "choosing a Notion project busts the task cache; an unrelated save does not" do
     tracker = with_links!(tracker!)
-    Stacks::TaskBuilder.expects(:clear_cache!).once
-    tracker.update!(notion_project_id: project_page!.notion_id)
+    first = project_page!
+    second = project_page!(title: "Harvey Retainer")
+    Stacks::TaskBuilder.expects(:clear_cache!).twice
+    tracker.update!(notion_project_ids: [first.notion_id])
+    tracker.update!(notion_project_ids: [first.notion_id, second.notion_id])
     tracker.update!(notes: "Unrelated change")
+    tracker.update!(notion_project_ids: ["", first.notion_id, second.notion_id])
   end
 
   test "destroying a tracker still busts the task cache" do
@@ -348,22 +562,5 @@ class ProjectTrackerSourcesTest < ActiveSupport::TestCase
     link = pt.project_tracker_links.create!(name: "Twist Channel", link_type: :twist_channel, url: "HTTPS://Twist.com/a/133876/ch/00012")
     assert_equal "https://twist.com/a/133876/ch/12/", link.reload.url
     assert_equal 12, link.twist_channel_id
-  end
-
-  test "the Notion project must be a synced Projects page; blank is stored as nil" do
-    pt = with_links!(tracker!)
-    pt.notion_project_id = "anything-at-all"
-    assert_not pt.valid?
-    assert_includes pt.errors[:notion_project_id], "must be a page in the Notion Projects database"
-
-    pt.notion_project_id = ""
-    assert pt.valid?
-    assert_nil pt.notion_project_id
-  end
-
-  test "a tracker whose Notion page was removed can still be saved" do
-    pt = with_links!(tracker!)
-    pt.update_columns(notion_project_id: SecureRandom.uuid)
-    assert pt.reload.update(notes: "Still editable")
   end
 end

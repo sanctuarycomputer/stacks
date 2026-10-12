@@ -36,14 +36,19 @@ module Stacks
             out << :no_account_lead_set if pt.current_account_leads.empty?
             out << :likely_should_mark_as_work_complete? if pt.likely_should_be_marked_as_completed?
             # The project log reads what Stacksbot sees in the project's Twist
-            # channel and files it under the project's Notion page. Asked only
-            # of live client work: a dormant tracker has nothing to watch.
+            # channels and files it under the project's Notion pages; a
+            # tracker needs at least one of each. Asked only of live client
+            # work: a dormant tracker has nothing to watch.
             if in_progress_ids.include?(pt.id) && !pt.internal_client?
               # Until the Projects database has been synced there is nothing
               # to choose from, so the Notion half is not asked for yet.
-              notion_missing = notion_project_ids.any? && !notion_project_ids.include?(pt.notion_project_id)
-              out << :project_sources_not_linked if pt.twist_channel_id.nil? || notion_missing
-              out << :stacksbot_not_in_twist_channel if pt.twist_channel_id.present? && pt.twist_channel_accessible == false
+              notion_missing = synced_notion_page_ids.any? &&
+                               pt.notion_project_ids.none? { |id| synced_notion_page_ids.include?(id) }
+              channel_ids = pt.twist_channel_ids
+              out << :project_sources_not_linked if channel_ids.empty? || notion_missing
+              # Only channels the tracker still names: the stored answer is
+              # cleared when a link changes, and this does not rely on it.
+              out << :stacksbot_not_in_twist_channel if (pt.twist_channels_inaccessible & channel_ids).any?
             end
           else
             out << :project_capsule_incomplete if pt.work_status == :capsule_pending
@@ -58,8 +63,8 @@ module Stacks
 
         # Ids of Notion Projects pages that still exist (the sync soft-deletes
         # a page removed from Notion).
-        def notion_project_ids
-          @notion_project_ids ||= NotionPage.projects.pluck(:notion_id).to_set
+        def synced_notion_page_ids
+          @synced_notion_page_ids ||= NotionPage.projects.pluck(:notion_id).to_set
         end
 
         def owners_for(pt, type)
