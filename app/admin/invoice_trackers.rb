@@ -361,21 +361,38 @@ ActiveAdmin.register InvoiceTracker do
       if params[:invoice_tracker][:allow_early_contributor_payouts_on].present?
         raise "Only admins can schedule early contributor payouts" unless current_admin_user.is_admin?
       end
+      strip_invoice_binding_for_non_admins!(params[:invoice_tracker])
       split_packed_qbo_invoice_value!(params[:invoice_tracker])
       super
     end
 
     def create
+      strip_invoice_binding_for_non_admins!(params[:invoice_tracker])
       split_packed_qbo_invoice_value!(params[:invoice_tracker])
       super
     end
 
     private
 
+    # Only an admin may change which QuickBooks invoice a tracker points at.
+    # The form disables the select for everyone else, but a disabled input
+    # enforces nothing: both columns are permitted params, so they are dropped
+    # here, before mass-assignment, whatever was sent.
+    def strip_invoice_binding_for_non_admins!(p)
+      return if p.nil? || current_admin_user.is_admin?
+      p.delete(:qbo_invoice_id)
+      p.delete(:qbo_account_id)
+    end
+
+    # Touches the invoice columns ONLY when the form actually submitted the
+    # select. A save that leaves it out (a notes-only save, or a non-admin's
+    # stripped field) keeps the attached invoice; a submitted blank is the
+    # explicit "None" and detaches it.
     def split_packed_qbo_invoice_value!(p)
-      val = p&.dig(:qbo_invoice_id)
+      return unless p&.key?(:qbo_invoice_id)
+      val = p[:qbo_invoice_id]
       if val.blank?
-        p[:qbo_invoice_id] = nil if p
+        p[:qbo_invoice_id] = nil
         return
       end
       return unless val.to_s.include?(":")
@@ -403,12 +420,21 @@ ActiveAdmin.register InvoiceTracker do
         else
           QboInvoice.none
         end
+      # The invoice already attached is by definition not an orphan. It goes
+      # first (and is selected below), so the select shows what the tracker
+      # points at and re-saving the form submits it back instead of "None".
+      # It is the tracker's own invoice, so everyone who can open this page
+      # sees it. A mirror row with no stored data is labelled by its id:
+      # QboInvoice#display_name would fetch it from QuickBooks.
+      attached_invoice = f.object.qbo_invoice
+      invoice_options = [attached_invoice, *orphan_invoices].compact.map { |inv|
+        ent_name = inv.qbo_account&.enterprise&.name || "?"
+        label = inv.read_attribute(:data).present? ? inv.display_name : "QuickBooks invoice #{inv.qbo_id}"
+        ["[#{ent_name}] #{label}", "#{inv.qbo_account_id}:#{inv.qbo_id}"]
+      }
       f.input :qbo_invoice,
         as: :select,
-        collection: orphan_invoices.map { |inv|
-          ent_name = inv.qbo_account&.enterprise&.name || "?"
-          ["[#{ent_name}] #{inv.display_name}", "#{inv.qbo_account_id}:#{inv.qbo_id}"]
-        },
+        collection: invoice_options,
         selected: (f.object.qbo_invoice_id.present? && f.object.qbo_account_id.present? ?
           "#{f.object.qbo_account_id}:#{f.object.qbo_invoice_id}" : nil),
         include_blank: "None",
