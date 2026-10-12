@@ -337,14 +337,14 @@ class InvoiceTracker < ApplicationRecord
     ActionController::Base.helpers.number_to_currency(*args, **kwargs, &b)
   end
 
+  class UnexpectedOrphanOverCapError < StandardError; end
+
   # Saves exactly what InvoicePayouts::Build computed. The per-payout cap
   # validation is skipped on every save here: it sums the tracker's payouts
   # mid-write, while stale ones from the last generation still exist. The
   # caller is expected to have run InvoicePayouts::MarginCheck on the build
   # first (the admin action does); called bare, this writes whatever the
   # build says, over the cap or not.
-  class UnexpectedOrphanOverCapError < StandardError; end
-
   def make_contributor_payouts!(created_by, build: nil, allow_over_cap: false)
     raise "Payment splits are not supported for this invoice pass" unless invoice_pass.allows_payment_splits?
     return [] if qbo_invoice.nil?
