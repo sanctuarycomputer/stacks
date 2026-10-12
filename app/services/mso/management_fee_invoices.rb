@@ -202,6 +202,41 @@ module Mso
         InvoicePass.find(invoice_pass.id).management_fee_collected?
       end
 
+      # garden3d's pass for the month containing `date`, with one tracker per
+      # payer. DATABASE ONLY -- no QuickBooks call.
+      #
+      # Works for ANY month, including ones before MANAGEMENT_FEE_START: a
+      # month invoiced by hand needs a pass and trackers so those invoices can
+      # be attached. It never makes a pass draftable; see draftable?.
+      def ensure_month!(date)
+        assert_schema_ready!
+
+        month = date.to_date.beginning_of_month
+        pass = InvoicePass.find_or_create_by!(enterprise: Enterprise.garden3d, start_of_month: month) do |new_pass|
+          new_pass.data = {}
+        end
+        ensure_trackers!(invoice_pass: pass)
+        pass
+      end
+
+      # The nightly, database-only half: makes sure garden3d has a pass for
+      # last month, ready for an admin to act on.
+      #
+      # NEVER WRITES TO QUICKBOOKS. Do not add a push here. Creating the
+      # drafts is an explicit admin click (create_drafts!).
+      def ensure_previous_month!(today: Date.today)
+        # Migrations are run by hand on production, after the deploy. Until
+        # then this is a no-op rather than a nightly error.
+        return nil unless schema_ready?
+
+        month = (today - 1.month).beginning_of_month
+        # Months before the start were invoiced by hand. Do not put a pass in
+        # front of an admin that invites drafting them.
+        return nil if month < MANAGEMENT_FEE_START
+
+        ensure_month!(month)
+      end
+
       private
 
       def schema_ready?
