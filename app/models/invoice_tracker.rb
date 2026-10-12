@@ -337,251 +337,63 @@ class InvoiceTracker < ApplicationRecord
     ActionController::Base.helpers.number_to_currency(*args, **kwargs, &b)
   end
 
-  def make_contributor_payouts!(created_by)
+  # Saves exactly what InvoicePayouts::Build computed. The per-payout cap
+  # validation is skipped on every save here: it sums the tracker's payouts
+  # mid-write, while stale ones from the last generation still exist. The
+  # caller is expected to have run InvoicePayouts::MarginCheck on the build
+  # first (the admin action does); called bare, this writes whatever the
+  # build says, over the cap or not.
+  def make_contributor_payouts!(created_by, build: nil)
     raise "Payment splits are not supported for this invoice pass" unless invoice_pass.allows_payment_splits?
     return [] if qbo_invoice.nil?
 
+    build ||= InvoicePayouts::Build.new(self)
+
     ActiveRecord::Base.transaction do
-      payouts = {}
-
-      qbo_invoice.line_items.each do |line_item|
-        metadata = (blueprint["lines"] || {}).values.find{|l| l["id"] == line_item["id"]}
-        next unless metadata.present?
-
-        forecast_project = ForecastProject.includes(:forecast_client).find(metadata["forecast_project"])
-        next unless forecast_project.present?
-
-        # Handle Internal Project
-        if forecast_project.forecast_client.is_internal?
-          individual_contributor = ForecastPerson.find(metadata["forecast_person"])
-          next unless individual_contributor.present?
-
-          # Internal projects may or may not have a ProjectTracker. If they do
-          # and it has commissions, deduct them off the top before recording the IC entry.
-          ptfps = ProjectTrackerForecastProject.includes(:project_tracker).where(forecast_project_id: metadata["forecast_project"])
-          pt = ptfps.first&.project_tracker
-          commission_total = 0
-          if pt
-            deductions = commission_deductions_for_line(pt, line_item, metadata)
-            commission_total = deductions.sum { |d| d[:amount] }
-
-            deductions.each do |d|
-              recipient = d[:commission].contributor.forecast_person
-              next unless recipient.present?
-              payouts[recipient] ||= {
-                blueprint: {
-                  AccountLead: [],
-                  ProjectLead: [],
-                  IndividualContributor: [],
-                  Commission: [],
-                }
-              }
-              payouts[recipient][:blueprint][:Commission] << {
-                blueprint_metadata: ContributorPayout.slim_metadata(metadata),
-                amount: d[:amount],
-                description_line: d[:commission].description_line(line_item, metadata, d[:amount]),
-              }
-            end
-          end
-
-          payouts[individual_contributor] ||= {
-            blueprint: {
-              AccountLead: [],
-              ProjectLead: [],
-              IndividualContributor: [],
-              Commission: [],
-            }
-          }
-          payouts[individual_contributor][:blueprint][:IndividualContributor] << {
-            blueprint_metadata: ContributorPayout.slim_metadata(metadata),
-            amount: (line_item["amount"].to_f - commission_total).round(2),
-          }
-          next
-        end
-
-        # Handle Client Project
-        ptfps = ProjectTrackerForecastProject.includes(:project_tracker).where(forecast_project_id: metadata["forecast_project"])
-        if ptfps.length > 1
-          raise "Multiple project trackers found for forecast project #{metadata["forecast_project"]}"
-        end
-        if ptfps.length == 0
-          raise "No project trackers found for forecast project #{metadata["forecast_project"]}"
-        end
-        pt = ptfps.first.project_tracker
-        rules = pt.billing_rules
-
-        working_amount = line_item["amount"].to_f
-        working_hours = metadata["quantity"].to_f
-        working_rate = metadata["unit_price"].to_f
-
-        # Commission deduction: take commissions off the top before AL/PL/IC math.
-        deductions = commission_deductions_for_line(pt, line_item, metadata)
-        commission_total = deductions.sum { |d| d[:amount] }
-        working_amount -= commission_total
-
-        deductions.each do |d|
-          recipient = d[:commission].contributor.forecast_person
-          next unless recipient.present?
-          payouts[recipient] ||= {
-            blueprint: {
-              AccountLead: [],
-              ProjectLead: [],
-              IndividualContributor: [],
-              Commission: [],
-            }
-          }
-          payouts[recipient][:blueprint][:Commission] << {
-            blueprint_metadata: ContributorPayout.slim_metadata(metadata),
-            amount: d[:amount],
-            description_line: d[:commission].description_line(line_item, metadata, d[:amount]),
-          }
-        end
-
-        is_first_month_of_new_deal = invoice_pass.start_of_month == Date.new(2025, 6, 1)
-        if is_first_month_of_new_deal
-          working_hours =
-            ForecastAssignment
-              .where(
-                'end_date >= ? AND start_date <= ? AND project_id = ? AND person_id = ?',
-                Date.new(2025, 6, 16),
-                Date.new(2025, 6, 30),
-                metadata["forecast_project"],
-                metadata["forecast_person"]
-              ).map do |a|
-                a.allocation_during_range_in_hours(Date.new(2025, 6, 16), Date.new(2025, 6, 30))
-              end.compact.sum
-          working_amount = working_hours * working_rate
-          working_amount -= commission_total  # re-apply commission deduction after first-month recompute
-        end
-
-        account_lead = pt.account_lead_for_month(invoice_pass.start_of_month).try(:forecast_person)
-        if account_lead.present?
-          payouts[account_lead] ||= {
-            blueprint: {
-              AccountLead: [],
-              ProjectLead: [],
-              IndividualContributor: [],
-              Commission: [],
-            }
-          }
-
-          amount = (working_amount * rules.account_lead_share).round(2).to_f
-          payouts[account_lead][:blueprint][:AccountLead] << {
-            blueprint_metadata: ContributorPayout.slim_metadata(metadata),
-            amount: amount,
-            description_line: commission_total > 0 ?
-              "- (#{working_hours} hrs * #{n2c(working_rate)} p/h) - #{n2c(commission_total)} commission = #{n2c(working_amount)} * #{(rules.account_lead_share * 100).round(2)}% = #{n2c(amount)}" :
-              "- #{working_hours} hrs * #{n2c(working_rate)} p/h * #{(rules.account_lead_share * 100).round(2)}% = #{n2c(amount)}",
-          }
-        end
-
-        project_lead = pt.project_lead_for_month(invoice_pass.start_of_month).try(:forecast_person)
-        if project_lead.present?
-          payouts[project_lead] ||= {
-            blueprint: {
-              AccountLead: [],
-              ProjectLead: [],
-              IndividualContributor: [],
-              Commission: [],
-            }
-          }
-          amount = (working_amount * rules.project_lead_share).round(2).to_f
-          payouts[project_lead][:blueprint][:ProjectLead] << {
-            blueprint_metadata: ContributorPayout.slim_metadata(metadata),
-            amount: amount,
-            description_line: commission_total > 0 ?
-              "- (#{working_hours} hrs * #{n2c(working_rate)} p/h) - #{n2c(commission_total)} commission = #{n2c(working_amount)} * #{(rules.project_lead_share * 100).round(2)}% = #{n2c(amount)}" :
-              "- #{working_hours} hrs * #{n2c(working_rate)} p/h * #{(rules.project_lead_share * 100).round(2)}% = #{n2c(amount)}",
-          }
-        end
-
-        individual_contributor = ForecastPerson.find(metadata["forecast_person"])
-        hourly_rate_of_pay_override = forecast_project.hourly_rate_override_for_email_address(individual_contributor.email)
-
-        if individual_contributor.present?
-          payouts[individual_contributor] ||= {
-            blueprint: {
-              AccountLead: [],
-              ProjectLead: [],
-              IndividualContributor: [],
-              Commission: [],
-            }
-          }
-          if hourly_rate_of_pay_override.present?
-            amount = (working_hours * hourly_rate_of_pay_override).round(2)
-            payouts[individual_contributor][:blueprint][:IndividualContributor] << {
-              blueprint_metadata: ContributorPayout.slim_metadata(metadata),
-              amount: amount,
-              description_line: "- #{working_hours} hrs * #{n2c(hourly_rate_of_pay_override)} p/h = #{n2c(amount)}",
-            }
-          else
-            ic_share = rules.ic_share(account_lead: account_lead.present?, project_lead: project_lead.present?)
-            # ic_share is a BigDecimal (the rules are BigDecimal), so coerce the
-            # product to Float before it lands in the jsonb blueprint.
-            amount = (working_amount * ic_share).round(2).to_f
-            payouts[individual_contributor][:blueprint][:IndividualContributor] << {
-              blueprint_metadata: ContributorPayout.slim_metadata(metadata),
-              amount: amount,
-              description_line: commission_total > 0 ?
-                "- (#{working_hours} hrs * #{n2c(working_rate)} p/h) - #{n2c(commission_total)} commission = #{n2c(working_amount)} * #{(ic_share * 100).round(2)}% = #{n2c(amount)}" :
-                "- #{working_hours} hrs * #{n2c(working_rate)} p/h * #{(ic_share * 100).round(2)}% = #{n2c(amount)}",
-            }
-          end
-        end
-      end
-
-      synced = payouts.map do |payee, payee_data|
-        amount = payee_data[:blueprint].values.flatten.sum{|l| l[:amount]}.round(2)
-        next if amount == 0
-        forecast_person = payee.is_a?(ForecastPerson) ? payee : payee.forecast_person
+      synced = build.paid_payees.map do |payee|
+        forecast_person = payee.forecast_person
         forecast_person.ensure_contributor_exists!
-        contributor = forecast_person.contributor
+        ledger = Ledger.find_or_create_for(enterprise: forecast_client.billing_enterprise, contributor: forecast_person.contributor)
+        cp = contributor_payouts.with_deleted.find_or_initialize_by(ledger_id: ledger.id)
+        preserve_acceptance =
+          cp.persisted? && cp.accepted_at.present? && amount_equals?(cp.amount, payee.amount)
 
-        # Only schedule payouts for variable hours people, as they're likely on the new deal
-        if forecast_person.admin_user.nil? || forecast_person.admin_user.full_time_periods.empty? || forecast_person.admin_user.full_time_period_at(invoice_pass.start_of_month.end_of_month).variable_hours?
-          ledger = Ledger.find_or_create_for(enterprise: forecast_client.billing_enterprise, contributor: contributor)
-          cp = contributor_payouts.with_deleted.find_or_initialize_by(ledger_id: ledger.id)
-          preserve_acceptance =
-            cp.persisted? && cp.accepted_at.present? && amount_equals?(cp.amount, amount)
-
-          attrs = {
-            deleted_at: nil,
-            amount: amount,
-            blueprint: payee_data[:blueprint],
-            created_by: created_by,
-            description: "",
-          }
-          # Commission-only CPs (no admin_user behind them) auto-accept now and always.
-          # Otherwise: preserve acceptance only when the recomputed amount matches the
-          # existing one. Mismatches reset accepted_at so the contributor re-reviews.
-          if payee.admin_user.nil?
-            attrs[:accepted_at] = DateTime.now
-          elsif !preserve_acceptance
-            attrs[:accepted_at] = nil
-          end
-          cp.update!(attrs)
-          next cp
+        attrs = {
+          deleted_at: nil,
+          amount: payee.amount,
+          blueprint: payee.blueprint,
+          created_by: created_by,
+          description: "",
+        }
+        # Commission-only CPs (no admin_user behind them) auto-accept now and always.
+        # Otherwise: preserve acceptance only when the recomputed amount matches the
+        # existing one. Mismatches reset accepted_at so the contributor re-reviews.
+        if forecast_person.admin_user.nil?
+          attrs[:accepted_at] = DateTime.now
+        elsif !preserve_acceptance
+          attrs[:accepted_at] = nil
         end
-      end.compact
+        cp.skip_seventy_percent_check = true
+        cp.update!(attrs)
+        cp
+      end
 
       # Per-row rescue around obsolete CP destroys: ContributorPayout's
       # before_destroy chain runs SyncsAsQboBill#detach_and_destroy_qbo_bill
-      # which now raises PaidQboBillError on a paid bill. Without this rescue
-      # the exception would roll back the entire make_contributor_payouts!
-      # transaction and every cp.update! above would be lost. Skip the one
+      # which raises PaidQboBillError on a paid bill. Without this rescue
+      # the exception would roll back the whole transaction. Skip the one
       # paid-bill orphan with a log; the rest of the tracker still updates.
-      (contributor_payouts - synced).each do |orphan|
+      (contributor_payouts.reload.to_a - synced).each do |orphan|
         begin
           orphan.destroy
         rescue SyncsAsQboBill::PaidQboBillError => e
           Rails.logger.error("[invoice_tracker_make_payouts] ##{id} cannot destroy orphan CP ##{orphan.id}: #{e.message}")
         end
       end
-      contributor_payouts.reload
 
       # Commission-only CPs auto-accept: no contributor is reviewing their own work,
       # since the commission rate was agreed up-front on the project tracker.
-      contributor_payouts.each do |cp|
+      contributor_payouts.reload.each do |cp|
         bp = cp.blueprint || {}
         commission_amount = (bp["Commission"] || []).sum { |e| e["amount"].to_f }
         other_amount = ["AccountLead", "AccountLeadSurplus", "ProjectLead", "ProjectLeadSurplus", "IndividualContributor"].sum do |role|
@@ -589,60 +401,6 @@ class InvoiceTracker < ApplicationRecord
         end
         if commission_amount > 0 && other_amount == 0 && cp.accepted_at.nil?
           cp.update_columns(accepted_at: DateTime.now)
-        end
-      end
-
-      # Assign splits for Surplus
-      chunks = surplus_chunks.select{|c| c[:surplus] > 0}
-      chunks.each do |c|
-        next unless c[:project_tracker].present?
-
-        rules = c[:project_tracker].billing_rules
-        lead_share = (c[:surplus] * rules.surplus_lead_share).round(2).to_f
-        lead_pct = "#{(rules.surplus_lead_share * 100).round(2)}%"
-
-        # Share to Account Lead
-        account_lead = c[:project_tracker].account_lead_for_month(invoice_pass.start_of_month)
-        account_lead_on_new_deal = account_lead ? (account_lead.full_time_periods.empty? || account_lead.full_time_period_at(invoice_pass.start_of_month.end_of_month).variable_hours?) : false
-        if account_lead_on_new_deal && account_lead_contributor = account_lead.try(:forecast_person).try(:contributor)
-          ledger = Ledger.find_or_create_for(enterprise: forecast_client.billing_enterprise, contributor: account_lead_contributor)
-          cp = contributor_payouts.with_deleted.find_or_initialize_by(ledger_id: ledger.id)
-
-          new_blueprint = (cp.blueprint || {}).clone
-          new_blueprint["AccountLeadSurplus"] ||= []
-          new_blueprint["AccountLeadSurplus"] << {
-            amount: lead_share,
-            description_line: "- #{n2c(c[:surplus])} * #{lead_pct} = #{n2c(lead_share)} (`#{c[:qbo_line_item].dig("description")}` generated #{n2c(c[:surplus])} surplus revenue, #{lead_pct} of which is shared with the Account Lead)",
-            blueprint_metadata: ContributorPayout.slim_metadata(c[:blueprint_metadata]),
-          }
-
-          cp.update!(
-            deleted_at: nil,
-            amount: ((cp.amount || 0) + lead_share).round(2),
-            blueprint: new_blueprint,
-          )
-        end
-
-        # Share to Project Lead
-        project_lead = c[:project_tracker].project_lead_for_month(invoice_pass.start_of_month)
-        project_lead_on_new_deal = project_lead ? (project_lead.full_time_periods.empty? || project_lead.full_time_period_at(invoice_pass.start_of_month.end_of_month).variable_hours?) : false
-        if project_lead_on_new_deal && project_lead_contributor = project_lead.try(:forecast_person).try(:contributor)
-          ledger = Ledger.find_or_create_for(enterprise: forecast_client.billing_enterprise, contributor: project_lead_contributor)
-          cp = contributor_payouts.with_deleted.find_or_initialize_by(ledger_id: ledger.id)
-
-          new_blueprint = (cp.blueprint || {}).clone
-          new_blueprint["ProjectLeadSurplus"] ||= []
-          new_blueprint["ProjectLeadSurplus"] << {
-            amount: lead_share,
-            description_line: "- #{n2c(c[:surplus])} * #{lead_pct} = #{n2c(lead_share)} (`#{c[:qbo_line_item].dig("description")})` generated #{n2c(c[:surplus])} surplus revenue, #{lead_pct} of which is shared with the Project Lead)",
-            blueprint_metadata: ContributorPayout.slim_metadata(c[:blueprint_metadata]),
-          }
-
-          cp.update!(
-            deleted_at: nil,
-            amount: ((cp.amount || 0) + lead_share).round(2),
-            blueprint: new_blueprint,
-          )
         end
       end
 
@@ -657,6 +415,7 @@ class InvoiceTracker < ApplicationRecord
           end
 
         description = description << "# Total: #{n2c(cp.amount)}"
+        cp.skip_seventy_percent_check = true
         cp.update!(description: description)
       end
 
