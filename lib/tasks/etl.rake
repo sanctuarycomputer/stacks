@@ -132,14 +132,14 @@ namespace :stacks do
       end
     end
 
-    # Links recent Meet meetings to the project tracker(s) they were about
-    # (Stacks::Meetings::ProjectMatcher: one cheap model call per meeting).
-    # Does nothing until MEETING_MATCHING=on.
-    desc "Match recent Google Meet meetings to project trackers"
+    # Links Meet meetings to the project tracker(s) they were about
+    # (Stacks::Meetings::Sweep, the sibling of the weekly ship sweep: one cheap
+    # model call per new or changed meeting from the last 90 days).
+    desc "Match Google Meet meetings to project trackers"
     task match_meetings: :environment do
       system_task = SystemTask.create!(name: "stacks:etl:match_meetings")
       begin
-        stats = Stacks::Meetings::ProjectMatcher.run!
+        stats = Stacks::Meetings::Sweep.run!
         if stats[:errored].to_i.positive?
           system_task.mark_as_error(StandardError.new("#{stats[:errored]} meetings failed to match: #{stats.inspect}"))
         else
@@ -150,11 +150,11 @@ namespace :stacks do
       end
     end
 
-    # Preview matches for unmatched recent meetings without writing anything.
+    # Preview what the sweep would match, newest meetings first, without writing anything.
     #   rake "stacks:etl:match_meetings_preview[10]"
     desc 'Preview meeting-to-tracker matches without saving them ([limit], default 10)'
     task :match_meetings_preview, [:limit] => :environment do |_t, args|
-      stats = Stacks::Meetings::ProjectMatcher.run!(dry_run: true, limit: (args[:limit] || 10).to_i)
+      stats = Stacks::Meetings::Sweep.run!(dry_run: true, limit: (args[:limit] || 10).to_i)
       names = ProjectTracker.where(id: Array(stats[:results]).flat_map { |r| r[:tracker_ids] }).pluck(:id, :name).to_h
       Array(stats[:results]).each do |r|
         matched = r[:tracker_ids].map { |id| names[id] || "tracker #{id}" }.join(", ").presence || "no project"
@@ -217,9 +217,9 @@ namespace :stacks do
     # The nightly ETL entry point. Runs the ongoing sync for EVERY source; today that's
     # Meet transcripts, Gemini notes + Google Groups, but new sources (Notion, Gmail, …) get added here
     # so the Scheduler job never has to change. Each source is invoked independently so
-    # one source failing doesn't stop the others. The matchers run last, on what was just
+    # one source failing doesn't stop the others. The sweeps run last, on what was just
     # synced: weekly ships to trackers, then Meet meetings to trackers.
-    desc 'Nightly ETL sync across ALL sources (currently Meet transcripts, Gemini notes + Google Groups), then the ship and meeting matchers'
+    desc 'Nightly ETL sync across ALL sources (currently Meet transcripts, Gemini notes + Google Groups), then the ship and meeting sweeps'
     task sync_all: :environment do
       %w[stacks:etl:sync_meet_all stacks:etl:sync_gemini_notes_all stacks:etl:sync_google_groups stacks:etl:reclassify_privacy stacks:etl:match_weekly_ships stacks:etl:match_meetings].each do |task_name|
         Rake::Task[task_name].invoke
