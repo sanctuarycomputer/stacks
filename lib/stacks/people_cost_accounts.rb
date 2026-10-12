@@ -12,6 +12,9 @@ module Stacks::PeopleCostAccounts
     /misc(ellaneous)? payments/i, /payments offset/i, /pass.?through/i, /clearing/i,
     /justworks/i, /\bdeel\b/i, /gusto/i, /rippling/i, /trinet/i,
     /management fee/i, /intercompany/i, /inter-company/i, /due (to|from)/i,
+    # MSO executive compensation, whatever Finance names the account. Without these an account called
+    # "MSO Compensation" matches nothing above and the outlook would report total executive pay.
+    /compensation/i, /\bmso\b/i, /executive/i,
   ].freeze
 
   def self.excluded?(*labels)
