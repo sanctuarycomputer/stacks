@@ -18,7 +18,7 @@ module Mcp
         clear_monthly_budget: { type: 'boolean', description: 'true removes the monthly budget (both ends).' },
         msa_url: { type: 'string' },
         sow_url: { type: 'string' },
-        twist_channel_url: { type: 'string', description: "http(s) URL of the project's Twist channel." },
+        twist_channel_url: { type: 'string', description: "http(s) URL of the project's Twist channel. Must be the channel's link in our Twist workspace (https://twist.com/a/<workspace>/ch/<id>/); a thread link is cut back to its channel." },
         notion_homepage_url: { type: 'string', description: "http(s) URL of the project's Notion homepage." },
       },
       required: %w[project_tracker_id]

@@ -425,6 +425,28 @@ namespace :stacks do
     else
       system_task.mark_as_success
     end
+
+    # The sync soft-deletes pages without callbacks, so a tracker whose Notion
+    # project was removed would otherwise keep a stale task list for a day.
+    begin
+      Stacks::TaskBuilder.clear_cache!
+    rescue => e
+      Rails.logger.error("[sync_notion] task cache clear failed: #{e.class}: #{e.message}")
+    end
+    # Rides on this daily task so no scheduler entry is needed.
+    Rake::Task["stacks:sync_twist_channel_access"].invoke
+  end
+
+  desc "Record which project Twist channels the Stacksbot account can see"
+  task :sync_twist_channel_access => :environment do
+    system_task = SystemTask.create!(name: "stacks:sync_twist_channel_access")
+    begin
+      stats = ProjectTracker.sync_twist_channel_access!
+      Rails.logger.info("[sync_twist_channel_access] #{stats.inspect}")
+      system_task.mark_as_success
+    rescue => e
+      system_task.mark_as_error(e)
+    end
   end
 
   desc "Sync Contacts"

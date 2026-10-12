@@ -23,6 +23,17 @@ class NotionPage < ApplicationRecord
     Stacks::Notion::HumanOperatingManual.new(self)
   end
 
+  scope :projects, -> {
+    where(
+      notion_parent_type: "database_id",
+      notion_parent_id: Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:PROJECTS])
+    )
+  }
+
+  def as_project
+    Stacks::Notion::Project.new(self)
+  end
+
   def notion_link
     "https://www.notion.so/garden3d/#{notion_id.gsub('-', '')}"
   end

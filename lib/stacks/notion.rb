@@ -7,7 +7,9 @@ class Stacks::Notion
 
   DATABASE_IDS = {
     LEADS: "4d9b46b8bad542509f144347db37964d",
-    HUMAN_OPERATING_MANUALS: "5d59dcd95bfb458a9747ce7d6ce9e009"
+    HUMAN_OPERATING_MANUALS: "5d59dcd95bfb458a9747ce7d6ce9e009",
+    # Projects: a tracker picks its page from these (app/admin/project_trackers.rb).
+    PROJECTS: "713b28db4f8a45c68126e9723c65349e",
   }
 
   def initialize()
