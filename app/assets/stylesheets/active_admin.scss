@@ -214,8 +214,13 @@
   tr.margin-breach__entry td {
     padding-top: 4px;
     padding-bottom: 4px;
-    padding-left: 30px;
     border-bottom: none;
+  }
+
+  // Role rows sit against the Payouts column, so each amount reads as a
+  // part of the line's payout figure above it.
+  tr.margin-breach__entry td.margin-breach__entry-label {
+    text-align: right;
   }
 
   form.margin-breach__override {
