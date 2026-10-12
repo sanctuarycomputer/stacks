@@ -65,7 +65,8 @@ class InvoicePass < ApplicationRecord
 
   def payout_statuses
     return [] unless allows_payment_splits?
-    status = invoice_trackers.map(&:contributor_payouts_status)
+    # compact: a management fee tracker has no payout status at all.
+    status = invoice_trackers.map(&:contributor_payouts_status).compact
     status.inject(Hash.new(0)) { |h, e| h[e] += 1 ; h }
   end
 

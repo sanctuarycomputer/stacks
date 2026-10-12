@@ -135,6 +135,11 @@ class InvoiceTracker < ApplicationRecord
         nil
       elsif contributor_payouts.loaded? ? contributor_payouts.any? : contributor_payouts.exists?
         (contributor_payouts.loaded? ? contributor_payouts.all?(&:accepted?) : contributor_payouts.where(accepted_at: nil).none?) ? :all_accepted : :some_pending
+      elsif management_fee_invoice?
+        # A management fee invoice never has payouts, so "no payouts" is not a
+        # state worth a pill. (A legacy garden3d tracker carries a blueprint, so
+        # it never reaches this branch and reports exactly as before.)
+        nil
       else
         :no_payouts
       end
@@ -148,7 +153,10 @@ class InvoiceTracker < ApplicationRecord
         :deleted
       end
     else
-      if blueprint.nil?
+      # A management fee tracker never has a blueprint -- Finance sets the
+      # amount in QuickBooks -- so for it "an invoice and no blueprint" is the
+      # normal case, not an impossible one.
+      if blueprint.nil? && !management_fee?
         :impossible
       else
         qbo_invoice.status
@@ -239,6 +247,11 @@ class InvoiceTracker < ApplicationRecord
   end
 
   def configuration_errors
+    # These checks match the Forecast client to a QuickBooks customer BY NAME.
+    # A management fee invoice resolves its customer by stored id instead, and
+    # Mso::ManagementFeeInvoices.push_invoice! raises on anything missing.
+    return [] if management_fee_invoice?
+
     err = []
     qa = qbo_account
     err << [:missing_qbo_customer] if forecast_client.qbo_customer(qa: qa).nil?
@@ -343,6 +356,9 @@ class InvoiceTracker < ApplicationRecord
   def make_contributor_payouts!(created_by)
     raise "Payment splits are not supported for this invoice pass" unless invoice_pass.allows_payment_splits?
     return [] if qbo_invoice.nil?
+    if management_fee_invoice?
+      raise "Management fee invoices have no contributor payouts (InvoiceTracker #{id})"
+    end
 
     ActiveRecord::Base.transaction do
       payouts = {}
