@@ -9,7 +9,7 @@ risk first shows (the project's Twist channel, Meet transcripts, mail to ships@)
 sees to Notion. None of that is visible from a project tracker, because almost nothing Stacksbot
 writes is tied to a tracker.
 
-The goal is a log per project tracker of what was seen, marked good, bad or ugly, so risk across
+The goal is a log per project tracker of what was seen, marked positive, neutral or negative, so risk across
 projects can be read off Stacks without asking anyone.
 
 ## What exists (measured 2026-10-12)
