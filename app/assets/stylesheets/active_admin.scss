@@ -187,6 +187,12 @@
     padding: 0 20px;
   }
 
+  // Headers and figures stay on one line; only the description column wraps.
+  th,
+  td.text-right {
+    white-space: nowrap;
+  }
+
   tr.margin-breach__line.over td {
     color: $color-red;
   }
