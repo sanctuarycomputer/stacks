@@ -61,6 +61,14 @@ module Mso
         end
       end
 
+      # The trackers `payer` has on this pass: those on any of its internal
+      # Forecast clients. THE payer -> tracker mapping; ensure_trackers! and
+      # InvoicePass#management_fee_collected? both go through it. A relation,
+      # empty when the payer has no internal client. Database only.
+      def payer_trackers(invoice_pass:, payer:)
+        trackers_on(invoice_pass, internal_client_ids(payer))
+      end
+
       # May Stacks create drafts on this pass at all?
       def draftable?(invoice_pass)
         invoice_pass.management_fee? &&
@@ -192,10 +200,20 @@ module Mso
       # If any invoice cannot be read it RAISES: an answer from a stale copy
       # could say "nobody was charged" about an invoice that is unpaid.
       #
-      # It also answers false while any payer's tracker has NO invoice
-      # attached: an invoice Stacks cannot see (one made by hand, or one this
-      # refresh just detached because QuickBooks no longer has it) may be an
-      # unpaid charge. Attach every payer's invoice before relying on a "yes".
+      # The answer itself is InvoicePass#management_fee_collected?, the pure
+      # rule, asked of the refreshed mirrors -- so the two entry points can
+      # never disagree about what "collected" means. That rule fails closed
+      # on everything Stacks cannot vouch for. It answers false while:
+      #   - any current payer has no management fee tracker on the pass;
+      #   - any payer's tracker has NO invoice attached (one made by hand, or
+      #     one this refresh just detached because QuickBooks no longer has
+      #     it, may be an unpaid charge);
+      #   - any attached invoice is dated outside the pass month, or has no
+      #     readable date;
+      #   - garden3d's mirror holds an invoice to a payer, dated in the pass
+      #     month, that is not attached to this pass (a second or hand-made
+      #     invoice Stacks is not tracking, and so did not refresh).
+      # Attach every payer's invoice before relying on a "yes".
       #
       # Costs one QuickBooks read per attached invoice. Call it once per run
       # or page and reuse the answer; do not call it per ledger row.
@@ -284,11 +302,15 @@ module Mso
 
       # Queried fresh, lowest Forecast id first, so the choice is the same on
       # every run and never comes from a stale association cache.
-      def internal_client_ids!(payer)
-        ids = EnterpriseForecastClient
+      def internal_client_ids(payer)
+        EnterpriseForecastClient
           .where(enterprise_id: payer.id)
           .order(:forecast_client_id)
           .pluck(:forecast_client_id)
+      end
+
+      def internal_client_ids!(payer)
+        ids = internal_client_ids(payer)
         if ids.empty?
           raise Misconfigured, "#{payer.name} is a management fee payer but has no internal Forecast client " \
                                "to hang its invoice tracker on"
@@ -296,10 +318,12 @@ module Mso
         ids
       end
 
+      def trackers_on(invoice_pass, client_ids)
+        InvoiceTracker.where(invoice_pass_id: invoice_pass.id, forecast_client_id: client_ids)
+      end
+
       def find_tracker(invoice_pass, client_ids)
-        InvoiceTracker
-          .where(invoice_pass_id: invoice_pass.id, forecast_client_id: client_ids)
-          .order(:id).first
+        trackers_on(invoice_pass, client_ids).order(:id).first
       end
 
       # Two first-time calls at once (a double click on Create drafts, or the

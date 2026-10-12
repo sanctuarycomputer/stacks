@@ -60,11 +60,34 @@ class InvoicePass < ApplicationRecord
   # for every payer), or voided. Collected = at least one charged invoice,
   # and every charged invoice has a total above zero and nothing outstanding.
   #
-  # - A management fee tracker with NO invoice attached is unknown: not
-  #   collected. Stacks cannot see whether that payer was charged -- the
-  #   pre-flight refuses to draft when Finance already invoiced by hand, and
-  #   that invoice stays invisible here until someone attaches it. (An
-  #   attached, unsent, zero draft is the "nobody was charged" case.)
+  # That is only a "yes" when Stacks can vouch for the whole month, so the
+  # rule FAILS CLOSED on anything it cannot see. All of these are unknown,
+  # and unknown is not collected:
+  #
+  # - A current payer (Enterprise.management_fee_payers) with NO management
+  #   fee tracker on this pass: flagged after the pass was made, or its
+  #   tracker was deleted. The payer -> tracker mapping is the one
+  #   ensure_trackers! uses (Mso::ManagementFeeInvoices.payer_trackers).
+  # - A management fee tracker with NO invoice attached. Stacks cannot see
+  #   whether that payer was charged -- the pre-flight refuses to draft when
+  #   Finance already invoiced by hand, and that invoice stays invisible here
+  #   until someone attaches it. (An attached, unsent, zero draft is the
+  #   "nobody was charged" case.)
+  # - An attached invoice whose stored txn_date is outside this pass's month,
+  #   or missing, or unreadable: it is some other month's invoice, and this
+  #   month's own may be unpaid. Checked on every attached invoice, even a
+  #   draft or a voided one.
+  # - An invoice in garden3d's mirror billed to a payer's stored garden3d
+  #   customer id, dated in this pass's month, that is NOT attached to a
+  #   tracker on this pass: a second or hand-made invoice Stacks is not
+  #   tracking. Nothing refreshes an unattached mirror, so even one stored as
+  #   paid, or as an untouched draft, blocks. The exception is one stored as
+  #   voided (below): voiding is final, so a stale copy cannot hide a charge.
+  #   An invoice to anyone else, or dated in another month, or in another
+  #   company's books, is not this pass's business.
+  #
+  # And on the invoices it can see:
+  #
   # - An invoice with an amount that was never emailed still posts to account
   #   4100 and raises the cap, so it is a charge.
   # - A sent $0.00 invoice is a charge with no total, so it is NOT collected.
@@ -80,7 +103,16 @@ class InvoicePass < ApplicationRecord
     end
 
     own_account_ids = QboAccount.where(enterprise_id: enterprise_id).pluck(:id)
+    payers = Enterprise.management_fee_payers.order(:id).to_a
     charged = []
+    attached = []
+
+    # Every current payer needs a fee tracker here, or its invoice is unseen.
+    # (A legacy Forecast tracker, which has a blueprint, is not one.)
+    payers.each do |payer|
+      fee_trackers = Mso::ManagementFeeInvoices.payer_trackers(invoice_pass: self, payer: payer)
+      return false unless fee_trackers.where(blueprint: nil).exists?
+    end
 
     # Fresh queries throughout, by the (account, id) pair: never the cached
     # association, and never the qbo_invoice association.
@@ -101,11 +133,16 @@ class InvoicePass < ApplicationRecord
       stored = mirror&.read_attribute(:data)
       return false if stored.blank?
 
+      # Another month's invoice, or one with no readable date: unknown.
+      dated = stored_date(stored["txn_date"])
+      return false if dated.nil? || dated.beginning_of_month != start_of_month
+      attached << [tracker.qbo_account_id, tracker.qbo_invoice_id]
+
       total = stored_amount(stored["total"])
       balance = stored_amount(stored["balance"])
       return false if total.nil? || balance.nil?
 
-      next if stored["private_note"].to_s.downcase.include?("voided") && total.zero? && balance.zero?
+      next if stored_as_voided?(stored)
 
       sent = stored["email_status"] == "EmailSent"
       next unless sent || total.positive? # unsent and zero: nobody was charged
@@ -113,6 +150,7 @@ class InvoicePass < ApplicationRecord
       charged << [total, balance]
     end
 
+    return false if untracked_payer_invoice?(own_account_ids, payers, attached)
     return false if charged.empty?
     charged.all? { |total, balance| total.positive? && balance.zero? }
   end
@@ -219,5 +257,42 @@ class InvoicePass < ApplicationRecord
     BigDecimal(value.to_s)
   rescue ArgumentError
     nil
+  end
+
+  # The mirror stores what Quickbooks::Model::Invoice#as_json gives: the
+  # transaction date as an ISO String ("2026-10-31") under "txn_date". nil
+  # when missing or unparseable.
+  def stored_date(value)
+    return nil unless value.is_a?(String)
+    Date.iso8601(value)
+  rescue ArgumentError
+    nil
+  end
+
+  # As QuickBooks leaves a voided invoice: the note says so AND total and
+  # balance are both zero.
+  def stored_as_voided?(stored)
+    total = stored_amount(stored["total"])
+    balance = stored_amount(stored["balance"])
+    return false if total.nil? || balance.nil?
+    stored["private_note"].to_s.downcase.include?("voided") && total.zero? && balance.zero?
+  end
+
+  # Does garden3d's mirror hold an invoice to a payer, dated in this month,
+  # that no tracker on this pass has attached? Stored rows only, read in SQL
+  # and through pluck: never QboInvoice#data, which can call QuickBooks.
+  def untracked_payer_invoice?(own_account_ids, payers, attached)
+    customer_ids = payers.map(&:g3d_qbo_customer_id).reject(&:blank?).map(&:to_s)
+    return false if own_account_ids.empty? || customer_ids.empty?
+
+    QboInvoice
+      .where(qbo_account_id: own_account_ids)
+      .where("qbo_invoices.data->'customer_ref'->>'value' IN (?)", customer_ids)
+      .where("qbo_invoices.data->>'txn_date' >= ? AND qbo_invoices.data->>'txn_date' < ?",
+             start_of_month.iso8601, start_of_month.next_month.iso8601)
+      .pluck(:qbo_account_id, :qbo_id, :data)
+      .any? do |account_id, qbo_id, stored|
+        !attached.include?([account_id, qbo_id]) && !stored_as_voided?(stored)
+      end
   end
 end

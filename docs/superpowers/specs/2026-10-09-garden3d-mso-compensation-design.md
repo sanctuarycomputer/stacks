@@ -1033,13 +1033,37 @@ fixes below.
 - An invoice is **charged** when it is sent **or** its total is above zero. It is
   ignored only when unsent and zero, or voided (note says voided **and** total
   and balance are zero).
-- Collected = every management fee tracker has an invoice attached, at least one
-  is charged, and every charged one is fully paid with a total above zero. A
-  tracker with no invoice means *unknown*, so not collected.
-- `Mso::ManagementFeeInvoices.collected?(invoice_pass:)` refreshes every attached
-  invoice from QuickBooks first and raises if any read fails. It costs one read
-  per invoice: call it once per run, never per row.
-  `InvoicePass#management_fee_collected?` is the pure rule over stored mirrors.
+- Collected = at least one attached invoice is charged, and every charged one is
+  fully paid with a total above zero — **and** Stacks can vouch for the whole
+  month. The gate fails closed: each of the following is *unknown*, so not
+  collected.
+  - A current payer (`management_fee_payer`) has no management fee tracker on
+    the pass. Same payer → tracker mapping as `ensure_trackers!`
+    (`Mso::ManagementFeeInvoices.payer_trackers`); a legacy Forecast tracker
+    (one with a blueprint) does not count.
+  - A management fee tracker has no invoice attached.
+  - An attached invoice's stored `txn_date` is outside the pass month, missing or
+    unreadable. Applies to every attached invoice, drafts and voided ones
+    included.
+  - garden3d's mirror holds an invoice billed to a payer's
+    `g3d_qbo_customer_id`, dated in the pass month, that is not attached to a
+    tracker on this pass (a second or hand-made invoice). It blocks whatever
+    its stored status, because nothing refreshes an unattached mirror. The one
+    exception is an invoice stored as voided (note **and** zero total and
+    balance): voiding is final. An invoice to a non-payer customer, in another
+    month, or in another company's books does not block.
+  - An attached invoice has no stored data or an unreadable amount.
+- All of the above lives in `InvoicePass#management_fee_collected?`, the pure
+  rule over stored mirrors (no QuickBooks call).
+  `Mso::ManagementFeeInvoices.collected?(invoice_pass:)` refreshes every attached
+  invoice from QuickBooks first, raises if any read fails, then asks the pure
+  rule — so the two entry points always agree. It costs one read per attached
+  invoice: call it once per run, never per row.
+- The unattached-invoice check sees only what is mirrored. garden3d's mirror
+  gains rows from a draft push, a refused push (which records what QuickBooks
+  already holds for that customer and month) and a manual
+  `QboAccount#sync_all_invoices!`; an invoice made by hand after those is
+  invisible until one of them runs again.
 
 **Fee income (§6.3)**
 

@@ -46,6 +46,8 @@ class InvoicePassManagementFeeCollectedTest < ActiveSupport::TestCase
 
   test "collected when the one sent invoice is paid in full" do
     invoice_for(@sanctuary, "c-3", total: "130000.0", balance: "0.0", sent: true)
+    # Every payer needs a tracker with an invoice; Index's is the untouched draft.
+    invoice_for(@index, "c-3b", total: "0.0", balance: "0.0", sent: false)
 
     assert collected?
   end
@@ -106,7 +108,11 @@ class InvoicePassManagementFeeCollectedTest < ActiveSupport::TestCase
 
   test "a legacy Forecast tracker with no invoice is not a fee tracker and does not block" do
     invoice_for(@sanctuary, "c-15", total: "130000.0", balance: "0.0", sent: true)
-    fee_tracker(@pass, @index).update!(blueprint: { "lines" => {} })
+    invoice_for(@index, "c-15b", total: "0.0", balance: "0.0", sent: false)
+    # On a client that is no payer's: each payer still has its fee tracker.
+    ForecastClient.create!(forecast_id: 992_009, name: "Legacy external client")
+    InvoiceTracker.create!(invoice_pass: @pass, forecast_client_id: 992_009, qbo_account: @qbo_account,
+                           blueprint: { "lines" => {} })
 
     assert collected?
   end
@@ -125,6 +131,7 @@ class InvoicePassManagementFeeCollectedTest < ActiveSupport::TestCase
   test "an unsent invoice with an amount, paid in full, is collected" do
     # An intercompany invoice recorded as paid without ever being emailed.
     invoice_for(@sanctuary, "c-22", total: "130000.0", balance: "0.0", sent: false)
+    invoice_for(@index, "c-22b", total: "0.0", balance: "0.0", sent: false)
 
     assert collected?
   end
@@ -158,6 +165,188 @@ class InvoicePassManagementFeeCollectedTest < ActiveSupport::TestCase
     invoice_for(@index, "c-36", total: "40000.0", balance: "40000.0", sent: false, private_note: "Voided")
 
     refute collected?
+  end
+
+  # --- an invoice that belongs to another month ------------------------------
+
+  test "an attached invoice dated the following month is unknown: not collected" do
+    # Someone attached July's invoice to June's tracker. June's own invoice,
+    # which Stacks cannot see, may be unpaid.
+    tracker = fee_tracker(@pass, @sanctuary)
+    attach_invoice(tracker, qbo_id: "c-50", total: "130000.0", balance: "0.0", sent: true,
+                            txn_date: Date.new(2091, 7, 1))
+    invoice_for(@index, "c-51", total: "0.0", balance: "0.0", sent: false)
+
+    refute collected?
+  end
+
+  test "an attached invoice dated the previous month is unknown: not collected" do
+    attach_invoice(fee_tracker(@pass, @sanctuary), qbo_id: "c-52", total: "130000.0", balance: "0.0", sent: true,
+                                                   txn_date: Date.new(2091, 5, 31))
+    invoice_for(@index, "c-53", total: "0.0", balance: "0.0", sent: false)
+
+    refute collected?
+  end
+
+  test "an attached invoice dated the first or last day of the month is in the month" do
+    attach_invoice(fee_tracker(@pass, @sanctuary), qbo_id: "c-54", total: "130000.0", balance: "0.0", sent: true,
+                                                   txn_date: Date.new(2091, 6, 1))
+    attach_invoice(fee_tracker(@pass, @index), qbo_id: "c-55", total: "40000.0", balance: "0.0", sent: true,
+                                               txn_date: Date.new(2091, 6, 30))
+
+    assert collected?
+  end
+
+  test "an attached invoice with no stored date, or an unreadable one, is unknown: not collected" do
+    invoice_for(@sanctuary, "c-56", total: "130000.0", balance: "0.0", sent: true)
+    invoice_for(@index, "c-57", total: "0.0", balance: "0.0", sent: false)
+    assert collected?, "sanity: collected while the date is readable"
+    mirror = QboInvoice.find_by!(qbo_account_id: @qbo_account.id, qbo_id: "c-57")
+
+    mirror.update!(data: mirror.read_attribute(:data).except("txn_date"))
+    refute collected?
+
+    mirror.update!(data: mirror.read_attribute(:data).merge("txn_date" => "last June"))
+    refute collected?
+
+    mirror.update!(data: mirror.read_attribute(:data).merge("txn_date" => 20_910_630))
+    refute collected?
+  end
+
+  # --- a payer with no tracker at all ----------------------------------------
+
+  test "a payer with no tracker on the pass is unknown: not collected" do
+    # Flagged after the pass was made, or its tracker was deleted.
+    invoice_for(@sanctuary, "c-60", total: "130000.0", balance: "0.0", sent: true)
+    assert_empty InvoiceTracker.where(invoice_pass_id: @pass.id, forecast_client_id: 992_002)
+
+    refute collected?
+  end
+
+  test "a payer with no internal Forecast client can have no tracker: not collected" do
+    invoice_for(@sanctuary, "c-61", total: "130000.0", balance: "0.0", sent: true)
+    invoice_for(@index, "c-62", total: "0.0", balance: "0.0", sent: false)
+    assert collected?, "sanity"
+    Enterprise.create!(name: "Clientless #{SecureRandom.hex(3)}", management_fee_payer: true)
+
+    refute collected?
+  end
+
+  test "a payer's tracker on any of its internal Forecast clients counts" do
+    # ensure_trackers! reuses a tracker on any of a payer's clients.
+    ForecastClient.create!(forecast_id: 992_003, name: "Index second internal")
+    EnterpriseForecastClient.create!(enterprise: @index, forecast_client_id: 992_003)
+    invoice_for(@sanctuary, "c-63", total: "130000.0", balance: "0.0", sent: true)
+    second = InvoiceTracker.create!(invoice_pass: @pass, forecast_client_id: 992_003, qbo_account: @qbo_account)
+    attach_invoice(second, qbo_id: "c-64", total: "0.0", balance: "0.0", sent: false)
+
+    assert collected?
+  end
+
+  test "a payer whose only tracker is a legacy Forecast one has no fee tracker: not collected" do
+    invoice_for(@sanctuary, "c-65", total: "130000.0", balance: "0.0", sent: true)
+    fee_tracker(@pass, @index).update!(blueprint: { "lines" => {} })
+
+    refute collected?
+  end
+
+  # --- an invoice in garden3d's books that Stacks is not tracking -------------
+
+  def collected_pass_with_customer_ids
+    @sanctuary.update_columns(g3d_qbo_customer_id: "2")
+    @index.update_columns(g3d_qbo_customer_id: "5")
+    invoice_for(@sanctuary, "c-70", total: "130000.0", balance: "0.0", sent: true)
+    invoice_for(@index, "c-71", total: "0.0", balance: "0.0", sent: false)
+    assert collected?, "sanity: collected before the stray invoice exists"
+  end
+
+  test "an unattached invoice to a payer dated in the month is an unseen charge: not collected" do
+    collected_pass_with_customer_ids
+
+    # A second, hand-made invoice for Index. Paid or not, Stacks is not
+    # tracking it, and nothing refreshes an unattached mirror.
+    mirror_invoice(@qbo_account, qbo_id: "c-72", total: "40000.0", balance: "0.0", sent: true,
+                                 txn_date: Date.new(2091, 6, 15), customer_id: "5")
+
+    refute collected?
+  end
+
+  test "an unattached untouched draft to a payer dated in the month still blocks" do
+    collected_pass_with_customer_ids
+
+    # Unsent and zero as stored, but Finance may have set an amount since.
+    mirror_invoice(@qbo_account, qbo_id: "c-73", total: "0.0", balance: "0.0", sent: false,
+                                 txn_date: Date.new(2091, 6, 30), customer_id: "2")
+
+    refute collected?
+  end
+
+  test "an unattached voided invoice to a payer does not block; a voided note with an amount does" do
+    collected_pass_with_customer_ids
+
+    # QuickBooks zeroes a voided invoice and it stays voided, so a stale
+    # mirror cannot be hiding a charge. Typical: Finance voids a hand-made
+    # invoice and replaces it; only the replacement can be attached.
+    mirror_invoice(@qbo_account, qbo_id: "c-81", total: "0.0", balance: "0.0", sent: true,
+                                 txn_date: Date.new(2091, 6, 15), customer_id: "5", private_note: "Voided")
+    assert collected?
+
+    mirror_invoice(@qbo_account, qbo_id: "c-82", total: "40000.0", balance: "0.0", sent: true,
+                                 txn_date: Date.new(2091, 6, 15), customer_id: "5", private_note: "Voided")
+    refute collected?
+  end
+
+  test "an invoice attached to another pass's tracker but dated in this month blocks" do
+    collected_pass_with_customer_ids
+    july = garden3d_pass(Date.new(2091, 7, 1))
+    attach_invoice(fee_tracker(july, @index), qbo_id: "c-74", total: "40000.0", balance: "0.0", sent: true,
+                                              txn_date: Date.new(2091, 6, 30))
+    mirror = QboInvoice.find_by!(qbo_account_id: @qbo_account.id, qbo_id: "c-74")
+    mirror.update!(data: mirror.read_attribute(:data).merge("customer_ref" => { "value" => "5" }))
+
+    refute collected?
+  end
+
+  test "an unattached invoice to a customer who is not a payer does not block" do
+    collected_pass_with_customer_ids
+
+    mirror_invoice(@qbo_account, qbo_id: "c-75", total: "900.0", balance: "900.0", sent: true,
+                                 txn_date: Date.new(2091, 6, 15), customer_id: "9")
+    mirror_invoice(@qbo_account, qbo_id: "c-76", total: "900.0", balance: "900.0", sent: true,
+                                 txn_date: Date.new(2091, 6, 15))
+
+    assert collected?
+  end
+
+  test "an unattached invoice to a payer dated in another month does not block" do
+    collected_pass_with_customer_ids
+
+    mirror_invoice(@qbo_account, qbo_id: "c-77", total: "40000.0", balance: "40000.0", sent: true,
+                                 txn_date: Date.new(2091, 5, 31), customer_id: "5")
+    mirror_invoice(@qbo_account, qbo_id: "c-78", total: "40000.0", balance: "40000.0", sent: true,
+                                 txn_date: Date.new(2091, 7, 1), customer_id: "5")
+
+    assert collected?
+  end
+
+  test "another company's invoice that shares a payer's customer id value does not block" do
+    collected_pass_with_customer_ids
+    sanctuary_qa = Enterprise.find(enterprises(:sanctuary).id).qbo_account
+
+    mirror_invoice(sanctuary_qa, qbo_id: "c-79", total: "500.0", balance: "500.0", sent: true,
+                                 txn_date: Date.new(2091, 6, 15), customer_id: "5")
+
+    assert collected?
+  end
+
+  test "an unattached invoice to an enterprise that is no longer a payer does not block" do
+    collected_pass_with_customer_ids
+    former = Enterprise.create!(name: "Former #{SecureRandom.hex(3)}", g3d_qbo_customer_id: "7")
+
+    mirror_invoice(@qbo_account, qbo_id: "c-80", total: "500.0", balance: "500.0", sent: true,
+                                 txn_date: Date.new(2091, 6, 15), customer_id: former.g3d_qbo_customer_id)
+
+    assert collected?
   end
 
   # --- unknown, and misuse ---------------------------------------------------

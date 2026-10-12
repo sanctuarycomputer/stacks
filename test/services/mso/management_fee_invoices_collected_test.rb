@@ -18,7 +18,8 @@ class Mso::ManagementFeeInvoicesCollectedTest < ActiveSupport::TestCase
   test "it reads QuickBooks first, so a stale draft snapshot cannot hide a paid invoice" do
     refute InvoicePass.find(@pass.id).management_fee_collected?, "sanity: the stored snapshot says nobody was charged"
     QboAccount.any_instance.expects(:fetch_invoice_by_id).once.with("k-1")
-      .returns(qbo_created_invoice("k-1", total: "130000", balance: "0", email_status: "EmailSent"))
+      .returns(qbo_created_invoice("k-1", total: "130000", balance: "0", email_status: "EmailSent",
+                                          txn_date: Date.new(2091, 7, 31)))
 
     assert Mso::ManagementFeeInvoices.collected?(invoice_pass: @pass)
   end
@@ -28,9 +29,56 @@ class Mso::ManagementFeeInvoicesCollectedTest < ActiveSupport::TestCase
     mirror.update!(data: mirror.read_attribute(:data).merge("email_status" => "EmailSent", "total" => "130000.0"))
     assert InvoicePass.find(@pass.id).management_fee_collected?, "sanity: the stored snapshot says paid"
     QboAccount.any_instance.expects(:fetch_invoice_by_id).once
-      .returns(qbo_created_invoice("k-1", total: "130000", balance: "130000", email_status: "EmailSent"))
+      .returns(qbo_created_invoice("k-1", total: "130000", balance: "130000", email_status: "EmailSent",
+                                          txn_date: Date.new(2091, 7, 31)))
 
     refute Mso::ManagementFeeInvoices.collected?(invoice_pass: @pass)
+  end
+
+  # --- the refreshed answer is the pure rule's, fail-closed parts included ----
+
+  def paid_in(txn_date)
+    qbo_created_invoice("k-1", total: "130000", balance: "0", email_status: "EmailSent", txn_date: txn_date)
+  end
+
+  test "a refreshed invoice that turns out to be dated another month is not collected" do
+    QboAccount.any_instance.expects(:fetch_invoice_by_id).once.returns(paid_in(Date.new(2091, 8, 1)))
+
+    refute Mso::ManagementFeeInvoices.collected?(invoice_pass: @pass)
+  end
+
+  test "a refreshed invoice with no date is not collected" do
+    QboAccount.any_instance.expects(:fetch_invoice_by_id).once.returns(paid_in(nil))
+
+    refute Mso::ManagementFeeInvoices.collected?(invoice_pass: @pass)
+  end
+
+  test "a payer with no tracker on the pass is not collected, however the refresh goes" do
+    QboAccount.any_instance.expects(:fetch_invoice_by_id).once.returns(paid_in(Date.new(2091, 7, 31)))
+    make_payer(Enterprise::INDEX_SPACE_NAME, forecast_ids: [992_103])
+
+    refute Mso::ManagementFeeInvoices.collected?(invoice_pass: @pass)
+  end
+
+  test "an unattached invoice to a payer in the pass month is not collected, and is not read" do
+    @payer.update_columns(g3d_qbo_customer_id: "2")
+    # Only the attached invoice is refreshed.
+    QboAccount.any_instance.expects(:fetch_invoice_by_id).once.with("k-1").returns(paid_in(Date.new(2091, 7, 31)))
+    mirror_invoice(@qbo_account, qbo_id: "k-9", total: "5000.0", balance: "0.0", sent: true,
+                                 txn_date: Date.new(2091, 7, 20), customer_id: "2")
+
+    refute Mso::ManagementFeeInvoices.collected?(invoice_pass: @pass)
+  end
+
+  test "an unattached invoice to a non-payer, or in another month, does not stop a collected answer" do
+    @payer.update_columns(g3d_qbo_customer_id: "2")
+    QboAccount.any_instance.expects(:fetch_invoice_by_id).once.with("k-1").returns(paid_in(Date.new(2091, 7, 31)))
+    mirror_invoice(@qbo_account, qbo_id: "k-10", total: "5000.0", balance: "5000.0", sent: true,
+                                 txn_date: Date.new(2091, 7, 20), customer_id: "9")
+    mirror_invoice(@qbo_account, qbo_id: "k-11", total: "5000.0", balance: "5000.0", sent: true,
+                                 txn_date: Date.new(2091, 8, 1), customer_id: "2")
+
+    assert Mso::ManagementFeeInvoices.collected?(invoice_pass: @pass)
   end
 
   test "it raises when an invoice cannot be read, rather than answer from a stale copy" do
@@ -47,7 +95,8 @@ class Mso::ManagementFeeInvoicesCollectedTest < ActiveSupport::TestCase
     other = make_payer(Enterprise::INDEX_SPACE_NAME, forecast_ids: [992_102])
     attach_invoice(fee_tracker(@pass, other), qbo_id: "k-2", total: "40000.0", balance: "0.0", sent: true)
     QboAccount.any_instance.stubs(:fetch_invoice_by_id).with("k-2")
-      .returns(qbo_created_invoice("k-2", total: "40000", balance: "0", email_status: "EmailSent"))
+      .returns(qbo_created_invoice("k-2", total: "40000", balance: "0", email_status: "EmailSent",
+                                          txn_date: Date.new(2091, 7, 31)))
     QboAccount.any_instance.stubs(:fetch_invoice_by_id).with("k-1")
       .raises(RuntimeError, "Object Not Found: Something you're trying to use has been made inactive.")
 

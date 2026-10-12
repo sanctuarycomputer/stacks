@@ -41,18 +41,34 @@ module ManagementFeeFixtures
   end
 
   # Attaches a mirrored QuickBooks invoice. The stored data is never blank:
-  # QboInvoice#data fetches from QuickBooks when it is.
-  def attach_invoice(tracker, qbo_id:, total:, balance:, sent:, lines: nil)
-    QboInvoice.create!(qbo_account: tracker.qbo_account, qbo_id: qbo_id, data: {
+  # QboInvoice#data fetches from QuickBooks when it is. Dated the last day of
+  # the tracker's pass month, as push_invoice! dates a draft, unless told
+  # otherwise.
+  def attach_invoice(tracker, qbo_id:, total:, balance:, sent:, lines: nil, txn_date: nil)
+    txn_date ||= tracker.invoice_pass.start_of_month.end_of_month
+    mirror_invoice(tracker.qbo_account, qbo_id: qbo_id, total: total, balance: balance, sent: sent,
+                                        lines: lines, txn_date: txn_date)
+    tracker.update!(qbo_invoice_id: qbo_id)
+    InvoiceTracker.find(tracker.id)
+  end
+
+  # A mirrored QuickBooks invoice attached to nothing, in the shape
+  # push_invoice! stores (Quickbooks::Model::Invoice#as_json: the date is an
+  # ISO String under "txn_date", the customer under "customer_ref").
+  def mirror_invoice(qbo_account, qbo_id:, total:, balance:, sent:, txn_date:, customer_id: nil, lines: nil,
+                     private_note: nil)
+    data = {
       "id" => qbo_id,
       "total" => total,
       "balance" => balance,
       "email_status" => sent ? "EmailSent" : "NotSet",
       "due_date" => "2999-01-01",
+      "txn_date" => txn_date.respond_to?(:iso8601) ? txn_date.iso8601 : txn_date,
       "line_items" => lines || [fee_line(total)],
-    })
-    tracker.update!(qbo_invoice_id: qbo_id)
-    InvoiceTracker.find(tracker.id)
+    }
+    data["customer_ref"] = { "value" => customer_id, "name" => "Customer #{customer_id}" } if customer_id
+    data["private_note"] = private_note if private_note
+    QboInvoice.create!(qbo_account: qbo_account, qbo_id: qbo_id, data: data)
   end
 
   def fee_line(amount, item: "Managerial Services")
@@ -88,9 +104,10 @@ module ManagementFeeFixtures
     end
   end
 
-  def qbo_created_invoice(id, total: "0", balance: "0", email_status: "NotSet", private_note: nil)
+  def qbo_created_invoice(id, total: "0", balance: "0", email_status: "NotSet", private_note: nil, txn_date: nil)
     Quickbooks::Model::Invoice.new.tap do |invoice|
       invoice.id = id
+      invoice.txn_date = txn_date if txn_date
       invoice.email_status = email_status
       invoice.total = BigDecimal(total)
       invoice.balance = BigDecimal(balance)
