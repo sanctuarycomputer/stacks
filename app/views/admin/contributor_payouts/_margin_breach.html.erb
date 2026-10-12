@@ -13,21 +13,12 @@
 <div class="full-screen-modal margin-breach">
   <div class="full-screen-modal__contents">
     <div class="full-screen-modal__contents__title">
-      <% if flash[:alert].present? %><p class="margin-breach__alert"><%= flash[:alert] %></p><% end %>
-      <% if check.percentages? %>
-        <h2>The generated payouts would be <%= check.payout_percentage %>% of gross earnings. The cap for this invoice is <%= check.cap_percentage %>%.</h2>
-      <% else %>
-        <h2>The generated payouts would be <%= number_to_currency check.pool %> against a cap of <%= number_to_currency check.cap %>.</h2>
-      <% end %>
-      <p>
-        Nothing has been written. Billed after commissions: <strong><%= number_to_currency check.post_commission_total %></strong>.
-        Generated payouts: <strong><%= number_to_currency check.pool %></strong>.
-        Allowed: <strong><%= number_to_currency check.cap %></strong>.
-        Over by: <strong><%= number_to_currency check.over_by %></strong>.
-      </p>
+      <p>Error generating payouts</p>
+      <%= link_to "✕", index_path, class: "margin-breach__close", title: "Close", "aria-label": "Close" %>
     </div>
 
     <div class="full-screen-modal__contents__body">
+      <% if flash[:alert].present? %><p class="margin-breach__alert"><%= flash[:alert] %></p><% end %>
       <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
         <thead>
           <tr>
@@ -91,8 +82,8 @@
             <td class="col"><strong>TOTAL</strong></td>
             <td class="col text-right"><%= number_to_currency invoice_tracker.total %></td>
             <td class="col text-right"><%= number_to_currency check.pool %></td>
-            <td class="col text-right"><%= check.payout_percentage %>%</td>
-            <td class="col text-right"><%= (100 - check.payout_percentage).round(1) %>%</td>
+            <td class="col text-right"><%= check.percentages? ? "#{check.payout_percentage}%" : "—" %></td>
+            <td class="col text-right"><%= check.percentages? ? "#{(100 - check.payout_percentage).round(1)}%" : "—" %></td>
             <td class="col text-right"><%= number_to_currency check.cap %></td>
             <td class="col text-right">+ <%= number_to_currency check.over_by %></td>
           </tr>

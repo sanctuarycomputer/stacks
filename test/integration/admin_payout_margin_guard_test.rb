@@ -238,8 +238,10 @@ class AdminPayoutMarginGuardTest < ActionDispatch::IntegrationTest
 
     get admin_invoice_tracker_contributor_payouts_path(it, margin_breach: 1)
     assert_response :success
-    assert_select ".full-screen-modal.margin-breach h2", text: "The generated payouts would be $9,000.00 against a cap of $0.00."
-    assert_select ".full-screen-modal.margin-breach h2", text: /%/, count: 0
+    assert_select ".full-screen-modal.margin-breach tr.margin-breach__total" do
+      assert_select "td", text: "$9,000.00"
+      assert_select "td", text: /%/, count: 0
+    end
   end
 
   test "a multi-line exception is flashed as its first line" do
@@ -255,7 +257,10 @@ class AdminPayoutMarginGuardTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     assert_select ".full-screen-modal.margin-breach" do
-      assert_select "h2", text: /The generated payouts would be 103\.0% of gross earnings\. The cap for this invoice is 70\.0%\./
+      assert_select ".full-screen-modal__contents__title p", text: "Error generating payouts"
+      assert_select ".full-screen-modal__contents__title a.margin-breach__close[href=?]", admin_invoice_tracker_contributor_payouts_path(it)
+      assert_select "tr.margin-breach__total td", text: "103.0%"
+      assert_select "tr.margin-breach__total td", text: "$7,000.00"
       assert_select "tr.margin-breach__line", 1
       assert_select "tr.margin-breach__line.over", 1
       assert_select "tr.margin-breach__entry", 3

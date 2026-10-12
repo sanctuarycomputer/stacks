@@ -173,19 +173,29 @@
   text-align: left;
   font-weight: normal;
 
-  h2 {
-    font-size: 20px;
-    line-height: 1.3;
-    font-weight: 700;
-  }
-
   .margin-breach__alert {
     color: $color-red;
   }
 
   .full-screen-modal__contents__title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     padding-bottom: 12px;
     border-bottom: 1px solid $color-light-grey;
+
+    p {
+      margin: 0;
+    }
+
+    a.margin-breach__close {
+      text-decoration: none;
+      color: inherit;
+    }
+  }
+
+  tr.margin-breach__total td {
+    color: $color-red;
   }
 
   .full-screen-modal__contents__body {
@@ -223,7 +233,7 @@
   // (A margin on an inner block: the admin theme's own cell padding wins
   // over padding set on the td.)
   .margin-breach__entry-label {
-    margin-left: 40px;
+    margin-left: 20px;
   }
 
   form.margin-breach__override {
