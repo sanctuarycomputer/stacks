@@ -318,7 +318,7 @@ ActiveAdmin.register ProjectTracker do
       unreadable = Array(pt.twist_channels_inaccessible)
       div do
         links.each do |link|
-          a("#{link.name} ↗", href: link.url, target: "_blank", class: "block", style: "white-space:nowrap")
+          a("#{link.name.presence || ProjectTracker::TWIST_LINK_PLACEHOLDER_NAME} ↗", href: link.url, target: "_blank", class: "block", style: "white-space:nowrap")
           # Stacksbot can only file what it sees in a channel it belongs to.
           span("Stacksbot not invited", class: "pill error") if unreadable.include?(link.twist_channel_id)
         end
@@ -327,7 +327,7 @@ ActiveAdmin.register ProjectTracker do
 
     # One line per chosen page, in the order they were chosen.
     column "Notion" do |pt|
-      ids = Array(pt.notion_project_ids)
+      ids = Array(pt.notion_project_ids).reject(&:blank?)
       if ids.empty?
         if params[:scope] == "complete" || pt.internal_client?
           span "—", style: "opacity: 0.4;"

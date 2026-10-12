@@ -436,7 +436,8 @@ class ProjectTracker < ApplicationRecord
       raise Stacks::Twist::Error, "Twist channels/get failed (#{response.code})"
     end
     member_ids = response.parsed_response.map { |c| c["id"].to_i }.to_set
-    names = response.parsed_response.to_h { |c| [c["id"].to_i, c["name"].to_s.strip] }
+    # Only a real name is worth copying onto a link.
+    names = response.parsed_response.to_h { |c| [c["id"].to_i, c["name"].is_a?(String) ? c["name"].strip : ""] }
     stats = { checked: 0, accessible: 0, inaccessible: 0 }
     # checked counts trackers; accessible and inaccessible count channels.
     where(work_completed_at: nil).includes(:project_tracker_links).find_each do |tracker|
@@ -458,10 +459,10 @@ class ProjectTracker < ApplicationRecord
 
   # Gives each Twist link that nobody has named the channel's real name, so
   # the trackers index can tell two channels apart. A name a person typed is
-  # never replaced. (update_columns: no callbacks, so the link's after_commit
-  # does not forget the access answer; and nothing is written when the name is
-  # already right.) Twist only lists the channels Stacksbot is in, so a
-  # channel it cannot read keeps its placeholder.
+  # never replaced. (update_columns: no validations, so one legacy link with
+  # an odd URL cannot stop the whole check; and nothing is written when the
+  # name is already right.) Twist only lists the channels Stacksbot is in, so
+  # a channel it cannot read keeps its placeholder.
   def self.name_twist_channel_links!(tracker, names)
     tracker.project_tracker_links.each do |link|
       next unless link.name.blank? || link.name == TWIST_LINK_PLACEHOLDER_NAME

@@ -647,4 +647,13 @@ class ProjectTrackerSourcesTest < ActiveSupport::TestCase
     assert_equal "https://twist.com/a/133876/ch/12/", link.reload.url
     assert_equal 12, link.twist_channel_id
   end
+
+  test "the sync only copies a real name from Twist" do
+    pt = tracker!
+    link = pt.project_tracker_links.create!(name: "Twist Channel", link_type: :twist_channel, url: "https://twist.com/a/133876/ch/794756/")
+    [{ "a" => 1 }, ["x", "y"], true, 123, nil, "   "].each do |odd|
+      ProjectTracker.sync_twist_channel_access!(twist: fake_twist(body: [{ "id" => 794756, "name" => odd }]))
+      assert_equal "Twist Channel", link.reload.name, "#{odd.inspect} is not a channel name"
+    end
+  end
 end

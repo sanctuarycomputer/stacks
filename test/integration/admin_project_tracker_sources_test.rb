@@ -272,6 +272,32 @@ class AdminProjectTrackerSourcesTest < ActionDispatch::IntegrationTest
     assert_empty cell(pt, "twist").css("script")
   end
 
+  test "a Notion page title is shown as text, never as markup" do
+    page = project_page!(title: "<script>alert(1)</script> & co", stage: "Active")
+    pt = tracker!
+    pt.update_columns(notion_project_ids: [page.notion_id])
+
+    get admin_project_trackers_path(scope: "all")
+    assert_not_includes response.body, "<script>alert(1)</script>"
+    assert_equal ["<script>alert(1)</script> & co ↗"], cell(pt, "notion").css("a").map(&:text)
+    assert_empty cell(pt, "notion").css("script")
+  end
+
+  test "blank entries in a tracker's Notion projects are ignored, not shown as removed" do
+    pt = tracker!
+    pt.update_columns(notion_project_ids: [""])
+    get admin_project_trackers_path(scope: "all")
+    assert_equal ["No Notion Project"], cell(pt, "notion").css("span.pill.error").map(&:text)
+  end
+
+  test "a Twist link with no name still reads as a link" do
+    pt = tracker!
+    link = twist_link!(pt, 5)
+    link.update_columns(name: "")
+    get admin_project_trackers_path(scope: "all")
+    assert_equal ["Twist Channel ↗"], cell(pt, "twist").css("a").map(&:text)
+  end
+
   test "the Runn.io Project column is still there, ahead of Twist and Notion" do
     pt = tracker!
     get admin_project_trackers_path(scope: "all")
