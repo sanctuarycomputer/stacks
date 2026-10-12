@@ -1,9 +1,9 @@
 # One ledger's qualifying compensation for one calendar month: anything that
 # is payment for doing work.
 #
-#   Counts:         contributor payouts, pay stubs, profit shares, true-ups,
-#                   and POSITIVE contributor adjustments (recruiting fees,
-#                   advances and the like).
+#   Counts:         contributor payouts, pay stubs, profit shares, true-ups
+#                   (the founder's and the MSO's), and POSITIVE contributor
+#                   adjustments (recruiting fees, advances and the like).
 #   Does not count: reimbursements; Deel invoice adjustments; and NEGATIVE
 #                   contributor adjustments. Negative adjustments are not pay
 #                   cuts — they are the old ledger style's record of money
@@ -23,6 +23,9 @@ module Ledger::QualifyingIncome
     PayStub => :pay_cycle,
     ProfitShare => :periodic_report,
     ContributorAdjustment => nil,
+    # An executive's MSO true-up. Mso::MonthlyRun passes the month's own
+    # true-ups as `excluding:`, or a re-run would net each against itself.
+    MsoTrueup => :invoice_pass,
   }.freeze
 
   # Mso::Benchmark deliberately narrows this (its own KLASSES leaves out
@@ -44,6 +47,10 @@ module Ledger::QualifyingIncome
 
     # uniq: naming a class twice must not count its rows twice.
     klasses.uniq.sum(ZERO) do |klass|
+      # Migrations are run by hand after the deploy: a class whose table is
+      # not there yet has no rows.
+      next ZERO if klass.respond_to?(:schema_ready?) && !klass.schema_ready?
+
       rows = klass.where(ledger_id: ledger.id)
       preloads = SOURCES.fetch(klass)
       rows = rows.includes(preloads) if preloads

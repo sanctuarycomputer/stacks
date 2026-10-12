@@ -12,11 +12,14 @@ module Mso
   # the stored figure can differ from what was paid by a cent.
   class Benchmark
     # Everything that is payment for work — payouts, pay stubs, profit shares
-    # and positive adjustments such as recruiting fees — but not true-ups. A
-    # true-up is a top-up, not earnings: today every true-up is the monthly
-    # founder true-up, which lifts one person to exactly the highest earner's
-    # figure, so counting it would put a copy of the top earner in the pool.
-    KLASSES = (Ledger::QualifyingIncome::KLASSES - [Trueup]).freeze
+    # and positive adjustments such as recruiting fees — but no true-up of
+    # either kind. A true-up is a top-up, not earnings. The founder true-up
+    # lifts one person to exactly the highest earner's figure, so counting it
+    # would put a copy of the top earner in the pool; an MSO true-up is what
+    # this benchmark is used to compute, so counting it would be circular.
+    # (An MsoTrueup only ever sits on a garden3d ledger and this reads
+    # Sanctuary's, but that is an accident of today's data, not a rule.)
+    KLASSES = (Ledger::QualifyingIncome::KLASSES - [Trueup, MsoTrueup]).freeze
 
     Result = Struct.new(:average, :configured_n, :counted, :members, :small_sample,
                         :excluded_without_login, keyword_init: true)
