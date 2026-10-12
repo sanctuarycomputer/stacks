@@ -41,6 +41,34 @@ module Stacks
                         "(done, moved, or dropped, and why).",
       }.freeze
 
+      # How the coaching page (app/admin/weekly_ships.rb) names each dimension and
+      # says what good looks like, in the words a Project Lead would use. Keep in
+      # step with DIMENSIONS: the model scores against those, people read these.
+      GUIDE = {
+        "shipped" => { label: "Shipped, not busy",
+                       good: "Names finished things (merged, launched, delivered, shared for review, " \
+                             "approved, decided), not activity like \"worked on\" or \"continued\"." },
+        "next_week" => { label: "Next week is a promise",
+                         good: "Names specific outcomes for next week that the next ship can check off." },
+        "asks" => { label: "Risks and asks are visible",
+                    good: "Calls out blockers and risks plainly, and each ask says who needs to do what " \
+                          "and what it unblocks. Saying there are none this week counts." },
+        "timeline" => { label: "Timeline is explicit",
+                        good: "States the next milestone or delivery date, and says so when a date has moved." },
+        "money" => { label: "Money is visible",
+                     good: "Reports hours and spend against the budget in a form the client can follow. " \
+                           "The Stacks numbers block is one way." },
+        "readable" => { label: "Readable by the client",
+                        good: "Plain language and skimmable sections, with no internal jargon, tool names " \
+                              "or team shorthand to decode." },
+        "continuity" => { label: "Picks up where the last ship left off",
+                          good: "Answers what the previous ship promised for this week: done, moved or " \
+                                "dropped, and why." },
+      }.freeze
+
+      # A dimension's 0-2 score as the coaching page shows it: [words, pill class].
+      SCORE_LABELS = { 2 => ["Nailed it", "exceptional"], 1 => ["Partly", "at_risk"], 0 => ["Missing", "error"] }.freeze
+
       SCHEMA = {
         "type" => "object",
         "properties" => {

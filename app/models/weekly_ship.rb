@@ -50,6 +50,33 @@ class WeeklyShip < ApplicationRecord
     ("★" * n) + ("☆" * (5 - n))
   end
 
+  # The pill colour for a tracker's last ship: the worse of how stale it is and
+  # how it graded, so a fresh two-star ship and a five-star ship from six weeks
+  # ago both stand out. An ungraded ship is coloured by staleness alone.
+  # ("exceptional", not "complete": .complete is re-declared purple later in the
+  # stylesheet cascade; .exceptional is the stable green.)
+  PILL_CLASSES = %w[exceptional at_risk error].freeze
+  STALENESS_SEVERITY = { fresh: 0, stale: 1, overdue: 2 }.freeze
+
+  def self.pill_class(staleness:, stars: nil)
+    grade_severity =
+      case stars
+      when nil then 0
+      when 4.. then 0
+      when 3 then 1
+      else 2
+      end
+    "pill #{PILL_CLASSES[[STALENESS_SEVERITY.fetch(staleness, 0), grade_severity].max]}"
+  end
+
+  # The newest earlier ship (a different email) on this tracker, for the trend.
+  def previous_ship
+    WeeklyShip.where(project_tracker_id: project_tracker_id)
+      .where.not(document_id: document_id)
+      .where("sent_at < ?", sent_at)
+      .order(sent_at: :desc).first
+  end
+
   before_validation { self.matched_by ||= :human unless via_sweep }
 
   after_save    :human_lock_scan!, unless: :via_sweep

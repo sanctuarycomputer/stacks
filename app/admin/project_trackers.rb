@@ -222,24 +222,26 @@ ActiveAdmin.register ProjectTracker do
           span "No ships yet", class: "pill", style: "background-color: #1a1a1a; color: #fff;"
         end
       else
-        pill_class =
-          case staleness
-          when :overdue then "pill error"
-          when :stale then "pill at_risk"
-          # NOT "pill complete" — .complete is re-declared purple later in the
-          # stylesheet cascade; .exceptional is the stable green.
-          else "pill exceptional"
-          end
+        # Stars first, then when and who. The colour is the worse of staleness
+        # and grade (WeeklyShip.pill_class); an ungraded ship has no stars.
+        grade = ship.grade
         label = "#{time_ago_in_words(ship.sent_at)} ago by #{(ship.sent_by_name || ship.sent_by_email).to_s.split(" ").first} ↗"
         url = ship.document&.google_groups_permalink
-        if url
-          # Arbre `a`, not block-form link_to — Rails' capture doesn't see
-          # Arbre elements, which renders the pill OUTSIDE an empty anchor.
-          a(href: url, target: "_blank", rel: "noopener", style: "text-decoration: none;") do
-            span label, class: pill_class
+        link_style = "text-decoration: none; color: inherit;"
+        # Arbre `a`, not block-form link_to — Rails' capture doesn't see Arbre
+        # elements, which renders the content OUTSIDE an empty anchor.
+        span(class: WeeklyShip.pill_class(staleness: staleness, stars: grade&.dig("stars"))) do
+          if grade
+            # The stars open the coaching page; the rest opens the email.
+            a(WeeklyShip.stars_label(grade["stars"]), href: admin_weekly_ship_path(ship),
+              title: grade["summary"], style: link_style)
+            text_node " · "
           end
-        else
-          span label, class: pill_class
+          if url
+            a(label, href: url, target: "_blank", rel: "noopener", style: link_style)
+          else
+            text_node label
+          end
         end
       end
     end
@@ -495,7 +497,8 @@ ActiveAdmin.register ProjectTracker do
           # Coaching for the sender from the nightly grader (Stacks::WeeklyShips::Grader).
           column("Grade") do |ws|
             if (g = ws.grade)
-              span WeeklyShip.stars_label(g["stars"]), title: "#{g["stars"]} of 5", style: "white-space: nowrap;"
+              a(WeeklyShip.stars_label(g["stars"]), href: admin_weekly_ship_path(ws),
+                title: "#{g["stars"]} of 5. Open the coaching page.", style: "white-space: nowrap; text-decoration: none;")
             end
           end
           column("Feedback for the sender") do |ws|
