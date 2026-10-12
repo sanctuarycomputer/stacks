@@ -990,6 +990,73 @@ left as the record of the design.
 - **Answered:** outside referral fees must not count, and the no-login rule
   is how — referral partners are not given Stacks logins.
 
+## 13b. As built — S1
+
+S1 (management fee invoices, fee income) is built. Where the code differs from
+§3, §4.1 and §6 above, **this section governs**. The plan,
+`docs/superpowers/plans/2026-10-13-mso-management-fee-invoices.md`, holds the
+full decision list; note its Task 5 and Task 9 listings predate the final-review
+fixes below.
+
+**Corrections to the design**
+
+- garden3d's passes are **not** all management-fee trackers. Seven legacy passes
+  (2025-06 … 2025-12) hold Forecast trackers with blueprints. A management fee
+  invoice tracker is "on garden3d's pass **and** has no blueprint"
+  (`InvoiceTracker#management_fee_invoice?`); legacy passes behave as before and
+  can never be drafted or extended.
+- A garden3d enterprise fixture exists (contrary to §3.6); there is no garden3d
+  `QboAccount` fixture, so tests create one.
+- A payer can have several internal Forecast clients (Sanctuary has five); the
+  tracker uses the lowest id.
+- **Invoice lookups never cross QuickBooks accounts.** Mirrors were matched on
+  `qbo_id` alone; garden3d's are the first second-realm rows, and ids collide
+  with Sanctuary's.
+
+**Drafting**
+
+- Nothing scheduled writes to QuickBooks. The nightly job creates garden3d's
+  previous-month pass and trackers (database only); the write is an admin click.
+- `MANAGEMENT_FEE_START = 2026-10-01` (**awaiting the owner's confirmation**).
+  Earlier months are never drafted: fee invoices were made by hand for nearly
+  every month from 2024-01.
+- Before writing, the push reads QuickBooks for an invoice to that customer
+  dated in the month. If one exists it refuses, and records what it found as
+  mirror rows so the invoice can be attached from the tracker's edit page.
+- A customer is created only when the stored id is blank **and** no active
+  customer has the payer's exact name; otherwise it raises naming the id.
+- `ensure_month!(date)` creates a pass and trackers for attaching hand-made
+  invoices; it refuses legacy months.
+
+**Collection gate (§6.4 replaced)**
+
+- An invoice is **charged** when it is sent **or** its total is above zero. It is
+  ignored only when unsent and zero, or voided (note says voided **and** total
+  and balance are zero).
+- Collected = every management fee tracker has an invoice attached, at least one
+  is charged, and every charged one is fully paid with a total above zero. A
+  tracker with no invoice means *unknown*, so not collected.
+- `Mso::ManagementFeeInvoices.collected?(invoice_pass:)` refreshes every attached
+  invoice from QuickBooks first and raises if any read fails. It costs one read
+  per invoice: call it once per run, never per row.
+  `InvoicePass#management_fee_collected?` is the pure rule over stored mirrors.
+
+**Fee income (§6.3)**
+
+- A month with no fee has **no 4100 row** and raises `RowMissing` (December
+  2025). S4 must decide what that means for a run.
+- `reconcile` sums only `Managerial Services` lines on attached invoices and
+  returns a per-invoice breakdown; `reconcile!` raises on variance. A fee line on
+  the `Services` item blocks S4 until Finance moves it.
+- `for_month` is a partial figure for an unfinished month.
+
+**Also changed**
+
+- Saving the tracker edit form no longer detaches its invoice, and only admins
+  can change which invoice a tracker points at (enforced server-side).
+- Intercompany fee invoices are excluded from the invoicing totals and from the
+  AR aging and overdue-invoice MCP tools.
+
 ## 14. Out of scope
 
 - Per-person cap reduction limits and residual tracking
