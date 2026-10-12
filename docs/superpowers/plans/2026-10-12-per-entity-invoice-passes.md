@@ -6,32 +6,37 @@
 
 **Architecture:** A pass belongs to the **issuing** enterprise. A tracker lives on the pass of its `qbo_account`'s enterprise. `clients_served` stays global — external clients have no enterprise mapping, so scoping it by enterprise would strip the entire external book off Sanctuary's pass. A new `invoice_trackers.source` enum (`forecast` / `management_fee`) distinguishes Forecast-driven trackers from the MSO management-fee trackers a later subsystem adds.
 
-**Tech Stack:** Rails 6.1, Postgres, Minitest, ActiveAdmin, `acts_as_paranoid` (not on these models).
+**Tech Stack:** Rails 6.1, Postgres, Minitest, Mocha, ActiveAdmin.
 
 This is subsystem **S0** of `docs/superpowers/specs/2026-10-09-garden3d-mso-compensation-design.md`. It is a prerequisite refactor of live financial machinery and ships as its own PR, merged and verified against a real month before any MSO work lands on it. It adds **no** MSO behaviour.
 
 ## Global Constraints
 
-- `db/schema.rb` is **hand-curated** in this repo. Every schema change must be reflected there deliberately, by hand, matching the migration exactly.
-- Migrations **never run** in the test suite — the test DB is schema-loaded from `db/schema.rb`. Backfill tests must instantiate the migration class explicitly.
+- `db/schema.rb` is **hand-curated**. It deliberately omits things Rails would dump (the pgvector `embeddings.embedding` column and its HNSW index, `chunks.content_tsv`) and carries comments the repo depends on. Edit it by hand; **never** let `db:migrate` re-dump it (see Task 7 Step 1).
+- Migrations **never run** in the test suite — the test DB is schema-loaded from `db/schema.rb`. Backfill tests instantiate the migration class explicitly.
+- `maintain_test_schema` is **on** (`config.load_defaults 6.0`) and `rails/test_help` calls `check_pending!`. If `db/schema.rb`'s version is lower than the newest file in `db/migrate/`, **every** `bin/rails test` aborts before loading a test. So `db/schema.rb` must carry the version of this plan's **final** migration (`2026_10_12_000002`) from Task 1 onward. Any further migration added to this branch requires the version bump in the same commit.
+- `belongs_to` is required by default. `InvoiceTracker belongs_to :forecast_client` has no `optional: true`, so test trackers need real `ForecastClient` rows.
+- `test/fixtures/qbo_accounts.yml` already attaches **two** `QboAccount`s to `sanctuary`, and `has_one` emits `LIMIT 1` with no `ORDER BY`. Never create a third, and pin the one `has_one` picks via `Enterprise.find(id).qbo_account`.
+- `Enterprise.sanctuary` / `.garden3d` memoize in `Thread.current`. Clear both in `teardown` of any test that relies on them.
 - Run the suite with `--exclude "sync_meet runs the connector inside a SystemTask"` — that test makes a live Google call and can hang for over an hour.
 - Never run two suites concurrently against the shared test database.
-- `Enterprise.sanctuary` and `Enterprise.garden3d` are memoized in `Thread.current`. A test that creates one and rolls back leaves a stale memo for every later test on that thread. Clear the memo in teardown when a test creates either.
-- Full suite baseline before this plan: **1783 runs, 5702 assertions, 0 failures, 0 errors, 2 skips**.
+- Verified baseline: **1783 runs, 5702 assertions, 0 failures, 0 errors, 2 skips**.
 - Commit after every task.
 
 ---
 
 ### Task 1: Add `enterprise_id` and `source` to the schema, keep the suite green
 
-The column is `null: false`, and the test DB loads `db/schema.rb` directly, so every existing `InvoicePass` construction must supply an enterprise the moment the schema changes. That is why the schema change, the fixture, the association and all 35 call sites are one task — the suite cannot be green at any intermediate point.
+The column ends up `null: false` and the test DB loads `db/schema.rb` directly, so every existing `InvoicePass` construction must supply an enterprise the moment the schema changes. That is why the schema change, the fixture, the association and all 35 call sites are one task — the suite cannot be green at any intermediate point.
 
 **Files:**
 - Create: `db/migrate/20261012000001_add_enterprise_to_invoice_passes.rb`
 - Modify: `db/schema.rb`
 - Modify: `app/models/invoice_pass.rb:1-2`
+- Modify: `app/models/invoice_tracker.rb` (add the enum after the `belongs_to` block)
 - Modify: `test/fixtures/enterprises.yml`
-- Modify: 18 test files (listed in Step 5)
+- Create: `test/models/invoice_pass_enterprise_test.rb`
+- Modify: 18 test files (table in Step 9)
 
 **Interfaces:**
 - Consumes: nothing
@@ -39,7 +44,7 @@ The column is `null: false`, and the test DB loads `db/schema.rb` directly, so e
 
 - [ ] **Step 1: Write the migration**
 
-Create `db/migrate/20261012000001_add_enterprise_to_invoice_passes.rb`. The column goes on nullable; Task 2 backfills and constrains. Splitting it this way is deliberate — `add_reference ... null: false` against the 64 existing rows raises `PG::NotNullViolation`.
+Create `db/migrate/20261012000001_add_enterprise_to_invoice_passes.rb`. The column goes on **nullable**; Task 2 backfills and constrains. This split is deliberate — `add_reference ... null: false` against the 64 existing rows raises `PG::NotNullViolation`.
 
 ```ruby
 class AddEnterpriseToInvoicePasses < ActiveRecord::Migration[6.1]
@@ -52,9 +57,15 @@ end
 
 - [ ] **Step 2: Hand-edit `db/schema.rb`**
 
-Bump the version line at the top of `db/schema.rb` to `2026_10_12_000001`.
+**Set the version line to this plan's FINAL migration**, not this one. `db/schema.rb:14` currently reads `ActiveRecord::Schema.define(version: 2026_10_01_120000) do`. Change it to:
 
-In `create_table "invoice_passes"`, add the column and index. Note `enterprise_id` is `null: false` here even though the migration adds it nullable — schema.rb reflects the **end state** after Task 2, and the test DB needs the final shape.
+```ruby
+ActiveRecord::Schema.define(version: 2026_10_12_000002) do
+```
+
+`assume_migrated_upto_version` inserts that version, so Task 2's migration file is never "pending" and `check_pending!` stays quiet. Using `...000001` here makes the entire suite unbootable from Task 2 Step 3 onward.
+
+Replace the `invoice_passes` table block. Note `enterprise_id` is `null: false` and `start_of_month` gains `null: false` — schema.rb reflects the **end state** after Task 2.
 
 ```ruby
   create_table "invoice_passes", force: :cascade do |t|
@@ -69,7 +80,7 @@ In `create_table "invoice_passes"`, add the column and index. Note `enterprise_i
   end
 ```
 
-Delete the old line `t.index ["start_of_month"], name: "index_invoice_passes_on_start_of_month", unique: true`, and note `start_of_month` gains `null: false` (it was nullable, which left a duplicate-NULL hole in the old unique index).
+The old `t.index ["start_of_month"], name: "index_invoice_passes_on_start_of_month", unique: true` line is **deleted**.
 
 In `create_table "invoice_trackers"`, add:
 
@@ -77,7 +88,7 @@ In `create_table "invoice_trackers"`, add:
     t.integer "source", default: 0, null: false
 ```
 
-In the foreign-key list at the bottom of `db/schema.rb`, add:
+In the foreign-key list, insert **between** `add_foreign_key "gifted_profit_shares", "admin_users"` (line 1591) and `add_foreign_key "invoice_trackers", "admin_users"` (line 1592) — the list is alphabetical by from-table:
 
 ```ruby
   add_foreign_key "invoice_passes", "enterprises"
@@ -90,11 +101,11 @@ cd /Users/hhff/Documents/Code/stacks/.claude/worktrees/garden3d-mso
 RAILS_ENV=test bin/rails db:environment:set db:schema:load
 ```
 
-Expected: completes without error. (`db:environment:set` is required in this repo or the task refuses to run.)
+Expected: completes without error. (`db:environment:set` is required in this repo or the task refuses.)
 
 - [ ] **Step 4: Add the garden3d fixture**
 
-`test/fixtures/enterprises.yml` currently has only `sanctuary`, `one`, `two`, which is why `Enterprise.garden3d` raises `RecordNotFound` in the suite today. The name must match `Enterprise::GARDEN3D_NAME` exactly.
+`test/fixtures/enterprises.yml` has only `sanctuary`, `one`, `two`, which is why `Enterprise.garden3d` raises `RecordNotFound` in the suite today. The name must match `Enterprise::GARDEN3D_NAME` exactly.
 
 ```yaml
 sanctuary:
@@ -110,7 +121,9 @@ two:
   name: Two LLC
 ```
 
-- [ ] **Step 5: Write the failing association test**
+Do **not** add a garden3d `QboAccount` fixture — Task 3 and Task 4 create one per-test, and adding a second to `sanctuary` would make `has_one` non-deterministic.
+
+- [ ] **Step 5: Write the failing test**
 
 Create `test/models/invoice_pass_enterprise_test.rb`:
 
@@ -137,14 +150,17 @@ class InvoicePassEnterpriseTest < ActiveSupport::TestCase
     month = Date.new(2099, 7, 1)
     InvoicePass.create!(start_of_month: month, enterprise: enterprises(:sanctuary))
 
+    # There is no uniqueness validation, only the DB index — hence
+    # RecordNotUnique rather than RecordInvalid. The test transaction is
+    # opened joinable: false, so this nested save gets a real savepoint and
+    # does not poison the surrounding fixtures.
     assert_raises(ActiveRecord::RecordNotUnique) do
       InvoicePass.create!(start_of_month: month, enterprise: enterprises(:sanctuary))
     end
   end
 
-  test "existing invoice trackers default to the forecast source" do
-    tracker = InvoiceTracker.new
-    assert_equal "forecast", tracker.source
+  test "a new invoice tracker defaults to the forecast source" do
+    assert_equal "forecast", InvoiceTracker.new.source
   end
 end
 ```
@@ -155,18 +171,18 @@ end
 bin/rails test test/models/invoice_pass_enterprise_test.rb
 ```
 
-Expected: FAIL. The first test fails because `belongs_to :enterprise` is not declared yet, so no `:enterprise` error is added.
+Expected: **3 of 4 fail.** Test 1 fails its assertion (no `:enterprise` error exists yet). Tests 2 and 3 raise `ActiveModel::UnknownAttributeError: unknown attribute 'enterprise' for InvoicePass` — the association doesn't exist, so the keyword is rejected. Test 4 passes already (the column default is in schema.rb). This is the expected red state, not a problem.
 
 - [ ] **Step 7: Add the association and the enum**
 
-In `app/models/invoice_pass.rb`, change the top of the class from:
+In `app/models/invoice_pass.rb`, replace lines 1-2:
 
 ```ruby
 class InvoicePass < ApplicationRecord
   has_many :invoice_trackers
 ```
 
-to:
+with:
 
 ```ruby
 class InvoicePass < ApplicationRecord
@@ -178,7 +194,7 @@ class InvoicePass < ApplicationRecord
   has_many :invoice_trackers
 ```
 
-In `app/models/invoice_tracker.rb`, add the enum immediately after the existing `belongs_to` declarations:
+In `app/models/invoice_tracker.rb`, add the enum immediately after the existing `belongs_to` declarations (after line 9's `belongs_to :forecast_client ...`):
 
 ```ruby
   # `forecast` trackers come from Harvest Forecast via InvoicePass#make_trackers!.
@@ -187,7 +203,7 @@ In `app/models/invoice_tracker.rb`, add the enum immediately after the existing 
   enum source: { forecast: 0, management_fee: 1 }
 ```
 
-- [ ] **Step 8: Run the new test to verify it passes**
+- [ ] **Step 8: Run the test to verify it passes**
 
 ```bash
 bin/rails test test/models/invoice_pass_enterprise_test.rb
@@ -197,9 +213,7 @@ Expected: PASS, 4 runs, 0 failures.
 
 - [ ] **Step 9: Update all 35 existing construction sites**
 
-Every one needs `enterprise: Enterprise.sanctuary` (or `enterprises(:sanctuary)` in fixture-based tests). Pass Sanctuary explicitly rather than defaulting in the model — these are financial routing decisions and a silent default would have hidden exactly the `Stacks::Automator` bug Task 4 fixes.
-
-Files and counts:
+Each needs `enterprise: Enterprise.sanctuary`. Pass Sanctuary explicitly rather than defaulting in the model — these are financial routing decisions, and a silent default would hide exactly the `Stacks::Automator` bug Task 4 fixes.
 
 | File | Sites |
 | --- | --- |
@@ -222,7 +236,7 @@ Files and counts:
 | `test/services/mcp/invoice_passes_tool_test.rb` | 4 |
 | `test/services/project_trackers/income_series_test.rb` | 1 |
 
-Find them all with:
+Find them with:
 
 ```bash
 grep -rn "InvoicePass\.\(create\|new\|find_or_create\)" test/
@@ -234,7 +248,7 @@ For `create!` and `new`, add the keyword:
 InvoicePass.create!(start_of_month: Date.new(2026, 7, 1), enterprise: Enterprise.sanctuary)
 ```
 
-For `find_or_create_by!`, the enterprise belongs in the **lookup**, not the block — otherwise the finder matches a pass belonging to another enterprise:
+For `find_or_create_by!`, the enterprise belongs in the **lookup**, not the block — otherwise the finder matches another enterprise's pass:
 
 ```ruby
 InvoicePass.find_or_create_by!(
@@ -243,7 +257,7 @@ InvoicePass.find_or_create_by!(
 )
 ```
 
-Where a `find_or_create_by!` already has a block (`{ |ip| ip.data = {} }`), keep the block and add `enterprise:` to the arguments.
+Where a block already exists (`{ |ip| ip.data = {} }`), keep it and add `enterprise:` to the arguments.
 
 - [ ] **Step 10: Run the full suite**
 
@@ -251,7 +265,7 @@ Where a `find_or_create_by!` already has a block (`{ |ip| ip.data = {} }`), keep
 bin/rails test --exclude "sync_meet runs the connector inside a SystemTask"
 ```
 
-Expected: **1787 runs, 0 failures, 0 errors, 2 skips** (the baseline 1783 plus this task's 4). If any test fails with `Enterprise must exist`, a construction site was missed — re-run the grep from Step 9.
+Expected: **1787 runs, 0 failures, 0 errors, 2 skips** (baseline 1783 + 4). A failure reading `Enterprise must exist` means a site was missed — re-run the grep.
 
 - [ ] **Step 11: Commit**
 
@@ -266,6 +280,9 @@ index moves from [start_of_month] to [enterprise_id, start_of_month], and
 start_of_month gains null: false -- it was nullable, which left a
 duplicate-NULL hole in the old unique index.
 
+schema.rb carries version 2026_10_12_000002, the final migration of this
+branch, so check_pending! stays quiet once that file lands.
+
 Adds the garden3d enterprise fixture; Enterprise.garden3d raised
 RecordNotFound in the suite before this."
 ```
@@ -276,19 +293,22 @@ RecordNotFound in the suite before this."
 
 **Files:**
 - Create: `db/migrate/20261012000002_backfill_invoice_pass_enterprises.rb`
-- Test: `test/migrations/backfill_invoice_pass_enterprises_test.rb`
+- Create: `test/migrations/backfill_invoice_pass_enterprises_test.rb`
 
 **Interfaces:**
 - Consumes: `InvoicePass#enterprise` from Task 1
-- Produces: nothing consumed by later tasks (a data migration)
+- Produces: nothing consumed later (a data migration)
 
-Production state, verified 2026-10-09: 64 passes, 1,165 trackers, tracker-set histogram `{[2] => 57, [2, 35] => 7}`. QBO account ids: 1 = Index Space, 2 = Sanctuary, 35 = garden3d, 68 = USB Club. The 7 mixed passes (2025-06-01 … 2025-12-01) each have modal `qbo_account` 2 against exactly one garden3d tracker. No pass has zero trackers; no tracker has a null `qbo_account_id`.
+Production state, verified 2026-10-09: 64 passes, 1,165 trackers, tracker-set histogram `{[2] => 57, [2, 35] => 7}`. QBO account ids: 1 = Index Space, 2 = Sanctuary, 35 = garden3d, 68 = USB Club. The 7 mixed passes (2025-06-01 … 2025-12-01) each have modal `qbo_account` 2 against exactly one garden3d tracker.
 
-The migration must derive "mixed" **dynamically** by grouping trackers on `qbo_account_id`, never from those 7 dates — production may have gained passes or Index/USB trackers since.
+The migration derives "mixed" **dynamically** by grouping on `qbo_account_id`, never from those 7 dates — production may have gained passes or Index/USB trackers since.
 
 - [ ] **Step 1: Write the failing migration test**
 
-Create `test/migrations/backfill_invoice_pass_enterprises_test.rb`. Migrations don't run in the suite, so instantiate the class directly. The test builds a mixed pass, nulls the enterprise to simulate pre-migration state, and runs `up`.
+Create `test/migrations/backfill_invoice_pass_enterprises_test.rb`. Two things make this fiddly and both are deliberate:
+
+1. `db/schema.rb` has `enterprise_id null: false`, so the test must drop that constraint to simulate pre-migration state. It rolls back with the fixture transaction.
+2. `InvoiceTracker belongs_to :forecast_client` is required, so real `ForecastClient` rows are needed.
 
 ```ruby
 require "test_helper"
@@ -296,21 +316,39 @@ require Rails.root.join("db/migrate/20261012000002_backfill_invoice_pass_enterpr
 
 class BackfillInvoicePassEnterprisesTest < ActiveSupport::TestCase
   def setup
+    # schema.rb already carries the post-migration NOT NULL constraint, so drop
+    # it for the duration to simulate the pre-backfill state. Rolls back with
+    # the fixture transaction. The schema cache must be cleared too, or the
+    # migration's own column_not_null? check reads the stale `null: false`.
+    ActiveRecord::Base.connection.execute(
+      "ALTER TABLE invoice_passes ALTER COLUMN enterprise_id DROP NOT NULL"
+    )
+    ActiveRecord::Base.connection.schema_cache.clear!
+    InvoicePass.reset_column_information
+
     @sanctuary = enterprises(:sanctuary)
     @garden3d = enterprises(:garden3d)
-    @sanctuary_qa = QboAccount.create!(enterprise: @sanctuary, realm_id: "s-realm",
-                                       client_id: "x", client_secret: "y")
+    # Sanctuary already has two qbo_account fixtures; pin the one has_one picks.
+    @sanctuary_qa = Enterprise.find(@sanctuary.id).qbo_account
     @garden3d_qa = QboAccount.create!(enterprise: @garden3d, realm_id: "g-realm",
                                       client_id: "x", client_secret: "y")
+    @clients = 3.times.map do |i|
+      ForecastClient.create!(forecast_id: 900_001 + i, name: "Backfill Co #{i}")
+    end
+  end
+
+  def teardown
+    InvoicePass.reset_column_information
+    Thread.current[:sanctuary_enterprise] = nil
+    Thread.current[:garden3d_enterprise] = nil
   end
 
   def build_pass_with_trackers(month, qbo_accounts)
-    pass = InvoicePass.create!(start_of_month: month, enterprise: @sanctuary)
+    pass = InvoicePass.create!(start_of_month: month, enterprise: @sanctuary, data: {})
     qbo_accounts.each_with_index do |qa, i|
       InvoiceTracker.create!(invoice_pass: pass, qbo_account: qa,
-                             forecast_client_id: 900_000 + i)
+                             forecast_client: @clients[i])
     end
-    # Simulate pre-migration state: enterprise_id not yet assigned.
     InvoicePass.where(id: pass.id).update_all(enterprise_id: nil)
     pass
   end
@@ -323,7 +361,7 @@ class BackfillInvoicePassEnterprisesTest < ActiveSupport::TestCase
     assert_equal @sanctuary, pass.reload.enterprise
   end
 
-  test "splits a mixed pass, moving the minority trackers to their own enterprise's pass" do
+  test "splits a mixed pass, moving minority trackers to their own enterprise's pass" do
     pass = build_pass_with_trackers(
       Date.new(2095, 2, 1),
       [@sanctuary_qa, @sanctuary_qa, @garden3d_qa],
@@ -339,10 +377,13 @@ class BackfillInvoicePassEnterprisesTest < ActiveSupport::TestCase
     assert garden3d_pass.present?, "expected a garden3d pass for the month"
     assert_equal 1, garden3d_pass.invoice_trackers.count
     assert_equal @garden3d_qa, garden3d_pass.invoice_trackers.first.qbo_account
+    assert garden3d_pass.data["created_by_backfill"],
+      "a pass the backfill created must be tagged so `down` only removes its own"
   end
 
   test "assigns Sanctuary to a pass with no trackers" do
-    pass = InvoicePass.create!(start_of_month: Date.new(2095, 3, 1), enterprise: @sanctuary)
+    pass = InvoicePass.create!(start_of_month: Date.new(2095, 3, 1),
+                               enterprise: @sanctuary, data: {})
     InvoicePass.where(id: pass.id).update_all(enterprise_id: nil)
 
     BackfillInvoicePassEnterprises.new.up
@@ -358,15 +399,20 @@ class BackfillInvoicePassEnterprisesTest < ActiveSupport::TestCase
     assert_equal 0, InvoicePass.where(enterprise_id: nil).count
   end
 
-  test "down re-merges split passes back onto the Sanctuary pass" do
+  test "down re-merges only the passes the backfill created" do
     pass = build_pass_with_trackers(Date.new(2095, 5, 1), [@sanctuary_qa, @garden3d_qa])
     BackfillInvoicePassEnterprises.new.up
+
+    # A legitimate garden3d pass that the backfill did NOT create must survive.
+    untagged = InvoicePass.create!(start_of_month: Date.new(2095, 9, 1),
+                                   enterprise: @garden3d, data: {})
 
     BackfillInvoicePassEnterprises.new.down
 
     assert_equal 2, pass.reload.invoice_trackers.count
     assert_nil InvoicePass.find_by(start_of_month: Date.new(2095, 5, 1),
                                    enterprise: @garden3d)
+    assert untagged.reload.persisted?, "an untagged pass must not be destroyed"
   end
 end
 ```
@@ -383,16 +429,21 @@ Expected: FAIL with `LoadError` / `cannot load such file` — the migration does
 
 Create `db/migrate/20261012000002_backfill_invoice_pass_enterprises.rb`.
 
-The `null: false` and the unique index are applied here rather than in Task 1's migration, because they can only hold once the data is correct. On a schema-loaded test DB the constraints already exist, so the `change_column_null` / index calls are guarded — that is why `up` checks before applying.
+**The index drop comes first.** The old `index_invoice_passes_on_start_of_month` is still `unique: true` during the loop, so creating a second pass for the same month raises `PG::UniqueViolation` before any constraint work happens. Tests never catch this — the schema-loaded test DB has no such index — so it would only surface against the dev or production database.
 
 ```ruby
 class BackfillInvoicePassEnterprises < ActiveRecord::Migration[6.1]
-  # Reversible by construction: `down` re-merges every non-Sanctuary pass for a
-  # month back onto that month's Sanctuary pass and destroys the pass it created.
-  # It does not restore enterprise_id to NULL -- Task 1's migration owns the
-  # column, and rolling that back drops it entirely.
-
+  # `down` is a one-shot rollback. It removes only passes tagged
+  # data["created_by_backfill"], so a legitimate MSO-era garden3d pass is never
+  # destroyed, and it refuses to proceed if such a pass has acquired a Trueup
+  # (invoice_passes has an FK from trueups and no dependent: option).
   def up
+    # MUST come before the loop: the old unique index on start_of_month alone
+    # would reject the second pass for a month.
+    if index_name_exists?(:invoice_passes, "index_invoice_passes_on_start_of_month")
+      remove_index :invoice_passes, name: "index_invoice_passes_on_start_of_month"
+    end
+
     sanctuary = Enterprise.find_by!(name: Enterprise::SANCTUARY_NAME)
     enterprise_by_qbo_account = QboAccount.pluck(:id, :enterprise_id).to_h
 
@@ -405,8 +456,7 @@ class BackfillInvoicePassEnterprises < ActiveRecord::Migration[6.1]
       end
 
       modal_qbo_account_id = counts.max_by { |_qa, n| n }.first
-      modal_enterprise_id = enterprise_by_qbo_account.fetch(modal_qbo_account_id)
-      pass.update_columns(enterprise_id: modal_enterprise_id)
+      pass.update_columns(enterprise_id: enterprise_by_qbo_account.fetch(modal_qbo_account_id))
 
       # Every OTHER qbo_account on this pass belongs to a different issuer.
       # Generalised over qbo_account_id -- never hardcoded to garden3d or to the
@@ -418,7 +468,7 @@ class BackfillInvoicePassEnterprises < ActiveRecord::Migration[6.1]
         other_pass = InvoicePass.find_or_create_by!(
           start_of_month: pass.start_of_month,
           enterprise_id: other_enterprise_id,
-        ) { |p| p.data = {} }
+        ) { |p| p.data = { "created_by_backfill" => true } }
 
         pass.invoice_trackers
             .where(qbo_account_id: qa_id)
@@ -432,10 +482,6 @@ class BackfillInvoicePassEnterprises < ActiveRecord::Migration[6.1]
     change_column_null :invoice_passes, :enterprise_id, false unless column_not_null?(:enterprise_id)
     change_column_null :invoice_passes, :start_of_month, false unless column_not_null?(:start_of_month)
 
-    if index_name_exists?(:invoice_passes, "index_invoice_passes_on_start_of_month")
-      remove_index :invoice_passes, name: "index_invoice_passes_on_start_of_month"
-    end
-
     unless index_name_exists?(:invoice_passes, "index_invoice_passes_on_enterprise_and_month")
       add_index :invoice_passes, [:enterprise_id, :start_of_month],
                 unique: true, name: "index_invoice_passes_on_enterprise_and_month"
@@ -443,12 +489,18 @@ class BackfillInvoicePassEnterprises < ActiveRecord::Migration[6.1]
   end
 
   def down
-    sanctuary = Enterprise.find_by!(name: Enterprise::SANCTUARY_NAME)
+    created = InvoicePass.where("data->>'created_by_backfill' = 'true'")
 
-    InvoicePass.where.not(enterprise_id: sanctuary.id).find_each do |pass|
-      target = InvoicePass.find_by(start_of_month: pass.start_of_month,
-                                   enterprise_id: sanctuary.id)
-      next if target.nil?
+    created.each do |pass|
+      if Trueup.where(invoice_pass_id: pass.id).exists?
+        raise "InvoicePass #{pass.id} has trueups; refusing to roll back"
+      end
+
+      target = InvoicePass.find_by(
+        start_of_month: pass.start_of_month,
+        enterprise_id: Enterprise.find_by!(name: Enterprise::SANCTUARY_NAME).id,
+      )
+      raise "No Sanctuary pass for #{pass.start_of_month} to re-merge into" if target.nil?
 
       pass.invoice_trackers.update_all(invoice_pass_id: target.id)
       pass.destroy!
@@ -457,6 +509,9 @@ class BackfillInvoicePassEnterprises < ActiveRecord::Migration[6.1]
     if index_name_exists?(:invoice_passes, "index_invoice_passes_on_enterprise_and_month")
       remove_index :invoice_passes, name: "index_invoice_passes_on_enterprise_and_month"
     end
+
+    change_column_null :invoice_passes, :start_of_month, true
+    change_column_null :invoice_passes, :enterprise_id, true
 
     unless index_name_exists?(:invoice_passes, "index_invoice_passes_on_start_of_month")
       add_index :invoice_passes, :start_of_month,
@@ -467,6 +522,7 @@ class BackfillInvoicePassEnterprises < ActiveRecord::Migration[6.1]
   private
 
   def column_not_null?(name)
+    connection.schema_cache.clear!
     column = connection.columns(:invoice_passes).find { |c| c.name == name.to_s }
     column.present? && !column.null
   end
@@ -481,9 +537,9 @@ bin/rails test test/migrations/backfill_invoice_pass_enterprises_test.rb
 
 Expected: PASS, 5 runs, 0 failures.
 
-- [ ] **Step 5: Verify the backfill against real data, read-only**
+- [ ] **Step 5: Verify the modal logic against real data, read-only**
 
-Do **not** run the migration against the development database yet. Confirm the modal logic would produce the right answer first:
+Do **not** migrate the dev database yet.
 
 ```bash
 bin/rails runner '
@@ -501,7 +557,7 @@ puts "mixed: #{mixed} of #{InvoicePass.count}"
 '
 ```
 
-Expected: 7 mixed passes, each `modal=Sanctuary Computer Inc others=["garden3d, LLC"]`, `mixed: 7 of 64`. If any pass shows a non-Sanctuary modal, stop and report before proceeding.
+Expected: 7 mixed passes, each `modal=Sanctuary Computer Inc others=["garden3d, LLC"]`, `mixed: 7 of 64`. If any pass shows a non-Sanctuary modal, **stop and report** before proceeding.
 
 - [ ] **Step 6: Run the full suite**
 
@@ -524,25 +580,29 @@ Generalised over qbo_account_id rather than the seven known mixed months,
 so a pass that has since gained an Index Space or USB Club tracker splits
 correctly too.
 
-Reversible: down re-merges non-Sanctuary passes onto the Sanctuary pass
-for the month."
+Drops the old unique index on start_of_month BEFORE the loop -- creating a
+second pass for a month would otherwise violate it, which the
+schema-loaded test DB cannot catch.
+
+Passes the backfill creates are tagged data.created_by_backfill so down
+re-merges only its own and never a later legitimate garden3d pass."
 ```
 
 ---
 
 ### Task 3: Route `make_trackers!` by issuing enterprise
 
-Without this, `make_trackers!` resolves `qbo_account` from the **client's** billing enterprise and creates the tracker on `self` regardless — so the invariant from Task 1 breaks on the first daily run after deploy.
+Without this, `make_trackers!` resolves `qbo_account` from the **client's** billing enterprise and creates the tracker on `self` regardless — so Task 1's invariant breaks on the first daily run after deploy.
 
 **Files:**
 - Modify: `app/models/invoice_pass.rb:39-57`
-- Test: `test/models/invoice_pass_make_trackers_test.rb`
+- Create: `test/models/invoice_pass_make_trackers_test.rb`
 
 **Interfaces:**
 - Consumes: `InvoicePass#enterprise` (Task 1)
 - Produces: `make_trackers!` creating trackers only for clients whose issuer is the pass's enterprise
 
-Note: after `reject(&:is_internal?)`, every remaining client has `billing_enterprise == Enterprise.sanctuary`, because `ForecastClient#is_internal?` is `enterprise_forecast_client.present?` and `billing_enterprise` is `enterprise || Enterprise.sanctuary` — the same mapping. So in practice only Sanctuary's pass gets forecast trackers today. The per-client form is used anyway because it states the rule rather than hardcoding one enterprise.
+Note: after `reject(&:is_internal?)`, every remaining client has `billing_enterprise == Enterprise.sanctuary`, because `ForecastClient#is_internal?` is `enterprise_forecast_client.present?` and `billing_enterprise` is `enterprise || Enterprise.sanctuary` — the same mapping. So only Sanctuary's pass gets forecast trackers today. The per-client form is used anyway because it states the rule rather than hardcoding one enterprise.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -555,10 +615,18 @@ class InvoicePassMakeTrackersTest < ActiveSupport::TestCase
   def setup
     @sanctuary = enterprises(:sanctuary)
     @garden3d = enterprises(:garden3d)
-    QboAccount.create!(enterprise: @sanctuary, realm_id: "s-realm", client_id: "x", client_secret: "y")
-    QboAccount.create!(enterprise: @garden3d, realm_id: "g-realm", client_id: "x", client_secret: "y")
+    # Sanctuary already has two qbo_account fixtures and has_one has no ORDER BY;
+    # pin the one it picks rather than creating a third.
+    @sanctuary_qa = Enterprise.find(@sanctuary.id).qbo_account
+    QboAccount.create!(enterprise: @garden3d, realm_id: "g-realm",
+                       client_id: "x", client_secret: "y")
 
     @external_client = ForecastClient.create!(forecast_id: 910_001, name: "External Co")
+  end
+
+  def teardown
+    Thread.current[:sanctuary_enterprise] = nil
+    Thread.current[:garden3d_enterprise] = nil
   end
 
   test "a garden3d pass creates no forecast trackers for Sanctuary's clients" do
@@ -582,7 +650,7 @@ class InvoicePassMakeTrackersTest < ActiveSupport::TestCase
     assert_equal 1, pass.invoice_trackers.count
     tracker = pass.invoice_trackers.first
     assert_equal @external_client.forecast_id, tracker.forecast_client_id
-    assert_equal @sanctuary.qbo_account, tracker.qbo_account
+    assert_equal @sanctuary_qa, tracker.qbo_account
     assert_equal "forecast", tracker.source
   end
 end
@@ -594,7 +662,7 @@ end
 bin/rails test test/models/invoice_pass_make_trackers_test.rb
 ```
 
-Expected: the first test FAILS with `1 expected but was 0` reversed — it asserts 0 and gets 1, because `make_trackers!` currently creates a tracker on any pass.
+Expected: test 1 FAILS — it asserts 0 trackers and gets 1, because `make_trackers!` currently creates a tracker on whatever pass it is called on.
 
 - [ ] **Step 3: Rewrite `make_trackers!`**
 
@@ -660,15 +728,16 @@ garden3d-issued tracker landed on Sanctuary's pass."
 
 ### Task 4: Stop `Stacks::Automator` from creating an enterprise-less pass
 
-This is the highest-severity item in S0. `attempt_invoicing_for_previous_month` calls `InvoicePass.create!` with no enterprise. With `null: false` that raises `RecordInvalid` at `lib/tasks/stacks.rake:588`, inside the **single** `begin/rescue` of `stacks:daily_tasks` — so everything after it silently stops running: Runn sync, QBO sync, Deel sync, salary windows, every ProjectTracker and Studio snapshot, notifications, and the TaskBuilder cache warm.
+The highest-severity item in S0. `attempt_invoicing_for_previous_month` calls `InvoicePass.create!` with no enterprise. Under `null: false` that raises `RecordInvalid` at `lib/tasks/stacks.rake:588`, inside the **single** `begin/rescue` of `stacks:daily_tasks` — so everything after it silently stops: Runn sync, QBO sync, Deel sync, salary windows, every ProjectTracker and Studio snapshot, notifications, and the TaskBuilder cache warm.
 
-The same method's `find_by` also becomes non-deterministic once two passes share a month.
+Its `find_by` also becomes non-deterministic once two passes share a month.
 
-`attempt_invoicing_for_invoice_pass` gets a guard too: it runs `make_trackers!` then `make_invoice!` on every tracker, and is reachable from two unconditional admin buttons on **every** pass show page. On garden3d's pass that would push a second full set of real QBO invoices for the month plus a second Twist thread.
+`attempt_invoicing_for_invoice_pass` needs a guard too: it runs `make_trackers!` then `make_invoice!` on every tracker, and is reachable from two unconditional admin buttons on **every** pass show page. On garden3d's pass that would push a second full set of real QBO invoices for the month plus a second Twist thread.
 
 **Files:**
-- Modify: `lib/stacks/automator.rb:63-98` and `:140-160`
-- Test: `test/lib/stacks/automator_invoice_pass_test.rb`
+- Modify: `lib/stacks/automator.rb:145-160` (`attempt_invoicing_for_previous_month`)
+- Modify: `lib/stacks/automator.rb:63` (guard at the top of `attempt_invoicing_for_invoice_pass`)
+- Create: `test/lib/stacks/automator_invoice_pass_test.rb`
 
 **Interfaces:**
 - Consumes: `InvoicePass#enterprise` (Task 1)
@@ -685,8 +754,8 @@ class AutomatorInvoicePassTest < ActiveSupport::TestCase
   def setup
     @sanctuary = enterprises(:sanctuary)
     @garden3d = enterprises(:garden3d)
-    QboAccount.create!(enterprise: @sanctuary, realm_id: "s-realm", client_id: "x", client_secret: "y")
-    QboAccount.create!(enterprise: @garden3d, realm_id: "g-realm", client_id: "x", client_secret: "y")
+    QboAccount.create!(enterprise: @garden3d, realm_id: "g-realm",
+                       client_id: "x", client_secret: "y")
   end
 
   def teardown
@@ -703,8 +772,8 @@ class AutomatorInvoicePassTest < ActiveSupport::TestCase
 
     Stacks::Automator.attempt_invoicing_for_previous_month
 
-    pass = InvoicePass.find_by(start_of_month: month, enterprise: @sanctuary)
-    assert pass.present?, "expected a Sanctuary pass for #{month}"
+    assert InvoicePass.find_by(start_of_month: month, enterprise: @sanctuary).present?,
+      "expected a Sanctuary pass for #{month}"
   end
 
   test "attempt_invoicing_for_previous_month ignores a garden3d pass for the same month" do
@@ -721,6 +790,14 @@ class AutomatorInvoicePassTest < ActiveSupport::TestCase
   end
 
   test "attempt_invoicing_for_invoice_pass refuses a non-Sanctuary pass" do
+    # Before the guard exists, the method's first statement reaches
+    # remind_people_to_record_hours_prior_to_invoicing -> twist.get_workspace_users,
+    # a real outbound HTTP call. Stub it so the red phase fails on the assertion
+    # rather than on the network. Dead weight once the guard lands, kept so the
+    # test does not depend on guard ordering.
+    Stacks::Twist.any_instance.stubs(:get_workspace_users)
+                 .returns(stub(parsed_response: []))
+
     pass = InvoicePass.create!(start_of_month: Date.new(2093, 1, 1),
                                enterprise: @garden3d, data: {})
     pass.expects(:make_trackers!).never
@@ -738,19 +815,19 @@ end
 bin/rails test test/lib/stacks/automator_invoice_pass_test.rb
 ```
 
-Expected: FAIL. The first test raises `ActiveRecord::RecordInvalid: Validation failed: Enterprise must exist`.
+Expected: tests 1 and 2 raise `ActiveRecord::RecordInvalid: Validation failed: Enterprise must exist`. Test 3 fails on the `make_trackers!` expectation (it is called).
 
 - [ ] **Step 3: Fix `attempt_invoicing_for_previous_month`**
 
-Replace the body at `lib/stacks/automator.rb:140-160`:
+Replace `lib/stacks/automator.rb:145-160` — the method body only. Line 140 is the previous method's `end` and 142-144 are this method's doc comment; leave all of those intact.
 
 ```ruby
     def attempt_invoicing_for_previous_month
       # Forecast-driven invoicing is Sanctuary's. Scope both the lookup and the
       # create: passes are unique per [enterprise, start_of_month], so an
-      # unscoped find_by could return garden3d's pass for the month and a
+      # unscoped find_by could return garden3d's pass for the month, and a
       # create! without an enterprise raises RecordInvalid -- which, from
-      # stacks:daily_tasks, would abort every later step in the task.
+      # stacks:daily_tasks, aborts every later step in the task.
       sanctuary = Enterprise.sanctuary
       start_of_month = (Date.today - 1.month).beginning_of_month
 
@@ -775,15 +852,15 @@ Replace the body at `lib/stacks/automator.rb:140-160`:
 
 - [ ] **Step 4: Guard `attempt_invoicing_for_invoice_pass`**
 
-Insert at the very top of the method, before the reminder pass (`lib/stacks/automator.rb:63`):
+Insert the guard as the first statement of the method at `lib/stacks/automator.rb:63`, before `needed_reminding = ...`:
 
 ```ruby
     def attempt_invoicing_for_invoice_pass(invoice_pass, send_twist_reminders = true)
       # Only the forecast-invoicing enterprise may run a pass. This method runs
       # make_trackers! then make_invoice! on every tracker, and is reachable from
-      # two unconditional action_items on every pass show page -- on garden3d's
-      # pass that would create trackers for Sanctuary's entire external book and
-      # push a second full set of real QBO invoices for the month.
+      # two action_items on every pass show page -- on garden3d's pass that would
+      # create trackers for Sanctuary's entire external book and push a second
+      # full set of real QBO invoices for the month.
       return unless invoice_pass.enterprise == Enterprise.sanctuary
 
       needed_reminding = remind_people_to_record_hours_prior_to_invoicing(
@@ -817,24 +894,23 @@ stacks:daily_tasks -- aborting Runn, QBO and Deel sync, salary windows,
 every snapshot, notifications and the task cache warm.
 
 attempt_invoicing_for_invoice_pass now refuses a non-Sanctuary pass. It is
-reachable from two unconditional buttons on every pass show page, and on
-garden3d's pass it would have pushed a second full set of real QBO
-invoices for the month."
+reachable from two buttons on every pass show page, and on garden3d's pass
+it would have pushed a second full set of real QBO invoices."
 ```
 
 ---
 
 ### Task 5: Scope `sync_founder_trueups!` and `PeriodicReport` to Sanctuary
 
-`Stacks::System.sync_founder_trueups!` selects the month's pass with an unordered `.where(...).first`, which is heap order. If it returns garden3d's pass, `contributor_payouts_by_contributor` is `{}`, `max_by` returns `nil`, and the next line raises `NoMethodError` on nil. If garden3d's pass ever holds payouts, `find_or_initialize_by` creates a **second** founder true-up for the month — `Trueup` has no uniqueness validation.
+`Stacks::System.sync_founder_trueups!` selects the month's pass with an unordered `.where(...).first`, which is heap order. If it returns garden3d's pass, the payout aggregation is empty and the method fails; if garden3d's pass ever holds payouts, `find_or_initialize_by` writes a **second** founder true-up for the month (`Trueup` has no uniqueness validation).
 
 `PeriodicReport#invoice_passes` queries by `start_of_month` alone, so `#surplus` would silently widen from Sanctuary to company-wide.
 
 **Files:**
 - Modify: `lib/stacks/system.rb:79`
 - Modify: `app/models/periodic_report.rb:58-60`
-- Test: `test/lib/stacks/founder_trueup_scoping_test.rb`
-- Test: `test/models/periodic_report_scoping_test.rb`
+- Create: `test/lib/stacks/founder_trueup_scoping_test.rb`
+- Create: `test/models/periodic_report_scoping_test.rb`
 
 **Interfaces:**
 - Consumes: `InvoicePass#enterprise` (Task 1)
@@ -848,45 +924,59 @@ Create `test/models/periodic_report_scoping_test.rb`:
 require "test_helper"
 
 class PeriodicReportScopingTest < ActiveSupport::TestCase
-  test "invoice_passes only includes the Sanctuary pass for the period" do
-    sanctuary = enterprises(:sanctuary)
-    garden3d = enterprises(:garden3d)
-    month = Date.new(2092, 1, 1)
+  def teardown
+    Thread.current[:sanctuary_enterprise] = nil
+    Thread.current[:garden3d_enterprise] = nil
+  end
 
-    sanctuary_pass = InvoicePass.create!(start_of_month: month, enterprise: sanctuary, data: {})
-    InvoicePass.create!(start_of_month: month, enterprise: garden3d, data: {})
+  test "invoice_passes only includes the Sanctuary pass for the period" do
+    month = Date.new(2092, 1, 1)
+    sanctuary_pass = InvoicePass.create!(start_of_month: month,
+                                         enterprise: enterprises(:sanctuary), data: {})
+    InvoicePass.create!(start_of_month: month,
+                        enterprise: enterprises(:garden3d), data: {})
 
     report = PeriodicReport.new(period_starts_at: month, period_gradation: :quarter)
 
     assert_equal [sanctuary_pass.id], report.invoice_passes.map(&:id)
   end
+
+  test "surplus ignores other enterprises' trackers" do
+    month = Date.new(2092, 4, 1)
+    InvoicePass.create!(start_of_month: month,
+                        enterprise: enterprises(:sanctuary), data: {})
+    InvoicePass.create!(start_of_month: month,
+                        enterprise: enterprises(:garden3d), data: {})
+
+    report = PeriodicReport.new(period_starts_at: month, period_gradation: :quarter)
+
+    assert_equal [], report.invoice_trackers
+    assert_nil report.surplus
+  end
 end
 ```
 
-Create `test/lib/stacks/founder_trueup_scoping_test.rb`:
+Create `test/lib/stacks/founder_trueup_scoping_test.rb`. This asserts **which pass was selected** by observing the explicit raise, which only fires when the Sanctuary-scoped lookup finds nothing. Before the fix, garden3d's pass satisfies the unscoped `.first` and the method proceeds past that guard, failing later with a different error class — so the test genuinely discriminates.
 
 ```ruby
 require "test_helper"
 
 class FounderTrueupScopingTest < ActiveSupport::TestCase
-  test "sync_founder_trueups! ignores a garden3d pass for the same month" do
-    sanctuary = enterprises(:sanctuary)
-    garden3d = enterprises(:garden3d)
-    month = Stacks::System.founder_trueup_months.last
+  def teardown
+    Thread.current[:sanctuary_enterprise] = nil
+    Thread.current[:garden3d_enterprise] = nil
+  end
 
+  test "sync_founder_trueups! does not accept a garden3d pass as the month's pass" do
+    month = Date.new(2091, 1, 1)
     InvoicePass.where(start_of_month: month).destroy_all
-    sanctuary_pass = InvoicePass.create!(start_of_month: month, enterprise: sanctuary, data: {})
-    InvoicePass.create!(start_of_month: month, enterprise: garden3d, data: {})
+    InvoicePass.create!(start_of_month: month,
+                        enterprise: enterprises(:garden3d), data: {})
 
     Stacks::System.stubs(:founder_trueup_months).returns([month])
 
-    # With no payouts on Sanctuary's pass the method raises on nil max_by; the
-    # point of this test is WHICH pass it picked, so assert on the error's pass.
-    InvoicePass.any_instance.stubs(:invoice_trackers).returns([])
-
-    error = assert_raises(NoMethodError) { Stacks::System.sync_founder_trueups! }
-    assert_match(/nil/, error.message)
-    assert_equal sanctuary.id, sanctuary_pass.reload.enterprise_id
+    error = assert_raises(RuntimeError) { Stacks::System.sync_founder_trueups! }
+    assert_match(/No invoice pass found/, error.message)
   end
 end
 ```
@@ -897,7 +987,7 @@ end
 bin/rails test test/models/periodic_report_scoping_test.rb test/lib/stacks/founder_trueup_scoping_test.rb
 ```
 
-Expected: the `PeriodicReport` test FAILS with two ids where one was expected.
+Expected: the `PeriodicReport` tests FAIL (two pass ids where one was expected; two trackers where none were). The founder test FAILS because a `NoMethodError` is raised instead of the `RuntimeError` — the garden3d pass satisfied the unscoped lookup.
 
 - [ ] **Step 3: Scope `PeriodicReport#invoice_passes`**
 
@@ -932,7 +1022,7 @@ Replace the pass lookup at `lib/stacks/system.rb:79`:
 bin/rails test test/models/periodic_report_scoping_test.rb test/lib/stacks/founder_trueup_scoping_test.rb
 ```
 
-Expected: PASS, 2 runs, 0 failures.
+Expected: PASS, 3 runs, 0 failures.
 
 - [ ] **Step 6: Run the full suite**
 
@@ -940,7 +1030,7 @@ Expected: PASS, 2 runs, 0 failures.
 bin/rails test --exclude "sync_meet runs the connector inside a SystemTask"
 ```
 
-Expected: 1799 runs, 0 failures, 0 errors, 2 skips.
+Expected: 1800 runs, 0 failures, 0 errors, 2 skips.
 
 - [ ] **Step 7: Commit**
 
@@ -950,9 +1040,9 @@ git add lib/stacks/system.rb app/models/periodic_report.rb \
 git commit -m "fix(invoicing): scope founder trueups and periodic reports to Sanctuary
 
 sync_founder_trueups! picked the month's pass with an unordered .first,
-which could return garden3d's pass -- raising NoMethodError on a nil
-max_by, or writing a duplicate founder true-up since Trueup has no
-uniqueness validation.
+so it could select garden3d's pass -- and if that pass ever held payouts,
+write a duplicate founder true-up, since Trueup has no uniqueness
+validation.
 
 PeriodicReport#invoice_passes queried by start_of_month alone, so #surplus
 would have widened from Sanctuary to company-wide."
@@ -963,10 +1053,10 @@ would have widened from Sanctuary to company-wide."
 ### Task 6: Surface the enterprise in the admin and MCP read paths
 
 **Files:**
-- Modify: `app/admin/invoice_passes.rb:37-46` (hide the rerun actions on non-forecast passes), and the index block to show the enterprise
-- Modify: `app/admin/invoice_trackers.rb:101` (build the Twist URL from the tracker's current pass)
-- Modify: `app/services/mcp/get_invoice_passes_tool.rb:35-45`
-- Test: `test/services/mcp/invoice_passes_tool_test.rb` (existing: 4 creations + ~17 shape assertions)
+- Modify: `app/admin/invoice_passes.rb:39-47` (the two `action_item` blocks) and the `index` block
+- Modify: `app/services/mcp/get_invoice_passes_tool.rb:38` and `:66-73`
+- Modify: `test/services/mcp/invoice_passes_tool_test.rb`
+- Modify: `test/integration/admin_permission_grants_test.rb`
 
 **Interfaces:**
 - Consumes: `InvoicePass#enterprise` (Task 1)
@@ -974,15 +1064,19 @@ would have widened from Sanctuary to company-wide."
 
 - [ ] **Step 1: Hide the rerun action items on non-Sanctuary passes**
 
-Task 4 already makes `attempt_invoicing_for_invoice_pass` refuse them; this stops the buttons being offered at all. Replace both `action_item` blocks in `app/admin/invoice_passes.rb:37-46`:
+Task 4 already makes the `Automator` refuse them; this stops the buttons being offered. Replace **lines 39-47** of `app/admin/invoice_passes.rb` — exactly the two `action_item` blocks. Line 37 is the `controller do` block's `end`; do not touch it.
+
+House style for a conditional action item is `if: proc { ... }` (see `app/admin/pay_stubs.rb:8`):
 
 ```ruby
-  action_item :rerun_invoice_pass, only: :show, if: -> { resource.enterprise == Enterprise.sanctuary } do
+  action_item :rerun_invoice_pass, only: :show,
+    if: proc { resource.enterprise == Enterprise.sanctuary } do
     link_to 'Send Reminders',
       rerun_invoice_pass_admin_invoice_pass_path(resource), method: :post
   end
 
-  action_item :rerun_invoice_pass_without_reminders, only: :show, if: -> { resource.enterprise == Enterprise.sanctuary } do
+  action_item :rerun_invoice_pass_without_reminders, only: :show,
+    if: proc { resource.enterprise == Enterprise.sanctuary } do
     link_to 'Generate Invoices',
       rerun_invoice_pass_without_reminders_admin_invoice_pass_path(resource), method: :post
   end
@@ -990,7 +1084,7 @@ Task 4 already makes `attempt_invoicing_for_invoice_pass` refuse them; this stop
 
 - [ ] **Step 2: Add the enterprise column to the index**
 
-In the `index` block in `app/admin/invoice_passes.rb`, immediately after `column :start_of_month`:
+In the `index` block, immediately after `column :start_of_month`:
 
 ```ruby
     column :enterprise
@@ -998,33 +1092,54 @@ In the `index` block in `app/admin/invoice_passes.rb`, immediately after `column
 
 - [ ] **Step 3: Add the enterprise to the MCP tool's pass rows**
 
-In `app/services/mcp/get_invoice_passes_tool.rb`, the `passes` array now carries one row per (enterprise, month) rather than one per month. The `mom` rollup at lines 44-45 already groups by month and sums, so it stays correct. Add the enterprise so a consumer can tell the rows apart — find the hash built around line 35-39 and add:
+In `app/services/mcp/get_invoice_passes_tool.rb`, the row hash is built in `self.pass_block` at **lines 66-73** (not in the query at 35-39). Add the key there:
 
 ```ruby
           enterprise: pass.enterprise.name,
 ```
 
-- [ ] **Step 4: Update the MCP tool test's shape assertions**
+Then preload it — line 38's `includes(invoice_trackers: { qbo_account: :enterprise })` does **not** cover the pass's own enterprise, so the new key would fire one query per pass:
 
-`test/services/mcp/invoice_passes_tool_test.rb` has 4 pass creations (already given `enterprise:` in Task 1) and ~17 assertions on the returned shape. Add an `enterprise` key assertion to the row-shape test and confirm the `mom` series is unchanged:
+```ruby
+      .includes(:enterprise, invoice_trackers: { qbo_account: :enterprise })
+```
+
+The `passes` array now carries one row per (enterprise, month). The `mom` rollup at lines 44-45 already groups by month and sums, so it stays correct.
+
+- [ ] **Step 4: Add the MCP shape test**
+
+Add this **inside the existing `Mcp::InvoicePassesToolTest` class** in `test/services/mcp/invoice_passes_tool_test.rb`, so it inherits that file's `setup` (which creates the June and July 2026 passes inside the frozen window). Standalone it would see zero passes and `.first` would be nil.
+
+The tool's entry point is `self.call` with a required `server_context:`, and it returns an MCP envelope — use the file's existing `mcp_payload` helper, whose keys are **strings** because it JSON-parses:
 
 ```ruby
   test "each pass row names its issuing enterprise" do
-    result = Mcp::GetInvoicePassesTool.new.call
-    row = result[:passes].first
-    assert_equal "Sanctuary Computer Inc", row[:enterprise]
+    payload = mcp_payload(Mcp::GetInvoicePassesTool.call(server_context: {}))
+    assert_equal 'Sanctuary Computer Inc', payload['passes'].first['enterprise']
   end
 ```
 
-- [ ] **Step 5: Rebuild the Twist URL from the tracker's current pass**
+`.first` is deterministic: the query is `order(:start_of_month)` and the shared setup creates June 2026 before July 2026.
 
-At `app/admin/invoice_trackers.rb:101`, the notification URL is built from `resource.invoice_pass`. Task 2's backfill moved 7 trackers to a different pass, so any URL cached elsewhere is stale; building from `resource.invoice_pass` at render time is already correct. Verify no literal pass id is interpolated anywhere:
+- [ ] **Step 5: Add the action-item visibility test**
 
-```bash
-grep -rn "invoice_passes/" app/ lib/ | grep -v "admin_invoice_pass"
+Append to `test/integration/admin_permission_grants_test.rb`:
+
+```ruby
+  test "the Generate Invoices action is not offered on a non-Sanctuary pass" do
+    pass = InvoicePass.create!(start_of_month: Date.new(2090, 1, 1),
+                               enterprise: enterprises(:garden3d), data: {})
+    sign_in_as_admin
+
+    get admin_invoice_pass_path(pass)
+
+    assert_response :success
+    assert_select "a[href=?]",
+      rerun_invoice_pass_without_reminders_admin_invoice_pass_path(pass), count: 0
+  end
 ```
 
-Expected: no hits that interpolate a hardcoded id. If there are, replace them with the route helper.
+Match the file's existing sign-in idiom rather than `sign_in_as_admin` if it differs — check the top of the file.
 
 - [ ] **Step 6: Run the affected tests**
 
@@ -1040,34 +1155,37 @@ Expected: PASS, 0 failures.
 bin/rails test --exclude "sync_meet runs the connector inside a SystemTask"
 ```
 
-Expected: 1800 runs, 0 failures, 0 errors, 2 skips.
+Expected: 1802 runs, 0 failures, 0 errors, 2 skips.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add app/admin/invoice_passes.rb app/admin/invoice_trackers.rb \
-  app/services/mcp/get_invoice_passes_tool.rb test/services/mcp/invoice_passes_tool_test.rb
+git add app/admin/invoice_passes.rb app/services/mcp/get_invoice_passes_tool.rb \
+  test/services/mcp/invoice_passes_tool_test.rb test/integration/admin_permission_grants_test.rb
 git commit -m "feat(invoicing): surface the issuing enterprise in admin and MCP
 
 Hides the Send Reminders / Generate Invoices actions on non-Sanctuary
 passes, adds the enterprise to the invoicing index, and names the issuing
-enterprise on each MCP pass row now that there can be more than one pass
-per month."
+enterprise on each MCP pass row now that a month can have more than one."
 ```
 
 ---
 
 ### Task 7: Verify against real data and open the PR
 
-**Files:** none modified.
+**Files:** none modified. `db/schema.rb` must be **restored** after migrating (Step 1).
 
-- [ ] **Step 1: Run the migrations against development**
+- [ ] **Step 1: Migrate development without clobbering the hand-curated schema**
+
+`config.active_record.dump_schema_after_migration = false` is set **only** in `config/environments/production.rb`, so in development `db:migrate` re-dumps `db/schema.rb` — wiping the deliberate omissions (pgvector's `embeddings.embedding` and its HNSW index, `chunks.content_tsv`) and the composite-FK comment. A dumped schema with `enable_extension "vector"` also breaks Heroku CI.
 
 ```bash
 bin/rails db:migrate
+git checkout -- db/schema.rb
+git status --porcelain
 ```
 
-Expected: both migrations run clean.
+Expected: both migrations run clean, and `git status --porcelain` prints **nothing**. If `db/schema.rb` shows as modified after the checkout, stop and report.
 
 - [ ] **Step 2: Verify the real backfill**
 
@@ -1085,7 +1203,7 @@ puts "tracker sources: " + InvoiceTracker.group(:source).count.inspect
 '
 ```
 
-Expected: `{"Sanctuary Computer Inc" => 64, "garden3d, LLC" => 7}`, `orphans: 0`, no mixed passes remaining, and `{"forecast" => 1165}`.
+Expected: `{"Sanctuary Computer Inc" => 64, "garden3d, LLC" => 7}`, `orphans: 0`, no mixed passes remaining, `{"forecast" => 1165}`.
 
 - [ ] **Step 3: Confirm the daily task's invoicing step is safe**
 
@@ -1093,7 +1211,7 @@ Expected: `{"Sanctuary Computer Inc" => 64, "garden3d, LLC" => 7}`, `orphans: 0`
 bin/rails runner 'Stacks::Automator.attempt_invoicing_for_previous_month; puts "ok"'
 ```
 
-Expected: `ok`, with no `RecordInvalid`. This is the blast-radius check from Task 4 — if this raises, `stacks:daily_tasks` would abort every step after invoicing.
+Expected: `ok`, no `RecordInvalid`. This is the blast-radius check from Task 4 — if this raises, `stacks:daily_tasks` would abort every step after invoicing.
 
 - [ ] **Step 4: Run the full suite one more time**
 
@@ -1101,7 +1219,7 @@ Expected: `ok`, with no `RecordInvalid`. This is the blast-radius check from Tas
 bin/rails test --exclude "sync_meet runs the connector inside a SystemTask"
 ```
 
-Expected: 1800 runs, 0 failures, 0 errors, 2 skips.
+Expected: 1802 runs, 0 failures, 0 errors, 2 skips.
 
 - [ ] **Step 5: Push and open the PR**
 
@@ -1117,23 +1235,24 @@ subsystem S0). Adds no MSO behaviour.
 `InvoicePass` now belongs to the enterprise that **issues** its invoices.
 A tracker lives on the pass of its `qbo_account`'s enterprise, so
 garden3d's invoices stop riding on Sanctuary's pass. `invoice_trackers`
-gains a `source` enum (`forecast` / `management_fee`) for the MSO
-trackers a later subsystem adds.
+gains a `source` enum (`forecast` / `management_fee`) for the MSO trackers
+a later subsystem adds.
 
 `clients_served` is deliberately **not** scoped by enterprise — external
-clients have no enterprise mapping, so scoping it that way would strip
-the entire external book off Sanctuary's pass.
+clients have no enterprise mapping, so scoping it that way would strip the
+entire external book off Sanctuary's pass.
 
 ## Migration
 
 64 passes, 1,165 trackers. Each pass takes its modal `qbo_account`'s
 enterprise; every other issuer's trackers move to that enterprise's pass
-for the same month. Generalised over `qbo_account_id`, not the seven
-known mixed months (2025-06 … 2025-12), so a pass that has since gained
-an Index Space or USB Club tracker splits correctly too. Reversible.
+for the same month. Generalised over `qbo_account_id`, not the seven known
+mixed months (2025-06 … 2025-12), so a pass that has since gained an Index
+Space or USB Club tracker splits correctly too. Passes the backfill creates
+are tagged `data.created_by_backfill` so `down` re-merges only its own.
 
-**Migrations are manual in this repo** — run `bin/rails db:migrate`
-after deploy.
+**Migrations are manual in this repo** — run `bin/rails db:migrate` after
+deploy.
 
 ## Bugs fixed along the way
 
@@ -1142,15 +1261,14 @@ after deploy.
   `begin/rescue` of `stacks:daily_tasks`, which would have aborted every
   later step: Runn, QBO and Deel sync, salary windows, every tracker and
   studio snapshot, notifications, and the task cache warm.
-- The two "Send Reminders" / "Generate Invoices" buttons were
-  unconditional on every pass show page. On garden3d's pass they would
-  have created trackers for Sanctuary's entire external book and pushed a
-  **second full set of real QBO invoices** for the month, plus a second
-  Twist thread.
+- The "Send Reminders" / "Generate Invoices" buttons were unconditional on
+  every pass show page. On garden3d's pass they would have created trackers
+  for Sanctuary's entire external book and pushed a **second full set of
+  real QBO invoices** for the month, plus a second Twist thread.
 - `Stacks::System#sync_founder_trueups!` picked the month's pass with an
-  unordered `.first`, so it could hit garden3d's pass — raising
-  `NoMethodError` on a nil `max_by`, or writing a duplicate founder
-  true-up (`Trueup` has no uniqueness validation).
+  unordered `.first`, so it could select garden3d's — and if that pass ever
+  held payouts, write a duplicate founder true-up (`Trueup` has no
+  uniqueness validation).
 - `PeriodicReport#invoice_passes` queried by `start_of_month` alone, so
   `#surplus` would have silently widened from Sanctuary to company-wide.
 - `invoice_passes.start_of_month` was nullable under a unique index,
@@ -1158,11 +1276,12 @@ after deploy.
 
 ## Testing
 
-Full suite green: 1800 runs, 0 failures, 0 errors, 2 skips.
+Full suite green: 1802 runs, 0 failures, 0 errors, 2 skips.
 
-Migrations don't run in the suite (the test DB is schema-loaded from the
+Migrations don't run in this suite (the test DB is schema-loaded from the
 hand-curated `db/schema.rb`), so the backfill is tested by instantiating
-the migration class directly against a pre-constraint fixture state.
+the migration class directly, with the `NOT NULL` constraint dropped for
+the duration to simulate pre-migration state.
 
 Also adds the missing `garden3d` enterprise fixture — `Enterprise.garden3d`
 raised `RecordNotFound` in the suite before this.
@@ -1178,16 +1297,21 @@ BODY
 gh pr checks --watch
 ```
 
-Expected: Heroku CI green. Note this repo only deploys `main` once `main`'s own CI goes green, and an **errored** run silently withholds the deploy — check the run's conclusion, not just its absence of failures.
+Expected: Heroku CI green. This repo only deploys `main` once `main`'s own CI goes green, and an **errored** run silently withholds the deploy — check the run's conclusion, not merely the absence of failures.
 
 ---
 
 ## Self-Review
 
-**Spec coverage.** Every §5 requirement maps to a task: §5.2 schema → Task 1; §5.3 backfill → Task 2; §5.1 issuer routing → Task 3; §5.4's call-site table → Tasks 4 (automator ×2), 5 (`sync_founder_trueups!`, `PeriodicReport`), 6 (admin actions, MCP tool, tracker URL), 1 (35 test sites). §5.4's `admin_authorization.rb:94-95` row is **deliberately deferred** — it is an authorization change that belongs with S4's combined guard (spec §10), not in a schema refactor, and garden3d's pass holds nothing sensitive until S4 adds the snapshot. §12's S0 test list is covered except `clients_served` unchanged, which Task 3's second test covers implicitly by asserting the external client still gets a tracker.
+**Spec coverage.** Every §5 requirement maps to a task: §5.2 schema → Task 1; §5.3 backfill → Task 2; §5.1 issuer routing → Task 3; §5.4's call-site table → Tasks 4 (automator ×2), 5 (`sync_founder_trueups!`, `PeriodicReport`), 6 (admin actions, MCP tool), 1 (35 test sites). §12's S0 list is covered, with one stated exception below.
 
-**Placeholders.** None. Every code step carries the actual code; every command carries its expected output, including exact run counts that increase monotonically (1783 → 1787 → 1792 → 1794 → 1797 → 1799 → 1800).
+**Two deliberate deferrals.**
 
-**Type consistency.** `InvoicePass#enterprise` (association), `InvoiceTracker#source` (string from the enum, asserted as `"forecast"`), `Enterprise.sanctuary` / `Enterprise.garden3d` (memoized class methods, cleared in Task 4's teardown). The migration class name `BackfillInvoicePassEnterprises` matches its filename in both the `require` and the instantiation.
+1. `admin_authorization.rb:95`'s `return true if subject.is_a?(InvoicePass)` over-grant stays as-is. It predates S0, and S0 does not widen which trackers a lead-in-training can reach — the same 7 trackers were readable on Sanctuary's pass before. It is fixed in S4 alongside the combined MSO guard (spec §10). Note the garden3d passes this plan creates **do** carry real invoice trackers and client invoices; the deferral rests on "no change in exposure", not on "nothing sensitive there".
+2. `InvoiceTracker#status` returning `:impossible` for a blueprint-less tracker (spec §6.4) is **not** fixed here. It only bites once `:management_fee` trackers exist, which is S1. Flagged so S1 does not assume otherwise.
 
-**One known gap:** `InvoiceTracker#status` returning `:impossible` for a blueprint-less tracker (spec §6.4) is **not** fixed here. It only bites once `:management_fee` trackers exist, which is S1. Flagged so S1 doesn't assume S0 handled it.
+**Known coverage gap.** §12's "`sync_founder_trueups!` writes exactly one founder true-up with two passes present" is covered only by the pass-selection test, not by asserting a `Trueup` count. Building the payouts that would make the stronger assertion possible requires defeating `contributor_payouts_within_seventy_percent` and `only_after_new_deal` plus an `AdminUser` for `created_by`, which buys a brittle test; Task 7 Step 2's real-data check covers the outcome instead.
+
+**Placeholders.** None. Every code step carries the actual code; every command carries its expected output, with run counts increasing monotonically (1783 → 1787 → 1792 → 1794 → 1797 → 1800 → 1802).
+
+**Type consistency.** `InvoicePass#enterprise` (association), `InvoiceTracker#source` (string from the enum, asserted as `"forecast"`), `Enterprise.sanctuary` / `.garden3d` (thread-memoized, cleared in teardown everywhere they are used). `BackfillInvoicePassEnterprises` matches its filename in both the `require` and the instantiation. MCP assertions use string keys via `mcp_payload`, matching the existing file.
