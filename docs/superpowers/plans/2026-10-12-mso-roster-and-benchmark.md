@@ -23,7 +23,7 @@ This is subsystem **S2** of `docs/superpowers/specs/2026-10-09-garden3d-mso-comp
 - Money is `BigDecimal`, built from strings (`BigDecimal(amount.to_s)`). Never `to_f`.
 - `Contributor` has a `default_scope` that joins `forecast_people`. A `Contributor` only exists alongside a `ForecastPerson`; tests create both.
 - Tier multipliers, verbatim: head `0.70`, svp `0.85`, chief `1.00`, principal `1.15`.
-- Baseline before this plan: **1835 runs, 0 failures, 0 errors, 2 skips**.
+- Baseline before this plan: **1862 runs, 0 failures, 0 errors, 2 skips** (verify with a full run before Task 1; if it differs, use what you measure — each task states how many runs it adds).
 - Commit after every task.
 
 ## File Structure
@@ -128,7 +128,8 @@ class MsoRolePeriodTest < ActiveSupport::TestCase
   def make_contributor(tag)
     fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000),
                                 email: "mso-#{tag}-#{SecureRandom.hex(3)}@example.com", data: {})
-    Contributor.create!(forecast_person: fp)
+    # ForecastPerson's after_create already makes the Contributor.
+    fp.contributor || Contributor.create!(forecast_person: fp)
   end
 
   def build_period(contributor, attrs = {})
@@ -165,6 +166,12 @@ class MsoRolePeriodTest < ActiveSupport::TestCase
     build_period(contributor).save!
     period = build_period(contributor, started_at: nil)
     assert_not period.valid?
+  end
+
+  test "tier is required" do
+    period = build_period(make_contributor("notier"), tier: nil)
+    assert_not period.valid?
+    assert_includes period.errors[:tier], "can't be blank"
   end
 
   test "title is required" do
@@ -279,6 +286,7 @@ class MsoRolePeriod < ApplicationRecord
 
   enum tier: { head: 0, svp: 1, chief: 2, principal: 3 }, _prefix: :tier
 
+  validates :tier, presence: true
   validates :started_at, presence: true
   validates :title, presence: true
   validate :full_months_only
@@ -291,7 +299,7 @@ class MsoRolePeriod < ApplicationRecord
   }
 
   def tier_multiplier
-    MULTIPLIERS.fetch(tier)
+    MULTIPLIERS.fetch(tier.to_s)
   end
 
   def period_ended_at
@@ -329,7 +337,7 @@ In `app/models/contributor.rb`, directly below `has_many :ledgers` (line 68), ad
 bin/rails test test/models/mso_role_period_test.rb
 ```
 
-Expected: PASS, 14 runs, 0 failures.
+Expected: PASS, 15 runs, 0 failures.
 
 - [ ] **Step 8: Run the full suite**
 
@@ -337,7 +345,7 @@ Expected: PASS, 14 runs, 0 failures.
 bin/rails test --exclude "sync_meet runs the connector inside a SystemTask"
 ```
 
-Expected: 1849 runs, 0 failures, 0 errors, 2 skips.
+Expected: 15 more runs than before this task, with 0 failures, 0 errors, 2 skips. Report the actual total.
 
 - [ ] **Step 9: Commit**
 
@@ -432,7 +440,7 @@ class AdminMsoRolePeriodsTest < ActionDispatch::IntegrationTest
     PermissionGrant.create!(admin_user: @lead, permission: "lead")
 
     fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "roster-exec@example.com", data: {})
-    @contributor = Contributor.create!(forecast_person: fp)
+    @contributor = fp.contributor || Contributor.create!(forecast_person: fp)
   end
 
   test "an admin can list and create role periods" do
@@ -457,7 +465,10 @@ class AdminMsoRolePeriodsTest < ActionDispatch::IntegrationTest
 
     get admin_mso_role_periods_path
 
-    assert_not_equal 200, response.status
+    # ActiveAdmin redirects an unauthorized user with a flash error. Asserting
+    # both means a silently failed sign-in cannot pass this test.
+    assert_response :redirect
+    assert_match(/not authorized/i, flash[:error])
   end
 
   test "a lead cannot create a role period by posting directly" do
@@ -540,7 +551,7 @@ Expected: PASS, 3 runs, 0 failures. If the index test fails on `column :contribu
 bin/rails test --exclude "sync_meet runs the connector inside a SystemTask"
 ```
 
-Expected: 1853 runs, 0 failures, 0 errors, 2 skips.
+Expected: 4 more runs than after Task 1, with 0 failures, 0 errors, 2 skips. Report the actual total.
 
 - [ ] **Step 10: Commit**
 
@@ -570,7 +581,7 @@ action including read."
 
 - [ ] **Step 1: Write the failing test**
 
-Append inside the existing test class in `test/models/system_test.rb` (it already has a `@sys` helper built with `System.first_or_create!(settings: {})`; create the row the same way here):
+Append inside the existing test class in `test/models/system_test.rb` (the class is `SystemModelTest`; it builds its row with `System.first_or_create!(settings: {})`, as these tests do):
 
 ```ruby
   test "mso_top_n defaults to 3" do
@@ -646,7 +657,15 @@ bin/rails test test/models/system_test.rb
 
 Expected: PASS, 0 failures.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Run the full suite**
+
+```bash
+bin/rails test --exclude "sync_meet runs the connector inside a SystemTask"
+```
+
+Expected: 4 more runs than after Task 2, with 0 failures, 0 errors, 2 skips. Report the actual total.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add app/models/system.rb test/models/system_test.rb
@@ -667,12 +686,15 @@ This is deliberately **not** the same sum as `Ledger#items_grouped_by_month`'s `
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks
-- Produces: `Ledger::QualifyingIncome.for(ledger:, month:, excluding: []) -> BigDecimal`
+- Produces: `Ledger::QualifyingIncome.for(ledger:, month:, excluding: [], klasses: KLASSES) -> BigDecimal`
   - `month:` is any `Date` in the month
   - `excluding:` is an array of records to leave out, matched by class and id
-  - `Ledger::QualifyingIncome::KLASSES` — the classes that count
+  - `klasses:` narrows which kinds of row count; it must be a subset of `KLASSES`
+  - `Ledger::QualifyingIncome::KLASSES == [ContributorPayout, Trueup, PayStub]`
 
 Dates: a row counts in the month of its `effective_on_for_display` — a payout by its invoice pass's month, a true-up by its pass's month end, a pay stub by its pay cycle's end.
+
+**Rails 6.1 trap:** `relation.sum(initial) { block }` raises `ArgumentError: Column name argument is not supported when a block is passed`. Load the rows with `.to_a` and sum the array. Do not "fix" it by dropping the initial value — a block-only `Relation#sum` returns the Integer `0` for an empty relation.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -686,7 +708,7 @@ class Ledger::QualifyingIncomeTest < ActiveSupport::TestCase
     @sanctuary = enterprises(:sanctuary)
     fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000),
                                 email: "qi-#{SecureRandom.hex(3)}@example.com", data: {})
-    @contributor = Contributor.create!(forecast_person: fp)
+    @contributor = fp.contributor || Contributor.create!(forecast_person: fp)
     @ledger = Ledger.find_or_create_for(enterprise: @sanctuary, contributor: @contributor)
     @admin = AdminUser.create!(email: "qi-admin-#{SecureRandom.hex(3)}@example.com",
                                password: "password12345", roles: ["admin"])
@@ -717,65 +739,114 @@ class Ledger::QualifyingIncomeTest < ActiveSupport::TestCase
     ContributorPayout.create!(ledger: @ledger, invoice_tracker: tracker, created_by: @admin, amount: amount)
   end
 
-  test "an empty month is zero, as a BigDecimal" do
-    result = Ledger::QualifyingIncome.for(ledger: @ledger, month: @march)
-    assert_equal BigDecimal("0"), result
-    assert_kind_of BigDecimal, result
+  def pay_stub(ends_at, amount)
+    cycle = PayCycle.create!(enterprise: @sanctuary, starts_at: ends_at.beginning_of_month, ends_at: ends_at)
+    PayStub.create!(pay_cycle: cycle, ledger: @ledger, amount: amount, blueprint: {
+      "lines" => [{ "forecast_project" => "p", "hours" => 1, "rate" => amount, "amount" => amount, "description" => "x" }],
+    })
   end
 
-  test "sums true-ups and payouts that fall in the month" do
+  def income(**opts)
+    Ledger::QualifyingIncome.for(ledger: @ledger, month: @march, **opts)
+  end
+
+  test "an empty month is zero, as a BigDecimal" do
+    assert_equal BigDecimal("0"), income
+    assert_kind_of BigDecimal, income
+  end
+
+  test "sums true-ups, payouts and pay stubs that fall in the month" do
     trueup(@march_pass, "1000.25")
     payout(@march_pass, "2500.50")
+    pay_stub(Date.new(2090, 3, 31), 900)
 
-    assert_equal BigDecimal("3500.75"), Ledger::QualifyingIncome.for(ledger: @ledger, month: @march)
+    assert_equal BigDecimal("4400.75"), income
+    assert_kind_of BigDecimal, income
   end
 
   test "any date within the month selects that month" do
     trueup(@march_pass, "1000")
-    assert_equal BigDecimal("1000"), Ledger::QualifyingIncome.for(ledger: @ledger, month: Date.new(2090, 3, 19))
+    assert_equal BigDecimal("1000"),
+      Ledger::QualifyingIncome.for(ledger: @ledger, month: Date.new(2090, 3, 19))
   end
 
   test "rows from other months are left out" do
     trueup(@march_pass, "1000")
     trueup(@april_pass, "9999")
+    payout(@april_pass, "500")
+    pay_stub(Date.new(2090, 4, 30), 700)
 
-    assert_equal BigDecimal("1000"), Ledger::QualifyingIncome.for(ledger: @ledger, month: @march)
+    assert_equal BigDecimal("1000"), income
   end
 
-  test "soft-deleted rows are not income" do
+  test "a soft-deleted true-up is not income" do
     trueup(@march_pass, "1000")
     trueup(@march_pass, "10300").destroy
 
-    assert_equal BigDecimal("1000"), Ledger::QualifyingIncome.for(ledger: @ledger, month: @march)
+    assert_equal BigDecimal("1000"), income
+  end
+
+  test "a soft-deleted payout is not income" do
+    payout(@march_pass, "1000")
+    payout(@march_pass, "10300").destroy
+
+    assert_equal BigDecimal("1000"), income
+  end
+
+  test "differs from the ledger page's total_income by exactly the soft-deleted rows" do
+    trueup(@march_pass, "1000")
+    trueup(@march_pass, "10300").destroy
+
+    # items_grouped_by_month(start, end) -> { by_month: { Stacks::Period => { total_income: Float } } }
+    grouped = @ledger.items_grouped_by_month(@march, @march.end_of_month)
+    display_total = grouped[:by_month].sum { |_period, bucket| bucket[:total_income] }
+
+    assert_in_delta 11_300.0, display_total, 0.001, "the ledger page counts the deleted row, by design"
+    assert_equal BigDecimal("1000"), income
   end
 
   test "another contributor's ledger is not counted" do
     other_fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000),
                                       email: "qi-other-#{SecureRandom.hex(3)}@example.com", data: {})
-    other_ledger = Ledger.find_or_create_for(enterprise: @sanctuary,
-                                             contributor: Contributor.create!(forecast_person: other_fp))
+    other = other_fp.contributor || Contributor.create!(forecast_person: other_fp)
+    other_ledger = Ledger.find_or_create_for(enterprise: @sanctuary, contributor: other)
     Trueup.create!(ledger: other_ledger, invoice_pass: @march_pass, amount: 7777, description: "other")
     trueup(@march_pass, "1000")
 
-    assert_equal BigDecimal("1000"), Ledger::QualifyingIncome.for(ledger: @ledger, month: @march)
+    assert_equal BigDecimal("1000"), income
   end
 
   test "excluded records are left out, matched by class and id" do
-    kept = trueup(@march_pass, "1000")
+    trueup(@march_pass, "1000")
     dropped = trueup(@march_pass, "400")
 
-    assert_equal BigDecimal("1000"),
-      Ledger::QualifyingIncome.for(ledger: @ledger, month: @march, excluding: [dropped])
-    assert_equal BigDecimal("1400"),
-      Ledger::QualifyingIncome.for(ledger: @ledger, month: @march, excluding: [])
-    assert kept.persisted?
+    assert_equal BigDecimal("1000"), income(excluding: [dropped])
+    assert_equal BigDecimal("1400"), income(excluding: [])
   end
 
-  test "reimbursements and adjustments are not compensation" do
-    assert_equal [ContributorPayout, Trueup, PayStub], Ledger::QualifyingIncome::KLASSES
+  test "a reimbursement is not compensation" do
+    trueup(@march_pass, "1000")
+    Reimbursement.create!(ledger: @ledger, amount: 250, description: "taxi", receipts: "")
+
+    assert_equal BigDecimal("1000"), income
+  end
+
+  test "klasses narrows which kinds of row count" do
+    trueup(@march_pass, "1000")
+    payout(@march_pass, "2500")
+
+    assert_equal BigDecimal("2500"), income(klasses: [ContributorPayout, PayStub])
+    assert_equal BigDecimal("1000"), income(klasses: [Trueup])
+    assert_equal BigDecimal("3500"), income
+  end
+
+  test "an unknown class is rejected" do
+    assert_raises(ArgumentError) { income(klasses: [Reimbursement]) }
   end
 end
 ```
+
+If the "differs from the ledger page's total_income" test fails on the shape of `items_grouped_by_month`'s return value rather than on the numbers, read `app/models/ledger.rb` (`items_grouped_by_month`, around line 128) and adjust only how `display_total` is read — the two asserted figures (11,300 and 1,000) are the point and must not change.
 
 - [ ] **Step 2: Run it to verify it fails**
 
@@ -809,12 +880,17 @@ module Ledger::QualifyingIncome
 
   ZERO = BigDecimal("0")
 
-  def self.for(ledger:, month:, excluding: [])
+  def self.for(ledger:, month:, excluding: [], klasses: KLASSES)
+    unknown = klasses - KLASSES
+    raise ArgumentError, "not qualifying income: #{unknown.map(&:name).join(', ')}" if unknown.any?
+
     range = month.beginning_of_month..month.end_of_month
     excluded = excluding.map { |record| [record.class.name, record.id] }.to_set
 
-    SOURCES.sum(ZERO) do |klass, preloads|
-      klass.where(ledger_id: ledger.id).includes(preloads).sum(ZERO) do |item|
+    klasses.sum(ZERO) do |klass|
+      # .to_a first: Relation#sum with both an initial value and a block raises
+      # in Rails 6.1.
+      klass.where(ledger_id: ledger.id).includes(SOURCES.fetch(klass)).to_a.sum(ZERO) do |item|
         next ZERO if excluded.include?([item.class.name, item.id])
 
         effective_on = item.effective_on_for_display
@@ -833,7 +909,7 @@ end
 bin/rails test test/models/ledger/qualifying_income_test.rb
 ```
 
-Expected: PASS, 8 runs, 0 failures.
+Expected: PASS, 12 runs, 0 failures.
 
 - [ ] **Step 5: Run the full suite**
 
@@ -841,7 +917,7 @@ Expected: PASS, 8 runs, 0 failures.
 bin/rails test --exclude "sync_meet runs the connector inside a SystemTask"
 ```
 
-Expected: 1865 runs, 0 failures, 0 errors, 2 skips.
+Expected: 12 more runs than after Task 3, with 0 failures, 0 errors, 2 skips. Report the actual total.
 
 - [ ] **Step 6: Commit**
 
@@ -857,13 +933,14 @@ for strikethrough display; a deleted payout is not income."
 
 ### Task 5: `Mso::Benchmark`
 
-The average qualifying income of Sanctuary's top N earners for a month.
+The average income of Sanctuary's top N earners for a month.
 
-Who is in the pool:
+What counts, and who:
 
-1. Contributors with a login (`forecast_person.admin_user`). Commission-only payouts go to outside parties who have a `Contributor` row but no `AdminUser`; they are not Sanctuary contributors and must not set executive pay.
-2. Not anyone who holds, or has held, an MSO role starting on or before the end of the month — an executive's own earnings must not set their benchmark, and a departed executive's must not set their former peers'.
-3. Only people with positive qualifying income on their **Sanctuary** ledger that month.
+1. **Payouts and pay stubs on the Sanctuary ledger only — not true-ups.** A true-up is a top-up, not earnings. Today every true-up in the system is the monthly founder true-up, which lifts one person to exactly the highest earner's figure; counting it would put a copy of the top earner in the pool. Income on other enterprises' ledgers is not Sanctuary income and is not counted.
+2. **Not anyone who holds, or has held, an MSO role** starting on or before the end of the month — an executive's own earnings must not set their benchmark, and a departed executive's must not set their former peers'.
+3. **Only contributors with a login** (`forecast_person.admin_user`). This is a proxy, and an imperfect one: it exists to keep outside parties who are paid commissions out of the pool, but ordinary contractors without a login are left out by it too. So that this is never silent, anyone left out for lacking a login whose income would have placed them in the top N is reported in `excluded_without_login`.
+4. Only positive income.
 
 **Files:**
 - Create: `app/services/mso/benchmark.rb`
@@ -872,13 +949,15 @@ Who is in the pool:
 **Interfaces:**
 - Consumes: `Ledger::QualifyingIncome.for` (Task 4), `MsoRolePeriod` (Task 1), `System.mso_top_n` (Task 3)
 - Produces:
-  - `Mso::Benchmark.for_month(date, top_n: System.mso_top_n) -> Mso::Benchmark::Result`
-  - `Result = Struct.new(:average, :configured_n, :counted, :members, :small_sample, keyword_init: true)`
+  - `Mso::Benchmark.for_month(date, top_n: System.mso_top_n) -> Mso::Benchmark::Result`; raises `ArgumentError` if `top_n < 1`
+  - `Mso::Benchmark::KLASSES == [ContributorPayout, PayStub]`
+  - `Result = Struct.new(:average, :configured_n, :counted, :members, :small_sample, :excluded_without_login, keyword_init: true)`
     - `average` BigDecimal (unrounded; `0` when nobody qualifies)
     - `configured_n` Integer — the N asked for
     - `counted` Integer — how many were actually averaged
     - `members` `[{ contributor_id: Integer, amount: BigDecimal }]`, highest first
     - `small_sample` Boolean — `counted < configured_n`
+    - `excluded_without_login` `[{ contributor_id:, amount: }]` — people with no login who out-earned the lowest counted member (or anyone with no login, if fewer than N were counted)
 
 - [ ] **Step 1: Write the failing test**
 
@@ -892,6 +971,11 @@ class Mso::BenchmarkTest < ActiveSupport::TestCase
     @sanctuary = enterprises(:sanctuary)
     @month = Date.new(2091, 3, 1)
     @pass = InvoicePass.create!(start_of_month: @month, enterprise: @sanctuary, data: {})
+    @admin = AdminUser.create!(email: "bm-admin-#{SecureRandom.hex(3)}@example.com",
+                               password: "password12345", roles: ["admin"])
+    client = ForecastClient.create!(forecast_id: rand(1..2_000_000_000), name: "BM Client #{SecureRandom.hex(3)}")
+    @tracker = InvoiceTracker.create!(invoice_pass: @pass, forecast_client: client,
+                                      qbo_account: Enterprise.find(@sanctuary.id).qbo_account)
   end
 
   teardown do
@@ -899,15 +983,24 @@ class Mso::BenchmarkTest < ActiveSupport::TestCase
     Thread.current[:garden3d_enterprise] = nil
   end
 
-  # A contributor with a login and `amount` of Sanctuary income in @month.
-  def earner(tag, amount, login: true, enterprise: @sanctuary)
+  def person(tag, login: true)
     email = "bm-#{tag}-#{SecureRandom.hex(3)}@example.com"
     fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: email, data: {})
     AdminUser.create!(email: email, password: "password12345") if login
-    contributor = Contributor.create!(forecast_person: fp)
+    fp.contributor || Contributor.create!(forecast_person: fp)
+  end
+
+  # Payouts are saved without validation: this test is about who is in the
+  # pool, not about ContributorPayout's own invoice-share rules.
+  def pay(contributor, amount, enterprise: @sanctuary)
     ledger = Ledger.find_or_create_for(enterprise: enterprise, contributor: contributor)
-    Trueup.create!(ledger: ledger, invoice_pass: @pass, amount: amount, description: "income") if amount
-    contributor
+    ContributorPayout.new(ledger: ledger, invoice_tracker: @tracker, created_by: @admin, amount: amount)
+                     .save!(validate: false)
+  end
+
+  # A contributor with a login and `amount` of Sanctuary payout income in @month.
+  def earner(tag, amount, login: true)
+    person(tag, login: login).tap { |contributor| pay(contributor, amount) }
   end
 
   test "averages the top N earners" do
@@ -919,12 +1012,13 @@ class Mso::BenchmarkTest < ActiveSupport::TestCase
     result = Mso::Benchmark.for_month(@month, top_n: 3)
 
     assert_equal BigDecimal("20000"), result.average
+    assert_kind_of BigDecimal, result.average
     assert_equal 3, result.configured_n
     assert_equal 3, result.counted
     assert_equal false, result.small_sample
     assert_equal [a.id, b.id, c.id], result.members.map { |m| m[:contributor_id] }
     assert_equal BigDecimal("30000"), result.members.first[:amount]
-    assert_kind_of BigDecimal, result.average
+    assert_equal [], result.excluded_without_login
   end
 
   test "fewer earners than N averages over those present and flags a small sample" do
@@ -948,15 +1042,54 @@ class Mso::BenchmarkTest < ActiveSupport::TestCase
     assert_equal [], result.members
   end
 
-  test "a payee with no login is not a Sanctuary contributor" do
+  test "a top_n below one is rejected" do
+    assert_raises(ArgumentError) { Mso::Benchmark.for_month(@month, top_n: 0) }
+  end
+
+  test "a payee with no login is left out, and reported when they would have ranked" do
     earner("a", 20_000)
     earner("b", 10_000)
-    earner("outside-referrer", 21_024.90, login: false)
+    outsider = earner("outside-referrer", 21_024.90, login: false)
 
-    result = Mso::Benchmark.for_month(@month, top_n: 3)
+    result = Mso::Benchmark.for_month(@month, top_n: 2)
 
     assert_equal BigDecimal("15000"), result.average
     assert_equal 2, result.counted
+    assert_equal [{ contributor_id: outsider.id, amount: BigDecimal("21024.9") }], result.excluded_without_login
+  end
+
+  test "a payee with no login who would not have ranked is not reported" do
+    earner("a", 20_000)
+    earner("b", 10_000)
+    earner("small-contractor", 500, login: false)
+
+    result = Mso::Benchmark.for_month(@month, top_n: 2)
+
+    assert_equal [], result.excluded_without_login
+  end
+
+  test "with fewer than N counted, every payee with no login is reported" do
+    earner("a", 20_000)
+    contractor = earner("contractor", 500, login: false)
+
+    result = Mso::Benchmark.for_month(@month, top_n: 3)
+
+    assert_equal 1, result.counted
+    assert_equal [contractor.id], result.excluded_without_login.map { |m| m[:contributor_id] }
+  end
+
+  test "true-ups are not earnings and do not count" do
+    earner("a", 20_000)
+    earner("b", 10_000)
+    topped_up = person("founder")
+    Trueup.create!(ledger: Ledger.find_or_create_for(enterprise: @sanctuary, contributor: topped_up),
+                   invoice_pass: @pass, amount: 20_000, description: "founder true-up")
+
+    result = Mso::Benchmark.for_month(@month, top_n: 3)
+
+    assert_equal 2, result.counted
+    assert_equal BigDecimal("15000"), result.average
+    refute_includes result.members.map { |m| m[:contributor_id] }, topped_up.id
   end
 
   test "a current MSO executive is left out of the pool" do
@@ -994,7 +1127,8 @@ class Mso::BenchmarkTest < ActiveSupport::TestCase
 
   test "income on another enterprise's ledger does not count" do
     earner("a", 20_000)
-    earner("elsewhere", 80_000, enterprise: enterprises(:garden3d))
+    elsewhere = person("elsewhere")
+    pay(elsewhere, 80_000, enterprise: enterprises(:garden3d))
 
     result = Mso::Benchmark.for_month(@month, top_n: 3)
 
@@ -1013,10 +1147,12 @@ class Mso::BenchmarkTest < ActiveSupport::TestCase
     assert_equal BigDecimal("20000"), result.average
   end
 
-  test "ties are broken by contributor id, so the result is stable" do
+  test "ties are broken by contributor id whatever order the pool arrives in" do
     first = earner("tie-1", 10_000)
     second = earner("tie-2", 10_000)
-    lower, = [first, second].sort_by(&:id)
+    lower, higher = [first, second].sort_by(&:id)
+    ledgers = [higher, lower].map { |c| Ledger.find_by!(enterprise: @sanctuary, contributor: c) }
+    Mso::Benchmark.any_instance.stubs(:pool).returns(ledgers)
 
     result = Mso::Benchmark.for_month(@month, top_n: 1)
 
@@ -1042,7 +1178,7 @@ end
 bin/rails test test/services/mso/benchmark_test.rb
 ```
 
-Expected: errors with `NameError: uninitialized constant Mso::Benchmark` (or `Mso`).
+Expected: errors with `NameError: uninitialized constant Mso::Benchmark`.
 
 - [ ] **Step 3: Write the implementation**
 
@@ -1050,12 +1186,19 @@ Create `app/services/mso/benchmark.rb`:
 
 ```ruby
 module Mso
-  # The average qualifying income of Sanctuary's top N earners for a month —
-  # the figure each MSO executive's tier multiplier is applied to.
+  # The average income of Sanctuary's top N earners for a month — the figure
+  # each MSO executive's tier multiplier is applied to.
   #
   # Current month only; no smoothing across months.
   class Benchmark
-    Result = Struct.new(:average, :configured_n, :counted, :members, :small_sample, keyword_init: true)
+    # Earnings only. A true-up is a top-up, not earnings: today every true-up
+    # is the monthly founder true-up, which lifts one person to exactly the
+    # highest earner's figure, so counting it would put a copy of the top
+    # earner in the pool.
+    KLASSES = [ContributorPayout, PayStub].freeze
+
+    Result = Struct.new(:average, :configured_n, :counted, :members, :small_sample,
+                        :excluded_without_login, keyword_init: true)
 
     ZERO = BigDecimal("0")
 
@@ -1064,35 +1207,47 @@ module Mso
     end
 
     def initialize(date, top_n)
+      raise ArgumentError, "top_n must be at least 1 (got #{top_n.inspect})" if top_n.to_i < 1
       @date = date
-      @top_n = top_n
+      @top_n = top_n.to_i
     end
 
     def call
-      members = scored_members.sort_by { |m| [-m[:amount], m[:contributor_id]] }.first(@top_n)
+      with_login, without_login = earners.partition { |entry| entry[:login] }
+      members = rank(with_login).first(@top_n)
       average = members.empty? ? ZERO : members.sum(ZERO) { |m| m[:amount] } / members.size
+
+      # Having no login is a proxy for "outside party", and it also leaves out
+      # ordinary contractors. Report anyone it removed who would have ranked.
+      threshold = members.size < @top_n ? ZERO : members.last[:amount]
+      excluded = rank(without_login).select { |entry| entry[:amount] > threshold }
 
       Result.new(
         average: average,
         configured_n: @top_n,
         counted: members.size,
-        members: members,
+        members: members.map { |m| m.slice(:contributor_id, :amount) },
         small_sample: members.size < @top_n,
+        excluded_without_login: excluded.map { |m| m.slice(:contributor_id, :amount) },
       )
     end
 
     private
 
-    def scored_members
-      pool.filter_map do |ledger|
-        # Commission-only payees have a Contributor row but no login. They are
-        # outside parties, not Sanctuary contributors.
-        next if ledger.contributor&.forecast_person&.admin_user.nil?
+    def rank(entries)
+      entries.sort_by { |entry| [-entry[:amount], entry[:contributor_id]] }
+    end
 
-        amount = Ledger::QualifyingIncome.for(ledger: ledger, month: @date)
+    def earners
+      pool.filter_map do |ledger|
+        amount = Ledger::QualifyingIncome.for(ledger: ledger, month: @date, klasses: KLASSES)
         next unless amount.positive?
 
-        { contributor_id: ledger.contributor_id, amount: amount }
+        {
+          contributor_id: ledger.contributor_id,
+          amount: amount,
+          login: ledger.contributor&.forecast_person&.admin_user.present?,
+        }
       end
     end
 
@@ -1119,7 +1274,7 @@ end
 bin/rails test test/services/mso/benchmark_test.rb
 ```
 
-Expected: PASS, 11 runs, 0 failures.
+Expected: PASS, 15 runs, 0 failures.
 
 - [ ] **Step 5: Run the full suite**
 
@@ -1127,7 +1282,7 @@ Expected: PASS, 11 runs, 0 failures.
 bin/rails test --exclude "sync_meet runs the connector inside a SystemTask"
 ```
 
-Expected: 1876 runs, 0 failures, 0 errors, 2 skips.
+Expected: 15 more runs than after Task 4, with 0 failures, 0 errors, 2 skips. Report the actual total.
 
 - [ ] **Step 6: Commit**
 
@@ -1135,28 +1290,36 @@ Expected: 1876 runs, 0 failures, 0 errors, 2 skips.
 git add app/services/mso/benchmark.rb test/services/mso/benchmark_test.rb
 git commit -m "feat(mso): Top-N Sanctuary benchmark
 
-Leaves out payees with no login (outside commission recipients) and anyone
-who holds or has held an MSO role, so an executive's own earnings never set
-executive pay."
+Counts payouts and pay stubs on the Sanctuary ledger; true-ups are top-ups,
+not earnings. Leaves out anyone who holds or has held an MSO role, and
+payees with no login -- reporting any of those who would have ranked, since
+having no login is only a proxy for being an outside party."
 ```
 
 ---
 
 ## Self-Review
 
-**Spec coverage.** §7.1 `MsoRolePeriod` (table, tiers, multipliers, month boundaries, overlap incl. the future-dated case, `active_during` in SQL) → Task 1. §10's admin-only roster above the blanket lead grant → Task 2. §7.3's `mso_top_n` with a coerced, clamped reader via `System.first` → Task 3. §7.2 `QualifyingIncome` (live rows only, month bucketing on `effective_on_for_display`, `excluding:` by class and id, BigDecimal) → Task 4. §7.3 pool rules (login required, current and former executives out, Sanctuary ledger only, positive income, top N, small sample, never divide by N) → Task 5.
+**Spec coverage.** §7.1 `MsoRolePeriod` (table, tiers, multipliers, month boundaries, overlap incl. the future-dated case, `active_during` in SQL) → Task 1. §10's admin-only roster above the blanket lead grant → Task 2. §7.3's `mso_top_n` with a coerced, clamped reader via `System.first` → Task 3. §7.2 `QualifyingIncome` (live rows only, month bucketing on `effective_on_for_display`, `excluding:` by class and id, BigDecimal, and that it differs from the ledger page's total by exactly the soft-deleted rows) → Task 4. §7.3 pool rules → Task 5.
 
 **Deliberate differences from the spec, to carry back into it:**
 
-1. `BustsTaskCache` is **not** included on `MsoRolePeriod`. Nothing in this plan turns a role period into a task; S4's nag keys off true-ups. Add it when something needs it.
-2. The tier enum is declared with `_prefix: :tier` (`tier_head?`), so its generated scopes and predicates cannot collide with anything named `head` or `chief`.
-3. `Ledger#items_grouped_by_month` is left untouched; spec §7.2's instruction to add `MsoTrueup` to its class list belongs to S4, which creates that class.
-4. `KLASSES` ships without `MsoTrueup`; S4 adds it together with the model.
-5. "Has ever held a role" is implemented as "has a role period starting on or before the end of the month", so an appointment entered ahead of time does not remove someone from earlier months' pools.
-6. `mso_top_n` has no admin form — `System` settings have none today. It is changed from the console: `System.first.update!(mso_top_n: 5)`.
+1. **The benchmark does not count true-ups** (`Mso::Benchmark::KLASSES` is payouts and pay stubs). The spec scored the pool with all qualifying income. Verified on production data: all 16 live true-ups are the founder true-up, and leaving that person in the pool for a month lifts the top-3 average by 4–22%. Excluding true-ups removes the distortion whether or not the roster has been filled in yet. `Ledger::QualifyingIncome` itself still includes true-ups, because S4 needs them when netting off what an executive already received.
+2. **Having no login is a proxy, and is reported.** On production data 24 of the 80 people who have earned on a Sanctuary ledger have no login, and only one of them is an outside commission payee; the rest are ordinary contractors, the largest of whom ranked 15th. The rule gives the intended top 3 today, but would silently drop a contractor who reached the top N — hence `excluded_without_login`.
+3. `BustsTaskCache` is **not** included on `MsoRolePeriod`; nothing here turns a role period into a task.
+4. The tier enum uses `_prefix: :tier` so its generated scopes cannot collide with anything named `head` or `chief`.
+5. `Ledger#items_grouped_by_month` is untouched, and `QualifyingIncome::KLASSES` ships without `MsoTrueup`; S4 adds both with the model.
+6. "Has ever held a role" is implemented as "has a role period starting on or before the end of the month".
+7. `mso_top_n` has no admin form — `System` settings have none today. Change it from the console: `System.first.update!(mso_top_n: 5)`.
+
+**Known limitations, stated rather than solved:**
+
+- Exclusion from the pool is by `contributor_id`. A person with two Forecast identities (two `Contributor` rows) is only excluded under the one their role period names. At least one such pair exists in production.
+- Only the Sanctuary ledger is read. Top earners' income on other enterprises' ledgers (a few thousand dollars a month for some) is not Sanctuary income and is not counted. Nearly all pay stubs live on other enterprises' ledgers, so in practice the benchmark is payout income.
+- The development and production databases get the `mso_role_periods` table when the migration is run (`bin/rails db:migrate`; in development follow it with `git checkout -- db/schema.rb`). Until then the roster page and `Mso::Benchmark` raise there. The test database gets it from `db/schema.rb`.
 
 **Placeholders.** None.
 
-**Type consistency.** `MsoRolePeriod#tier_multiplier` returns `BigDecimal` and is what S3's `Line#multiplier` takes. `Ledger::QualifyingIncome.for(ledger:, month:, excluding:)` matches spec §4.1 and is called with exactly those keywords in Task 5. `Mso::Benchmark::Result` field names match spec §7.3. `System.mso_top_n` is the only reader used.
+**Type consistency.** `MsoRolePeriod#tier_multiplier` returns the `BigDecimal` that S3's `Line#multiplier` takes. `Ledger::QualifyingIncome.for(ledger:, month:, excluding:, klasses:)` is called with those keywords in Task 5. `Mso::Benchmark::Result` extends spec §7.3's fields with `excluded_without_login`. `System.mso_top_n` is the only reader used.
 
-**Cost note.** `Mso::Benchmark` runs three queries per Sanctuary ledger (about 200 ledgers today). It is an admin-triggered monthly computation, so that is acceptable; batch it if it is ever called in a loop.
+**Cost note.** `Mso::Benchmark` runs two queries per Sanctuary ledger (about 200 ledgers today). It is an admin-triggered monthly computation; batch it if it is ever called in a loop.
