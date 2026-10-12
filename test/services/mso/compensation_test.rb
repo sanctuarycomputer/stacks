@@ -159,6 +159,28 @@ class Mso::CompensationTest < ActiveSupport::TestCase
     assert_equal result.cap, result.total_calculated
     assert_equal BigDecimal("20000.01"), sum_of_finals(result)
     assert_equal [BigDecimal("10000.01"), BigDecimal("10000.00")], result.outputs.map(&:final)
+    # The first line was rounded UP past its calculated value; that is not a
+    # negative reduction.
+    assert_equal BigDecimal("0"), result.outputs.first.reduction
+  end
+
+  test "tied remainders go to the lowest numeric key first" do
+    # 1.01 across three equal lines is 0.33666 each: two odd cents to hand out.
+    # Ordering ids as strings would give them to 1 and 10.
+    result = compute(benchmark: "10", lines: [line(10, "1.00"), line(2, "1.00"), line(1, "1.00")],
+                     fee_income: "1.01", cap_percentage: "1")
+
+    by_key = result.outputs.index_by(&:key)
+    assert_equal BigDecimal("0.34"), by_key[1].final
+    assert_equal BigDecimal("0.34"), by_key[2].final
+    assert_equal BigDecimal("0.33"), by_key[10].final
+  end
+
+  test "very large amounts stay exact" do
+    # A Float anywhere in the pro rata step would lose the cents here.
+    result = compute(benchmark: "123456789012345678.123456", lines: roster, fee_income: "999999999999999.01")
+
+    assert_equal result.cap.floor(2), sum_of_finals(result)
   end
 
   test "the odd cent goes to the largest remainder, not the largest line" do
@@ -198,6 +220,20 @@ class Mso::CompensationTest < ActiveSupport::TestCase
       assert_equal BigDecimal("0"), output.final
       assert_equal BigDecimal("0"), output.trueup
     end
+  end
+
+  test "a negative fee, benchmark, cap percentage or multiplier is rejected" do
+    assert_raises(ArgumentError) { compute(benchmark: "1000", lines: roster, fee_income: "-10000") }
+    assert_raises(ArgumentError) { compute(benchmark: "-1000", lines: roster, fee_income: "10000") }
+    assert_raises(ArgumentError) { compute(benchmark: "1000", lines: roster, fee_income: "10000", cap_percentage: "-0.55") }
+    assert_raises(ArgumentError) { compute(benchmark: "1000", lines: [line(:a, "-1.00")], fee_income: "10000") }
+  end
+
+  test "negative earnings never push a true-up above the final" do
+    result = compute(benchmark: "1000", lines: [line(:chief, "1.00", "-500")], fee_income: "100000")
+
+    assert_equal BigDecimal("1000"), result.outputs.first.final
+    assert_equal BigDecimal("1000"), result.outputs.first.trueup
   end
 
   test "duplicate line keys are rejected" do

@@ -36,16 +36,24 @@ module Mso
 
       keys = lines.map(&:key)
       raise ArgumentError, "duplicate line keys: #{keys.inspect}" if keys.uniq.size != keys.size
+
+      # A negative fee would produce a negative cap and allocate negative pay
+      # against it. None of these can legitimately be below zero.
+      if [@benchmark_average, @fee_income, @cap_percentage].any?(&:negative?) ||
+         lines.any? { |line| BigDecimal(line.multiplier.to_s).negative? }
+        raise ArgumentError, "benchmark, fee income, cap percentage and multipliers must not be negative"
+      end
     end
 
     def call
-      calculated = @lines.to_h { |line| [line.key, @benchmark_average * line.multiplier] }
+      calculated = @lines.to_h { |line| [line.key, @benchmark_average * BigDecimal(line.multiplier.to_s)] }
       total_calculated = calculated.values.sum(ZERO)
       finals = finals_for(calculated, total_calculated)
 
       outputs = @lines.map do |line|
         final = finals.fetch(line.key)
-        earned = BigDecimal(line.already_earned.to_s)
+        # A month of net clawbacks must not push a true-up above the final.
+        earned = [ZERO, BigDecimal(line.already_earned.to_s)].max
 
         Output.new(
           key: line.key,
@@ -92,12 +100,16 @@ module Mso
 
     # Largest-remainder allocation: floor every line to cents, then hand out
     # the cents still owed towards `target`, biggest fractional remainder
-    # first. Ties break on key.to_s (lexicographic) so the result is stable.
+    # first. Ties break on the key — numerically for numeric keys (record
+    # ids), otherwise by its string — so the result is stable.
     def allocate_cents(amounts, target)
       floored = amounts.transform_values { |amount| amount.floor(2) }
       leftover = [((target - floored.values.sum(ZERO)) / CENT).round, 0].max
 
-      ranked = amounts.keys.sort_by { |key| [-(amounts.fetch(key) - floored.fetch(key)), key.to_s] }
+      ranked = amounts.keys.sort_by do |key|
+        numeric = key.is_a?(Numeric)
+        [-(amounts.fetch(key) - floored.fetch(key)), numeric ? 0 : 1, numeric ? key : key.to_s]
+      end
       ranked.first(leftover).each { |key| floored[key] += CENT }
       floored
     end
