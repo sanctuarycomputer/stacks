@@ -209,7 +209,8 @@ class PeriodicReport < ApplicationRecord
         scoped_assignments, month.starts_at, month.ends_at
       )
       income = metadata[:items].reduce(0) do |sum, item|
-        if (item.is_a?(ContributorPayout) || item.is_a?(Trueup)) && scope_ids.include?(item.ledger.enterprise_id)
+        counts = item.is_a?(ContributorPayout) || item.is_a?(Trueup) || item.is_a?(MsoTrueup)
+        if counts && scope_ids.include?(item.ledger.enterprise_id)
           sum + item.amount
         else
           sum
