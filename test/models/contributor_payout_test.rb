@@ -56,7 +56,7 @@ class ContributorPayoutTest < ActiveSupport::TestCase
     assert_equal 0, cp.as_individual_contributor
   end
 
-  test "70% cap excludes commission entries from LHS sum and uses post-commission total as basis" do
+  test "payout cap excludes commission entries from LHS sum and uses post-commission total as basis" do
     invoice_tracker = mock("invoice_tracker")
     forecast_client = mock("forecast_client")
     forecast_client.stubs(:is_internal?).returns(false)
@@ -78,7 +78,7 @@ class ContributorPayoutTest < ActiveSupport::TestCase
     assert_empty ic_cp.errors[:base], "Expected the IC CP to be valid (under post-commission cap)"
   end
 
-  test "70% cap rejects when contributor pool exceeds post-commission cap" do
+  test "payout cap rejects when contributor pool exceeds post-commission cap" do
     invoice_tracker = mock("invoice_tracker")
     forecast_client = mock("forecast_client")
     forecast_client.stubs(:is_internal?).returns(false)
@@ -94,6 +94,7 @@ class ContributorPayoutTest < ActiveSupport::TestCase
     ic_cp.stubs(:invoice_tracker).returns(invoice_tracker)
     ic_cp.send(:contributor_payouts_within_cap)
     assert_not_empty ic_cp.errors[:base]
+    assert_match(/may not exceed \$630\.00 \(70\.0% of post-commission invoice total\)/, ic_cp.errors[:base].join)
   end
 
   test "calculate_surplus uses post-commission working_amount as basis" do

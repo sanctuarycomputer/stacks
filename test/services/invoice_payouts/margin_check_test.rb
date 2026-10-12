@@ -98,6 +98,48 @@ class InvoicePayoutsMarginCheckTest < ActiveSupport::TestCase
     assert check.breached?
   end
 
+  # The cap takes this commission off the line; the line's row has to as well,
+  # or the rows stop adding up to the cap.
+  test "a commission on a payout that cannot be removed comes off its line's row" do
+    build_tracker("new_deal_v1")
+    it = build_invoice_tracker([{ id: "1", person: @ic, hours: 100.0, rate: 100.0 }])
+    stranger = ForecastPerson.create!(forecast_id: 710_009, email: "gone-guard@example.com", data: {})
+    stranger.ensure_contributor_exists!
+    ledger = Ledger.find_or_create_for(enterprise: @client.billing_enterprise, contributor: stranger.reload.contributor)
+    paid = ContributorPayout.new(
+      invoice_tracker: it,
+      ledger: ledger,
+      amount: 1000.0,
+      blueprint: { "Commission" => [{ "amount" => 1000.0, "blueprint_metadata" => { "id" => "1" } }] },
+      created_by: @creator,
+    )
+    paid.skip_seventy_percent_check = true
+    paid.save!
+    bill = mock("qbo_bill")
+    bill.stubs(:has_payments?).returns(true)
+    ContributorPayout.any_instance.stubs(:qbo_bill).returns(bill)
+
+    check = InvoicePayouts::MarginCheck.new(InvoicePayouts::Build.new(it.reload))
+    row = check.rows.first
+    assert_in_delta 1000.0, row.commissions, 0.01
+    assert_in_delta 9000.0, row.basis, 0.01
+    assert_in_delta 6300.0, row.allowed, 0.01 # 9000 * 0.70
+    assert_in_delta 0.0, check.other_allowed, 0.01
+    assert_in_delta 9000.0, check.post_commission_total, 0.01
+    assert_in_delta 0.0, check.retained_total, 0.01
+  end
+
+  test "a breach needs more than the dollar of slack" do
+    build_tracker("new_deal_v2")
+    check = check_for([{ id: "1", person: @ic, hours: 100.0, rate: 100.0 }])
+    check.stubs(:cap).returns(100.0)
+
+    check.stubs(:pool).returns(101.0)
+    assert_not check.breached?
+    check.stubs(:pool).returns(101.01)
+    assert check.breached?
+  end
+
   test "the surplus invariant: a lone line with surplus never exceeds its own cap" do
     Stacks::BillingModel::ALL.each_value do |rules|
       assert rules.surplus_lead_share * 2 < 1, "#{rules.name}: lead surplus shares must leave some surplus for the company"

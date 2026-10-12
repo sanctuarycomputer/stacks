@@ -159,10 +159,29 @@ class InvoiceTrackerPayoutsTest < ActiveSupport::TestCase
     assert_in_delta 1400.0, it.contributor_payouts.reload.sum { |cp| cp.amount.to_f }, 0.01
   end
 
-  test "generation accepts a prebuilt Build" do
+  test "generation writes the prebuilt Build it is given, not a fresh one" do
     build_tracker("new_deal_v1")
     it = build_invoice_tracker
-    it.make_contributor_payouts!(@creator, build: InvoicePayouts::Build.new(it))
+    build = InvoicePayouts::Build.new(it)
+    build.payees # computed now, at 57%
+    @project.update!(notes: "#{@ic.email}:80p/h") # a fresh build would pay 10 hrs * $80
+    it.make_contributor_payouts!(@creator, build: build)
     assert_in_delta 1140.0, amount_for(it, @ic), 0.01
+  end
+
+  test "a salaried payee still gets a Contributor, but no payout" do
+    build_tracker("new_deal_v1")
+    FullTimePeriod.create!(admin_user: @al_admin, started_at: Date.new(2020, 1, 1), contributor_type: :five_day, expected_utilization: 0.8)
+    # A Contributor is created with a Ledger per enterprise; clear those so it can go.
+    Ledger.where(contributor: @al.contributor).delete_all
+    @al.contributor.destroy
+    @al.reload
+    assert_nil @al.contributor
+    it = build_invoice_tracker
+    it.make_contributor_payouts!(@creator)
+
+    assert @al.reload.contributor.present?
+    assert_nil amount_for(it, @al)
+    assert_equal 2, it.contributor_payouts.reload.length # IC and Project Lead only
   end
 end

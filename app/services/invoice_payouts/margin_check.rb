@@ -86,7 +86,9 @@ module InvoicePayouts
     def rows
       @rows ||= build.lines.map do |line|
         line_id = line.qbo_line_item["id"].to_s
-        commissions = build.paid_commissions_by_line.fetch(line_id, 0.0)
+        # From the cap, not the build: the cap also takes off commissions
+        # carried by payouts that cannot be removed.
+        commissions = cap_calculation.commission_for(line_id)
         paid_entries = line.entries.select { |e| e.role != "Commission" && build.paid?(e.payee) }
         Row.new(
           line: line,

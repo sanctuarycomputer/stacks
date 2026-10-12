@@ -7,7 +7,6 @@ module InvoicePayouts
   # invoice before anything touches the database.
   class Build
     BASE_ROLES = %w[AccountLead ProjectLead IndividualContributor Commission].freeze
-    SURPLUS_ROLES = %w[AccountLeadSurplus ProjectLeadSurplus].freeze
 
     Entry = Struct.new(:role, :payee, :amount, :description_line, :rate_override, :metadata, keyword_init: true) do
       def to_blueprint
@@ -50,7 +49,8 @@ module InvoicePayouts
     end
 
     def paid_payees
-      payees.select { |p| p.payable && p.amount != 0 }
+      compute
+      @paid_payees ||= @payees.values.select { |p| p.payable && p.amount != 0 }
     end
 
     def paid?(forecast_person)
@@ -58,25 +58,18 @@ module InvoicePayouts
     end
 
     def paid_commissions_by_line
-      paid_payees.flat_map(&:entries).select { |e| e.role == "Commission" }.each_with_object(Hash.new(0.0)) do |e, h|
+      compute
+      @paid_commissions_by_line ||= paid_payees.flat_map(&:entries).select { |e| e.role == "Commission" }.each_with_object(Hash.new(0.0)) do |e, h|
         h[e.metadata["id"].to_s] += e.amount
       end
     end
 
     # Existing payouts the write would normally delete as no longer earned,
     # but cannot: their QBO bill has payments against it. They stay on the
-    # tracker, so they stay in the pool.
+    # tracker, so they stay in the pool, and keep feeding lead surplus.
     def retained_orphans
-      @retained_orphans ||= begin
-        enterprise = invoice_tracker.forecast_client.billing_enterprise
-        kept_ledger_ids = paid_payees.filter_map do |p|
-          contributor = p.forecast_person.contributor
-          contributor && Ledger.find_by(enterprise: enterprise, contributor: contributor)&.id
-        end
-        invoice_tracker.contributor_payouts.reload.reject { |cp| kept_ledger_ids.include?(cp.ledger_id) }.select do |cp|
-          cp.qbo_bill&.has_payments?
-        end
-      end
+      compute
+      @retained_orphans
     end
 
     private
@@ -117,9 +110,12 @@ module InvoicePayouts
 
     def compute
       return if @computed
+      raise "Invoice tracker ##{invoice_tracker.id} has no QBO invoice" if invoice_tracker.qbo_invoice.nil?
+      raise "Invoice tracker ##{invoice_tracker.id} has no blueprint" unless invoice_tracker.blueprint.is_a?(Hash)
+
       @lines = []
       @payees = {}
-      blueprint_lines = ((invoice_tracker.blueprint || {})["lines"] || {}).values
+      blueprint_lines = (invoice_tracker.blueprint["lines"] || {}).values
 
       invoice_tracker.qbo_invoice.line_items.each do |line_item|
         metadata = blueprint_lines.find { |l| l["id"] == line_item["id"] }
@@ -139,8 +135,22 @@ module InvoicePayouts
       # full_time_period_at can be nil for someone with no period this month.
       @payees.each_value { |p| p.payable = p.amount != 0 && payable?(p.forecast_person) }
 
+      @retained_orphans = find_retained_orphans
       compute_surplus
       @computed = true
+    end
+
+    # Asked before the surplus pass, so "kept" means paid a base share: a
+    # payout on any other ledger is one the write will try to delete.
+    def find_retained_orphans
+      enterprise = invoice_tracker.forecast_client.billing_enterprise
+      kept_ledger_ids = @payees.values.select(&:payable).filter_map do |p|
+        contributor = p.forecast_person.contributor
+        contributor && Ledger.find_by(enterprise: enterprise, contributor: contributor)&.id
+      end
+      invoice_tracker.contributor_payouts.reload.reject { |cp| kept_ledger_ids.include?(cp.ledger_id) }.select do |cp|
+        cp.qbo_bill&.has_payments?
+      end
     end
 
     def new_line(line_item, metadata, project_tracker)
@@ -171,7 +181,7 @@ module InvoicePayouts
           amount: d[:amount],
           description_line: d[:commission].description_line(line.qbo_line_item, line.metadata, d[:amount]))
       end
-      line.commission_total = deductions.sum { |d| d[:amount] }
+      line.commission_total = deductions.sum(0.0) { |d| d[:amount] }
     end
 
     # Internal projects may or may not have a ProjectTracker. The IC takes the
@@ -265,47 +275,73 @@ module InvoicePayouts
     # ContributorPayout#calculate_surplus, which reads the same figures back
     # from saved payouts: the working amount is the billed line less the
     # commissions actually paid on it, and only paid ICs generate surplus.
+    #
+    # Retained orphans are saved payouts too, and the write cannot remove
+    # them, so they count here as they always have: their Commission entries
+    # come off the working amount, and their IndividualContributor entries
+    # generate surplus for the leads (only when the payout is in sync, as
+    # calculate_surplus requires).
     def compute_surplus
       paid = @payees.values.select(&:payable)
-      paid_commissions = Hash.new(0.0)
-      paid.flat_map(&:entries).each { |e| paid_commissions[e.metadata["id"]] += e.amount if e.role == "Commission" }
+      @surplus_commissions = Hash.new(0.0)
+      paid.flat_map(&:entries).each { |e| @surplus_commissions[e.metadata["id"].to_s] += e.amount if e.role == "Commission" }
+      @retained_orphans.each do |cp|
+        (cp.blueprint["Commission"] || []).each do |entry|
+          next unless entry.is_a?(Hash) && entry["blueprint_metadata"].is_a?(Hash)
+          @surplus_commissions[entry["blueprint_metadata"]["id"].to_s] += entry["amount"].to_f
+        end
+      end
 
       paid.each do |payee|
         payee.entries.select { |e| e.role == "IndividualContributor" }.each do |ic|
           line = @lines.find { |l| l.entries.any? { |e| e.equal?(ic) } }
-          pt = line.project_tracker
-          next unless pt.present?
-
-          rules = pt.billing_rules
-          surplus = rules.surplus_for(working_amount: line.billed - paid_commissions[ic.metadata["id"]], ic_amount: ic.amount)
-          next unless surplus > 0
-
-          lead_share = (surplus * rules.surplus_lead_share).round(2).to_f
-          lead_pct = "#{(rules.surplus_lead_share * 100).round(2)}%"
-          description = line.qbo_line_item.dig("description")
-
-          account_lead = pt.account_lead_for_month(invoice_pass.start_of_month).try(:forecast_person)
-          if account_lead.present? && payable?(account_lead)
-            add_entry(line,
-              role: "AccountLeadSurplus",
-              payee: account_lead,
-              amount: lead_share,
-              metadata: ic.metadata,
-              description_line: "- #{n2c(surplus)} * #{lead_pct} = #{n2c(lead_share)} (`#{description}` generated #{n2c(surplus)} surplus revenue, #{lead_pct} of which is shared with the Account Lead)")
-            @payees[account_lead].payable = true
-          end
-
-          project_lead = pt.project_lead_for_month(invoice_pass.start_of_month).try(:forecast_person)
-          if project_lead.present? && payable?(project_lead)
-            add_entry(line,
-              role: "ProjectLeadSurplus",
-              payee: project_lead,
-              amount: lead_share,
-              metadata: ic.metadata,
-              description_line: "- #{n2c(surplus)} * #{lead_pct} = #{n2c(lead_share)} (`#{description}` generated #{n2c(surplus)} surplus revenue, #{lead_pct} of which is shared with the Project Lead)")
-            @payees[project_lead].payable = true
-          end
+          add_surplus(line, ic.amount, ic.metadata)
         end
+      end
+
+      @retained_orphans.select(&:in_sync?).each do |cp|
+        (cp.blueprint["IndividualContributor"] || []).each do |entry|
+          next unless entry.is_a?(Hash) && entry["blueprint_metadata"].is_a?(Hash)
+          line = @lines.find { |l| l.qbo_line_item["id"].to_s == entry["blueprint_metadata"]["id"].to_s }
+          next unless line
+          add_surplus(line, entry["amount"], ContributorPayout.slim_metadata(entry["blueprint_metadata"]))
+        end
+      end
+    end
+
+    # One IC chunk's surplus on its line, shared out to the line's leads.
+    def add_surplus(line, ic_amount, metadata)
+      pt = line.project_tracker
+      return unless pt.present?
+
+      rules = pt.billing_rules
+      surplus = rules.surplus_for(working_amount: line.billed - @surplus_commissions[line.qbo_line_item["id"].to_s], ic_amount: ic_amount)
+      return unless surplus > 0
+
+      lead_share = (surplus * rules.surplus_lead_share).round(2).to_f
+      lead_pct = "#{(rules.surplus_lead_share * 100).round(2)}%"
+      description = line.qbo_line_item.dig("description")
+
+      account_lead = pt.account_lead_for_month(invoice_pass.start_of_month).try(:forecast_person)
+      if account_lead.present? && payable?(account_lead)
+        add_entry(line,
+          role: "AccountLeadSurplus",
+          payee: account_lead,
+          amount: lead_share,
+          metadata: metadata,
+          description_line: "- #{n2c(surplus)} * #{lead_pct} = #{n2c(lead_share)} (`#{description}` generated #{n2c(surplus)} surplus revenue, #{lead_pct} of which is shared with the Account Lead)")
+        @payees[account_lead].payable = true
+      end
+
+      project_lead = pt.project_lead_for_month(invoice_pass.start_of_month).try(:forecast_person)
+      if project_lead.present? && payable?(project_lead)
+        add_entry(line,
+          role: "ProjectLeadSurplus",
+          payee: project_lead,
+          amount: lead_share,
+          metadata: metadata,
+          description_line: "- #{n2c(surplus)} * #{lead_pct} = #{n2c(lead_share)} (`#{description}` generated #{n2c(surplus)} surplus revenue, #{lead_pct} of which is shared with the Project Lead)")
+        @payees[project_lead].payable = true
       end
     end
   end

@@ -350,6 +350,10 @@ class InvoiceTracker < ApplicationRecord
     build ||= InvoicePayouts::Build.new(self)
 
     ActiveRecord::Base.transaction do
+      # Everyone who earned something on this invoice gets a Contributor,
+      # paid per invoice or not, as before.
+      build.payees.each { |payee| payee.forecast_person.ensure_contributor_exists! if payee.amount != 0 }
+
       synced = build.paid_payees.map do |payee|
         forecast_person = payee.forecast_person
         forecast_person.ensure_contributor_exists!

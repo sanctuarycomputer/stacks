@@ -118,4 +118,143 @@ class InvoicePayoutsBuildTest < ActiveSupport::TestCase
     bill.stubs(:has_payments?).returns(false)
     assert_empty InvoicePayouts::Build.new(it.reload).retained_orphans
   end
+
+  # The IC has gone salaried since their payout was generated and paid. The
+  # payout cannot be removed, so its IC chunk still generates lead surplus,
+  # exactly as it did when the surplus pass read saved payouts.
+  test "a payout that cannot be removed still generates lead surplus" do
+    build_tracker("new_deal_v1")
+    @project.update!(notes: "#{@ic.email}:20p/h")
+    ic_admin = AdminUser.create!(email: @ic.email, password: "password123", password_confirmation: "password123")
+    FullTimePeriod.create!(admin_user: ic_admin, started_at: Date.new(2020, 1, 1), contributor_type: :five_day, expected_utilization: 0.8)
+    it = build_invoice_tracker([{ id: "1", person: @ic, hours: 100.0, rate: 100.0 }])
+    ledger = Ledger.find_or_create_for(enterprise: @client.billing_enterprise, contributor: @ic.reload.contributor)
+    paid = ContributorPayout.new(
+      invoice_tracker: it,
+      ledger: ledger,
+      amount: 2000.0,
+      blueprint: { "IndividualContributor" => [{ "amount" => 2000.0, "blueprint_metadata" => { "id" => "1", "forecast_project" => @project.forecast_id, "forecast_person" => @ic.forecast_id } }] },
+      created_by: @creator,
+    )
+    paid.skip_seventy_percent_check = true
+    paid.save!
+
+    bill = mock("qbo_bill")
+    bill.stubs(:has_payments?).returns(true)
+    ContributorPayout.any_instance.stubs(:qbo_bill).returns(bill)
+    build = InvoicePayouts::Build.new(it.reload)
+
+    assert_not build.paid?(@ic)
+    assert_equal [paid], build.retained_orphans
+    # margin 0.80, threshold 0.43 → surplus 3700 → 555 to each lead
+    assert_in_delta 800.0 + 555.0, payee(build, @al).amount, 0.001
+    assert_in_delta 500.0 + 555.0, payee(build, @pl).amount, 0.001
+    surplus_entry = payee(build, @al).blueprint["AccountLeadSurplus"].first
+    assert_equal({ "id" => "1", "forecast_project" => @project.forecast_id, "forecast_person" => @ic.forecast_id }, surplus_entry["blueprint_metadata"])
+    assert_kind_of Float, surplus_entry["amount"]
+
+    # Unpaid, the write removes it, and its surplus goes with it.
+    bill.stubs(:has_payments?).returns(false)
+    build = InvoicePayouts::Build.new(it.reload)
+    assert_empty build.retained_orphans
+    assert_in_delta 800.0, payee(build, @al).amount, 0.001
+    assert_in_delta 500.0, payee(build, @pl).amount, 0.001
+  end
+
+  test "an existing paid payout on a ledger this run still pays is not an orphan" do
+    build_tracker("new_deal_v1")
+    it = build_invoice_tracker([{ id: "1", person: @ic, hours: 100.0, rate: 100.0 }])
+    ledger = Ledger.find_or_create_for(enterprise: @client.billing_enterprise, contributor: @ic.reload.contributor)
+    paid = ContributorPayout.new(invoice_tracker: it, ledger: ledger, amount: 5700.0, blueprint: {}, created_by: @creator)
+    paid.skip_seventy_percent_check = true
+    paid.save!
+
+    bill = mock("qbo_bill")
+    bill.stubs(:has_payments?).returns(true)
+    ContributorPayout.any_instance.stubs(:qbo_bill).returns(bill)
+    build = InvoicePayouts::Build.new(it.reload)
+
+    assert build.paid?(@ic)
+    assert_empty build.retained_orphans
+  end
+
+  test "a tracker with no QBO invoice raises rather than computing nothing" do
+    build_tracker("new_deal_v1")
+    it = build_invoice_tracker([{ id: "1", person: @ic, hours: 100.0, rate: 100.0 }])
+    InvoiceTracker.any_instance.stubs(:qbo_invoice).returns(nil)
+    err = assert_raises(RuntimeError) { InvoicePayouts::Build.new(it).payees }
+    assert_equal "Invoice tracker ##{it.id} has no QBO invoice", err.message
+  end
+
+  test "a tracker with no blueprint raises rather than computing nothing" do
+    build_tracker("new_deal_v1")
+    it = build_invoice_tracker([{ id: "1", person: @ic, hours: 100.0, rate: 100.0 }])
+    it.update_columns(blueprint: nil)
+    err = assert_raises(RuntimeError) { InvoicePayouts::Build.new(it.reload).payees }
+    assert_equal "Invoice tracker ##{it.id} has no blueprint", err.message
+  end
+
+  test "an internal project's line goes whole to the IC, tracker or not" do
+    ForecastClient.any_instance.stubs(:is_internal?).returns(true)
+    it = build_invoice_tracker([{ id: "1", person: @ic, hours: 100.0, rate: 100.0 }])
+    build = InvoicePayouts::Build.new(it)
+
+    line = build.lines.first
+    assert_nil line.project_tracker
+    assert_equal 1, line.entries.length
+    entry = line.entries.first
+    assert_equal "IndividualContributor", entry.role
+    assert_equal @ic, entry.payee
+    assert_equal 10_000.0, entry.amount
+    assert_not entry.to_blueprint.key?("description_line")
+    assert_equal [@ic], build.payees.map(&:forecast_person)
+  end
+
+  test "multiple project trackers for a client project raises as generation does" do
+    build_tracker("new_deal_v1")
+    # The model validates one tracker per forecast project, but nothing in the
+    # database enforces it, so a second link can only arrive unvalidated.
+    second = ProjectTracker.new(name: "Guard Tracker second", billing_model: "new_deal_v1")
+    second.save!(validate: false)
+    ProjectTrackerForecastProject.new(project_tracker: second, forecast_project: @project).save!(validate: false)
+    it = build_invoice_tracker([{ id: "1", person: @ic, hours: 100.0, rate: 100.0 }])
+    err = assert_raises(RuntimeError) { InvoicePayouts::Build.new(it).lines }
+    assert_match(/Multiple project trackers found/, err.message)
+  end
+
+  test "description lines on a line with a commission" do
+    pt = build_tracker("new_deal_v2")
+    recipient = ForecastPerson.create!(forecast_id: 710_004, email: "comm-guard@example.com", data: {})
+    recipient.ensure_contributor_exists!
+    commission = PercentageCommission.create!(project_tracker: pt, contributor: recipient.reload.contributor, rate: 0.10)
+    it = build_invoice_tracker([{ id: "1", person: @ic, hours: 100.0, rate: 100.0 }])
+    build = InvoicePayouts::Build.new(it)
+
+    assert_equal "- (100.0 hrs * $100.00 p/h) - $1,000.00 commission = $9,000.00 * 8.0% = $720.00",
+      payee(build, @al).blueprint["AccountLead"].first["description_line"]
+    assert_equal "- (100.0 hrs * $100.00 p/h) - $1,000.00 commission = $9,000.00 * 5.0% = $450.00",
+      payee(build, @pl).blueprint["ProjectLead"].first["description_line"]
+    assert_equal "- (100.0 hrs * $100.00 p/h) - $1,000.00 commission = $9,000.00 * 54.0% = $4,860.00",
+      payee(build, @ic).blueprint["IndividualContributor"].first["description_line"]
+
+    line = build.lines.first
+    assert_equal commission.description_line(line.qbo_line_item, line.metadata, 1000.0),
+      payee(build, recipient).blueprint["Commission"].first["description_line"]
+  end
+
+  test "description lines for a rate override and the surplus it generates" do
+    build_tracker("new_deal_v1")
+    @project.update!(notes: "#{@ic.email}:20p/h")
+    it = build_invoice_tracker([{ id: "1", person: @ic, hours: 100.0, rate: 100.0 }])
+    build = InvoicePayouts::Build.new(it)
+    line_description = build.lines.first.qbo_line_item["description"]
+    assert_equal "MG-1 line 1 [FP-710001]", line_description
+
+    assert_equal "- 100.0 hrs * $20.00 p/h = $2,000.00",
+      payee(build, @ic).blueprint["IndividualContributor"].first["description_line"]
+    assert_equal "- $3,700.00 * 15.0% = $555.00 (`#{line_description}` generated $3,700.00 surplus revenue, 15.0% of which is shared with the Account Lead)",
+      payee(build, @al).blueprint["AccountLeadSurplus"].first["description_line"]
+    assert_equal "- $3,700.00 * 15.0% = $555.00 (`#{line_description}` generated $3,700.00 surplus revenue, 15.0% of which is shared with the Project Lead)",
+      payee(build, @pl).blueprint["ProjectLeadSurplus"].first["description_line"]
+  end
 end

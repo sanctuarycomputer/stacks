@@ -10,7 +10,7 @@ class ContributorPayout < ApplicationRecord
   belongs_to :created_by, class_name: 'AdminUser'
 
   # Ephemeral flag — not persisted. Set via the admin edit form to bypass the
-  # 70% cap validation for a single save. Resets to nil on each fresh instance.
+  # payout cap validation for a single save. Resets to nil on each fresh instance.
   attr_accessor :skip_seventy_percent_check
 
   validates :amount, presence: true
