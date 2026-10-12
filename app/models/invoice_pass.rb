@@ -6,6 +6,46 @@ class InvoicePass < ApplicationRecord
   belongs_to :enterprise
   has_many :invoice_trackers
 
+  class UnsupportedIssuer < StandardError; end
+
+  # What a tracker on this pass IS depends on who issues the pass:
+  #
+  #   Sanctuary  -> Forecast-driven (blueprint, contributor payouts)
+  #   garden3d   -> a management fee invoice to each paying company
+  #   otherwise  -> unsupported
+  #
+  # There is no column for this; the enterprise decides.
+  def forecast?
+    enterprise == Enterprise.sanctuary
+  end
+
+  # Checks forecast? first so a Sanctuary pass -- nearly every pass -- never
+  # depends on a garden3d row existing.
+  def management_fee?
+    return false if forecast?
+    enterprise == Enterprise.garden3d
+  end
+
+  # For anything that ACTS on a pass. Index Space and USB Club both have
+  # QuickBooks accounts, so a pass for either is constructible; treating it as
+  # one of the two known kinds is how the wrong company gets invoiced.
+  def invoicing_kind
+    return :forecast if forecast?
+    return :management_fee if management_fee?
+
+    raise UnsupportedIssuer, "InvoicePass #{id} belongs to #{enterprise&.name || 'no enterprise'}. Only " \
+                             "#{Enterprise::SANCTUARY_NAME} (Forecast invoicing) and " \
+                             "#{Enterprise::GARDEN3D_NAME} (management fee) issue invoices."
+  end
+
+  # garden3d's 2025 passes each hold one Forecast-driven tracker (a blueprint,
+  # accepted payouts) from before passes were per-enterprise. A pass holding
+  # one is left exactly as it was: Stacks never drafts on it. Always a fresh
+  # query, so it cannot read a stale association.
+  def legacy_forecast_trackers?
+    InvoiceTracker.where(invoice_pass_id: id).where.not(blueprint: nil).exists?
+  end
+
   def complete?
     completed_at.present?
   end

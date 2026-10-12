@@ -20,6 +20,21 @@ class InvoiceTracker < ApplicationRecord
 
   delegate :billing_enterprise, to: :forecast_client
 
+  # A tracker on garden3d's pass bills a paying company its management fee.
+  # It has no blueprint and no contributor payouts; Finance sets the amount in
+  # QuickBooks. See InvoicePass#invoicing_kind and Mso::ManagementFeeInvoices.
+  def management_fee?
+    invoice_pass.present? && invoice_pass.management_fee?
+  end
+
+  # The narrower question every behaviour change asks: is this a tracker made
+  # to bill a paying company its fee? True on garden3d's pass with no
+  # blueprint. garden3d's seven 2025 passes each hold a legacy Forecast
+  # tracker WITH a blueprint; those answer false and behave as they always have.
+  def management_fee_invoice?
+    management_fee? && blueprint.nil?
+  end
+
   def display_name
     "#{qbo_invoice.try(:display_name) || forecast_client.name} (#{status})"
   end
