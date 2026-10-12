@@ -193,4 +193,19 @@ class AdminAuthorizationTest < ActiveSupport::TestCase
     assert admin_auth.authorized?(:close_survey, survey)
     assert admin_auth.authorized?(:reopen_survey, survey)
   end
+
+  test "only admins may touch the MSO roster, including reading it" do
+    admin = AdminUser.create!(email: "mso-admin@sanctuary.computer", password: "password12345", roles: ["admin"])
+    lead = make_user("mso-lead@sanctuary.computer")
+    PermissionGrant.create!(admin_user: lead, permission: "lead")
+    nobody = make_user("mso-nobody@sanctuary.computer")
+
+    %i[read create update destroy].each do |action|
+      assert auth_for(admin).authorized?(action, MsoRolePeriod), "admin should #{action}"
+      assert auth_for(admin).authorized?(action, MsoRolePeriod.new), "admin should #{action} a record"
+      refute auth_for(lead).authorized?(action, MsoRolePeriod), "lead must not #{action}"
+      refute auth_for(lead).authorized?(action, MsoRolePeriod.new), "lead must not #{action} a record"
+      refute auth_for(nobody).authorized?(action, MsoRolePeriod), "non-lead must not #{action}"
+    end
+  end
 end
