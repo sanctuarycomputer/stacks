@@ -131,9 +131,11 @@ module Stacks
         ENV["WEEKLY_SHIP_GRADING"].to_s.strip.downcase == "on"
       end
 
-      def self.run!(dry_run: false, limit: MAX_PER_RUN)
+      # `since` reaches further back than WINDOW for a one-off backfill a person asked for
+      # (rake stacks:etl:grade_weekly_ships_backfill). The nightly run never passes it.
+      def self.run!(dry_run: false, limit: MAX_PER_RUN, since: nil)
         return { skipped_disabled: 1, errored: 0 } unless dry_run || enabled?
-        new(dry_run: dry_run, limit: limit).run!
+        new(dry_run: dry_run, limit: limit, since: since).run!
       end
 
       def self.stars_for(dimensions, has_previous:)
@@ -184,9 +186,10 @@ module Stacks
         PROMPT
       end
 
-      def initialize(dry_run:, limit:)
+      def initialize(dry_run:, limit:, since: nil)
         @dry_run = dry_run
         @limit = limit
+        @since = since
       end
 
       def run!
@@ -207,7 +210,7 @@ module Stacks
 
       def candidate_document_ids
         WeeklyShip.corpus_eligible
-          .where(sent_at: WINDOW.ago..)
+          .where(sent_at: (@since || WINDOW.ago)..)
           .where("weekly_ships.metadata -> 'scoring' IS NULL")
           .group("weekly_ships.document_id")
           .order(Arel.sql("MAX(weekly_ships.sent_at) DESC"))

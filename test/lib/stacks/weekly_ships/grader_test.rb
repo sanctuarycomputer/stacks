@@ -146,6 +146,17 @@ class StacksWeeklyShipsGraderTest < ActiveSupport::TestCase
     assert_equal 0, WeeklyShip.where(document: walled).where("metadata -> 'scoring' IS NOT NULL").count
   end
 
+  test "a backfill reaches past the window only when given a since date" do
+    old = link(make_doc(occurred_at: 60.days.ago))
+    older = link(make_doc(occurred_at: 120.days.ago))
+    Stacks::AI.expects(:extract).once.returns(ai)
+
+    assert_equal 0, Grader.run![:graded]
+    assert_equal 1, Grader.run!(since: 90.days.ago)[:graded]
+    assert_equal 5, old.reload.grade["stars"]
+    assert_nil older.reload.grade
+  end
+
   test "a model failure or a malformed grade writes nothing and is retried next night" do
     doc = make_doc
     ws = link(doc)
