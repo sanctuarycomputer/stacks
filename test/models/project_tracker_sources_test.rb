@@ -319,4 +319,23 @@ class ProjectTrackerSourcesTest < ActiveSupport::TestCase
     Stacks::Twist.expects(:get).with("/channels/get", has_entry(query: { workspace_id: 133876 })).returns(:response)
     assert_equal :response, Stacks::Twist.new.get_channels
   end
+
+  test "choosing a Notion project busts the task cache; an unrelated save does not" do
+    tracker = with_links!(tracker!)
+    Stacks::TaskBuilder.expects(:clear_cache!).once
+    tracker.update!(notion_project_id: SecureRandom.uuid)
+    tracker.update!(notes: "Unrelated change")
+  end
+
+  test "destroying a tracker still busts the task cache" do
+    tracker = with_links!(tracker!)
+    Stacks::TaskBuilder.expects(:clear_cache!).at_least_once
+    tracker.destroy
+  end
+
+  test "a Twist client never prints its token" do
+    client = Stacks::Twist.new
+    assert_equal "#<Stacks::Twist>", client.inspect
+    assert_not_includes client.inspect, "Bearer"
+  end
 end

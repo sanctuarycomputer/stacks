@@ -1,5 +1,10 @@
 class ProjectTracker < ApplicationRecord
   include BustsTaskCache
+  # BustsTaskCache only fires on destroy today (its second after_commit
+  # declaration replaces the first). Choosing a Notion project settles a
+  # task, so that one change busts the cache itself. A block, not the method
+  # name: a second callback with the same name would replace the concern's.
+  after_commit(if: :saved_change_to_notion_project_id?) { bust_task_cache }
 
   validates :name, presence: :true
   validate :has_msa_and_sow_links

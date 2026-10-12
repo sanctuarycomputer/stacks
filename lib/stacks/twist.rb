@@ -18,6 +18,13 @@ class Stacks::Twist
     })
   end
 
+  # The headers carry the bearer token, and Ruby prints an object's instance
+  # variables in error messages (NoMethodError, a failed expectation), which
+  # end up in logs and test output.
+  def inspect
+    "#<#{self.class.name}>"
+  end
+
   def get_default_workspace
     self.class.get("/workspaces/get_default", headers: @headers)
   end
