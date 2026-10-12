@@ -110,8 +110,42 @@ ActiveAdmin.register ContributorPayout do
 
   collection_action :make_payouts, method: :post do
     invoice_tracker = InvoiceTracker.find(params["invoice_tracker_id"])
-    invoice_tracker.make_contributor_payouts!(current_admin_user)
-    redirect_to admin_invoice_tracker_contributor_payouts_path(invoice_tracker), notice: "Payouts processed!"
+    index_path = admin_invoice_tracker_contributor_payouts_path(invoice_tracker)
+    return redirect_to(index_path, alert: "Admins only.") unless current_admin_user.is_admin?
+
+    begin
+      if invoice_tracker.qbo_invoice.nil?
+        invoice_tracker.make_contributor_payouts!(current_admin_user)
+        return redirect_to(index_path, notice: "Payouts processed!")
+      end
+
+      # Rule on the whole invoice before writing anything. Over the cap, the
+      # index re-runs this check and shows the breakdown; an admin can then
+      # come back here with a reason to generate regardless.
+      build = InvoicePayouts::Build.new(invoice_tracker)
+      check = InvoicePayouts::MarginCheck.new(build)
+
+      if check.breached?
+        breach_path = admin_invoice_tracker_contributor_payouts_path(invoice_tracker, margin_breach: 1)
+        return redirect_to(breach_path) unless params[:force].present?
+
+        reason = params[:override_reason].to_s.strip
+        return redirect_to(breach_path, alert: "A reason is required to generate payouts over the cap.") if reason.blank?
+
+        override_note = "[#{Date.today.iso8601}] #{current_admin_user.email} generated payouts over the cap (#{check.payout_percentage}% vs #{check.cap_percentage}%): #{reason}"
+        ActiveRecord::Base.transaction do
+          invoice_tracker.make_contributor_payouts!(current_admin_user, build: build)
+          invoice_tracker.update!(notes: [invoice_tracker.notes.presence, override_note].compact.join("\n\n"))
+        end
+      else
+        invoice_tracker.make_contributor_payouts!(current_admin_user, build: build)
+      end
+
+      redirect_to index_path, notice: "Payouts processed!"
+    rescue StandardError => e
+      Rails.logger.error("[contributor_payouts_make_payouts] it=#{invoice_tracker.id}: #{e.class}: #{e.message}")
+      redirect_to index_path, alert: "Could not calculate payouts: #{e.message}"
+    end
   end
 
   controller do
@@ -137,7 +171,23 @@ ActiveAdmin.register ContributorPayout do
     def create
       params[:contributor_payout]["created_by_id"] = current_admin_user.id
       params[:contributor_payout]["blueprint"] = {}
+      strip_admin_only_params
       super
+    end
+
+    def update
+      strip_admin_only_params
+      super
+    end
+
+    # The form only shows this box to admins, but hiding an input enforces
+    # nothing: permit_params is one list for everyone.
+    def strip_admin_only_params
+      return if current_admin_user.is_admin?
+      params[:contributor_payout]&.delete(:skip_seventy_percent_check)
+      # A hand-written Commission entry is subtracted from the pool the cap
+      # is checked against, so the raw blueprint is admin-only too.
+      params[:contributor_payout]&.delete(:blueprint) if action_name == "update"
     end
 
     # Catch the SyncsAsQboBill paid-bill guard so 'Delete' on a CP whose QBO
@@ -202,8 +252,8 @@ ActiveAdmin.register ContributorPayout do
       if current_admin_user.is_admin?
         f.input :skip_seventy_percent_check,
           as: :boolean,
-          label: "Skip 70% cap validation (one-time override, not persisted)",
-          hint: "Tick this to let this save proceed even if all contributor payouts on this invoice would exceed 70% of the invoice total. Only use when you understand why the cap is blocking an otherwise correct edit."
+          label: "Skip payout cap validation (one-time override, not persisted)",
+          hint: "Tick this to let this save proceed even if all contributor payouts on this invoice would exceed the invoice's payout cap. Only use when you understand why the cap is blocking an otherwise correct edit."
         f.input :blueprint, as: :json_editor, input_html: { style: { height: "600px" } }
       end
     end
