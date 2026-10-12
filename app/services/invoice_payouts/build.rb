@@ -67,9 +67,14 @@ module InvoicePayouts
     # Existing payouts the write would normally delete as no longer earned,
     # but cannot: their QBO bill has payments against it. They stay on the
     # tracker, so they stay in the pool, and keep feeding lead surplus.
+    #
+    # The pre-surplus set drives the surplus pass; this reader also drops any
+    # payout on a ledger that surplus made payable afterwards, which the
+    # paid payees already count.
     def retained_orphans
       compute
-      @retained_orphans
+      paid_ledger_ids = ledger_ids_for(paid_payees)
+      @retained_orphans.reject { |cp| paid_ledger_ids.include?(cp.ledger_id) }
     end
 
     private
@@ -143,13 +148,18 @@ module InvoicePayouts
     # Asked before the surplus pass, so "kept" means paid a base share: a
     # payout on any other ledger is one the write will try to delete.
     def find_retained_orphans
-      enterprise = invoice_tracker.forecast_client.billing_enterprise
-      kept_ledger_ids = @payees.values.select(&:payable).filter_map do |p|
-        contributor = p.forecast_person.contributor
-        contributor && Ledger.find_by(enterprise: enterprise, contributor: contributor)&.id
-      end
+      kept_ledger_ids = ledger_ids_for(@payees.values.select(&:payable))
       invoice_tracker.contributor_payouts.reload.reject { |cp| kept_ledger_ids.include?(cp.ledger_id) }.select do |cp|
         cp.qbo_bill&.has_payments?
+      end
+    end
+
+    # Read-only: a person with no ledger yet simply has none to match.
+    def ledger_ids_for(payees)
+      enterprise = invoice_tracker.forecast_client.billing_enterprise
+      payees.filter_map do |p|
+        contributor = p.forecast_person.contributor
+        contributor && Ledger.find_by(enterprise: enterprise, contributor: contributor)&.id
       end
     end
 

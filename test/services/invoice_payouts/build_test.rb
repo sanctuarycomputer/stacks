@@ -119,6 +119,28 @@ class InvoicePayoutsBuildTest < ActiveSupport::TestCase
     assert_empty InvoicePayouts::Build.new(it.reload).retained_orphans
   end
 
+  # A lead who is payable only through surplus joins paid_payees after the
+  # orphan set is fixed; the public reader must not count their ledger twice.
+  test "retained_orphans leaves out a payout on a ledger of a paid payee" do
+    build_tracker("new_deal_v1")
+    it = build_invoice_tracker([{ id: "1", person: @ic, hours: 100.0, rate: 100.0 }])
+    stranger = ForecastPerson.create!(forecast_id: 710_010, email: "late-guard@example.com", data: {})
+    stranger.ensure_contributor_exists!
+    ledger = Ledger.find_or_create_for(enterprise: @client.billing_enterprise, contributor: stranger.reload.contributor)
+    paid = ContributorPayout.new(invoice_tracker: it, ledger: ledger, amount: 3000.0, blueprint: {}, created_by: @creator)
+    paid.skip_seventy_percent_check = true
+    paid.save!
+
+    bill = mock("qbo_bill")
+    bill.stubs(:has_payments?).returns(true)
+    ContributorPayout.any_instance.stubs(:qbo_bill).returns(bill)
+    build = InvoicePayouts::Build.new(it.reload)
+    assert_equal [paid], build.retained_orphans
+
+    build.stubs(:paid_payees).returns([InvoicePayouts::Build::Payee.new(forecast_person: stranger, payable: true, entries: [])])
+    assert_empty build.retained_orphans
+  end
+
   # The IC has gone salaried since their payout was generated and paid. The
   # payout cannot be removed, so its IC chunk still generates lead surplus,
   # exactly as it did when the surplus pass read saved payouts.

@@ -115,8 +115,7 @@ ActiveAdmin.register ContributorPayout do
 
     begin
       if invoice_tracker.qbo_invoice.nil?
-        invoice_tracker.make_contributor_payouts!(current_admin_user)
-        return redirect_to(index_path, notice: "Payouts processed!")
+        return redirect_to(index_path, alert: "This invoice has no QBO invoice yet, so there is nothing to pay out.")
       end
 
       # Rule on the whole invoice before writing anything. Over the cap, the
@@ -127,7 +126,7 @@ ActiveAdmin.register ContributorPayout do
 
       if check.breached?
         breach_path = admin_invoice_tracker_contributor_payouts_path(invoice_tracker, margin_breach: 1)
-        return redirect_to(breach_path) unless params[:force].present?
+        return redirect_to(breach_path) unless ActiveModel::Type::Boolean.new.cast(params[:force])
 
         reason = params[:override_reason].to_s.strip
         return redirect_to(breach_path, alert: "A reason is required to generate payouts over the cap.") if reason.blank?
