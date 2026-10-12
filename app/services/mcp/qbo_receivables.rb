@@ -84,56 +84,13 @@ module Mcp
 
     # garden3d's management fee invoices bill its own operating companies.
     # They are intercompany, not receivables: left in, the fee would age in
-    # get_ar_aging and list_overdue_invoices next to real client debt. Two
-    # ways to recognise one, both in SQL (never through QboInvoice#data):
-    #
-    #   - a garden3d-account invoice billed to a payer's stored garden3d
-    #     customer id. This covers the hand-made history, attached or not.
-    #   - an invoice attached to a management fee tracker (garden3d's pass, no
-    #     blueprint), by the exact (qbo_account_id, qbo_id) pair.
-    #
-    # A garden3d invoice to anyone else, a legacy Forecast tracker's invoice,
-    # and another company's invoice that merely shares the customer id value
-    # all stay receivables.
+    # get_ar_aging and list_overdue_invoices next to real client debt. The rule
+    # for recognising one is QboInvoice.without_management_fees, shared with
+    # the admin selects; it excludes nothing until the migration has run.
     def self.without_management_fee_invoices(scope)
-      return scope unless management_fee_schema_ready?
-      garden3d = Enterprise.find_by(name: Enterprise::GARDEN3D_NAME)
-      return scope if garden3d.nil?
-
-      account_ids = QboAccount.where(enterprise_id: garden3d.id).pluck(:id)
-      customer_ids = Enterprise.management_fee_payers
-        .where.not(g3d_qbo_customer_id: [nil, ''])
-        .pluck(:g3d_qbo_customer_id)
-      if account_ids.any? && customer_ids.any?
-        # COALESCE: a row with no customer_ref must compare false, not NULL,
-        # or NOT (...) would drop it from the result.
-        scope = scope.where(
-          "NOT (qbo_invoices.qbo_account_id IN (?) " \
-          "AND COALESCE(qbo_invoices.data->'customer_ref'->>'value', '') IN (?))",
-          account_ids, customer_ids
-        )
-      end
-
-      attached = InvoiceTracker
-        .joins(:invoice_pass)
-        .where(invoice_passes: { enterprise_id: garden3d.id }, blueprint: nil)
-        .where.not(qbo_invoice_id: [nil, ''])
-        .pluck(:qbo_account_id, :qbo_invoice_id)
-      return scope if attached.empty?
-
-      values_sql = attached.map { |qa, qid| "(#{qa.to_i}, #{QboInvoice.connection.quote(qid)})" }.join(', ')
-      scope.where("(qbo_invoices.qbo_account_id, qbo_invoices.qbo_id) NOT IN (#{values_sql})")
+      scope.merge(QboInvoice.without_management_fees)
     end
     private_class_method :without_management_fee_invoices
-
-    # Migrations are run by hand on production, after the deploy. Until the
-    # columns exist nothing is excluded, rather than every AR tool call raising.
-    def self.management_fee_schema_ready?
-      Enterprise.column_names.include?('g3d_qbo_customer_id') &&
-        Enterprise.column_names.include?('management_fee_payer') &&
-        InvoicePass.column_names.include?('enterprise_id')
-    end
-    private_class_method :management_fee_schema_ready?
 
     # Warns with a count plus at most the first 20 id/qbo_id pairs. Both the
     # fetch and the log line are bounded — a bad sync leaving thousands of

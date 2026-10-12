@@ -99,9 +99,19 @@ ActiveAdmin.register ContributorAdjustment do
       f.input :ledger_id, as: :hidden
       f.input :amount, as: :number, input_html: { step: 0.01 }, label: "Amount (positive increases amount owed to contributor)"
       f.input :effective_on, as: :date_picker
+      # garden3d's management fee invoices are intercompany and belong on a
+      # management fee tracker only, so they are never offered here. Every
+      # other invoice is, from any company's books: the value packs
+      # "qa_id:qbo_id" and the adjustment takes its account from the pick.
+      # The invoice this adjustment already points at is always listed, so
+      # re-saving the form cannot detach it.
+      offered_invoices = QboInvoice.without_management_fees
+        .includes(qbo_account: :enterprise).order(Arel.sql("(data->>'doc_number')::int DESC")).to_a
+      attached_invoice = f.object.qbo_invoice
+      offered_invoices.unshift(attached_invoice) if attached_invoice && !offered_invoices.include?(attached_invoice)
       f.input :qbo_invoice,
         as: :select,
-        collection: QboInvoice.includes(qbo_account: :enterprise).order(Arel.sql("(data->>'doc_number')::int DESC")).map { |inv|
+        collection: offered_invoices.map { |inv|
           ent_name = inv.qbo_account&.enterprise&.name || "?"
           ["[#{ent_name}] #{inv.display_name}", "#{inv.qbo_account_id}:#{inv.qbo_id}"]
         },
