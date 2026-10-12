@@ -188,6 +188,11 @@ module Mso
       # If any invoice cannot be read it RAISES: an answer from a stale copy
       # could say "nobody was charged" about an invoice that is unpaid.
       #
+      # It also answers false while any payer's tracker has NO invoice
+      # attached: an invoice Stacks cannot see (one made by hand, or one this
+      # refresh just detached because QuickBooks no longer has it) may be an
+      # unpaid charge. Attach every payer's invoice before relying on a "yes".
+      #
       # Costs one QuickBooks read per attached invoice. Call it once per run
       # or page and reuse the answer; do not call it per ledger row.
       def collected?(invoice_pass:)

@@ -85,9 +85,28 @@ class InvoicePassManagementFeeCollectedTest < ActiveSupport::TestCase
     assert collected?
   end
 
-  test "a payer with no invoice at all is ignored the same way" do
+  # --- a tracker with nothing attached ---------------------------------------
+
+  test "a payer's tracker with no invoice attached is unknown: not collected" do
+    # Stacks cannot see whether this payer was charged. The pre-flight may
+    # have refused to draft because Finance invoiced it by hand.
     invoice_for(@sanctuary, "c-9", total: "130000.0", balance: "0.0", sent: true)
     fee_tracker(@pass, @index)
+
+    refute collected?
+  end
+
+  test "a blank invoice id is no invoice: not collected" do
+    invoice_for(@sanctuary, "c-14", total: "130000.0", balance: "0.0", sent: true)
+    QboInvoice.create!(qbo_account: @qbo_account, qbo_id: "", data: { "total" => "0.0" })
+    fee_tracker(@pass, @index).update_columns(qbo_invoice_id: "")
+
+    refute collected?
+  end
+
+  test "a legacy Forecast tracker with no invoice is not a fee tracker and does not block" do
+    invoice_for(@sanctuary, "c-15", total: "130000.0", balance: "0.0", sent: true)
+    fee_tracker(@pass, @index).update!(blueprint: { "lines" => {} })
 
     assert collected?
   end
@@ -121,6 +140,22 @@ class InvoicePassManagementFeeCollectedTest < ActiveSupport::TestCase
 
   test "a pass whose only invoice was voided has collected nothing" do
     invoice_for(@sanctuary, "c-32", total: "0.0", balance: "0.0", sent: true, private_note: "Voided")
+
+    refute collected?
+  end
+
+  test "a note that merely mentions a voided invoice does not hide an unpaid charge" do
+    invoice_for(@sanctuary, "c-33", total: "130000.0", balance: "0.0", sent: true)
+    invoice_for(@index, "c-34", total: "40000.0", balance: "40000.0", sent: true, private_note: "replaces voided #12")
+
+    refute collected?
+  end
+
+  test "a voided note on an invoice that still has an amount is not believed" do
+    # QuickBooks zeroes a voided invoice. One that still carries a total was
+    # not voided, whatever its note says.
+    invoice_for(@sanctuary, "c-35", total: "130000.0", balance: "0.0", sent: true)
+    invoice_for(@index, "c-36", total: "40000.0", balance: "40000.0", sent: false, private_note: "Voided")
 
     refute collected?
   end

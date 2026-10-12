@@ -60,10 +60,18 @@ class InvoicePass < ApplicationRecord
   # for every payer), or voided. Collected = at least one charged invoice,
   # and every charged invoice has a total above zero and nothing outstanding.
   #
+  # - A management fee tracker with NO invoice attached is unknown: not
+  #   collected. Stacks cannot see whether that payer was charged -- the
+  #   pre-flight refuses to draft when Finance already invoiced by hand, and
+  #   that invoice stays invisible here until someone attaches it. (An
+  #   attached, unsent, zero draft is the "nobody was charged" case.)
   # - An invoice with an amount that was never emailed still posts to account
   #   4100 and raises the cap, so it is a charge.
   # - A sent $0.00 invoice is a charge with no total, so it is NOT collected.
   #   QboInvoice#status reads it as :paid, which is why this does not use it.
+  # - Voided means the note says so AND total and balance are both zero, as
+  #   QuickBooks leaves a voided invoice. A note alone ("replaces voided #12")
+  #   never hides an amount.
   # - No stored data, or an unreadable amount, is unknown: not collected.
   def management_fee_collected?
     unless management_fee?
@@ -76,7 +84,14 @@ class InvoicePass < ApplicationRecord
 
     # Fresh queries throughout, by the (account, id) pair: never the cached
     # association, and never the qbo_invoice association.
-    InvoiceTracker.where(invoice_pass_id: id).where.not(qbo_invoice_id: nil).order(:id).each do |tracker|
+    InvoiceTracker.where(invoice_pass_id: id).order(:id).each do |tracker|
+      if tracker.qbo_invoice_id.blank?
+        # Nothing attached. On a fee tracker that is unknown, so fail closed.
+        # A legacy Forecast tracker (it has a blueprint) is not a fee invoice.
+        return false if tracker.blueprint.nil?
+        next
+      end
+
       unless own_account_ids.include?(tracker.qbo_account_id)
         raise "InvoiceTracker #{tracker.id} on this pass points at QuickBooks account " \
               "#{tracker.qbo_account_id}, which is not #{enterprise.name}'s"
@@ -86,11 +101,11 @@ class InvoicePass < ApplicationRecord
       stored = mirror&.read_attribute(:data)
       return false if stored.blank?
 
-      next if stored["private_note"].to_s.downcase.include?("voided")
-
       total = stored_amount(stored["total"])
       balance = stored_amount(stored["balance"])
       return false if total.nil? || balance.nil?
+
+      next if stored["private_note"].to_s.downcase.include?("voided") && total.zero? && balance.zero?
 
       sent = stored["email_status"] == "EmailSent"
       next unless sent || total.positive? # unsent and zero: nobody was charged

@@ -43,6 +43,18 @@ class Mso::ManagementFeeInvoicesCollectedTest < ActiveSupport::TestCase
     assert_match(/InvoiceTracker #{@tracker.id}/, error.message)
   end
 
+  test "an invoice deleted in QuickBooks leaves its tracker with nothing attached: not collected" do
+    other = make_payer(Enterprise::INDEX_SPACE_NAME, forecast_ids: [992_102])
+    attach_invoice(fee_tracker(@pass, other), qbo_id: "k-2", total: "40000.0", balance: "0.0", sent: true)
+    QboAccount.any_instance.stubs(:fetch_invoice_by_id).with("k-2")
+      .returns(qbo_created_invoice("k-2", total: "40000", balance: "0", email_status: "EmailSent"))
+    QboAccount.any_instance.stubs(:fetch_invoice_by_id).with("k-1")
+      .raises(RuntimeError, "Object Not Found: Something you're trying to use has been made inactive.")
+
+    refute Mso::ManagementFeeInvoices.collected?(invoice_pass: @pass)
+    assert_nil InvoiceTracker.find(@tracker.id).qbo_invoice_id
+  end
+
   test "it refuses a pass that is not garden3d's" do
     pass = InvoicePass.create!(start_of_month: Date.new(2091, 7, 1), enterprise: enterprises(:sanctuary), data: {})
     QboAccount.any_instance.expects(:fetch_invoice_by_id).never
