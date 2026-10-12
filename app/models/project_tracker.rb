@@ -1,14 +1,19 @@
 class ProjectTracker < ApplicationRecord
   include BustsTaskCache
+  # Superseded by notion_project_ids and twist_channels_inaccessible. Both are
+  # still in the table because the code before this one was live when the new
+  # columns were added; they are dropped in a follow-up once this is deployed.
+  self.ignored_columns += %w[notion_project_id twist_channel_accessible]
+
   # BustsTaskCache only fires on destroy today (its second after_commit
   # declaration replaces the first). Choosing a Notion project settles a
   # task, so that one change busts the cache itself. A block, not the method
   # name: a second callback with the same name would replace the concern's.
-  after_commit(if: :saved_change_to_notion_project_id?) { bust_task_cache }
+  after_commit(if: :saved_change_to_notion_project_ids?) { bust_task_cache }
 
   validates :name, presence: :true
   validate :has_msa_and_sow_links
-  validate :at_most_one_twist_channel_link
+  validate :no_twist_channel_linked_twice
   validate :no_forecast_projects_missing_project_code
   validate :no_forecast_project_code_collisions
   after_initialize :set_targets
@@ -401,21 +406,30 @@ class ProjectTracker < ApplicationRecord
     self
   end
 
+  # A tracker has one link of most types, so a new URL replaces the old one.
+  # It may have many Twist channels, so a channel is added beside the others,
+  # and one it already has is left exactly as it is.
   private def upsert_link!(type, label, url)
+    if type.to_s == "twist_channel"
+      channel_id = ProjectTrackerLink.twist_channel_id_in(url)
+      return if channel_id && twist_channel_ids.include?(channel_id)
+      project_tracker_links.build(name: label, link_type: type, url: url)
+      return
+    end
     link = project_tracker_links.find { |l| l.link_type == type.to_s } ||
            project_tracker_links.build(name: label, link_type: type)
     link.url = url
   end
 
-  # The id of this project's Twist channel, from its twist_channel link.
-  def twist_channel_id
-    project_tracker_links.find(&:twist_channel?)&.twist_channel_id
+  # The ids of this project's Twist channels, from its twist_channel links.
+  def twist_channel_ids
+    project_tracker_links.map(&:twist_channel_id).compact.uniq.sort
   end
 
   # Stacks's Twist token is the Stacksbot account, so the channels it belongs
   # to are the channels Stacksbot can read. Records, per open tracker with a
-  # Twist link, whether its channel is one of them. A failed call changes
-  # nothing: an old answer is better than a wrong one.
+  # Twist link, which of its channels are not among them. A failed call
+  # changes nothing: an old answer is better than a wrong one.
   def self.sync_twist_channel_access!(twist: Stacks::Twist.new, now: Time.zone.now)
     response = twist.get_channels
     unless response.code == 200 && response.parsed_response.is_a?(Array)
@@ -423,47 +437,57 @@ class ProjectTracker < ApplicationRecord
     end
     member_ids = response.parsed_response.map { |c| c["id"].to_i }.to_set
     stats = { checked: 0, accessible: 0, inaccessible: 0 }
+    # checked counts trackers; accessible and inaccessible count channels.
     where(work_completed_at: nil).includes(:project_tracker_links).find_each do |tracker|
-      channel_id = tracker.twist_channel_id
-      next if channel_id.nil?
-      accessible = member_ids.include?(channel_id)
-      tracker.update_columns(twist_channel_accessible: accessible, twist_channel_checked_at: now)
+      channel_ids = tracker.twist_channel_ids
+      next if channel_ids.empty?
+      inaccessible = channel_ids.reject { |id| member_ids.include?(id) }
+      tracker.update_columns(twist_channels_inaccessible: inaccessible, twist_channel_checked_at: now)
       stats[:checked] += 1
-      stats[accessible ? :accessible : :inaccessible] += 1
+      stats[:accessible] += channel_ids.size - inaccessible.size
+      stats[:inaccessible] += inaccessible.size
     end
     Stacks::TaskBuilder.clear_cache!
     stats
   end
 
-  # The form's blank option arrives as "", and the id travels to Stacksbot
-  # over MCP, so only a page Stacks has synced may be chosen. Checked when
-  # the value changes: a page later removed from Notion must not make the
-  # tracker unsaveable.
-  before_validation { self.notion_project_id = notion_project_id.presence }
-  validate :notion_project_is_a_synced_page, if: :will_save_change_to_notion_project_id?
+  # A multiple select posts a blank beside its choices, and the ids travel to
+  # Stacksbot over MCP, so the list is tidied and only pages Stacks has synced
+  # may be added. Ids already stored are not checked again: a page later
+  # removed from Notion must not make the tracker unsaveable.
+  before_validation do
+    self.notion_project_ids = Array(notion_project_ids).map { |id| id.to_s.strip }.reject(&:blank?).uniq
+  end
+  validate :added_notion_projects_are_synced_pages, if: :will_save_change_to_notion_project_ids?
 
-  # The Notion Projects page this tracker belongs to, or nil when none is
-  # chosen or the page has since been removed from Notion.
-  def notion_project
-    return nil if notion_project_id.blank?
-    NotionPage.projects.find_by(notion_id: notion_project_id)&.as_project
+  # The Notion Projects pages this tracker belongs to, in the order they were
+  # chosen. Leaves out any that has since been removed from Notion.
+  def notion_projects
+    ids = Array(notion_project_ids)
+    return [] if ids.empty?
+    pages = NotionPage.projects.where(notion_id: ids).index_by(&:notion_id)
+    ids.filter_map { |id| pages[id]&.as_project }
   end
 
   def notion_project_linked?
-    notion_project.present?
+    notion_projects.any?
   end
 
-  private def notion_project_is_a_synced_page
-    return if notion_project_id.nil?
-    return if NotionPage.projects.exists?(notion_id: notion_project_id)
-    errors.add(:notion_project_id, "must be a page in the Notion Projects database")
+  private def added_notion_projects_are_synced_pages
+    added = Array(notion_project_ids) - Array(notion_project_ids_in_database)
+    return if added.empty?
+    return if (added - NotionPage.projects.where(notion_id: added).pluck(:notion_id)).empty?
+    errors.add(:notion_project_ids, "must be pages in the Notion Projects database")
   end
 
-  # Checked on the tracker, over links not marked for removal, so replacing
-  # the link in one form submit is not refused.
-  private def at_most_one_twist_channel_link
+  # Checked on the tracker, over links not marked for removal, so replacing a
+  # link in one form submit is not refused. The tracker is checked before its
+  # links are tidied, so each URL is read as it was pasted.
+  private def no_twist_channel_linked_twice
     live = project_tracker_links.reject(&:marked_for_destruction?).select(&:twist_channel?)
-    errors.add(:base, "A project can have only one Twist channel link.") if live.size > 1
+    channel_ids = live.map { |link| ProjectTrackerLink.twist_channel_id_in(link.url) }.compact
+    return if channel_ids.uniq.size == channel_ids.size
+    errors.add(:base, "This Twist channel is already linked to this project.")
   end
 
   # Capsules the LEAD still has work to do on. Deliberately excludes capsules
