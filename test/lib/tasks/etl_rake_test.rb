@@ -36,13 +36,91 @@ class EtlRakeTest < ActiveSupport::TestCase
     Stacks::Etl::Groups::Connector.any_instance.stubs(:run)
     Stacks::WeeklyShips::Sweep.stubs(:run!).returns(Hash.new(0))
     Stacks::WeeklyShips::Grader.stubs(:run!).returns(Hash.new(0))
+    Stacks::Meetings::ProjectMatcher.stubs(:run!).returns(Hash.new(0))
     # The privacy wall is re-applied after the syncs, for real (not a dry run).
     Stacks::Etl::Reclassifier.expects(:call).with(dry_run: false, mail_review_budget: Stacks::Etl::Reclassifier::NIGHTLY_MAIL_REVIEW_BUDGET).in_sequence(seq).returns(Hash.new(0))
     Rake::Task['stacks:etl:sync_meet_all'].reenable
     Rake::Task['stacks:etl:reclassify_privacy'].reenable
     Rake::Task['stacks:etl:sync_gemini_notes_all'].reenable
+    Rake::Task['stacks:etl:match_weekly_ships'].reenable
+    Rake::Task['stacks:etl:match_meetings'].reenable
     Rake::Task['stacks:etl:sync_all'].reenable
     Rake::Task['stacks:etl:sync_all'].invoke
+  end
+
+  test 'sync_all matches meetings last, after the weekly ships' do
+    Stacks::Etl::Meet.stubs(:sweep_all_users!)
+    Stacks::Etl::Groups::Connector.any_instance.stubs(:run)
+    Stacks::Etl::Reclassifier.stubs(:call).returns(Hash.new(0))
+    seq = sequence('matchers')
+    Stacks::WeeklyShips::Sweep.expects(:run!).once.in_sequence(seq).returns(Hash.new(0))
+    Stacks::WeeklyShips::Grader.expects(:run!).once.in_sequence(seq).returns(Hash.new(0))
+    Stacks::Meetings::ProjectMatcher.expects(:run!).once.with.in_sequence(seq).returns(Hash.new(0))
+    %w[sync_meet_all sync_gemini_notes_all sync_google_groups reclassify_privacy match_weekly_ships match_meetings sync_all].each do |name|
+      Rake::Task["stacks:etl:#{name}"].reenable
+    end
+    Rake::Task['stacks:etl:sync_all'].invoke
+    assert SystemTask.where(name: 'stacks:etl:match_meetings').exists?
+  end
+
+  test 'match_meetings runs the matcher inside a SystemTask' do
+    Stacks::Meetings::ProjectMatcher.expects(:run!).once.with.returns(Hash.new(0).merge(scanned: 2, linked: 1))
+    Rake::Task['stacks:etl:match_meetings'].reenable
+    assert_difference -> { SystemTask.where(name: 'stacks:etl:match_meetings').count }, 1 do
+      Rake::Task['stacks:etl:match_meetings'].invoke
+    end
+    task = SystemTask.where(name: 'stacks:etl:match_meetings').last
+    assert task.settled_at.present?
+    assert_nil task.notification_id, "expected success"
+  end
+
+  test 'match_meetings marks the task errored when meetings failed to match' do
+    Stacks::Notifications.stubs(:report_exception).returns(stub(record: nil))
+    Stacks::Meetings::ProjectMatcher.expects(:run!).returns(Hash.new(0).merge(errored: 2))
+    SystemTask.any_instance.expects(:mark_as_error).with { |e| e.message.include?('2 meetings failed to match') }
+    SystemTask.any_instance.expects(:mark_as_success).never
+    Rake::Task['stacks:etl:match_meetings'].reenable
+    Rake::Task['stacks:etl:match_meetings'].invoke
+  end
+
+  test 'match_meetings marks the task errored when the matcher raises' do
+    Stacks::Notifications.stubs(:report_exception).returns(stub(record: nil))
+    Stacks::Meetings::ProjectMatcher.expects(:run!).raises(RuntimeError, 'matcher blew up')
+    SystemTask.any_instance.expects(:mark_as_error).with { |e| e.message == 'matcher blew up' }
+    SystemTask.any_instance.expects(:mark_as_success).never
+    Rake::Task['stacks:etl:match_meetings'].reenable
+    assert_nothing_raised { Rake::Task['stacks:etl:match_meetings'].invoke }
+  end
+
+  test 'match_meetings is quiet about the switch being off' do
+    Stacks::Meetings::ProjectMatcher.expects(:run!).returns({ skipped_disabled: 1, errored: 0 })
+    SystemTask.any_instance.expects(:mark_as_error).never
+    Rake::Task['stacks:etl:match_meetings'].reenable
+    Rake::Task['stacks:etl:match_meetings'].invoke
+  end
+
+  test 'match_meetings_preview prints each result and never writes' do
+    tracker = ProjectTracker.new(name: 'Harvey Staff Augmentation').tap { |t| t.save!(validate: false) }
+    Stacks::Meetings::ProjectMatcher.expects(:run!).with(dry_run: true, limit: 3).returns(
+      Hash.new(0).merge(scanned: 2, input_tokens: 2000, output_tokens: 200, results: [
+        { meeting_id: 11, title: 'Harvey weekly sync', tracker_ids: [tracker.id], confidence: 0.9, rationale: 'Title names the client.' },
+        { meeting_id: 12, title: 'Studio standup', tracker_ids: [], confidence: 0.2, rationale: 'Internal.' },
+      ]))
+    Rake::Task['stacks:etl:match_meetings_preview'].reenable
+    out = nil
+    assert_no_difference('SystemTask.count') do
+      out, = capture_io { Rake::Task['stacks:etl:match_meetings_preview'].invoke('3') }
+    end
+    lines = out.lines.map(&:chomp)
+    assert_equal 'Harvey weekly sync (meeting 11) -> Harvey Staff Augmentation [0.9] Title names the client.', lines[0]
+    assert_equal 'Studio standup (meeting 12) -> no project [0.2] Internal.', lines[1]
+    assert_equal 'scanned 2, errored 0, tokens in 2000 / out 200 (nothing saved)', lines[2]
+  end
+
+  test 'match_meetings_preview defaults to ten meetings' do
+    Stacks::Meetings::ProjectMatcher.expects(:run!).with(dry_run: true, limit: 10).returns(Hash.new(0).merge(results: []))
+    Rake::Task['stacks:etl:match_meetings_preview'].reenable
+    assert_output(/\(nothing saved\)$/) { Rake::Task['stacks:etl:match_meetings_preview'].invoke }
   end
 
   test 'reclassify_privacy[dry_run] previews without a SystemTask' do
