@@ -156,6 +156,48 @@ class Ledger::QualifyingIncomeTest < ActiveSupport::TestCase
     assert_equal BigDecimal("0"), Ledger::QualifyingIncome.for(ledger: @ledger, month: Date.new(2090, 4, 1))
   end
 
+  def sanctuary_qbo_account
+    Enterprise.find(@sanctuary.id).qbo_account
+  end
+
+  test "a positive adjustment, such as a recruiting fee, is compensation" do
+    trueup(@march_pass, "1000")
+    ContributorAdjustment.create!(ledger: @ledger, qbo_account: sanctuary_qbo_account,
+                                  amount: 6000, effective_on: Date.new(2090, 3, 30), description: "recruiting fee")
+
+    assert_equal BigDecimal("7000"), income
+  end
+
+  test "a negative adjustment is a record of money paid out, not negative income" do
+    trueup(@march_pass, "1000")
+    # Old-style ledgers mirrored each QuickBooks payment as a negative adjustment.
+    ContributorAdjustment.create!(ledger: @ledger, qbo_account: sanctuary_qbo_account,
+                                  amount: -5000, effective_on: Date.new(2090, 3, 15),
+                                  description: "Misc payment", skip_qbo_bound_negative_check: true)
+
+    assert_equal BigDecimal("1000"), income
+  end
+
+  test "an adjustment dated in another month is left out" do
+    ContributorAdjustment.create!(ledger: @ledger, qbo_account: sanctuary_qbo_account,
+                                  amount: 6000, effective_on: Date.new(2090, 4, 1))
+
+    assert_equal BigDecimal("0"), income
+  end
+
+  test "a profit share counts in the month its period ends" do
+    report = PeriodicReport.create!(period_gradation: :quarter, period_starts_at: Date.new(2090, 1, 1),
+                                    period_label: "Q1, 2090")
+    ProfitShare.create!(periodic_report: report, ledger: @ledger, amount: "272.46", blueprint: { "shares" => 1 })
+
+    assert_equal BigDecimal("272.46"), income
+    assert_equal BigDecimal("0"), Ledger::QualifyingIncome.for(ledger: @ledger, month: Date.new(2090, 2, 1))
+  end
+
+  test "a Deel invoice adjustment is not something that can be counted" do
+    assert_raises(ArgumentError) { income(klasses: [DeelInvoiceAdjustment]) }
+  end
+
   test "a reimbursement is not compensation" do
     trueup(@march_pass, "1000")
     Reimbursement.create!(ledger: @ledger, amount: 250, description: "taxi", receipts: "")

@@ -11,11 +11,12 @@ module Mso
   # full (average.to_s), not to two decimals, or a later recomputation from
   # the stored figure can differ from what was paid by a cent.
   class Benchmark
-    # Earnings only. A true-up is a top-up, not earnings: today every true-up
-    # is the monthly founder true-up, which lifts one person to exactly the
-    # highest earner's figure, so counting it would put a copy of the top
-    # earner in the pool.
-    KLASSES = [ContributorPayout, PayStub].freeze
+    # Everything that is payment for work — payouts, pay stubs, profit shares
+    # and positive adjustments such as recruiting fees — but not true-ups. A
+    # true-up is a top-up, not earnings: today every true-up is the monthly
+    # founder true-up, which lifts one person to exactly the highest earner's
+    # figure, so counting it would put a copy of the top earner in the pool.
+    KLASSES = (Ledger::QualifyingIncome::KLASSES - [Trueup]).freeze
 
     Result = Struct.new(:average, :configured_n, :counted, :members, :small_sample,
                         :excluded_without_login, keyword_init: true)

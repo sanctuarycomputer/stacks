@@ -139,6 +139,47 @@ class Mso::BenchmarkTest < ActiveSupport::TestCase
     assert_equal [tied.id], result.excluded_without_login.map { |m| m[:contributor_id] }
   end
 
+  test "a recruiting fee paid as an adjustment counts as earnings" do
+    recruiter = earner("recruiter", 10_000)
+    ContributorAdjustment.create!(
+      ledger: Ledger.find_by!(enterprise: @sanctuary, contributor: recruiter),
+      qbo_account: Enterprise.find(@sanctuary.id).qbo_account,
+      amount: 6_000, effective_on: @month + 14, description: "talent sourcing fee",
+    )
+    earner("a", 12_000)
+
+    result = Mso::Benchmark.for_month(@month, top_n: 1)
+
+    assert_equal [recruiter.id], result.members.map { |m| m[:contributor_id] }
+    assert_equal BigDecimal("16000"), result.average
+  end
+
+  test "an old-style payment record does not reduce someone's earnings" do
+    paid = earner("paid", 20_000)
+    ContributorAdjustment.create!(
+      ledger: Ledger.find_by!(enterprise: @sanctuary, contributor: paid),
+      qbo_account: Enterprise.find(@sanctuary.id).qbo_account,
+      amount: -20_000, effective_on: @month + 20, description: "Misc payment",
+      skip_qbo_bound_negative_check: true,
+    )
+
+    result = Mso::Benchmark.for_month(@month, top_n: 1)
+
+    assert_equal BigDecimal("20000"), result.average
+  end
+
+  test "a profit share counts as earnings" do
+    sharer = earner("sharer", 10_000)
+    report = PeriodicReport.create!(period_gradation: :quarter, period_starts_at: Date.new(2091, 1, 1),
+                                    period_label: "Q1, 2091")
+    ProfitShare.create!(periodic_report: report, blueprint: { "shares" => 1 }, amount: 500,
+                        ledger: Ledger.find_by!(enterprise: @sanctuary, contributor: sharer))
+
+    result = Mso::Benchmark.for_month(@month, top_n: 1)
+
+    assert_equal BigDecimal("10500"), result.average
+  end
+
   test "true-ups are not earnings and do not count" do
     earner("a", 20_000)
     earner("b", 10_000)

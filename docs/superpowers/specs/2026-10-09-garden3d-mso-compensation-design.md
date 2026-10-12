@@ -942,14 +942,26 @@ left as the record of the design.
 **Qualifying income (§7.2, §4.1)**
 
 - Signature: `Ledger::QualifyingIncome.for(ledger:, month:, excluding: [], klasses: KLASSES)`.
-- `KLASSES` is payouts, true-ups and pay stubs. S4 adds `MsoTrueup`.
+- **Qualifying income is anything that is payment for doing work** (decided
+  2026-10-12, replacing §7.2's narrower list): payouts, pay stubs, profit
+  shares, true-ups and **positive** contributor adjustments (recruiting fees,
+  advances). S4 adds `MsoTrueup`.
+- **Not counted:** reimbursements, Deel invoice adjustments, and **negative**
+  contributor adjustments. On production 389 of the 398 adjustments are
+  negative (−$2.95M, June 2025 – June 2026): the old ledger style's record
+  of money paid out, mirrored from QuickBooks so a balance read
+  earned-minus-paid. They are not pay cuts; counting them would subtract what
+  people were paid from what they earned.
+- An advance counts in the month it is given. If one is ever recovered by
+  reducing a later payout, that month would need looking at; today recovery
+  is expected to happen through QuickBooks, not through payouts.
 - `Ledger#items_grouped_by_month` is untouched.
 - A live row whose parent has gone missing raises rather than being skipped:
   silently dropping income would enlarge someone's true-up.
 
 **Benchmark (§7.3)**
 
-- Counts **payouts and pay stubs only, not true-ups** (`Mso::Benchmark::KLASSES`).
+- Counts all qualifying income **except true-ups** (`Mso::Benchmark::KLASSES`).
   Every live true-up is the monthly founder top-up, which mirrors the highest
   earner; left in, it lifts the top-3 average by 4–22%.
 - Having no login is a proxy for "outside party" and also leaves out ordinary
@@ -961,16 +973,22 @@ left as the record of the design.
 - It is a live calculation. A backdated roster edit or a re-run payout changes
   a past month's answer, so S4 must store the members and the unrounded average
   it used (`average.to_s`, not a two-decimal column).
-- Verified on production data: top-3 averages for May–July 2026 match the
-  finance workbook to the dollar, and May–September match an independent SQL
-  recomputation on every id and amount.
+- Verified on production data. Counting payouts and pay stubs alone, top-3
+  averages for May–July 2026 match the finance workbook to the dollar and
+  May–September match an independent SQL recomputation on every id and
+  amount. Adding profit shares and positive adjustments moves three months:
+  March 2026 $23,216.96 → $25,345.22 and April $25,942.59 → $27,942.59
+  (recruiting fees paid to a top-three earner), and June $21,447.73 →
+  $21,534.30 (profit shares). **The workbook leaves those out**, so it no
+  longer matches for March and April.
 
 **Open questions these raise for S4**
 
-- The founder true-up and the MSO true-up would both top up the same person.
-  Does the MSO true-up replace the founder true-up?
-- Should outside commission income be excluded as income, rather than by the
-  no-login proxy?
+- **Answered:** the founder true-up is replaced by a Principal-level MSO
+  payout. S4 must stop `sync_founder_trueups!` writing one for any month the
+  founder holds an MSO role.
+- **Answered:** outside referral fees must not count, and the no-login rule
+  is how — referral partners are not given Stacks logins.
 
 ## 14. Out of scope
 
