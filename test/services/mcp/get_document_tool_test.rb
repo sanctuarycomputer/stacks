@@ -34,9 +34,8 @@ class Mcp::GetDocumentToolTest < ActiveSupport::TestCase
     transcript = Document.create!(source: :meet, external_id: 'cr/pt', source_record: m, excluded: :not_excluded, title: 'Harvey sync')
     notes = Document.create!(source: :gemini_notes, external_id: 'notes/pt', source_record: m, excluded: :not_excluded, title: 'Harvey sync notes')
     trackers = %w[Harvey Acme].map { |n| ProjectTracker.new(name: n).tap { |t| t.save!(validate: false) } }
-    trackers.reverse_each do |t|
-      MeetingProjectTracker.new(meeting: m, project_tracker: t, confidence: 0.9, rationale: 'r').tap { |l| l.via_matcher = true }.save!
-    end
+    m.project_trackers << trackers.reverse
+    MeetingScan.create!(meeting: m, outcome: :linked, scanned_at: 1.hour.ago, confidence: 0.9, rationale: 'r')
     ids = trackers.map(&:id).sort
 
     [transcript, notes].each do |doc|

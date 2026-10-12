@@ -21,7 +21,7 @@ module Mcp
       docs = scope.to_a
       # One query for the page: a transcript and its notes share their Meeting's match.
       meeting_ids = docs.select { |d| d.source_record_type == 'Meeting' }.map(&:source_record_id)
-      tracker_ids = MeetingProjectTracker.tracker_ids_by_meeting(meeting_ids)
+      tracker_ids = Meeting.project_tracker_ids_by_meeting(meeting_ids)
       payload = docs.map do |d|
         matched = d.source_record_type == 'Meeting' ? tracker_ids.fetch(d.source_record_id, []) : []
         { id: d.id, title: d.title, source: d.source, occurred_at: d.occurred_at, project_tracker_ids: matched }

@@ -35,10 +35,17 @@ class ProjectTracker < ApplicationRecord
 
   has_one :project_capsule, dependent: :delete, inverse_of: :project_tracker
   has_many :weekly_ships, dependent: :destroy
-  # Meetings matched to this tracker. Removed in a callback rather than with
-  # `dependent:`, so a destroy still works before the table's migration has run.
-  has_many :meeting_project_trackers
-  before_destroy { MeetingProjectTracker.remove_for_tracker!(id) if MeetingProjectTracker.table_exists? }
+  # Meetings that were about this tracker (Stacks::Meetings::Sweep, or a person).
+  has_and_belongs_to_many :meetings
+  # Destroying a tracker removes its rows in the join. A meeting left with no
+  # tracker says no_match again, so it shows under Needs Review; whatever lock
+  # its scan had stays.
+  before_destroy { @meeting_ids_before_destroy = meeting_ids }
+  after_destroy do
+    MeetingScan.linked.where(meeting_id: @meeting_ids_before_destroy)
+               .where.not(meeting_id: Meeting.joins(:project_trackers).select(:id))
+               .update_all(outcome: MeetingScan.outcomes[:no_match])
+  end
   has_many :project_tracker_links, dependent: :delete_all
   accepts_nested_attributes_for :project_tracker_links, allow_destroy: true
 
@@ -747,7 +754,7 @@ class ProjectTracker < ApplicationRecord
   end
 
   # The people a meeting about this project would plausibly include, for the
-  # meeting matcher's prompt: current project and account leads, and everyone
+  # meeting sweep's prompt: current project and account leads, and everyone
   # with Forecast hours on its projects lately. "First Last <email>" strings
   # (AdminUser#name and ForecastPerson#display_name are the email). No rates, no hours.
   def matcher_people
@@ -760,7 +767,7 @@ class ProjectTracker < ApplicationRecord
       ForecastPerson.joins(:forecast_assignments)
         .where(forecast_assignments: { project_id: project_ids })
         .where("forecast_assignments.end_date >= ? AND forecast_assignments.start_date <= ?",
-               Stacks::Meetings::ProjectMatcher::RECENT_PEOPLE.ago.to_date, Date.today)
+               Stacks::Meetings::Sweep::RECENT_PEOPLE.ago.to_date, Date.today)
         .distinct.to_a
     end
     (leads + team).compact.map do |person|

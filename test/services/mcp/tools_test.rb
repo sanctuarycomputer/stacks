@@ -83,11 +83,8 @@ class Mcp::ToolsTest < ActiveSupport::TestCase
     notes = Document.create!(source: :gemini_notes, external_id: "n-#{key}", title: "Sync #{key} notes", excluded: :not_excluded,
                              source_record: m, occurred_at: 1.day.ago)
     trackers = tracker_names.map { |n| ProjectTracker.new(name: n).tap { |t| t.save!(validate: false) } }
-    trackers.reverse_each do |t|
-      link = MeetingProjectTracker.new(meeting: m, project_tracker: t, confidence: 0.91, rationale: rationale)
-      link.via_matcher = true
-      link.save!
-    end
+    m.project_trackers << trackers.reverse
+    MeetingScan.create!(meeting: m, outcome: :linked, scanned_at: 1.hour.ago, confidence: 0.91, rationale: rationale)
     [m, transcript, notes, trackers.map(&:id).sort]
   end
 
@@ -156,14 +153,29 @@ class Mcp::ToolsTest < ActiveSupport::TestCase
     assert_includes Mcp::GetDocumentTool.call(id: transcript.id, server_context: {}).content.first[:text].downcase, 'not found'
   end
 
-  test 'both document tools still answer before the match tables exist' do
+  test 'both document tools still answer, with no tracker ids, before the join table exists' do
     _m, transcript, _notes, _ids = matched_meeting!('early', %w[Harvey])
-    MeetingProjectTracker.stubs(:table_exists?).returns(false)
-    MeetingProjectTracker.expects(:where).never
-    assert_equal [], listed.index_by { |d| d['id'] }[transcript.id]['project_tracker_ids']
-    got = JSON.parse(Mcp::GetDocumentTool.call(id: transcript.id, server_context: {}).content.first[:text])
+    ActiveRecord::Base.connection.stubs(:table_exists?).with('meetings_project_trackers').returns(false)
+    queries = []
+    record = ->(*, payload) { queries << payload[:sql] }
+    listed_ids = got = nil
+    ActiveSupport::Notifications.subscribed(record, 'sql.active_record') do
+      listed_ids = listed.index_by { |d| d['id'] }[transcript.id]['project_tracker_ids']
+      got = JSON.parse(Mcp::GetDocumentTool.call(id: transcript.id, server_context: {}).content.first[:text])
+    end
+    assert_equal [], listed_ids
     assert_equal [], got['project_tracker_ids']
     assert_equal transcript.id, got['id']
+    assert_empty queries.grep(/meetings_project_trackers/), 'the missing table is never queried'
+  end
+
+  test 'a missing join table is not remembered: the ids come back once it exists' do
+    _m, transcript, _notes, ids = matched_meeting!('later', %w[Harvey])
+    ActiveRecord::Base.connection.stubs(:table_exists?).with('meetings_project_trackers').returns(false)
+    assert_equal [], listed.index_by { |d| d['id'] }[transcript.id]['project_tracker_ids']
+    ActiveRecord::Base.connection.unstub(:table_exists?)
+    assert_equal ids, listed.index_by { |d| d['id'] }[transcript.id]['project_tracker_ids']
+    assert_equal ids, JSON.parse(Mcp::GetDocumentTool.call(id: transcript.id, server_context: {}).content.first[:text])['project_tracker_ids']
   end
 
   test 'the document tools describe project_tracker_ids' do

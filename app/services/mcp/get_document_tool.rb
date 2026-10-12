@@ -21,9 +21,9 @@ module Mcp
       # segments) is still readable. Callers prefer `segments` for transcripts, `body` for notes.
       body = doc.chunks.order(:position).pluck(:content).join("\n")
       meeting_key = is_meeting ? meeting.id : nil
-      # Which project tracker(s) the meeting was about: ids only. The matcher's rationale and
+      # Which project tracker(s) the meeting was about: ids only. The sweep's reason and
       # confidence stay in Stacks.
-      project_tracker_ids = is_meeting ? MeetingProjectTracker.tracker_ids_by_meeting([meeting.id]).fetch(meeting.id, []) : []
+      project_tracker_ids = is_meeting ? Meeting.project_tracker_ids_by_meeting([meeting.id]).fetch(meeting.id, []) : []
       # google_groups: expose the RFC822 root Message-ID (external_id) so an observing agent can
       # build the precise Gmail deep link (rfc822msgid:<id>). url already carries the group.
       extra = doc.google_groups? ? { root_message_id: doc.external_id } : {}

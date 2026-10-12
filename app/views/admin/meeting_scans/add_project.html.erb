@@ -1,0 +1,22 @@
+<%# The form behind "Add a project" on the Meeting Matches page (app/admin/meeting_scans.rb).
+    The title is the meeting's eligible title, never meeting.title. %>
+<%= form_with url: add_project_admin_meeting_scan_path(@scan), method: :post, local: true, class: "formtastic" do |f| %>
+  <fieldset class="inputs">
+    <ol>
+      <li class="string input">
+        <label class="label">Meeting</label>
+        <span><%= @meeting_title %></span>
+      </li>
+      <li class="select input required">
+        <%= f.label :project_tracker_id, "Project", class: "label" %>
+        <%= f.select :project_tracker_id, @trackers, { include_blank: true }, required: true %>
+      </li>
+    </ol>
+  </fieldset>
+  <fieldset class="actions">
+    <ol>
+      <li class="action input_action"><%= f.submit "Add project" %></li>
+      <li class="cancel"><%= link_to "Cancel", admin_meeting_scans_path %></li>
+    </ol>
+  </fieldset>
+<% end %>
