@@ -25,6 +25,7 @@ ledger_item_path = ->(li) {
   when Trueup                  then admin_ledger_trueup_path(li.ledger, li)
   when ContributorAdjustment   then admin_ledger_contributor_adjustment_path(li.ledger, li)
   when PayStub                 then admin_pay_cycle_pay_stub_path(li.pay_cycle, li)
+  when MsoTrueup               then admin_ledger_mso_trueup_path(li.ledger, li)
   end
 }
 %>

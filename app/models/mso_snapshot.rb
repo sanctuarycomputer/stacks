@@ -64,6 +64,11 @@ class MsoSnapshot < ApplicationRecord
     invoice_pass.start_of_month
   end
 
+  # ActiveAdmin's page title and breadcrumb.
+  def display_name
+    "MSO compensation, #{invoice_pass.invoice_month}#{current? ? '' : ' (superseded)'}"
+  end
+
   # What is owed after this run, counting a billed true-up at its billed
   # amount, is more than the cap. Possible only when the fee fell after a
   # bill was written. The snapshot page warns about it.
