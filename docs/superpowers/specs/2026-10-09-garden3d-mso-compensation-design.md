@@ -140,7 +140,7 @@ account, ledgers) **and** must clear the thread memo between cases (§12).
 S0  Per-entity invoice passes  (own PR, merged and verified first)
 
 S1  garden3d's management fee          S2  Roster + benchmark
-    :management_fee trackers           MsoRolePeriod
+    trackers on garden3d's pass        MsoRolePeriod
     Mso::ManagementFeeInvoices         Mso::Benchmark
     Mso::ManagementFeeIncome           Ledger::QualifyingIncome
                     \                 /
@@ -182,7 +182,6 @@ off Sanctuary's pass. Routing is by issuer instead.
 ```ruby
 # Step 1 — nullable
 add_reference :invoice_passes, :enterprise, null: true, foreign_key: true
-add_column :invoice_trackers, :source, :integer, null: false, default: 0
 
 # Step 2 — backfill (§5.3)
 
@@ -193,8 +192,7 @@ remove_index :invoice_passes, name: "index_invoice_passes_on_start_of_month"
 add_index :invoice_passes, [:enterprise_id, :start_of_month], unique: true
 ```
 
-`InvoiceTracker` gains `enum source: { forecast: 0, management_fee: 1 }` — **S0**,
-since S0 ships first.
+No column distinguishes tracker kinds — the pass's enterprise does (§5.6).
 
 ### 5.3 Backfill
 
@@ -230,8 +228,51 @@ so `Trueup.invoice_pass_id` is unaffected.
 `lib/stacks/client_revenue.rb` is **safe** — `build_rows` drops internal clients
 at line 100.
 
-`make_trackers!` needs no internal-client carve-out for `source`: it only creates
-`:forecast` trackers, which take the enum default.
+`make_trackers!` needs no carve-out: its `issuer == enterprise` guard already
+confines it to Sanctuary's pass, so it can never produce a management-fee tracker.
+
+### 5.6 The discriminator is the pass's enterprise, not a column
+
+An earlier revision gave `invoice_trackers` a `source` enum
+(`forecast` / `management_fee`). **It was removed.** A tracker's behaviour is a
+switch on its pass's issuing enterprise:
+
+| Pass belongs to | Behaviour |
+| --- | --- |
+| Sanctuary | Forecast-driven (blueprint, contributor payouts, the existing pipeline) |
+| garden3d | Management-fee stub to each `management_fee_payer` enterprise |
+| anything else | **Unsupported — raise.** No such pass exists today. |
+
+The column duplicated state the enterprise already determines, and nothing read
+it. It is also redundant by construction: `ForecastClient#is_internal?` and "has
+a non-Sanctuary `billing_enterprise`" are the **same** predicate (both reduce to
+`enterprise_forecast_client` being present), so only Sanctuary can ever receive a
+Forecast-driven tracker regardless.
+
+S1 introduces the derived predicate where it is needed rather than carrying a
+column:
+
+```ruby
+# InvoiceTracker
+def management_fee?
+  invoice_pass.enterprise == Enterprise.garden3d
+end
+```
+
+Three sites consume it (§6.4, §6.5). A pass whose enterprise is neither Sanctuary
+nor garden3d must raise rather than fall to an `else` — Index Space and USB Club
+both have QBO accounts, so such a pass is constructible, and silently treating it
+as one case or the other is how the wrong entity gets invoiced. If Index or USB
+Club should ever issue their own invoices, that is a design decision, not a
+default.
+
+**Consequence for a future need:** if garden3d ever wants to Forecast-invoice its
+own external client, its pass would hold both kinds of tracker and the
+enterprise would stop being a sufficient discriminator. That is already blocked
+today for an unrelated reason (mapping such a client via
+`enterprise_forecast_clients` makes it `is_internal?`, so nothing invoices it at
+all), and resolving it requires separating "internal client" from "billing
+enterprise" first. Revisit the discriminator then, not before.
 
 ### 5.5 Risk
 
@@ -292,17 +333,19 @@ invoice totals, and `Mso::MonthlyRun` **raises on non-zero variance**.
 
 ### 6.4 Collection gate
 
-`InvoicePass#management_fee_collected?` — true when **at least one**
-`:management_fee` invoice on the pass was sent, and **every sent one** is
-collected. Per the inferred-waiver decision, an unsent draft means that payer was
-not charged and is ignored.
+`InvoicePass#management_fee_collected?` — called on **garden3d's** pass, where
+every tracker is a management-fee tracker by construction (§5.6), so this reads
+`invoice_trackers` directly with no filtering. True when **at least one** invoice
+on the pass was sent, and **every sent one** is collected. Per the
+inferred-waiver decision, an unsent draft means that payer was not charged and is
+ignored.
 
 Both naive forms fail:
 
 - "every tracker is `:paid`" — `InvoiceTracker#status` returns `:impossible` for a
   blueprint-less tracker with an invoice (`invoice_tracker.rb:128-141`), so it can
   never be `:paid`. Read `tracker.qbo_invoice&.status` directly, or add a
-  `:management_fee` branch to `InvoiceTracker#status` (S0 owns that method).
+  `management_fee?` branch to `InvoiceTracker#status`.
 - gating on unsent drafts — Stacks drafts one per payer every month, so an
   uncharged payer's unsent $0 draft would block forever.
 
@@ -310,12 +353,13 @@ A **zero-total** sent invoice counts as not collected (§3.2).
 
 Knock-on: `InvoicePass#statuses`, `#payout_statuses` (which would render
 `1x No payouts` per management-fee tracker via `contributor_payouts_status`) and
-`Mcp::GetInvoicePassesTool.entity_block` must all skip `:management_fee` trackers.
+`Mcp::GetInvoicePassesTool.entity_block` must all skip management-fee trackers —
+equivalently, must skip every tracker on a garden3d pass.
 
 ### 6.5 Draft generation
 
-Per payer: find or create an `InvoiceTracker` with `source: :management_fee`,
-`forecast_client` = the payer's internal client, `qbo_account` = garden3d's
+Per payer: find or create an `InvoiceTracker` on **garden3d's** pass with
+`forecast_client` = the payer's internal client and `qbo_account` = garden3d's
 (idempotent on the existing `[forecast_client_id, invoice_pass_id]` index). Then
 one QBO line: description `"Management fee"`, amount **$0.00**, `item_ref` =
 `Managerial Services` (id 2, resolved by name, failing loudly if absent),
@@ -323,11 +367,11 @@ one QBO line: description `"Management fee"`, amount **$0.00**, `item_ref` =
 
 Finance edits the amount in QBO and sends. Stacks never writes the amount.
 
-`make_invoice!` dispatches to `push_invoice!` when `source == :management_fee`; its
-internal-client `raise` (`invoice_tracker.rb:738`) applies only to `:forecast`.
-`make_invoice!` does `return if configuration_errors.any?` — a **silent no-op**;
-`push_invoice!` must raise instead. Blueprint, `configuration_errors` and the
-payout pipeline skip `:management_fee` trackers.
+`make_invoice!` dispatches to `push_invoice!` when `management_fee?`; its
+internal-client `raise` (`invoice_tracker.rb:738`) applies only to the Forecast
+path. `make_invoice!` does `return if configuration_errors.any?` — a **silent
+no-op**; `push_invoice!` must raise instead. Blueprint, `configuration_errors`
+and the payout pipeline skip management-fee trackers.
 
 ### 6.6 GL account — external dependency
 

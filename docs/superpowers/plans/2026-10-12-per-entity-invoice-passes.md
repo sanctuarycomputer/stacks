@@ -10,6 +10,15 @@
 
 This is subsystem **S0** of `docs/superpowers/specs/2026-10-09-garden3d-mso-compensation-design.md`. It is a prerequisite refactor of live financial machinery and ships as its own PR, merged and verified against a real month before any MSO work lands on it. It adds **no** MSO behaviour.
 
+> **Superseded in part (2026-10-12, after execution).** This plan added
+> `invoice_trackers.source` as an enum (`forecast` / `management_fee`). The owner
+> subsequently determined the column was redundant — the behaviour is a switch on
+> the pass's **issuing enterprise** (Sanctuary ⇒ Forecast-driven, garden3d ⇒
+> management-fee stubs), and nothing read the column. It was removed in
+> `bc1f74e8` before this branch merged. Steps below that create, record, set or
+> assert on `source` are kept as the historical record of what was executed; do
+> not re-apply them. See spec §5.6 for the replacement.
+
 ## Global Constraints
 
 - `db/schema.rb` is **hand-curated**. It deliberately omits things Rails would dump (the pgvector `embeddings.embedding` column and its HNSW index, `chunks.content_tsv`) and carries comments the repo depends on. Edit it by hand; **never** let `db:migrate` re-dump it (see Task 7 Step 1).
