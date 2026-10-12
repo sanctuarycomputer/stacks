@@ -17,6 +17,7 @@ module Stacks
       BODY_CHUNKS = 5           # per document
       MAX_PER_RUN = 60          # cost guard: about 7 new meetings a night today
       RECENT_PEOPLE = 60.days
+      RATIONALE_CHARS = 300     # stored and shown; the model is asked for one sentence
 
       SCHEMA = {
         "type" => "object",
@@ -97,7 +98,9 @@ module Stacks
       # now contain, newest first, at most @limit. About a hundred rows are in
       # the window, so the per-meeting hash query is affordable.
       def candidates
-        newest_tracker_at = ProjectTracker.maximum(:created_at)
+        # Only trackers a meeting could be matched to: a new internal tracker
+        # must not send every unmatched meeting back to the model.
+        newest_tracker_at = open_client_trackers.map(&:created_at).compact.max
         due = []
         Meeting.where(started_at: WINDOW.ago..).where(id: readable_meeting_ids)
                .includes(:meeting_project_scan).order(started_at: :desc, id: :desc).each do |meeting|
@@ -128,12 +131,17 @@ module Stacks
         end
       end
 
+      # Client work only. Trackers for our own companies (internal_client?) are
+      # left out: a hiring interview or a company meeting would otherwise be
+      # filed under whichever internal tracker shares the most people.
+      def open_client_trackers
+        @open_client_trackers ||= ProjectTracker.where(work_completed_at: nil)
+                                                .includes(forecast_projects: :forecast_client)
+                                                .reject(&:internal_client?)
+      end
+
       def candidate_trackers
-        # Client work only. Trackers for our own companies (internal_client?) are
-        # left out: a hiring interview or a company meeting would otherwise be
-        # filed under whichever internal tracker shares the most people.
-        open_trackers = ProjectTracker.where(work_completed_at: nil).includes(forecast_projects: :forecast_client)
-        open_trackers.reject(&:internal_client?).map do |pt|
+        open_client_trackers.map do |pt|
           { id: pt.id, names: ([pt.name] + pt.forecast_projects.map(&:name)).compact.uniq,
             client: pt.derived_client&.name, people: pt.matcher_people }
         end
@@ -143,9 +151,10 @@ module Stacks
         # Notes first: they are the summary, and the title comes from the first.
         docs = Meeting.notes_first(meeting.eligible_documents.to_a)
         return if docs.empty?
-        # Read before the prompt is built, so a document that changes while the
-        # model is answering leaves a stale hash and is matched again tomorrow.
-        content_hash = meeting.eligible_content_hash
+        # Hashed from the documents the prompt is built from, not read again: a
+        # document that changes after this load leaves a stale hash and is
+        # matched again tomorrow.
+        content_hash = Meeting.content_hash_for(docs)
         # Never meeting.title: it can have been written by an excluded document.
         title = meeting.eligible_title(docs) || "(untitled)"
 
@@ -154,17 +163,21 @@ module Stacks
         stats[:input_tokens] += result.input_tokens.to_i
         stats[:output_tokens] += result.output_tokens.to_i
         data = result.data
+        # The model's output is not trusted to be in range, short, or even a string.
+        confidence = data["confidence"].to_f.clamp(0.0, 1.0)
+        rationale = data["rationale"].to_s.squish.first(RATIONALE_CHARS)
 
-        ids = Array(data["tracker_ids"]).uniq & trackers.map { |t| t[:id] }
-        ids = [] if data["confidence"].to_f < CONFIDENCE_THRESHOLD
+        candidate_ids = trackers.map { |t| t[:id] }
+        ids = Array(data["tracker_ids"]).uniq & candidate_ids
+        ids = [] if confidence < CONFIDENCE_THRESHOLD
 
         if @dry_run
           stats[:results] << { meeting_id: meeting.id, title: title, tracker_ids: ids,
-                               confidence: data["confidence"], rationale: data["rationale"] }
+                               confidence: confidence, rationale: rationale }
           return
         end
 
-        outcome = write!(meeting, ids, data, content_hash)
+        outcome = write!(meeting, ids, candidate_ids, confidence, rationale, content_hash)
         stats[outcome] += 1 if outcome
       rescue StandardError => e
         # Timeouts and socket errors are not wrapped by the provider. No scan row, so retried next night.
@@ -174,7 +187,7 @@ module Stacks
 
       # Returns the outcome written, or nil when a person locked the meeting
       # while the model was answering (their judgment stands; nothing is written).
-      def write!(meeting, ids, data, content_hash)
+      def write!(meeting, ids, candidate_ids, confidence, rationale, content_hash)
         outcome = nil
         MeetingProjectScan.transaction do
           scan = MeetingProjectScan.lock.find_by(meeting_id: meeting.id)
@@ -183,10 +196,12 @@ module Stacks
           ids.each do |tracker_id|
             link = MeetingProjectTracker.find_or_initialize_by(meeting_id: meeting.id, project_tracker_id: tracker_id)
             link.via_matcher = true
-            link.assign_attributes(confidence: data["confidence"], rationale: data["rationale"])
+            link.assign_attributes(confidence: confidence, rationale: rationale)
             link.save!
           end
-          destroy_llm_links!(MeetingProjectTracker.where(meeting_id: meeting.id).where.not(project_tracker_id: ids))
+          # Only links the model was offered and did not return. A link to a
+          # tracker that is no longer a candidate (completed since) is left alone.
+          destroy_llm_links!(MeetingProjectTracker.where(meeting_id: meeting.id, project_tracker_id: candidate_ids - ids))
 
           outcome = MeetingProjectTracker.where(meeting_id: meeting.id).exists? ? :linked : :no_match
           scan ||= MeetingProjectScan.new(meeting_id: meeting.id)

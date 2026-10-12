@@ -25,6 +25,19 @@ class MeetingProjectTracker < ApplicationRecord
       .group_by(&:first).transform_values { |pairs| pairs.map(&:last).sort }
   end
 
+  # A tracker is being destroyed: its links go, without callbacks (nothing is
+  # locked by it). A scan left with no links says no_match, so the meeting
+  # shows under Needs Review and gets the matcher's kickoff retry; a
+  # human_locked scan keeps its lock. The caller checks table_exists?.
+  def self.remove_for_tracker!(project_tracker_id)
+    meeting_ids = where(project_tracker_id: project_tracker_id).pluck(:meeting_id)
+    return if meeting_ids.empty?
+    where(project_tracker_id: project_tracker_id).delete_all
+    still_linked = where(meeting_id: meeting_ids).distinct.pluck(:meeting_id)
+    MeetingProjectScan.where(meeting_id: meeting_ids - still_linked)
+                      .update_all(outcome: MeetingProjectScan.outcomes[:no_match])
+  end
+
   before_validation { self.matched_by = :human unless via_matcher || persisted? }
 
   after_save    :human_lock_scan!, unless: :via_matcher

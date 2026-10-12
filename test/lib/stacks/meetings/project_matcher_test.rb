@@ -78,6 +78,54 @@ class StacksMeetingsProjectMatcherTest < ActiveSupport::TestCase
     assert_equal 1, stats[:no_match]
   end
 
+  test "confidence exactly at the threshold links" do
+    m = meeting!
+    doc!(m)
+    Stacks::AI.stubs(:extract).returns(answer(confidence: Matcher::CONFIDENCE_THRESHOLD))
+    Matcher.run!
+    assert_equal [@tracker.id], m.meeting_project_trackers.pluck(:project_tracker_id)
+    assert_equal 0.6, m.meeting_project_trackers.first.confidence
+    assert m.reload.meeting_project_scan.linked?
+  end
+
+  test "a confidence outside 0 to 1 is clamped before it is stored" do
+    m = meeting!
+    doc!(m)
+    Stacks::AI.stubs(:extract).returns(answer(confidence: 5))
+    Matcher.run!
+    assert_equal 1.0, m.meeting_project_trackers.first.confidence
+  end
+
+  test "a very long rationale is stored at 300 characters, on one line" do
+    m = meeting!
+    doc!(m)
+    Stacks::AI.stubs(:extract).returns(answer(rationale: "Names  the\nclient. " + ("x" * 50_000)))
+    Matcher.run!
+    rationale = m.meeting_project_trackers.first.rationale
+    assert_equal 300, rationale.length
+    assert rationale.start_with?("Names the client. xxx")
+  end
+
+  test "a rationale that is not a string does not raise and is stored as text" do
+    m = meeting!
+    doc!(m)
+    Stacks::AI.stubs(:extract).returns(answer(rationale: { "why" => "Title names the client." }))
+    stats = Matcher.run!
+    assert_equal 0, stats[:errored]
+    assert_equal({ "why" => "Title names the client." }.to_s.squish, m.meeting_project_trackers.first.rationale)
+    assert m.reload.meeting_project_scan.linked?
+  end
+
+  test "a dry run reports the confidence and rationale as they would be stored" do
+    doc!(meeting!)
+    Stacks::AI.stubs(:extract).returns(answer(confidence: 5, rationale: "y" * 50_000))
+    result = Matcher.run!(dry_run: true)[:results].first
+    assert_equal 1.0, result[:confidence]
+    assert_equal "y" * 300, result[:rationale]
+    Stacks::AI.stubs(:extract).returns(answer(rationale: { "why" => "x" }))
+    assert_kind_of String, Matcher.run!(dry_run: true)[:results].first[:rationale]
+  end
+
   test "an empty answer is no_match" do
     m = meeting!
     doc!(m)
@@ -133,6 +181,15 @@ class StacksMeetingsProjectMatcherTest < ActiveSupport::TestCase
     %w[PRIVATE-TITLE SECRET-CHUNK SECRET-SEGMENT Hidden\ Speaker Segment\ Speaker Hidden\ Contact hidden@client.example].each do |leak|
       assert_not_includes prompt, leak
     end
+  end
+
+  test "the prompt title comes from the eligible transcript when the notes are excluded" do
+    m = meeting!(title: "PRIVATE NOTES TITLE")
+    exclude!(doc!(m, source: :gemini_notes, title: "PRIVATE NOTES TITLE"))
+    doc!(m, title: "Harvey weekly sync")
+    prompt = prompt_sent
+    assert_includes prompt, "Meeting title: Harvey weekly sync"
+    assert_not_includes prompt, "PRIVATE NOTES TITLE"
   end
 
   test "an untitled eligible document never borrows the meeting row's title" do
@@ -220,6 +277,56 @@ class StacksMeetingsProjectMatcherTest < ActiveSupport::TestCase
     assert m.reload.meeting_project_scan.no_match?
   end
 
+  test "a link to a tracker completed since survives a rescan" do
+    m = meeting!
+    doc = doc!(m, content_hash: "v1")
+    Stacks::AI.stubs(:extract).returns(answer)
+    Matcher.run!
+    link = MeetingProjectTracker.find_by!(meeting: m, project_tracker: @tracker)
+
+    @tracker.update_columns(work_completed_at: 1.day.ago)
+    doc.update!(content_hash: "v2")
+    Stacks::AI.expects(:extract).once.returns(answer(tracker_ids: []))
+    stats = Matcher.run!
+
+    assert MeetingProjectTracker.exists?(link.id), "the tracker is no longer a candidate, so the model could not have returned it"
+    scan = m.reload.meeting_project_scan
+    assert scan.linked?
+    assert_equal m.eligible_content_hash, scan.scanned_hash
+    assert_equal 1, stats[:linked]
+  end
+
+  test "a person's link is never removed, even when the scan is not locked" do
+    m = meeting!
+    doc!(m)
+    other = tracker!("Acme Phase 2")
+    human = MeetingProjectTracker.new(meeting: m, project_tracker: @tracker, matched_by: :human)
+    human.via_matcher = true # saved without taking the lock
+    human.save!
+    assert human.human?
+    assert_nil m.reload.meeting_project_scan
+
+    Stacks::AI.expects(:extract).once.returns(answer(tracker_ids: [other.id]))
+    Matcher.run!
+
+    assert MeetingProjectTracker.exists?(human.id)
+    assert human.reload.human?
+    assert_equal [@tracker.id, other.id].sort, m.meeting_project_trackers.pluck(:project_tracker_id).sort
+    assert_not m.reload.meeting_project_scan.human_locked?
+  end
+
+  test "the scan's hash is taken from the documents the prompt was built from, not read again" do
+    m = meeting!
+    transcript = doc!(m, content_hash: "v1")
+    notes = doc!(m, source: :gemini_notes, content_hash: "n1")
+    expected = Meeting.content_hash_for([transcript, notes])
+    # A second read could see a document that changed after the prompt's were loaded.
+    Meeting.any_instance.expects(:eligible_content_hash).never
+    Stacks::AI.expects(:extract).once.returns(answer)
+    Matcher.run!
+    assert_equal expected, MeetingProjectScan.find_by!(meeting_id: m.id).scanned_hash
+  end
+
   test "a matched meeting that stops being readable loses its llm links and scan, with no model call" do
     m = meeting!
     doc = doc!(m)
@@ -291,6 +398,26 @@ class StacksMeetingsProjectMatcherTest < ActiveSupport::TestCase
     MeetingProjectScan.create!(meeting: m, outcome: :no_match, scanned_at: 1.day.ago, scanned_hash: m.eligible_content_hash)
     Stacks::AI.expects(:extract).never
     Matcher.run!
+  end
+
+  test "a no_match meeting is not retried when the only newer tracker is one of our own companies'" do
+    m = meeting!
+    doc!(m)
+    MeetingProjectScan.create!(meeting: m, outcome: :no_match, scanned_at: 1.day.ago, scanned_hash: m.eligible_content_hash)
+    # As in the internal-tracker test below: every open tracker reads as internal.
+    ProjectTracker.any_instance.stubs(:internal_client?).returns(true)
+    Stacks::AI.expects(:extract).never
+    assert_equal 0, Matcher.run![:scanned]
+  end
+
+  test "a no_match meeting is not retried when the only newer tracker is already completed" do
+    m = meeting!
+    doc!(m)
+    @tracker.update_columns(created_at: 3.days.ago)
+    tracker!("Finished Project", work_completed_at: 1.hour.ago)
+    MeetingProjectScan.create!(meeting: m, outcome: :no_match, scanned_at: 1.day.ago, scanned_hash: m.eligible_content_hash)
+    Stacks::AI.expects(:extract).never
+    assert_equal 0, Matcher.run![:scanned]
   end
 
   test "a linked meeting is not retried just because a tracker is new" do

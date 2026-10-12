@@ -50,6 +50,13 @@ class AdminMeetingMatchesTest < ActionDispatch::IntegrationTest
     Nokogiri::HTML(response.body)
   end
 
+  def count_queries
+    count = 0
+    counter = ->(*, payload) { count += 1 unless %w[SCHEMA TRANSACTION].include?(payload[:name]) }
+    ActiveSupport::Notifications.subscribed(counter, "sql.active_record") { yield }
+    count
+  end
+
   def row_for(meeting)
     page.at_css("#meeting_project_scan_#{meeting.meeting_project_scan.id}")
   end
@@ -112,14 +119,72 @@ class AdminMeetingMatchesTest < ActionDispatch::IntegrationTest
   end
 
   test "a meeting with no eligible document is listed nowhere and none of its text is shown" do
-    m = matched!("PRIVATE-MEETING-TITLE", rationale: "PRIVATE-RATIONALE about a salary.")
+    private_tracker = tracker!("Zebra Confidential Engagement")
+    m = matched!("PRIVATE-MEETING-TITLE", tracker: private_tracker, confidence: 0.7, rationale: "PRIVATE-RATIONALE about a salary.")
     exclude!(m.documents.first)
+    unmatched = matched!("PRIVATE-MEETING-TITLE unmatched", tracker: nil)
+    exclude!(unmatched.documents.first)
+    listed = matched!("Harvey weekly sync")
     ["needs_review", "linked", "no_match", "all", nil].each do |scope|
       get admin_meeting_project_scans_path(scope: scope)
       assert_response :success
+      # Not just its text: the meeting has no row at all, under any scope.
+      assert_nil row_for(m), "a private meeting has a row under #{scope.inspect}"
+      assert_nil row_for(unmatched), "a private unmatched meeting has a row under #{scope.inspect}"
+      assert_not_includes response.body, "Zebra Confidential Engagement"
+      assert_not_includes response.body, new_admin_meeting_project_tracker_path(meeting_id: m.id)
       assert_not_includes response.body, "PRIVATE-MEETING-TITLE"
       assert_not_includes response.body, "PRIVATE-RATIONALE"
     end
+    get admin_meeting_project_scans_path(scope: "all")
+    assert_equal 1, page.css("tr[id^='meeting_project_scan_']").size
+    assert row_for(listed)
+  end
+
+  test "an excluded notes document's title is never shown, though notes sort first" do
+    m = meeting!("PRIVATE NOTES TITLE")
+    exclude!(doc!(m, source: :gemini_notes, title: "PRIVATE NOTES TITLE", url: "https://docs.example/private-notes"))
+    doc!(m, title: "Harvey weekly sync", url: "https://docs.example/transcript-2")
+    MeetingProjectScan.create!(meeting: m, outcome: :no_match, scanned_at: 1.hour.ago, scanned_hash: m.eligible_content_hash)
+
+    get admin_meeting_project_scans_path(scope: "all")
+    assert_includes row_for(m).text, "Harvey weekly sync"
+    assert row_for(m).at_css("a[href='https://docs.example/transcript-2']")
+    assert_not_includes response.body, "PRIVATE NOTES TITLE"
+    assert_not_includes response.body, "https://docs.example/private-notes"
+  end
+
+  test "a reason written about an absorbed meeting's documents is not shown after the absorb" do
+    survivor = matched!("Harvey weekly sync", tracker: nil)
+    standalone = meeting!("Harvey weekly sync notes")
+    notes = doc!(standalone, source: :gemini_notes)
+    link = MeetingProjectTracker.new(meeting: standalone, project_tracker: @tracker, confidence: 0.9, rationale: "SECRET NOTES TEXT")
+    link.via_matcher = true
+    link.save!
+    # The notes are walled off, then the ETL folds the standalone meeting into the survivor.
+    exclude!(notes)
+    standalone.documents.update_all(source_record_id: survivor.id)
+    survivor.absorb_project_matches_from!(standalone)
+    standalone.reload.destroy
+
+    get admin_meeting_project_scans_path(scope: "all")
+    assert_response :success
+    row = row_for(survivor.reload)
+    assert_includes row.text, "Harvey Staff Augmentation", "the link itself came along"
+    assert_not_includes response.body, "SECRET NOTES TEXT"
+  end
+
+  test "the index issues the same number of queries for 2 meetings as for 6" do
+    2.times { |i| matched!("Harvey sync #{i}") }
+    get admin_meeting_project_scans_path(scope: "all") # warm up
+    at_2 = count_queries { get admin_meeting_project_scans_path(scope: "all") }
+    assert_equal 2, page.css("tr[id^='meeting_project_scan_']").size
+    assert_includes response.body, "Title names the client."
+
+    4.times { |i| matched!("Acme sync #{i}", tracker: tracker!("Acme #{i}")) }
+    at_6 = count_queries { get admin_meeting_project_scans_path(scope: "all") }
+    assert_equal 6, page.css("tr[id^='meeting_project_scan_']").size
+    assert_equal at_2, at_6, "the page issues a query per row"
   end
 
   test "the title shown comes from an eligible document, never from the meeting row" do
@@ -171,6 +236,15 @@ class AdminMeetingMatchesTest < ActionDispatch::IntegrationTest
     assert_includes options, "Harvey Staff Augmentation"
     assert_not_includes options, done.name
     assert page.at_css("form a[href='#{admin_meeting_project_scans_path}']"), "Cancel goes back to Meeting Matches"
+  end
+
+  test "the add-a-project form takes the meeting's title from an eligible document, never from the meeting row" do
+    m = matched!("Harvey weekly sync", tracker: nil)
+    m.update_columns(title: "PRIVATE ROW TITLE")
+    get new_admin_meeting_project_tracker_path(meeting_id: m.id)
+    assert_response :success
+    assert_includes page.css("form").text, "Harvey weekly sync"
+    assert_not_includes response.body, "PRIVATE ROW TITLE"
   end
 
   test "creating a link by hand makes a human link, locks the scan and returns to the page" do

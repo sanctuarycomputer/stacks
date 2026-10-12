@@ -203,8 +203,111 @@ class MeetingProjectMatchTest < ActiveSupport::TestCase
                                scanned_hash: "theirs", human_locked: true)
     survivor.absorb_project_matches_from!(standalone)
     scan = survivor.reload.meeting_project_scan
-    assert_equal "mine", scan.scanned_hash
+    assert_nil scan.scanned_hash, "the survivor's documents changed, so its old hash no longer stands"
     assert scan.human_locked?
     assert MeetingProjectScan.exists?(meeting_id: standalone.id), "the other scan is left for the destroy"
+  end
+
+  test "absorb_project_matches_from! blanks what the matcher wrote about the other meeting's documents" do
+    survivor = meeting!
+    doc!(survivor)
+    MeetingProjectScan.create!(meeting: survivor, outcome: :no_match, scanned_at: 1.day.ago,
+                               scanned_hash: survivor.eligible_content_hash)
+    standalone = meeting!
+    doc!(standalone, source: :gemini_notes)
+    moved = MeetingProjectTracker.new(meeting: standalone, project_tracker: tracker!("Harvey"),
+                                      confidence: 0.9, rationale: "SECRET NOTES TEXT")
+    moved.via_matcher = true
+    moved.save!
+
+    survivor.absorb_project_matches_from!(standalone)
+
+    moved.reload
+    assert_equal survivor.id, moved.meeting_id
+    assert moved.llm?
+    assert_nil moved.rationale
+    assert_nil moved.confidence
+    scan = survivor.reload.meeting_project_scan
+    assert_nil scan.scanned_hash
+    assert_not scan.human_locked?
+    assert scan.linked?, "the survivor now has a link"
+  end
+
+  test "absorb_project_matches_from! leaves a moved scan saying what the survivor now has" do
+    survivor = meeting!
+    doc!(survivor)
+    matcher_link!(survivor, tracker!("Harvey"))
+    standalone = meeting!
+    doc!(standalone, source: :gemini_notes)
+    MeetingProjectScan.create!(meeting: standalone, outcome: :no_match, scanned_at: 1.day.ago, scanned_hash: "theirs")
+
+    survivor.absorb_project_matches_from!(standalone)
+
+    scan = survivor.reload.meeting_project_scan
+    assert scan.linked?
+    assert_equal "theirs", scan.scanned_hash
+  end
+
+  test "absorb_project_matches_from! with no links on either side leaves the survivor's scan no_match" do
+    survivor = meeting!
+    doc!(survivor)
+    MeetingProjectScan.create!(meeting: survivor, outcome: :no_match, scanned_at: 1.day.ago, scanned_hash: "mine")
+    standalone = meeting!
+    doc!(standalone, source: :gemini_notes)
+    survivor.absorb_project_matches_from!(standalone)
+    scan = survivor.reload.meeting_project_scan
+    assert scan.no_match?
+    assert_nil scan.scanned_hash
+  end
+
+  test "destroying a tracker leaves a scan with no links as no_match, and one with another link as linked" do
+    gone = tracker!("Harvey")
+    stays = tracker!("Acme")
+    emptied = meeting!
+    doc!(emptied)
+    matcher_link!(emptied, gone)
+    MeetingProjectScan.create!(meeting: emptied, outcome: :linked, scanned_at: 1.day.ago, scanned_hash: "a")
+    still_linked = meeting!
+    doc!(still_linked)
+    matcher_link!(still_linked, gone)
+    matcher_link!(still_linked, stays)
+    MeetingProjectScan.create!(meeting: still_linked, outcome: :linked, scanned_at: 1.day.ago, scanned_hash: "b")
+    untouched = meeting!
+    doc!(untouched)
+    matcher_link!(untouched, stays)
+    MeetingProjectScan.create!(meeting: untouched, outcome: :linked, scanned_at: 1.day.ago, scanned_hash: "c")
+
+    gone.reload.destroy
+
+    scan = emptied.reload.meeting_project_scan
+    assert scan.no_match?
+    assert_not scan.human_locked?, "a tracker going away is not a person's correction"
+    assert_equal "a", scan.scanned_hash
+    assert still_linked.reload.meeting_project_scan.linked?
+    assert untouched.reload.meeting_project_scan.linked?
+  end
+
+  test "destroying a tracker keeps a person's lock, and the locked scan is no_match once it has no links" do
+    gone = tracker!("Harvey")
+    m = meeting!
+    doc!(m)
+    MeetingProjectTracker.create!(meeting: m, project_tracker: gone)
+    scan = m.reload.meeting_project_scan
+    assert scan.human_locked?
+    assert scan.linked?
+
+    gone.reload.destroy
+
+    assert scan.reload.human_locked?
+    assert scan.no_match?
+  end
+
+  test "content_hash_for hashes loaded documents the way eligible_content_hash does" do
+    m = meeting!
+    a = doc!(m, content_hash: "a1")
+    b = doc!(m, source: :gemini_notes, content_hash: "b1")
+    assert_equal m.eligible_content_hash, Meeting.content_hash_for([b, a])
+    assert_equal Digest::SHA256.hexdigest("#{a.id}:a1|#{b.id}:b1"), Meeting.content_hash_for([a, b])
+    assert_nil Meeting.content_hash_for([])
   end
 end

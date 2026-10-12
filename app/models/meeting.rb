@@ -32,7 +32,13 @@ class Meeting < ApplicationRecord
 
   # What the matcher was allowed to read, as one value: nil when nothing is.
   def eligible_content_hash
-    parts = eligible_documents.pluck(:id, :content_hash).sort_by(&:first)
+    Meeting.content_hash_for(eligible_documents.select(:id, :content_hash))
+  end
+
+  # The same value for documents already loaded. Callers pass eligible
+  # documents only; the matcher hashes exactly the ones its prompt is built from.
+  def self.content_hash_for(documents)
+    parts = documents.map { |d| [d.id, d.content_hash] }.sort_by(&:first)
     return nil if parts.empty?
     Digest::SHA256.hexdigest(parts.map { |id, hash| "#{id}:#{hash}" }.join("|"))
   end
@@ -42,19 +48,29 @@ class Meeting < ApplicationRecord
   # lacks are moved (no callbacks, so nothing is locked by the move), and the
   # scan is moved when the survivor has none. When both have a scan the
   # survivor's stays, locked if either was, so a person's correction survives.
+  #
+  # A moved link loses its rationale and confidence: they were written about
+  # a different set of documents, some of which may since have been excluded.
+  # A scan the survivor already had loses its hash for the same reason: no
+  # "Why" is shown until the matcher has read the merged meeting (an unlocked
+  # scan is matched again; a locked one just shows no reason).
   def absorb_project_matches_from!(other)
     return unless MeetingProjectTracker.table_exists?
     already = MeetingProjectTracker.where(meeting_id: id).pluck(:project_tracker_id)
     MeetingProjectTracker.where(meeting_id: other.id).where.not(project_tracker_id: already)
-                         .update_all(meeting_id: id)
+                         .update_all(meeting_id: id, rationale: nil, confidence: nil)
     theirs = MeetingProjectScan.find_by(meeting_id: other.id)
-    return if theirs.nil?
-    mine = MeetingProjectScan.find_by(meeting_id: id)
-    if mine.nil?
+    scan = MeetingProjectScan.find_by(meeting_id: id)
+    if scan
+      scan.update_columns(scanned_hash: nil, human_locked: scan.human_locked? || theirs&.human_locked? || false)
+    elsif theirs
       theirs.update_columns(meeting_id: id)
-    elsif theirs.human_locked? && !mine.human_locked?
-      mine.update_columns(human_locked: true)
+      scan = theirs
     end
+    return if scan.nil?
+    # The outcome says what the survivor has now, not what either had before.
+    linked = MeetingProjectTracker.where(meeting_id: id).exists?
+    scan.update_columns(outcome: MeetingProjectScan.outcomes[linked ? :linked : :no_match])
   end
 
   private

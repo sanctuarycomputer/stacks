@@ -66,7 +66,9 @@ ActiveAdmin.register MeetingProjectScan do
     column("Why") do |scan|
       # The reason was written from the documents the matcher read. Once those
       # have changed (one was excluded, say), it is no longer shown.
-      if scan.scanned_hash.present? && scan.scanned_hash == scan.meeting.eligible_content_hash
+      # Hashed from the documents already loaded for the row, not queried per row.
+      docs = scan.meeting.documents.select(&:corpus_eligible?)
+      if scan.scanned_hash.present? && scan.scanned_hash == Meeting.content_hash_for(docs)
         rationale = scan.meeting.meeting_project_trackers.sort_by(&:id).map(&:rationale).find(&:present?)
         span rationale if rationale
       end
