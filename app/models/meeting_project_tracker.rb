@@ -15,6 +15,16 @@ class MeetingProjectTracker < ApplicationRecord
   # these links must not become a way to see or file a private meeting.
   validate :meeting_must_be_readable, unless: :via_matcher
 
+  # {meeting_id => sorted tracker ids} for the given meetings, in one query.
+  # What the MCP document tools return: ids only, never the rationale.
+  def self.tracker_ids_by_meeting(meeting_ids)
+    meeting_ids = Array(meeting_ids).compact.uniq
+    # Deploys land before migrations on Heroku: without the table, no matches (not a crash).
+    return {} if meeting_ids.empty? || !table_exists?
+    where(meeting_id: meeting_ids).pluck(:meeting_id, :project_tracker_id)
+      .group_by(&:first).transform_values { |pairs| pairs.map(&:last).sort }
+  end
+
   before_validation { self.matched_by = :human unless via_matcher || persisted? }
 
   after_save    :human_lock_scan!, unless: :via_matcher

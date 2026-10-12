@@ -1,7 +1,8 @@
 module Mcp
   class GetDocumentTool < MCP::Tool
     tool_name 'get_document'
-    description 'Fetch one corpus-eligible document with its transcript segments, full text, and meeting key.'
+    description 'Fetch one corpus-eligible document with its transcript segments, full text, and meeting key. ' \
+                'project_tracker_ids lists the project tracker(s) its meeting was matched to (empty when none, or not a meeting).'
     input_schema(properties: { id: { type: 'integer' } }, required: ['id'])
     annotations(read_only_hint: true, destructive_hint: false, idempotent_hint: true)
 
@@ -20,11 +21,15 @@ module Mcp
       # segments) is still readable. Callers prefer `segments` for transcripts, `body` for notes.
       body = doc.chunks.order(:position).pluck(:content).join("\n")
       meeting_key = is_meeting ? meeting.id : nil
+      # Which project tracker(s) the meeting was about: ids only. The matcher's rationale and
+      # confidence stay in Stacks.
+      project_tracker_ids = is_meeting ? MeetingProjectTracker.tracker_ids_by_meeting([meeting.id]).fetch(meeting.id, []) : []
       # google_groups: expose the RFC822 root Message-ID (external_id) so an observing agent can
       # build the precise Gmail deep link (rfc822msgid:<id>). url already carries the group.
       extra = doc.google_groups? ? { root_message_id: doc.external_id } : {}
       Responses.ok({ id: doc.id, title: doc.title, url: doc.url, occurred_at: doc.occurred_at,
-                     source: doc.source, meeting_key: meeting_key, segments: segments, body: body }
+                     source: doc.source, meeting_key: meeting_key, project_tracker_ids: project_tracker_ids,
+                     segments: segments, body: body }
                    .merge(extra))
     end
   end
