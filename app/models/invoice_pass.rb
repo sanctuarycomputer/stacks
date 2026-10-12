@@ -51,11 +51,18 @@ class InvoicePass < ApplicationRecord
       # passes were per-enterprise this resolved qa from the client's billing
       # enterprise and created the tracker on `self` regardless, which is how
       # garden3d-issued trackers ended up on Sanctuary's pass.
+      #
+      # NOTE: `is_internal?` and "has a non-Sanctuary billing_enterprise" are
+      # currently the SAME predicate (both reduce to enterprise_forecast_client
+      # being present), so after the reject above `issuer` is always Sanctuary
+      # and this guard only ever fires to stop a non-Sanctuary pass absorbing
+      # Sanctuary's clients. Real per-issuer forecast invoicing needs those two
+      # concepts separated first.
       issuer = c.billing_enterprise || Enterprise.sanctuary
       next unless issuer == enterprise
 
       qa = issuer.qbo_account
-      next if qa.nil?
+      raise "Issuer #{issuer.name} has no connected QboAccount" if qa.nil?
 
       InvoiceTracker.find_or_create_by!(
         forecast_client_id: c.forecast_id,

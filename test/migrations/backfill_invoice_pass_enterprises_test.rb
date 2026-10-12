@@ -15,6 +15,7 @@ class BackfillInvoicePassEnterprisesTest < ActiveSupport::TestCase
 
     @sanctuary = enterprises(:sanctuary)
     @garden3d = enterprises(:garden3d)
+    @one = enterprises(:one)
     # Sanctuary already has two qbo_account fixtures; pin the one has_one picks.
     @sanctuary_qa = Enterprise.find(@sanctuary.id).qbo_account
     @garden3d_qa = QboAccount.create!(enterprise: @garden3d, realm_id: "g-realm",
@@ -98,11 +99,30 @@ class BackfillInvoicePassEnterprisesTest < ActiveSupport::TestCase
     assert tagged.data["created_by_backfill"]
   end
 
-  test "down re-merges only the passes the backfill created" do
+  test "down refuses to roll back when an untagged pass shares a month with another pass" do
     pass = build_pass_with_trackers(Date.new(2095, 5, 1), [@sanctuary_qa, @garden3d_qa])
     BackfillInvoicePassEnterprises.new.up
 
-    # A legitimate garden3d pass that the backfill did NOT create must survive.
+    # An untagged pass for an unrelated enterprise, sharing the Sanctuary
+    # pass's month -- exactly what a future Mso::MonthlyRun pass looks like.
+    # After the re-merge loop this leaves two untagged passes in the same
+    # month, so re-adding the single-column unique index on start_of_month
+    # would otherwise fail with a raw Postgres unique violation.
+    conflicting = InvoicePass.create!(start_of_month: Date.new(2095, 5, 1),
+                                      enterprise: @one, data: {})
+
+    error = assert_raises(RuntimeError) { BackfillInvoicePassEnterprises.new.down }
+    assert_match "2095-05-01", error.message
+
+    assert conflicting.reload.persisted?
+  end
+
+  test "down still re-merges and leaves an untagged pass in a non-conflicting month alone" do
+    pass = build_pass_with_trackers(Date.new(2095, 5, 1), [@sanctuary_qa, @garden3d_qa])
+    BackfillInvoicePassEnterprises.new.up
+
+    # A legitimate garden3d pass that the backfill did NOT create, in a month
+    # with no other pass, must survive the rollback untouched.
     untagged = InvoicePass.create!(start_of_month: Date.new(2095, 9, 1),
                                    enterprise: @garden3d, data: {})
 

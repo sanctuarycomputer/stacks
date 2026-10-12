@@ -4,8 +4,6 @@ class AutomatorInvoicePassTest < ActiveSupport::TestCase
   def setup
     @sanctuary = enterprises(:sanctuary)
     @garden3d = enterprises(:garden3d)
-    QboAccount.create!(enterprise: @garden3d, realm_id: "g-realm",
-                       client_id: "x", client_secret: "y")
   end
 
   def teardown

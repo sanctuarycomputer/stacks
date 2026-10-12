@@ -65,6 +65,7 @@ class BackfillInvoicePassEnterprises < ActiveRecord::Migration[6.1]
   end
 
   def down
+    sanctuary = Enterprise.find_by!(name: Enterprise::SANCTUARY_NAME)
     created = InvoicePass.where("data->>'created_by_backfill' = 'true'")
 
     created.each do |pass|
@@ -74,7 +75,7 @@ class BackfillInvoicePassEnterprises < ActiveRecord::Migration[6.1]
 
       target = InvoicePass.find_by(
         start_of_month: pass.start_of_month,
-        enterprise_id: Enterprise.find_by!(name: Enterprise::SANCTUARY_NAME).id,
+        enterprise_id: sanctuary.id,
       )
       raise "No Sanctuary pass for #{pass.start_of_month} to re-merge into" if target.nil?
 
@@ -84,6 +85,26 @@ class BackfillInvoicePassEnterprises < ActiveRecord::Migration[6.1]
 
       pass.invoice_trackers.update_all(invoice_pass_id: target.id)
       pass.destroy!
+    end
+
+    # Pre-flight: if any surviving untagged pass shares a month with another
+    # pass (e.g. a Mso::MonthlyRun pass created after this migration ran),
+    # re-adding the unique index below fails with a raw Postgres unique
+    # violation mid-rollback. Catch it here with a clear message instead.
+    # `IS DISTINCT FROM` (not a plain `!=`/`where.not`) is required here: for a
+    # pass with no "created_by_backfill" key at all, `data->>'created_by_backfill'`
+    # is SQL NULL, and `NOT (NULL = 'true')` is itself NULL -- which Postgres
+    # treats as "no match", silently excluding every ordinary pass and making
+    # this check a no-op.
+    conflicts = InvoicePass
+      .where("(data->>'created_by_backfill') IS DISTINCT FROM 'true'")
+      .group(:start_of_month)
+      .having("count(*) > 1")
+      .count
+      .keys
+    if conflicts.any?
+      raise "Cannot roll back: untagged passes share months with other passes " \
+            "(#{conflicts.map(&:to_s).join(', ')}). Re-merge or remove them first."
     end
 
     if index_name_exists?(:invoice_passes, "index_invoice_passes_on_enterprise_and_month")

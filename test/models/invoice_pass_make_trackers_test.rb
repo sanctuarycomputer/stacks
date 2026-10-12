@@ -4,9 +4,6 @@ class InvoicePassMakeTrackersTest < ActiveSupport::TestCase
   def setup
     @sanctuary = enterprises(:sanctuary)
     @garden3d = enterprises(:garden3d)
-    # Sanctuary already has two qbo_account fixtures and has_one has no ORDER BY;
-    # pin the one it picks rather than creating a third.
-    @sanctuary_qa = Enterprise.find(@sanctuary.id).qbo_account
     QboAccount.create!(enterprise: @garden3d, realm_id: "g-realm",
                        client_id: "x", client_secret: "y")
 
@@ -41,7 +38,7 @@ class InvoicePassMakeTrackersTest < ActiveSupport::TestCase
     # as empty before the tracker is created; reload to see the fresh row.
     tracker = pass.invoice_trackers.reload.first
     assert_equal @external_client.forecast_id, tracker.forecast_client_id
-    assert_equal @sanctuary_qa, tracker.qbo_account
+    assert_equal @sanctuary.id, tracker.qbo_account.enterprise_id
     assert_equal "forecast", tracker.source
   end
 end

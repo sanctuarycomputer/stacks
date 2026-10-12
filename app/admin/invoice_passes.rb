@@ -14,6 +14,7 @@ ActiveAdmin.register InvoicePass do
       # payout. Production showed /admin/invoice_passes index at 4s for
       # 12 rows.
       super.includes(
+        :enterprise,
         invoice_trackers: [
           :qbo_invoice,
           { contributor_payouts: { ledger: { contributor: :forecast_person } } },

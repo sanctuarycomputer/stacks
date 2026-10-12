@@ -66,7 +66,13 @@ class Stacks::Automator
       # two action_items on every pass show page -- on garden3d's pass that would
       # create trackers for Sanctuary's entire external book and push a second
       # full set of real QBO invoices for the month.
-      return unless invoice_pass.enterprise == Enterprise.sanctuary
+      unless invoice_pass.enterprise == Enterprise.sanctuary
+        Rails.logger.warn(
+          "[Automator] refusing forecast invoicing for InvoicePass #{invoice_pass.id} " \
+          "(#{invoice_pass.enterprise.name}); only #{Enterprise::SANCTUARY_NAME} runs it"
+        )
+        return
+      end
 
       needed_reminding = remind_people_to_record_hours_prior_to_invoicing(
         invoice_pass.start_of_month,

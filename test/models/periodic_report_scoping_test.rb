@@ -22,11 +22,20 @@ class PeriodicReportScopingTest < ActiveSupport::TestCase
     month = Date.new(2092, 4, 1)
     InvoicePass.create!(start_of_month: month,
                         enterprise: enterprises(:sanctuary), data: {})
-    InvoicePass.create!(start_of_month: month,
-                        enterprise: enterprises(:garden3d), data: {})
+    garden3d_pass = InvoicePass.create!(start_of_month: month,
+                                        enterprise: enterprises(:garden3d), data: {})
+
+    garden3d_qa = QboAccount.create!(enterprise: enterprises(:garden3d), realm_id: "g-realm",
+                                     client_id: "x", client_secret: "y")
+    garden3d_client = ForecastClient.create!(forecast_id: 920_001, name: "garden3d Co")
+    InvoiceTracker.create!(invoice_pass: garden3d_pass, qbo_account: garden3d_qa,
+                           forecast_client: garden3d_client)
 
     report = PeriodicReport.new(period_starts_at: month, period_gradation: :quarter)
 
+    # Unscoped, invoice_passes would also pull in garden3d's pass and its
+    # tracker above -- this assertion only discriminates because that
+    # tracker now exists.
     assert_equal [], report.invoice_trackers
     assert_nil report.surplus
   end
