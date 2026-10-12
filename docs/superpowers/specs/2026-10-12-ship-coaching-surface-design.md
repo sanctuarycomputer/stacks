@@ -35,7 +35,7 @@ with matcher internals. Two changes make the grade visible and useful.
   with no sender name or address drops the "by ..." part.
 - The whole pill is one link to the ship's page (`admin_weekly_ship_path`), graded or not. Its hover
   title is the grade's one-line summary, then "Open the coaching for this ship." The email is reached
-  from the ship page ("Open in Google Groups", top right), not from the index.
+  from the ship page (its "Sent by" line), not from the index.
 - A reader who cannot open the ship page (`authorized?(:read, WeeklyShip)`, asked once per request,
   never per row) gets the same text with "↗", linked to the email in Google Groups instead, with the
   title "Open the email."
@@ -68,11 +68,11 @@ with matcher internals. Two changes make the grade visible and useful.
 `app/admin/weekly_ships.rb`, `show`, laid out in `app/views/admin/weekly_ships/_show.html.erb` with
 the same modules as the Project Tracker page (`.dashboard-modules`, `.dashboard-module`,
 `.module-header`, `.module-body`, `.factoid`), not ActiveAdmin's default panels. Page title is the
-email subject (`WeeklyShip#display_title`). The top-right actions include "Open in Google Groups ↗"
-(the original email, in a new tab) when the email has a Groups link. Top to bottom:
+email subject (`WeeklyShip#display_title`). Top to bottom:
 
 1. Module "This ship": the project (linked, in the header), and two factoids: the stars with
-   "n of 5", and how long ago it was sent with the sender and date.
+   "n of 5", and how long ago it was sent with "Sent by <sender> on <date> ↗". That line links to the
+   original email in Google Groups, in a new tab, when the email has a Groups link.
 2. Side by side: module "What this ship does well" (the grade's summary) and module "For next time"
    (the one to three suggestions, numbered).
 3. Module "How it scored": one row per rubric dimension, with

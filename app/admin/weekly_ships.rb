@@ -41,12 +41,6 @@ ActiveAdmin.register WeeklyShip do
     actions
   end
 
-  # The original email is one click from the coaching page, not from the lists.
-  action_item :open_in_google_groups, only: :show do
-    url = resource.document.google_groups_permalink
-    link_to "Open in Google Groups ↗", url, target: "_blank", rel: "noopener" if url
-  end
-
   # The coaching page for a ship's sender: what worked, what to add next time,
   # then how it scored against the rubric (Stacks::WeeklyShips::Grader), in the
   # words a Project Lead would use. Never shown to the client.

@@ -22,7 +22,10 @@
       </div>
       <div class="factoid">
         <h2><%= time_ago_in_words(weekly_ship.sent_at) %> ago</h2>
-        <p>Sent by <%= weekly_ship.sender_label %> on <%= weekly_ship.sent_at.strftime("%B %-d, %Y") %></p>
+        <%# The way to the original email: opens Google Groups in a new tab. %>
+        <% sent_line = "Sent by #{weekly_ship.sender_label} on #{weekly_ship.sent_at.strftime("%B %-d, %Y")}" %>
+        <% email_url = weekly_ship.document.google_groups_permalink %>
+        <p><%= email_url ? link_to("#{sent_line} ↗", email_url, target: "_blank", rel: "noopener") : sent_line %></p>
       </div>
     </div>
   </div>

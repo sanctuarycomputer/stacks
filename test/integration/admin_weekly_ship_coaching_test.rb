@@ -209,11 +209,12 @@ class AdminWeeklyShipCoachingTest < ActionDispatch::IntegrationTest
     # Laid out in the Project Tracker page's modules, not ActiveAdmin's default panels.
     assert_empty page.css("#main_content .panel, #main_content .attributes_table")
     assert_includes panel("This ship").at_css(".module-header a")["href"], admin_project_tracker_path(@tracker)
-    # The original email is the page's top-right action.
-    action = page.css("#titlebar_right .action_item a").find { |a| a.text.include?("Open in Google Groups") }
-    assert action, "expected an Open in Google Groups action"
-    assert_match %r{\Ahttps://groups\.google\.com/}, action["href"]
-    assert_equal "_blank", action["target"]
+    # The "Sent by" line is the way to the original email, in a new tab.
+    sent = panel("This ship").css(".module-body a").find { |a| a.text.start_with?("Sent by Sam Lead on ") }
+    assert sent, "expected the Sent by line to be a link"
+    assert_match %r{\Ahttps://groups\.google\.com/}, sent["href"]
+    assert_equal "_blank", sent["target"]
+    assert_not_includes body, "Open in Google Groups"
     assert_not_includes body, "Open the email"
     assert_not_includes body, "Weekly Ship Details"
     assert_includes body, "★★★★☆"
