@@ -122,7 +122,10 @@ class AdminManagementFeeInvoicesTest < ActionDispatch::IntegrationTest
     assert_no_match(/S-ORPHAN-1/, response.body)
   end
 
-  test "a lead editing a legacy garden3d tracker is shown no invoices at all" do
+  # Was "a lead editing a legacy garden3d tracker is shown no invoices at
+  # all", with a 200. garden3d's passes are now admin-only, the legacy ones
+  # included, so the lead does not reach the page.
+  test "a lead cannot open a legacy garden3d tracker's edit page, and is shown no invoices" do
     other = make_payer("Legacy Edit #{SecureRandom.hex(3)}")
     legacy = fee_tracker(@pass, other)
     legacy.update!(blueprint: { "lines" => {} })
@@ -131,7 +134,8 @@ class AdminManagementFeeInvoicesTest < ActionDispatch::IntegrationTest
 
     get edit_admin_invoice_pass_invoice_tracker_path(@pass, legacy)
 
-    assert_response :success
+    assert_response :redirect
+    assert_match(/not authorized/i, flash[:error])
     assert_no_match(/G-ORPHAN-2/, response.body)
   end
 

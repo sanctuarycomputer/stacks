@@ -29,36 +29,52 @@ class AdminAuthorizationManagementFeeTest < ActiveSupport::TestCase
     InvoiceTracker.create!(invoice_pass: pass, forecast_client_id: client.forecast_id, qbo_account: sanctuary_qa)
   end
 
-  test "only an admin may update or regenerate a management fee invoice tracker" do
-    %i[update attempt_generate].each do |action|
+  # The owner's decision: garden3d's passes, and every tracker on them, are
+  # admin-only for every action, reading included. The tests below used to
+  # assert that a lead could READ a fee tracker and its pass, and kept
+  # :update on a legacy garden3d tracker. They now assert the opposite.
+
+  test "only an admin may update or regenerate a management fee invoice tracker, or read it" do
+    %i[update attempt_generate read].each do |action|
       assert auth_for(@admin).authorized?(action, @fee_tracker), "admin should #{action}"
       refute auth_for(@lead).authorized?(action, @fee_tracker), "a lead must not #{action}"
     end
-    assert auth_for(@lead).authorized?(:read, @fee_tracker), "reading is unchanged"
   end
 
-  test "a lead may still update and regenerate a Sanctuary tracker" do
+  test "a lead may still read, update and regenerate a Sanctuary tracker" do
     tracker = sanctuary_tracker
 
+    assert auth_for(@lead).authorized?(:read, tracker)
     assert auth_for(@lead).authorized?(:update, tracker)
     assert auth_for(@lead).authorized?(:attempt_generate, tracker)
+    assert auth_for(@lead).authorized?(:read, tracker.invoice_pass)
   end
 
-  test "a lead keeps update on a legacy garden3d tracker" do
+  test "a lead no longer has anything on a legacy garden3d tracker" do
     other = make_payer("Legacy Auth #{SecureRandom.hex(3)}")
     legacy = fee_tracker(@pass, other)
     legacy.update!(blueprint: { "lines" => {} })
 
-    assert auth_for(@lead).authorized?(:update, legacy)
-    assert auth_for(@lead).authorized?(:attempt_generate, legacy)
+    %i[read update attempt_generate].each do |action|
+      refute auth_for(@lead).authorized?(action, legacy), "a lead must not #{action}"
+      assert auth_for(@admin).authorized?(action, legacy), "admin should #{action}"
+    end
   end
 
-  test "only an admin may create drafts or refresh on a pass" do
-    %i[create_management_fee_drafts refresh_management_fee_invoices].each do |action|
+  test "only an admin may create drafts or refresh on a pass, or read garden3d's" do
+    %i[create_management_fee_drafts refresh_management_fee_invoices read].each do |action|
       assert auth_for(@admin).authorized?(action, @pass), "admin should #{action}"
       refute auth_for(@lead).authorized?(action, @pass), "a lead must not #{action}"
     end
-    assert auth_for(@lead).authorized?(:read, @pass), "a full lead's read is unchanged"
+  end
+
+  test "a lead cannot create drafts or refresh on a Sanctuary pass either" do
+    pass = sanctuary_tracker.invoice_pass
+
+    %i[create_management_fee_drafts refresh_management_fee_invoices].each do |action|
+      refute auth_for(@lead).authorized?(action, pass), "a lead must not #{action}"
+      assert auth_for(@admin).authorized?(action, pass), "admin should #{action}"
+    end
   end
 
   def trainee_auth
@@ -79,9 +95,9 @@ class AdminAuthorizationManagementFeeTest < ActiveSupport::TestCase
     refute auth.authorized?(:read, @pass)
   end
 
-  test "a project-scoped grantee can still open a legacy garden3d pass, as today" do
+  test "a project-scoped grantee cannot open a legacy garden3d pass any more" do
     @fee_tracker.update!(blueprint: { "lines" => {} })
 
-    assert trainee_auth.authorized?(:read, @pass)
+    refute trainee_auth.authorized?(:read, @pass)
   end
 end

@@ -1080,6 +1080,18 @@ fixes below.
   the `Services` item blocks S4 until Finance moves it.
 - `for_month` is a partial figure for an unfinished month.
 
+**Who can see garden3d's passes**
+
+- **Admins only**, the owner's decision, for every action including read: every
+  invoice pass garden3d issues, every tracker on one, and the payouts pages
+  under such a tracker. The seven legacy 2025 passes are included, so leads lose
+  the access they had to those. Enforced in `AdminAuthorization` above the
+  blanket lead grant; `scope_collection` keeps the same rows out of the index
+  pages. This supersedes the narrower restriction §10 asked for (hiding the pass
+  from leads-in-training only).
+- A contributor paid on a legacy garden3d tracker still sees that payout on
+  their own page and can open it; they cannot open the tracker.
+
 **Also changed**
 
 - Saving the tracker edit form no longer detaches its invoice, and only admins

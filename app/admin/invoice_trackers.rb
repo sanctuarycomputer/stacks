@@ -342,6 +342,8 @@ ActiveAdmin.register InvoiceTracker do
   end
 
   controller do
+    before_action :authorize_garden3d_pass!
+
     # Only re-sync the QBO invoice once per 5 minutes per dyno. The previous
     # always-sync fired an OAuth refresh + a QBO API call + an UPDATE on
     # every show. QboInvoice has no timestamp column, so we gate the sync
@@ -377,6 +379,17 @@ ActiveAdmin.register InvoiceTracker do
     end
 
     private
+
+    # garden3d's passes are admin-only, their trackers included: the rule is
+    # AdminAuthorization's. It is asked here of the parent pass, before
+    # anything else runs, because ActiveAdmin authorizes the index against
+    # the InvoiceTracker class alone and does not authorize a member action
+    # that never loads its tracker (toggle_contributor_payout_acceptance).
+    # Only for garden3d's passes: a contributor accepting their own payout on
+    # a Sanctuary tracker has no read on that pass and needs none.
+    def authorize_garden3d_pass!
+      authorize!(:read, parent) if parent.management_fee?
+    end
 
     # Only an admin may change which QuickBooks invoice a tracker points at.
     # The form disables the select for everyone else, but a disabled input
