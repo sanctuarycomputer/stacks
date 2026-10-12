@@ -11,6 +11,8 @@ class StacksTask
     likely_should_mark_as_work_complete?: "Project tracker likely needs to be marked as work complete",
     no_project_lead_set: "Project tracker needs project lead assigned",
     no_account_lead_set: "Project tracker needs account lead assigned",
+    project_sources_not_linked: "Project tracker needs its Twist channel and Notion project linked",
+    stacksbot_not_in_twist_channel: "Stacksbot needs inviting to this project's Twist channel",
 
     # ForecastProject issues
     needs_archiving: "Forecast project needs archiving",

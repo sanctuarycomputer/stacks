@@ -1142,6 +1142,10 @@ ActiveRecord::Schema.define(version: 2026_10_12_180000) do
     t.string "billing_model", default: "new_deal_v1", null: false
     t.decimal "monthly_budget_low_end"
     t.decimal "monthly_budget_high_end"
+    t.string "notion_project_id"
+    t.boolean "twist_channel_accessible"
+    t.datetime "twist_channel_checked_at"
+    t.index ["notion_project_id"], name: "index_project_trackers_on_notion_project_id"
     t.index ["runn_project_id"], name: "index_project_trackers_on_runn_project_id", unique: true
   end
 

@@ -160,7 +160,7 @@ class Mcp::WeeklyShipToolsTest < ActiveSupport::TestCase
   test 'list_project_trackers emits every link, the monthly budget, and the ongoing flag' do
     tracker = tracker!(name: 'Linked (retainer)', monthly_budget_low_end: 5000, monthly_budget_high_end: 8000)
     tracker.project_tracker_links.create!(name: 'MSA', url: 'https://x/msa', link_type: :msa)
-    tracker.project_tracker_links.create!(name: 'Twist', url: 'https://twist.com/a/1/ch/2', link_type: :twist_channel)
+    tracker.project_tracker_links.create!(name: 'Twist', url: 'https://twist.com/a/133876/ch/2/', link_type: :twist_channel)
     # A legacy row with embedded credentials (the validation now rejects these on write).
     legacy = tracker.project_tracker_links.build(name: 'Staging', url: 'https://user:secret@staging.example.com/x', link_type: :staging_link)
     legacy.save!(validate: false)
@@ -172,7 +172,7 @@ class Mcp::WeeklyShipToolsTest < ActiveSupport::TestCase
     assert_equal true, row['considered_ongoing']
     assert_equal 'https://x/msa', row['msa_url']
     assert_equal [%w[MSA https://x/msa msa],
-                  ['Twist', 'https://twist.com/a/1/ch/2', 'twist_channel'],
+                  ['Twist', 'https://twist.com/a/133876/ch/2/', 'twist_channel'],
                   ['Staging', 'https://staging.example.com/x', 'staging_link']],
                  row['links'].map { |l| [l['name'], l['url'], l['link_type']] }
     assert_no_match(/secret/, row.to_json)
@@ -221,7 +221,7 @@ class Mcp::WeeklyShipToolsTest < ActiveSupport::TestCase
 
     after = mcp_payload(Mcp::UpdateProjectTrackerTool.call(
       project_tracker_id: tracker.id, monthly_budget_low_end: 7000,
-      twist_channel_url: 'https://twist.com/a/1/ch/9', notion_homepage_url: 'https://app.notion.com/p/h',
+      twist_channel_url: 'https://twist.com/a/133876/ch/9/', notion_homepage_url: 'https://app.notion.com/p/h',
       server_context: {}
     ))['after']
 
@@ -230,7 +230,7 @@ class Mcp::WeeklyShipToolsTest < ActiveSupport::TestCase
     types = after['links'].map { |l| l['link_type'] }
     assert_includes types, 'twist_channel'
     assert_includes types, 'notion_homepage'
-    assert_equal 'https://twist.com/a/1/ch/9', after['links'].find { |l| l['link_type'] == 'twist_channel' }['url']
+    assert_equal 'https://twist.com/a/133876/ch/9/', after['links'].find { |l| l['link_type'] == 'twist_channel' }['url']
   end
 
   test 'update_project_tracker replaces an existing range with one end, and clears on request' do

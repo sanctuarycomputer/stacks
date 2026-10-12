@@ -8,6 +8,23 @@ class Stacks::Twist
     }
   end
 
+  class Error < StandardError; end
+
+  # Every channel the token's account (Stacksbot) belongs to.
+  def get_channels
+    self.class.get("/channels/get", {
+      headers: @headers,
+      query: { workspace_id: Stacks::Utils.config[:twist][:workspace_id] }
+    })
+  end
+
+  # The headers carry the bearer token, and Ruby prints an object's instance
+  # variables in error messages (NoMethodError, a failed expectation), which
+  # end up in logs and test output.
+  def inspect
+    "#<#{self.class.name}>"
+  end
+
   def get_default_workspace
     self.class.get("/workspaces/get_default", headers: @headers)
   end
