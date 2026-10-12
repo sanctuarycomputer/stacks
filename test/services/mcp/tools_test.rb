@@ -74,6 +74,115 @@ class Mcp::ToolsTest < ActiveSupport::TestCase
     assert_nil standalone['meeting_key']
   end
 
+  # project_tracker_ids: which project tracker(s) a document's meeting was matched to.
+
+  def matched_meeting!(key, tracker_names, rationale: 'RATIONALE-TEXT names the client.')
+    m = Meeting.create!(meet_source: :meet_api, meet_conference_record_id: "cr/#{key}", started_at: 1.day.ago)
+    transcript = Document.create!(source: :meet, external_id: "t-#{key}", title: "Sync #{key}", excluded: :not_excluded,
+                                  source_record: m, occurred_at: 1.day.ago)
+    notes = Document.create!(source: :gemini_notes, external_id: "n-#{key}", title: "Sync #{key} notes", excluded: :not_excluded,
+                             source_record: m, occurred_at: 1.day.ago)
+    trackers = tracker_names.map { |n| ProjectTracker.new(name: n).tap { |t| t.save!(validate: false) } }
+    m.project_trackers << trackers.reverse
+    MeetingScan.create!(meeting: m, outcome: :linked, scanned_at: 1.hour.ago, confidence: 0.91, rationale: rationale)
+    [m, transcript, notes, trackers.map(&:id).sort]
+  end
+
+  def listed(**args)
+    JSON.parse(Mcp::ListDocumentsTool.call(server_context: {}, **args).content.first[:text])
+  end
+
+  def count_queries
+    count = 0
+    counter = ->(*, payload) { count += 1 unless %w[SCHEMA TRANSACTION].include?(payload[:name]) }
+    ActiveSupport::Notifications.subscribed(counter, 'sql.active_record') { yield }
+    count
+  end
+
+  test 'list_documents gives a meeting transcript and its notes the same sorted project_tracker_ids' do
+    _m, transcript, notes, ids = matched_meeting!('one', %w[Harvey Acme])
+    by_id = listed.index_by { |d| d['id'] }
+    assert_equal 2, ids.size
+    assert_equal ids, by_id[transcript.id]['project_tracker_ids']
+    assert_equal ids, by_id[notes.id]['project_tracker_ids']
+  end
+
+  test 'list_documents answers for two meetings in one call, and [] for everything else' do
+    _a, a_doc, _a_notes, a_ids = matched_meeting!('a', %w[Harvey])
+    _b, b_doc, _b_notes, b_ids = matched_meeting!('b', %w[Acme])
+    unmatched = Meeting.create!(meet_source: :meet_api, meet_conference_record_id: 'cr/none')
+    plain = Document.create!(source: :meet, external_id: 'none', excluded: :not_excluded, source_record: unmatched)
+    mail = Document.create!(source: :google_groups, external_id: '<m@x>', excluded: :not_excluded, title: 'Deploy chatter')
+
+    by_id = listed.index_by { |d| d['id'] }
+    assert_equal a_ids, by_id[a_doc.id]['project_tracker_ids']
+    assert_equal b_ids, by_id[b_doc.id]['project_tracker_ids']
+    assert_not_equal a_ids, b_ids
+    assert_equal [], by_id[plain.id]['project_tracker_ids']
+    assert_equal [], by_id[mail.id]['project_tracker_ids']
+    assert_equal [], by_id[@doc.id]['project_tracker_ids'], 'a document with no meeting'
+  end
+
+  test 'list_documents adds no query per document' do
+    matched_meeting!('q1', %w[Harvey])
+    few = count_queries { listed }
+    matched_meeting!('q2', %w[Acme])
+    matched_meeting!('q3', %w[Initech])
+    assert_equal few, count_queries { listed }
+  end
+
+  test 'list_documents and get_document never return the rationale or the confidence' do
+    _m, transcript, _notes, _ids = matched_meeting!('quiet', %w[Harvey])
+    [Mcp::ListDocumentsTool.call(server_context: {}),
+     Mcp::GetDocumentTool.call(id: transcript.id, server_context: {})].each do |resp|
+      json = resp.content.first[:text]
+      assert_includes json, 'project_tracker_ids'
+      assert_not_includes json, 'rationale'
+      assert_not_includes json, 'RATIONALE-TEXT'
+      assert_not_includes json, 'confidence'
+      assert_not_includes json, '0.91'
+    end
+  end
+
+  test 'list_documents still hides an excluded document of a matched meeting' do
+    _m, transcript, notes, ids = matched_meeting!('walled', %w[Harvey])
+    transcript.update_columns(excluded: Document.excludeds[:manually_excluded])
+    by_id = listed.index_by { |d| d['id'] }
+    assert_nil by_id[transcript.id]
+    assert_equal ids, by_id[notes.id]['project_tracker_ids']
+    assert_includes Mcp::GetDocumentTool.call(id: transcript.id, server_context: {}).content.first[:text].downcase, 'not found'
+  end
+
+  test 'both document tools still answer, with no tracker ids, before the join table exists' do
+    _m, transcript, _notes, _ids = matched_meeting!('early', %w[Harvey])
+    ActiveRecord::Base.connection.stubs(:table_exists?).with('meetings_project_trackers').returns(false)
+    queries = []
+    record = ->(*, payload) { queries << payload[:sql] }
+    listed_ids = got = nil
+    ActiveSupport::Notifications.subscribed(record, 'sql.active_record') do
+      listed_ids = listed.index_by { |d| d['id'] }[transcript.id]['project_tracker_ids']
+      got = JSON.parse(Mcp::GetDocumentTool.call(id: transcript.id, server_context: {}).content.first[:text])
+    end
+    assert_equal [], listed_ids
+    assert_equal [], got['project_tracker_ids']
+    assert_equal transcript.id, got['id']
+    assert_empty queries.grep(/meetings_project_trackers/), 'the missing table is never queried'
+  end
+
+  test 'a missing join table is not remembered: the ids come back once it exists' do
+    _m, transcript, _notes, ids = matched_meeting!('later', %w[Harvey])
+    ActiveRecord::Base.connection.stubs(:table_exists?).with('meetings_project_trackers').returns(false)
+    assert_equal [], listed.index_by { |d| d['id'] }[transcript.id]['project_tracker_ids']
+    ActiveRecord::Base.connection.unstub(:table_exists?)
+    assert_equal ids, listed.index_by { |d| d['id'] }[transcript.id]['project_tracker_ids']
+    assert_equal ids, JSON.parse(Mcp::GetDocumentTool.call(id: transcript.id, server_context: {}).content.first[:text])['project_tracker_ids']
+  end
+
+  test 'the document tools describe project_tracker_ids' do
+    assert_includes Mcp::ListDocumentsTool.description, 'project_tracker_ids'
+    assert_includes Mcp::GetDocumentTool.description, 'project_tracker_ids'
+  end
+
   def ids_for(resp)
     JSON.parse(resp.content.first[:text]).map { |d| d['id'] }
   end
