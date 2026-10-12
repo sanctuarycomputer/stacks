@@ -148,6 +148,32 @@ class AdminManagementFeeInvoicesTest < ActionDispatch::IntegrationTest
     assert_equal 0, ContributorPayout.where(invoice_tracker_id: tracker.id).count
   end
 
+  test "a management fee tracker's page offers no way into its payouts" do
+    tracker = attach_invoice(fee_tracker(@pass, @payer), qbo_id: "8201", total: "130000.0", balance: "0.0", sent: true)
+    assert @pass.allows_payment_splits?, "sanity: the link is shown on passes in the payment-splits era"
+    QboInvoice.any_instance.stubs(:sync!).returns(true) # the page's own re-sync
+    sign_in @admin
+
+    get tracker_path(tracker)
+
+    assert_response :success
+    assert_match(/Payouts/, response.body, "sanity: the page rendered its payouts section")
+    assert_select "a[href=?]", admin_invoice_tracker_contributor_payouts_path(tracker), count: 0
+    assert_no_match(/All Payouts/, response.body)
+  end
+
+  test "a legacy garden3d tracker's page still links to its payouts" do
+    tracker = attach_invoice(fee_tracker(@pass, @payer), qbo_id: "8202", total: "1000.0", balance: "1000.0", sent: true)
+    tracker.update!(blueprint: { "lines" => {} })
+    QboInvoice.any_instance.stubs(:sync!).returns(true)
+    sign_in @admin
+
+    get tracker_path(tracker)
+
+    assert_response :success
+    assert_select "a[href=?]", admin_invoice_tracker_contributor_payouts_path(tracker), text: /All Payouts/, count: 1
+  end
+
   # --- The pass page ---------------------------------------------------------
 
   def create_drafts_path(pass)
