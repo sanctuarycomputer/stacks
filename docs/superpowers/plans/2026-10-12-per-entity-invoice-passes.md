@@ -1082,6 +1082,38 @@ House style for a conditional action item is `if: proc { ... }` (see `app/admin/
   end
 ```
 
+- [ ] **Step 1b: Guard both `member_action`s, not just the links**
+
+Hiding an `action_item` does **not** unroute its `member_action` — a direct
+`POST /admin/invoice_passes/:id/rerun_invoice_pass_without_reminders` still
+reaches it. And the controller redirects with `notice: "Done!"`
+unconditionally, so Task 4's silent `return` would report success having done
+nothing. Concealment is not enforcement; guard the server side too.
+
+Replace both `member_action` blocks in `app/admin/invoice_passes.rb:51-58`:
+
+```ruby
+  member_action :rerun_invoice_pass_without_reminders, method: :post do
+    unless resource.enterprise == Enterprise.sanctuary
+      return redirect_to admin_invoice_pass_path(resource),
+        alert: "Forecast invoicing only runs on #{Enterprise::SANCTUARY_NAME}'s passes."
+    end
+    Stacks::Automator.attempt_invoicing_for_invoice_pass(resource, false)
+    redirect_to admin_invoice_pass_path(resource), notice: "Done!"
+  end
+
+  member_action :rerun_invoice_pass, method: :post do
+    unless resource.enterprise == Enterprise.sanctuary
+      return redirect_to admin_invoice_pass_path(resource),
+        alert: "Forecast invoicing only runs on #{Enterprise::SANCTUARY_NAME}'s passes."
+    end
+    Stacks::Automator.attempt_invoicing_for_invoice_pass(resource)
+    redirect_to admin_invoice_pass_path(resource), notice: "Done!"
+  end
+```
+
+Verify the real line numbers before editing — Step 1's edit shifts them.
+
 - [ ] **Step 2: Add the enterprise column to the index**
 
 In the `index` block, immediately after `column :start_of_month`:
@@ -1137,7 +1169,24 @@ Append to `test/integration/admin_permission_grants_test.rb`:
     assert_select "a[href=?]",
       rerun_invoice_pass_without_reminders_admin_invoice_pass_path(pass), count: 0
   end
+
+  test "POSTing the Generate Invoices action directly on a non-Sanctuary pass is refused" do
+    pass = InvoicePass.create!(start_of_month: Date.new(2090, 2, 1),
+                               enterprise: enterprises(:garden3d), data: {})
+    sign_in_as_admin
+    Stacks::Automator.expects(:attempt_invoicing_for_invoice_pass).never
+
+    post rerun_invoice_pass_without_reminders_admin_invoice_pass_path(pass)
+
+    assert_redirected_to admin_invoice_pass_path(pass)
+    assert_equal "Forecast invoicing only runs on #{Enterprise::SANCTUARY_NAME}'s passes.",
+      flash[:alert]
+  end
 ```
+
+The second test is the one that matters: hiding a link does not unroute its
+`member_action`, so without the Step 1b guard this POST would succeed with
+`notice: "Done!"` and no work done.
 
 Match the file's existing sign-in idiom rather than `sign_in_as_admin` if it differs — check the top of the file.
 
@@ -1155,7 +1204,7 @@ Expected: PASS, 0 failures.
 bin/rails test --exclude "sync_meet runs the connector inside a SystemTask"
 ```
 
-Expected: 1803 runs, 0 failures, 0 errors, 2 skips.
+Expected: 1804 runs, 0 failures, 0 errors, 2 skips.
 
 - [ ] **Step 8: Commit**
 
@@ -1219,7 +1268,7 @@ Expected: `ok`, no `RecordInvalid`. This is the blast-radius check from Task 4 �
 bin/rails test --exclude "sync_meet runs the connector inside a SystemTask"
 ```
 
-Expected: 1803 runs, 0 failures, 0 errors, 2 skips.
+Expected: 1804 runs, 0 failures, 0 errors, 2 skips.
 
 - [ ] **Step 5: Push and open the PR**
 
