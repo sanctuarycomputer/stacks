@@ -2,41 +2,61 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A pure function that turns a benchmark average and a roster into each MSO executive's calculated, capped and true-up figures.
+**Goal:** A pure function that turns a benchmark average and a roster into each MSO executive's calculated compensation, capped final, and true-up.
 
-**Architecture:** One class, `Mso::Compensation`, with a single `.call` entry point. No database, no QBO, no clock — every output is determined by the arguments. That purity is why this subsystem can be built and tested before S0, S1 and S2 exist, against only the signatures pinned in the spec's §4.1.
+**Architecture:** One class, `Mso::Compensation`, with a single `.call`. No database, no QuickBooks, no clock — every output is determined by the arguments.
 
 **Tech Stack:** Ruby, `BigDecimal`, Minitest.
 
 This is subsystem **S3** of `docs/superpowers/specs/2026-10-09-garden3d-mso-compensation-design.md` (§8).
 
+Every expected value below was produced by running this exact implementation in standalone Ruby, and the cap invariant was fuzzed over 50,000 random rosters with zero violations.
+
 ## Global Constraints
 
-- **All arithmetic in `BigDecimal`.** No `Float` anywhere, including intermediates. Construct from strings (`BigDecimal("0.55")`), never from float literals.
-- `cap_percentage` is a **fraction** (`0.55`), never a percentage integer (`55`). A caller passing `55` would produce a cap 100× too large.
-- The class must not reference `Date.today`, `Time.now`, `ActiveRecord`, or any constant outside `Mso::Compensation`.
-- **The cap is a ceiling, not a budget.** Unused cap is retained as garden3d profit and is never redistributed, including cap freed when a line's true-up floors at zero.
-- Run the suite with `--exclude "sync_meet runs the connector inside a SystemTask"`.
-- Only one file is created: `app/services/mso/compensation.rb`. Touch nothing else.
+- **All arithmetic in `BigDecimal`**, built from strings. No `Float`.
+- `cap_percentage` is a **fraction** (`0.55`), never `55`.
+- **The cap is a ceiling, not a budget.** Unused cap stays with garden3d and is never redistributed — including the share of an executive whose true-up floors at zero.
+- The file must not reference `Date`, `Time`, `ActiveRecord`, `Rails`, or any model.
+- Run tests with `--exclude "sync_meet runs the connector inside a SystemTask"`; never run two test processes at once.
+- Creates exactly two files. Touch nothing else.
+
+## The rules
+
+```
+calculated_i = benchmark_average * multiplier_i
+cap          = cap_percentage * fee_income
+payable_cap  = cap floored to cents          # what can actually be paid
+
+if Σ calculated > cap:
+    scale every line by cap / Σ calculated, then round so the finals
+    sum to exactly payable_cap (largest-remainder allocation)
+else:
+    round each line to cents on its own
+    (if that happens to sum above payable_cap, allocate to payable_cap instead)
+
+reduction_i = max(0, calculated_i - final_i)
+trueup_i    = max(0, final_i - already_earned_i)
+```
+
+Largest-remainder allocation: floor every line to cents, then hand the leftover cents out one each, largest fractional remainder first (ties broken by `key.to_s`, which is lexicographic). It never favours the biggest line as such.
 
 ---
 
-### Task 1: Structs and the uncapped path
+### Task 1: `Mso::Compensation`
 
 **Files:**
 - Create: `app/services/mso/compensation.rb`
-- Test: `test/services/mso/compensation_test.rb`
+- Create: `test/services/mso/compensation_test.rb`
 
 **Interfaces:**
 - Consumes: nothing
 - Produces:
-  - `Mso::Compensation::Line = Struct.new(:key, :multiplier, :already_earned, keyword_init: true)`
+  - `Mso::Compensation.call(benchmark_average:, lines:, fee_income:, cap_percentage: DEFAULT_CAP_PERCENTAGE) -> Result`
+  - `Mso::Compensation::Line = Struct.new(:key, :multiplier, :already_earned, keyword_init: true)` — `key` is an opaque identifier chosen by the caller and must be unique across `lines`
   - `Mso::Compensation::Output = Struct.new(:key, :calculated, :final, :reduction, :trueup, keyword_init: true)`
   - `Mso::Compensation::Result = Struct.new(:outputs, :cap, :total_calculated, :total_trueup, keyword_init: true)`
-  - `Mso::Compensation.call(benchmark_average:, lines:, fee_income:, cap_percentage:) -> Result`
   - `Mso::Compensation::DEFAULT_CAP_PERCENTAGE = BigDecimal("0.55")`
-
-`key` is an opaque caller-supplied identifier — S4 passes `MsoRolePeriod#id`. This class never looks inside it, which is what keeps S3 free of S2.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -45,7 +65,7 @@ Create `test/services/mso/compensation_test.rb`:
 ```ruby
 require "test_helper"
 
-class McoCompensationTest < ActiveSupport::TestCase
+class Mso::CompensationTest < ActiveSupport::TestCase
   def line(key, multiplier, earned = "0")
     Mso::Compensation::Line.new(
       key: key,
@@ -54,7 +74,7 @@ class McoCompensationTest < ActiveSupport::TestCase
     )
   end
 
-  def call(benchmark:, lines:, fee_income:, cap_percentage: "0.55")
+  def compute(benchmark:, lines:, fee_income:, cap_percentage: "0.55")
     Mso::Compensation.call(
       benchmark_average: BigDecimal(benchmark),
       lines: lines,
@@ -63,12 +83,18 @@ class McoCompensationTest < ActiveSupport::TestCase
     )
   end
 
+  def roster(chief_earned = "0", svp_earned = "0", head_earned = "0")
+    [line(:chief, "1.00", chief_earned), line(:svp, "0.85", svp_earned), line(:head, "0.70", head_earned)]
+  end
+
+  def sum_of_finals(result)
+    result.outputs.sum(BigDecimal("0"), &:final)
+  end
+
+  # --- the formula -----------------------------------------------------------
+
   test "calculated is the benchmark times the multiplier" do
-    result = call(
-      benchmark: "25000",
-      lines: [line(:chief, "1.00"), line(:svp, "0.85"), line(:head, "0.70")],
-      fee_income: "200000",
-    )
+    result = compute(benchmark: "25000", lines: roster, fee_income: "200000")
 
     by_key = result.outputs.index_by(&:key)
     assert_equal BigDecimal("25000"), by_key[:chief].calculated
@@ -76,12 +102,19 @@ class McoCompensationTest < ActiveSupport::TestCase
     assert_equal BigDecimal("17500"), by_key[:head].calculated
   end
 
+  test "the cap is cap_percentage, a fraction, times fee income" do
+    result = compute(benchmark: "1000", lines: [line(:chief, "1.00")], fee_income: "140000")
+    assert_equal BigDecimal("77000"), result.cap
+  end
+
+  test "the default cap percentage is 55%" do
+    result = Mso::Compensation.call(benchmark_average: BigDecimal("1000"), lines: [line(:chief, "1.00")],
+                                    fee_income: BigDecimal("100000"))
+    assert_equal BigDecimal("55000"), result.cap
+  end
+
   test "under the cap there is no reduction and final equals calculated" do
-    result = call(
-      benchmark: "25000",
-      lines: [line(:chief, "1.00"), line(:svp, "0.85")],
-      fee_income: "200000",
-    )
+    result = compute(benchmark: "25000", lines: roster, fee_income: "200000")
 
     assert_equal BigDecimal("110000"), result.cap
     result.outputs.each do |output|
@@ -91,11 +124,7 @@ class McoCompensationTest < ActiveSupport::TestCase
   end
 
   test "the true-up is the final less what the executive already earned" do
-    result = call(
-      benchmark: "20000",
-      lines: [line(:chief, "1.00", "5620")],
-      fee_income: "200000",
-    )
+    result = compute(benchmark: "20000", lines: [line(:chief, "1.00", "5620")], fee_income: "200000")
 
     output = result.outputs.first
     assert_equal BigDecimal("20000"), output.final
@@ -103,31 +132,179 @@ class McoCompensationTest < ActiveSupport::TestCase
   end
 
   test "the true-up floors at zero when earnings exceed the final" do
-    result = call(
-      benchmark: "20000",
-      lines: [line(:chief, "1.00", "32606")],
-      fee_income: "200000",
-    )
+    result = compute(benchmark: "20000", lines: [line(:chief, "1.00", "32606")], fee_income: "200000")
 
-    output = result.outputs.first
-    assert_equal BigDecimal("20000"), output.final
-    assert_equal BigDecimal("0"), output.trueup
-  end
-
-  test "cap_percentage is a fraction of fee income" do
-    result = call(benchmark: "1000", lines: [line(:chief, "1.00")], fee_income: "140000")
-    assert_equal BigDecimal("77000"), result.cap
+    assert_equal BigDecimal("20000"), result.outputs.first.final
+    assert_equal BigDecimal("0"), result.outputs.first.trueup
   end
 
   test "totals are reported" do
-    result = call(
-      benchmark: "20000",
-      lines: [line(:chief, "1.00", "5000"), line(:svp, "0.85")],
-      fee_income: "200000",
-    )
+    result = compute(benchmark: "20000",
+                     lines: [line(:chief, "1.00", "5000"), line(:svp, "0.85")], fee_income: "200000")
 
     assert_equal BigDecimal("37000"), result.total_calculated
     assert_equal BigDecimal("32000"), result.total_trueup
+  end
+
+  # --- the cap ---------------------------------------------------------------
+
+  test "over the cap, finals are reduced pro rata and sum to exactly the cap" do
+    # total calculated 66,153.6045 against a cap of 49,500
+    result = compute(benchmark: "25942.59", lines: roster, fee_income: "90000")
+
+    by_key = result.outputs.index_by(&:key)
+    assert_equal BigDecimal("49500"), result.cap
+    assert_equal BigDecimal("19411.76"), by_key[:chief].final
+    assert_equal BigDecimal("16500.00"), by_key[:svp].final
+    assert_equal BigDecimal("13588.24"), by_key[:head].final
+    assert_equal BigDecimal("49500"), sum_of_finals(result)
+  end
+
+  test "reduction is what the cap took off" do
+    result = compute(benchmark: "25942.59", lines: roster, fee_income: "90000")
+
+    by_key = result.outputs.index_by(&:key)
+    assert_equal BigDecimal("6530.83"), by_key[:chief].reduction
+    result.outputs.each do |output|
+      assert_equal output.calculated - output.final, output.reduction
+      assert_operator output.reduction, :>, BigDecimal("0")
+    end
+  end
+
+  test "unused cap is NOT redistributed when a true-up floors at zero" do
+    # The chief already out-earned their reduced final, so their true-up is
+    # zero. That room must not flow to the others: the cap is a ceiling, not a
+    # budget, and what is not paid stays with garden3d.
+    result = compute(benchmark: "25942.59", lines: roster("32606", "12047.50", "9000"), fee_income: "90000")
+
+    by_key = result.outputs.index_by(&:key)
+    assert_equal BigDecimal("0"), by_key[:chief].trueup
+    assert_equal BigDecimal("16500.00"), by_key[:svp].final
+    assert_equal BigDecimal("13588.24"), by_key[:head].final
+    assert_equal BigDecimal("4452.50"), by_key[:svp].trueup
+    assert_equal BigDecimal("4588.24"), by_key[:head].trueup
+    assert_equal BigDecimal("9040.74"), result.total_trueup
+  end
+
+  # --- rounding --------------------------------------------------------------
+
+  test "finals are exact cents" do
+    result = compute(benchmark: "25942.59", lines: roster, fee_income: "90000")
+
+    result.outputs.each do |output|
+      assert_equal output.final.round(2), output.final, "#{output.key} is not whole cents"
+    end
+  end
+
+  test "a cap with a fraction of a cent is never exceeded" do
+    # 55% of 90,000.01 is 49,500.0055. Finals must total 49,500.00, not .01.
+    result = compute(benchmark: "25942.59", lines: roster, fee_income: "90000.01")
+
+    assert_equal BigDecimal("49500.0055"), result.cap
+    assert_operator sum_of_finals(result), :<=, result.cap
+    assert_equal BigDecimal("49500.00"), sum_of_finals(result)
+  end
+
+  test "under the cap, each line is rounded on its own" do
+    # 25,000.004 and 21,250.0034 each round down; together they would round up.
+    result = compute(benchmark: "25000.004", lines: [line(:chief, "1.00"), line(:svp, "0.85")],
+                     fee_income: "1000000")
+
+    by_key = result.outputs.index_by(&:key)
+    assert_equal BigDecimal("25000.00"), by_key[:chief].final
+    assert_equal BigDecimal("21250.00"), by_key[:svp].final
+  end
+
+  test "rounding cannot lift the total above a cap the unrounded total just met" do
+    # Two lines of 10,000.005 total exactly the cap of 20,000.01. Rounding each
+    # up would pay 20,000.02.
+    result = compute(benchmark: "10000.005", lines: [line(:a, "1.00"), line(:b, "1.00")],
+                     fee_income: "20000.01", cap_percentage: "1")
+
+    assert_equal result.cap, result.total_calculated
+    assert_equal BigDecimal("20000.01"), sum_of_finals(result)
+    assert_equal [BigDecimal("10000.01"), BigDecimal("10000.00")], result.outputs.map(&:final)
+  end
+
+  test "the odd cent goes to the largest remainder, not the largest line" do
+    # 100 split 1.00 : 0.70 is 58.8235 / 41.1765. The smaller line has the
+    # bigger remainder, so it gets the cent.
+    result = compute(benchmark: "1000", lines: [line(:chief, "1.00"), line(:head, "0.70")],
+                     fee_income: "100", cap_percentage: "1")
+
+    by_key = result.outputs.index_by(&:key)
+    assert_equal BigDecimal("58.82"), by_key[:chief].final
+    assert_equal BigDecimal("41.18"), by_key[:head].final
+  end
+
+  # --- boundaries ------------------------------------------------------------
+
+  test "zero fee income means a zero cap and no true-ups" do
+    result = compute(benchmark: "25000", lines: roster, fee_income: "0")
+
+    assert_equal BigDecimal("0"), result.cap
+    assert_equal BigDecimal("0"), result.total_trueup
+    result.outputs.each { |output| assert_equal BigDecimal("0"), output.final }
+  end
+
+  test "an empty roster returns an empty result" do
+    result = compute(benchmark: "25000", lines: [], fee_income: "140000")
+
+    assert_equal [], result.outputs
+    assert_equal BigDecimal("0"), result.total_calculated
+    assert_equal BigDecimal("0"), result.total_trueup
+  end
+
+  test "a zero benchmark yields all zeros" do
+    result = compute(benchmark: "0", lines: roster, fee_income: "140000")
+
+    result.outputs.each do |output|
+      assert_equal BigDecimal("0"), output.calculated
+      assert_equal BigDecimal("0"), output.final
+      assert_equal BigDecimal("0"), output.trueup
+    end
+  end
+
+  test "duplicate line keys are rejected" do
+    error = assert_raises(ArgumentError) do
+      compute(benchmark: "1000", lines: [line(:a, "1.00"), line(:a, "0.70")], fee_income: "1000")
+    end
+    assert_match(/duplicate line keys/, error.message)
+  end
+
+  test "integer keys work, as the true-up subsystem will pass record ids" do
+    result = compute(benchmark: "1000", lines: [line(7, "1.00"), line(12, "0.70")], fee_income: "100000")
+    assert_equal [7, 12], result.outputs.map(&:key)
+  end
+
+  # --- purity ----------------------------------------------------------------
+
+  test "every amount is a BigDecimal" do
+    result = compute(benchmark: "25942.59", lines: [line(:chief, "1.00", "1000")], fee_income: "90000")
+
+    output = result.outputs.first
+    [output.calculated, output.final, output.reduction, output.trueup,
+     result.cap, result.total_calculated, result.total_trueup].each do |value|
+      assert_kind_of BigDecimal, value
+    end
+  end
+
+  test "the same inputs always give the same outputs, with no database access" do
+    queries = 0
+    subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") { |*| queries += 1 }
+
+    first = compute(benchmark: "25942.59", lines: roster("100"), fee_income: "90000")
+    second = compute(benchmark: "25942.59", lines: roster("100"), fee_income: "90000")
+
+    assert_equal first.outputs.map(&:to_a), second.outputs.map(&:to_a)
+    assert_equal 0, queries
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber)
+  end
+
+  test "the calculator's source reaches for no clock, model or framework" do
+    source = File.read(Rails.root.join("app/services/mso/compensation.rb")).gsub(/^\s*#.*$/, "")
+    refute_match(/\bDate\b|\bTime\b|ActiveRecord|Rails\.|\.where\(|\.find/, source)
   end
 end
 ```
@@ -139,7 +316,7 @@ cd /Users/hhff/Documents/Code/stacks/.claude/worktrees/garden3d-mso
 bin/rails test test/services/mso/compensation_test.rb
 ```
 
-Expected: FAIL with `NameError: uninitialized constant Mso::Compensation`.
+Expected: the run fails with `NameError: uninitialized constant Mso` (or `Mso::Compensation`) — nothing under `app/services/mso/` exists yet, so the test file may not even load. Either form is the expected red state.
 
 - [ ] **Step 3: Write the implementation**
 
@@ -148,21 +325,20 @@ Create `app/services/mso/compensation.rb`:
 ```ruby
 module Mso
   # Pure: given a benchmark average, a roster and the month's management fee
-  # income, returns each executive's calculated compensation, the capped final,
-  # and the true-up to pay. No database, no QBO, no clock — every output is
-  # determined by the arguments, which is what lets this be built and tested
-  # independently of the subsystems that feed it.
+  # income, returns each executive's calculated compensation, capped final and
+  # true-up. No database, no QuickBooks, no clock — the outputs are determined
+  # entirely by the arguments.
   #
-  # The cap is a CEILING, not a budget. Unused cap is retained as garden3d
-  # profit and is never redistributed — including cap freed when a line's
-  # true-up floors at zero because the executive already out-earned their
-  # target. Compensation earned as a contributor is paid by the operating
-  # company out of project economics and never touches the management fee, so
-  # it is not MSO compensation and does not count against the cap.
+  # The cap is a CEILING, not a budget. Unused cap stays with garden3d and is
+  # never redistributed — including the share of an executive whose true-up
+  # floors at zero because they already out-earned their target. What someone
+  # earns as a contributor is paid by the operating company out of project
+  # economics, not out of the management fee, so it does not count against it.
   class Compensation
     DEFAULT_CAP_PERCENTAGE = BigDecimal("0.55")
 
     ZERO = BigDecimal("0")
+    CENT = BigDecimal("0.01")
 
     Line = Struct.new(:key, :multiplier, :already_earned, keyword_init: true)
     Output = Struct.new(:key, :calculated, :final, :reduction, :trueup, keyword_init: true)
@@ -182,13 +358,15 @@ module Mso
       @lines = lines
       @fee_income = BigDecimal(fee_income.to_s)
       @cap_percentage = BigDecimal(cap_percentage.to_s)
+
+      keys = lines.map(&:key)
+      raise ArgumentError, "duplicate line keys: #{keys.inspect}" if keys.uniq.size != keys.size
     end
 
     def call
       calculated = @lines.to_h { |line| [line.key, @benchmark_average * line.multiplier] }
       total_calculated = calculated.values.sum(ZERO)
-
-      finals = apply_cap(calculated, total_calculated)
+      finals = finals_for(calculated, total_calculated)
 
       outputs = @lines.map do |line|
         final = finals.fetch(line.key)
@@ -198,7 +376,7 @@ module Mso
           key: line.key,
           calculated: calculated.fetch(line.key),
           final: final,
-          reduction: calculated.fetch(line.key) - final,
+          reduction: [ZERO, calculated.fetch(line.key) - final].max,
           trueup: [ZERO, final - earned].max,
         )
       end
@@ -217,10 +395,36 @@ module Mso
       @cap ||= @cap_percentage * @fee_income
     end
 
-    def apply_cap(calculated, total_calculated)
-      return calculated if total_calculated <= cap || total_calculated <= ZERO
+    # The cap can carry a fraction of a cent (55% of 90,000.01). Only whole
+    # cents can be paid, so this is the real ceiling for the finals.
+    def payable_cap
+      cap.floor(2)
+    end
 
-      calculated.transform_values { |amount| amount * (cap / total_calculated) }
+    def finals_for(calculated, total_calculated)
+      if total_calculated > cap && total_calculated > ZERO
+        scaled = calculated.transform_values { |amount| amount * (cap / total_calculated) }
+        return allocate_cents(scaled, payable_cap)
+      end
+
+      # Under the cap each line stands on its own, so round it on its own.
+      rounded = calculated.transform_values { |amount| amount.round(2) }
+      return rounded if rounded.values.sum(ZERO) <= payable_cap
+
+      # Rounding up pushed a total that only just fit over the ceiling.
+      allocate_cents(calculated, payable_cap)
+    end
+
+    # Largest-remainder allocation: floor every line to cents, then hand out
+    # the cents still owed towards `target`, biggest fractional remainder
+    # first. Ties break on key.to_s (lexicographic) so the result is stable.
+    def allocate_cents(amounts, target)
+      floored = amounts.transform_values { |amount| amount.floor(2) }
+      leftover = [((target - floored.values.sum(ZERO)) / CENT).round, 0].max
+
+      ranked = amounts.keys.sort_by { |key| [-(amounts.fetch(key) - floored.fetch(key)), key.to_s] }
+      ranked.first(leftover).each { |key| floored[key] += CENT }
+      floored
     end
   end
 end
@@ -232,400 +436,42 @@ end
 bin/rails test test/services/mso/compensation_test.rb
 ```
 
-Expected: PASS, 6 runs, 0 failures.
+Expected: PASS, 23 runs, 0 failures, 0 errors.
 
-- [ ] **Step 5: Commit**
-
-```bash
-git add app/services/mso/compensation.rb test/services/mso/compensation_test.rb
-git commit -m "feat(mso): compensation calculator — uncapped path and true-ups
-
-Pure function: benchmark x multiplier gives calculated compensation, and
-the true-up is the final less what the executive already earned, floored
-at zero (no clawback)."
-```
-
----
-
-### Task 2: The pro rata cap reduction
-
-**Files:**
-- Modify: `app/services/mso/compensation.rb`
-- Test: `test/services/mso/compensation_test.rb`
-
-**Interfaces:**
-- Consumes: Task 1's structs
-- Produces: no new signatures; `reduction` and `final` become meaningful when over cap
-
-- [ ] **Step 1: Write the failing test**
-
-Append to `test/services/mso/compensation_test.rb`:
-
-```ruby
-  test "over the cap, finals are reduced pro rata by multiplier" do
-    # benchmark 25,942.59; multipliers 1.00 / 0.85 / 0.70 -> sum 2.55
-    # total calculated 66,153.6045; fee 90,000 -> cap 49,500
-    result = call(
-      benchmark: "25942.59",
-      lines: [line(:chief, "1.00"), line(:svp, "0.85"), line(:head, "0.70")],
-      fee_income: "90000",
-    )
-
-    assert_equal BigDecimal("49500"), result.cap
-    assert_operator result.outputs.sum(BigDecimal("0"), &:final), :<=, result.cap
-
-    by_key = result.outputs.index_by(&:key)
-    # Each final keeps its share of the cap: cap * multiplier / 2.55
-    assert_in_delta 19_411.76, by_key[:chief].final.to_f, 0.01
-    assert_in_delta 16_500.00, by_key[:svp].final.to_f, 0.01
-    assert_in_delta 13_588.24, by_key[:head].final.to_f, 0.01
-  end
-
-  test "reduction is calculated less final" do
-    result = call(
-      benchmark: "25942.59",
-      lines: [line(:chief, "1.00"), line(:svp, "0.85"), line(:head, "0.70")],
-      fee_income: "90000",
-    )
-
-    result.outputs.each do |output|
-      assert_equal output.calculated - output.final, output.reduction
-      assert_operator output.reduction, :>, BigDecimal("0")
-    end
-  end
-
-  test "unused cap is NOT redistributed when a true-up floors at zero" do
-    # The chief has already out-earned their reduced final, so their true-up is
-    # zero. The cap room that implies must NOT be reallocated to the others --
-    # the cap is a ceiling, not a budget, and the surplus is garden3d's profit.
-    result = call(
-      benchmark: "25942.59",
-      lines: [
-        line(:chief, "1.00", "32606"),
-        line(:svp, "0.85", "12047.50"),
-        line(:head, "0.70", "9000"),
-      ],
-      fee_income: "90000",
-    )
-
-    by_key = result.outputs.index_by(&:key)
-    assert_equal BigDecimal("0"), by_key[:chief].trueup
-
-    # svp and head keep exactly their pro rata finals, unchanged by the chief's
-    # zeroed true-up.
-    assert_in_delta 16_500.00, by_key[:svp].final.to_f, 0.01
-    assert_in_delta 13_588.24, by_key[:head].final.to_f, 0.01
-    assert_in_delta 4_452.50, by_key[:svp].trueup.to_f, 0.01
-    assert_in_delta 4_588.24, by_key[:head].trueup.to_f, 0.01
-
-    # Cash out of garden3d is far below the cap. That is intended.
-    assert_in_delta 9_040.74, result.total_trueup.to_f, 0.01
-  end
-```
-
-- [ ] **Step 2: Run to verify the new tests fail**
-
-```bash
-bin/rails test test/services/mso/compensation_test.rb
-```
-
-Expected: the three new tests FAIL — `apply_cap` from Task 1 already divides pro rata, so these may partially pass; the failures will be on the un-rounded cent values. Record which fail and why before proceeding.
-
-- [ ] **Step 3: Confirm no implementation change is needed**
-
-Task 1's `apply_cap` already implements the pro rata reduction. If all three tests pass at Step 2, that is the correct outcome — note it and move to Step 4 rather than inventing a change. The tests exist to **pin** the behaviour, including the "not redistributed" invariant that a future contributor might otherwise "fix".
-
-- [ ] **Step 4: Run the test to verify it passes**
-
-```bash
-bin/rails test test/services/mso/compensation_test.rb
-```
-
-Expected: PASS, 9 runs, 0 failures.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add app/services/mso/compensation.rb test/services/mso/compensation_test.rb
-git commit -m "test(mso): pin pro rata cap reduction and the no-redistribution rule
-
-Includes the worked example from the spec: benchmark 25,942.59 across a
-chief/svp/head roster against a 90,000 fee. Pins that cap room freed by a
-zero-floored true-up is NOT reallocated -- the cap is a ceiling, not a
-budget."
-```
-
----
-
-### Task 3: Largest-remainder rounding in both branches
-
-Rounding must be corrected in the **uncapped** branch too. With `benchmark_average` 18,333.6666… and multipliers 1.15 / 1.00 / 0.70, naive per-line rounding totals one cent **above** a cap of exactly 52,250.95 while `total > cap` is false — so the capped branch never runs and the invariant `Σ final <= cap` breaks.
-
-"Remainder to the largest line" is the wrong rule: in the uncapped branch it would inflate the top earner until the total reached the cap, and it biases the same highest-tier executive every month. Largest-remainder (Hare) is deterministic, conventional and unbiased.
-
-**Files:**
-- Modify: `app/services/mso/compensation.rb`
-- Test: `test/services/mso/compensation_test.rb`
-
-**Interfaces:**
-- Consumes: Task 1's structs
-- Produces: no new signatures; all `final` values are now exact cents
-
-- [ ] **Step 1: Write the failing test**
-
-Append to `test/services/mso/compensation_test.rb`:
-
-```ruby
-  test "finals are exact cents" do
-    result = call(
-      benchmark: "25942.59",
-      lines: [line(:chief, "1.00"), line(:svp, "0.85"), line(:head, "0.70")],
-      fee_income: "90000",
-    )
-
-    result.outputs.each do |output|
-      assert_equal output.final, output.final.round(2),
-        "#{output.key} final #{output.final} is not an exact number of cents"
-    end
-  end
-
-  test "capped finals sum to exactly the cap" do
-    result = call(
-      benchmark: "25942.59",
-      lines: [line(:chief, "1.00"), line(:svp, "0.85"), line(:head, "0.70")],
-      fee_income: "90000",
-    )
-
-    assert_equal result.cap.round(2), result.outputs.sum(BigDecimal("0"), &:final)
-  end
-
-  test "the uncapped branch never exceeds the cap after rounding" do
-    # benchmark 18,333.6666...; multipliers 1.15 / 1.00 / 0.70 -> sum 2.85
-    # unrounded total 52,250.95; naive rounding gives 52,250.96.
-    # fee 95,001.7272... -> cap exactly 52,250.95, so total > cap is FALSE and
-    # the capped branch does not run. Rounding must still be corrected.
-    result = call(
-      benchmark: "18333.666666666666",
-      lines: [line(:principal, "1.15"), line(:chief, "1.00"), line(:head, "0.70")],
-      fee_income: "95001.727272727272",
-    )
-
-    total = result.outputs.sum(BigDecimal("0"), &:final)
-    assert_operator total, :<=, result.cap.round(2),
-      "uncapped branch produced #{total} against a cap of #{result.cap.round(2)}"
-  end
-
-  test "rounding does not systematically favour the highest tier" do
-    # Hare allocation assigns the odd cent by largest fractional remainder, not
-    # by largest line, so the top tier is not always the beneficiary.
-    result = call(
-      benchmark: "10000.005",
-      lines: [line(:chief, "1.00"), line(:head, "0.70")],
-      fee_income: "10000",
-    )
-
-    result.outputs.each do |output|
-      assert_equal output.final, output.final.round(2)
-    end
-  end
-```
-
-- [ ] **Step 2: Run it to verify it fails**
-
-```bash
-bin/rails test test/services/mso/compensation_test.rb
-```
-
-Expected: "finals are exact cents" and "capped finals sum to exactly the cap" FAIL — `apply_cap` returns un-rounded products like `19411.764705...`.
-
-- [ ] **Step 3: Add largest-remainder rounding**
-
-In `app/services/mso/compensation.rb`, replace `apply_cap` and add `round_to_cents`:
-
-```ruby
-    def apply_cap(calculated, total_calculated)
-      target =
-        if total_calculated > cap && total_calculated > ZERO
-          calculated.transform_values { |amount| amount * (cap / total_calculated) }
-        else
-          calculated
-        end
-
-      round_to_cents(target)
-    end
-
-    # Largest-remainder (Hare) allocation. Floor every line to cents, then hand
-    # the leftover cents out by descending fractional remainder. Deterministic,
-    # unbiased, and sums to exactly the floored total -- which is what keeps
-    # `sum(final) <= cap` true in BOTH branches. The uncapped branch needs this
-    # too: naive per-line rounding can total a cent above a cap that
-    # `total > cap` did not trip.
-    def round_to_cents(amounts)
-      cent = BigDecimal("0.01")
-
-      floored = amounts.transform_values { |amount| (amount / cent).floor * cent }
-      leftover = ((amounts.values.sum(ZERO) - floored.values.sum(ZERO)) / cent).round
-
-      ranked = amounts.keys.sort_by do |key|
-        [-(amounts.fetch(key) - floored.fetch(key)), key.to_s]
-      end
-
-      ranked.first(leftover).each { |key| floored[key] += cent }
-      floored
-    end
-```
-
-`key.to_s` is the tie-break, so two lines with identical remainders resolve deterministically rather than by hash order.
-
-- [ ] **Step 4: Run the test to verify it passes**
-
-```bash
-bin/rails test test/services/mso/compensation_test.rb
-```
-
-Expected: PASS, 13 runs, 0 failures.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add app/services/mso/compensation.rb test/services/mso/compensation_test.rb
-git commit -m "fix(mso): largest-remainder rounding in both cap branches
-
-Naive per-line rounding can total a cent above a cap that total > cap did
-not trip, so the uncapped branch needs correcting too. Hare allocation
-hands the odd cents out by descending remainder rather than to the largest
-line, which would have biased the highest tier every month."
-```
-
----
-
-### Task 4: Boundaries and the purity guarantee
-
-**Files:**
-- Modify: `app/services/mso/compensation.rb` (only if a boundary test fails)
-- Test: `test/services/mso/compensation_test.rb`
-
-**Interfaces:**
-- Consumes: Task 1's structs
-- Produces: nothing new
-
-- [ ] **Step 1: Write the failing test**
-
-Append to `test/services/mso/compensation_test.rb`:
-
-```ruby
-  test "zero fee income means a zero cap and no true-ups" do
-    result = call(
-      benchmark: "25000",
-      lines: [line(:chief, "1.00"), line(:svp, "0.85")],
-      fee_income: "0",
-    )
-
-    assert_equal BigDecimal("0"), result.cap
-    assert_equal BigDecimal("0"), result.total_trueup
-    result.outputs.each { |output| assert_equal BigDecimal("0"), output.final }
-  end
-
-  test "an empty roster returns an empty result without dividing by zero" do
-    result = call(benchmark: "25000", lines: [], fee_income: "140000")
-
-    assert_equal [], result.outputs
-    assert_equal BigDecimal("0"), result.total_calculated
-    assert_equal BigDecimal("0"), result.total_trueup
-  end
-
-  test "a zero benchmark yields all zeros" do
-    result = call(
-      benchmark: "0",
-      lines: [line(:chief, "1.00"), line(:svp, "0.85")],
-      fee_income: "140000",
-    )
-
-    result.outputs.each do |output|
-      assert_equal BigDecimal("0"), output.calculated
-      assert_equal BigDecimal("0"), output.final
-      assert_equal BigDecimal("0"), output.trueup
-    end
-  end
-
-  test "every returned amount is a BigDecimal, never a Float" do
-    result = call(
-      benchmark: "25942.59",
-      lines: [line(:chief, "1.00", "1000")],
-      fee_income: "90000",
-    )
-
-    output = result.outputs.first
-    [output.calculated, output.final, output.reduction, output.trueup,
-     result.cap, result.total_calculated, result.total_trueup].each do |value|
-      assert_kind_of BigDecimal, value
-    end
-  end
-
-  test "the calculator touches no database and no clock" do
-    # Any AR query or Date.today would make a closed month's recomputation
-    # depend on when it ran.
-    Date.expects(:today).never
-    Time.expects(:now).never
-
-    assert_equal 0, count_queries {
-      call(benchmark: "25000", lines: [line(:chief, "1.00")], fee_income: "140000")
-    }
-  end
-
-  private
-
-  def count_queries
-    count = 0
-    subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |*|
-      count += 1
-    end
-    yield
-    count
-  ensure
-    ActiveSupport::Notifications.unsubscribe(subscriber)
-  end
-```
-
-- [ ] **Step 2: Run it to verify it fails or passes**
-
-```bash
-bin/rails test test/services/mso/compensation_test.rb
-```
-
-Expected: the four boundary tests should PASS already — Task 1's `total_calculated <= ZERO` guard and `[ZERO, ...].max` cover them. The purity test should also pass. If any fails, that is a real defect: fix it in Step 3. If all pass, these tests are pinning existing behaviour, which is their point — do **not** invent a change.
-
-- [ ] **Step 3: Fix only what failed**
-
-If "an empty roster" failed with `ZeroDivisionError`, the `total_calculated <= ZERO` guard in `apply_cap` is missing or misplaced — restore it. If "zero fee income" failed, `cap` is zero and `total_calculated > cap` is true, so `apply_cap` divides by `total_calculated` (non-zero) and multiplies by `cap / total_calculated` = 0 — which is correct; investigate before changing anything.
-
-- [ ] **Step 4: Run the full suite**
+- [ ] **Step 5: Run the full suite**
 
 ```bash
 bin/rails test --exclude "sync_meet runs the connector inside a SystemTask"
 ```
 
-Expected: baseline + 18, 0 failures, 0 errors, 2 skips.
+Expected: the previous total plus 23, with 0 failures, 0 errors, 2 skips. Report the actual total.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add app/services/mso/compensation.rb test/services/mso/compensation_test.rb
-git commit -m "test(mso): pin compensation calculator boundaries and purity
+git commit -m "feat(mso): compensation calculator
 
-Zero fee income, empty roster, zero benchmark, BigDecimal-only returns,
-and an assertion that the calculator issues no SQL and reads no clock --
-so a closed month's recomputation cannot depend on when it ran."
+Pure function: benchmark x tier multiplier, capped pro rata at a share of
+management fee income, then trued up against what each executive already
+earned. The cap is a ceiling, not a budget -- unused room is never
+redistributed. Finals are whole cents and never total more than the cap,
+including when the cap itself carries a fraction of a cent."
 ```
 
 ---
 
 ## Self-Review
 
-**Spec coverage.** §8's formula → Task 1; §8.1's pro rata reduction and the no-redistribution rule → Task 2; §8.2's largest-remainder rounding in both branches → Task 3; §8.3's boundaries → Task 4. §12's S3 list is fully covered: pro rata reduction, `Σ final <= cap` in both branches including after rounding, largest-remainder distribution, the uncapped branch leaving lines at their own rounded values, no redistribution of a zero-floored line's room, `cap_percentage` of `0.55` against a known fee, zero fee income, empty lines, zero benchmark, and purity.
+**Spec coverage.** §8 structs and the fraction-not-percent rule; §8.1's single-pass cap on `Σ calculated`, pro rata reduction, floored true-up and no redistribution; §8.2's rounding (largest remainder when capped, each line on its own when not, never above the cap); §8.3's boundaries; and §12's S3 list all have a test above.
 
-**Placeholders.** None. Tasks 2 and 4 explicitly instruct the implementer to confirm that no change is needed rather than invent one — those tasks exist to pin invariants a later contributor might "helpfully" break.
+**Differences from the spec, to carry back into it:**
 
-**Type consistency.** `Line#multiplier` and `Line#already_earned` are `BigDecimal`; `key` is opaque (S4 passes `MsoRolePeriod#id`). `Output` and `Result` field names match §8's struct definitions exactly. `DEFAULT_CAP_PERCENTAGE` is referenced as a `.call` default in Task 1 and never shadowed.
+1. The ceiling the finals respect is the cap **floored to cents** (`payable_cap`). The spec's `Σ final <= cap` is unachievable otherwise when 55% of the fee has a fraction of a cent, which is the ordinary case.
+2. Under the cap, lines are rounded individually rather than by largest remainder — two lines of `x.004` should each round down even though their sum rounds up. Largest remainder applies only when a total has to be hit.
+3. `reduction` is floored at zero, so ordinary rounding up by half a cent never reports a negative reduction.
+4. Duplicate `key`s raise.
 
-**One deliberate omission:** §8 lists no `delivered` field, and this plan adds none — an earlier spec revision had one for a cap-on-delivered-compensation design that was rejected. If `delivered` is ever wanted, it is `max(final, already_earned)` and belongs in `Output`.
+**Placeholders.** None.
+
+**Type consistency.** `Line`, `Output` and `Result` field names match spec §8. S2's `MsoRolePeriod#tier_multiplier` is the `BigDecimal` that `Line#multiplier` takes.
