@@ -86,6 +86,18 @@ class BackfillInvoicePassEnterprisesTest < ActiveSupport::TestCase
     assert_equal 0, InvoicePass.where(enterprise_id: nil).count
   end
 
+  test "a tied tracker count resolves to Sanctuary, deterministically" do
+    pass = build_pass_with_trackers(Date.new(2095, 6, 1), [@sanctuary_qa, @garden3d_qa])
+
+    BackfillInvoicePassEnterprises.new.up
+
+    assert_equal @sanctuary, pass.reload.enterprise,
+      "a tie must resolve to Sanctuary, the historical issuer"
+    tagged = InvoicePass.find_by(start_of_month: Date.new(2095, 6, 1), enterprise: @garden3d)
+    assert tagged.present?
+    assert tagged.data["created_by_backfill"]
+  end
+
   test "down re-merges only the passes the backfill created" do
     pass = build_pass_with_trackers(Date.new(2095, 5, 1), [@sanctuary_qa, @garden3d_qa])
     BackfillInvoicePassEnterprises.new.up

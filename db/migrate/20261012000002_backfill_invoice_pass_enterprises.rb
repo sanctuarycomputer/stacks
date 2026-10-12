@@ -21,7 +21,17 @@ class BackfillInvoicePassEnterprises < ActiveRecord::Migration[6.1]
         next
       end
 
-      modal_qbo_account_id = counts.max_by { |_qa, n| n }.first
+      # Deterministic: highest tracker count wins; on a tie Sanctuary wins
+      # (it is the historical issuer of every pass); then lowest qbo_account_id.
+      # An unordered max_by here made the choice depend on id values, which
+      # vary with how many rows earlier tests created -- a seed-dependent flake.
+      modal_qbo_account_id = counts.keys.min_by do |qa_id|
+        [
+          -counts.fetch(qa_id),
+          enterprise_by_qbo_account.fetch(qa_id) == sanctuary.id ? 0 : 1,
+          qa_id,
+        ]
+      end
       pass.update_columns(enterprise_id: enterprise_by_qbo_account.fetch(modal_qbo_account_id))
 
       # Every OTHER qbo_account on this pass belongs to a different issuer.
@@ -67,6 +77,10 @@ class BackfillInvoicePassEnterprises < ActiveRecord::Migration[6.1]
         enterprise_id: Enterprise.find_by!(name: Enterprise::SANCTUARY_NAME).id,
       )
       raise "No Sanctuary pass for #{pass.start_of_month} to re-merge into" if target.nil?
+
+      if target.id == pass.id
+        raise "InvoicePass #{pass.id} is its own re-merge target; refusing to roll back"
+      end
 
       pass.invoice_trackers.update_all(invoice_pass_id: target.id)
       pass.destroy!
