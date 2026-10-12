@@ -249,6 +249,8 @@ module Stacks
                               .where.not(id: meeting.id).first
           return unless standalone
           standalone.documents.update_all(source_record_type: "Meeting", source_record_id: meeting.id)
+          # Its project matches (and a person's corrections to them) follow the documents.
+          meeting.absorb_project_matches_from!(standalone)
           standalone.destroy
         end
       end

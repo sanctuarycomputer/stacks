@@ -35,6 +35,10 @@ class ProjectTracker < ApplicationRecord
 
   has_one :project_capsule, dependent: :delete, inverse_of: :project_tracker
   has_many :weekly_ships, dependent: :destroy
+  # Meetings matched to this tracker. Removed in a callback rather than with
+  # `dependent:`, so a destroy still works before the table's migration has run.
+  has_many :meeting_project_trackers
+  before_destroy { MeetingProjectTracker.where(project_tracker_id: id).delete_all if MeetingProjectTracker.table_exists? }
   has_many :project_tracker_links, dependent: :delete_all
   accepts_nested_attributes_for :project_tracker_links, allow_destroy: true
 

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_10_12_130000) do
+ActiveRecord::Schema.define(version: 2026_10_12_180000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -596,6 +596,30 @@ ActiveRecord::Schema.define(version: 2026_10_12_130000) do
     t.datetime "updated_at", precision: 6, null: false
     t.index ["contact_id"], name: "index_meeting_participants_on_contact_id"
     t.index ["meeting_id"], name: "index_meeting_participants_on_meeting_id"
+  end
+
+  create_table "meeting_project_scans", force: :cascade do |t|
+    t.bigint "meeting_id", null: false
+    t.integer "outcome", null: false
+    t.string "scanned_hash"
+    t.datetime "scanned_at", null: false
+    t.boolean "human_locked", default: false, null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["meeting_id"], name: "index_meeting_project_scans_on_meeting_id", unique: true
+  end
+
+  create_table "meeting_project_trackers", force: :cascade do |t|
+    t.bigint "meeting_id", null: false
+    t.bigint "project_tracker_id", null: false
+    t.integer "matched_by", default: 0, null: false
+    t.float "confidence"
+    t.text "rationale"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["meeting_id", "project_tracker_id"], name: "index_meeting_project_trackers_on_meeting_and_tracker", unique: true
+    t.index ["meeting_id"], name: "index_meeting_project_trackers_on_meeting_id"
+    t.index ["project_tracker_id"], name: "index_meeting_project_trackers_on_project_tracker_id"
   end
 
   create_table "meeting_transcript_segments", force: :cascade do |t|
@@ -1620,6 +1644,9 @@ ActiveRecord::Schema.define(version: 2026_10_12_130000) do
   add_foreign_key "mailing_lists", "studios"
   add_foreign_key "meeting_participants", "contacts"
   add_foreign_key "meeting_participants", "meetings"
+  add_foreign_key "meeting_project_scans", "meetings"
+  add_foreign_key "meeting_project_trackers", "meetings"
+  add_foreign_key "meeting_project_trackers", "project_trackers"
   add_foreign_key "meeting_transcript_segments", "contacts", column: "speaker_contact_id"
   add_foreign_key "meeting_transcript_segments", "meetings"
   add_foreign_key "mentions", "chunks"
