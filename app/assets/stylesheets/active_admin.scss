@@ -169,6 +169,99 @@
   }
 }
 
+.full-screen-modal.margin-breach {
+  text-align: left;
+  font-weight: normal;
+
+  .margin-breach__alert {
+    color: $color-red;
+  }
+
+  // The title block borrows the standard module header
+  // (.dashboard-module .module-header): title left, link right, dashed rule.
+  .full-screen-modal__contents__title {
+    padding: 20px;
+    display: flex;
+    justify-content: space-between;
+    border-bottom: 1px dashed $color-light-grey;
+
+    p {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 0;
+      color: $color-grey;
+    }
+
+    a.margin-breach__close {
+      font-size: 18px;
+      font-weight: 700;
+      text-decoration: none;
+    }
+  }
+
+  tr.margin-breach__total td {
+    color: $color-red;
+  }
+
+  .full-screen-modal__contents__body {
+    padding: 16px 20px;
+  }
+
+  // Each invoice line reads as a band, with its role rows hanging beneath it.
+  tr.margin-breach__line td,
+  tr.margin-breach__other td,
+  tr.margin-breach__total td {
+    background-color: #f4f5f5;
+    border-top: 1px solid $color-light-grey;
+    border-bottom: 1px solid $color-light-grey;
+  }
+
+  // Headers and figures stay on one line; only the description column wraps.
+  th,
+  td.text-right {
+    white-space: nowrap;
+  }
+
+  tr.margin-breach__line.over td {
+    color: $color-red;
+  }
+
+  // !important because the app's own `table.index_table td` padding is.
+  tr.margin-breach__entry td {
+    padding-top: 6px !important;
+    padding-bottom: 6px !important;
+    border-bottom: none;
+  }
+
+  // Role rows hang well inside their invoice line, so each amount reads as
+  // a part of the line's payout figure above it.
+  // (A margin on an inner block: the admin theme's own cell padding wins
+  // over padding set on the td.)
+  .margin-breach__entry-label {
+    margin-left: 20px;
+  }
+
+  form.margin-breach__override {
+    padding: 20px;
+    border-top: 1px dashed $color-light-grey;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+
+    textarea {
+      flex-grow: 1;
+      margin-bottom: 0;
+    }
+
+    .margin-breach__actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      white-space: nowrap;
+    }
+  }
+}
+
 hr {
   border: 1px solid $color-light-grey;
   box-shadow: none;
