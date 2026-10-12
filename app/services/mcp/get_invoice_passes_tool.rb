@@ -8,7 +8,8 @@ module Mcp
                 'total-invoiced series. Totals mirror the admin value column (every linked ' \
                 'invoice counts; the status mix separates voided/unpaid/paid). Reads STORED ' \
                 'QBO invoice data only — mirrors with no synced data yet are skipped and ' \
-                'counted per entity, never fetched live.'
+                'counted per entity, never fetched live. garden3d\'s own passes hold its ' \
+                'intercompany management fee invoices, which are left out of every total.'
 
     MIN_MONTHS_BACK = 1
     MAX_MONTHS_BACK = 24
@@ -58,7 +59,17 @@ module Mcp
     end
 
     def self.pass_block(pass)
-      entities = pass.invoice_trackers
+      # garden3d's pass holds its management fee invoices to the operating
+      # companies. Those are intercompany: counting them would add the fee to
+      # the month's invoiced total and to the MoM series, which sums every
+      # pass in a month. The pass row is still listed.
+      #
+      # Only blueprint-less trackers are left out. garden3d's 2025 passes each
+      # hold a legacy Forecast tracker with a blueprint; those are reported
+      # exactly as before.
+      trackers = pass.invoice_trackers
+      trackers = trackers.reject { |tracker| tracker.blueprint.nil? } if pass.management_fee?
+      entities = trackers
         .group_by { |t| t.qbo_account&.enterprise&.name || 'Unknown entity' }
         .sort_by { |name, _| name }
         .map { |name, trackers| entity_block(name, trackers) }
