@@ -13,6 +13,24 @@ ActiveAdmin.register ContributorPayout do
       data: { confirm: "Are you sure you want to re-calculate the payouts for this invoice? This will delete/overwrite any custom payouts previously configured." }
   end
 
+  # The breakdown shown after make_payouts refused to write. It re-runs the
+  # check here rather than carrying the result across the redirect; the modal
+  # is position: fixed, so it covers the page from wherever it is rendered.
+  action_item :margin_breach, only: :index, if: proc { params[:margin_breach].present? && current_admin_user.is_admin? } do
+    check =
+      begin
+        # `retained` carries the earlier payouts a write just found it could
+        # not remove, when that is what put the invoice over its cap.
+        retained_ids = params[:retained].to_s.split(",").map(&:to_i).presence
+        candidate = InvoicePayouts::MarginCheck.new(InvoicePayouts::Build.new(invoice_tracker, retained_orphan_ids: retained_ids)) if invoice_tracker.qbo_invoice.present?
+        candidate if candidate&.breached? && candidate.rows
+      rescue StandardError => e
+        Rails.logger.error("[contributor_payouts_margin_breach] it=#{invoice_tracker.id}: #{e.class}: #{e.message}")
+        nil
+      end
+    render(partial: "admin/contributor_payouts/margin_breach", locals: { check: check, invoice_tracker: invoice_tracker, retained: params[:retained].presence }) if check
+  end
+
   action_item :toggle_acceptance, only: :show do
     if current_admin_user == resource.contributor.forecast_person.admin_user || current_admin_user.is_admin?
       link_to resource.accepted? ? "Unaccept" : "Accept", toggle_contributor_payout_acceptance_admin_invoice_pass_invoice_tracker_path(resource.invoice_tracker.invoice_pass.id, resource.invoice_tracker, {contributor_payout_id: resource.id}),
@@ -110,12 +128,72 @@ ActiveAdmin.register ContributorPayout do
 
   collection_action :make_payouts, method: :post do
     invoice_tracker = InvoiceTracker.find(params["invoice_tracker_id"])
+    index_path = admin_invoice_tracker_contributor_payouts_path(invoice_tracker)
+    return redirect_to(index_path, alert: "Admins only.") unless current_admin_user.is_admin?
     if invoice_tracker.management_fee_invoice?
-      return redirect_to admin_invoice_tracker_contributor_payouts_path(invoice_tracker),
-        alert: "A management fee invoice has no contributor payouts."
+      return redirect_to(index_path, alert: "A management fee invoice has no contributor payouts.")
     end
-    invoice_tracker.make_contributor_payouts!(current_admin_user)
-    redirect_to admin_invoice_tracker_contributor_payouts_path(invoice_tracker), notice: "Payouts processed!"
+
+    begin
+      if invoice_tracker.qbo_invoice.nil?
+        return redirect_to(index_path, alert: "This invoice has no QBO invoice yet, so there is nothing to pay out.")
+      end
+
+      # Rule on the whole invoice before writing anything. Over the cap, the
+      # index re-runs this check and shows the breakdown; an admin can then
+      # come back here with a reason to generate regardless.
+      # Coming back from a write that found unremovable earlier payouts, the
+      # breakdown the admin saw (and is now answering) counted them.
+      retained_ids = params[:retained].to_s.split(",").map(&:to_i).presence
+      build = InvoicePayouts::Build.new(invoice_tracker, retained_orphan_ids: retained_ids)
+      check = InvoicePayouts::MarginCheck.new(build)
+      # Whoever is really signed in, not someone they are impersonating:
+      # this is the name that goes on the payouts and on any override.
+      generating_admin = true_admin_user
+
+      if check.breached?
+        breach_path = admin_invoice_tracker_contributor_payouts_path(invoice_tracker, { margin_breach: 1, retained: params[:retained].presence }.compact)
+        return redirect_to(breach_path) unless ActiveModel::Type::Boolean.new.cast(params[:force])
+
+        reason = params[:override_reason].to_s.strip
+        return redirect_to(breach_path, alert: "A reason is required to generate payouts over the cap.") if reason.blank?
+
+        ActiveRecord::Base.transaction do
+          invoice_tracker.make_contributor_payouts!(generating_admin, build: build, allow_over_cap: true)
+          # The note quotes what was written, which is not always what the
+          # pre-flight judged: generation finds out for real which earlier
+          # payouts it can remove. Within the cap after all, nothing was
+          # overridden, so there is nothing to note.
+          written = InvoicePayouts::MarginCheck.new(invoice_tracker.written_payout_build)
+          if written.breached?
+            override_note = "[#{Date.today.iso8601}] #{generating_admin.email} generated payouts over the cap (#{written.payout_percentage}% vs #{written.cap_percentage}%): #{reason}"
+            invoice_tracker.update!(notes: [invoice_tracker.notes.presence, override_note].compact.join("\n\n"))
+            invoice_tracker.record_payout_cap_override!(admin_user: generating_admin, reason: reason, check: written)
+          else
+            invoice_tracker.clear_payout_cap_override!
+          end
+        end
+      else
+        ActiveRecord::Base.transaction do
+          invoice_tracker.make_contributor_payouts!(generating_admin, build: build)
+          # Within the cap now, so an earlier override no longer describes
+          # the payouts on this invoice.
+          invoice_tracker.clear_payout_cap_override!
+        end
+      end
+
+      redirect_to index_path, notice: "Payouts processed!"
+    rescue InvoiceTracker::PayoutsOverCapError => e
+      # The pre-flight passed on the cached QBO bills; the write learned
+      # otherwise and rolled back. Show the breakdown with those payouts
+      # counted, where the admin can still generate with a reason.
+      Rails.logger.error("[contributor_payouts_make_payouts] it=#{invoice_tracker.id}: #{e.message}")
+      redirect_to admin_invoice_tracker_contributor_payouts_path(invoice_tracker, margin_breach: 1, retained: e.survivor_ids.join(",")),
+        alert: "Could not generate payouts: #{e.message}"
+    rescue StandardError => e
+      Rails.logger.error("[contributor_payouts_make_payouts] it=#{invoice_tracker.id}: #{e.class}: #{e.message}")
+      redirect_to index_path, alert: "Could not generate payouts: #{e.message.to_s.lines.first.to_s.strip}"
+    end
   end
 
   controller do
@@ -141,7 +219,23 @@ ActiveAdmin.register ContributorPayout do
     def create
       params[:contributor_payout]["created_by_id"] = current_admin_user.id
       params[:contributor_payout]["blueprint"] = {}
+      strip_admin_only_params
       super
+    end
+
+    def update
+      strip_admin_only_params
+      super
+    end
+
+    # The form only shows this box to admins, but hiding an input enforces
+    # nothing: permit_params is one list for everyone.
+    def strip_admin_only_params
+      return if current_admin_user.is_admin?
+      params[:contributor_payout]&.delete(:skip_seventy_percent_check)
+      # A hand-written Commission entry is subtracted from the pool the cap
+      # is checked against, so the raw blueprint is admin-only too.
+      params[:contributor_payout]&.delete(:blueprint) if action_name == "update"
     end
 
     # Catch the SyncsAsQboBill paid-bill guard so 'Delete' on a CP whose QBO
@@ -206,8 +300,8 @@ ActiveAdmin.register ContributorPayout do
       if current_admin_user.is_admin?
         f.input :skip_seventy_percent_check,
           as: :boolean,
-          label: "Skip 70% cap validation (one-time override, not persisted)",
-          hint: "Tick this to let this save proceed even if all contributor payouts on this invoice would exceed 70% of the invoice total. Only use when you understand why the cap is blocking an otherwise correct edit."
+          label: "Skip payout cap validation (one-time override, not persisted)",
+          hint: "Tick this to let this save proceed even if all contributor payouts on this invoice would exceed the invoice's payout cap. Only use when you understand why the cap is blocking an otherwise correct edit."
         f.input :blueprint, as: :json_editor, input_html: { style: { height: "600px" } }
       end
     end
