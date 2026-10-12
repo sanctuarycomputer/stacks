@@ -41,6 +41,34 @@ module Stacks
                         "(done, moved, or dropped, and why).",
       }.freeze
 
+      # How the coaching page (app/admin/weekly_ships.rb) names each dimension and
+      # says what good looks like, in the words a Project Lead would use. Keep in
+      # step with DIMENSIONS: the model scores against those, people read these.
+      GUIDE = {
+        "shipped" => { label: "Shipped, not busy",
+                       good: "Names finished things (merged, launched, delivered, shared for review, " \
+                             "approved, decided), not activity like \"worked on\" or \"continued\"." },
+        "next_week" => { label: "Next week is a promise",
+                         good: "Names specific outcomes for next week that the next ship can check off." },
+        "asks" => { label: "Risks and asks are visible",
+                    good: "Calls out blockers and risks plainly, and each ask says who needs to do what " \
+                          "and what it unblocks. Saying there are none this week counts." },
+        "timeline" => { label: "Timeline is explicit",
+                        good: "States the next milestone or delivery date, and says so when a date has moved." },
+        "money" => { label: "Money is visible",
+                     good: "Reports hours and spend against the budget in a form the client can follow. " \
+                           "The Stacks numbers block is one way." },
+        "readable" => { label: "Readable by the client",
+                        good: "Plain language and skimmable sections, with no internal jargon, tool names " \
+                              "or team shorthand to decode." },
+        "continuity" => { label: "Picks up where the last ship left off",
+                          good: "Answers what the previous ship promised for this week: done, moved or " \
+                                "dropped, and why." },
+      }.freeze
+
+      # A dimension's 0-2 score as the coaching page shows it: [words, pill class].
+      SCORE_LABELS = { 2 => ["Nailed it", "exceptional"], 1 => ["Partly", "at_risk"], 0 => ["Missing", "error"] }.freeze
+
       SCHEMA = {
         "type" => "object",
         "properties" => {
@@ -103,9 +131,11 @@ module Stacks
         ENV["WEEKLY_SHIP_GRADING"].to_s.strip.downcase == "on"
       end
 
-      def self.run!(dry_run: false, limit: MAX_PER_RUN)
+      # `since` reaches further back than WINDOW for a one-off backfill a person asked for
+      # (rake stacks:etl:grade_weekly_ships_backfill). The nightly run never passes it.
+      def self.run!(dry_run: false, limit: MAX_PER_RUN, since: nil)
         return { skipped_disabled: 1, errored: 0 } unless dry_run || enabled?
-        new(dry_run: dry_run, limit: limit).run!
+        new(dry_run: dry_run, limit: limit, since: since).run!
       end
 
       def self.stars_for(dimensions, has_previous:)
@@ -156,9 +186,10 @@ module Stacks
         PROMPT
       end
 
-      def initialize(dry_run:, limit:)
+      def initialize(dry_run:, limit:, since: nil)
         @dry_run = dry_run
         @limit = limit
+        @since = since
       end
 
       def run!
@@ -179,7 +210,7 @@ module Stacks
 
       def candidate_document_ids
         WeeklyShip.corpus_eligible
-          .where(sent_at: WINDOW.ago..)
+          .where(sent_at: (@since || WINDOW.ago)..)
           .where("weekly_ships.metadata -> 'scoring' IS NULL")
           .group("weekly_ships.document_id")
           .order(Arel.sql("MAX(weekly_ships.sent_at) DESC"))
@@ -231,11 +262,7 @@ module Stacks
 
       # The newest earlier ship (any document) on any of this email's trackers.
       def previous_ship(ships)
-        WeeklyShip.corpus_eligible.includes(:document)
-          .where(project_tracker_id: ships.map(&:project_tracker_id))
-          .where.not(document_id: ships.first.document_id)
-          .where("weekly_ships.sent_at < ?", ships.map(&:sent_at).min)
-          .order(sent_at: :desc).first
+        WeeklyShip.previous_to(ships)
       end
 
       # Validates the model's output (a malformed grade is an error, never stored)

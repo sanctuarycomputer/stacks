@@ -132,6 +132,16 @@ namespace :stacks do
       end
     end
 
+    # One-off: grade ships older than the nightly 14-day window. Newest first, so a capped
+    # run can be repeated until nothing is left. Needs WEEKLY_SHIP_GRADING=on, like the nightly run.
+    #   rake "stacks:etl:grade_weekly_ships_backfill[2026-05-01,200]"
+    desc 'Grade ungraded weekly ships sent since a date ([since YYYY-MM-DD, limit], default limit 200)'
+    task :grade_weekly_ships_backfill, [:since, :limit] => :environment do |_t, args|
+      since = Date.iso8601(args[:since].to_s).beginning_of_day
+      stats = Stacks::WeeklyShips::Grader.run!(since: since, limit: (args[:limit] || 200).to_i)
+      puts stats.inspect
+    end
+
     # Preview grades for ungraded recent ships without writing anything (calibration).
     #   rake "stacks:etl:grade_weekly_ships_preview[10]"
     desc 'Preview weekly ship grades without saving them ([limit], default 10)'
