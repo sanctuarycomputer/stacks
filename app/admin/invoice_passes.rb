@@ -98,7 +98,9 @@ ActiveAdmin.register InvoicePass do
 
     begin
       # Raises WrongPass off garden3d's pass, and NotDraftable before
-      # October 2026 or on a pass holding a legacy Forecast tracker.
+      # MANAGEMENT_FEE_START or on a pass holding a legacy Forecast tracker.
+      # A payer QuickBooks already holds an invoice for is reported in
+      # run.failed, with that invoice mirrored for attaching.
       run = Mso::ManagementFeeInvoices.create_drafts!(invoice_pass: resource)
     rescue Mso::ManagementFeeInvoices::Error => e
       return redirect_to admin_invoice_pass_path(resource), alert: e.message

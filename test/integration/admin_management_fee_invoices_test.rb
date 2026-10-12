@@ -225,6 +225,44 @@ class AdminManagementFeeInvoicesTest < ActionDispatch::IntegrationTest
     assert_match(/invoiced by hand/, response.body)
   end
 
+  # August, September and October 2026 were invoiced by hand before Stacks
+  # drafted anything, and are draftable all the same: the click must find each
+  # existing invoice, create nothing, and offer it for attaching.
+  test "Create drafts on a start-month pass that was invoiced by hand refuses and lists the invoice to attach" do
+    pass = garden3d_pass(Mso::ManagementFeeInvoices::MANAGEMENT_FEE_START)
+    assert_equal "August 2026", pass.invoice_month
+    stub_garden3d_qbo(customers: [qbo_customer("2", "Sanctuary Computer Inc")],
+                      invoices_in_month: [qbo_created_invoice("4700", total: "140000", balance: "0")])
+    Quickbooks::Service::Invoice.any_instance.expects(:create).never
+    Quickbooks::Service::Customer.any_instance.expects(:create).never
+    sign_in @admin
+
+    get admin_invoice_pass_path(pass)
+
+    assert_response :success
+    assert_select "a[href=?]", create_drafts_path(pass), count: 1
+    assert_no_match(/invoiced by hand/, response.body)
+
+    post create_drafts_path(pass)
+
+    assert_redirected_to admin_invoice_pass_path(pass)
+    assert_nil flash[:notice]
+    assert_match(/Created 0 draft/, flash[:alert])
+    assert_match(/already holds 1 invoice\(s\).*August 2026: 4700 \(total 140000\.0\)/, flash[:alert])
+    assert_match(/attach the right one/, flash[:alert])
+    tracker = InvoiceTracker.find_by!(invoice_pass_id: pass.id)
+    assert_nil tracker.qbo_invoice_id
+
+    get edit_admin_invoice_pass_invoice_tracker_path(pass, tracker)
+
+    assert_response :success
+    assert_select "select#invoice_tracker_qbo_invoice_id option[value=?]", "#{@qbo_account.id}:4700", count: 1
+
+    patch tracker_path(tracker), params: { invoice_tracker: { qbo_invoice_id: "#{@qbo_account.id}:4700" } }
+
+    assert_equal "4700", tracker.reload.qbo_invoice_id
+  end
+
   test "a legacy garden3d pass renders as it does today, with neither action" do
     fee_tracker(@pass, @payer).update!(blueprint: { "lines" => {} })
     Stacks::Automator.expects(:discover_people_missing_hours_for_month).once.returns([])

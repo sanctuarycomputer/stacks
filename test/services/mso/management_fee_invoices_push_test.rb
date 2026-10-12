@@ -359,7 +359,7 @@ class Mso::ManagementFeeInvoicesPushTest < ActiveSupport::TestCase
 
     error = assert_raises(Mso::ManagementFeeInvoices::NotDraftable) { push }
 
-    assert_match(/October 2026/, error.message)
+    assert_match(/August 2026/, error.message)
   end
 
   test "a pass holding a legacy Forecast tracker is refused" do
@@ -374,7 +374,7 @@ class Mso::ManagementFeeInvoicesPushTest < ActiveSupport::TestCase
     start = Mso::ManagementFeeInvoices::MANAGEMENT_FEE_START
     sanctuary_pass = InvoicePass.create!(start_of_month: start, enterprise: enterprises(:sanctuary), data: {})
 
-    assert_equal Date.new(2026, 10, 1), start
+    assert_equal Date.new(2026, 8, 1), start
     assert Mso::ManagementFeeInvoices.draftable?(garden3d_pass(start))
     refute Mso::ManagementFeeInvoices.draftable?(garden3d_pass(start - 1.month))
     refute Mso::ManagementFeeInvoices.draftable?(sanctuary_pass)

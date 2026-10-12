@@ -83,8 +83,9 @@ class Enterprise < ApplicationRecord
   # Add new per-enterprise behaviors here rather than as new rake steps.
   def daily_tasks
     Stacks::Optix.deactivate_inactive_members! if is_index?
-    # Database only: garden3d's pass for last month and its trackers. Nothing
-    # here may write to QuickBooks; an admin creates the drafts by hand.
+    # Database only: garden3d's pass and trackers for last month, and for any
+    # earlier month since the start that has none. Nothing here may write to
+    # QuickBooks; an admin creates the drafts by hand.
     Mso::ManagementFeeInvoices.ensure_previous_month! if is_garden3d?
   end
 

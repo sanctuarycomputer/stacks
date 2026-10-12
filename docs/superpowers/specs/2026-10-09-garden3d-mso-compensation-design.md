@@ -1016,10 +1016,16 @@ fixes below.
 **Drafting**
 
 - Nothing scheduled writes to QuickBooks. The nightly job creates garden3d's
-  previous-month pass and trackers (database only); the write is an admin click.
-- `MANAGEMENT_FEE_START = 2026-10-01` (**awaiting the owner's confirmation**).
-  Earlier months are never drafted: fee invoices were made by hand for nearly
-  every month from 2024-01.
+  previous-month pass and trackers, and catches up any earlier month since the
+  start month that has none, looking back twelve months at most (database
+  only); the write is an admin click.
+- `MANAGEMENT_FEE_START = 2026-08-01`, the owner's decision: the first billing
+  month is August 2026. Earlier months are never drafted: fee invoices were
+  made by hand for nearly every month from 2024-01.
+- August, September and October 2026 were also invoiced by hand, before this
+  shipped. They are draftable, and the click is how their invoices reach
+  Stacks: the pre-flight below refuses per payer and mirrors what it found,
+  and an admin attaches each one.
 - Before writing, the push reads QuickBooks for an invoice to that customer
   dated in the month. If one exists it refuses, and records what it found as
   mirror rows so the invoice can be attached from the tracker's edit page.

@@ -4,8 +4,8 @@ module Mso
   # garden3d's QuickBooks. Finance sets the amount in QuickBooks and sends the
   # invoice; Stacks never writes an amount and never sends one.
   #
-  # NOTHING HERE WRITES TO QUICKBOOKS UNATTENDED. ensure_trackers! and
-  # ensure_previous_month! touch the database only. push_invoice! and
+  # NOTHING HERE WRITES TO QUICKBOOKS UNATTENDED. ensure_trackers!,
+  # ensure_month! and ensure_previous_month! touch the database only. push_invoice! and
   # create_drafts! write to QuickBooks and are reached only from an admin's
   # click (app/admin/invoice_passes.rb, app/admin/invoice_trackers.rb). Do not
   # call either from a rake task, a job or Stacks::Automator.
@@ -26,12 +26,21 @@ module Mso
     ITEM_NAME = "Managerial Services"
     ZERO = BigDecimal("0")
 
-    # The first month Stacks drafts management fee invoices for. Every earlier
-    # month with a fee was invoiced by hand in QuickBooks (account 4100 is
-    # non-zero from 2024-01), so a draft there would be a second invoice.
-    # Earlier months can still have their existing invoices ATTACHED; see
-    # ensure_month!. Awaiting the owner's confirmation of the date.
-    MANAGEMENT_FEE_START = Date.new(2026, 10, 1)
+    # The first month Stacks drafts management fee invoices for: the billing
+    # month of August 2026, the owner's decision. Every earlier month with a
+    # fee was invoiced by hand in QuickBooks (account 4100 is non-zero from
+    # 2024-01), so a draft there would be a second invoice. Earlier months can
+    # still have their existing invoices ATTACHED; see ensure_month!.
+    #
+    # August, September and October 2026 were ALSO invoiced by hand, before
+    # this shipped. They are draftable all the same: push_invoice!'s
+    # pre-flight finds each existing invoice in QuickBooks, refuses to make a
+    # second, and lists it on the tracker's edit page to be attached.
+    MANAGEMENT_FEE_START = Date.new(2026, 8, 1)
+
+    # How far back the nightly run looks for a month with no pass. It bounds
+    # the work of one run; a month older than this is opened by an admin.
+    CATCH_UP_MONTHS = 12
 
     DraftRun = Struct.new(:created, :already_drafted, :failed, keyword_init: true)
     RefreshRun = Struct.new(:attempted, :succeeded, :detached, :failed, keyword_init: true)
@@ -256,22 +265,41 @@ module Mso
         pass
       end
 
-      # The nightly, database-only half: makes sure garden3d has a pass for
-      # last month, ready for an admin to act on.
+      # The nightly, database-only half: makes sure garden3d has a pass, with
+      # its trackers, for EVERY month from MANAGEMENT_FEE_START through last
+      # month, ready for an admin to act on. Normally that is last month's
+      # alone. The rest is the catch-up: a month the run missed (it was not
+      # deployed yet, or it failed that night) is made the next time it runs.
+      # It looks back CATCH_UP_MONTHS at most, and never before the start.
       #
-      # NEVER WRITES TO QUICKBOOKS. Do not add a push here. Creating the
-      # drafts is an explicit admin click (create_drafts!).
+      # Idempotent: a month that has its pass and trackers is left as it is.
+      # A month whose pass holds a legacy Forecast tracker is stepped over,
+      # as ensure_month! refuses it. Answers with last month's pass, or nil
+      # when there is none to make.
+      #
+      # NEVER WRITES TO QUICKBOOKS, AND NEVER READS IT. Do not add a push
+      # here. Creating the drafts is an explicit admin click (create_drafts!).
       def ensure_previous_month!(today: Date.today)
         # Migrations are run by hand on production, after the deploy. Until
         # then this is a no-op rather than a nightly error.
         return nil unless schema_ready?
 
-        month = (today - 1.month).beginning_of_month
+        last_month = (today - 1.month).beginning_of_month
         # Months before the start were invoiced by hand. Do not put a pass in
         # front of an admin that invites drafting them.
-        return nil if month < MANAGEMENT_FEE_START
+        month = [MANAGEMENT_FEE_START, last_month - (CATCH_UP_MONTHS - 1).months].max
 
-        ensure_month!(month)
+        pass = nil
+        while month <= last_month
+          pass =
+            begin
+              ensure_month!(month)
+            rescue LegacyPass
+              nil
+            end
+          month = month.next_month
+        end
+        pass
       end
 
       private
