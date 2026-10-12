@@ -5,6 +5,9 @@ class InvoicePass < ApplicationRecord
   # Sanctuary's pass (7 mixed passes, 2025-06 .. 2025-12).
   belongs_to :enterprise
   has_many :invoice_trackers
+  # One per run of the month's MSO compensation; at most one is current.
+  # Only garden3d's passes ever have any.
+  has_many :mso_snapshots
 
   class UnsupportedIssuer < StandardError; end
 
