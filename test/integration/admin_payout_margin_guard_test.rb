@@ -314,6 +314,72 @@ class AdminPayoutMarginGuardTest < ActionDispatch::IntegrationTest
     assert_no_match(/rate override/, response.body)
   end
 
+  test "generate anyway records who overrode the cap, when and why" do
+    it = breaching_tracker
+    post make_payouts_admin_invoice_tracker_contributor_payouts_path(it), params: { force: "1", override_reason: "Agreed fixed fee" }
+
+    it.reload
+    assert_equal @creator, it.payout_cap_override_by
+    assert_equal "Agreed fixed fee", it.payout_cap_override_reason
+    assert_in_delta Time.current, it.payout_cap_override_at, 60
+    assert_in_delta 103.0, it.payout_cap_override_payout_percentage, 0.01
+    assert_in_delta 70.0, it.payout_cap_override_cap_percentage, 0.01
+    assert it.payout_cap_overridden?
+  end
+
+  test "a later generation within the cap clears the recorded override" do
+    it = breaching_tracker
+    post make_payouts_admin_invoice_tracker_contributor_payouts_path(it), params: { force: "1", override_reason: "Agreed fixed fee" }
+    assert it.reload.payout_cap_overridden?
+
+    @project.update!(notes: nil) # no more rate override: the invoice is back on its cap
+    post make_payouts_admin_invoice_tracker_contributor_payouts_path(it)
+    assert_equal "Payouts processed!", flash[:notice]
+
+    it.reload
+    assert_not it.payout_cap_overridden?
+    assert_nil it.payout_cap_override_by
+    assert_nil it.payout_cap_override_reason
+  end
+
+  test "the override is recorded against the real admin, not the one they impersonate" do
+    other_admin = AdminUser.create!(email: "other-admin-guard@example.com", password: "password123", password_confirmation: "password123", roles: ["admin"])
+    it = breaching_tracker
+    post impersonate_admin_admin_user_path(other_admin)
+    assert_match(/Now impersonating/, flash[:notice])
+
+    post make_payouts_admin_invoice_tracker_contributor_payouts_path(it), params: { force: "1", override_reason: "Agreed fixed fee" }
+
+    it.reload
+    assert_equal @creator, it.payout_cap_override_by
+    assert_match(/#{Regexp.escape(@creator.email)} generated payouts over the cap/, it.notes)
+    assert_no_match(/#{Regexp.escape(other_admin.email)}/, it.notes)
+    assert_equal [@creator.id], it.contributor_payouts.map(&:created_by_id).uniq
+  end
+
+  test "the override cannot be set through the tracker form" do
+    it = within_cap_tracker
+    patch admin_invoice_pass_invoice_tracker_path(it.invoice_pass, it), params: { invoice_tracker: { payout_cap_override_by_id: @creator.id, payout_cap_override_reason: "sneaky", notes: "edited" } }
+    it.reload
+    assert_equal "edited", it.notes, "the update itself must have gone through"
+    assert_nil it.payout_cap_override_by_id
+    assert_nil it.payout_cap_override_reason
+  end
+
+  test "the tracker's override banner names who overrode the cap and why" do
+    it = breaching_tracker
+    post make_payouts_admin_invoice_tracker_contributor_payouts_path(it), params: { force: "1", override_reason: "Agreed <b>fixed</b> fee" }
+
+    html = ApplicationController.render(partial: "admin/invoice_trackers/payout_cap_override", locals: { invoice_tracker: it.reload })
+    assert_match "These payouts were generated over the invoice's cap", html
+    assert_match "(103.0% against a cap of 70.0%)", html
+    assert_match @creator.email, html
+    assert_match "Reason given: Agreed &lt;b&gt;fixed&lt;/b&gt; fee", html
+
+    blank = ApplicationController.render(partial: "admin/invoice_trackers/payout_cap_override", locals: { invoice_tracker: within_cap_tracker })
+    assert_equal "", blank.strip
+  end
+
   private
 
   def sign_in(admin)

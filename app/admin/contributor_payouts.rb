@@ -138,6 +138,9 @@ ActiveAdmin.register ContributorPayout do
       # come back here with a reason to generate regardless.
       build = InvoicePayouts::Build.new(invoice_tracker)
       check = InvoicePayouts::MarginCheck.new(build)
+      # Whoever is really signed in, not someone they are impersonating:
+      # this is the name that goes on the payouts and on any override.
+      generating_admin = true_admin_user
 
       if check.breached?
         breach_path = admin_invoice_tracker_contributor_payouts_path(invoice_tracker, margin_breach: 1)
@@ -147,19 +150,27 @@ ActiveAdmin.register ContributorPayout do
         return redirect_to(breach_path, alert: "A reason is required to generate payouts over the cap.") if reason.blank?
 
         ActiveRecord::Base.transaction do
-          invoice_tracker.make_contributor_payouts!(current_admin_user, build: build, allow_over_cap: true)
+          invoice_tracker.make_contributor_payouts!(generating_admin, build: build, allow_over_cap: true)
           # The note quotes what was written, which is not always what the
           # pre-flight judged: generation finds out for real which earlier
           # payouts it can remove. Within the cap after all, nothing was
           # overridden, so there is nothing to note.
           written = InvoicePayouts::MarginCheck.new(invoice_tracker.written_payout_build)
           if written.breached?
-            override_note = "[#{Date.today.iso8601}] #{current_admin_user.email} generated payouts over the cap (#{written.payout_percentage}% vs #{written.cap_percentage}%): #{reason}"
+            override_note = "[#{Date.today.iso8601}] #{generating_admin.email} generated payouts over the cap (#{written.payout_percentage}% vs #{written.cap_percentage}%): #{reason}"
             invoice_tracker.update!(notes: [invoice_tracker.notes.presence, override_note].compact.join("\n\n"))
+            invoice_tracker.record_payout_cap_override!(admin_user: generating_admin, reason: reason, check: written)
+          else
+            invoice_tracker.clear_payout_cap_override!
           end
         end
       else
-        invoice_tracker.make_contributor_payouts!(current_admin_user, build: build)
+        ActiveRecord::Base.transaction do
+          invoice_tracker.make_contributor_payouts!(generating_admin, build: build)
+          # Within the cap now, so an earlier override no longer describes
+          # the payouts on this invoice.
+          invoice_tracker.clear_payout_cap_override!
+        end
       end
 
       redirect_to index_path, notice: "Payouts processed!"

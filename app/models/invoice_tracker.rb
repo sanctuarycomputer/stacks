@@ -18,6 +18,11 @@ class InvoiceTracker < ApplicationRecord
 
   has_many :contributor_payouts, dependent: :destroy
 
+  # Who last chose to generate this invoice's payouts over its cap, and why.
+  # Set only by the admin "Generate anyway" action and cleared when a later
+  # generation lands within the cap; not editable through the form.
+  belongs_to :payout_cap_override_by, class_name: "AdminUser", optional: true
+
   delegate :billing_enterprise, to: :forecast_client
 
   # The share the company keeps on this invoice, when set by hand. nil means
@@ -335,6 +340,38 @@ class InvoiceTracker < ApplicationRecord
 
   def n2c(*args, **kwargs, &b)
     ActionController::Base.helpers.number_to_currency(*args, **kwargs, &b)
+  end
+
+  # The override columns arrive with a migration that is run by hand after
+  # the deploy; until then there is nowhere to record one.
+  def payout_cap_override_recordable?
+    has_attribute?(:payout_cap_override_by_id)
+  end
+
+  def payout_cap_overridden?
+    payout_cap_override_recordable? && payout_cap_override_at.present?
+  end
+
+  def record_payout_cap_override!(admin_user:, reason:, check:)
+    return unless payout_cap_override_recordable?
+    update!(
+      payout_cap_override_by: admin_user,
+      payout_cap_override_at: Time.current,
+      payout_cap_override_reason: reason,
+      payout_cap_override_payout_percentage: check.payout_percentage,
+      payout_cap_override_cap_percentage: check.cap_percentage,
+    )
+  end
+
+  def clear_payout_cap_override!
+    return unless payout_cap_overridden?
+    update!(
+      payout_cap_override_by: nil,
+      payout_cap_override_at: nil,
+      payout_cap_override_reason: nil,
+      payout_cap_override_payout_percentage: nil,
+      payout_cap_override_cap_percentage: nil,
+    )
   end
 
   class PayoutsOverCapError < StandardError; end

@@ -1,0 +1,15 @@
+<% if invoice_tracker.payout_cap_overridden? %>
+  <div class="dashboard-modules table index_table index" style="margin-bottom: 20px;">
+    <div class="dashboard-module">
+      <div class="module-body">
+        <p style="margin-bottom: 6px;">
+          ⚠️ <strong>These payouts were generated over the invoice's cap</strong>
+          (<%= invoice_tracker.payout_cap_override_payout_percentage %>% against a cap of <%= invoice_tracker.payout_cap_override_cap_percentage %>%)
+          by <strong><%= invoice_tracker.payout_cap_override_by&.email || "an admin who no longer exists" %></strong>
+          on <%= invoice_tracker.payout_cap_override_at.to_date.to_s(:long) %>.
+        </p>
+        <p style="margin-bottom: 0;">Reason given: <%= invoice_tracker.payout_cap_override_reason %></p>
+      </div>
+    </div>
+  </div>
+<% end %>
