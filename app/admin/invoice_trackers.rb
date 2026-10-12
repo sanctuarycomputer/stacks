@@ -381,7 +381,7 @@ ActiveAdmin.register InvoiceTracker do
           as: :number,
           label: "Target margin override",
           hint: "Blank = derive the cap from each project's billing model. 0.33 keeps 33% and caps payouts at 67%.",
-          input_html: { step: 0.01 }
+          input_html: { step: 0.01, min: 0, max: 1 }
       end
       f.input :allow_early_contributor_payouts_on, as: :date_picker
       f.input :notes, label: "❗Important Notes (accepts markdown)"

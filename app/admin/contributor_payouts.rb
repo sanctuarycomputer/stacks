@@ -148,7 +148,7 @@ ActiveAdmin.register ContributorPayout do
 
         override_note = "[#{Date.today.iso8601}] #{current_admin_user.email} generated payouts over the cap (#{check.payout_percentage}% vs #{check.cap_percentage}%): #{reason}"
         ActiveRecord::Base.transaction do
-          invoice_tracker.make_contributor_payouts!(current_admin_user, build: build)
+          invoice_tracker.make_contributor_payouts!(current_admin_user, build: build, allow_over_cap: true)
           invoice_tracker.update!(notes: [invoice_tracker.notes.presence, override_note].compact.join("\n\n"))
         end
       else
@@ -158,7 +158,7 @@ ActiveAdmin.register ContributorPayout do
       redirect_to index_path, notice: "Payouts processed!"
     rescue StandardError => e
       Rails.logger.error("[contributor_payouts_make_payouts] it=#{invoice_tracker.id}: #{e.class}: #{e.message}")
-      redirect_to index_path, alert: "Could not calculate payouts: #{e.message}"
+      redirect_to index_path, alert: "Could not generate payouts: #{e.message.to_s.lines.first.to_s.strip}"
     end
   end
 

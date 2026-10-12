@@ -50,7 +50,7 @@
             <% row.entries.each do |entry| %>
               <tr class="margin-breach__entry">
                 <td class="col">
-                  <%= role_labels.fetch(entry.role, entry.role) %> · <%= entry.payee.email %>
+                  <%= role_labels.fetch(entry.role, entry.role) %> · <%= entry.payee.email.presence || "Forecast person ##{entry.payee.forecast_id}" %>
                   <% if entry.rate_override %><span class="pill error">rate override</span><% end %>
                   <% unless check.build.paid?(entry.payee) %><span class="pill">not paid out</span><% end %>
                   <% if entry.description_line.present? %><br><small><%= entry.description_line %></small><% end %>

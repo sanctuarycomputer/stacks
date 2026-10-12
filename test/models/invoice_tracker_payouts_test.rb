@@ -159,6 +159,46 @@ class InvoiceTrackerPayoutsTest < ActiveSupport::TestCase
     assert_in_delta 1400.0, it.contributor_payouts.reload.sum { |cp| cp.amount.to_f }, 0.01
   end
 
+  def add_stale_payout(it, amount: 900.0)
+    stranger = ForecastPerson.create!(forecast_id: 700_009, email: "stale-split@example.com", data: {})
+    stranger.ensure_contributor_exists!
+    ledger = Ledger.find_or_create_for(enterprise: @client.billing_enterprise, contributor: stranger.reload.contributor)
+    stale = ContributorPayout.new(invoice_tracker: it, ledger: ledger, amount: amount, blueprint: {}, created_by: @creator)
+    stale.skip_seventy_percent_check = true
+    stale.save!
+    it.contributor_payouts.reset
+    stale
+  end
+
+  test "an orphan that survives unexpectedly and leaves the invoice over its cap rolls the write back" do
+    build_tracker("new_deal_v1")
+    it = build_invoice_tracker
+    it.make_contributor_payouts!(@creator)
+    stale = add_stale_payout(it)
+    before = it.contributor_payouts.reload.map { |cp| [cp.id, cp.amount.to_f] }.sort
+    ContributorPayout.any_instance.stubs(:destroy).raises(SyncsAsQboBill::PaidQboBillError, "cannot verify")
+
+    error = assert_raises(InvoiceTracker::UnexpectedOrphanOverCapError) { it.make_contributor_payouts!(@creator) }
+    assert_match(/could not be removed/, error.message)
+    assert_includes error.message, stale.id.to_s
+    assert_equal before, it.contributor_payouts.reload.map { |cp| [cp.id, cp.amount.to_f] }.sort
+
+    assert_nothing_raised { it.make_contributor_payouts!(@creator, allow_over_cap: true) }
+  end
+
+  test "an orphan the pre-flight predicted does not make the write itself raise" do
+    build_tracker("new_deal_v1")
+    it = build_invoice_tracker
+    it.make_contributor_payouts!(@creator)
+    add_stale_payout(it)
+    bill = mock("qbo_bill")
+    bill.stubs(:has_payments?).returns(true)
+    ContributorPayout.any_instance.stubs(:qbo_bill).returns(bill)
+    ContributorPayout.any_instance.stubs(:destroy).raises(SyncsAsQboBill::PaidQboBillError, "paid")
+
+    assert_nothing_raised { it.make_contributor_payouts!(@creator) }
+  end
+
   test "generation writes the prebuilt Build it is given, not a fresh one" do
     build_tracker("new_deal_v1")
     it = build_invoice_tracker

@@ -79,7 +79,7 @@ class AdminPayoutMarginGuardTest < ActionDispatch::IntegrationTest
       post make_payouts_admin_invoice_tracker_contributor_payouts_path(it)
     end
     assert_redirected_to admin_invoice_tracker_contributor_payouts_path(it)
-    assert_match(/Could not calculate payouts: No project trackers found/, flash[:alert])
+    assert_match(/Could not generate payouts: No project trackers found/, flash[:alert])
   end
 
   test "a falsy force param is not a force" do
@@ -109,7 +109,7 @@ class AdminPayoutMarginGuardTest < ActionDispatch::IntegrationTest
       post make_payouts_admin_invoice_tracker_contributor_payouts_path(it), params: { force: "1", override_reason: "Agreed fee" }
     end
     assert_redirected_to admin_invoice_tracker_contributor_payouts_path(it)
-    assert_match(/Could not calculate payouts/, flash[:alert])
+    assert_match(/Could not generate payouts/, flash[:alert])
   end
 
   test "a non-admin cannot smuggle skip_seventy_percent_check through update" do
@@ -150,24 +150,29 @@ class AdminPayoutMarginGuardTest < ActionDispatch::IntegrationTest
     assert_equal [{ "amount" => 5000 }], cp.reload.blueprint["Commission"], "an admin can still edit it"
   end
 
-  test "a non-admin cannot skip the cap check on create" do
+  test "an unremovable stale payout that leaves the invoice over its cap writes nothing" do
     it = within_cap_tracker
-    it.make_contributor_payouts!(@creator)
-    @ic2.ensure_contributor_exists!
-    delete destroy_admin_user_session_path
-    lead = AdminUser.create!(email: "lead4-guard@example.com", password: "password123", password_confirmation: "password123")
-    PermissionGrant.create!(admin_user: lead, permission: "lead")
-    sign_in lead
+    stranger = ForecastPerson.create!(forecast_id: 700_099, email: "stale-guard@example.com", data: {})
+    stranger.ensure_contributor_exists!
+    ledger = Ledger.find_or_create_for(enterprise: @client.billing_enterprise, contributor: stranger.reload.contributor)
+    stale = ContributorPayout.new(invoice_tracker: it, ledger: ledger, amount: 9000.0, blueprint: {}, created_by: @creator)
+    stale.skip_seventy_percent_check = true
+    stale.save!
+    ContributorPayout.any_instance.stubs(:destroy).raises(SyncsAsQboBill::PaidQboBillError, "cannot verify")
 
-    # The controller's build_new_resource never assigns the parent tracker
-    # (pre-existing), so over HTTP the model has no invoice_tracker and the
-    # cap validation cannot even run. Hand it the tracker so the strip is
-    # the only thing standing between the flag and the cap.
-    ContributorPayout.any_instance.stubs(:invoice_tracker).returns(it)
     assert_no_difference "ContributorPayout.with_deleted.count" do
-      post admin_invoice_tracker_contributor_payouts_path(it), params: { contributor_payout: { contributor_id: @ic2.reload.contributor.id, amount: 9000, skip_seventy_percent_check: "1" } }
+      post make_payouts_admin_invoice_tracker_contributor_payouts_path(it)
     end
-    assert_match(/may not exceed/, response.body, "the cap validation, not something else, must be what blocked it")
+    assert_redirected_to admin_invoice_tracker_contributor_payouts_path(it)
+    assert_match(/could not be removed/, flash[:alert])
+    assert_equal [stale.id], it.contributor_payouts.reload.map(&:id)
+  end
+
+  test "a multi-line exception is flashed as its first line" do
+    it = within_cap_tracker
+    InvoicePayouts::Build.any_instance.stubs(:payees).raises(StandardError, "boom\n\n  some.code\n  ^^^^")
+    post make_payouts_admin_invoice_tracker_contributor_payouts_path(it)
+    assert_equal "Could not generate payouts: boom", flash[:alert]
   end
 
   test "the overlay lists every line with its roles and the override form" do

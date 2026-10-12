@@ -343,7 +343,9 @@ class InvoiceTracker < ApplicationRecord
   # caller is expected to have run InvoicePayouts::MarginCheck on the build
   # first (the admin action does); called bare, this writes whatever the
   # build says, over the cap or not.
-  def make_contributor_payouts!(created_by, build: nil)
+  class UnexpectedOrphanOverCapError < StandardError; end
+
+  def make_contributor_payouts!(created_by, build: nil, allow_over_cap: false)
     raise "Payment splits are not supported for this invoice pass" unless invoice_pass.allows_payment_splits?
     return [] if qbo_invoice.nil?
 
@@ -387,11 +389,25 @@ class InvoiceTracker < ApplicationRecord
       # which raises PaidQboBillError on a paid bill. Without this rescue
       # the exception would roll back the whole transaction. Skip the one
       # paid-bill orphan with a log; the rest of the tracker still updates.
+      survivors = []
       (contributor_payouts.reload.to_a - synced).each do |orphan|
         begin
           orphan.destroy
         rescue SyncsAsQboBill::PaidQboBillError => e
+          survivors << orphan
           Rails.logger.error("[invoice_tracker_make_payouts] ##{id} cannot destroy orphan CP ##{orphan.id}: #{e.message}")
+        end
+      end
+
+      # The pre-flight predicted survivors from the cached bill; the live
+      # fetch above can disagree. An unpredicted one may leave the invoice
+      # over its cap, which the pre-flight never ruled on: roll back.
+      unexpected = survivors.reject { |cp| build.retained_orphans.any? { |r| r.id == cp.id } }
+      if unexpected.any? && !allow_over_cap
+        cap, pool = ContributorPayout.cap_and_pool(self, contributor_payouts.reload.to_a)
+        if pool > cap.cap + 1
+          raise UnexpectedOrphanOverCapError,
+            "Payouts would exceed the cap: an earlier payout (##{unexpected.map(&:id).join(", #")}) could not be removed because its QBO bill has payments or could not be checked. Nothing was written. Refresh the bill from QBO and try again."
         end
       end
 

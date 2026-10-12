@@ -300,6 +300,20 @@ class ContributorPayout < ApplicationRecord
     end
   end
 
+  # The cap and the contributor pool (payouts net of commissions) for a set of
+  # payouts on one invoice. Shared with InvoiceTracker#make_contributor_payouts!.
+  def self.cap_and_pool(invoice_tracker, cps)
+    commissions_by_line = Hash.new(0.0)
+    cps.each do |cp|
+      (cp.blueprint["Commission"] || []).each do |entry|
+        commissions_by_line[cp.entry_line_id(entry)] += entry["amount"].to_f
+      end
+    end
+
+    cap = InvoicePayouts::Cap.new(invoice_tracker, commissions_by_line: commissions_by_line)
+    [cap, cps.sum { |cp| cp.amount.to_f - cp.as_commission }]
+  end
+
   def contributor_payouts_within_cap
     return if ActiveModel::Type::Boolean.new.cast(skip_seventy_percent_check) # Ephemeral admin override
     return if changes.keys == ["accepted_at"] # Don't check if the payout is being accepted or unaccepted
@@ -309,16 +323,8 @@ class ContributorPayout < ApplicationRecord
     others = invoice_tracker.contributor_payouts.reject { |cp| cp.equal?(self) || (persisted? && cp.id == id) }
     cps = [*others, self]
 
-    commissions_by_line = Hash.new(0.0)
-    cps.each do |cp|
-      (cp.blueprint["Commission"] || []).each do |entry|
-        commissions_by_line[cp.entry_line_id(entry)] += entry["amount"].to_f
-      end
-    end
-
-    cap = InvoicePayouts::Cap.new(invoice_tracker, commissions_by_line: commissions_by_line)
+    cap, contributor_pool_sum = self.class.cap_and_pool(invoice_tracker, cps)
     max_amount = cap.cap
-    contributor_pool_sum = cps.sum { |cp| cp.amount.to_f - cp.as_commission }
 
     if contributor_pool_sum > (max_amount + 1) # Add a dollar to account for rounding errors
       percentage = cap.post_commission_total > 0 ? (max_amount / cap.post_commission_total * 100).round(1) : 0.0
