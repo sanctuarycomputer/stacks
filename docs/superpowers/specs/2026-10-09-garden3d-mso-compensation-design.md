@@ -1032,7 +1032,8 @@ fixes below.
 - A customer is created only when the stored id is blank **and** no active
   customer has the payer's exact name; otherwise it raises naming the id.
 - `ensure_month!(date)` creates a pass and trackers for attaching hand-made
-  invoices; it refuses legacy months.
+  invoices; it refuses legacy months. An admin reaches it from Money →
+  Invoicing ("Open garden3d month"); it is database only.
 
 **Collection gate (§6.4 replaced)**
 

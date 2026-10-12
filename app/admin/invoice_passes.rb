@@ -73,6 +73,44 @@ ActiveAdmin.register InvoicePass do
   # click; nothing scheduled does it. AdminAuthorization enforces admin-only
   # on the server -- the `if:` below only hides the button.
 
+  # Opening a month gives it garden3d's pass and a tracker per paying company
+  # (Mso::ManagementFeeInvoices.ensure_month!). DATABASE ONLY: it never calls
+  # QuickBooks. The nightly run already opens every month from the start
+  # month on, so this is for an earlier month whose hand-made invoices are to
+  # be attached, and for the current month before the nightly run reaches it.
+  action_item :open_management_fee_month, only: :index, if: proc { current_admin_user.is_admin? } do
+    months = Mso::ManagementFeeInvoices.openable_months
+    render(partial: "admin/invoice_passes/open_management_fee_month", locals: { months: months }) if months.any?
+  end
+
+  collection_action :open_management_fee_month, method: :post do
+    # A collection action loads no record, so ActiveAdmin authorizes nothing
+    # on its own. Admin-only, in AdminAuthorization.
+    authorize! :open_management_fee_month, InvoicePass
+
+    month =
+      begin
+        Date.strptime(params[:month].to_s, "%Y-%m")
+      rescue ArgumentError
+        nil
+      end
+    if month.nil? || month > Date.today.beginning_of_month
+      return redirect_to admin_invoice_passes_path, alert: "Choose a month, no later than the current one."
+    end
+
+    begin
+      # Raises LegacyPass for a month whose pass holds a legacy Forecast
+      # tracker, and Misconfigured when a payer is not set up.
+      pass = Mso::ManagementFeeInvoices.ensure_month!(month)
+    rescue Mso::ManagementFeeInvoices::Error => e
+      return redirect_to admin_invoice_passes_path, alert: e.message
+    end
+
+    redirect_to admin_invoice_pass_path(pass),
+      notice: "#{Enterprise::GARDEN3D_NAME}'s pass for #{pass.invoice_month} is open, with a tracker for each " \
+              "paying company. Nothing was sent to QuickBooks."
+  end
+
   action_item :create_management_fee_drafts, only: :show,
     if: proc { current_admin_user.is_admin? && Mso::ManagementFeeInvoices.draftable?(resource) } do
     link_to "Create management fee drafts",

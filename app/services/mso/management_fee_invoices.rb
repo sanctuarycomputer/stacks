@@ -5,7 +5,8 @@ module Mso
   # invoice; Stacks never writes an amount and never sends one.
   #
   # NOTHING HERE WRITES TO QUICKBOOKS UNATTENDED. ensure_trackers!,
-  # ensure_month! and ensure_previous_month! touch the database only. push_invoice! and
+  # ensure_month!, openable_months and ensure_previous_month! touch the
+  # database only. push_invoice! and
   # create_drafts! write to QuickBooks and are reached only from an admin's
   # click (app/admin/invoice_passes.rb, app/admin/invoice_trackers.rb). Do not
   # call either from a rake task, a job or Stacks::Automator.
@@ -37,6 +38,10 @@ module Mso
     # pre-flight finds each existing invoice in QuickBooks, refuses to make a
     # second, and lists it on the tracker's edit page to be attached.
     MANAGEMENT_FEE_START = Date.new(2026, 8, 1)
+
+    # The first month garden3d charged a management fee (account 4100 is
+    # non-zero from 2024-01): the earliest month an admin is offered to open.
+    FIRST_FEE_MONTH = Date.new(2024, 1, 1)
 
     # How far back the nightly run looks for a month with no pass. It bounds
     # the work of one run; a month older than this is opened by an admin.
@@ -263,6 +268,22 @@ module Mso
         end
         ensure_trackers!(invoice_pass: pass)
         pass
+      end
+
+      # The months an admin can open by hand ("Open garden3d month" on the
+      # invoice passes index): every month from FIRST_FEE_MONTH through the
+      # current one that has no garden3d pass, newest first. DATABASE ONLY.
+      def openable_months(today: Date.today)
+        garden3d_ids = Enterprise.where(name: Enterprise::GARDEN3D_NAME).select(:id)
+        taken = InvoicePass.where(enterprise_id: garden3d_ids).pluck(:start_of_month).to_set
+
+        months = []
+        month = today.beginning_of_month
+        while month >= FIRST_FEE_MONTH
+          months << month unless taken.include?(month)
+          month = month.prev_month
+        end
+        months
       end
 
       # The nightly, database-only half: makes sure garden3d has a pass, with

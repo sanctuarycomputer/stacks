@@ -15,7 +15,11 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
   # These write to, or read from, garden3d's QuickBooks. On garden3d's own
   # pass the admin-only rule below already covers them; this keeps them
   # admin-only on every other pass too, where the action would only refuse.
-  MANAGEMENT_FEE_PASS_ADMIN_ACTIONS = [:create_management_fee_drafts, :refresh_management_fee_invoices].freeze
+  # :open_management_fee_month is a collection action, asked of the class: it
+  # makes a garden3d pass.
+  MANAGEMENT_FEE_PASS_ADMIN_ACTIONS = [
+    :create_management_fee_drafts, :refresh_management_fee_invoices, :open_management_fee_month,
+  ].freeze
 
   # Narrows index pages. An admin sees everything. Everyone else never sees
   # garden3d's invoice passes or the trackers on them (see authorized?).
@@ -90,7 +94,7 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
     # for every action including read. Must stay above the blanket lead grant.
     return user.is_admin? if subject.is_a?(MsoRolePeriod) || subject == MsoRolePeriod
 
-    if subject.is_a?(InvoicePass) && MANAGEMENT_FEE_PASS_ADMIN_ACTIONS.include?(action)
+    if (subject.is_a?(InvoicePass) || subject == InvoicePass) && MANAGEMENT_FEE_PASS_ADMIN_ACTIONS.include?(action)
       return user.is_admin?
     end
 

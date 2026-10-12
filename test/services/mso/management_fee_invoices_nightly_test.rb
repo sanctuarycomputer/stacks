@@ -83,6 +83,22 @@ class Mso::ManagementFeeInvoicesNightlyTest < ActiveSupport::TestCase
     assert_equal [legacy.id], InvoiceTracker.where(invoice_pass_id: pass.id).pluck(:id)
   end
 
+  # --- openable_months -------------------------------------------------------
+
+  test "openable_months lists the months with no garden3d pass, newest first, and reads only the database" do
+    forbid_quickbooks
+    first = Mso::ManagementFeeInvoices::FIRST_FEE_MONTH
+    assert_equal Date.new(2024, 1, 1), first
+    garden3d_pass(Date.new(2024, 2, 1))
+    # Another company's pass does not take the month.
+    InvoicePass.create!(start_of_month: Date.new(2024, 3, 1), enterprise: enterprises(:sanctuary), data: {})
+
+    months = Mso::ManagementFeeInvoices.openable_months(today: Date.new(2024, 4, 20))
+
+    assert_equal [Date.new(2024, 4, 1), Date.new(2024, 3, 1), Date.new(2024, 1, 1)], months
+    assert_equal [], Mso::ManagementFeeInvoices.openable_months(today: first - 1.day)
+  end
+
   # --- ensure_previous_month! ------------------------------------------------
 
   test "the nightly run creates last month's pass and never touches QuickBooks" do

@@ -77,6 +77,14 @@ class AdminAuthorizationManagementFeeTest < ActiveSupport::TestCase
     end
   end
 
+  test "only an admin may open a month for garden3d" do
+    # A collection action: it is asked of the class.
+    assert auth_for(@admin).authorized?(:open_management_fee_month, InvoicePass)
+    refute auth_for(@lead).authorized?(:open_management_fee_month, InvoicePass)
+    refute trainee_auth.authorized?(:open_management_fee_month, InvoicePass)
+    assert auth_for(@lead).authorized?(:read, InvoicePass), "the index itself is unchanged for a lead"
+  end
+
   def trainee_auth
     trainee = AdminUser.create!(email: "fee-trainee@sanctuary.computer", password: "password12345")
     project = ProjectTracker.new(name: "Training Project")
