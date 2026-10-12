@@ -123,6 +123,32 @@ class Ledger::QualifyingIncomeTest < ActiveSupport::TestCase
     assert_equal BigDecimal("1400"), income(excluding: [])
   end
 
+  test "exclusion matches on class as well as id" do
+    kept = payout(@march_pass, "2500")
+    # A true-up that shares the payout's id must not drag the payout out with it.
+    same_id = Trueup.new(ledger: @ledger, invoice_pass: @march_pass, amount: 400, description: "same id")
+    same_id.id = kept.id
+    same_id.save!
+
+    assert_equal BigDecimal("2500"), income(excluding: [same_id])
+    assert_equal BigDecimal("400"), income(excluding: [kept])
+  end
+
+  test "naming a class twice does not count it twice" do
+    trueup(@march_pass, "1000")
+
+    assert_equal BigDecimal("1000"), income(klasses: [Trueup, Trueup])
+  end
+
+  test "the first and last day of the month both count" do
+    pay_stub(Date.new(2090, 3, 31), 300)
+    payout(@march_pass, "200") # effective on the 1st, its pass's start_of_month
+
+    assert_equal BigDecimal("500"), income
+    assert_equal BigDecimal("0"), Ledger::QualifyingIncome.for(ledger: @ledger, month: Date.new(2090, 2, 28))
+    assert_equal BigDecimal("0"), Ledger::QualifyingIncome.for(ledger: @ledger, month: Date.new(2090, 4, 1))
+  end
+
   test "a reimbursement is not compensation" do
     trueup(@march_pass, "1000")
     Reimbursement.create!(ledger: @ledger, amount: 250, description: "taxi", receipts: "")

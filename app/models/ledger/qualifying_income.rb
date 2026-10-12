@@ -24,7 +24,8 @@ module Ledger::QualifyingIncome
     range = month.beginning_of_month..month.end_of_month
     excluded = excluding.map { |record| [record.class.name, record.id] }.to_set
 
-    klasses.sum(ZERO) do |klass|
+    # uniq: naming a class twice must not count its rows twice.
+    klasses.uniq.sum(ZERO) do |klass|
       # .to_a first: Relation#sum with both an initial value and a block raises
       # in Rails 6.1.
       klass.where(ledger_id: ledger.id).includes(SOURCES.fetch(klass)).to_a.sum(ZERO) do |item|
