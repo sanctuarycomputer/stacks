@@ -171,8 +171,12 @@ Stacks ingests the transcripts, so it matches them, in the nightly ETL beside th
     Most internal meetings match nothing, and that is a normal answer.
 - **Rematching.** A no-match meeting inside the window is tried again when a tracker has been created
   since its scan (a kickoff call often comes before the tracker).
-- **Exclusion.** When a document is excluded from the corpus, its meeting's model-made links and scan
-  are removed, so the next run rematches from whatever is still eligible, or not at all.
+- **Exclusion.** The scan remembers which eligible documents it read. When one is later excluded, the
+  next nightly run rematches the meeting from whatever is still eligible, and removes the model's
+  links and the scan when nothing is. In between, a meeting with no eligible document is not listed
+  on the Meeting Matches page and returns nothing over MCP.
+- **Off until switched on.** The matcher runs only when `MEETING_MATCHING=on`, like the ship grader.
+  A dry-run preview task ignores the switch and writes nothing.
 - **Volume.** About 100 eligible meetings a fortnight, so roughly seven calls a night.
 - **MCP.** `list_documents` and `get_document` return `project_tracker_ids` for a meeting's documents.
   The rationale is never returned over MCP.
