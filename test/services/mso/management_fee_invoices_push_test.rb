@@ -189,6 +189,55 @@ class Mso::ManagementFeeInvoicesPushTest < ActiveSupport::TestCase
     assert_match(/already has QuickBooks invoice 8000/, error.message)
   end
 
+  test "a tracker that gains an invoice while this push is still preparing is refused under the lock" do
+    # The double click: both requests pass the first check. This one is still
+    # reading QuickBooks when the other attaches its draft.
+    account = @tracker.qbo_account
+    tracker_id = @tracker.id
+    customers = @customers
+    account.define_singleton_method(:fetch_all_customers) do
+      QboInvoice.create!(qbo_account_id: id, qbo_id: "7777", data: { "id" => "7777", "total" => "0.0" })
+      InvoiceTracker.where(id: tracker_id).update_all(qbo_invoice_id: "7777")
+      customers
+    end
+    Quickbooks::Service::Invoice.any_instance.expects(:query).never
+    forbid_writes
+
+    error = assert_raises(Mso::ManagementFeeInvoices::PushFailed) { push }
+
+    assert_match(/already has QuickBooks invoice 7777/, error.message)
+    assert_equal "7777", InvoiceTracker.find(@tracker.id).qbo_invoice_id
+  end
+
+  test "a blank invoice id is no invoice: the push goes ahead" do
+    # "" is what a cleared form field leaves behind, and QboInvoice#sync!
+    # treats a mirror with that id as junk. It must not block a draft forever.
+    QboInvoice.create!(qbo_account: @qbo_account, qbo_id: "", data: { "total" => "0.0" })
+    @tracker.update_columns(qbo_invoice_id: "")
+    expect_one_draft("9002")
+
+    push
+
+    assert_equal "9002", InvoiceTracker.find(@tracker.id).qbo_invoice_id
+  end
+
+  test "a tracker bound to another company's QuickBooks account is refused before any QuickBooks call" do
+    sanctuary_qa = Enterprise.find(enterprises(:sanctuary).id).qbo_account
+    @tracker.update_columns(qbo_account_id: sanctuary_qa.id)
+    @tracker = InvoiceTracker.find(@tracker.id)
+    QboAccount.any_instance.expects(:fetch_all_items).never
+    QboAccount.any_instance.expects(:fetch_all_terms).never
+    QboAccount.any_instance.expects(:fetch_all_customers).never
+    Quickbooks::Service::Invoice.any_instance.expects(:query).never
+    forbid_writes
+
+    error = assert_raises(Mso::ManagementFeeInvoices::Misconfigured) { push }
+
+    assert_match(/InvoiceTracker #{@tracker.id} is bound to a QuickBooks account that is not garden3d, LLC's/,
+                 error.message)
+    assert unattached?
+  end
+
   test "a tracker on Sanctuary's pass is refused" do
     sanctuary_qa = Enterprise.find(enterprises(:sanctuary).id).qbo_account
     pass = InvoicePass.create!(start_of_month: Date.new(2095, 9, 1), enterprise: enterprises(:sanctuary), data: {})

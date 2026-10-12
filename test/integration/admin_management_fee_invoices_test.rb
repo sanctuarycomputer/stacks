@@ -234,6 +234,65 @@ class AdminManagementFeeInvoicesTest < ActionDispatch::IntegrationTest
     assert_equal 0, InvoiceTracker.where(invoice_pass_id: @pass.id).count
   end
 
+  test "a lead cannot refresh by posting directly, and QuickBooks is never read" do
+    tracker = attach_invoice(fee_tracker(@pass, @payer), qbo_id: "8103", total: "0.0", balance: "0.0", sent: false)
+    Mso::ManagementFeeInvoices.expects(:refresh!).never
+    QboInvoice.any_instance.expects(:sync!).never
+    QboAccount.any_instance.expects(:fetch_invoice_by_id).never
+    sign_in @lead
+
+    post refresh_path(@pass)
+
+    assert_response :redirect
+    assert_match(/not authorized/i, flash[:error])
+    assert_equal "8103", tracker.reload.qbo_invoice_id
+  end
+
+  test "a lead posting create-drafts never reaches QuickBooks at all" do
+    Mso::ManagementFeeInvoices.expects(:create_drafts!).never
+    QboAccount.any_instance.expects(:fetch_all_customers).never
+    Quickbooks::Service::Invoice.any_instance.expects(:query).never
+    Quickbooks::Service::Invoice.any_instance.expects(:create).never
+    Quickbooks::Service::Customer.any_instance.expects(:create).never
+    sign_in @lead
+
+    post create_drafts_path(@pass)
+
+    assert_response :redirect
+    assert_match(/not authorized/i, flash[:error])
+    assert_equal 0, InvoiceTracker.where(invoice_pass_id: @pass.id).count
+  end
+
+  test "a lead cannot update a management fee invoice tracker by PATCH or PUT, not even its notes" do
+    tracker = attach_invoice(fee_tracker(@pass, @payer), qbo_id: "8104", total: "130000.0", balance: "0.0", sent: true)
+    sign_in @lead
+
+    patch tracker_path(tracker), params: { invoice_tracker: { notes: "From a lead", qbo_invoice_id: "" } }
+
+    assert_response :redirect
+    assert_match(/not authorized/i, flash[:error])
+
+    put tracker_path(tracker), params: { invoice_tracker: { notes: "From a lead", qbo_invoice_id: "" } }
+
+    assert_response :redirect
+    assert_match(/not authorized/i, flash[:error])
+    tracker.reload
+    assert_nil tracker.notes
+    assert_equal "8104", tracker.qbo_invoice_id
+    assert_equal @qbo_account.id, tracker.qbo_account_id
+  end
+
+  test "a lead cannot open a management fee invoice tracker's edit page" do
+    tracker = fee_tracker(@pass, @payer)
+    orphan_invoice!(@qbo_account, "G-ORPHAN-3")
+    sign_in @lead
+
+    get edit_admin_invoice_pass_invoice_tracker_path(@pass, tracker)
+
+    assert_response :redirect
+    assert_match(/not authorized/i, flash[:error])
+  end
+
   test "creating drafts on a Sanctuary pass is refused" do
     pass = InvoicePass.create!(start_of_month: Date.new(2094, 7, 1), enterprise: enterprises(:sanctuary), data: {})
     Quickbooks::Service::Invoice.any_instance.expects(:create).never
