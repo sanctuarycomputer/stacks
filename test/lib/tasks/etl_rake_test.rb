@@ -5,6 +5,9 @@ class EtlRakeTest < ActiveSupport::TestCase
   setup do
     Stacks::Application.load_tasks if Rake::Task.tasks.empty?
     Rake::Task['stacks:etl:sync_meet'].reenable
+    # A failing run must never post to the real alerts thread. Tests that
+    # expect no report, or a particular one, say so themselves.
+    Stacks::Notifications.stubs(:report_exception).returns(stub(record: nil))
   end
 
   test 'sync_meet runs the connector inside a SystemTask' do
