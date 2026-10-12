@@ -18,6 +18,18 @@ class Meeting < ApplicationRecord
     documents.corpus_eligible
   end
 
+  # Notes before the transcript (they are the summary), then oldest first.
+  def self.notes_first(documents)
+    documents.sort_by { |d| [d.gemini_notes? ? 0 : 1, d.id] }
+  end
+
+  # A title the corpus may read, or nil. `title` itself is overwritten by
+  # whichever document was ingested last, which can be an excluded one, so
+  # the matcher's prompt and the Meeting Matches page never use it.
+  def eligible_title(documents = eligible_documents.to_a)
+    Meeting.notes_first(documents).map(&:title).find(&:present?)
+  end
+
   # What the matcher was allowed to read, as one value: nil when nothing is.
   def eligible_content_hash
     parts = eligible_documents.pluck(:id, :content_hash).sort_by(&:first)

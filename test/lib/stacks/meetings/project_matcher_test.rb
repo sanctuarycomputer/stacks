@@ -135,6 +135,18 @@ class StacksMeetingsProjectMatcherTest < ActiveSupport::TestCase
     end
   end
 
+  test "an untitled eligible document never borrows the meeting row's title" do
+    m = meeting!(title: "PRIVATE-TITLE from the excluded document")
+    doc!(m, title: nil)
+    exclude!(doc!(m, source: :gemini_notes, title: "PRIVATE-TITLE from the excluded document"))
+    prompt = nil
+    Stacks::AI.expects(:extract).once.with { |args| prompt = args[:prompt]; true }.returns(answer)
+    stats = Matcher.run!(dry_run: true)
+    assert_not_includes prompt, "PRIVATE-TITLE"
+    assert_includes prompt, "Meeting title: (untitled)"
+    assert_not_includes stats[:results].to_s, "PRIVATE-TITLE"
+  end
+
   test "the prompt names the people who spoke in an eligible transcript" do
     m = meeting!
     doc!(m, speaker: "Sam Lead")

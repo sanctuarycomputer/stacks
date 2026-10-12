@@ -134,12 +134,13 @@ module Stacks
 
       def process(meeting, trackers, stats)
         # Notes first: they are the summary, and the title comes from the first.
-        docs = meeting.eligible_documents.to_a.sort_by { |d| [d.gemini_notes? ? 0 : 1, d.id] }
+        docs = Meeting.notes_first(meeting.eligible_documents.to_a)
         return if docs.empty?
         # Read before the prompt is built, so a document that changes while the
         # model is answering leaves a stale hash and is matched again tomorrow.
         content_hash = meeting.eligible_content_hash
-        title = title_for(meeting, docs)
+        # Never meeting.title: it can have been written by an excluded document.
+        title = meeting.eligible_title(docs) || "(untitled)"
 
         stats[:scanned] += 1
         result = Stacks::AI.extract(system: SYSTEM_PROMPT, prompt: prompt_for(meeting, docs, title, trackers), schema: SCHEMA)
@@ -194,12 +195,6 @@ module Stacks
           link.via_matcher = true
           link.destroy!
         end
-      end
-
-      # meeting.title is overwritten by whichever document was ingested last,
-      # which may be an excluded one, so an eligible document's title comes first.
-      def title_for(meeting, docs)
-        docs.map(&:title).find(&:present?) || meeting.title
       end
 
       def prompt_for(meeting, docs, title, trackers)
