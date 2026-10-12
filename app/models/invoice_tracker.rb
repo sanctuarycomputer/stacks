@@ -374,7 +374,17 @@ class InvoiceTracker < ApplicationRecord
     )
   end
 
-  class PayoutsOverCapError < StandardError; end
+  # Raised mid-write when earlier payouts turned out to be unremovable and
+  # the invoice is over its cap with them counted. survivor_ids lets the
+  # admin action show the breakdown as it really is.
+  class PayoutsOverCapError < StandardError
+    attr_reader :survivor_ids
+
+    def initialize(message, survivor_ids: [])
+      super(message)
+      @survivor_ids = survivor_ids
+    end
+  end
 
   # The build the last make_contributor_payouts! saved, which is not always
   # the one it was handed (see below).
@@ -423,8 +433,10 @@ class InvoiceTracker < ApplicationRecord
         if !allow_over_cap && InvoicePayouts::MarginCheck.new(build).breached?
           # Normally the unpredicted survivors are what tipped it over.
           blamed = (survivor_ids - predicted_ids).presence || survivor_ids
-          raise PayoutsOverCapError,
-            "Payouts would exceed the cap because an earlier payout (##{blamed.join(", #")}) could not be removed: its QBO bill has payments or could not be checked. No payouts were changed, though QBO bills of other removed payouts may already have been deleted and will be recreated on the next sync. Retry once QBO is reachable, or generate with a reason."
+          raise PayoutsOverCapError.new(
+            "Payouts would exceed the cap because an earlier payout (##{blamed.join(", #")}) could not be removed: its QBO bill has payments or could not be checked. No payouts were changed, though QBO bills of other removed payouts may already have been deleted and will be recreated on the next sync. Retry once QBO is reachable, or generate with a reason.",
+            survivor_ids: survivor_ids,
+          )
         end
       end
 

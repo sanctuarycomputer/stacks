@@ -182,11 +182,32 @@ class AdminPayoutMarginGuardTest < ActionDispatch::IntegrationTest
     assert_no_difference "ContributorPayout.with_deleted.count" do
       post make_payouts_admin_invoice_tracker_contributor_payouts_path(it)
     end
-    assert_redirected_to admin_invoice_tracker_contributor_payouts_path(it)
+    breach_path = admin_invoice_tracker_contributor_payouts_path(it, margin_breach: 1, retained: stale.id.to_s)
+    assert_redirected_to breach_path
     assert_match(/\ACould not generate payouts: Payouts would exceed the cap because an earlier payout \(##{stale.id}\) could not be removed/, flash[:alert])
-    assert_not_equal "Payouts processed!", flash[:notice]
     assert_equal before, it.contributor_payouts.reload.map { |cp| [cp.id, cp.amount.to_f, cp.deleted_at] }.sort
     assert_nil it.reload.notes
+
+    # The breakdown counts the payout that would not go, and offers the override.
+    get breach_path
+    assert_response :success
+    assert_select ".full-screen-modal.margin-breach" do
+      assert_select "tr.margin-breach__other", text: /Earlier payouts that can't be removed/
+      assert_select "form input[name=retained][value=?]", stale.id.to_s
+    end
+
+    # Without `retained` the pre-flight still trusts the cached bill: no overlay.
+    get admin_invoice_tracker_contributor_payouts_path(it, margin_breach: 1)
+    assert_select ".margin-breach", 0
+
+    post make_payouts_admin_invoice_tracker_contributor_payouts_path(it), params: { force: "1", override_reason: "Bill is paid, accept it", retained: stale.id.to_s }
+    assert_redirected_to admin_invoice_tracker_contributor_payouts_path(it)
+    assert_equal "Payouts processed!", flash[:notice]
+    it.reload
+    assert_equal @creator, it.payout_cap_override_by
+    assert_equal "Bill is paid, accept it", it.payout_cap_override_reason
+    assert_in_delta 5000.0, it.contributor_payouts.find { |cp| cp.contributor.forecast_person == @ic }.amount.to_f, 0.01
+    assert ContributorPayout.exists?(stale.id), "the unremovable payout stays"
   end
 
   # The cache said the stale payout's bill was paid, so the pre-flight judged

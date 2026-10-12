@@ -93,6 +93,7 @@
 
     <%= form_tag make_payouts_admin_invoice_tracker_contributor_payouts_path(invoice_tracker), method: :post, class: "margin-breach__override" do %>
       <%= hidden_field_tag :force, "1" %>
+      <%= hidden_field_tag :retained, retained if local_assigns[:retained].present? %>
       <%= text_area_tag :override_reason, nil, required: true, rows: 2, placeholder: "Why should this invoice pay out more than its cap? Saved to the invoice's notes." %>
       <div class="margin-breach__actions">
         <%= link_to "Close", index_path %>

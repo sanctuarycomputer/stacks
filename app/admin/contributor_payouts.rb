@@ -19,13 +19,16 @@ ActiveAdmin.register ContributorPayout do
   action_item :margin_breach, only: :index, if: proc { params[:margin_breach].present? && current_admin_user.is_admin? } do
     check =
       begin
-        candidate = InvoicePayouts::MarginCheck.new(InvoicePayouts::Build.new(invoice_tracker)) if invoice_tracker.qbo_invoice.present?
+        # `retained` carries the earlier payouts a write just found it could
+        # not remove, when that is what put the invoice over its cap.
+        retained_ids = params[:retained].to_s.split(",").map(&:to_i).presence
+        candidate = InvoicePayouts::MarginCheck.new(InvoicePayouts::Build.new(invoice_tracker, retained_orphan_ids: retained_ids)) if invoice_tracker.qbo_invoice.present?
         candidate if candidate&.breached? && candidate.rows
       rescue StandardError => e
         Rails.logger.error("[contributor_payouts_margin_breach] it=#{invoice_tracker.id}: #{e.class}: #{e.message}")
         nil
       end
-    render(partial: "admin/contributor_payouts/margin_breach", locals: { check: check, invoice_tracker: invoice_tracker }) if check
+    render(partial: "admin/contributor_payouts/margin_breach", locals: { check: check, invoice_tracker: invoice_tracker, retained: params[:retained].presence }) if check
   end
 
   action_item :toggle_acceptance, only: :show do
@@ -136,14 +139,17 @@ ActiveAdmin.register ContributorPayout do
       # Rule on the whole invoice before writing anything. Over the cap, the
       # index re-runs this check and shows the breakdown; an admin can then
       # come back here with a reason to generate regardless.
-      build = InvoicePayouts::Build.new(invoice_tracker)
+      # Coming back from a write that found unremovable earlier payouts, the
+      # breakdown the admin saw (and is now answering) counted them.
+      retained_ids = params[:retained].to_s.split(",").map(&:to_i).presence
+      build = InvoicePayouts::Build.new(invoice_tracker, retained_orphan_ids: retained_ids)
       check = InvoicePayouts::MarginCheck.new(build)
       # Whoever is really signed in, not someone they are impersonating:
       # this is the name that goes on the payouts and on any override.
       generating_admin = true_admin_user
 
       if check.breached?
-        breach_path = admin_invoice_tracker_contributor_payouts_path(invoice_tracker, margin_breach: 1)
+        breach_path = admin_invoice_tracker_contributor_payouts_path(invoice_tracker, { margin_breach: 1, retained: params[:retained].presence }.compact)
         return redirect_to(breach_path) unless ActiveModel::Type::Boolean.new.cast(params[:force])
 
         reason = params[:override_reason].to_s.strip
@@ -174,6 +180,13 @@ ActiveAdmin.register ContributorPayout do
       end
 
       redirect_to index_path, notice: "Payouts processed!"
+    rescue InvoiceTracker::PayoutsOverCapError => e
+      # The pre-flight passed on the cached QBO bills; the write learned
+      # otherwise and rolled back. Show the breakdown with those payouts
+      # counted, where the admin can still generate with a reason.
+      Rails.logger.error("[contributor_payouts_make_payouts] it=#{invoice_tracker.id}: #{e.message}")
+      redirect_to admin_invoice_tracker_contributor_payouts_path(invoice_tracker, margin_breach: 1, retained: e.survivor_ids.join(",")),
+        alert: "Could not generate payouts: #{e.message}"
     rescue StandardError => e
       Rails.logger.error("[contributor_payouts_make_payouts] it=#{invoice_tracker.id}: #{e.class}: #{e.message}")
       redirect_to index_path, alert: "Could not generate payouts: #{e.message.to_s.lines.first.to_s.strip}"
