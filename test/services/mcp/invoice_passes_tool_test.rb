@@ -213,6 +213,11 @@ class Mcp::InvoicePassesToolTest < ActiveSupport::TestCase
     assert_equal({ 'voided' => 1 }, sanct['status_mix'])
   end
 
+  test "each pass row names its issuing enterprise" do
+    payload = mcp_payload(Mcp::GetInvoicePassesTool.call(server_context: {}))
+    assert_equal 'Sanctuary Computer Inc', payload['passes'].first['enterprise']
+  end
+
   test 'months_back clamps to 1..24 and windows the passes' do
     seed_july!
 
