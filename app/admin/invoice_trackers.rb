@@ -6,10 +6,7 @@ ActiveAdmin.register InvoiceTracker do
   belongs_to :invoice_pass
   permit_params do
     permitted = [:notes, :allow_early_contributor_payouts_on, :qbo_invoice_id, :qbo_account_id]
-    # Admin-only, and absent until the (manual) migration has run.
-    if current_admin_user.is_admin? && InvoiceTracker.column_names.include?("target_margin_override")
-      permitted << :target_margin_override
-    end
+    permitted << :target_margin_override if current_admin_user.is_admin?
     permitted
   end
 
@@ -446,7 +443,7 @@ ActiveAdmin.register InvoiceTracker do
           "#{f.object.qbo_account_id}:#{f.object.qbo_invoice_id}" : nil),
         include_blank: "None",
         input_html: { disabled: !current_admin_user.is_admin? }
-      if current_admin_user.is_admin? && InvoiceTracker.column_names.include?("target_margin_override")
+      if current_admin_user.is_admin?
         f.input :target_margin_override,
           as: :number,
           label: "Target margin override",
