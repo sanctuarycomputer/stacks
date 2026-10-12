@@ -102,7 +102,7 @@ when it is not the project of the row being viewed.
 ### Not graded
 
 The page reads the grade from this row, or from another row for the same email (a project linked
-after the email was graded gets its copy on the next nightly run). With no grade at all, a "Not
+after the email was graded gets its own copy only if the grader runs while the ship is inside its 14-day window, so the page reads the grade from any row of the email; the index pill does not, and shows such a row without stars). With no grade at all, a "Not
 graded" panel replaces 2 to 4 and says one of:
 
 - the email is excluded from Stacks search: "This ship is not graded because its email is excluded

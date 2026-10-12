@@ -46,8 +46,9 @@ ActiveAdmin.register WeeklyShip do
   # words a Project Lead would use. Never shown to the client.
   show title: proc { |ws| ws.display_title } do
     grader = Stacks::WeeklyShips::Grader
-    # A link added after the email was graded has no grade of its own until the
-    # next nightly run copies it over, so read the email's grade from any row.
+    # A link added after the email was graded has no grade of its own (the
+    # grader copies it over only inside its window), so read the email's grade
+    # from any row.
     grade = resource.grade || WeeklyShip.where(document_id: resource.document_id).filter_map(&:grade).first
     previous = resource.previous_ship
     email_url = resource.document.google_groups_permalink
@@ -62,7 +63,7 @@ ActiveAdmin.register WeeklyShip do
     continuity_not_counted = grade && grade["continuity_counted"] == false
 
     attributes_table title: "This ship" do
-      row("Project") { |ws| link_to ws.project_tracker.name, admin_project_tracker_path(ws.project_tracker) }
+      row("Project") { |ws| link_to ws.project_tracker.name, admin_project_tracker_path(ws.project_tracker), style: "font-size: inherit;" }
       row("Sent") { |ws| "#{ws.sender_label}, #{time_ago_in_words(ws.sent_at)} ago (#{ws.sent_at.strftime("%B %-d, %Y")})" }
       row("Grade") do |_ws|
         if grade
@@ -72,7 +73,7 @@ ActiveAdmin.register WeeklyShip do
           span "Not graded", style: muted
         end
       end
-      row("The ship") { |_ws| link_to("Open the email ↗", email_url, target: "_blank", rel: "noopener") if email_url }
+      row("The ship") { |_ws| link_to("Open the email ↗", email_url, target: "_blank", rel: "noopener", style: "font-size: inherit;") if email_url }
     end
 
     if grade
@@ -96,18 +97,23 @@ ActiveAdmin.register WeeklyShip do
           table_for scored_rows do
             column("A great ship") do |(_, guide, _)|
               div strong(guide[:label])
-              div guide[:good], style: "#{muted} font-size: 0.9em;"
+              div guide[:good], style: "font-size: 13px; color: #555;"
             end
             column("This ship") do |(key, _, scored)|
               if key == "continuity" && continuity_not_counted
                 # A bare .pill has no background, so the grey is set here.
-                span previous ? "Not counted" : "First ship, not counted", class: "pill", style: "background-color: #e3e5e7;"
+                # (Darker than the striped row it sits on.)
+                span previous ? "Not counted" : "First ship, not counted", class: "pill",
+                     style: "background-color: #cfd3d7;",
+                     title: ("The previous ship was not available when this one was scored." if previous)
               else
                 words, pill = grader::SCORE_LABELS.fetch(scored["score"])
                 span words, class: "pill #{pill}"
               end
             end
-            column("Why") { |(key, _, scored)| scored["why"].to_s unless key == "continuity" && continuity_not_counted }
+            column("Why") do |(key, _, scored)|
+              span scored["why"].to_s, style: "font-size: 14px;" unless key == "continuity" && continuity_not_counted
+            end
           end
         end
       end
@@ -135,7 +141,7 @@ ActiveAdmin.register WeeklyShip do
           # One text node: Arbre puts each tag on its own line, which would show
           # as a space before the comma.
           text_node safe_join([
-            link_to(previous.display_title, admin_weekly_ship_path(previous)),
+            link_to(previous.display_title, admin_weekly_ship_path(previous), style: "font-size: inherit;"),
             content_tag(:span, ", #{time_ago_in_words(previous.sent_at)} ago#{elsewhere}", style: muted),
           ])
           if (pg = previous.grade)

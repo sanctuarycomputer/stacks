@@ -124,8 +124,9 @@ class AdminWeeklyShipCoachingTest < ActionDispatch::IntegrationTest
     assert_equal "Orange: the last ship scored 3 of 5.", pill["title"]
     stars, email = pill.css("a").to_a
     assert_equal admin_weekly_ship_path(ws), stars["href"]
-    assert_equal "Clear asks with owners. Open the coaching for this ship.", stars["title"]
-    assert_equal "Open the email.", email["title"]
+    # Both links say why the pill is orange: they cover most of it.
+    assert_equal "Clear asks with owners. Open the coaching for this ship. Orange: the last ship scored 3 of 5.", stars["title"]
+    assert_equal "Open the email. Orange: the last ship scored 3 of 5.", email["title"]
     assert_match %r{\Ahttps://groups\.google\.com/}, email["href"]
     # The global `a` rule would otherwise size the pill's text at 18px.
     [stars, email].each { |a| assert_includes a["style"], "font-size: inherit" }
@@ -244,7 +245,7 @@ class AdminWeeklyShipCoachingTest < ActionDispatch::IntegrationTest
     assert_response :success
     pill = page.css(".pill").find { |p| p.text == "First ship, not counted" }
     assert pill, "expected the first-ship pill"
-    assert_includes pill["style"], "background-color: #e3e5e7" # a bare .pill has no background
+    assert_includes pill["style"], "background-color: #cfd3d7" # a bare .pill has no background
     assert_not_includes response.body, "Why continuity."
     assert_nil panel("Previous ship")
   end
@@ -316,6 +317,15 @@ class AdminWeeklyShipCoachingTest < ActionDispatch::IntegrationTest
     ws = make_ship!(sent_at: 2.days.ago, sent_by_name: "", sent_by_email: "sam@sanctuary.computer")
     assert_equal "sam@sanctuary.computer", ws.sender_label
     assert_equal "Unknown sender", WeeklyShip.new.sender_label
+    # The pill shows the part before the @, not the whole address.
+    get admin_project_trackers_path(scope: "all")
+    assert_match(/\A2 days ago by sam ↗/, last_ship_pill.text.squish)
+  end
+
+  test "the coaching text is set at a readable size" do
+    ws = make_ship!(sent_at: 2.days.ago, scoring: scoring(stars: 4))
+    get admin_weekly_ship_path(ws)
+    assert_includes panel("What this ship does well").at_css("p")["style"], "font-size: 16px"
   end
 
   test "dimensions that are not a set of scores leave How it scored off the page" do

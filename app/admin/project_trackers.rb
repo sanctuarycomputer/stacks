@@ -229,28 +229,30 @@ ActiveAdmin.register ProjectTracker do
         # and grade (WeeklyShip.pill_class); an ungraded ship has no stars.
         grade = ship.grade
         stars = grade&.dig("stars")
-        who = ship.sender&.split(" ")&.first
+        # First name, or the part of the address before the @ when there is no name.
+        who = ship.sender&.split(/[\s@]/)&.first
         label = "#{time_ago_in_words(ship.sent_at)} ago#{" by #{who}" if who} ↗"
         url = ship.document&.google_groups_permalink
         # font-size: the global `a` rule would otherwise size the pill's text at 18px.
         link_style = "text-decoration: none; color: inherit; font-size: inherit;"
         # Arbre `a`, not block-form link_to — Rails' capture doesn't see Arbre
         # elements, which renders the content OUTSIDE an empty anchor.
-        # The pill's own title says why it is orange or red, links or no links.
-        span(class: WeeklyShip.pill_class(staleness: staleness, stars: stars),
-             title: WeeklyShip.pill_reason(staleness: staleness, stars: stars)) do
+        # Every title says why the pill is orange or red: the links cover most
+        # of the pill, so the pill's own title alone would rarely show.
+        reason = WeeklyShip.pill_reason(staleness: staleness, stars: stars)
+        span(class: WeeklyShip.pill_class(staleness: staleness, stars: stars), title: reason) do
           if grade
             if can_open_ships
               # The stars open the coaching page; the rest opens the email.
               a(WeeklyShip.stars_label(stars), href: admin_weekly_ship_path(ship), style: link_style,
-                title: [grade["summary"].presence, "Open the coaching for this ship."].compact.join(" "))
+                title: [grade["summary"].presence, "Open the coaching for this ship.", reason].compact.join(" "))
             else
               text_node WeeklyShip.stars_label(stars)
             end
             text_node " · "
           end
           if url
-            a(label, href: url, target: "_blank", rel: "noopener", title: "Open the email.", style: link_style)
+            a(label, href: url, target: "_blank", rel: "noopener", title: ["Open the email.", reason].compact.join(" "), style: link_style)
           else
             text_node label
           end
@@ -531,8 +533,8 @@ ActiveAdmin.register ProjectTracker do
             link_to("Open ↗", url, target: "_blank", rel: "noopener", style: "white-space: nowrap;") if url
           end
         end
-        para em("Grades are coaching for the Project Lead who sent the ship, scored overnight by a model. Never share them with the client."),
-             style: "margin: 8px 12px; opacity: 0.6; font-size: 0.85em;"
+        para "Grades are coaching for the Project Lead who sent the ship, scored overnight by a model. Never share them with the client.",
+             style: "margin: 8px 12px; font-size: 13px;"
       else
         para em("No weekly ships linked yet.")
       end
