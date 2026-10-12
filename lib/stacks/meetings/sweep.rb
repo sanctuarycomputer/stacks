@@ -174,14 +174,10 @@ module Stacks
         # matched again tomorrow.
         content_hash = Meeting.content_hash_for(docs)
         held = held_at(meeting)
-        if held.nil?
-          Rails.logger.warn("[meetings:match] meeting=#{meeting.id} has no start time and no dated document, skipping (data bug)")
-          stats[:errored] += 1
-          return
-        end
-
         stats[:scanned] += 1
-        unless in_window?(held)
+        # A meeting with no date at all cannot be placed in the window. It is
+        # recorded like an old one, so it is not an error every night.
+        if held.nil? || !in_window?(held)
           stats[:out_of_scope] += 1 if record_out_of_scope!(meeting, content_hash)
           return
         end
@@ -245,7 +241,9 @@ module Stacks
         MeetingScan.transaction do
           scan = MeetingScan.lock.find_by(meeting_id: meeting.id) || MeetingScan.new(meeting_id: meeting.id)
           next false if scan.human_locked?
-          scan.update!(outcome: :out_of_scope, confidence: nil, rationale: nil,
+          # A meeting that already has projects keeps saying so.
+          outcome = meeting.project_trackers.exists? ? :linked : :out_of_scope
+          scan.update!(outcome: outcome, confidence: nil, rationale: nil,
                        scanned_at: Time.zone.now, scanned_hash: content_hash)
           true
         end

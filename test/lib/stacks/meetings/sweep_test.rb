@@ -295,7 +295,7 @@ class StacksMeetingsSweepTest < ActiveSupport::TestCase
     assert_equal 0, Sweep.run![:scanned]
   end
 
-  test "an old meeting whose content changes stays out_of_scope, keeps its trackers and loses its reason" do
+  test "an old linked meeting whose content changes stays linked, keeps its trackers and loses its reason" do
     m = meeting!(started_at: 91.days.ago)
     doc = doc!(m, content_hash: "v1")
     m.project_trackers << @tracker
@@ -305,7 +305,7 @@ class StacksMeetingsSweepTest < ActiveSupport::TestCase
     Stacks::AI.expects(:extract).never
     Sweep.run!
     scan = m.reload.meeting_scan
-    assert scan.out_of_scope?
+    assert scan.linked?, "it still has a project, so it stays under Linked"
     assert_equal m.eligible_content_hash, scan.scanned_hash
     assert_nil scan.rationale, "the reason was written from text the meeting no longer has"
     assert_nil scan.confidence
@@ -323,13 +323,15 @@ class StacksMeetingsSweepTest < ActiveSupport::TestCase
     assert old.reload.meeting_scan.out_of_scope?
   end
 
-  test "a meeting with no date at all is counted as an error and gets no scan" do
+  test "a meeting with no date at all is recorded out of scope once, not an error every night" do
     m = Meeting.create!(title: "Harvey weekly sync", meet_source: :meet_api)
     doc!(m, occurred_at: nil)
     Stacks::AI.expects(:extract).never
     stats = Sweep.run!
-    assert_equal 1, stats[:errored]
-    assert_nil m.reload.meeting_scan
+    assert_equal 0, stats[:errored]
+    assert_equal 1, stats[:out_of_scope]
+    assert m.reload.meeting_scan.out_of_scope?
+    assert_equal 0, Sweep.run![:scanned], "recorded, so it is not looked at again"
   end
 
   # Rescans: links are added, never removed

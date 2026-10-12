@@ -68,6 +68,11 @@ class Meeting < ApplicationRecord
       project_trackers << tracker unless project_trackers.exists?(tracker.id)
       lock_scan_for_person!
     end
+  rescue ActiveRecord::RecordNotUnique
+    # A double submit, or the sweep linking the same tracker at the same
+    # moment: the link exists, which is what was asked for.
+    reload
+    transaction { lock_scan_for_person! }
   end
 
   # A person says this meeting was not about the tracker.

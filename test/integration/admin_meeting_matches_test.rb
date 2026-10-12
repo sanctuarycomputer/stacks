@@ -270,6 +270,50 @@ class AdminMeetingMatchesTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "QUOTES-THE-TRANSCRIPT"
   end
 
+  test "the page has no CSV, JSON or XML form, which would hand out the hidden reason" do
+    m = meeting!("Harvey weekly sync")
+    transcript = doc!(m)
+    doc!(m, source: :gemini_notes)
+    m.project_trackers << @tracker
+    MeetingScan.create!(meeting: m, outcome: :linked, scanned_at: 1.hour.ago, confidence: 0.9,
+                        rationale: "QUOTES-THE-TRANSCRIPT", scanned_hash: m.eligible_content_hash)
+    exclude!(transcript)
+
+    %w[csv json xml].each do |format|
+      begin
+        get admin_meeting_scans_path(scope: "all", format: format)
+      rescue ActionController::UnknownFormat, ActionController::RoutingError
+        next
+      end
+      assert_not_equal 200, response.status, "#{format} should not be served"
+      assert_not_includes response.body, "QUOTES-THE-TRANSCRIPT"
+    end
+  end
+
+  test "search and sort parameters are ignored, so they cannot probe excluded text" do
+    hit = meeting!("Harvey weekly sync")
+    doc!(hit)
+    hit.segments.create!(position: 0, text: "the secret phrase zebra-crossing", speaker_name: "Sam Lead")
+    hit.project_trackers << @tracker
+    MeetingScan.create!(meeting: hit, outcome: :linked, scanned_at: 1.hour.ago, confidence: 0.9,
+                        rationale: "zebra-reason", scanned_hash: hit.eligible_content_hash)
+    miss = matched!("Acme weekly sync", rationale: "Other reason.")
+
+    [{ "meeting_segments_text_cont" => "zebra-crossing" }, { "rationale_cont" => "zebra-reason" },
+     { "meeting_title_cont" => "Harvey" }].each do |q|
+      get admin_meeting_scans_path(scope: "all", q: q)
+      assert_response :success
+      assert row_for(hit), "#{q.keys.first} must not filter"
+      assert row_for(miss), "#{q.keys.first} must not filter: a miss would tell the searcher something"
+    end
+
+    get admin_meeting_scans_path(scope: "all", order: "rationale_desc")
+    assert_response :success
+    asc = page.css("tr[id^='meeting_scan_']").map { |tr| tr["id"] }
+    get admin_meeting_scans_path(scope: "all", order: "rationale_asc")
+    assert_equal asc, page.css("tr[id^='meeting_scan_']").map { |tr| tr["id"] }, "the order does not follow the request"
+  end
+
   test "a model-written reason is escaped" do
     matched!("Harvey weekly sync", rationale: "<script>alert('x')</script> names the client")
     get admin_meeting_scans_path(scope: "all")

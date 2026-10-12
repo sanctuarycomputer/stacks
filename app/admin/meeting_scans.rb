@@ -27,6 +27,16 @@ ActiveAdmin.register MeetingScan do
            .includes(meeting: [:documents, :project_trackers])
     end
 
+    # No filtering and no sorting by request. With the sidebar hidden,
+    # ActiveAdmin still applies ?q[...] and ?order=..., and a search over the
+    # meeting's segments, titles or the stored reason would answer yes or no
+    # about text that is excluded from the corpus. The parameters are dropped
+    # before ActiveAdmin reads them.
+    before_action(only: :index) do
+      params.delete(:q)
+      params.delete(:order)
+    end
+
     private
 
     # ActiveAdmin authorizes a member action only when the action loads
@@ -58,7 +68,9 @@ ActiveAdmin.register MeetingScan do
   # recorded, never sent to the model.
   scope :all
 
-  index title: "Meeting Matches" do
+  # download_links: false also refuses the .csv, .json and .xml forms of this
+  # page, which would hand out the raw reason column whatever the page hides.
+  index title: "Meeting Matches", download_links: false do
     column("Meeting") do |scan|
       docs = Meeting.notes_first(scan.meeting.documents.select(&:corpus_eligible?))
       title = scan.meeting.eligible_title(docs) ||
@@ -70,7 +82,7 @@ ActiveAdmin.register MeetingScan do
         span title
       end
     end
-    column("Held", sortable: "meetings.started_at") { |scan| scan.meeting.started_at&.to_date }
+    column("Held") { |scan| scan.meeting.started_at&.to_date }
     column("Projects") do |scan|
       trackers = scan.meeting.project_trackers.sort_by(&:id)
       if trackers.any?

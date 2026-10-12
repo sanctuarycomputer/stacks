@@ -347,4 +347,16 @@ class MeetingScanTest < ActiveSupport::TestCase
     assert_equal 1, survivor.reload.project_trackers.count
     assert_equal 0, MeetingScan.count
   end
+
+  test "linking a tracker that was linked a moment ago by someone else still succeeds and locks" do
+    m = meeting!
+    doc!(m)
+    t = tracker!("Harvey Staff Augmentation")
+    m.project_trackers << t
+    # The check sees no link (a double submit, or the sweep writing at the same moment).
+    m.project_trackers.stubs(:exists?).returns(false)
+    assert_nothing_raised { m.link_project!(t) }
+    assert_equal 1, join_rows
+    assert m.reload.meeting_scan.human_locked?
+  end
 end
