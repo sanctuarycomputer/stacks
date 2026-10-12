@@ -70,37 +70,61 @@ who can read the tracker.
 
 ## Part 1. A tracker names its sources (Stacks)
 
-- **Twist channel.** Stays a `project_tracker_links` row of type `twist_channel`. New validation: the
-  URL must match `\Ahttps://twist\.com/a/133876/ch/\d+/\z`, and a tracker has at most one.
-  `ProjectTracker#twist_channel_id` returns the id. The workspace id comes from the Twist config, not
-  a literal.
-- **Notion project.** New column `project_trackers.notion_project_id` (the Notion page id). The edit
-  form shows a dropdown of Projects pages in a live stage, plus the current value. Several trackers
-  may pick the same project. The unused `notion_homepage` link type is left alone.
+- **Twist channel.** Stays a `project_tracker_links` row of type `twist_channel`.
+  - Stored shape: `https://twist.com/a/<workspace>/ch/<id>/`, where `<workspace>` is the configured
+    Twist workspace id (133876) and only `<id>` varies.
+  - People paste what the browser shows, so the link is tidied before it is checked: a thread URL
+    (`…/ch/355509/t/6877281/`) or a missing trailing slash is cut back to the channel. Anything that
+    is not a channel in our workspace is refused, with a message that shows the expected shape.
+  - At most one per tracker, validated on the tracker over links not marked for removal, so replacing
+    the link in one form submit works.
+  - Several trackers may name the same channel (one client, two trackers). Part 3 then sets every
+    such tracker's Project on the observation.
+  - `ProjectTracker#twist_channel_id` returns the id as an Integer, or nil.
+  - `ProjectTrackerLink` busts the task cache when it changes, as `ProjectTracker` does.
+- **Notion project.** New column `project_trackers.notion_project_id`: the Notion page id, dashed, as
+  `notion_pages.notion_id` stores it.
+  - The edit form shows a dropdown of Projects pages that are live, labelled "Title · Stage" because
+    14 live titles repeat, plus the tracker's current page whatever its state.
+  - Live means `Stage` is one of: Active, Ongoing/Maintenance, Upcoming/Legal Review, On Hold, Paused,
+    Project Capsule Needed, Introduction, Pre-proposal Questions Needed, Proposal Needed, Proposal
+    Sent, Following Up; or Completed and edited in the last 90 days. Pages ticked "🔴 Duplicated" are
+    left out. This is Stacksbot's own list (`LIVE_STAGES`), copied so the two agree.
+  - Several trackers may pick the same project.
+  - If the chosen page is later removed from Notion, the tracker keeps the id, the form shows it as
+    "(removed from Notion)", and the tracker counts as having no Notion project.
+  - The unused `notion_homepage` link type is left alone.
 - **Sync.** Add the Projects database (`713b28db…`, about 760 rows) back to the nightly Notion sync.
-  Stacks still holds 698 stale rows from when it was last synced.
+  Stacks still holds 698 rows from when it was last synced, in February 2025. Before building, fetch
+  one live page with the Stacks client to confirm the `Stage` select reads as expected under the
+  Notion API version Stacks uses.
 - **MCP.** `list_project_trackers` returns `twist_channel_id` and `notion_project_id`, so Stacksbot
-  reads the mapping from Stacks and stops matching by name.
+  reads the mapping from Stacks and stops matching by name. The `update_project_tracker` tool's
+  `twist_channel_url` description states the shape.
 
 ## Part 2. Admin tasks (Stacks)
 
-Three new task types for trackers whose work is not complete, in the existing computed task system
-(`Stacks::TaskBuilder::Discoveries::ProjectTrackers`). Each clears itself when its condition ends.
+Two new task types in the existing computed task system
+(`Stacks::TaskBuilder::Discoveries::ProjectTrackers`), for trackers that are in progress
+(`ProjectTracker.in_progress`: not complete and not dormant) and not for an internal client. Each
+clears itself when its condition ends.
 
 | Task | Condition | Owner |
 |---|---|---|
-| Project tracker needs a Twist channel | no `twist_channel` link | project leads, else admins |
-| Project tracker needs a Notion project | `notion_project_id` blank | project leads, else admins |
-| Invite Stacksbot to this project's Twist channel | Stacksbot last reported it cannot see the channel | admins |
+| Project tracker needs its Twist channel and Notion project linked | either is missing | project leads, else admins |
+| Invite Stacksbot to this project's Twist channel | the last check found Stacksbot is not in it | admins |
 
-Internal clients are exempt from all three.
+One task covers both missing links, so a tracker raises one task, not two. On day one that is about
+28 tasks (the in-progress trackers), spread across their project leads. They also appear in
+Stacksbot's weekly action-items list, which is the nudge we want.
 
-The third needs to know what Stacksbot can see. Stacks can answer that itself: its Twist token is
-the Stacksbot account (checked 2026-10-12: user "Stacksbot", workspace 133876, 31 channels). A daily
-task `stacks:sync_twist_channel_access` lists the channels that account belongs to once, and stores on
-each tracker with a Twist link `twist_channel_accessible` and `twist_channel_checked_at`. A tracker
-never checked raises no task; only a checked "no" does. Saving a new channel URL clears both, so a
-stale answer never outlives the link it was about. If the Twist call fails, nothing is changed.
+The second task needs to know what Stacksbot can see. Stacks can answer that itself: its Twist token
+is the Stacksbot account (checked 2026-10-12: user "Stacksbot", workspace 133876, 31 channels). A
+daily task `stacks:sync_twist_channel_access` lists the channels that account belongs to once, and
+stores on each tracker with a Twist link `twist_channel_accessible` and `twist_channel_checked_at`.
+A tracker never checked raises no task; only a checked "no" does. Changing or removing the link
+clears both, so a stale answer never outlives the link it was about. If the Twist call fails,
+nothing is changed and the system task is marked as an error.
 
 ## Part 3. Observations carry what the log needs (Stacksbot)
 
@@ -125,23 +149,38 @@ stale answer never outlives the link it was about. If the Twist call fails, noth
 - **Problems inherit the Project** of their source observations when all of them agree.
 - The Observations `Type` select has stray options ("High", "Medium", "business"). Left alone.
 
-## Part 3a. Stacks matches Meet transcripts to trackers
+## Part 3a. Stacks matches meetings to trackers
 
 Stacks ingests the transcripts, so it matches them, in the nightly ETL beside the ship matcher.
 
-- New table `document_project_trackers`: `document_id`, `project_tracker_id`, `matched_by`
-  (llm or human), `confidence`, `rationale`. One scan record per document, as `ship_scans` is for
-  ships, so a document is matched once and again only when its content changes.
-- `Stacks::Etl::ProjectMatcher`, modelled on `Stacks::WeeklyShips::Sweep`: one cheap model call per
-  corpus-eligible `meet` or `gemini_notes` document from the last 14 days. It is given the meeting
-  title, the attendees and the opening of the transcript, and the active trackers with their names,
-  client and team. It answers with zero or more trackers, a confidence and a reason. A link is made
-  at 0.6 or above. Most internal meetings match nothing, and that is a normal answer.
-- The two documents of one meeting (transcript and Gemini notes) share a result.
-- `list_documents` and `get_document` return `project_tracker_ids`, so Stacksbot's Meet sensor sets
-  the Project without guessing.
-- A person can correct a link from the document's admin page; a corrected document is never
-  rematched. Ship emails keep their own matcher and table.
+- **Keyed on the meeting, not the document.** A meeting has one to three documents (a transcript,
+  Gemini notes, or both), all pointing at one `Meeting` row. The match belongs to the meeting.
+  - `meeting_project_trackers`: `meeting_id`, `project_tracker_id`, `matched_by` (llm or human),
+    `confidence`, `rationale`. Unique on the pair.
+  - `meeting_project_scans`: one per meeting, with `outcome` (linked, no_match), `scanned_hash`,
+    `scanned_at`, `human_locked`. A meeting is matched once, and again only when the content of its
+    eligible documents changes.
+- **`Stacks::Meetings::ProjectMatcher`**, modelled on `Stacks::WeeklyShips::Sweep`. One cheap model
+  call per meeting from the last 14 days that has at least one corpus-eligible document.
+  - About the meeting: its title, the names of its participants and speakers, and the opening of its
+    eligible documents (first chunks, 2,000 characters). Text from an excluded document is never sent.
+  - About each in-progress tracker: its name, its Forecast project names, its client's name, and the
+    names of its current leads and of people with hours on it in the last 60 days.
+  - Matching is by name; the meeting data carries no emails.
+  - The answer is zero or more trackers, a confidence and a reason. A link is made at 0.6 or above.
+    Most internal meetings match nothing, and that is a normal answer.
+- **Rematching.** A no-match meeting inside the window is tried again when a tracker has been created
+  since its scan (a kickoff call often comes before the tracker).
+- **Exclusion.** When a document is excluded from the corpus, its meeting's model-made links and scan
+  are removed, so the next run rematches from whatever is still eligible, or not at all.
+- **Volume.** About 100 eligible meetings a fortnight, so roughly seven calls a night.
+- **MCP.** `list_documents` and `get_document` return `project_tracker_ids` for a meeting's documents.
+  The rationale is never returned over MCP.
+- **Correcting a match.** A "Meeting Matches" page under Projects, for admins and leads, modelled on
+  the Weekly Ships page: the meeting, its date, the matched trackers with confidence and reason, and
+  a default "Needs review" view of low-confidence and unmatched client-looking meetings. A person can
+  add or remove a link; a meeting a person has touched is never rematched.
+- Ship emails keep their own matcher and table.
 
 ## Part 4. Stacks reads the Notion tables
 
@@ -184,23 +223,41 @@ Stacks ingests the transcripts, so it matches them, in the nightly ETL beside th
 ## Order of work
 
 1. Parts 1 and 2 (Stacks). One migration: `notion_project_id`, `twist_channel_accessible`,
-   `twist_channel_checked_at`. Migrate before merging.
-2. Part 3a (Stacks). One migration for the link and scan tables. Independent of step 1.
-3. Part 3 (Stacksbot), after Hugh and the leads have filled in channels and projects for the active
-   trackers. The Valence property is added in Notion first, by hand or by the same PR's setup step.
+   `twist_channel_checked_at`.
+2. Part 3a (Stacks). One migration for the two tables. Independent of step 1.
+3. Part 3 (Stacksbot), after the project leads have linked channels and projects on the in-progress
+   trackers. The Valence property is added in Notion first.
 4. Parts 4 and 5 (Stacks), once two weeks of attributed observations exist to look at.
+
+Stacks deploys `main` without running migrations, so for steps 1 and 2 the migration is run on
+production before the PR is merged. `db/schema.rb` is hand-edited in this repo (pgvector is left out
+on purpose): add the new columns and tables by hand, never commit a raw dump.
 
 Each is its own PR. Step 1 is useful alone: it produces the list of projects with no channel.
 
 ## Tests
 
-- Stacks: URL validation (good, wrong workspace, extra path, missing slash, two links); dropdown
-  options; each task appears and clears; internal clients exempt; MCP fields; filtered sync never
+- Stacks, Parts 1 and 2: the link is tidied (thread URL, missing slash) and refused (wrong workspace,
+  not Twist, two links); replacing a link in one submit; the seven existing test sites that use
+  `https://twist.com/a/1/ch/…` are updated; dropdown options and labels, a removed page; the combined
+  task appears, clears, skips dormant, complete and internal trackers; the invite task follows the
+  channel check and clears when the link changes; a failed Twist call changes nothing; MCP fields.
+- Stacks, later parts: filtered sync never
   deletes; each view's gate; a scoped reader is refused; empty states.
-- Stacks, Part 3a: a match at and under the threshold; no match; both documents of a meeting; a
-  human correction is kept; an excluded document is never sent to the model; MCP fields.
+- Stacks, Part 3a: a match at and under the threshold; no match; a meeting with two documents is
+  matched once; text from an excluded document is never sent; excluding a document removes the
+  model's links; a no-match is retried after a new tracker; a human correction is kept; MCP fields
+  without the rationale.
 - Stacksbot: registry join from tracker fields; channel attribution; Meet Project taken from Stacks;
   valence set only for project signal.
+
+## Notes for the later parts
+
+- Never run the whole-database sync and the filtered sync on the same Notion database: the first
+  deletes every row under that database it did not see.
+- `NotionPage#status_history` reads a database id that no longer exists and raises. Do not reuse it.
+- Two trackers that share a Twist channel but name different Notion projects are allowed. Stacksbot
+  sets both Projects on an observation from that channel.
 
 ## Open questions
 
