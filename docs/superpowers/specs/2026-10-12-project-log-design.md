@@ -112,7 +112,7 @@ clears itself when its condition ends.
 | Task | Condition | Owner |
 |---|---|---|
 | Project tracker needs its Twist channel and Notion project linked | either is missing | project leads, else admins |
-| Invite Stacksbot to this project's Twist channel | the last check found Stacksbot is not in it | admins |
+| Stacksbot needs inviting to this project's Twist channel | the last check found Stacksbot is not in it | admins |
 
 One task covers both missing links, so a tracker raises one task, not two. On day one that is about
 28 tasks (the in-progress trackers), spread across their project leads. They also appear in

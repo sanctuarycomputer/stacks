@@ -536,3 +536,23 @@ DATABASE_URL=postgres://localhost/stacks_test_projectlog RAILS_ENV=test bin/rail
 Report the totals line. If anything outside this plan's files fails, check whether it also fails on `origin/main` before touching it, and report it rather than fixing unrelated failures.
 
 - [ ] **Step 5: Commit** `feat(tasks): ask for a project's Twist channel and Notion project, and for Stacksbot's invite`.
+
+---
+
+## Amendments after the plan review (these override anything above)
+
+0. **Never read, decrypt or print credentials.** Do not open `config/credentials.yml.enc`, `config/master.key`, or print any value from `Stacks::Utils.config` or `ENV`. If you need to know whether a config key exists, the facts are here: in the test environment `Stacks::Utils.config[:twist][:workspace_id]` is the Integer `133876` and a token is present.
+1. **No config stubs.** Because the test config already has workspace `133876`, do not stub `Stacks::Utils.config` anywhere (a bare stub would drop every other key). Ignore the stub instructions in Task 2 Steps 1 and 5.
+2. **Task 2 callbacks.** Declare `before_validation :tidy_twist_channel_url` *below* the existing strip `before_validation`, so a padded URL is stripped first. The final callback line is
+   `after_commit :forget_twist_channel_access, if: -> { twist_channel? || saved_change_to_link_type? }`.
+   There is no `TWIST_CHANNEL_SHAPE` constant; the message comes from the class method `twist_channel_shape`.
+3. **Task 2 existing tests.** Also update `test/services/mcp/weekly_ship_tools_test.rb` around line 175 (it asserts the exact links array) and `test/models/project_tracker_monthly_budget_test.rb` lines 111-112 (the strip test now expects the canonical URL with a trailing slash).
+4. **Notion property names are confirmed** against a live page (2026-10-12): `Stage` is a `select` (values seen include Active, Completed, Upcoming/Legal Review, Ongoing/Maintenance, Proposal Sent, Introduction, Lost/Stale, Passed, Pre-proposal Questions Needed, Proposal Needed, Following Up, and none), `🔴 Duplicated` is a `checkbox`, the page object has a top-level `last_edited_time`, and the title property is named `reactor` (use `page_title`, which the sync fills). Other stage-like properties exist on old rows (`Stage (New)`, `Status`); ignore them.
+5. **Soft delete gem** is `acts_as_paranoid`, not paranoia. `with_deleted`, `deleted?` and a soft `destroy` all work as the plan uses them.
+6. **Task 3 Step 4** has no fixture tracker to lean on. Build the tracker in the test with the `tracker!` and `with_links!` helpers copied from `test/models/project_tracker_monthly_budget_test.rb:4-14`. No existing test renders the tracker edit form, so expect to fix render surprises; if the edit page cannot be made to render in test for reasons unrelated to this change, test the PATCH only and report it.
+7. **Task 4 rake tests must not touch Twist.** `SystemTask#mark_as_error` posts to a real Twist thread through `Stacks::Notifications.report_exception`, and the default `Stacks::Twist.new` would call the real API. In the rake tests stub `ProjectTracker.stubs(:sync_twist_channel_access!)` (returning stats, or raising) and `Stacks::Notifications.stubs(:report_exception).returns(stub(record: nil))`, following `test/lib/tasks/daily_enterprise_tasks_rake_test.rb:24`. Model tests pass a fake `twist:`; none may construct a real client call.
+8. **Task 4 placement.** In `lib/tasks/stacks.rake`, `sync_notion` is known to run daily in production (its SystemTask rows show a run every day at 20:30 UTC). Put two lines after the `end` that closes its `begin/rescue` (about line 427), in this order:
+   `Stacks::TaskBuilder.clear_cache!` (the sync soft-deletes pages without callbacks, so a removed Notion page would otherwise not re-raise its task for up to 24 hours), then `Rake::Task["stacks:sync_twist_channel_access"].invoke`. Wrap the `clear_cache!` in `rescue => e` with a log line so a cache failure cannot stop the Twist check. Add a rake test that `sync_notion` (with `Stacks::Notion` stubbed so no network call happens) invokes the Twist task; remember to `reenable` both tasks in tests.
+9. **Task 5 preloads.** Use `{ forecast_projects: :forecast_client }` in the discovery's `includes` (replacing the bare `:forecast_projects`), plus `:project_tracker_links`, because `internal_client?` reads each project's client.
+10. **Task 5 label.** The second label is `"Stacksbot needs inviting to this project's Twist channel"` (the subject-first pattern the other labels use). Update the spec's Part 2 table to say the same.
+11. **Hand-off note for the coordinator** (do not act on it): this PR has a migration; it is run on production before the PR is merged.
