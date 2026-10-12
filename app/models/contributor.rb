@@ -66,7 +66,9 @@ class Contributor < ApplicationRecord
   end
 
   has_many :ledgers
-  has_many :mso_role_periods, dependent: :destroy
+  # Role periods drive executive pay; deleting a contributor must not
+  # silently erase that history.
+  has_many :mso_role_periods, dependent: :restrict_with_error
 
   has_many :reimbursements, through: :ledgers
   has_many :contributor_payouts, through: :ledgers

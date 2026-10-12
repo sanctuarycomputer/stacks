@@ -40,6 +40,12 @@ class MsoRolePeriod < ApplicationRecord
     ended_at || OPEN_ENDED
   end
 
+  # ActsAsPeriod's version would measure an open period against the
+  # year-9999 sentinel.
+  def time_held_in_days
+    ((ended_at || Date.today) - started_at).to_i
+  end
+
   # ActsAsPeriod compares against these in its overlap validation. With no
   # contributor or no start date there is nothing meaningful to compare, and
   # the presence validations already fail the record.

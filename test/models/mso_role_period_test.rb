@@ -28,7 +28,10 @@ class MsoRolePeriodTest < ActiveSupport::TestCase
     assert_equal BigDecimal("0.85"), build_period(contributor, tier: :svp).tier_multiplier
     assert_equal BigDecimal("1.00"), build_period(contributor, tier: :chief).tier_multiplier
     assert_equal BigDecimal("1.15"), build_period(contributor, tier: :principal).tier_multiplier
-    assert_kind_of BigDecimal, build_period(contributor, tier: :head).tier_multiplier
+    # 0.85 == BigDecimal("0.85") can be true for a Float, so check the type.
+    MsoRolePeriod.tiers.each_key do |tier|
+      assert_kind_of BigDecimal, build_period(contributor, tier: tier).tier_multiplier, tier
+    end
   end
 
   test "started_at is required" do
@@ -66,6 +69,33 @@ class MsoRolePeriodTest < ActiveSupport::TestCase
     period = build_period(make_contributor("midend"), ended_at: Date.new(2026, 3, 15))
     assert_not period.valid?
     assert_includes period.errors[:ended_at], "must be the last day of the month"
+  end
+
+  test "a period of a single month saves" do
+    period = build_period(make_contributor("onemonth"),
+                          started_at: Date.new(2026, 1, 1), ended_at: Date.new(2026, 1, 31))
+    assert period.save, period.errors.full_messages.to_sentence
+    assert_equal 30, period.time_held_in_days
+  end
+
+  test "ended_at before started_at is rejected" do
+    period = build_period(make_contributor("backwards"),
+                          started_at: Date.new(2026, 3, 1), ended_at: Date.new(2026, 1, 31))
+    assert_not period.valid?
+  end
+
+  test "an existing period can be edited without conflicting with itself" do
+    period = build_period(make_contributor("edit"))
+    period.save!
+    period.title = "Finance"
+    assert period.valid?, period.errors.full_messages.to_sentence
+  end
+
+  test "a contributor with role periods cannot be destroyed" do
+    contributor = make_contributor("keep")
+    build_period(contributor).save!
+    assert_not contributor.destroy
+    assert MsoRolePeriod.exists?(contributor_id: contributor.id)
   end
 
   test "ended_at on the last day of a month is accepted" do
