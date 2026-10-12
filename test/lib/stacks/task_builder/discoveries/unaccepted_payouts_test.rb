@@ -13,7 +13,7 @@ class Stacks::TaskBuilder::Discoveries::UnacceptedPayoutsTest < ActiveSupport::T
     ip = InvoicePass.create!(start_of_month: Date.current.beginning_of_month)
     # blueprint gives the tracker a non-zero `total` (no qbo_invoice in this
     # test) — without it, InvoiceTracker#total is 0 and every payout above $0
-    # trips the 70% cap validation (ContributorPayout#contributor_payouts_within_seventy_percent).
+    # trips the 70% cap validation (ContributorPayout#contributor_payouts_within_cap).
     @invoice_tracker = InvoiceTracker.create!(
       invoice_pass: ip,
       forecast_client: fc,

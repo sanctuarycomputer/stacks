@@ -420,7 +420,7 @@ class ContributorElevatedServiceAdminUserIdsTest < ActiveSupport::TestCase
   end
 
   # Builds a ContributorPayout for `fp` in the month of `period`, with `amount`
-  # of income. InvoiceTracker's 70%-cap validation (contributor_payouts_within_seventy_percent)
+  # of income. InvoiceTracker's 70%-cap validation (contributor_payouts_within_cap)
   # is unrelated to elevated-service logic and would reject any payout against
   # a zero-total invoice tracker, so we bypass validations here (same pattern
   # used elsewhere in this suite) while still satisfying the NOT NULL

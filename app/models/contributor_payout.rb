@@ -14,7 +14,7 @@ class ContributorPayout < ApplicationRecord
   attr_accessor :skip_seventy_percent_check
 
   validates :amount, presence: true
-  validate :contributor_payouts_within_seventy_percent
+  validate :contributor_payouts_within_cap
   validate :only_after_new_deal
 
   def display_name
@@ -300,21 +300,29 @@ class ContributorPayout < ApplicationRecord
     end
   end
 
-  def contributor_payouts_within_seventy_percent
+  def contributor_payouts_within_cap
     return if ActiveModel::Type::Boolean.new.cast(skip_seventy_percent_check) # Ephemeral admin override
     return if changes.keys == ["accepted_at"] # Don't check if the payout is being accepted or unaccepted
 
-    cps = invoice_tracker.contributor_payouts.include?(self) ? invoice_tracker.contributor_payouts : [*invoice_tracker.contributor_payouts, self]
+    # Swap this record in for its saved copy: the association reads from the
+    # database, which still holds the amount from before this edit.
+    others = invoice_tracker.contributor_payouts.reject { |cp| cp.equal?(self) || (persisted? && cp.id == id) }
+    cps = [*others, self]
 
-    commissions_total = cps.sum(&:as_commission)
-    split = invoice_tracker.margin_override || Stacks::BillingModel.for(Stacks::BillingModel::DEFAULT).treasury_share
-    post_commission_total = invoice_tracker.total - commissions_total
-    max_amount = invoice_tracker.forecast_client.is_internal? ? post_commission_total : post_commission_total * (1 - split)
+    commissions_by_line = Hash.new(0.0)
+    cps.each do |cp|
+      (cp.blueprint["Commission"] || []).each do |entry|
+        commissions_by_line[cp.entry_line_id(entry)] += entry["amount"].to_f
+      end
+    end
 
+    cap = InvoicePayouts::Cap.new(invoice_tracker, commissions_by_line: commissions_by_line)
+    max_amount = cap.cap
     contributor_pool_sum = cps.sum { |cp| cp.amount.to_f - cp.as_commission }
 
     if contributor_pool_sum > (max_amount + 1) # Add a dollar to account for rounding errors
-      errors.add(:base, "Contributor Payouts may not exceed #{ActionController::Base.helpers.number_to_currency(max_amount)} (#{100 * (1 - split)}% of post-commission invoice total).")
+      percentage = cap.post_commission_total > 0 ? (max_amount / cap.post_commission_total * 100).round(1) : 0.0
+      errors.add(:base, "Contributor Payouts may not exceed #{ActionController::Base.helpers.number_to_currency(max_amount)} (#{percentage}% of post-commission invoice total).")
     end
   end
 
@@ -373,6 +381,11 @@ class ContributorPayout < ApplicationRecord
   def entry_forecast_project(entry)
     metadata = entry["blueprint_metadata"]
     metadata.is_a?(Hash) ? metadata["forecast_project"] : nil
+  end
+
+  def entry_line_id(entry)
+    metadata = entry["blueprint_metadata"]
+    metadata.is_a?(Hash) ? metadata["id"]&.to_s : nil
   end
 
   def amount_attributable_to(forecast_project_ids)

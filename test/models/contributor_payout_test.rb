@@ -74,7 +74,7 @@ class ContributorPayoutTest < ActiveSupport::TestCase
     # contributor_pool_sum = (100 - 100) + (620 - 0) = 620
     # 620 <= 630, so should be valid
     ic_cp.stubs(:invoice_tracker).returns(invoice_tracker)
-    ic_cp.send(:contributor_payouts_within_seventy_percent)
+    ic_cp.send(:contributor_payouts_within_cap)
     assert_empty ic_cp.errors[:base], "Expected the IC CP to be valid (under post-commission cap)"
   end
 
@@ -92,7 +92,7 @@ class ContributorPayoutTest < ActiveSupport::TestCase
 
     invoice_tracker.stubs(:contributor_payouts).returns([commission_cp, ic_cp])
     ic_cp.stubs(:invoice_tracker).returns(invoice_tracker)
-    ic_cp.send(:contributor_payouts_within_seventy_percent)
+    ic_cp.send(:contributor_payouts_within_cap)
     assert_not_empty ic_cp.errors[:base]
   end
 
