@@ -14,6 +14,8 @@ module Mso
     class WrongPass < Error; end
     class Misconfigured < Error; end
     class PushFailed < Error; end
+    class NotDraftable < Error; end
+    class AlreadyInvoiced < Error; end
 
     LINE_DESCRIPTION = "Management fee"
     # Resolved by name in garden3d's QuickBooks. The QBO default item
@@ -21,6 +23,13 @@ module Mso
     # work and be wrong; a missing item raises instead.
     ITEM_NAME = "Managerial Services"
     ZERO = BigDecimal("0")
+
+    # The first month Stacks drafts management fee invoices for. Every earlier
+    # month with a fee was invoiced by hand in QuickBooks (account 4100 is
+    # non-zero from 2024-01), so a draft there would be a second invoice.
+    # Earlier months can still have their existing invoices ATTACHED; see
+    # ensure_month!. Awaiting the owner's confirmation of the date.
+    MANAGEMENT_FEE_START = Date.new(2026, 10, 1)
 
     class << self
       # One tracker per management-fee payer on garden3d's pass. Idempotent.
@@ -49,6 +58,63 @@ module Mso
               forecast_client_id: client_ids.first,
               qbo_account: qbo_account,
             )
+          end
+        end
+      end
+
+      # May Stacks create drafts on this pass at all?
+      def draftable?(invoice_pass)
+        invoice_pass.management_fee? &&
+          invoice_pass.start_of_month >= MANAGEMENT_FEE_START &&
+          !invoice_pass.legacy_forecast_trackers?
+      end
+
+      # Creates the $0.00 draft for one tracker in garden3d's QuickBooks and
+      # attaches it. WRITES TO QUICKBOOKS. Raises on every failure; it never
+      # returns without having created the invoice.
+      #
+      # Do not call inside a database transaction: a customer created here is
+      # recorded straight away so that a later failure cannot lose its id.
+      def push_invoice!(invoice_tracker:)
+        pass = invoice_tracker.invoice_pass
+        assert_management_fee_pass!(pass)
+        assert_schema_ready!
+        assert_draftable!(pass)
+        assert_no_invoice!(invoice_tracker)
+
+        qbo_account = invoice_tracker.qbo_account
+        unless qbo_account.enterprise_id == pass.enterprise_id
+          raise Misconfigured, "InvoiceTracker #{invoice_tracker.id} is bound to a QuickBooks account that is " \
+                               "not #{pass.enterprise.name}'s"
+        end
+
+        payer = payer_for!(invoice_tracker)
+        item = managerial_services_item!(qbo_account)
+        term = net_15_term!(qbo_account)
+        customer = resolve_customer!(payer, qbo_account)
+
+        # The row lock makes a double click wait, then fail on the re-check,
+        # instead of creating two drafts.
+        invoice_tracker.with_lock do
+          assert_no_invoice!(invoice_tracker)
+          # The last thing before the write: does QuickBooks already have this
+          # month's invoice for this customer? A hand-made one, or our own
+          # from an attempt whose response never arrived.
+          assert_not_already_invoiced!(qbo_account, customer, pass, payer)
+          created = create_draft!(qbo_account, pass, customer, item, term)
+
+          begin
+            mirror = QboInvoice.find_or_create_by!(qbo_id: created.id.to_s, qbo_account: qbo_account) do |row|
+              # Store what QuickBooks returned. A blank mirror would make
+              # QboInvoice#data fetch from QuickBooks on first read.
+              row.data = created.as_json
+            end
+            invoice_tracker.update!(qbo_invoice_id: created.id.to_s)
+            mirror
+          rescue ActiveRecord::ActiveRecordError => e
+            raise PushFailed, "QuickBooks invoice #{created.id} was created for #{payer.name} but Stacks could " \
+                              "not record it (#{e.message}). Attach it from the tracker's edit page. Trying " \
+                              "again is safe: Stacks will find that invoice and refuse to make another."
           end
         end
       end
@@ -91,6 +157,175 @@ module Mso
                                "to hang its invoice tracker on"
         end
         ids
+      end
+
+      def assert_draftable!(invoice_pass)
+        return if draftable?(invoice_pass)
+
+        reason =
+          if invoice_pass.start_of_month < MANAGEMENT_FEE_START
+            "Stacks drafts management fee invoices from #{MANAGEMENT_FEE_START.strftime('%B %Y')} onward; " \
+              "#{invoice_pass.invoice_month} was invoiced by hand"
+          else
+            "#{invoice_pass.invoice_month}'s pass holds a Forecast-driven tracker from before passes were " \
+              "per-company"
+          end
+        raise NotDraftable, "#{reason}. Attach the existing QuickBooks invoice from the tracker's edit page " \
+                            "instead of creating a draft."
+      end
+
+      def assert_no_invoice!(invoice_tracker)
+        return if invoice_tracker.qbo_invoice_id.blank?
+        raise PushFailed, "InvoiceTracker #{invoice_tracker.id} already has QuickBooks invoice " \
+                          "#{invoice_tracker.qbo_invoice_id}. Delete it in QuickBooks, or detach it, before " \
+                          "creating another."
+      end
+
+      # One QuickBooks READ. Any invoice for this customer dated in the pass
+      # month stops the push -- including a voided one, which a person should
+      # look at rather than Stacks guess about.
+      def assert_not_already_invoiced!(qbo_account, customer, pass, payer)
+        customer_id = customer.id.to_s
+        unless customer_id.match?(/\A\d+\z/)
+          raise Misconfigured, "#{payer.name}'s QuickBooks customer id (#{customer_id.inspect}) is not numeric"
+        end
+        first_day = pass.start_of_month
+        last_day = first_day.end_of_month
+
+        service = Quickbooks::Service::Invoice.new
+        service.company_id = qbo_account.realm_id
+        service.access_token = qbo_account.make_and_refresh_qbo_access_token
+        found = service.query(
+          "SELECT * FROM Invoice WHERE CustomerRef = '#{customer_id}' " \
+          "AND TxnDate >= '#{first_day.iso8601}' AND TxnDate <= '#{last_day.iso8601}'",
+          per_page: 100,
+        )
+        existing = Array(found&.entries)
+        return if existing.empty?
+
+        listed = existing.map { |invoice| "#{invoice.id} (total #{invoice.total.to_f})" }.join(", ")
+        raise AlreadyInvoiced, "#{qbo_account.enterprise.name}'s QuickBooks already holds #{existing.size} " \
+                               "invoice(s) for #{payer.name} dated in #{pass.invoice_month}: #{listed}. Stacks " \
+                               "will not create another. Attach the right one from the tracker's edit page " \
+                               "(Refresh from QuickBooks first if it is not listed there)."
+      end
+
+      # The payer is the enterprise the tracker's Forecast client is internal to.
+      def payer_for!(invoice_tracker)
+        payer = Enterprise
+          .joins(:enterprise_forecast_clients)
+          .find_by(enterprise_forecast_clients: { forecast_client_id: invoice_tracker.forecast_client_id })
+        unless payer&.management_fee_payer?
+          raise Misconfigured, "InvoiceTracker #{invoice_tracker.id} does not belong to a management fee payer " \
+                               "(#{payer&.name || 'its Forecast client is not internal to any enterprise'})"
+        end
+        payer
+      end
+
+      def managerial_services_item!(qbo_account)
+        items, _default_item = qbo_account.fetch_all_items
+        item = items.find { |candidate| candidate.fully_qualified_name == ITEM_NAME }
+        if item.nil?
+          raise Misconfigured, "#{qbo_account.enterprise.name}'s QuickBooks has no active item named " \
+                               "\"#{ITEM_NAME}\". Restore it; Stacks will not fall back to another item."
+        end
+        item
+      end
+
+      def net_15_term!(qbo_account)
+        due_days = Stacks::System.singleton_class::DEFAULT_PAYMENT_TERM
+        term = qbo_account.fetch_all_terms.find { |candidate| candidate.due_days == due_days }
+        if term.nil?
+          raise Misconfigured, "#{qbo_account.enterprise.name}'s QuickBooks has no payment term due in " \
+                               "#{due_days} days"
+        end
+        term
+      end
+
+      # By stored id, never by name: the Enterprise, Forecast client and
+      # QuickBooks customer names all differ, so a name match would miss and
+      # then create a duplicate customer that Finance invoices for real.
+      def resolve_customer!(payer, qbo_account)
+        stored_id = payer.g3d_qbo_customer_id.presence
+        active_customers = qbo_account.fetch_all_customers
+
+        if stored_id
+          customer = active_customers.find { |candidate| candidate.id.to_s == stored_id.to_s }
+          if customer.nil?
+            raise Misconfigured, "#{payer.name}'s stored garden3d QuickBooks customer id (#{stored_id}) is not " \
+                                 "an active customer. Correct the id; Stacks never creates a customer while " \
+                                 "one is stored."
+          end
+          return customer
+        end
+
+        # No id stored. If an active customer already carries exactly this
+        # name, an earlier create probably succeeded and its id was lost.
+        # Do not create a second, and do not adopt this one on a name match.
+        same_name = active_customers.select do |candidate|
+          [candidate.display_name, candidate.company_name, candidate.fully_qualified_name]
+            .compact.any? { |name| name.strip.casecmp?(payer.name.strip) }
+        end
+        if same_name.any?
+          raise Misconfigured, "#{payer.name} has no stored garden3d QuickBooks customer id, but an active " \
+                               "customer already has that name (id #{same_name.map(&:id).join(', ')}). If it " \
+                               "is the right one, store its id on the enterprise (g3d_qbo_customer_id) and " \
+                               "try again. Stacks will not create a second customer or adopt one by name."
+        end
+
+        customer = Quickbooks::Model::Customer.new
+        customer.display_name = payer.name
+        customer.company_name = payer.name
+
+        service = Quickbooks::Service::Customer.new
+        service.company_id = qbo_account.realm_id
+        service.access_token = qbo_account.make_and_refresh_qbo_access_token
+        begin
+          created = service.create(customer)
+        rescue Quickbooks::IntuitRequestException => e
+          raise unless e.code.to_s == "6240" || e.message.to_s.match?(/duplicate name/i)
+          raise Misconfigured, "QuickBooks refused to create a customer named \"#{payer.name}\": a customer, " \
+                               "vendor or employee already has that name (it may be inactive). Find it in " \
+                               "QuickBooks; if it is this company's customer record, store its id on the " \
+                               "enterprise (g3d_qbo_customer_id)."
+        end
+        if created.nil? || created.id.blank?
+          raise PushFailed, "QuickBooks did not create a customer for #{payer.name}"
+        end
+
+        # Straight to the column, before anything else can fail: losing this
+        # id would mean a refused push on the next attempt.
+        payer.update_columns(g3d_qbo_customer_id: created.id.to_s)
+        created
+      end
+
+      def create_draft!(qbo_account, pass, customer, item, term)
+        invoice = Quickbooks::Model::Invoice.new
+        invoice.customer_id = customer.id
+        invoice.private_note = pass.invoice_month
+        invoice.bill_email = customer.primary_email_address if customer.primary_email_address.present?
+        invoice.sales_term_ref = Quickbooks::Model::BaseReference.new(term.name, value: term.id)
+        invoice.txn_date = pass.start_of_month.end_of_month
+
+        line = Quickbooks::Model::InvoiceLineItem.new
+        line.description = LINE_DESCRIPTION
+        line.amount = ZERO
+        line.sales_item! do |detail|
+          detail.unit_price = ZERO
+          detail.quantity = 1
+          detail.item_id = item.id
+        end
+        invoice.line_items << line
+
+        service = Quickbooks::Service::Invoice.new
+        service.company_id = qbo_account.realm_id
+        service.access_token = qbo_account.make_and_refresh_qbo_access_token
+        created = service.create(invoice)
+        if created.nil? || created.id.blank?
+          raise PushFailed, "QuickBooks did not create the management fee invoice for #{pass.invoice_month}. " \
+                            "Trying again is safe: Stacks checks QuickBooks for an existing invoice first."
+        end
+        created
       end
     end
   end
