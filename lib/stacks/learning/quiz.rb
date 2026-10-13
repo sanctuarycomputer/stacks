@@ -14,6 +14,9 @@ module Stacks
         # attempt count read below cannot be stale.
         AdminUser.transaction do
           user.lock!
+          # Re-read under the lock so a waive or completion committed just
+          # before is honoured.
+          assignment.reload
           state = assignment.outstanding? ? Checklist.new(assignment).module_state(learning_module) : nil
 
           if state.nil? || state.quiz_state != :open
@@ -29,7 +32,8 @@ module Stacks
           end
 
           correct = questions.count { |q| chosen[q.id] == q.correct_index }
-          passed = correct * 100 >= state.learning_module.quiz_pass_percent * questions.size
+          needed = needed_count(state.learning_module, questions.size)
+          passed = correct >= needed
           attempt = QuizAttempt.create!(
             admin_user: user, learning_module: state.learning_module,
             answers: chosen.transform_keys(&:to_s), correct_count: correct,
@@ -38,11 +42,20 @@ module Stacks
           left = passed ? 0 : state.attempts_left - 1
           result = Result.new(
             status: passed ? :passed : :failed, attempt: attempt, attempts_left: left,
-            message: passed ? "Passed: #{correct} of #{questions.size}." : failed_message(correct, questions.size, state.learning_module, left),
+            message: passed ? "Passed: #{correct} of #{questions.size}." : failed_message(correct, questions.size, needed, left),
           )
         end
 
-        Progress.refresh!(user) if result.status == :passed
+        if result.status == :passed
+          # The pass is already recorded; a failed refresh must not turn it into
+          # an error for the person (the daily refresh picks it up).
+          begin
+            Progress.refresh!(user)
+          rescue StandardError => e
+            Rails.logger.error("Stacks::Learning::Quiz refresh failed for AdminUser##{user.id}: #{e.class}: #{e.message}")
+            Sentry.capture_exception(e) if defined?(Sentry)
+          end
+        end
         result
       end
 
@@ -62,13 +75,13 @@ module Stacks
       end
       private_class_method :parse
 
-      def self.pass_count(learning_module, total)
-        (learning_module.quiz_pass_percent * total / 100.0).ceil
+      # Smallest correct count that meets the pass mark (integer ceiling).
+      def self.needed_count(learning_module, total)
+        (learning_module.quiz_pass_percent * total + 99) / 100
       end
-      private_class_method :pass_count
+      private_class_method :needed_count
 
-      def self.failed_message(correct, total, learning_module, left)
-        need = pass_count(learning_module, total)
+      def self.failed_message(correct, total, need, left)
         tail = left.positive? ? "You have #{left} #{"attempt".pluralize(left)} left, so re-read the pages first." : "You're out of attempts. Ask an admin to allow another."
         "You got #{correct} of #{total}; you need #{need}. #{tail}"
       end
@@ -86,7 +99,7 @@ module Stacks
       private_class_method :message_for_closed
 
       def self.rejected(message, state)
-        Result.new(status: :rejected, attempt: nil, message: message, attempts_left: state&.attempts_left.to_i)
+        Result.new(status: :rejected, attempt: nil, message: message, attempts_left: state ? state.attempts_left.to_i : 0)
       end
       private_class_method :rejected
     end
