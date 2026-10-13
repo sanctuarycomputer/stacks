@@ -648,4 +648,190 @@ class Mso::MonthlyRunTest < ActiveSupport::TestCase
     assert_equal BigDecimal("20000"), trueup_for(@chief).amount
     assert_equal BigDecimal("11767.44"), trueup_for(@principal).amount
   end
+
+  # --- income that can still move after the run -----------------------------
+
+  test "a run warns about, and is not stopped by, another company's unfinished pass and an unaccepted payout" do
+    unfinished = InvoicePass.create!(start_of_month: MONTH, enterprise: @payer, data: {})
+    finished_payer = make_payer("Run Finished #{SecureRandom.hex(3)}")
+    InvoicePass.create!(start_of_month: MONTH, enterprise: finished_payer, data: {}, completed_at: Time.current)
+    InvoicePass.create!(start_of_month: MONTH + 1.month, enterprise: @payer, data: {}) # another month's
+    unaccepted = pay(@chief, 500)
+    pay(@principal, 700).update_columns(accepted_at: Time.current)
+    # Another month's unaccepted payout to the same executive is not this month's.
+    next_pass = sanctuary_pass(MONTH + 1.month)
+    next_tracker = InvoiceTracker.create!(invoice_pass: next_pass, forecast_client: @tracker.forecast_client,
+                                          qbo_account: @tracker.qbo_account)
+    pay(@chief, 900, tracker: next_tracker)
+
+    snapshot = run!
+
+    assert_equal(
+      {
+        "incomplete_passes" => [{ "invoice_pass_id" => unfinished.id, "enterprise_id" => @payer.id }],
+        # The benchmark earners' payouts are unaccepted too; they are not on the roster.
+        "unaccepted_payouts" => [
+          { "contributor_id" => @chief.id, "count" => 1, "contributor_payout_ids" => [unaccepted.id] },
+        ],
+      },
+      snapshot.run_warnings,
+    )
+    assert snapshot.run_warnings?
+    assert_not snapshot.invalidated?
+    assert_equal BigDecimal("19500"), trueup_for(@chief).amount
+    assert_equal BigDecimal("22300"), trueup_for(@principal).amount
+  end
+
+  test "a run with nothing outstanding records no warning" do
+    snapshot = run!
+
+    assert_equal({ "incomplete_passes" => [], "unaccepted_payouts" => [] }, snapshot.run_warnings)
+    assert_not snapshot.run_warnings?
+    assert_not snapshot.income_drift?
+  end
+
+  # The nightly drift check, as garden3d's daily step calls it.
+  def nightly!(today: TODAY)
+    Mso::MonthlyRun.record_income_drift!(today: today)
+  end
+
+  def chief_drift(billed:)
+    [{ "contributor_id" => @chief.id, "ledger_id" => garden3d_ledger(@chief).id,
+       "stored" => "20000.0", "now" => "19500.0", "billed" => billed }]
+  end
+
+  test "nightly: income that lands after the run is recorded, and invalidates a run whose true-up has no bill" do
+    snapshot = run!
+    trueup_for(@chief).toggle_acceptance!
+    trueup_for(@principal).toggle_acceptance!
+    assert trueup_for(@chief).payable?
+
+    assert_equal [], nightly!
+    snapshot.reload
+    assert_equal [], snapshot.income_drift["lines"]
+    assert snapshot.income_drift["checked_at"].present?, "it records that it looked"
+    assert_not snapshot.income_drift?
+    assert_not snapshot.invalidated?
+
+    pay(@chief, 500) # another company finished invoicing after the run
+
+    assert_equal [snapshot.id], nightly!
+    snapshot.reload
+    assert_equal chief_drift(billed: false), snapshot.income_drift["lines"]
+    assert Time.zone.parse(snapshot.income_drift["checked_at"]) > 1.minute.ago
+    assert snapshot.income_drift?
+    assert snapshot.invalidated?
+    assert_match(/contributor #{@chief.id}\b/, snapshot.invalidated_reason)
+    assert_match(/run the month again/i, snapshot.invalidated_reason)
+    assert_equal false, trueup_for(@chief).payable?
+    assert_equal false, trueup_for(@principal).payable?
+    assert_equal BigDecimal("20000"), trueup_for(@chief).amount, "the check never rewrites a true-up"
+  end
+
+  test "nightly: drift on a true-up that already has a bill is recorded for a person, and invalidates nothing" do
+    snapshot = run!
+    trueup_for(@chief).update_columns(accepted_at: Time.current, qbo_bill_id: "88")
+    pay(@chief, 500)
+
+    2.times { assert_equal [snapshot.id], nightly! }
+
+    snapshot.reload
+    assert_equal chief_drift(billed: true), snapshot.income_drift["lines"]
+    assert_not snapshot.invalidated?
+    assert snapshot.fee_collected?
+    assert_equal BigDecimal("20000"), trueup_for(@chief).amount
+    assert_equal "88", trueup_for(@chief).qbo_bill_id
+  end
+
+  test "nightly: someone who joined or left the month's roster after the run is drift too" do
+    snapshot = run!
+    end_role_before_month(@principal_role)
+    late = mso_person("late-head")
+    MsoRolePeriod.create!(contributor: late, tier: :head, title: "Late", started_at: Date.new(2090, 1, 1))
+
+    assert_equal [snapshot.id], nightly!
+
+    lines = snapshot.reload.income_drift["lines"].index_by { |line| line["contributor_id"] }
+    assert_equal %w[23000.0 0.0], lines.fetch(@principal.id).values_at("stored", "now")
+    assert_equal %w[0.0 14000.0], lines.fetch(late.id).values_at("stored", "now")
+    assert_equal garden3d_ledger(late).id, lines.fetch(late.id)["ledger_id"]
+    assert_nil lines[@chief.id]
+    assert snapshot.invalidated?
+  end
+
+  test "nightly: the drift check makes no QuickBooks call, and skips a month it would have to fetch" do
+    snapshot = run!
+    pay(@chief, 500)
+    QboAccount.any_instance.expects(:make_and_refresh_qbo_access_token).never
+    QboProfitAndLossReport.expects(:find_or_fetch_for_range).never
+    QboInvoice.any_instance.expects(:sync!).never
+    Mso::ManagementFeeInvoices.expects(:collected?).never
+    Mso::MonthlyRun.expects(:call).never
+    MsoTrueup.any_instance.expects(:sync_qbo_bill!).never
+    MsoTrueup.any_instance.expects(:refresh_qbo_bill_mirror!).never
+
+    assert_equal [snapshot.id], nightly!
+    assert snapshot.reload.invalidated?
+
+    # No stored P&L for the month: computing it would FETCH one. Skipped.
+    snapshot.update_columns(invalidated_at: nil, invalidated_reason: nil, income_drift: {})
+    QboProfitAndLossReport.where(qbo_account_id: garden3d_qbo_account.id, starts_at: MONTH).delete_all
+
+    assert_equal [], nightly!
+    assert_equal({}, snapshot.reload.income_drift)
+    assert_not snapshot.invalidated?
+  end
+
+  test "nightly: the drift check looks at live snapshots of the last six months and no others" do
+    snapshot = run!
+    pay(@chief, 500)
+    Mso::MonthlyRun.expects(:preview).never
+
+    assert_equal [], nightly!(today: Date.new(2093, 12, 1)), "May is seven months before December"
+
+    snapshot.invalidate!("something else")
+    assert_equal [], nightly!, "an invalid run has to be run again anyway"
+
+    snapshot.update_columns(invalidated_at: nil, superseded_at: Time.current)
+    assert_equal [], nightly!, "a superseded run is history"
+    assert_equal({}, snapshot.reload.income_drift)
+
+    Mso::MonthlyRun.unstub(:preview)
+    snapshot.update_columns(superseded_at: nil)
+    assert_equal [snapshot.id], nightly!(today: Date.new(2093, 11, 30)), "May is six months before November"
+  end
+
+  test "nightly: a month that can no longer be computed is recorded, and no failure leaves the check" do
+    snapshot = run!
+    charge_fee("100000.0", account_total: "130000.0") # a reconcile variance
+
+    assert_nothing_raised { assert_equal [snapshot.id], nightly! }
+
+    snapshot.reload
+    assert_match(/variance/, snapshot.income_drift["refused"])
+    assert_equal [], snapshot.income_drift["lines"]
+    assert snapshot.income_drift?
+    assert_not snapshot.invalidated?, "the fee check and the first-bill check deal with that"
+
+    snapshot.update_columns(income_drift: {})
+    Mso::MonthlyRun.stubs(:preview).raises(RuntimeError, "boom")
+
+    assert_nothing_raised { assert_equal [], nightly! }
+    assert_equal({}, snapshot.reload.income_drift)
+  end
+
+  # Migrations are run by hand after the deploy: until the two columns exist
+  # a run writes neither, and the nightly check does nothing.
+  test "before the columns exist, a run still works and the nightly drift check does nothing" do
+    columns = MsoSnapshot.column_names - %w[run_warnings income_drift]
+    MsoSnapshot.stubs(:column_names).returns(columns)
+    pay(@chief, 500)
+    MsoSnapshot.any_instance.expects(:run_warnings=).never
+    Mso::MonthlyRun.expects(:preview).never
+
+    snapshot = run!
+
+    assert snapshot.persisted?
+    assert_equal [], nightly!
+  end
 end

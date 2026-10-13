@@ -25,7 +25,11 @@ module Mso
 
     ZERO = BigDecimal("0")
 
-    Planned = Struct.new(:period, :ledger, :earned_by_ledger, :output, keyword_init: true) do
+    # How far back the nightly drift check looks (.record_income_drift!).
+    # Each snapshot it recomputes costs about a thousand queries.
+    DRIFT_WINDOW_MONTHS = 6
+
+    Planned =Struct.new(:period, :ledger, :earned_by_ledger, :output, keyword_init: true) do
       def already_earned
         earned_by_ledger.values.sum(BigDecimal("0"))
       end
@@ -118,6 +122,104 @@ module Mso
           snapshot.invalidate!("Account 4100 now reads #{now_reads} for #{snapshot.invoice_pass.invoice_month}; " \
                                "this run used #{snapshot.fee_income.to_s('F')}. Run the month again.")
           snapshot.id
+        end
+      end
+
+      # NIGHTLY, DATABASE ONLY. A run nets each executive against everything
+      # they earned in the month on every ledger, but only waits for
+      # Sanctuary's pass: another company's invoice, a profit share or an
+      # adjustment can land afterwards, and so can a roster or payout change.
+      # This recomputes each live snapshot of the last DRIFT_WINDOW_MONTHS
+      # months (.preview: stored data only) and records, on the snapshot, every
+      # executive whose true-up would now be a different amount.
+      #
+      #   A drifted true-up with NO QuickBooks bill: the snapshot is also
+      #   invalidated, as the fee check invalidates it, so the stale figure is
+      #   not payable. (Its first bill would be refused anyway; this says so
+      #   the next morning instead of at the click.)
+      #   A drifted true-up WITH a bill: recorded only. The money is in
+      #   QuickBooks; a person decides.
+      #
+      # It never fetches: a month with no stored P&L is skipped, because
+      # computing it would fetch one. It creates, changes and deletes no
+      # true-up and no bill, and nothing it meets is allowed to raise out of
+      # the nightly job. Returns the ids of the snapshots it flagged.
+      #
+      # There is no cheap, sound test for "nothing in this month can have
+      # changed" (a deleted payout leaves no timestamp behind), so every
+      # snapshot in the window is recomputed: one Mso::Benchmark each, about a
+      # thousand queries. The window is what bounds it.
+      def record_income_drift!(today: Date.today)
+        return [] unless MsoTrueup.schema_ready? && MsoSnapshot.tracks_income_drift?
+
+        earliest = today.beginning_of_month - DRIFT_WINDOW_MONTHS.months
+        garden3d_account_ids = QboAccount.where(enterprise_id: Enterprise.garden3d.id).pluck(:id)
+        snapshots = MsoSnapshot.current.where(invalidated_at: nil).joins(:invoice_pass)
+          .where("invoice_passes.start_of_month >= ?", earliest).includes(:invoice_pass).order(:id).to_a
+
+        snapshots.filter_map do |snapshot|
+          month = snapshot.invoice_pass.start_of_month
+          stored = QboProfitAndLossReport
+            .where(qbo_account_id: garden3d_account_ids, starts_at: month, ends_at: month.end_of_month).exists?
+          next unless stored # Mso::ManagementFeeIncome would FETCH a missing report; never do that here
+
+          snapshot.id if record_income_drift_on!(snapshot, today)
+        rescue StandardError => e
+          Rails.logger.error("[mso] income drift check failed for MsoSnapshot #{snapshot.id}: " \
+                             "#{e.class}: #{e.message}")
+          Sentry.capture_exception(e) if defined?(Sentry)
+          nil
+        end
+      rescue StandardError => e
+        Rails.logger.error("[mso] income drift check failed: #{e.class}: #{e.message}")
+        Sentry.capture_exception(e) if defined?(Sentry)
+        []
+      end
+
+      private
+
+      # Writes what the check found (nothing found included, so the page can
+      # say when it last looked). True when the snapshot was flagged.
+      def record_income_drift_on!(snapshot, today)
+        pass = snapshot.invoice_pass
+        found = { "checked_at" => Time.current.iso8601, "lines" => [] }
+        begin
+          found["lines"] = income_drift_lines(snapshot, preview(invoice_pass: pass, today: today))
+        rescue Refused => e
+          # The month cannot be computed as it stands. Not invalidated here:
+          # what stopped it is either the fee (the fee check's business) or
+          # something a first bill is refused for anyway.
+          found["refused"] = e.message.to_s.truncate(1000)
+        end
+        snapshot.update_columns(income_drift: found)
+
+        unbilled = found["lines"].reject { |line| line["billed"] }
+        if unbilled.any?
+          snapshot.invalidate!(
+            "A nightly recomputation on #{today} no longer gives this run's true-up for contributor " \
+            "#{unbilled.map { |line| line['contributor_id'] }.join(', ')}: income, the roster or the benchmark " \
+            "changed after the run. Run the month again.",
+          )
+        end
+        found["lines"].any? || found.key?("refused")
+      end
+
+      # `now` is .preview's { garden3d ledger id => amount }. Someone no
+      # longer on the roster reads as zero now; someone new, as zero stored.
+      def income_drift_lines(snapshot, now)
+        stored = snapshot.lines.to_h { |line| [line["ledger_id"], BigDecimal(line["trueup"].to_s)] }
+        contributors = snapshot.lines.to_h { |line| [line["ledger_id"], line["contributor_id"]] }
+        contributors.merge!(Ledger.where(id: now.keys - stored.keys).pluck(:id, :contributor_id).to_h)
+        billed = MsoTrueup.where(invoice_pass_id: snapshot.invoice_pass_id).where.not(qbo_bill_id: nil)
+          .pluck(:ledger_id).to_set
+
+        (stored.keys | now.keys).sort.filter_map do |ledger_id|
+          was = stored.fetch(ledger_id, ZERO)
+          is = now.fetch(ledger_id, ZERO)
+          next if was == is
+
+          { "contributor_id" => contributors[ledger_id], "ledger_id" => ledger_id,
+            "stored" => was.to_s("F"), "now" => is.to_s("F"), "billed" => billed.include?(ledger_id) }
         end
       end
     end
@@ -356,6 +458,36 @@ module Mso
       on_roster + locked.values.sum(ZERO, &:amount)
     end
 
+    # A WARNING, never a refusal: a month is run when it is run (August, in
+    # October), and waiting for every company and every Accept would let one
+    # person freeze every executive's pay. What is listed here is what could
+    # still move the figures: netting is across all of a person's ledgers,
+    # and only Sanctuary's pass is required to be complete. Ids and counts
+    # only. The nightly drift check (.record_income_drift!) catches it if any
+    # of it does move.
+    def run_warnings(computation)
+      incomplete = InvoicePass
+        .where(start_of_month: @month, completed_at: nil)
+        .where.not(enterprise_id: @pass.enterprise_id)
+        .order(:id).pluck(:id, :enterprise_id)
+
+      contributor_ids = computation.planned.map { |plan| plan.period.contributor_id }
+      unaccepted = ContributorPayout.joins(:ledger, invoice_tracker: :invoice_pass)
+        .where(ledgers: { contributor_id: contributor_ids }, invoice_passes: { start_of_month: @month })
+        .where(accepted_at: nil)
+        .order("contributor_payouts.id").pluck("ledgers.contributor_id", "contributor_payouts.id")
+        .group_by(&:first)
+
+      {
+        "incomplete_passes" => incomplete.map do |id, enterprise_id|
+          { "invoice_pass_id" => id, "enterprise_id" => enterprise_id }
+        end,
+        "unaccepted_payouts" => unaccepted.sort.map do |contributor_id, rows|
+          { "contributor_id" => contributor_id, "count" => rows.size, "contributor_payout_ids" => rows.map(&:last) }
+        end,
+      }
+    end
+
     def write_snapshot!(computation, collected)
       now = Time.current
       result = computation.result
@@ -364,7 +496,11 @@ module Mso
       # Before the insert: the partial unique index allows one current row.
       previous&.update_columns(superseded_at: now)
 
+      # The column arrives in a later, hand-run migration than the table.
+      warnings = MsoSnapshot.records_run_warnings? ? { run_warnings: run_warnings(computation) } : {}
+
       snapshot = MsoSnapshot.create!(
+        **warnings,
         invoice_pass: @pass,
         sanctuary_invoice_pass: computation.sanctuary_pass,
         created_by: @run_by,

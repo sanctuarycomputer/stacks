@@ -92,6 +92,10 @@ class Enterprise < ApplicationRecord
     # Database only: a snapshot whose fee income no longer matches the stored
     # P&L is invalidated, so nothing computed from the old fee stays payable.
     Mso::MonthlyRun.invalidate_snapshots_whose_fee_moved!
+    # Database only: recompute each recent month's run from stored data and
+    # record, on its snapshot, any true-up that would now be a different
+    # amount (income that landed after the run). Writes no true-up or bill.
+    Mso::MonthlyRun.record_income_drift!
     # QuickBooks READS only: refresh the stored copy of MSO bills that already
     # exist, so a paid one is seen as paid. Cannot create or change a bill.
     MsoTrueup.refresh_bill_mirrors!

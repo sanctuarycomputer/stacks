@@ -16,6 +16,8 @@
 #                                        Nothing from it is payable, and only
 #                                        a successful run (a new snapshot)
 #                                        undoes that.
+#   income_drift                         the nightly check's note of where a
+#                                        fresh computation now differs.
 #
 # Executive compensation: admins only (AdminAuthorization).
 class MsoSnapshot < ApplicationRecord
@@ -25,8 +27,24 @@ class MsoSnapshot < ApplicationRecord
   FIGURES = %w[
     invoice_pass_id sanctuary_invoice_pass_id fee_income benchmark_average configured_n counted
     small_sample cap_percentage cap total_calculated total_trueup total_trueup_as_billed
-    benchmark_members excluded_without_login lines drift reconciliation
+    benchmark_members excluded_without_login lines drift reconciliation run_warnings
   ].freeze
+
+  # Added by a later migration than the table. Migrations are run by hand
+  # after the deploy, so everything that reads or writes these two asks first.
+  #
+  #   run_warnings  written once by the run: what was unfinished when the
+  #                 month was run and could still move its figures.
+  #   income_drift  rewritten by the nightly check
+  #                 (Mso::MonthlyRun.record_income_drift!): where a fresh
+  #                 computation no longer gives the figures stored here.
+  def self.records_run_warnings?
+    column_names.include?("run_warnings")
+  end
+
+  def self.tracks_income_drift?
+    column_names.include?("income_drift")
+  end
 
   ZERO = BigDecimal("0")
 
@@ -74,6 +92,48 @@ class MsoSnapshot < ApplicationRecord
   # bill was written. The snapshot page warns about it.
   def over_cap?
     total_trueup_as_billed > cap
+  end
+
+  # Other companies' passes for the month that had not finished invoicing
+  # when this was run: [{ "invoice_pass_id", "enterprise_id" }].
+  def incomplete_passes_at_run
+    return [] unless has_attribute?(:run_warnings)
+    Array(run_warnings["incomplete_passes"])
+  end
+
+  # Executives' payouts in the month that nobody had accepted when this was
+  # run: [{ "contributor_id", "count", "contributor_payout_ids" }].
+  def unaccepted_payouts_at_run
+    return [] unless has_attribute?(:run_warnings)
+    Array(run_warnings["unaccepted_payouts"])
+  end
+
+  def run_warnings?
+    incomplete_passes_at_run.any? || unaccepted_payouts_at_run.any?
+  end
+
+  # What the last nightly check found: one entry per executive whose true-up
+  # would now be a different amount
+  # ([{ "contributor_id", "ledger_id", "stored", "now", "billed" }]).
+  def income_drift_lines
+    return [] unless has_attribute?(:income_drift)
+    Array(income_drift["lines"])
+  end
+
+  # Set when the nightly check could not compute the month at all.
+  def income_drift_refusal
+    return nil unless has_attribute?(:income_drift)
+    income_drift["refused"].presence
+  end
+
+  def income_drift_checked_at
+    return nil unless has_attribute?(:income_drift)
+    stamp = income_drift["checked_at"]
+    stamp.present? ? Time.zone.parse(stamp) : nil
+  end
+
+  def income_drift?
+    income_drift_lines.any? || income_drift_refusal.present?
   end
 
   # The garden3d ledgers that are owed a true-up by this run. A line whose

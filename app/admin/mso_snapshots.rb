@@ -29,8 +29,13 @@ ActiveAdmin.register MsoSnapshot do
     column(:total_true_up) { |snapshot| number_to_currency(snapshot.total_trueup) }
     column(:fee_collected) { |snapshot| snapshot.fee_collected? ? "Yes" : "No" }
     column(:warnings) do |snapshot|
-      [("over the cap" if snapshot.over_cap?), ("#{snapshot.drift.size} billed row(s) differ" if snapshot.drift.any?)]
-        .compact.join("; ")
+      [
+        ("over the cap" if snapshot.over_cap?),
+        ("#{snapshot.drift.size} billed row(s) differ" if snapshot.drift.any?),
+        ("#{snapshot.income_drift_lines.size} true-up(s) have moved since the run" if snapshot.income_drift_lines.any?),
+        ("can no longer be computed" if snapshot.income_drift_refusal),
+        ("unfinished at the run" if snapshot.run_warnings?),
+      ].compact.join("; ")
     end
     column :created_at
     actions
@@ -72,7 +77,8 @@ ActiveAdmin.register MsoSnapshot do
   show title: :display_name do
     snapshot = resource
     money = ->(value) { number_to_currency(BigDecimal(value.to_s)) }
-    contributor_ids = (snapshot.lines + snapshot.benchmark_members + snapshot.excluded_without_login)
+    contributor_ids = (snapshot.lines + snapshot.benchmark_members + snapshot.excluded_without_login +
+                       snapshot.income_drift_lines + snapshot.unaccepted_payouts_at_run)
       .map { |entry| entry["contributor_id"] }.uniq
     contributors = Contributor.where(id: contributor_ids).includes(:forecast_person).index_by(&:id)
     name_for = ->(id) { contributors[id]&.display_name || "Contributor ##{id}" }
@@ -86,6 +92,55 @@ ActiveAdmin.register MsoSnapshot do
         para snapshot.invalidated_reason
         para "Invalidated #{l(snapshot.invalidated_at, format: :long)}. Run the month again from garden3d's " \
              "pass; confirming collection will not restore this run."
+      end
+    end
+
+    # The nightly check (Mso::MonthlyRun.record_income_drift!). Above the
+    # figures: they are the ones that no longer hold.
+    if snapshot.income_drift?
+      panel "FIGURES HAVE MOVED SINCE THIS RUN" do
+        if snapshot.income_drift_lines.any?
+          table_for snapshot.income_drift_lines do
+            column("Executive") { |entry| name_for.call(entry["contributor_id"]) }
+            column("True-up in this run") { |entry| money.call(entry["stored"]) }
+            column("A computation now gives") { |entry| money.call(entry["now"]) }
+            column("What to do") do |entry|
+              entry["billed"] ? "Has a QuickBooks bill: a person decides" : "No bill: run the month again"
+            end
+          end
+          para "Income landed, or the roster or the benchmark changed, after this month was run. A true-up " \
+               "with no QuickBooks bill cannot be paid at the old figure: this run has been marked invalid and " \
+               "the month has to be run again. A true-up that already has a bill is left as it is; to change " \
+               "it, remove its bill from the true-up's page and run the month again."
+        end
+        if snapshot.income_drift_refusal
+          para "The month can no longer be computed as it was run: #{snapshot.income_drift_refusal}"
+        end
+        if snapshot.income_drift_checked_at
+          para "As of the nightly check on #{l(snapshot.income_drift_checked_at, format: :long)}."
+        end
+      end
+    end
+
+    if snapshot.run_warnings?
+      panel "Not finished when this month was run" do
+        para "The run did not wait for these. Each can still change what an executive earned in the month, " \
+             "and so their true-up; the nightly check reports it above if one does."
+        if snapshot.incomplete_passes_at_run.any?
+          enterprise_names = Enterprise
+            .where(id: snapshot.incomplete_passes_at_run.map { |entry| entry["enterprise_id"] }).pluck(:id, :name).to_h
+          para "Invoice passes that had not finished invoicing: " +
+               snapshot.incomplete_passes_at_run.map { |entry|
+                 "InvoicePass ##{entry['invoice_pass_id']} (#{enterprise_names[entry['enterprise_id']] || 'unknown company'})"
+               }.join(", ")
+        end
+        if snapshot.unaccepted_payouts_at_run.any?
+          para "Executives' payouts nobody had accepted: " +
+               snapshot.unaccepted_payouts_at_run.map { |entry|
+                 "#{name_for.call(entry['contributor_id'])}: #{entry['count']} unaccepted " \
+                   "(ContributorPayout #{Array(entry['contributor_payout_ids']).join(', ')})"
+               }.join("; ")
+        end
       end
     end
 

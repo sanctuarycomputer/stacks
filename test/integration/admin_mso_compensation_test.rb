@@ -69,6 +69,51 @@ class AdminMsoCompensationTest < ActionDispatch::IntegrationTest
     assert_match(/55,000\.00/, response.body)  # the cap
     assert_match(/Check collection/, response.body)
     assert_no_match(/NO LONGER VALID|more than the cap/, response.body)
+    assert_no_match(/FIGURES HAVE MOVED|not finished when this month was run/i, response.body)
+  end
+
+  test "the snapshot page says what was unfinished at the run, and loudly what has moved since" do
+    @snapshot.update_columns(
+      run_warnings: {
+        "incomplete_passes" => [{ "invoice_pass_id" => 7101, "enterprise_id" => enterprises(:sanctuary).id }],
+        "unaccepted_payouts" => [{ "contributor_id" => @exec.id, "count" => 2, "contributor_payout_ids" => [7201, 7202] }],
+      },
+      income_drift: {
+        "checked_at" => Time.current.iso8601,
+        "lines" => [
+          { "contributor_id" => @exec.id, "ledger_id" => @ledger.id, "stored" => "1234.56", "now" => "1000.0",
+            "billed" => true },
+          { "contributor_id" => @other.id, "ledger_id" => @other_ledger.id, "stored" => "6543.21", "now" => "6000.5",
+            "billed" => false },
+        ],
+      },
+    )
+    sign_in @admin
+
+    get admin_mso_snapshot_path(@snapshot)
+
+    assert_response :success
+    assert_match(/FIGURES HAVE MOVED SINCE THIS RUN/, response.body)
+    assert_match(/1,000\.00/, response.body)
+    assert_match(/6,000\.50/, response.body)
+    assert_match(/Has a QuickBooks bill: a person decides/, response.body)
+    assert_match(/No bill: run the month again/, response.body)
+    assert response.body.index("FIGURES HAVE MOVED") < response.body.index("100,000.00"),
+           "above the figures, not under them"
+    assert_match(/Not finished when this month was run/, response.body)
+    assert_match(/InvoicePass #7101/, response.body)
+    assert_match(/2 unaccepted \(ContributorPayout 7201, 7202\)/, response.body)
+
+    get admin_mso_snapshots_path
+    assert_response :success
+    assert_match(/2 true-up\(s\) have moved since the run/, response.body)
+    assert_match(/unfinished at the run/, response.body)
+
+    @snapshot.update_columns(income_drift: { "checked_at" => Time.current.iso8601, "lines" => [],
+                                             "refused" => "a reconcile variance of 30000.0" })
+    get admin_mso_snapshot_path(@snapshot)
+    assert_match(/FIGURES HAVE MOVED SINCE THIS RUN/, response.body)
+    assert_match(/a reconcile variance of 30000\.0/, response.body)
   end
 
   test "a superseded snapshot is drawn from its own lines; an invalid or over-cap one says so loudly" do

@@ -401,9 +401,10 @@ class MsoTrueupBillingTest < ActiveSupport::TestCase
     assert_equal false, fresh.payable?
   end
 
-  test "garden3d's nightly step runs the fee check and the read-only refresh, and nothing that writes a bill" do
+  test "garden3d's nightly step runs the fee check, the drift check and the read-only refresh, and nothing that writes a bill" do
     Mso::ManagementFeeInvoices.stubs(:ensure_previous_month!)
     Mso::MonthlyRun.expects(:invalidate_snapshots_whose_fee_moved!).once.returns([])
+    Mso::MonthlyRun.expects(:record_income_drift!).once.returns([])
     MsoTrueup.expects(:refresh_bill_mirrors!).once.returns([])
     Mso::MonthlyRun.stubs(:call).raises(RuntimeError, "the nightly step ran the month")
     MsoTrueup.any_instance.stubs(:sync_qbo_bill!).raises(RuntimeError, "the nightly step synced a bill")

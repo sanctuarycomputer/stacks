@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_10_14_000001) do
+ActiveRecord::Schema.define(version: 2026_10_14_000002) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -715,6 +715,8 @@ ActiveRecord::Schema.define(version: 2026_10_14_000001) do
     t.bigint "superseded_by_id"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+    t.jsonb "run_warnings", default: {}, null: false
+    t.jsonb "income_drift", default: {}, null: false
     t.index ["invoice_pass_id"], name: "index_mso_snapshots_on_invoice_pass_id"
     t.index ["invoice_pass_id"], name: "index_mso_snapshots_one_current_per_pass", unique: true, where: "(superseded_at IS NULL)"
     t.index ["superseded_by_id"], name: "index_mso_snapshots_on_superseded_by_id"
