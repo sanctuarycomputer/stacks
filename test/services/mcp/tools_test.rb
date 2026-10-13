@@ -131,6 +131,89 @@ class Mcp::ToolsTest < ActiveSupport::TestCase
     assert_equal few, count_queries { listed }
   end
 
+  # notion_project_ids: the Notion projects of every tracker a document is
+  # linked to, through its meeting's match or, for a ships@ email, its weekly ship.
+
+  def notion_tracker!(name, notion_project_ids)
+    ProjectTracker.new(name: name, notion_project_ids: notion_project_ids).tap { |t| t.save!(validate: false) }
+  end
+
+  def meeting_doc!(key, trackers)
+    m = Meeting.create!(meet_source: :meet_api, meet_conference_record_id: "cr/np-#{key}", started_at: 1.day.ago)
+    doc = Document.create!(source: :meet, external_id: "np-#{key}", title: "Sync #{key}", excluded: :not_excluded,
+                           source_record: m, occurred_at: 1.day.ago)
+    m.project_trackers << trackers
+    doc
+  end
+
+  def ship_email!(key, trackers)
+    doc = Document.create!(source: :google_groups, external_id: "<ship-#{key}@x>", title: "Ship #{key}", excluded: :not_excluded,
+                           occurred_at: 1.day.ago, raw_metadata: { 'group_email' => Document::SHIPS_GROUP_EMAIL })
+    trackers.each do |t|
+      ship = WeeklyShip.new(document: doc, project_tracker: t, sent_at: 1.day.ago, matched_by: :llm)
+      ship.via_sweep = true
+      ship.save!
+    end
+    doc
+  end
+
+  def got(doc)
+    JSON.parse(Mcp::GetDocumentTool.call(id: doc.id, server_context: {}).content.first[:text])
+  end
+
+  test 'notion_project_ids is the de-duplicated union over the trackers a meeting was matched to' do
+    harvey = notion_tracker!('Harvey', %w[proj-b proj-a])
+    retainer = notion_tracker!('Harvey Retainer', %w[proj-c proj-a])
+    doc = meeting_doc!('two', [harvey, retainer])
+    assert_equal %w[proj-a proj-b proj-c], listed.index_by { |d| d['id'] }[doc.id]['notion_project_ids']
+    payload = got(doc)
+    assert_equal %w[proj-a proj-b proj-c], payload['notion_project_ids']
+    assert_equal [harvey.id, retainer.id].sort, payload['project_tracker_ids']
+  end
+
+  test 'a ships@ email returns the Notion projects of the trackers its weekly ship is linked to' do
+    harvey = notion_tracker!('Harvey', %w[proj-a])
+    acme = notion_tracker!('Acme', %w[proj-d proj-a])
+    doc = ship_email!('one', [harvey, acme])
+    assert_equal %w[proj-a proj-d], listed.index_by { |d| d['id'] }[doc.id]['notion_project_ids']
+    payload = got(doc)
+    assert_equal %w[proj-a proj-d], payload['notion_project_ids']
+    assert_equal [], payload['project_tracker_ids'], 'project_tracker_ids still means the meeting match'
+  end
+
+  test 'notion_project_ids is [] for a document with no tracker, and for one whose tracker names no Notion project' do
+    bare = meeting_doc!('bare', [notion_tracker!('No project', [])])
+    half = meeting_doc!('half', [notion_tracker!('No project either', []), notion_tracker!('Has one', %w[proj-z])])
+    mail = Document.create!(source: :google_groups, external_id: '<plain@x>', excluded: :not_excluded, title: 'Deploy chatter')
+    by_id = listed.index_by { |d| d['id'] }
+    assert_equal [], by_id[@doc.id]['notion_project_ids'], 'no meeting, no tracker'
+    assert_equal [], by_id[mail.id]['notion_project_ids'], 'mail that is not a ship'
+    assert_equal [], by_id[bare.id]['notion_project_ids']
+    assert_equal 1, by_id[bare.id]['project_tracker_ids'].size, 'the tracker is still listed'
+    assert_equal %w[proj-z], by_id[half.id]['notion_project_ids']
+    [@doc, mail, bare].each { |d| assert_equal [], got(d)['notion_project_ids'] }
+  end
+
+  test 'list_documents reads notion_project_ids in the same number of queries for 2 linked documents as for 6' do
+    make = lambda do |key|
+      meeting_doc!("m#{key}", [notion_tracker!("M#{key}", ["proj-m#{key}"]), notion_tracker!("N#{key}", ["proj-n#{key}"])])
+      ship_email!("s#{key}", [notion_tracker!("S#{key}", ["proj-s#{key}"])])
+    end
+    make.(1)
+    few = count_queries { assert_equal 2, listed.count { |d| d['notion_project_ids'].any? } }
+    make.(2)
+    make.(3)
+    many = count_queries { assert_equal 6, listed.count { |d| d['notion_project_ids'].any? } }
+    assert_equal few, many
+    assert_operator few, :<=, 5, 'the page, the join-table check, the meeting matches, the weekly ships, the trackers'
+  end
+
+  test 'the tool descriptions document notion_project_ids' do
+    [Mcp::ListDocumentsTool, Mcp::GetDocumentTool].each do |tool|
+      assert_includes tool.description, 'notion_project_ids', tool.tool_name
+    end
+  end
+
   test 'list_documents and get_document never return the rationale or the confidence' do
     _m, transcript, _notes, _ids = matched_meeting!('quiet', %w[Harvey])
     [Mcp::ListDocumentsTool.call(server_context: {}),

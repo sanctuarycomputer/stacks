@@ -2,7 +2,9 @@ module Mcp
   class GetDocumentTool < MCP::Tool
     tool_name 'get_document'
     description 'Fetch one corpus-eligible document with its transcript segments, full text, and meeting key. ' \
-                'project_tracker_ids lists the project tracker(s) its meeting was matched to (empty when none, or not a meeting).'
+                'project_tracker_ids lists the project tracker(s) its meeting was matched to (empty when none, or not a meeting). ' \
+                'notion_project_ids lists the Notion project page ids of every tracker the document is linked to: the trackers its meeting was matched to, ' \
+                'or for a ships@ email the trackers of its weekly ship. De-duplicated and sorted; empty when it is linked to no tracker or its trackers name no Notion project.'
     input_schema(properties: { id: { type: 'integer' } }, required: ['id'])
     annotations(read_only_hint: true, destructive_hint: false, idempotent_hint: true)
 
@@ -21,15 +23,16 @@ module Mcp
       # segments) is still readable. Callers prefer `segments` for transcripts, `body` for notes.
       body = doc.chunks.order(:position).pluck(:content).join("\n")
       meeting_key = is_meeting ? meeting.id : nil
-      # Which project tracker(s) the meeting was about: ids only. The sweep's reason and
+      # Which project tracker(s) the meeting was about, and the Notion projects of
+      # every tracker the document is linked to: ids only. The sweep's reason and
       # confidence stay in Stacks.
-      project_tracker_ids = is_meeting ? Meeting.project_tracker_ids_by_meeting([meeting.id]).fetch(meeting.id, []) : []
+      projects = Mcp::DocumentProjects.for([doc]).fetch(doc.id)
       # google_groups: expose the RFC822 root Message-ID (external_id) so an observing agent can
       # build the precise Gmail deep link (rfc822msgid:<id>). url already carries the group.
       extra = doc.google_groups? ? { root_message_id: doc.external_id } : {}
       Responses.ok({ id: doc.id, title: doc.title, url: doc.url, occurred_at: doc.occurred_at,
-                     source: doc.source, meeting_key: meeting_key, project_tracker_ids: project_tracker_ids,
-                     segments: segments, body: body }
+                     source: doc.source, meeting_key: meeting_key, project_tracker_ids: projects[:project_tracker_ids],
+                     notion_project_ids: projects[:notion_project_ids], segments: segments, body: body }
                    .merge(extra))
     end
   end
