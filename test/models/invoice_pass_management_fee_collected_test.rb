@@ -106,17 +106,6 @@ class InvoicePassManagementFeeCollectedTest < ActiveSupport::TestCase
     refute collected?
   end
 
-  test "a legacy Forecast tracker with no invoice is not a fee tracker and does not block" do
-    invoice_for(@sanctuary, "c-15", total: "130000.0", balance: "0.0", sent: true)
-    invoice_for(@index, "c-15b", total: "0.0", balance: "0.0", sent: false)
-    # On a client that is no payer's: each payer still has its fee tracker.
-    ForecastClient.create!(forecast_id: 992_009, name: "Legacy external client")
-    InvoiceTracker.create!(invoice_pass: @pass, forecast_client_id: 992_009, qbo_account: @qbo_account,
-                           blueprint: { "lines" => {} })
-
-    assert collected?
-  end
-
   # --- an amount is a charge, emailed or not ---------------------------------
 
   test "an unsent invoice with an amount is a charge: unpaid, it blocks collection" do

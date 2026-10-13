@@ -40,21 +40,15 @@ class InvoiceTracker < ApplicationRecord
 
   delegate :billing_enterprise, to: :forecast_client
 
-  # Is this tracker on a pass garden3d issues? See InvoicePass#garden3d?.
+  # Is this tracker on a pass garden3d issues? Then it is garden3d billing
+  # another enterprise: the invoice carries the management fee and may carry
+  # other intercompany lines (a loan repayment), it has no contributor
+  # payouts, and Finance sets every amount in QuickBooks. Only its Managerial
+  # Services lines are fee income (Mso::ManagementFeeIncome counts by line).
+  # (garden3d's seven 2025 passes each hold a Forecast tracker with accepted
+  # payouts. They are history and are treated like any other garden3d tracker.)
   def garden3d?
     invoice_pass.present? && invoice_pass.garden3d?
-  end
-
-  # The narrower question every behaviour change asks: is this garden3d
-  # billing one of its paying companies? True on garden3d's pass with no
-  # blueprint. Such an invoice carries the management fee and may carry other
-  # intercompany lines (a loan repayment); it has no contributor payouts, and
-  # Finance sets every amount in QuickBooks. Only its Managerial Services
-  # lines are fee income (Mso::ManagementFeeIncome counts by line).
-  # garden3d's seven 2025 passes each hold a legacy Forecast tracker WITH a
-  # blueprint; those answer false and behave as they always have.
-  def intercompany_invoice?
-    garden3d? && blueprint.nil?
   end
 
   def display_name
@@ -157,10 +151,9 @@ class InvoiceTracker < ApplicationRecord
         nil
       elsif contributor_payouts.loaded? ? contributor_payouts.any? : contributor_payouts.exists?
         (contributor_payouts.loaded? ? contributor_payouts.all?(&:accepted?) : contributor_payouts.where(accepted_at: nil).none?) ? :all_accepted : :some_pending
-      elsif intercompany_invoice?
-        # An intercompany invoice never has payouts, so "no payouts" is not a
-        # state worth a pill. (A legacy garden3d tracker carries a blueprint, so
-        # it never reaches this branch and reports exactly as before.)
+      elsif garden3d?
+        # garden3d's invoices have no payouts, so "no payouts" is not a state
+        # worth a pill.
         nil
       else
         :no_payouts
@@ -272,7 +265,7 @@ class InvoiceTracker < ApplicationRecord
     # These checks match the Forecast client to a QuickBooks customer BY NAME.
     # A management fee invoice resolves its customer by stored id instead, and
     # Mso::IntercompanyInvoices.push_invoice! raises on anything missing.
-    return [] if intercompany_invoice?
+    return [] if garden3d?
 
     err = []
     qa = qbo_account
@@ -432,7 +425,7 @@ class InvoiceTracker < ApplicationRecord
   def make_contributor_payouts!(created_by, build: nil, allow_over_cap: false)
     raise "Payment splits are not supported for this invoice pass" unless invoice_pass.allows_payment_splits?
     return [] if qbo_invoice.nil?
-    if intercompany_invoice?
+    if garden3d?
       raise "garden3d's intercompany invoices have no contributor payouts (InvoiceTracker #{id})"
     end
 
@@ -622,17 +615,16 @@ class InvoiceTracker < ApplicationRecord
   end
 
   def make_invoice!
-    # garden3d's invoice to an enterprise it bills is a $0.00 draft Finance
-    # fills in, not a Forecast invoice. It must leave here BEFORE the Forecast
-    # path's guards below: the first is a silent no-op, and the second refuses
-    # internal clients, which every enterprise garden3d bills is.
-    return Mso::IntercompanyInvoices.push_invoice!(invoice_tracker: self) if intercompany_invoice?
-
-    # Everything below is the Forecast path: Sanctuary's trackers, and
-    # garden3d's legacy ones from 2025 (each has a blueprint). Index Space and
-    # USB Club have QuickBooks accounts too; never invoice from them.
     issuer = invoice_pass.enterprise
-    unless [Enterprise::SANCTUARY_NAME, Enterprise::GARDEN3D_NAME].include?(issuer.name)
+    case issuer.name
+    when Enterprise::SANCTUARY_NAME
+      # The Forecast path, below.
+    when Enterprise::GARDEN3D_NAME
+      # A $0.00 draft Finance fills in, not a Forecast invoice.
+      return Mso::IntercompanyInvoices.push_invoice!(invoice_tracker: self)
+    else
+      # Index Space and USB Club have QuickBooks accounts too; never invoice
+      # from them.
       raise NotImplementedError, "#{issuer.name} makes no invoices through Stacks (InvoicePass #{invoice_pass.id})"
     end
 

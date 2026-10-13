@@ -40,7 +40,7 @@ class ContributorPayoutManagementFeeTest < ActiveSupport::TestCase
 
   test "a payout on a management fee tracker is invalid" do
     tracker = attach_invoice(fee_tracker(@pass, @payer), qbo_id: "fee-9", total: "130000.0", balance: "0.0", sent: true)
-    assert tracker.intercompany_invoice?, "sanity"
+    assert tracker.garden3d?, "sanity"
     payout = payout_on(tracker)
 
     refute payout.valid?
@@ -65,15 +65,16 @@ class ContributorPayoutManagementFeeTest < ActiveSupport::TestCase
     assert_includes payout.errors[:base], REFUSAL
   end
 
-  test "a payout on a legacy garden3d tracker is valid, as it always was" do
-    # garden3d's seven 2025 passes each hold a Forecast tracker with a blueprint.
+  test "a payout already on a garden3d tracker can still be saved; a new one cannot be made" do
+    # garden3d's seven 2025 passes each hold a Forecast tracker with payouts.
     tracker = attach_invoice(fee_tracker(@pass, @payer), qbo_id: "fee-11", total: "1000.0", balance: "1000.0", sent: true)
     tracker.update!(blueprint: { "lines" => {} })
-    refute tracker.intercompany_invoice?, "sanity"
-    payout = payout_on(InvoiceTracker.find(tracker.id))
+    existing = payout_on(InvoiceTracker.find(tracker.id))
+    existing.save!(validate: false)
 
-    assert payout.valid?, payout.errors.full_messages.join("; ")
-    assert payout.save
+    assert existing.reload.valid?, existing.errors.full_messages.join("; ")
+    assert existing.update(description: "Still editable")
+    refute payout_on(InvoiceTracker.find(tracker.id)).valid?
   end
 
   test "a payout on a Sanctuary tracker is valid" do
@@ -89,16 +90,5 @@ class ContributorPayoutManagementFeeTest < ActiveSupport::TestCase
     payout.valid?
 
     refute_includes payout.errors[:base], REFUSAL
-  end
-
-  test "a tracker with a blueprint is never asked who issues its pass" do
-    # Every Forecast-driven tracker has a blueprint, so the hot paths answer
-    # from the row already loaded and the validation adds no query.
-    tracker = sanctuary_tracker
-    payout = payout_on(tracker)
-    InvoicePass.any_instance.expects(:garden3d?).never
-    InvoiceTracker.any_instance.expects(:intercompany_invoice?).never
-
-    assert payout.valid?, payout.errors.full_messages.join("; ")
   end
 end

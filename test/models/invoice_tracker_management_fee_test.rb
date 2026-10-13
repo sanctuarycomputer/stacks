@@ -110,14 +110,6 @@ class InvoiceTrackerManagementFeeTest < ActiveSupport::TestCase
     assert_equal({}, pass.payout_statuses)
   end
 
-  test "a legacy garden3d tracker's configuration errors are still the Forecast checks" do
-    @tracker.update!(blueprint: { "lines" => {} })
-    QboAccount.any_instance.stubs(:fetch_all_customers).returns([])
-    QboAccount.any_instance.stubs(:fetch_all_terms).returns([])
-
-    assert_equal [[:missing_qbo_customer], [:missing_qbo_term]], @tracker.configuration_errors
-  end
-
   test "configuration errors are empty and look nothing up in QuickBooks" do
     QboAccount.any_instance.expects(:fetch_all_customers).never
     QboAccount.any_instance.expects(:fetch_all_terms).never

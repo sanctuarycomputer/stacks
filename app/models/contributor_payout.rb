@@ -16,19 +16,14 @@ class ContributorPayout < ApplicationRecord
   validates :amount, presence: true
   validate :contributor_payouts_within_cap
   validate :only_after_new_deal
-  validate :not_on_a_management_fee_invoice
+  validate :not_on_a_garden3d_invoice, on: :create
 
-  # A management fee invoice (garden3d's pass, no blueprint) bills a paying
-  # company; nobody is paid out of it. InvoiceTracker#make_contributor_payouts!
-  # refuses too, but a payout can also be made by hand.
-  #
-  # The blueprint check comes first and reads the tracker row the other
-  # validations already loaded: every Forecast-driven tracker -- Sanctuary's,
-  # and garden3d's seven legacy ones -- has a blueprint, so none of them ever
-  # reaches the question of who issues the pass, and this adds no query.
-  def not_on_a_management_fee_invoice
-    return if invoice_tracker.nil? || !invoice_tracker.blueprint.nil?
-    return unless invoice_tracker.intercompany_invoice?
+  # garden3d's invoice bills another enterprise; nobody is paid out of it.
+  # InvoiceTracker#make_contributor_payouts! refuses too, but a payout can
+  # also be made by hand. On create only: the payouts already on garden3d's
+  # 2025 trackers stay as they are and can still be saved.
+  def not_on_a_garden3d_invoice
+    return unless invoice_tracker&.garden3d?
     errors.add(:base, "Contributor Payouts cannot be made against one of garden3d's intercompany invoices.")
   end
 

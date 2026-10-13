@@ -117,23 +117,18 @@ class InvoicePass < ApplicationRecord
     charged = []
     attached = []
 
-    # Every current payer needs a fee tracker here, or its invoice is unseen.
-    # (A legacy Forecast tracker, which has a blueprint, is not one.)
+    # Every current payer needs a tracker here, or its invoice is unseen.
     payers.each do |payer|
       return false unless InvoiceTracker.where(
-        invoice_pass_id: id, forecast_client_id: payer.internal_forecast_client_ids, blueprint: nil,
+        invoice_pass_id: id, forecast_client_id: payer.internal_forecast_client_ids,
       ).exists?
     end
 
     # Fresh queries throughout, by the (account, id) pair: never the cached
     # association, and never the qbo_invoice association.
     InvoiceTracker.where(invoice_pass_id: id).order(:id).each do |tracker|
-      if tracker.qbo_invoice_id.blank?
-        # Nothing attached. On a fee tracker that is unknown, so fail closed.
-        # A legacy Forecast tracker (it has a blueprint) is not a fee invoice.
-        return false if tracker.blueprint.nil?
-        next
-      end
+      # Nothing attached is unknown, so fail closed.
+      return false if tracker.qbo_invoice_id.blank?
 
       unless own_account_ids.include?(tracker.qbo_account_id)
         raise "InvoiceTracker #{tracker.id} on this pass points at QuickBooks account " \

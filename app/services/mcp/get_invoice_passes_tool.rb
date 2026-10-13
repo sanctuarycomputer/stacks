@@ -63,12 +63,7 @@ module Mcp
       # companies. Those are intercompany: counting them would add the fee to
       # the month's invoiced total and to the MoM series, which sums every
       # pass in a month. The pass row is still listed.
-      #
-      # Only blueprint-less trackers are left out. garden3d's 2025 passes each
-      # hold a legacy Forecast tracker with a blueprint; those are reported
-      # exactly as before.
-      trackers = pass.invoice_trackers
-      trackers = trackers.reject { |tracker| tracker.blueprint.nil? } if pass.garden3d?
+      trackers = pass.garden3d? ? [] : pass.invoice_trackers
       entities = trackers
         .group_by { |t| t.qbo_account&.enterprise&.name || 'Unknown entity' }
         .sort_by { |name, _| name }

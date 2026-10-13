@@ -237,23 +237,6 @@ class Mcp::InvoicePassesToolTest < ActiveSupport::TestCase
     Thread.current[:garden3d_enterprise] = nil
   end
 
-  test "a legacy Forecast tracker on a garden3d pass is still reported, as before" do
-    garden3d = enterprises(:garden3d)
-    garden3d_qa = QboAccount.create!(enterprise: garden3d, client_id: 'c', client_secret: 's',
-                                     realm_id: "g-#{SecureRandom.hex(4)}")
-    legacy_pass = InvoicePass.create!(start_of_month: Date.new(2026, 7, 1), enterprise: garden3d)
-    tracker!(legacy_pass, @client, account: garden3d_qa, blueprint: { 'lines' => {} })
-
-    payload = mcp_payload(Mcp::GetInvoicePassesTool.call(server_context: {}))
-
-    row = payload['passes'].find { |p| p['enterprise'] == 'garden3d, LLC' }
-    assert_equal [{ 'entity' => 'garden3d, LLC', 'invoiced_total' => 0.0, 'invoice_count' => 0,
-                    'status_mix' => { 'deleted' => 1 }, 'skipped_invoices' => 0 }], row['entities']
-  ensure
-    Thread.current[:sanctuary_enterprise] = nil
-    Thread.current[:garden3d_enterprise] = nil
-  end
-
   test "each pass row names its issuing enterprise" do
     payload = mcp_payload(Mcp::GetInvoicePassesTool.call(server_context: {}))
     assert_equal 'Sanctuary Computer Inc', payload['passes'].first['enterprise']

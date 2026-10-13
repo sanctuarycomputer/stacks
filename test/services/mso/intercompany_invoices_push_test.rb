@@ -197,13 +197,6 @@ class Mso::IntercompanyInvoicesPushTest < ActiveSupport::TestCase
     assert unattached?
   end
 
-  test "a legacy garden3d tracker, which has a blueprint, is refused" do
-    @tracker.update!(blueprint: { "lines" => {} })
-    forbid_writes
-
-    assert_raises(Mso::IntercompanyInvoices::Misconfigured) { push }
-  end
-
   test "QuickBooks answering without an invoice is a failure, not a success" do
     Quickbooks::Service::Invoice.any_instance.expects(:create).once.returns(nil)
 

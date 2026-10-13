@@ -12,7 +12,7 @@ ActiveAdmin.register InvoiceTracker do
 
   action_item :attempt_generate, only: :show, if: proc { current_admin_user.is_admin? } do
     options = { method: :post }
-    if resource.intercompany_invoice?
+    if resource.garden3d?
       # On an intercompany invoice this writes to QuickBooks.
       options[:data] = {
         confirm: "Create a $0.00 draft invoice in garden3d's QuickBooks for " \
@@ -218,7 +218,7 @@ ActiveAdmin.register InvoiceTracker do
   member_action :attempt_generate, method: :post do
     # An intercompany tracker's make_invoice! returns a QboInvoice or
     # raises; the checks below are for the Forecast path.
-    if resource.intercompany_invoice?
+    if resource.garden3d?
       tracker_page = admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource)
       begin
         resource.make_invoice!

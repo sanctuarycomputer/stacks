@@ -166,18 +166,6 @@ class AdminManagementFeeInvoicesTest < ActionDispatch::IntegrationTest
     assert_no_match(/All Payouts/, response.body)
   end
 
-  test "a legacy garden3d tracker's page still links to its payouts" do
-    tracker = attach_invoice(fee_tracker(@pass, @payer), qbo_id: "8202", total: "1000.0", balance: "1000.0", sent: true)
-    tracker.update!(blueprint: { "lines" => {} })
-    QboInvoice.any_instance.stubs(:sync!).returns(true)
-    sign_in @admin
-
-    get tracker_path(tracker)
-
-    assert_response :success
-    assert_select "a[href=?]", admin_invoice_tracker_contributor_payouts_path(tracker), text: /All Payouts/, count: 1
-  end
-
   # --- The pass page ---------------------------------------------------------
 
   # "Generate Invoices": the same button every pass has. On garden3d's pass it

@@ -1121,8 +1121,10 @@ bills. Where §6 and §13b differ from this section, **this section governs**.
 - **Predicates are named for the enterprise, not for the fee.** A garden3d
   invoice carries the management fee and may carry other lines (a loan
   repayment between entities). `InvoicePass#garden3d?`,
-  `InvoiceTracker#garden3d?`, `InvoiceTracker#intercompany_invoice?`
-  (garden3d's pass, no blueprint), `QboInvoice.without_intercompany`. Fee
+  `InvoiceTracker#garden3d?`, `QboInvoice.without_intercompany`. There is no
+  narrower tracker question: every tracker on a garden3d pass is treated the
+  same, the seven 2025 Forecast trackers included (owner: ancient history).
+  Their accepted payouts stay and can be saved; no new payout can be made. Fee
   income is still counted by Managerial Services line, never by invoice total.
 - **No payer flag.** `enterprises.management_fee_payer` is not added. garden3d
   bills every other enterprise that has a customer id in garden3d's QuickBooks
