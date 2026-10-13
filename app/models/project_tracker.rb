@@ -436,11 +436,14 @@ class ProjectTracker < ApplicationRecord
       raise Stacks::Twist::Error, "Twist channels/get failed (#{response.code})"
     end
     member_ids = response.parsed_response.map { |c| c["id"].to_i }.to_set
+    # Only a real name is worth copying onto a link.
+    names = response.parsed_response.to_h { |c| [c["id"].to_i, c["name"].is_a?(String) ? c["name"].strip : ""] }
     stats = { checked: 0, accessible: 0, inaccessible: 0 }
     # checked counts trackers; accessible and inaccessible count channels.
     where(work_completed_at: nil).includes(:project_tracker_links).find_each do |tracker|
       channel_ids = tracker.twist_channel_ids
       next if channel_ids.empty?
+      name_twist_channel_links!(tracker, names)
       inaccessible = channel_ids.reject { |id| member_ids.include?(id) }
       tracker.update_columns(twist_channels_inaccessible: inaccessible, twist_channel_checked_at: now)
       stats[:checked] += 1
@@ -450,6 +453,25 @@ class ProjectTracker < ApplicationRecord
     Stacks::TaskBuilder.clear_cache!
     stats
   end
+
+  # What a Twist link is called until someone, or the sync, names it.
+  TWIST_LINK_PLACEHOLDER_NAME = "Twist Channel".freeze
+
+  # Gives each Twist link that nobody has named the channel's real name, so
+  # the trackers index can tell two channels apart. A name a person typed is
+  # never replaced. (update_columns: no validations, so one legacy link with
+  # an odd URL cannot stop the whole check; and nothing is written when the
+  # name is already right.) Twist only lists the channels Stacksbot is in, so
+  # a channel it cannot read keeps its placeholder.
+  def self.name_twist_channel_links!(tracker, names)
+    tracker.project_tracker_links.each do |link|
+      next unless link.name.blank? || link.name == TWIST_LINK_PLACEHOLDER_NAME
+      name = names[link.twist_channel_id].presence
+      next if name.nil? || name == link.name
+      link.update_columns(name: name)
+    end
+  end
+  private_class_method :name_twist_channel_links!
 
   # A multiple select posts a blank beside its choices, and the ids travel to
   # Stacksbot over MCP, so the list is tidied and only pages Stacks has synced
@@ -512,7 +534,7 @@ class ProjectTracker < ApplicationRecord
   end
 
   # Preloads every association a rendered ProjectTracker row needs (runn_project,
-  # forecast_projects, capsule + satisfaction survey, lead periods + admin users) and
+  # forecast_projects, links, capsule + satisfaction survey, lead periods + admin users) and
   # batch-caches assignment edge bounds. Idempotent — associations already loaded are
   # skipped. Use this on any page that iterates a list of trackers and renders columns
   # depending on considered_successful?, work_status, current_*_leads, etc.
@@ -523,6 +545,7 @@ class ProjectTracker < ApplicationRecord
     ActiveRecord::Associations::Preloader.new.preload(list, [
       :runn_project,
       :forecast_projects,
+      :project_tracker_links,
       { project_capsule: :project_satisfaction_survey },
       { account_lead_periods: :admin_user },
       { project_lead_periods: :admin_user }
