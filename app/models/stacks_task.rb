@@ -65,6 +65,9 @@ class StacksTask
     runn_role_rate_mismatch: "Project tracker has Runn hours at a rate that matches none of its workstreams",
     runn_sync_stale: "Runn mirror has not synced in over #{ContributorProjections::STALE_AFTER_DAYS} days (projections are stale)",
 
+    # Onboarding course issues
+    course_assignment_overdue: "Assigned checklist is overdue",
+    course_assignment_needs_admin_sign_off: "Checklist needs an admin sign-off",
   }.freeze
 
   # type    — Symbol classifying the task (:project_capsule_incomplete, :survey, …)
@@ -118,6 +121,7 @@ class StacksTask
     when ForecastPerson then subject.try(:display_name).presence || subject.try(:name).presence || subject.try(:email).presence || "Forecast Person ##{subject.forecast_id}"
     when ForecastAssignment then subject.try(:name).presence || "Forecast Assignment ##{subject.forecast_id}"
     when AdminUser then subject.email
+    when CourseAssignment then "#{subject.admin_user&.email} — #{subject.course&.learner_title}"
     when Contributor then subject.forecast_person&.email || "Contributor ##{subject.id}"
     when Reimbursement
       if redact_amounts
@@ -193,6 +197,8 @@ class StacksTask
     when RunnProject then helpers.new_admin_project_tracker_path(project_tracker: { runn_project_id: subject.runn_id })
     # The fix lives in Runn (correct the email) or Forecast (add the person).
     when RunnPerson then subject.link
+    when CourseAssignment
+      helpers.respond_to?(:admin_course_assignment_path) ? helpers.admin_course_assignment_path(subject) : nil
     when System then helpers.admin_system_tasks_path
     else subject.try(:external_link)
     end

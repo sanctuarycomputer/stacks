@@ -663,6 +663,16 @@ namespace :stacks do
       puts "~~~> DOING MISC"
       Stacks::Notifications.make_notifications!
 
+      # Tick off what Stacks can now see for itself (Forecast account, payment
+      # profile, Human Operating Manual) before tasks are rebuilt. Isolated so
+      # a failure here never fails the daily pass.
+      begin
+        Stacks::Learning::Progress.refresh_all!
+      rescue => e
+        Rails.logger.error("[stacks:daily_tasks] Course progress refresh failed: #{e.class}: #{e.message}")
+        Sentry.capture_exception(e) if defined?(Sentry)
+      end
+
       puts "~~~> WARMING TASK BUILDER CACHE"
       Stacks::TaskBuilder.new.refresh!
 
