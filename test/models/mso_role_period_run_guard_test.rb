@@ -11,17 +11,27 @@ class MsoRolePeriodRunGuardTest < ActiveSupport::TestCase
     @exec = mso_person("guard-exec")
     @role = mso_role(@exec, tier: :chief, started_at: Date.new(2091, 1, 1))
     ledger = garden3d_ledger(@exec)
-    # March and May each have a true-up computed from this role period; a
-    # soft-deleted one counts as much as a live one.
-    [MARCH, MAY].each { |month| mso_trueup(mso_report(month), @role, ledger, amount: "100") }
-    MsoTrueup.where(periodic_report_id: mso_report(MARCH).id).each(&:destroy)
+    # March and May each have an ACCEPTED true-up computed from this role
+    # period; April's is not accepted, so April is still free to change.
+    [MARCH, MAY].each { |month| mso_trueup(mso_report(month), @role, ledger, amount: "100", accepted: true) }
+    mso_trueup(mso_report(Date.new(2091, 4, 1)), @role, ledger, amount: "100")
   end
 
   def teardown
     clear_enterprise_memos
   end
 
-  test "a role period a true-up was computed from cannot be destroyed; one never used can" do
+  test "until a true-up is accepted, the role period it was computed from can be changed or deleted" do
+    exec = mso_person("guard-unsettled")
+    role = mso_role(exec, tier: :chief, started_at: Date.new(2091, 1, 1))
+    mso_trueup(mso_report(MARCH), role, garden3d_ledger(exec), amount: "100")
+
+    assert_equal [], role.months_with_trueups
+    assert role.update(tier: :principal)
+    assert role.destroy
+  end
+
+  test "a role period an accepted true-up was computed from cannot be destroyed; one never used can" do
     assert_equal [MARCH, MAY], @role.months_with_trueups
 
     assert_equal false, @role.destroy

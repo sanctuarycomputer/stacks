@@ -102,6 +102,15 @@ class Enterprise < ApplicationRecord
     # Database only: a monthly report for each month that has none. Nothing
     # nightly computes a true-up; an admin syncs them from the report.
     garden3d_nightly_step("monthly_reports") { PeriodicReport.ensure_monthly_reports_exist! }
+    # QuickBooks READS only: re-read MSO bills that already exist, so a paid
+    # one is seen as paid. Cannot create or change a bill.
+    garden3d_nightly_step("bill_mirrors") do
+      failures = MsoTrueup.refresh_bill_mirrors!
+      if failures.any?
+        raise "bill mirror refresh failed for " +
+              failures.map { |id, error| "MsoTrueup #{id} (#{error})" }.join("; ").truncate(2000)
+      end
+    end
   end
 
   # As stacks:daily_enterprise_tasks reports its own steps: the log and Sentry.

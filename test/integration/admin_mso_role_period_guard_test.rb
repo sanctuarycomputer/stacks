@@ -4,11 +4,11 @@ class AdminMsoRolePeriodGuardTest < ActionDispatch::IntegrationTest
   include Devise::Test::IntegrationHelpers
   include MsoFixtures
 
-  test "deleting a role period a true-up was computed from is refused on the roster page, with the reason" do
+  test "deleting a role period an accepted true-up was computed from is refused on the roster page, with the reason" do
     garden3d_qbo_account
     exec = mso_person("guard-ui-exec")
     role = mso_role(exec, started_at: Date.new(2091, 1, 1))
-    mso_trueup(mso_report(Date.new(2091, 6, 1)), role, garden3d_ledger(exec), amount: "100")
+    mso_trueup(mso_report(Date.new(2091, 6, 1)), role, garden3d_ledger(exec), amount: "100", accepted: true)
     sign_in mso_admin
 
     assert_no_difference -> { MsoRolePeriod.count } do
