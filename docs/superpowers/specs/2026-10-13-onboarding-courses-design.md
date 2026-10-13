@@ -269,10 +269,12 @@ assignments, in any order. They can never complete an `auto_check` or
 Admins can impersonate anyone (`ApplicationController#current_admin_user`
 returns the impersonated person). To keep the record honest:
 
-- `complete_step` and `submit_quiz` are refused while `impersonating?`.
-- Every admin action (`sign_off_step`, `complete_step_for`, `grant_quiz_retry`,
-  `waive`, assigning, granting a qualification by hand) is authorised against
-  and stamped with `true_admin_user`, never the impersonated person.
+- While impersonating, `current_admin_user` (and so the authorization
+  adapter's `user`) is the impersonated person. **Every write action on a
+  checklist is refused while `impersonating?`** with "Stop impersonating
+  first": the person's own (`complete_step`, `submit_quiz`) and the admin ones
+  (`sign_off_step`, `complete_step_for`, `grant_quiz_retry`, `waive`). An
+  impersonating admin can still look at the page as the person sees it.
 - An admin cannot sign off or mark done a step on, grant a retry on, or waive
   their **own** assignment, and cannot grant themselves a qualification.
 
@@ -435,8 +437,7 @@ Member actions on `CourseAssignment`:
 | `grant_quiz_retry` (`learning_module_id`, `note`) | POST | admins, not the assignee |
 | `waive` (`waive_note`) | POST | admins, not the assignee |
 
-"The assignee" means the signed-in person and not an admin impersonating them;
-"admins" means `true_admin_user.is_admin?`.
+All POST actions are refused while impersonating.
 
 Every action re-verifies in the controller that the step or module belongs to
 this assignment's course, and that the acting user is allowed, independent of
@@ -548,8 +549,7 @@ stubs, integration tests with Devise helpers).
     off, grant a retry or waive;
   - an admin can sign off, mark a step done for someone, grant a retry and
     waive, and can do none of those on their own assignment;
-  - while impersonating, `complete_step` and `submit_quiz` are refused, and
-    admin actions are stamped with the true admin;
+  - while impersonating, every POST action on a checklist is refused;
   - the quiz page and a failed result contain no correct-answer or
     explanation text.
 - **Seed:** running the task twice creates each row once; an edited row is not
