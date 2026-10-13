@@ -74,8 +74,10 @@ class AdminGarden3dPassesAdminOnlyTest < ActionDispatch::IntegrationTest
     person.ensure_contributor_exists!
     contributor = person.reload.contributor
     ledger = Ledger.find_or_create_for(enterprise: enterprises(:sanctuary), contributor: contributor)
-    payout = ContributorPayout.create!(invoice_tracker: @legacy, ledger: ledger, amount: 100.0, created_by: @admin,
-                                       accepted_at: Time.current, description: "Legacy garden3d payout")
+    # It predates the rule that garden3d's invoices have no payouts.
+    payout = ContributorPayout.new(invoice_tracker: @legacy, ledger: ledger, amount: 100.0, created_by: @admin,
+                                   accepted_at: Time.current, description: "Legacy garden3d payout")
+    payout.save!(validate: false)
     [AdminUser.find(user.id), contributor, payout]
   end
 

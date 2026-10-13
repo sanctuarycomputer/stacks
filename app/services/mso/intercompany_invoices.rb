@@ -36,7 +36,7 @@ module Mso
       # make a second, and lists it on the tracker's edit page to be attached.
       def push_invoice!(invoice_tracker:)
         pass = invoice_tracker.invoice_pass
-        unless invoice_tracker.intercompany_invoice? && pass.start_of_month >= InvoicePass::INTERCOMPANY_START
+        unless invoice_tracker.garden3d? && pass.start_of_month >= InvoicePass::INTERCOMPANY_START
           raise Misconfigured, "InvoiceTracker #{invoice_tracker.id} is not one of " \
                                "#{Enterprise::GARDEN3D_NAME}'s intercompany invoices"
         end

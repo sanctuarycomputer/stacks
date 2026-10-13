@@ -66,7 +66,7 @@ class InvoicePassMakeTrackersTest < ActiveSupport::TestCase
     assert trackers.all? { |tracker| tracker.blueprint.nil? }
     assert trackers.all? { |tracker| tracker.qbo_account_id == @qbo_account.id }
     assert trackers.all? { |tracker| tracker.qbo_invoice_id.nil? }
-    assert trackers.all?(&:intercompany_invoice?)
+    assert trackers.all?(&:garden3d?)
   end
 
   test "an enterprise with no customer id in garden3d's QuickBooks gets no tracker" do

@@ -134,7 +134,7 @@ ActiveAdmin.register ContributorPayout do
     invoice_tracker = InvoiceTracker.find(params["invoice_tracker_id"])
     index_path = admin_invoice_tracker_contributor_payouts_path(invoice_tracker)
     return redirect_to(index_path, alert: "Admins only.") unless current_admin_user.is_admin?
-    if invoice_tracker.intercompany_invoice?
+    if invoice_tracker.garden3d?
       return redirect_to(index_path, alert: "garden3d's intercompany invoices have no contributor payouts.")
     end
 

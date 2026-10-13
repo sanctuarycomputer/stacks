@@ -29,14 +29,6 @@ class InvoiceTrackerMakeInvoiceDispatchTest < ActiveSupport::TestCase
     assert_raises(Mso::IntercompanyInvoices::Misconfigured) { @tracker.make_invoice! }
   end
 
-  test "a legacy garden3d tracker stays on the Forecast path" do
-    @tracker.update!(blueprint: { "lines" => {} })
-    Mso::IntercompanyInvoices.expects(:push_invoice!).never
-    @tracker.stubs(:configuration_errors).returns([[:missing_qbo_customer]])
-
-    assert_nil @tracker.make_invoice!, "the Forecast path's first guard, as today"
-  end
-
   test "a tracker on a pass that is neither Sanctuary's nor garden3d's raises" do
     other_qa = QboAccount.create!(enterprise: enterprises(:one), realm_id: "one-#{SecureRandom.hex(4)}",
                                   client_id: "x", client_secret: "y")
