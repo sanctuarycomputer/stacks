@@ -1,22 +1,21 @@
 module Stacks
   module Learning
-    # Builds a course from a YAML file. Create-only, so it is safe to re-run:
-    #   - a qualification is matched by name, a course and a module by slug;
-    #   - a module that already exists is left entirely alone (steps and
-    #     questions included);
-    #   - the course's module list is written only when the course is created.
-    # Anything an admin has since edited or removed therefore stays that way.
+    # Builds a course from a YAML file, once. If the course (matched by slug)
+    # already exists, nothing at all is created or changed, so a module an admin
+    # deleted, or one added to the YAML later, is never recreated as an orphan.
+    # Only when creating the course are its qualification (matched by name) and
+    # modules ensured (an existing module, matched by slug, is reused untouched)
+    # and attached in order.
     class Seeder
       def self.call(path)
         data = YAML.load_file(path)
 
         ActiveRecord::Base.transaction do
-          modules = data.fetch("modules").map { |attrs| ensure_module(attrs) }
-
           course_attrs = data.fetch("course")
-          course = Course.find_by(slug: course_attrs.fetch("slug"))
-          next course if course
+          existing = Course.find_by(slug: course_attrs.fetch("slug"))
+          next existing if existing
 
+          modules = data.fetch("modules").map { |attrs| ensure_module(attrs) }
           qualification = ensure_qualification(data.dig("qualification", "name"), "qualification", data.dig("qualification", "description"))
           course = Course.create!(
             name: course_attrs.fetch("name"),

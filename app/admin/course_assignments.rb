@@ -16,7 +16,7 @@ ActiveAdmin.register CourseAssignment do
     helper_method :checklist, :acting_as_assignee?, :acting_as_admin?
 
     # The REST actions bypass the member-action guards below, so they get their own.
-    before_action :refuse_while_impersonating!, only: [:new, :create, :edit, :update]
+    include RefusesWritesWhileImpersonating
     before_action :refuse_own_due_date_change!, only: [:edit, :update]
 
     def checklist
@@ -31,10 +31,6 @@ ActiveAdmin.register CourseAssignment do
     # An admin acting on someone else's checklist, as themselves.
     def acting_as_admin?
       !impersonating? && current_admin_user.is_admin? && current_admin_user.id != resource.admin_user_id
-    end
-
-    def refuse_while_impersonating!
-      redirect_to admin_course_assignments_path, alert: "Stop impersonating first." if impersonating?
     end
 
     # `resource` first, so ActiveAdmin's own authorization runs before ours.

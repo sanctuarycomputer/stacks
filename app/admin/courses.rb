@@ -4,6 +4,10 @@ ActiveAdmin.register Course do
     course_modules_attributes: [:id, :learning_module_id, :position, :_destroy]
   config.filters = false
 
+  controller do
+    include RefusesWritesWhileImpersonating
+  end
+
   index download_links: false do
     column :name
     column :learner_title
@@ -47,7 +51,7 @@ ActiveAdmin.register Course do
       f.input :description, hint: "Markdown. Shown to the person at the top of their checklist."
       f.input :grace_period_days, hint: "Days from assignment until it's due."
       f.input :auto_assign, hint: "Assign to every newly discovered company-email person. Existing people are not affected."
-      f.input :qualification, as: :select, collection: Qualification.where(kind: "qualification").order(:name)
+      f.input :qualification, as: :select, collection: Qualification.where(kind: "qualification").or(Qualification.where(id: f.object.qualification_id)).order(:name)
     end
     f.has_many :course_modules, heading: "Modules", allow_destroy: true, new_record: "Add a module" do |cm|
       cm.input :position

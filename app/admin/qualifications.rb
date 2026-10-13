@@ -3,6 +3,10 @@ ActiveAdmin.register Qualification do
   permit_params :name, :description, :kind
   config.filters = false
 
+  controller do
+    include RefusesWritesWhileImpersonating
+  end
+
   index download_links: false do
     column :name
     column :kind

@@ -6,17 +6,16 @@ ActiveAdmin.register QualificationGrant do
   includes :admin_user, :qualification, :granted_by
 
   controller do
+    include RefusesWritesWhileImpersonating
+
     # Granted by hand: stamped with the acting admin, never from the client,
-    # never while impersonating, and never to oneself.
+    # never while impersonating (the concern), and never to oneself.
     def create
       # This override bypasses build_resource, which is where ActiveAdmin
       # normally authorizes a create. Without this line anyone signed in could
       # POST a grant.
       authorize! :create, QualificationGrant
       attrs = permitted_params[:qualification_grant] || {}
-      if impersonating?
-        return redirect_to admin_qualification_grants_path, alert: "Stop impersonating first."
-      end
       if attrs[:admin_user_id].to_i == current_admin_user.id
         return redirect_to admin_qualification_grants_path, alert: "You can't grant yourself a qualification."
       end

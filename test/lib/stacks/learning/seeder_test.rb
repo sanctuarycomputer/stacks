@@ -24,13 +24,17 @@ class StacksLearningSeederTest < ActiveSupport::TestCase
   end
 
   test "person-facing copy avoids training language" do
-    texts = [DATA["course"]["learner_title"], DATA["course"]["description"]]
+    texts = [DATA["course"]["learner_title"], DATA["course"]["description"], DATA.dig("qualification", "name")]
     DATA["modules"].each do |mod|
-      texts << mod["name"] << mod["summary"]
+      texts << mod["name"] << mod["summary"] << mod["badge"]
       mod["steps"].each { |s| texts << s["title"] }
+      mod["questions"].each do |q|
+        texts << q["prompt"] << q["explanation"]
+        texts.concat(q["choices"])
+      end
     end
     texts.compact.each do |text|
-      assert_no_match(/\b(course|lesson|training|learner|quiz)\b/i, text)
+      assert_no_match(/\b(courses?|lessons?|trainings?|learners?|quiz(zes)?)\b/i, text)
     end
   end
 
@@ -70,10 +74,17 @@ class StacksLearningSeederTest < ActiveSupport::TestCase
     mod.quiz_questions.first.destroy!
     step = mod.module_steps.first
     step.update!(title: "Edited step")
-    course.course_modules.find_by!(learning_module: LearningModule.find_by!(slug: "onboarding-sign-off")).destroy!
+
+    sign_off = LearningModule.find_by!(slug: "onboarding-sign-off")
+    course.course_modules.find_by!(learning_module: sign_off).destroy!
+    sign_off.destroy!
+    counts = -> { [Course, LearningModule, CourseModule, ModuleStep, QuizQuestion, Qualification].map(&:count) }
+    before = counts.call
 
     Stacks::Learning::Seeder.call(PATH)
 
+    assert_nil LearningModule.find_by(slug: "onboarding-sign-off")
+    assert_equal before, counts.call
     course.reload
     assert course.auto_assign
     assert_equal "Edited title", course.learner_title

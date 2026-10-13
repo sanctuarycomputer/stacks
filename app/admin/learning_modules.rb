@@ -5,6 +5,10 @@ ActiveAdmin.register LearningModule do
     quiz_questions_attributes: [:id, :position, :prompt, :choices_text, :correct_index, :explanation, :_destroy]
   config.filters = false
 
+  controller do
+    include RefusesWritesWhileImpersonating
+  end
+
   index download_links: false do
     column :name
     column :slug
@@ -58,7 +62,7 @@ ActiveAdmin.register LearningModule do
       f.input :summary, hint: "Markdown. Shown to the person above the steps."
       f.input :notion_url
       f.input :quiz_pass_percent, hint: "Only used if the module has questions."
-      f.input :qualification, as: :select, collection: Qualification.where(kind: "badge").order(:name),
+      f.input :qualification, as: :select, collection: Qualification.where(kind: "badge").or(Qualification.where(id: f.object.qualification_id)).order(:name),
         hint: "Optional badge granted when someone finishes this module."
     end
     f.has_many :module_steps, heading: "Steps", allow_destroy: true, new_record: "Add a step" do |s|
