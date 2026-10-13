@@ -125,4 +125,20 @@ class AdminAuthorizationMsoTest < ActiveSupport::TestCase
     assert_not_includes AdminAuthorization::OWN_LEDGER_ITEM_CLASSES, MsoTrueup
     assert_not_includes AdminAuthorization::OWN_LEDGER_ITEM_CLASSES, MsoSnapshot
   end
+
+  # Deleting a founder true-up deletes its QuickBooks bill, and for a month
+  # the MSO pays the nightly sync will not write it again.
+  test "only an admin may delete a founder true-up; a lead may still read one" do
+    sanctuary_ledger = Ledger.find_or_create_for(enterprise: enterprises(:sanctuary), contributor: @exec)
+    trueup = Trueup.create!(invoice_pass: @snapshot.sanctuary_invoice_pass, ledger: sanctuary_ledger,
+                            amount: "4000", description: "founder true-up")
+
+    [trueup, Trueup].each do |subject|
+      assert auth_for(@admin).authorized?(:destroy, subject)
+      refute auth_for(@lead).authorized?(:destroy, subject), "a lead must not destroy #{subject}"
+      refute auth_for(@exec_login).authorized?(:destroy, subject)
+      refute auth_for(@nobody).authorized?(:destroy, subject)
+      assert auth_for(@lead).authorized?(:read, subject), "a lead reads all, as before"
+    end
+  end
 end

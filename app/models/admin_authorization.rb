@@ -82,6 +82,14 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
       return user.is_admin?
     end
 
+    # Deleting a founder true-up deletes its QuickBooks bill in that company's
+    # books (Trueup's before_destroy), and for a month the MSO pays the
+    # nightly sync will not write it again. Must stay above the blanket lead
+    # grant; ActiveAdmin hides the Delete control from whoever this refuses.
+    if (subject.is_a?(Trueup) || subject == Trueup) && action == :destroy
+      return user.is_admin?
+    end
+
     # Opt-out sign-off polices project leads, so it must sit above the blanket
     # lead grant below — otherwise every lead could approve their own bypass.
     if subject.is_a?(ProjectCapsule) || subject == ProjectCapsule
