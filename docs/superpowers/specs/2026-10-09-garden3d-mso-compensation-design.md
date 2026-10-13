@@ -1165,3 +1165,68 @@ writes to QuickBooks except on an admin's click.
 - Trailing-month smoothing
 - Automatic month-end triggering; passes stay admin-created except garden3d's,
   which `Mso::MonthlyRun` creates
+
+## 13d. MSO true-ups follow the profit share model (owner, 2026-10-13)
+
+The owner's review of S2/S3: an MSO true-up is to a monthly `PeriodicReport`
+what a `ProfitShare` is to a quarterly one. Follow that model one-to-one.
+Where §7–§13b differ from this section, **this section governs**.
+
+**The model**
+
+| Profit share | MSO |
+|---|---|
+| `PeriodicReport` (quarter), `blueprint` | `PeriodicReport` (month), `blueprint` |
+| `has_many :profit_shares` | `has_many :mso_trueups` |
+| `ProfitShare` (report, ledger, amount, blueprint, accepted_at, qbo_bill_id) | `MsoTrueup`, same columns plus `description` |
+| `sync_profit_shares!` | `sync_mso_trueups!` |
+| `all_profit_shares_accepted?` | `all_mso_trueups_accepted?` |
+
+- **`MsoSnapshot` is gone**: no table, model, admin page or authorization
+  rule. No superseding, invalidation, drift, run warnings or collection stamp.
+- **`PeriodicReport#sync_mso_trueups!`** mirrors `sync_profit_shares!` line for
+  line. It returns at once when the report has true-ups and all are accepted
+  (**settled**). Otherwise it recomputes the month, creates or updates one
+  `MsoTrueup` per executive owed money on their garden3d ledger (amount, and
+  that executive's line as its `blueprint`), clears `accepted_at` when a
+  non-zero amount changes, restores a soft-deleted row, and destroys rows no
+  longer owed (`destroy_fully!`, skipping one whose bill is paid). It then
+  writes the month's figures (fee income, cap, benchmark, totals,
+  reconciliation, `generated_at`) to the report's `blueprint` and clears its
+  `notification`. Any error is caught, reported through
+  `Stacks::Notifications.report_exception`, and stored as the report's
+  `notification`, exactly as profit shares do. Nothing is immutable before
+  settlement, and that is intended.
+- **The calculation is unchanged**: `Mso::Benchmark`, `Mso::Compensation`,
+  `Ledger::QualifyingIncome`, `Mso::ManagementFeeIncome.reconcile!`, the cap,
+  flooring to the cent. `Mso::MonthlyRun` shrinks to the computation
+  (`.compute(month:, today:)`, no writes) and keeps the checks that protect
+  the figures, each as a raised error the sync records: the month has ended;
+  it is August 2026 or later; Sanctuary's pass exists, is complete and has
+  payouts; one role period per person; each executive has a QuickBooks-bound
+  garden3d ledger; no founder `Trueup` for a rostered person in the month;
+  account 4100 reconciles with the attached invoices' fee lines.
+- **`MsoTrueup#payable?`** is `periodic_report.all_mso_trueups_accepted?`, as a
+  profit share's is, **and** garden3d's pass for the month answers
+  `management_fee_collected?` (the stored-mirror rule; no QuickBooks call).
+  The second half is the one deliberate departure: executives are paid only
+  from a fee that has been collected. `payment_date`/`bill_txn_date` stay the
+  last day of the fee month.
+- **Acceptance** is a plain toggle, as a profit share's, except that a true-up
+  with a QuickBooks bill cannot be un-accepted (its amount is in QuickBooks).
+- **QuickBooks bills** are still created only by an admin's click on the Money
+  page; `MsoTrueup` stays out of the nightly `stacks:sync_contributor_qbo_bills`
+  task. `sync_qbo_bill!` refuses unless `payable?`, and says so when the
+  contributor has no garden3d vendor or the MSO account is not configured.
+  The first-bill recomputation, bill-gone handling, `remove_qbo_bill!` and the
+  read-only bill mirror refresh are removed.
+- **Reports**: the nightly garden3d step makes sure a monthly report exists for
+  every month from `InvoicePass::INTERCOMPANY_START` through last month
+  (database only). **Syncing is an admin's click** on the report, as for profit
+  shares. The reports index has "Quarterly" (default) and "Monthly" scopes; a
+  monthly report's page shows the month's figures and its true-ups. Reports
+  are read by whoever can read them today (admins and leads). Anything that
+  lists `PeriodicReport`s for quarterly purposes filters to quarters.
+  `PeriodicReport#period` ends at the end of the month for a monthly report.
+- **Migrations** (neither has run on production): `20261014000001` creates
+  `mso_trueups` in its new shape only; `20261014000002` is deleted.
