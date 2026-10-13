@@ -82,12 +82,19 @@ class AdminCourseAssignmentsTest < ActionDispatch::IntegrationTest
     get admin_course_assignment_path(theirs)
     assert_not_equal 200, response.status
     assert_not_includes response.body.to_s, @read.title
-    post complete_step_admin_course_assignment_path(theirs, step_id: @read.id)
-    assert_not done?(@other, @read)
+    assert_no_difference "StepCompletion.count" do
+      post complete_step_admin_course_assignment_path(theirs, step_id: @read.id)
+    end
+    [@read, @auto, @sign_off].each { |s| complete_step!(@other, s) }
     get quiz_admin_course_assignment_path(theirs, learning_module_id: @mod.id)
     assert_not_equal 200, response.status
     post submit_quiz_admin_course_assignment_path(theirs, learning_module_id: @mod.id), params: { answers: all_right }
     assert_equal 0, QuizAttempt.count
+
+    sign_out @person
+    sign_in @other
+    get quiz_admin_course_assignment_path(theirs, learning_module_id: @mod.id)
+    assert_response :success, "positive control: the quick check really is open for its owner"
   end
 
   test "a person gets no index" do
@@ -96,15 +103,27 @@ class AdminCourseAssignmentsTest < ActionDispatch::IntegrationTest
     assert_not_equal 200, response.status
   end
 
-  test "a person cannot sign off, mark done for, grant a retry or waive, even on their own" do
+  test "a person cannot sign off, mark done for or waive, even on their own" do
+    complete_step!(@person, @read)
+    complete_step!(@person, @auto, source: "auto")
     sign_in @person
     post sign_off_step_admin_course_assignment_path(@assignment, step_id: @sign_off.id)
-    post complete_step_for_admin_course_assignment_path(@assignment, step_id: @auto.id)
-    post grant_quiz_retry_admin_course_assignment_path(@assignment, learning_module_id: @mod.id)
+    assert_not done?(@person, @sign_off), "the sign-off was ready"
+    post complete_step_for_admin_course_assignment_path(@assignment, step_id: @sign_off.id)
+    other_mod = learning_module!(steps: ["do"])
+    @course.course_modules.create!(learning_module: other_mod, position: 5)
+    post complete_step_for_admin_course_assignment_path(@assignment, step_id: other_mod.module_steps.first.id)
+    assert_not done?(@person, other_mod.module_steps.first)
     post waive_admin_course_assignment_path(@assignment), params: { waive_note: "nope" }
-    assert_equal 0, StepCompletion.where(admin_user: @person).count
-    assert_equal 0, QuizRetryGrant.count
     assert_nil @assignment.reload.waived_at
+  end
+
+  test "a person cannot grant themselves a retry when locked out" do
+    [@read, @auto, @sign_off].each { |s| complete_step!(@person, s) }
+    2.times { QuizAttempt.create!(admin_user: @person, learning_module: @mod, correct_count: 0, question_count: 2) }
+    sign_in @person
+    post grant_quiz_retry_admin_course_assignment_path(@assignment, learning_module_id: @mod.id)
+    assert_equal 0, QuizRetryGrant.count
   end
 
   # ── the quick check ───────────────────────────────────────────────────────
@@ -230,6 +249,8 @@ class AdminCourseAssignmentsTest < ActionDispatch::IntegrationTest
     complete_step!(@admin, @auto, source: "auto")
     post sign_off_step_admin_course_assignment_path(mine, step_id: @sign_off.id)
     assert_not done?(@admin, @sign_off)
+    complete_step!(@admin, @sign_off)
+    2.times { QuizAttempt.create!(admin_user: @admin, learning_module: @mod, correct_count: 0, question_count: 2) }
     post grant_quiz_retry_admin_course_assignment_path(mine, learning_module_id: @mod.id)
     assert_equal 0, QuizRetryGrant.count
     post waive_admin_course_assignment_path(mine)
@@ -291,6 +312,9 @@ class AdminCourseAssignmentsTest < ActionDispatch::IntegrationTest
 
     post complete_step_admin_course_assignment_path(@assignment, step_id: @read.id)
     assert_not done?(@person, @read)
+    ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: @person.email, data: {})
+    post recheck_admin_course_assignment_path(@assignment)
+    assert_equal 0, StepCompletion.where(admin_user: @person).count, "a real recheck would have completed the auto step"
     finish.call
     post sign_off_step_admin_course_assignment_path(@assignment, step_id: @sign_off.id)
     assert_not done?(@person, @sign_off)
@@ -299,6 +323,7 @@ class AdminCourseAssignmentsTest < ActionDispatch::IntegrationTest
     assert_equal 0, QuizAttempt.count
     post waive_admin_course_assignment_path(@assignment)
     assert_nil @assignment.reload.waived_at
+    2.times { QuizAttempt.create!(admin_user: @person, learning_module: @mod, correct_count: 0, question_count: 2) }
     post grant_quiz_retry_admin_course_assignment_path(@assignment, learning_module_id: @mod.id)
     assert_equal 0, QuizRetryGrant.count
   end
@@ -311,6 +336,102 @@ class AdminCourseAssignmentsTest < ActionDispatch::IntegrationTest
     assert_not done?(@person, @auto)
     post waive_admin_course_assignment_path(@assignment)
     assert_nil @assignment.reload.waived_at
+
+    complete_step!(@person, @read)
+    complete_step!(@person, @auto, source: "auto")
+    post sign_off_step_admin_course_assignment_path(@assignment, step_id: @sign_off.id)
+    assert_not done?(@person, @sign_off)
+    complete_step!(@person, @sign_off)
+    2.times { QuizAttempt.create!(admin_user: @person, learning_module: @mod, correct_count: 0, question_count: 2) }
+    post grant_quiz_retry_admin_course_assignment_path(@assignment, learning_module_id: @mod.id)
+    assert_equal 0, QuizRetryGrant.count
+  end
+
+  test "an admin impersonating another admin cannot reach the assignment REST actions" do
+    second = learning_person!(prefix: "second", roles: ["admin"])
+    sign_in @admin
+    post impersonate_admin_admin_user_path(second)
+    course = learning_course!(modules: [learning_module!])
+    assert_no_difference "CourseAssignment.count" do
+      post admin_course_assignments_path, params: { course_assignment: { admin_user_id: @other.id, course_id: course.id } }
+    end
+    original = @assignment.due_on
+    patch admin_course_assignment_path(@assignment), params: { course_assignment: { due_on: (Date.today + 90).to_s } }
+    assert_equal original, @assignment.reload.due_on
+    get new_admin_course_assignment_path
+    assert_redirected_to admin_course_assignments_path
+    get edit_admin_course_assignment_path(@assignment)
+    assert_redirected_to admin_course_assignments_path
+  end
+
+  test "an admin cannot change the due date on their own assignment, but can on someone else's" do
+    mine = learning_assign!(@admin, @course)
+    original = mine.due_on
+    sign_in @admin
+    patch admin_course_assignment_path(mine), params: { course_assignment: { due_on: (Date.today + 90).to_s } }
+    assert_equal original, mine.reload.due_on
+    get edit_admin_course_assignment_path(mine)
+    assert_redirected_to admin_course_assignments_path
+
+    patch admin_course_assignment_path(@assignment), params: { course_assignment: { due_on: (Date.today + 90).to_s } }
+    assert_equal Date.today + 90, @assignment.reload.due_on
+  end
+
+  test "update tolerates a malformed course_assignment param" do
+    sign_in @admin
+    original = @assignment.due_on
+    patch admin_course_assignment_path(@assignment), params: { course_assignment: "x" }
+    assert_equal original, @assignment.reload.due_on
+  end
+
+  test "a double submit does not 500 when a person ticks a step" do
+    StepCompletion.stubs(:create!).raises(ActiveRecord::RecordNotUnique)
+    sign_in @person
+    post complete_step_admin_course_assignment_path(@assignment, step_id: @read.id)
+    assert_redirected_to admin_course_assignment_path(@assignment)
+  end
+
+  test "a double submit does not 500 when an admin marks a step done" do
+    StepCompletion.stubs(:create!).raises(ActiveRecord::RecordNotUnique)
+    sign_in @admin
+    post complete_step_for_admin_course_assignment_path(@assignment, step_id: @auto.id)
+    assert_redirected_to admin_course_assignment_path(@assignment)
+  end
+
+  test "a double submit does not 500 when an admin signs off" do
+    complete_step!(@person, @read)
+    complete_step!(@person, @auto, source: "auto")
+    StepCompletion.stubs(:create!).raises(ActiveRecord::RecordInvalid)
+    sign_in @admin
+    post sign_off_step_admin_course_assignment_path(@assignment, step_id: @sign_off.id)
+    assert_redirected_to admin_course_assignment_path(@assignment)
+  end
+
+  # ── quick check review gating ─────────────────────────────────────────────
+
+  test "a module completion without a passed attempt does not unlock explanations" do
+    ModuleCompletion.create!(admin_user: @person, learning_module: @mod, completed_at: Time.current)
+    sign_in @person
+    get quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id)
+    assert_redirected_to admin_course_assignment_path(@assignment)
+    assert_not_includes response.body, "Because 0."
+  end
+
+  test "an admin cannot preview answers on their own checklist before taking it" do
+    mine = learning_assign!(@admin, @course)
+    sign_in @admin
+    get quiz_admin_course_assignment_path(mine, learning_module_id: @mod.id)
+    assert_redirected_to admin_course_assignment_path(mine)
+    assert_not_includes response.body, "Because 0."
+  end
+
+  test "an admin can review someone else's locked quick check" do
+    [@read, @auto, @sign_off].each { |s| complete_step!(@person, s) }
+    2.times { QuizAttempt.create!(admin_user: @person, learning_module: @mod, correct_count: 0, question_count: 2) }
+    sign_in @admin
+    get quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id)
+    assert_response :success
+    assert_includes response.body, "Because 0."
   end
 
   # ── past project leads (the blanket grant in AdminAuthorization) ──────────
@@ -329,8 +450,10 @@ class AdminCourseAssignmentsTest < ActionDispatch::IntegrationTest
     assert_not done?(@person, @read)
     post waive_admin_course_assignment_path(@assignment)
     assert_nil @assignment.reload.waived_at
+    complete_step!(@person, @read)
+    complete_step!(@person, @auto, source: "auto")
     post sign_off_step_admin_course_assignment_path(@assignment, step_id: @sign_off.id)
-    assert_not done?(@person, @sign_off)
+    assert_not done?(@person, @sign_off), "the sign-off was ready"
   end
 
   test "an overdue task links to the checklist" do

@@ -15,6 +15,10 @@ ActiveAdmin.register CourseAssignment do
   controller do
     helper_method :checklist, :acting_as_assignee?, :acting_as_admin?
 
+    # The REST actions bypass the member-action guards below, so they get their own.
+    before_action :refuse_while_impersonating!, only: [:new, :create, :edit, :update]
+    before_action :refuse_own_due_date_change!, only: [:edit, :update]
+
     def checklist
       @checklist ||= Stacks::Learning::Checklist.new(resource)
     end
@@ -27,6 +31,26 @@ ActiveAdmin.register CourseAssignment do
     # An admin acting on someone else's checklist, as themselves.
     def acting_as_admin?
       !impersonating? && current_admin_user.is_admin? && current_admin_user.id != resource.admin_user_id
+    end
+
+    def refuse_while_impersonating!
+      redirect_to admin_course_assignments_path, alert: "Stop impersonating first." if impersonating?
+    end
+
+    # `resource` first, so ActiveAdmin's own authorization runs before ours.
+    def refuse_own_due_date_change!
+      return if resource.admin_user_id != current_admin_user.id
+      redirect_to admin_course_assignments_path, alert: "You can't change your own due date."
+    end
+
+    # Records one step as done. A double click or a racing request finds the row
+    # already there; that is not an error.
+    def record_completion!(step, **attrs)
+      StepCompletion.create!(admin_user: resource.admin_user, module_step: step, completed_at: Time.current, **attrs)
+      true
+    rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique
+      back(notice: "That was already done.")
+      false
     end
 
     def back(flash_opts = {})
@@ -70,7 +94,9 @@ ActiveAdmin.register CourseAssignment do
 
     # Only due_on is editable after creation.
     def update
-      params[:course_assignment] = ActionController::Parameters.new(due_on: params.dig(:course_assignment, :due_on))
+      submitted = params[:course_assignment]
+      due_on = submitted.respond_to?(:key?) ? submitted[:due_on] : nil
+      params[:course_assignment] = ActionController::Parameters.new(due_on: due_on)
       super
     end
   end
@@ -122,26 +148,27 @@ ActiveAdmin.register CourseAssignment do
     if state.nil? || state.done? || !%w[read do].include?(state.step.kind)
       next back(alert: "That step can't be marked done here.")
     end
-    StepCompletion.create!(admin_user: resource.admin_user, module_step: state.step, completed_at: Time.current, source: "self")
+    next unless record_completion!(state.step, source: "self")
     safe_refresh!(resource.admin_user)
     back(notice: "Done.")
   end
 
   member_action :quiz, method: :get do
     @module_state = module_state_from_params
-    viewer_may_review = current_admin_user.is_admin? && !impersonating?
     if @module_state.nil? || !@module_state.has_quiz?
       next back(alert: "There is no quick check here.")
     end
     case @module_state.quiz_state
     when :passed
+      # A ModuleCompletion alone is not a pass (questions may have been added after).
+      next back(alert: "There's nothing to review here.") unless @module_state.passed? || acting_as_admin?
       @review = true
     when :open
       next back(alert: "Stop impersonating first.") if impersonating?
       next back(alert: "Only the person can take their quick check.") unless acting_as_assignee?
       @review = false
     else
-      next back(alert: "The quick check isn't open.") unless viewer_may_review
+      next back(alert: "The quick check isn't open.") unless acting_as_admin?
       @review = true
     end
     @page_title = "Quick check: #{@module_state.learning_module.name}"
@@ -167,8 +194,7 @@ ActiveAdmin.register CourseAssignment do
     next unless require_admin!
     state = step_state_from_params
     next back(alert: "That step isn't ready to sign off.") if state.nil? || !state.ready
-    StepCompletion.create!(admin_user: resource.admin_user, module_step: state.step, completed_at: Time.current,
-                           source: "admin", completed_by: current_admin_user)
+    next unless record_completion!(state.step, source: "admin", completed_by: current_admin_user)
     safe_refresh!(resource.admin_user)
     back(notice: "Signed off.")
   end
@@ -179,8 +205,7 @@ ActiveAdmin.register CourseAssignment do
     if state.nil? || state.done? || state.step.kind == "admin_sign_off"
       next back(alert: "That step can't be marked done here.")
     end
-    StepCompletion.create!(admin_user: resource.admin_user, module_step: state.step, completed_at: Time.current,
-                           source: "admin", completed_by: current_admin_user)
+    next unless record_completion!(state.step, source: "admin", completed_by: current_admin_user)
     safe_refresh!(resource.admin_user)
     back(notice: "Marked done for #{resource.admin_user.email}.")
   end
