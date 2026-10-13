@@ -33,7 +33,7 @@ class StacksNotionFilteredSyncTest < ActiveSupport::TestCase
   end
 
   # The Problems database is small and an observation's problems must always
-  # be in the table for the escalated check, so every Problem is synced.
+  # be in the table for the flags, so every Problem is synced.
   test "Problems are asked for whole: no project clause and no 90-day bound" do
     client = FakeNotion.new
     stats = sync_with(client).sync(:PROBLEMS)
@@ -41,6 +41,27 @@ class StacksNotionFilteredSyncTest < ActiveSupport::TestCase
     assert_equal({ and: [{ timestamp: "last_edited_time", last_edited_time: { on_or_after: "2000-01-01T00:00:00Z" } }] },
                  client.queries.first[:filter])
     assert_equal "backfill", stats[:mode]
+  end
+
+  # Editing a formula in Notion changes its result on every page without
+  # touching last_edited_time, so the usual run never asks for those pages.
+  # A full run asks for everything again and stores what changed.
+  test "a full run stores a formula result that changed without the page being edited" do
+    edited = NOW - 20.days
+    before = problem_data(name: "Timeline slipping", flag: "", edited: edited, last_seen: edited)
+    sync_with(FakeNotion.new(pages: { PROB => [[before]] })).sync(:PROBLEMS)
+    stored = NotionPage.find_by!(notion_id: before["id"])
+    assert_not stored.as_problem.flag?
+
+    after = before.deep_dup
+    after["properties"]["Flag"]["formula"]["string"] = "High severity problem. Nobody owns it yet."
+    client = FakeNotion.new(pages: { PROB => [[after]] })
+    later = sync_with(client, now: NOW + 1.day)
+    assert_operator later.window_for(:PROBLEMS).first, :>, edited, "the usual run asks only for pages edited since, so it would not be sent this one"
+    stats = later.sync(:PROBLEMS, mode: :backfill)
+    assert_equal "2000-01-01T00:00:00Z", client.queries.first[:filter][:and].last[:last_edited_time][:on_or_after]
+    assert_equal 1, stats[:updated]
+    assert_equal "High severity problem. Nobody owns it yet.", stored.reload.as_problem.flag_reason
   end
 
   test "a problem with no project is stored, under no tracker" do

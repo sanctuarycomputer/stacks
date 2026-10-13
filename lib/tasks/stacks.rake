@@ -465,11 +465,20 @@ namespace :stacks do
   # run, upserts them into notion_pages and never deletes a row it did not
   # see. NOT the whole-database sync above, which must never be pointed at
   # these two databases.
-  desc "Sync Stacksbot's Observations and Problems from Notion for the project log"
-  task :sync_notion_log => :environment do
+  #
+  #   rake stacks:sync_notion_log            the rows edited since the last run
+  #   rake "stacks:sync_notion_log[full]"    every Problem, and 90 days of Observations
+  #
+  # Run it with [full] after changing a formula in Notion (the Flag formula,
+  # say). A formula's new result does not count as an edit of the page, so the
+  # usual run, which asks for pages edited since the last one, never sees it.
+  desc "Sync Stacksbot's Observations and Problems from Notion for the project log ([full] to re-read everything)"
+  task :sync_notion_log, [:mode] => :environment do |_t, args|
+    mode = args[:mode].presence
+    raise ArgumentError, "mode must be full, or left out" unless [nil, "full"].include?(mode)
     system_task = SystemTask.create!(name: "stacks:sync_notion_log")
     begin
-      stats = Stacks::Notion::FilteredSync.run!
+      stats = mode == "full" ? Stacks::Notion::FilteredSync.run!(mode: :backfill) : Stacks::Notion::FilteredSync.run!
       Rails.logger.info("[sync_notion_log] #{stats.to_json}")
       system_task.mark_as_success
     rescue => e

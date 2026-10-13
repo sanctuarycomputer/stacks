@@ -44,11 +44,13 @@ class Stacks::Notion::FilteredSync
       "Name" => "title", "Observation" => "rich_text", "Source" => "select", "Source Ref" => "url",
       "Observed At" => "date", "Salience" => "select", "Type" => "select", "Status" => "select",
       "Projects" => "relation", "Problems" => "relation", Stacks::Notion::Observation::VALENCE_PROPERTY => "select",
+      Stacks::Notion::Flag::PROPERTY => "formula",
     }.freeze,
     PROBLEMS: {
       "Problem" => "title", "Kind" => "select", "Severity" => "select", "Status" => "select", "Owner" => "people",
       "Owner Name" => "rich_text", "Project" => "relation", "Source Observations" => "relation",
-      "Occurrences" => "number", "First Seen" => "date", "Last Seen" => "date",
+      "Occurrences" => "number", "First Seen" => "date", "Last Seen" => "date", "Proposed Action" => "rich_text",
+      Stacks::Notion::Flag::PROPERTY => "formula",
     }.freeze,
   }.freeze
 

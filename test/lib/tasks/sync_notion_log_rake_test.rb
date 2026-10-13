@@ -37,6 +37,22 @@ class SyncNotionLogRakeTest < ActiveSupport::TestCase
     assert_nil task.notification_id
   end
 
+  # A formula's new result (the Flag formula, say) is not an edit of the page,
+  # so only a run that re-reads everything picks it up.
+  test "sync_notion_log[full] re-reads everything, and any other mode is refused before anything runs" do
+    Stacks::Notion::FilteredSync.expects(:run!).once.with(mode: :backfill).returns(STATS)
+    Stacks::Notifications.expects(:report_exception).never
+    assert_difference -> { SystemTask.where(name: "stacks:sync_notion_log").count }, 1 do
+      Rake::Task["stacks:sync_notion_log"].invoke("full")
+    end
+    assert last_task("stacks:sync_notion_log").settled_at.present?
+
+    Rake::Task["stacks:sync_notion_log"].reenable
+    assert_no_difference -> { SystemTask.count } do
+      assert_raises(ArgumentError) { Rake::Task["stacks:sync_notion_log"].invoke("everything") }
+    end
+  end
+
   test "sync_notion_log records an error when the sync raises" do
     error = Stacks::Notion::Error.new("Notion query of database x failed (400): bad filter", status: 400)
     Stacks::Notion::FilteredSync.stubs(:run!).raises(error)
