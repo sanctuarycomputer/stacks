@@ -245,6 +245,12 @@ taking an `AdminUser`:
 `payment_profile` therefore needs a Forecast account first; that is how Stacks
 finds a person's ledger at all.
 
+Each check has an **owner**. `forecast_account` and `human_operating_manual`
+are the person's: only they can make them true. `payment_profile` is the
+**admin's**: the person accepts the QuickBooks invite or finishes Deel, but the
+check only turns true when an admin links the vendor or Deel profile to their
+contributor record in Stacks, which a non-admin cannot do.
+
 `ModuleStep` validates `auto_check_key` against the registry's keys. The admin
 form offers the registry as a select. `refresh_all!` builds the set of manual
 emails once and passes it to the check, rather than scanning the Notion mirror
@@ -338,7 +344,7 @@ Two new `StacksTask` types, produced by a new discovery
 | Type | Label | Owners | Emitted when |
 |---|---|---|---|
 | `course_assignment_overdue` | "Assigned checklist is overdue" | the person | assignment is open, `due_on < Date.today`, the person is eligible, and the person has something of their own left to do |
-| `course_assignment_needs_admin_sign_off` | "Checklist needs an admin sign-off" | all admins except the assignee | assignment is open, the person is eligible, and it has at least one ready, incomplete sign-off step |
+| `course_assignment_needs_admin_sign_off` | "Checklist is waiting on an admin" | all admins except the assignee | assignment is open, the person is eligible, and it has a ready, incomplete sign-off step (or, once past due, an incomplete admin-owned auto-check) |
 
 A person is **eligible** when they are not `ignore`d and have not left: they
 have no `full_time_periods` at all (a brand-new account, before Christian adds
@@ -349,11 +355,18 @@ mailbox account `ignore` silences both tasks for it.
 "Something of their own left to do" means an incomplete `read`, `do` or
 `auto_check` step, or a module whose steps are done and whose quiz is not
 passed **and still has attempts left**. A person waiting only on an admin
-sign-off, or locked out of a quiz and waiting for an admin to allow another
-attempt, is not overdue: an admin's delay never puts a pill on someone's
-payout. Auto-checks count as the person's own because each needs them to act
-first (accept the QuickBooks invite, finish Deel, join Forecast); where that
-is not true for someone, an admin marks the step done for them.
+sign-off, an admin-owned auto-check, or locked out of a quiz and waiting for an
+admin to allow another attempt, is not overdue: an admin's delay never puts a
+pill on someone's payout. Person-owned auto-checks count as the person's own;
+where one can never come true for someone, an admin marks the step done for
+them.
+
+The admin task (`course_assignment_needs_admin_sign_off`, labelled "Checklist
+is waiting on an admin") is emitted when a sign-off step is ready, **or** when
+the assignment is past `due_on` and an admin-owned auto-check is still
+incomplete. Waiting until the due date for the latter avoids nagging every
+admin about each new person from their first day, while guaranteeing a
+checklist can never sit stuck on an admin with nobody told.
 
 If the sign-off task would have no owner (the assignee is the only admin), it
 is not emitted; it must not fall back to the assignee.

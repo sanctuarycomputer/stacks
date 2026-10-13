@@ -65,12 +65,12 @@ modules:
     questions:
       - prompt: "As an Individual Contributor, what is the most you can be paid for your work on a client engagement?"
         choices:
-          - "5% of net amounts billed to the client for the whole engagement"
-          - "8% of net amounts billed to the client for the first year"
-          - "54% of net amounts billed to the client specifically for your work"
+          - "Up to 25% of what the client is billed for your work"
+          - "Up to 40% of what the client is billed for your work"
+          - "Up to 54% of what the client is billed for your work"
           - "100% of your hourly rate, regardless of what the client is billed"
         correct_index: 2
-        explanation: "Roles and Compensation: the Individual Contributor is paid a maximum of 54% of net amounts billed to the client specifically from their work. The Account Lead is paid 8% and the Project Lead 5%."
+        explanation: "Roles and Compensation: an Individual Contributor is paid a maximum of 54% of the net amounts billed to the client specifically for their work."
       - prompt: "Under pay when paid, when is your compensation for a pay period released?"
         choices:
           - "On the earlier of: the client paying the corresponding invoice, or 90 days after your submitted invoice"
@@ -195,14 +195,14 @@ modules:
           - "admin@garden3d.net"
         correct_index: 1
         explanation: "Wayfinding, 'Who to ask': project-related questions, craft and process go to the Project Lead. Client and account questions (scope, hiring, team underperformance) go to the Account Lead."
-      - prompt: "You have a general question about how to navigate the organization and do not know who owns it. What is your first port of call?"
+      - prompt: "You have a question about the scope of the client engagement you are working on. Who does Wayfinding say to ask?"
         choices:
-          - "DM Christian Perez on Twist"
-          - "Email your client contact"
-          - "Wait for the Quarterly Business Review"
-          - "Ask your Account Lead to raise it at the Business Meeting"
+          - "Your Account Lead"
+          - "Your Project Lead"
+          - "The client, directly"
+          - "Whoever is online in Twist"
         correct_index: 0
-        explanation: "Wayfinding, 'Who to ask': for general questions about navigating the organization, DM Christian on Twist as your first port of call. He is also the contact for payments, Wayfinding, software access and GCA contracts."
+        explanation: "Wayfinding, 'Who to ask': client and account questions such as scope, hiring and team underperformance go to the Account Lead. Craft and process questions on the project go to the Project Lead."
       - prompt: "Which company meeting is mainly for Account Leads, Project Leads and Operations to sync on new business and current projects?"
         choices:
           - "The Monthly Retro"
