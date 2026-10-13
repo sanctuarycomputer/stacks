@@ -51,6 +51,17 @@ class Stacks::TaskBuilder::Discoveries::UnacceptedMsoTrueupsTest < ActiveSupport
     assert_empty tasks.select { |task| task.subject == @exec }
   end
 
+  # Accepting it would pay nobody: the month has to be run again first, and
+  # the run that follows asks again if the figure changed.
+  test "nobody is asked to accept a true-up whose run is no longer valid" do
+    @snapshot.invalidate!("Account 4100 now reads 90000.0")
+
+    assert_empty tasks.select { |task| task.subject == @exec }
+
+    @snapshot.update_columns(invalidated_at: nil, invalidated_reason: nil)
+    assert_equal 1, tasks.count { |task| task.subject == @exec }
+  end
+
   test "a removed true-up needs no task" do
     @trueup.destroy
 

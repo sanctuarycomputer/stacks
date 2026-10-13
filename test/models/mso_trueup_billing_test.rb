@@ -361,21 +361,35 @@ class MsoTrueupBillingTest < ActiveSupport::TestCase
     assert @snapshot.reload.invalidated?
   end
 
-  test "the batch refresh skips settled bills and contains a failure" do
+  test "the batch refresh skips bills settled long ago and contains a failure" do
+    long_after = Date.new(2091, 6, 15) # the true-up's month, November, is seven months back
     mirror!("906", { "balance" => "0", "total_amt" => "1200" })
     @trueup.update_columns(qbo_bill_id: "906")
     QboAccount.any_instance.stubs(:fetch_bill_by_id).raises(RuntimeError, "unexpected QuickBooks read")
 
-    assert_equal [], MsoTrueup.refresh_bill_mirrors!
+    assert_equal [], MsoTrueup.refresh_bill_mirrors!(today: long_after)
 
     QboBill.where(qbo_account_id: @qa.id, qbo_id: "906").update_all(data: { "balance" => "1200", "total_amt" => "1200" })
     QboAccount.any_instance.stubs(:fetch_bill_by_id).raises(RuntimeError, "QuickBooks is down")
 
-    failures = MsoTrueup.refresh_bill_mirrors!
+    failures = MsoTrueup.refresh_bill_mirrors!(today: long_after)
 
     assert_equal [@trueup.id], failures.map(&:first)
     assert_match(/QuickBooks is down/, failures.first.last)
     assert_equal "906", fresh.qbo_bill_id
+  end
+
+  test "a bill settled in the last six months is still refreshed, so a payment voided later is seen" do
+    mirror!("907", { "balance" => "0", "total_amt" => "1200" })
+    @trueup.update_columns(qbo_bill_id: "907")
+    assert_equal 0.0, Ledger.find(@ledger.id).balance.to_f
+    QboAccount.any_instance.expects(:fetch_bill_by_id).with("907").once.returns(remote_bill("907", balance: "1200"))
+
+    # November is six months before May.
+    assert_equal [], MsoTrueup.refresh_bill_mirrors!(today: Date.new(2091, 5, 31))
+
+    assert_not QboBill.find_by(qbo_account_id: @qa.id, qbo_id: "907").paid?
+    assert_equal 1200.0, Ledger.find(@ledger.id).balance.to_f
   end
 
   # --- what withdraws a stamp or invalidates a snapshot --------------------------------
@@ -412,6 +426,41 @@ class MsoTrueupBillingTest < ActiveSupport::TestCase
     Enterprise.find(garden3d.id).daily_tasks
     # Another company's nightly step does neither: a second call would exceed `once`.
     Enterprise.find(enterprises(:sanctuary).id).daily_tasks
+  end
+
+  test "a nightly garden3d step that fails does not skip the others; every failure is reported and none leaves" do
+    Mso::ManagementFeeInvoices.expects(:ensure_previous_month!).once.raises(RuntimeError, "step one broke")
+    Mso::MonthlyRun.expects(:invalidate_snapshots_whose_fee_moved!).once.raises(ActiveRecord::StatementInvalid, "step two broke")
+    Mso::MonthlyRun.expects(:record_income_drift!).once.returns([])
+    MsoTrueup.expects(:refresh_bill_mirrors!).once.returns([[@trueup.id, "RuntimeError: QuickBooks is down"]])
+    Sentry.expects(:capture_exception).twice.with { |error| error.message.match?(/step (one|two) broke/) }
+    Sentry.expects(:capture_message).once.with do |message, **|
+      message.include?("MsoTrueup #{@trueup.id}") && message.include?("QuickBooks is down")
+    end
+
+    assert_nothing_raised { Enterprise.find(garden3d.id).daily_tasks }
+  end
+
+  test "the nightly garden3d steps are quiet when nothing fails" do
+    Mso::ManagementFeeInvoices.stubs(:ensure_previous_month!)
+    Mso::MonthlyRun.stubs(:invalidate_snapshots_whose_fee_moved!).returns([])
+    Mso::MonthlyRun.stubs(:record_income_drift!).returns([])
+    MsoTrueup.stubs(:refresh_bill_mirrors!).returns([])
+    Sentry.expects(:capture_exception).never
+    Sentry.expects(:capture_message).never
+
+    Enterprise.find(garden3d.id).daily_tasks
+  end
+
+  test "a QuickBooks failure reading the chart of accounts is not reported as a missing MSO account" do
+    QboAccount.any_instance.stubs(:fetch_all_accounts).raises(RuntimeError, "QuickBooks is down")
+
+    error = assert_raises(RuntimeError) { fresh.sync_qbo_bill! }
+
+    assert_not_kind_of MsoTrueup::SyncRefused, error
+    assert_match(/QuickBooks is down/, error.message)
+    assert_no_match(/mso_compensation/, error.message)
+    assert_nil fresh.qbo_bill_id
   end
 
   test "attaching or detaching a fee invoice withdraws the collection stamp" do

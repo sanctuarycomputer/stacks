@@ -576,6 +576,7 @@ class Contributor < ApplicationRecord
           period.ends_at,
         )
       total_income = (sorted.reduce(0) do |acc, item|
+        # Known, and as for every class here: `sorted` holds soft-deleted rows too, so a removed MsoTrueup still counts.
         if item.is_a?(Trueup) || item.is_a?(MsoTrueup)
           next acc += item.amount
         elsif item.is_a?(ContributorPayout)

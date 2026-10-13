@@ -71,6 +71,13 @@ class Enterprise < ApplicationRecord
     Thread.current[:garden3d_enterprise] ||= Enterprise.find_by!(name: GARDEN3D_NAME)
   end
 
+  # garden3d's id, or nil on a database that has no garden3d. Never raises.
+  # Shares .garden3d's memo, so it costs a query only until garden3d has been
+  # found once on this thread.
+  def self.garden3d_id
+    (Thread.current[:garden3d_enterprise] ||= Enterprise.find_by(name: GARDEN3D_NAME))&.id
+  end
+
   def is_index?
     name == INDEX_SPACE_NAME
   end
@@ -85,21 +92,45 @@ class Enterprise < ApplicationRecord
     Stacks::Optix.deactivate_inactive_members! if is_index?
     return unless is_garden3d?
 
+    # Each step on its own: one that raises is reported and the rest still
+    # run. Nothing here runs a month, pays anyone, or creates, changes or
+    # deletes a QuickBooks bill.
+
     # Database only: garden3d's pass and trackers for last month, and for any
     # earlier month since the start that has none. Nothing here may write to
     # QuickBooks; an admin creates the drafts by hand.
-    Mso::ManagementFeeInvoices.ensure_previous_month!
+    garden3d_nightly_step("ensure_previous_month") { Mso::ManagementFeeInvoices.ensure_previous_month! }
     # Database only: a snapshot whose fee income no longer matches the stored
     # P&L is invalidated, so nothing computed from the old fee stays payable.
-    Mso::MonthlyRun.invalidate_snapshots_whose_fee_moved!
+    garden3d_nightly_step("fee_check") { Mso::MonthlyRun.invalidate_snapshots_whose_fee_moved! }
     # Database only: recompute each recent month's run from stored data and
     # record, on its snapshot, any true-up that would now be a different
     # amount (income that landed after the run). Writes no true-up or bill.
-    Mso::MonthlyRun.record_income_drift!
+    garden3d_nightly_step("income_drift") { Mso::MonthlyRun.record_income_drift! }
     # QuickBooks READS only: refresh the stored copy of MSO bills that already
     # exist, so a paid one is seen as paid. Cannot create or change a bill.
-    MsoTrueup.refresh_bill_mirrors!
+    garden3d_nightly_step("bill_mirrors") do
+      failures = MsoTrueup.refresh_bill_mirrors!
+      if failures.any?
+        # It rescues per true-up and hands the failures back; say so, or a
+        # bill that can never be read fails silently every night.
+        message = "[mso] nightly bill mirror refresh failed for " +
+                  failures.map { |id, error| "MsoTrueup #{id} (#{error})" }.join("; ").truncate(2000)
+        Rails.logger.error(message)
+        Sentry.capture_message(message, level: :error) if defined?(Sentry)
+      end
+    end
   end
+
+  # As stacks:daily_enterprise_tasks reports its own steps: the log and Sentry.
+  def garden3d_nightly_step(name)
+    yield
+  rescue StandardError => e
+    Rails.logger.error("[mso] nightly garden3d step #{name} failed: #{e.class}: #{e.message}")
+    Sentry.capture_exception(e) if defined?(Sentry)
+    nil
+  end
+  private :garden3d_nightly_step
 
   def discover_verticals
     qbo_account.qbo_profit_and_loss_reports.reduce([]) do |acc, qbo_profit_and_loss_report|

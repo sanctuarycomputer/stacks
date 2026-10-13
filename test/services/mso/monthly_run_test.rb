@@ -834,4 +834,14 @@ class Mso::MonthlyRunTest < ActiveSupport::TestCase
     assert snapshot.persisted?
     assert_equal [], nightly!
   end
+
+  # Between the deploy and the hand-run migration there are no MSO tables.
+  test "before the tables exist a run is not offered, and one that is tried is refused in words" do
+    MsoTrueup.stubs(:schema_ready?).returns(false)
+
+    assert_equal false, Mso::MonthlyRun.runnable?(@pass)
+    assert_match(/migration/i, refused.message)
+    error = assert_raises(Mso::MonthlyRun::Refused) { Mso::MonthlyRun.preview(invoice_pass: @pass, today: TODAY) }
+    assert_match(/migration/i, error.message)
+  end
 end

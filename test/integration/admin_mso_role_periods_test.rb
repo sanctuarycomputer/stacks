@@ -21,17 +21,17 @@ class AdminMsoRolePeriodsTest < ActionDispatch::IntegrationTest
     assert_difference -> { MsoRolePeriod.count }, 1 do
       post admin_mso_role_periods_path, params: { mso_role_period: {
         contributor_id: @contributor.id, tier: "chief", title: "Operations",
-        started_at: "2026-01-01",
+        started_at: "2027-01-01",
       } }
     end
     period = MsoRolePeriod.last
     assert_equal "chief", period.tier
-    assert_equal Date.new(2026, 1, 1), period.started_at
+    assert_equal Date.new(2027, 1, 1), period.started_at
   end
 
   test "an admin can view, edit and end a role period" do
     period = MsoRolePeriod.create!(contributor: @contributor, tier: :svp, title: "Finance",
-                                   started_at: Date.new(2026, 1, 1), ended_at: Date.new(2026, 6, 30))
+                                   started_at: Date.new(2027, 1, 1), ended_at: Date.new(2027, 6, 30))
     sign_in @admin
 
     get admin_mso_role_periods_path
@@ -53,7 +53,7 @@ class AdminMsoRolePeriodsTest < ActionDispatch::IntegrationTest
 
   test "a second open-ended period for the same person is a form error" do
     MsoRolePeriod.create!(contributor: @contributor, tier: :chief, title: "Operations",
-                          started_at: Date.new(2026, 1, 1))
+                          started_at: Date.new(2027, 1, 1))
     sign_in @admin
 
     assert_no_difference -> { MsoRolePeriod.count } do
@@ -82,7 +82,7 @@ class AdminMsoRolePeriodsTest < ActionDispatch::IntegrationTest
     assert_no_difference -> { MsoRolePeriod.count } do
       post admin_mso_role_periods_path, params: { mso_role_period: {
         contributor_id: @contributor.id, tier: "principal", title: "Self-appointed",
-        started_at: "2026-01-01",
+        started_at: "2027-01-01",
       } }
     end
     assert_response :redirect
@@ -95,7 +95,7 @@ class AdminMsoRolePeriodsTest < ActionDispatch::IntegrationTest
     assert_no_difference -> { MsoRolePeriod.count } do
       post admin_mso_role_periods_path, params: { mso_role_period: {
         contributor_id: @contributor.id, tier: "chief", title: "Operations",
-        started_at: "2026-01-15",
+        started_at: "2027-01-15",
       } }
     end
     assert_response :success
@@ -104,7 +104,7 @@ class AdminMsoRolePeriodsTest < ActionDispatch::IntegrationTest
 
   test "a lead cannot fetch the roster as JSON" do
     MsoRolePeriod.create!(contributor: @contributor, tier: :chief, title: "Operations",
-                          started_at: Date.new(2026, 1, 1))
+                          started_at: Date.new(2027, 1, 1))
     sign_in @lead
 
     get admin_mso_role_periods_path(format: :json)
@@ -115,7 +115,7 @@ class AdminMsoRolePeriodsTest < ActionDispatch::IntegrationTest
 
   test "a lead cannot update or delete an existing role period" do
     period = MsoRolePeriod.create!(contributor: @contributor, tier: :head, title: "Operations",
-                                   started_at: Date.new(2026, 1, 1))
+                                   started_at: Date.new(2027, 1, 1))
     sign_in @lead
 
     patch admin_mso_role_period_path(period), params: { mso_role_period: { tier: "principal" } }
@@ -132,7 +132,7 @@ class AdminMsoRolePeriodsTest < ActionDispatch::IntegrationTest
     fp = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: email, data: {})
     executive = AdminUser.create!(email: email, password: "password12345")
     MsoRolePeriod.create!(contributor: fp.contributor || Contributor.create!(forecast_person: fp),
-                          tier: :chief, title: "Operations", started_at: Date.new(2026, 1, 1))
+                          tier: :chief, title: "Operations", started_at: Date.new(2027, 1, 1))
     sign_in executive
 
     get admin_mso_role_periods_path

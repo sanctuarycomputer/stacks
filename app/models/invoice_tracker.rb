@@ -29,8 +29,12 @@ class InvoiceTracker < ApplicationRecord
   after_save :withdraw_mso_collection_stamp,
     if: -> { saved_change_to_qbo_invoice_id? || saved_change_to_qbo_account_id? }
 
+  # Runs on every invoice attach for EVERY company, so: by id against a
+  # memoized id (no enterprise is loaded), and no raise on a database that has
+  # no garden3d (InvoicePass#management_fee? would find_by! it).
   def withdraw_mso_collection_stamp
-    return unless invoice_pass&.management_fee?
+    garden3d_id = Enterprise.garden3d_id
+    return if garden3d_id.nil? || invoice_pass.nil? || invoice_pass.enterprise_id != garden3d_id
     MsoSnapshot.unconfirm_collection!(invoice_pass_id)
   end
 

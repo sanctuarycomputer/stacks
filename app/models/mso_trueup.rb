@@ -248,14 +248,24 @@ class MsoTrueup < ApplicationRecord
     :refreshed
   end
 
-  # Nightly, from garden3d's daily step. QuickBooks READS only. Bills already
-  # settled are skipped. One failure does not stop the rest.
-  def self.refresh_bill_mirrors!
+  # How long a settled bill is still re-read each night
+  # (.refresh_bill_mirrors!), counted from the true-up's own month.
+  PAID_MIRROR_REFRESH_MONTHS = 6
+
+  # Nightly, from garden3d's daily step. QuickBooks READS only. One failure
+  # does not stop the rest.
+  #
+  # A settled bill is still read while its month is within the last
+  # PAID_MIRROR_REFRESH_MONTHS months: a payment can be voided after the
+  # fact, and a mirror never read again would go on saying "paid". Older
+  # settled bills are skipped, which is what bounds the reads.
+  def self.refresh_bill_mirrors!(today: Date.today)
     return [] unless schema_ready?
 
+    recent = today.beginning_of_month - PAID_MIRROR_REFRESH_MONTHS.months
     failures = []
-    where.not(qbo_bill_id: nil).find_each do |trueup|
-      next if trueup.qbo_bill&.paid?
+    where.not(qbo_bill_id: nil).includes(:invoice_pass).find_each do |trueup|
+      next if trueup.invoice_pass.start_of_month < recent && trueup.qbo_bill&.paid?
 
       trueup.refresh_qbo_bill_mirror!
     rescue => e
@@ -300,9 +310,12 @@ class MsoTrueup < ApplicationRecord
                            "Contributors → Edit), then sync again. No bill was written."
     end
 
+    # Only the router's own "no such account". Anything else it raises (the
+    # chart of accounts could not be read, the enterprise is not registered)
+    # is a different problem and keeps its own message.
     begin
       Qbo::BillRouter.new(self, accounts_cache: accounts_cache).lines
-    rescue RuntimeError => e
+    rescue Qbo::BillRouter::UnmappedAccount => e
       raise AccountNotConfigured, "#{enterprise.name} has no MSO compensation account that Stacks can " \
                                   "post to (concept mso_compensation). Finance creates the account in " \
                                   "QuickBooks; its account number then replaces the placeholder in " \

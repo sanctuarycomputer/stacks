@@ -9,6 +9,10 @@ module Qbo
   #   1. Routing  (#concept_lines)  — pure: item -> [{amount, description, concept}]
   #   2. Resolution (#resolve)      — concept -> concrete QBO account by GL code
   class BillRouter
+    # A concept has no account in the enterprise's chart. A RuntimeError, as
+    # it was when this was a bare `raise`, so nothing that rescued it stops.
+    class UnmappedAccount < RuntimeError; end
+
     # Concepts whose missing account falls back to :subcontractor_default rather
     # than raising. Everything else (subcontractor_default, marketing, salaries,
     # profit_share_liability) raises when absent — silently misrouting payroll or
@@ -116,12 +120,12 @@ module Qbo
         fallback = find_account(fallback_gl)
         return fallback if fallback
 
-        raise "Qbo::BillRouter: no account for concept #{concept.inspect} " \
+        raise UnmappedAccount, "Qbo::BillRouter: no account for concept #{concept.inspect} " \
               "(gl #{gl.inspect}) and fallback :subcontractor_default " \
               "(gl #{fallback_gl.inspect}) in enterprise #{enterprise.name.inspect}"
       end
 
-      raise "Qbo::BillRouter: no account for concept #{concept.inspect} " \
+      raise UnmappedAccount, "Qbo::BillRouter: no account for concept #{concept.inspect} " \
             "(gl #{gl.inspect}) in enterprise #{enterprise.name.inspect}"
     end
 

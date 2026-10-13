@@ -385,6 +385,21 @@ class AdminMsoCompensationTest < ActionDispatch::IntegrationTest
     assert_match(/has not ended/, flash[:alert])
   end
 
+  # Migrations are run by hand after the deploy.
+  test "a run posted before the MSO tables exist says what to do instead of failing" do
+    sign_in @admin
+    MsoTrueup.stubs(:schema_ready?).returns(false)
+
+    get admin_invoice_pass_path(@pass)
+    assert_response :success
+    assert_no_match(/Run MSO compensation/, response.body)
+
+    post run_mso_compensation_admin_invoice_pass_path(@pass)
+
+    assert_redirected_to admin_invoice_pass_path(@pass)
+    assert_match(/migration/i, flash[:alert])
+  end
+
   # Whether a lead can even open garden3d's pass is S1's rule (it is becoming
   # admin-only). The run has its own guard regardless.
   test "a lead cannot post the run or Check collection" do

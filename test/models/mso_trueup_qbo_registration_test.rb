@@ -141,4 +141,42 @@ class MsoTrueupQboRegistrationTest < ActiveSupport::TestCase
     assert_nil MsoTrueup.with_deleted.find(@trueup.id).qbo_bill_id
     assert_nil QboBill.find_by(qbo_account_id: @qa.id, qbo_id: "503")
   end
+
+  test "orphan cleanup never deletes an MSO bill that has a payment" do
+    bill!("504")
+    @trueup.update_columns(qbo_bill_id: "504", deleted_at: Time.current)
+    paid = OpenStruct.new(id: "504", doc_number: "Stacks_#{@trueup.id}_MT",
+                          balance: BigDecimal("200"), total: BigDecimal("1200"))
+    @qa.stubs(:fetch_all_bills).returns([paid])
+    QboBill.any_instance.expects(:delete_qbo_bill!).never
+    @qa.expects(:delete_bill).never
+
+    @qa.cleanup_orphaned_qbo_objects!
+
+    assert_equal "504", MsoTrueup.with_deleted.find(@trueup.id).qbo_bill_id
+    assert QboBill.find_by(qbo_account_id: @qa.id, qbo_id: "504")
+  end
+
+  test "orphan cleanup never deletes a paid MSO bill that no true-up row answers for either" do
+    paid = OpenStruct.new(id: "505", doc_number: "Stacks_999999999_MT",
+                          balance: BigDecimal("0"), total: BigDecimal("1200"))
+    @qa.stubs(:fetch_all_bills).returns([paid])
+    @qa.expects(:delete_bill).never
+
+    @qa.cleanup_orphaned_qbo_objects!
+  end
+
+  test "until the table exists orphan cleanup leaves every MT bill alone" do
+    bill!("506")
+    @trueup.update_columns(qbo_bill_id: "506", deleted_at: Time.current)
+    @qa.stubs(:fetch_all_bills).returns([OpenStruct.new(id: "506", doc_number: "Stacks_#{@trueup.id}_MT")])
+    MsoTrueup.stubs(:schema_ready?).returns(false)
+    MsoTrueup.expects(:find_by).never
+    QboBill.any_instance.expects(:delete_qbo_bill!).never
+    @qa.expects(:delete_bill).never
+
+    @qa.cleanup_orphaned_qbo_objects!
+
+    assert QboBill.find_by(qbo_account_id: @qa.id, qbo_id: "506")
+  end
 end

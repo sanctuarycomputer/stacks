@@ -45,6 +45,40 @@ class InvoiceTrackerManagementFeeTest < ActiveSupport::TestCase
     assert_equal :impossible, tracker.status
   end
 
+  # The after_save that withdraws the MSO collection stamp runs on every
+  # invoice attach, for every company.
+  test "attaching an invoice for a company that is not garden3d costs no enterprise lookup and touches no snapshot" do
+    payer_qa = QboAccount.create!(enterprise: @payer, realm_id: "p-#{SecureRandom.hex(4)}", client_id: "x",
+                                  client_secret: "y")
+    pass = InvoicePass.create!(start_of_month: Date.new(2096, 4, 1), enterprise: @payer, data: {})
+    client = ForecastClient.create!(forecast_id: 940_003, name: "External Co 3")
+    tracker = InvoiceTracker.create!(invoice_pass: pass, forecast_client_id: client.forecast_id, qbo_account: payer_qa)
+    QboInvoice.create!(qbo_account: payer_qa, qbo_id: "p-1",
+                       data: { "total" => "100.0", "balance" => "100.0", "email_status" => "NotSet" })
+    Enterprise.garden3d_id # as any request that has run before this one leaves it
+    MsoSnapshot.expects(:unconfirm_collection!).never
+    Enterprise.expects(:find_by!).never
+    Enterprise.expects(:find_by).never
+
+    InvoiceTracker.find(tracker.id).update!(qbo_invoice_id: "p-1")
+  end
+
+  test "attaching an invoice does not raise on a database with no garden3d" do
+    payer_qa = QboAccount.create!(enterprise: @payer, realm_id: "p-#{SecureRandom.hex(4)}", client_id: "x",
+                                  client_secret: "y")
+    pass = InvoicePass.create!(start_of_month: Date.new(2096, 5, 1), enterprise: @payer, data: {})
+    client = ForecastClient.create!(forecast_id: 940_004, name: "External Co 4")
+    tracker = InvoiceTracker.create!(invoice_pass: pass, forecast_client_id: client.forecast_id, qbo_account: payer_qa)
+    QboInvoice.create!(qbo_account: payer_qa, qbo_id: "p-2",
+                       data: { "total" => "100.0", "balance" => "100.0", "email_status" => "NotSet" })
+    Enterprise.where(name: Enterprise::GARDEN3D_NAME).update_all(name: "formerly garden3d")
+    clear_enterprise_memos
+
+    assert_nil Enterprise.garden3d_id
+    assert_nothing_raised { InvoiceTracker.find(tracker.id).update!(qbo_invoice_id: "p-2") }
+    assert_equal "p-2", tracker.reload.qbo_invoice_id
+  end
+
   test "a legacy garden3d tracker with a blueprint and no invoice is still deleted" do
     @tracker.update!(blueprint: { "lines" => {} })
 

@@ -24,6 +24,9 @@ class MsoRolePeriod < ApplicationRecord
   validates :started_at, presence: true
   validates :title, presence: true
   validate :full_months_only
+  # Only when the start date is being set: a period already on file with an
+  # earlier start can still be ended.
+  validate :not_before_mso_compensation_began, if: -> { new_record? || started_at_changed? }
   validate :months_already_run_are_not_changed, on: :update
   before_destroy :refuse_destroy_once_run
 
@@ -106,6 +109,18 @@ class MsoRolePeriod < ApplicationRecord
                       "(#{months.map { |month| month.strftime('%B %Y') }.join(', ')}), so it cannot be deleted. " \
                       "Give it an end date instead.")
     throw :abort
+  end
+
+  # No month before this is ever run, so an earlier start pays nothing more.
+  # What it does do is silent: Stacks stops writing the founder true-up for
+  # every month from the start date on, and Mso::Benchmark drops the person
+  # from the pool for those months. A mistyped year would do both.
+  def not_before_mso_compensation_began
+    start = Mso::ManagementFeeInvoices::MANAGEMENT_FEE_START
+    return if started_at.nil? || started_at >= start
+
+    errors.add(:started_at, "cannot be before #{start.strftime('%B %Y')}, the first month MSO compensation " \
+                            "is run for")
   end
 
   def full_months_only

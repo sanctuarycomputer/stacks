@@ -65,7 +65,9 @@ module Mso
       # May a run be offered for this pass at all? (Whether it then succeeds
       # depends on the month's state; see #call.)
       def runnable?(invoice_pass)
-        invoice_pass.management_fee? &&
+        # Migrations are run by hand after the deploy: no tables, no run.
+        MsoTrueup.schema_ready? &&
+          invoice_pass.management_fee? &&
           invoice_pass.start_of_month >= Mso::ManagementFeeInvoices::MANAGEMENT_FEE_START &&
           !invoice_pass.legacy_forecast_trackers?
       end
@@ -312,6 +314,12 @@ module Mso
     # --- refusals -----------------------------------------------------------
 
     def assert_runnable!
+      # First: everything after this reads the MSO tables. (A crafted POST, or
+      # a page drawn before the deploy, still reaches the run.)
+      unless MsoTrueup.schema_ready?
+        raise Refused, "The MSO compensation tables are not on this database yet. Run the pending " \
+                       "migrations (db/migrate/20261014000001 and 20261014000002), then run the month again."
+      end
       unless @pass.management_fee?
         raise Refused, "MSO compensation is run on #{Enterprise::GARDEN3D_NAME}'s pass; InvoicePass " \
                        "#{@pass.id} belongs to #{@pass.enterprise.name}."

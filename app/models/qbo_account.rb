@@ -272,6 +272,18 @@ class QboAccount < ApplicationRecord
       when "RB"
         klass = Reimbursement
       when "MT"
+        # Migrations are run by hand after the deploy: with no table there is
+        # no row to ask, and "nobody answers for this bill" is not known.
+        next unless MsoTrueup.schema_ready?
+        # An MSO bill with any payment is never deleted from here, whatever
+        # became of its row: that would orphan the BillPayment (as
+        # SyncsAsQboBill#detach_and_destroy_qbo_bill refuses to). `b` was read
+        # from QuickBooks a moment ago.
+        if b.balance.present? && b.total.present? && b.balance.to_f < b.total.to_f
+          Rails.logger.warn("[cleanup_orphaned_qbo_objects] qbo_account=#{id}: leaving MSO bill #{b.id} " \
+                            "(#{b.doc_number}) alone, it has a payment")
+          next
+        end
         klass = MsoTrueup
       when "ContributorPayout", /^Contri/
         klass = ContributorPayout
