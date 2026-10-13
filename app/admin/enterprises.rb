@@ -2,19 +2,30 @@ ActiveAdmin.register Enterprise do
   config.filters = false
   config.paginate = false
   actions :index, :show, :new, :create, :edit, :update
-  permit_params :name,
-    :deel_legal_entity_id,
-    :pay_cycle_cadence,
-    enterprise_forecast_clients_attributes: [:id, :forecast_client_id, :_destroy],
-    enterprise_admins_attributes: [:id, :admin_user_id, :_destroy],
-    qbo_account_attributes: [
-      :id,
-      :_edit,
-      :_destroy,
-      :client_id,
-      :client_secret,
-      :realm_id,
+  permit_params do
+    permitted = [
+      :name,
+      :deel_legal_entity_id,
+      :pay_cycle_cadence,
+      enterprise_forecast_clients_attributes: [:id, :forecast_client_id, :_destroy],
+      enterprise_admins_attributes: [:id, :admin_user_id, :_destroy],
+      qbo_account_attributes: [
+        :id,
+        :_edit,
+        :_destroy,
+        :client_id,
+        :client_secret,
+        :realm_id,
+      ],
     ]
+    # Storing this id is what makes garden3d invoice the enterprise each
+    # month. Admins only, and only once the column exists (migrations are run
+    # by hand after the deploy).
+    if current_admin_user.is_admin? && Enterprise.column_names.include?("g3d_qbo_customer_id")
+      permitted.unshift(:g3d_qbo_customer_id)
+    end
+    permitted
+  end
 
   action_item :trigger_generate_snapshot, only: :show do
     link_to "Regenerate Data", trigger_generate_snapshot_admin_enterprise_path(resource), method: :post
@@ -95,6 +106,13 @@ ActiveAdmin.register Enterprise do
       else
         f.input :deel_legal_entity_id,
           hint: "Deel API unreachable — paste the legal_entity.id manually."
+      end
+
+      if current_admin_user.is_admin? && f.object.has_attribute?(:g3d_qbo_customer_id) && !f.object.is_garden3d?
+        f.input :g3d_qbo_customer_id,
+          label: "Customer id in garden3d's QuickBooks",
+          hint: "When set, garden3d invoices this enterprise every month (its management fee). " \
+                "Leave blank for an enterprise garden3d does not bill. Stacks never creates the customer."
       end
 
       f.has_many :enterprise_forecast_clients,

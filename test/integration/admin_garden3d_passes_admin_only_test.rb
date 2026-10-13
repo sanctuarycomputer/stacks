@@ -201,6 +201,18 @@ class AdminGarden3dPassesAdminOnlyTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test "asking for garden3d's tab by URL shows a lead nothing" do
+    sign_in @lead
+
+    get admin_invoice_passes_path(scope: "garden3d")
+
+    assert_response :success
+    [@sanctuary_pass, @fee_pass, @legacy_pass].each do |pass|
+      assert_select "a[href=?]", trackers_path(pass), count: 0
+    end
+    assert_select "a[href=?]", admin_invoice_passes_path(scope: "garden3d"), count: 0
+  end
+
   # --- an admin sees everything --------------------------------------------------
 
   test "an admin sees garden3d's passes in the index and can open every one of their pages" do

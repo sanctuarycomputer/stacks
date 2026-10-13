@@ -45,7 +45,7 @@ class AdminManagementFeeInvoicesTest < ActionDispatch::IntegrationTest
     post attempt_generate_path(tracker)
 
     assert_redirected_to tracker_path(tracker)
-    assert_match(/Management fee draft created/, flash[:notice])
+    assert_match(/Draft created in garden3d's QuickBooks/, flash[:notice])
     assert_equal "9100", tracker.reload.qbo_invoice_id
   end
 
@@ -293,6 +293,28 @@ class AdminManagementFeeInvoicesTest < ActionDispatch::IntegrationTest
     assert_redirected_to admin_invoice_pass_path(@pass)
     assert_match(/Created 1 draft/, flash[:notice])
     assert_equal ["9300"], InvoiceTracker.where(invoice_pass_id: @pass.id).pluck(:qbo_invoice_id)
+  end
+
+  test "Generate Invoices skips a company that already has an invoice, and one failing does not stop the next" do
+    attach_invoice(fee_tracker(@pass, @payer), qbo_id: "8110", total: "130000.0", balance: "0.0", sent: true)
+    broken = make_payer("Broken #{SecureRandom.hex(3)}", customer_id: "404", forecast_ids: [980_010])
+    working = make_payer("Working #{SecureRandom.hex(3)}", customer_id: "77", forecast_ids: [980_011])
+    stub_garden3d_qbo(customers: [qbo_customer("2", "Sanctuary Computer Inc"), qbo_customer("77", "Working Co")])
+    Quickbooks::Service::Invoice.any_instance.expects(:create).once.returns(qbo_created_invoice("9301"))
+    sign_in @admin
+
+    post generate_path(@pass)
+
+    assert_redirected_to admin_invoice_pass_path(@pass)
+    assert_match(/Created 1 draft/, flash[:alert])
+    assert_match(/404/, flash[:alert])
+    invoice_ids = lambda do |payer|
+      InvoiceTracker.where(invoice_pass_id: @pass.id, forecast_client_id: payer.internal_forecast_client_ids)
+                    .pluck(:qbo_invoice_id)
+    end
+    assert_equal ["8110"], invoice_ids.call(@payer), "the invoice already attached is left alone"
+    assert_equal [nil], invoice_ids.call(broken)
+    assert_equal ["9301"], invoice_ids.call(working)
   end
 
   test "a lead cannot create drafts by posting directly" do

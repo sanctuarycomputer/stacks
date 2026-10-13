@@ -236,7 +236,7 @@ ActiveAdmin.register InvoiceTracker do
       end
       return redirect_to(
         tracker_page,
-        notice: "Management fee draft created in QuickBooks. Set the amount there and send it."
+        notice: "Draft created in garden3d's QuickBooks. Set the amount there and send it."
       )
     end
 

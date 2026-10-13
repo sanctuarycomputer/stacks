@@ -40,14 +40,22 @@ class InvoicePass < ApplicationRecord
   end
 
   # garden3d's pass, with its trackers, for every month from
-  # INTERCOMPANY_START through last month. Run nightly (Enterprise#daily_tasks).
-  # DATABASE ONLY: it never calls QuickBooks. An admin's click makes the
-  # invoices.
+  # INTERCOMPANY_START through last month that has none. Run nightly
+  # (Enterprise#daily_tasks). DATABASE ONLY: it never calls QuickBooks. An
+  # admin's click makes the invoices.
+  #
+  # A month that already has its pass is left alone, so an enterprise that
+  # starts being billed later is not added to months already invoiced.
+  # ("Generate Invoices" on a pass does add it, when an admin means to.)
   def self.make_intercompany_passes!(today: Date.today)
     garden3d = Enterprise.garden3d
     month = INTERCOMPANY_START
     while month < today.beginning_of_month
-      find_or_create_by!(enterprise: garden3d, start_of_month: month) { |pass| pass.data = {} }.make_trackers!
+      unless exists?(enterprise: garden3d, start_of_month: month)
+        # Together: a pass whose trackers could not be made is not kept, so
+        # the next night tries the month again.
+        transaction { create!(enterprise: garden3d, start_of_month: month, data: {}).make_trackers! }
+      end
       month = month.next_month
     end
   end
@@ -109,6 +117,9 @@ class InvoicePass < ApplicationRecord
 
     own_account_ids = QboAccount.where(enterprise_id: enterprise_id).pluck(:id)
     payers = Enterprise.billed_by_garden3d.order(:id).to_a
+    # Nobody to bill is not "everybody paid": no customer ids are stored, or
+    # the column is not on this database yet.
+    return false if payers.empty?
     charged = []
     attached = []
 

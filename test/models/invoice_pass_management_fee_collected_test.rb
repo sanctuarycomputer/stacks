@@ -260,6 +260,14 @@ class InvoicePassManagementFeeCollectedTest < ActiveSupport::TestCase
     assert collected?, "sanity: collected before the stray invoice exists"
   end
 
+  test "with no enterprise stored as billed, nothing is collected, whatever the trackers hold" do
+    collected_pass_with_customer_ids
+
+    Enterprise.update_all(g3d_qbo_customer_id: nil)
+
+    refute collected?
+  end
+
   test "an unattached invoice to a payer dated in the month is an unseen charge: not collected" do
     collected_pass_with_customer_ids
 

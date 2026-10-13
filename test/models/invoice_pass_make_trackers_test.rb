@@ -189,6 +189,33 @@ class InvoicePassMakeTrackersTest < ActiveSupport::TestCase
     end
   end
 
+  test "the nightly step leaves a month that has its pass alone: a newly billed enterprise is not added to it" do
+    InvoicePass.make_intercompany_passes!(today: Date.new(2026, 10, 3))
+    make_payer("Late Joiner #{SecureRandom.hex(3)}", customer_id: "31", forecast_ids: [981_020])
+
+    InvoicePass.make_intercompany_passes!(today: Date.new(2026, 11, 3))
+
+    august = InvoicePass.find_by!(enterprise: garden3d, start_of_month: START)
+    october = InvoicePass.find_by!(enterprise: garden3d, start_of_month: Date.new(2026, 10, 1))
+    assert_equal [981_001, 981_002], trackers(august).map(&:forecast_client_id)
+    assert_equal [981_001, 981_002, 981_020], trackers(october).map(&:forecast_client_id)
+
+    # An admin's Generate Invoices is make_trackers! on that pass: it does add it.
+    august.make_trackers!
+    assert_equal [981_001, 981_002, 981_020], trackers(august).map(&:forecast_client_id)
+  end
+
+  test "a month whose trackers cannot be made keeps no pass, so the next night tries again" do
+    clientless = Enterprise.create!(name: "Clientless #{SecureRandom.hex(3)}", g3d_qbo_customer_id: "9")
+
+    assert_raises(RuntimeError) { InvoicePass.make_intercompany_passes!(today: Date.new(2026, 9, 2)) }
+    refute InvoicePass.exists?(enterprise: garden3d, start_of_month: START)
+
+    clientless.update_columns(g3d_qbo_customer_id: nil)
+    InvoicePass.make_intercompany_passes!(today: Date.new(2026, 9, 2))
+    assert_equal 2, trackers(InvoicePass.find_by!(enterprise: garden3d, start_of_month: START)).size
+  end
+
   test "the nightly step twice changes nothing, and fills in a month that is missing" do
     InvoicePass.make_intercompany_passes!(today: Date.new(2026, 10, 3))
     before = InvoiceTracker.count

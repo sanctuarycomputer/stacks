@@ -260,7 +260,7 @@ module Mso
         customer = qbo_account.fetch_all_customers.find { |candidate| candidate.id.to_s == stored_id }
         if customer.nil?
           raise Misconfigured, "#{payer.name}'s stored garden3d QuickBooks customer id (#{stored_id}) is not " \
-                               "an active customer. Correct the id on the enterprise (g3d_qbo_customer_id)."
+                               "an active customer. Correct it on the enterprise's edit page."
         end
         customer
       end
