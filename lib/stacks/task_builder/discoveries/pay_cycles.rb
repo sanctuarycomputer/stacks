@@ -10,7 +10,7 @@ module Stacks
           PayCycle
             .includes(:pay_stubs, enterprise: { enterprise_admins: :admin_user })
             .where(approved_at: nil)
-            .where("EXISTS (SELECT 1 FROM pay_stubs WHERE pay_stubs.pay_cycle_id = pay_cycles.id)")
+            .where("EXISTS (SELECT 1 FROM pay_stubs WHERE pay_stubs.pay_cycle_id = pay_cycles.id AND pay_stubs.deleted_at IS NULL)")
             .map do |cycle|
               task(
                 subject: cycle,

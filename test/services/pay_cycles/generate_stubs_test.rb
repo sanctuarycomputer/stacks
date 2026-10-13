@@ -164,6 +164,22 @@ class PayCycles::GenerateStubsTest < ActiveSupport::TestCase
     end
   end
 
+  # The escape hatch for the case above: the sole stub of an unapproved cycle
+  # can be unaccepted, after which regen clears it and empties the cycle.
+  test "an accepted sole stub can be unaccepted and regenerated away once its hours are gone" do
+    setup_one_assignment(hours_per_day: 8)
+    PayCycles::GenerateStubs.call(@cycle)
+    stub = @cycle.pay_stubs.first
+    stub.update!(accepted_at: DateTime.now, accepted_by: @admin)
+    @assignment.update!(start_date: @cycle.starts_at - 5.days, end_date: @cycle.starts_at - 1.day)
+
+    stub.toggle_acceptance!(by: @admin)
+    PayCycles::GenerateStubs.call(@cycle)
+
+    assert stub.reload.deleted_at.present?
+    assert_equal :no_stubs, @cycle.reload.stubs_status
+  end
+
   test "call does not write a stub for $0 amount" do
     setup_one_assignment(hours_per_day: 0, allocation_seconds: 0)
     PayCycles::GenerateStubs.call(@cycle)

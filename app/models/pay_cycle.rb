@@ -20,7 +20,7 @@ class PayCycle < ApplicationRecord
   # Computed status across this cycle's stubs.
   #   :no_stubs       → no stubs have been generated yet
   #   :some_pending   → at least one stub is unaccepted
-  #   :all_accepted   → every stub is accepted (implicit lock)
+  #   :all_accepted   → every stub is accepted (ready for cycle approval)
   def stubs_status
     return :no_stubs unless pay_stubs.exists?
     pay_stubs.where(accepted_at: nil).none? ? :all_accepted : :some_pending
