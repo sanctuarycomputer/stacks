@@ -30,31 +30,6 @@ class InvoicePassMakeTrackersTest < ActiveSupport::TestCase
     assert_equal Date.new(2026, 8, 1), START
   end
 
-  test "a pass is Forecast-driven or intercompany by its enterprise" do
-    sanctuary_pass = InvoicePass.create!(start_of_month: START, enterprise: enterprises(:sanctuary), data: {})
-    other_pass = InvoicePass.create!(start_of_month: START, enterprise: enterprises(:one), data: {})
-
-    assert sanctuary_pass.forecast?
-    refute sanctuary_pass.garden3d?
-    refute sanctuary_pass.intercompany?
-
-    refute @pass.forecast?
-    assert @pass.garden3d?
-    assert @pass.intercompany?
-
-    refute other_pass.forecast?
-    refute other_pass.garden3d?
-    refute other_pass.intercompany?
-  end
-
-  test "a garden3d pass before the first month is garden3d's but not intercompany" do
-    early = garden3d_pass(START - 1.month)
-
-    assert early.garden3d?
-    refute early.intercompany?
-    assert garden3d_pass(START).intercompany?
-  end
-
   # --- Sanctuary's trackers --------------------------------------------------
 
   test "a Sanctuary pass creates a tracker for an external client" do
@@ -163,7 +138,7 @@ class InvoicePassMakeTrackersTest < ActiveSupport::TestCase
 
     error = assert_raises(RuntimeError) { early.make_trackers! }
 
-    assert_match(/makes no invoices through Stacks/, error.message)
+    assert_match(/were made by hand/, error.message)
     assert_empty trackers(early)
   end
 
@@ -171,7 +146,7 @@ class InvoicePassMakeTrackersTest < ActiveSupport::TestCase
     other_pass = InvoicePass.create!(start_of_month: Date.new(2096, 3, 1), enterprise: enterprises(:one), data: {})
     other_pass.expects(:clients_served).never
 
-    error = assert_raises(RuntimeError) { other_pass.make_trackers! }
+    error = assert_raises(NotImplementedError) { other_pass.make_trackers! }
 
     assert_match(/makes no invoices through Stacks/, error.message)
     assert_empty trackers(other_pass)

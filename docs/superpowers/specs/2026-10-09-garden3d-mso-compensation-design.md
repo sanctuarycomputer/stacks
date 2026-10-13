@@ -1107,12 +1107,17 @@ pass makes its trackers, and who gets a tracker depends on the enterprise.
 Sanctuary: every client it worked for. garden3d: every other enterprise it
 bills. Where §6 and §13b differ from this section, **this section governs**.
 
-- **`InvoicePass#make_trackers!` is the one entry point**, and dispatches on
-  the enterprise: `forecast?` (Sanctuary) or `intercompany?` (garden3d, from
-  `InvoicePass::INTERCOMPANY_START`, August 2026). Any other pass raises.
+- **`InvoicePass#make_trackers!` is the one entry point**, and is a plain
+  `case` on the enterprise: Sanctuary, garden3d, else `NotImplementedError`.
+  The admin page does the same for "Generate Invoices" and for which page a
+  pass renders. There is no `forecast?` or `intercompany?` predicate, and
   `invoicing_kind`, `UnsupportedIssuer` and `legacy_forecast_trackers?` are
-  gone: a garden3d pass before the start month is simply not `intercompany?`,
-  which covers the seven legacy 2025 passes.
+  gone. The start month (`InvoicePass::INTERCOMPANY_START`, August 2026) is
+  checked where garden3d's trackers are made and where a draft is pushed, so
+  the seven 2025 passes get no new trackers or drafts.
+- **`enterprises.g3d_qbo_customer_id` is picked from a dropdown** of
+  garden3d's QuickBooks customers, read live on the enterprise edit page
+  (admins only), with a text input as the fallback.
 - **Predicates are named for the enterprise, not for the fee.** A garden3d
   invoice carries the management fee and may carry other lines (a loan
   repayment between entities). `InvoicePass#garden3d?`,

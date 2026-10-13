@@ -220,18 +220,17 @@ class AdminManagementFeeInvoicesTest < ActionDispatch::IntegrationTest
     assert_select "a[href=?]", refresh_path(pass), count: 0
   end
 
-  test "a garden3d pass from before the first month renders as it always has, with neither action" do
+  test "a garden3d pass from before the first month renders like any other garden3d pass" do
     pass = garden3d_pass(InvoicePass::INTERCOMPANY_START - 1.month)
     fee_tracker(pass, @payer).update!(blueprint: { "lines" => {} })
-    Stacks::Automator.expects(:discover_people_missing_hours_for_month).once.returns([])
+    Stacks::Automator.expects(:discover_people_missing_hours_for_month).never
     sign_in @admin
 
     get admin_invoice_pass_path(pass)
 
     assert_response :success
-    assert_select "a[href=?]", generate_path(pass), count: 0
-    assert_select "a[href=?]", refresh_path(pass), count: 0
-    assert_no_match(/Invoices to paying companies/, response.body)
+    assert_select "a[href=?]", generate_path(pass), count: 1
+    assert_match(/Invoices to paying companies/, response.body)
   end
 
   test "Generate Invoices posted to a garden3d pass from before the first month makes nothing" do
@@ -243,7 +242,7 @@ class AdminManagementFeeInvoicesTest < ActionDispatch::IntegrationTest
     post generate_path(pass)
 
     assert_redirected_to admin_invoice_pass_path(pass)
-    assert_match(/Forecast invoicing only runs/, flash[:alert])
+    assert_match(/were made by hand/, flash[:alert])
     assert_equal 0, InvoiceTracker.where(invoice_pass_id: pass.id).count
   end
 

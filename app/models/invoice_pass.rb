@@ -23,20 +23,11 @@ class InvoicePass < ApplicationRecord
   # passes are left exactly as they are.
   INTERCOMPANY_START = Date.new(2026, 8, 1)
 
-  def forecast?
-    enterprise == Enterprise.sanctuary
-  end
-
   # Asked of the issuing enterprise, not of what the invoices hold: a garden3d
   # invoice is not only a management fee. By name, so no pass depends on a
   # garden3d row existing.
   def garden3d?
     enterprise&.is_garden3d? || false
-  end
-
-  # A garden3d pass whose invoices Stacks makes and tracks.
-  def intercompany?
-    garden3d? && start_of_month >= INTERCOMPANY_START
   end
 
   # garden3d's pass, with its trackers, for every month from
@@ -211,14 +202,13 @@ class InvoicePass < ApplicationRecord
   # Makes this month's trackers: one per company this enterprise invoices.
   # Idempotent. DATABASE ONLY -- no QuickBooks call.
   def make_trackers!
-    if forecast?
+    case enterprise.name
+    when Enterprise::SANCTUARY_NAME
       make_forecast_trackers!
-    elsif intercompany?
+    when Enterprise::GARDEN3D_NAME
       make_intercompany_trackers!
     else
-      raise "InvoicePass #{id} (#{enterprise.name}, #{invoice_month}) makes no invoices through Stacks: only " \
-            "#{Enterprise::SANCTUARY_NAME}'s passes, and #{Enterprise::GARDEN3D_NAME}'s from " \
-            "#{INTERCOMPANY_START.strftime('%B %Y')}, do."
+      raise NotImplementedError, "#{enterprise.name} makes no invoices through Stacks (InvoicePass #{id})"
     end
   end
 
@@ -283,6 +273,11 @@ class InvoicePass < ApplicationRecord
   # enterprise can have several; a tracker on any of them counts, so
   # remapping clients never makes a second.
   def make_intercompany_trackers!
+    if start_of_month < INTERCOMPANY_START
+      raise "#{enterprise.name}'s invoices for #{invoice_month} were made by hand: Stacks makes them from " \
+            "#{INTERCOMPANY_START.strftime('%B %Y')}"
+    end
+
     # Ordered query, not enterprise.qbo_account: has_one is unordered.
     qa = QboAccount.where(enterprise_id: enterprise_id).order(:id).first
     raise "#{enterprise.name} has no connected QboAccount" if qa.nil?
