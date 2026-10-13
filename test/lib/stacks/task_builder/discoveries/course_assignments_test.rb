@@ -73,7 +73,27 @@ class StacksTaskBuilderCourseAssignmentsDiscoveryTest < ActiveSupport::TestCase
     complete_step!(@person, mod.module_steps.first)
     assert_equal [D::OVERDUE], tasks.select { |t| t.subject == a }.map(&:type), "quiz open: theirs"
     2.times { QuizAttempt.create!(admin_user: @person, learning_module: mod, correct_count: 0, question_count: 1) }
+    found = tasks.select { |t| t.subject == a }
+    assert_equal [D::SIGN_OFF], found.map(&:type), "locked and past due: the admins are told, the person is not overdue"
+    assert_not_includes found.first.owners, @person
+  end
+
+  test "a locked quiz before the due date tells nobody" do
+    mod = learning_module!(steps: ["read"], questions: 1)
+    course = learning_course!(modules: [mod])
+    @extra_course_ids = [course.id]
+    a = learning_assign!(@person, course)
+    complete_step!(@person, mod.module_steps.first)
+    2.times { QuizAttempt.create!(admin_user: @person, learning_module: mod, correct_count: 0, question_count: 1) }
     assert_empty tasks.select { |t| t.subject == a }
+  end
+
+  test "admins are not told to link a payment profile while the person still has their own steps to do" do
+    mod = learning_module!(steps: [["auto_check", "forecast_account"], ["auto_check", "payment_profile"]])
+    course = learning_course!(modules: [mod])
+    @extra_course_ids = [course.id]
+    a = learning_assign!(@person, course, due_on: Date.today - 1)
+    assert_equal [D::OVERDUE], tasks.select { |t| t.subject == a }.map(&:type)
   end
 
   test "a sign-off that is not ready yet produces no admin task" do
@@ -144,7 +164,8 @@ class StacksTaskBuilderCourseAssignmentsDiscoveryTest < ActiveSupport::TestCase
     course = learning_course!(modules: [mod])
     @extra_course_ids = [course.id]
     a = learning_assign!(@person, course, due_on: Date.today - 1)
-    assert_equal [D::OVERDUE, D::SIGN_OFF].sort, tasks.select { |t| t.subject == a }.map(&:type).sort
+    # Admins are told only once the person has nothing of their own left.
+    assert_equal [D::OVERDUE], tasks.select { |t| t.subject == a }.map(&:type)
   end
 
   test "the discovery is registered" do

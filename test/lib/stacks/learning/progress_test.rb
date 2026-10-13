@@ -119,6 +119,43 @@ class StacksLearningProgressTest < ActiveSupport::TestCase
     assert a.reload.completed_at.present?
   end
 
+  test "allow_for_admin_delay! pushes a near or past due date out, and leaves a comfortable one alone" do
+    course = learning_course!(modules: [learning_module!])
+    late = learning_assign!(learning_person!, course, due_on: Date.today - 5)
+    P.allow_for_admin_delay!(late)
+    assert_equal Date.today + P::ADMIN_DELAY_GRACE_DAYS, late.reload.due_on
+
+    roomy = learning_assign!(learning_person!, course, due_on: Date.today + 10)
+    P.allow_for_admin_delay!(roomy)
+    assert_equal Date.today + 10, roomy.reload.due_on
+
+    waived = learning_assign!(learning_person!, course, due_on: Date.today - 5)
+    waived.update!(waived_at: Time.current)
+    P.allow_for_admin_delay!(waived)
+    assert_equal Date.today - 5, waived.reload.due_on
+  end
+
+  test "an admin-owned check passing after the due date gives the person time for what it unblocks" do
+    person = learning_person!
+    mod = learning_module!(steps: [["auto_check", "payment_profile"]], questions: 1)
+    a = learning_assign!(person, learning_course!(modules: [mod]), due_on: Date.today - 2)
+    AC.stubs(:passed?).returns(true)
+
+    P.refresh!(person)
+
+    assert_equal Date.today + P::ADMIN_DELAY_GRACE_DAYS, a.reload.due_on
+    assert_not Stacks::Learning::Checklist.new(a).overdue?, "the quiz just opened; they are not overdue for the admin's delay"
+  end
+
+  test "a person-owned check passing late does not move the due date" do
+    person = learning_person!
+    mod = learning_module!(steps: [["auto_check", "forecast_account"]], questions: 1)
+    a = learning_assign!(person, learning_course!(modules: [mod]), due_on: Date.today - 2)
+    AC.stubs(:passed?).returns(true)
+    P.refresh!(person)
+    assert_equal Date.today - 2, a.reload.due_on
+  end
+
   test "refresh_all! covers everyone with an outstanding assignment and survives one person failing" do
     bad = learning_person!(prefix: "bad")
     good = learning_person!(prefix: "good")

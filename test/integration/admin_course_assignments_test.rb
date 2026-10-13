@@ -445,6 +445,27 @@ class AdminCourseAssignmentsTest < ActionDispatch::IntegrationTest
     assert_equal Date.new(2099, 1, 1), CourseAssignment.find_by!(admin_user: @other, course: course).due_on
   end
 
+  test "the own-deadline rule holds for a padded id and for multiparameter dates" do
+    sign_in @admin
+    padded = learning_course!(modules: [learning_module!])
+    post admin_course_assignments_path, params: { course_assignment: { admin_user_id: "0#{@admin.id}", course_id: padded.id, due_on: "2099-01-01" } }
+    assert_equal Date.today + padded.grace_period_days, CourseAssignment.find_by!(admin_user: @admin, course: padded).due_on
+
+    multi = learning_course!(modules: [learning_module!])
+    post admin_course_assignments_path, params: { course_assignment: { admin_user_id: @admin.id, course_id: multi.id, "due_on(1i)" => "2099", "due_on(2i)" => "1", "due_on(3i)" => "1" } }
+    assert_equal Date.today + multi.grace_period_days, CourseAssignment.find_by!(admin_user: @admin, course: multi).due_on
+  end
+
+  test "an admin signing off after the due date gives the person time for what it unblocks" do
+    @assignment.update!(due_on: Date.today - 3)
+    complete_step!(@person, @read)
+    complete_step!(@person, @auto, source: "auto")
+    sign_in @admin
+    post sign_off_step_admin_course_assignment_path(@assignment, step_id: @sign_off.id)
+    assert done?(@person, @sign_off)
+    assert_equal Date.today + Stacks::Learning::Progress::ADMIN_DELAY_GRACE_DAYS, @assignment.reload.due_on
+  end
+
   test "an admin cannot change the due date on their own assignment, but can on someone else's" do
     mine = learning_assign!(@admin, @course)
     original = mine.due_on

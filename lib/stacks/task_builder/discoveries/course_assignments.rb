@@ -31,10 +31,10 @@ module Stacks
           checklist = Stacks::Learning::Checklist.new(assignment)
           types = []
           types << OVERDUE if checklist.overdue?(today)
-          # Past due and only an admin can unblock it (e.g. link a payment
-          # profile): the admins get the task, the person never does.
-          waiting_on_admin = assignment.due_on < today && checklist.pending_admin_auto_check_steps.any?
-          types << SIGN_OFF if checklist.ready_sign_off_steps.any? || waiting_on_admin
+          # Past due and only an admin can unblock it (link a payment profile,
+          # allow another quiz attempt): the admins get the task, the person
+          # never does.
+          types << SIGN_OFF if checklist.ready_sign_off_steps.any? || checklist.waiting_on_admin?(today)
           types
         end
 

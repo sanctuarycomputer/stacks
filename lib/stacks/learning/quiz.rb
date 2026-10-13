@@ -10,9 +10,13 @@ module Stacks
 
       # Identifies the exact questions (and their answer key) a form was built
       # from, so an edit between load and submit can't be scored against.
+      # Keyed (HMAC), not a bare hash: the person already knows the ids, prompts
+      # and choices, so an unkeyed digest that covers correct_index would let
+      # them recover the answer key offline in a few thousand guesses.
       def self.fingerprint(learning_module)
         parts = learning_module.quiz_questions.map { |q| [q.id, q.prompt, q.choices, q.correct_index] }
-        Digest::SHA256.hexdigest(parts.to_json)
+        key = Rails.application.key_generator.generate_key("stacks-learning-quiz-fingerprint", 32)
+        OpenSSL::HMAC.hexdigest("SHA256", key, parts.to_json)
       end
 
       # fingerprint: nil skips the check (internal callers); a given value,

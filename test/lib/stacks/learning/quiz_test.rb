@@ -179,6 +179,11 @@ class StacksLearningQuizTest < ActiveSupport::TestCase
     assert_not_equal base, Q.fingerprint(@mod.reload)
   end
 
+  test "the fingerprint is keyed, so the answer key cannot be recovered from it" do
+    parts = @mod.quiz_questions.map { |q| [q.id, q.prompt, q.choices, q.correct_index] }
+    assert_not_equal Digest::SHA256.hexdigest(parts.to_json), Q.fingerprint(@mod)
+  end
+
   test "a stale fingerprint is rejected and records no attempt" do
     stale = Q.fingerprint(@mod)
     q = @mod.quiz_questions.first

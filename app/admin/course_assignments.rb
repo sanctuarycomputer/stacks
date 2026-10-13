@@ -10,10 +10,18 @@ ActiveAdmin.register CourseAssignment do
 
   before_create do |assignment|
     assignment.assigned_by = current_admin_user
+    # An admin can't pick their own deadline: for themselves the course's
+    # grace period applies (the model refills a blank due_on on create).
+    assignment.due_on = nil if assignment.admin_user_id == current_admin_user.id
   end
 
   controller do
-    helper_method :checklist, :acting_as_assignee?, :acting_as_admin?
+    helper_method :checklist, :checklist_for, :acting_as_assignee?, :acting_as_admin?
+
+    # One Checklist per index row, however many columns read it.
+    def checklist_for(assignment)
+      (@checklists ||= {})[assignment.id] ||= Stacks::Learning::Checklist.new(assignment)
+    end
 
     # The REST actions bypass the member-action guards below, so they get their own.
     include RefusesWritesWhileImpersonating
@@ -88,16 +96,6 @@ ActiveAdmin.register CourseAssignment do
       checklist.module_state(params[:learning_module_id])
     end
 
-    # An admin can't pick their own deadline: for themselves the course's
-    # grace period applies.
-    def create
-      submitted = params[:course_assignment]
-      if submitted.respond_to?(:key?) && submitted[:admin_user_id].to_s == current_admin_user.id.to_s
-        params[:course_assignment] = submitted.except(:due_on)
-      end
-      super
-    end
-
     # Only due_on is editable after creation.
     def update
       submitted = params[:course_assignment]
@@ -117,14 +115,13 @@ ActiveAdmin.register CourseAssignment do
     column :state do |a|
       if a.completed? then status_tag("Done", class: "yes")
       elsif a.waived? then status_tag("Waived")
-      elsif Stacks::Learning::Checklist.new(a).overdue? then status_tag("Overdue", class: "no")
-      elsif a.due_on < Date.today then status_tag("Waiting on an admin")
+      elsif checklist_for(a).overdue? then status_tag("Overdue", class: "no")
+      elsif a.due_on < Date.today then status_tag("Past due, not on them")
       else status_tag("In progress")
       end
     end
     column :steps do |a|
-      cl = Stacks::Learning::Checklist.new(a)
-      "#{cl.steps_done} of #{cl.steps_total}"
+      "#{checklist_for(a).steps_done} of #{checklist_for(a).steps_total}"
     end
     actions defaults: false do |a|
       item "Edit due date", edit_admin_course_assignment_path(a)
@@ -205,6 +202,7 @@ ActiveAdmin.register CourseAssignment do
     state = step_state_from_params
     next back(alert: "That step isn't ready to sign off.") if state.nil? || !state.ready
     next unless record_completion!(state.step, source: "admin", completed_by: current_admin_user)
+    Stacks::Learning::Progress.allow_for_admin_delay!(resource)
     safe_refresh!(resource.admin_user)
     back(notice: "Signed off.")
   end
@@ -216,6 +214,7 @@ ActiveAdmin.register CourseAssignment do
       next back(alert: "That step can't be marked done here.")
     end
     next unless record_completion!(state.step, source: "admin", completed_by: current_admin_user)
+    Stacks::Learning::Progress.allow_for_admin_delay!(resource)
     safe_refresh!(resource.admin_user)
     back(notice: "Marked done for #{resource.admin_user.email}.")
   end

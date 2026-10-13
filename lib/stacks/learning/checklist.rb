@@ -97,6 +97,14 @@ module Stacks
         end
       end
 
+      # Past due, nothing left for the person to do, and blocked on something
+      # only an admin can do: link a payment profile, or allow another attempt
+      # at a locked quick check. (Ready sign-offs are reported separately.)
+      def waiting_on_admin?(today = Date.today)
+        return false unless assignment.outstanding? && assignment.due_on < today && !own_work_remaining?
+        pending_admin_auto_check_steps.any? || modules.any? { |m| !m.done? && m.quiz_state == :locked }
+      end
+
       # The one definition of "overdue": past due with something of their own
       # left to do. Shared by the profile, the assignments index and the task.
       def overdue?(today = Date.today)

@@ -363,10 +363,24 @@ them.
 
 The admin task (`course_assignment_needs_admin_sign_off`, labelled "Checklist
 is waiting on an admin") is emitted when a sign-off step is ready, **or** when
-the assignment is past `due_on` and an admin-owned auto-check is still
-incomplete. Waiting until the due date for the latter avoids nagging every
-admin about each new person from their first day, while guaranteeing a
+the assignment is past `due_on`, the person has nothing of their own left, and
+it is blocked on an admin: an admin-owned auto-check is incomplete, or a quiz
+is locked awaiting a retry grant. Waiting until the due date avoids nagging
+every admin about each new person from their first day, while guaranteeing a
 checklist can never sit stuck on an admin with nobody told.
+
+**Admin delay grace.** Whenever a step only an admin could complete is
+completed (a sign-off, "Mark done for them", or an admin-owned auto-check
+passing) and the due date is past or fewer than 3 days away, `due_on` moves to
+3 days from today. Otherwise whatever that step unblocks (a quiz, later steps)
+would open already overdue, and the person would carry the pill for the
+admin's delay.
+
+**Quiz fingerprint.** The quiz form carries an HMAC of the module's question
+ids, prompts, choices and answer key; a submission whose fingerprint no longer
+matches (an admin edited a question meanwhile) is rejected without counting as
+an attempt. It is keyed with a server secret so the answer key cannot be
+recovered from it.
 
 If the sign-off task would have no owner (the assignee is the only admin), it
 is not emitted; it must not fall back to the assignee.

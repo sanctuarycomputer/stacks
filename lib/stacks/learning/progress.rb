@@ -3,6 +3,20 @@ module Stacks
     # The only writer of derived progress. Idempotent and additive: it never
     # removes a completion or a grant.
     class Progress
+      # When an admin's step lands close to (or after) the due date, the person
+      # gets at least this long to finish what it unblocked.
+      ADMIN_DELAY_GRACE_DAYS = 3
+
+      # Called whenever a step only an admin could complete gets completed. An
+      # admin's delay must never make the person overdue, so if what it unblocks
+      # (a quiz, later steps) would otherwise open already past due, push the
+      # due date out.
+      def self.allow_for_admin_delay!(assignment, today: Date.today)
+        earliest = today + ADMIN_DELAY_GRACE_DAYS
+        return unless assignment.outstanding? && assignment.due_on < earliest
+        assignment.update!(due_on: earliest)
+      end
+
       def self.refresh!(admin_user, context: nil)
         context ||= AutoChecks::Context.new
         first_error = nil
@@ -60,6 +74,7 @@ module Stacks
               row.completed_at = Time.current
               row.source = "auto"
             end
+            allow_for_admin_delay!(assignment) if AutoChecks.owner(step.auto_check_key) == :admin
           end
         end
       end
