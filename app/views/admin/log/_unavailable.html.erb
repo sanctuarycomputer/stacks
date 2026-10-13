@@ -1,0 +1,12 @@
+<%# The log page when its rows cannot be read: the same frame, one line. %>
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>What Stacksbot has seen</p>
+      <%= link_to "#{tracker.name} →", admin_project_tracker_path(tracker) %>
+    </div>
+    <div class="module-body">
+      <p>The project log is unavailable right now.</p>
+    </div>
+  </div>
+</div>

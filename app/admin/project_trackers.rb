@@ -20,6 +20,21 @@ ActiveAdmin.register ProjectTracker do
       .select { |pt| pt.project_capsule&.complete_but_for_admin_sign_off? }.map(&:id)
     scope.where(id: ids)
   end
+  # The trackers that have a Flags pill on this index: the ids come
+  # from the same count the pill prints (Stacks::ProjectLog.flag_counts), so
+  # the two cannot disagree. show_count: false for the reason above: it is read
+  # only when this tab is opened, never on a load of another tab. Empty,
+  # never an error, before the first sync or when the log's rows cannot be read.
+  scope "Has Flags", :has_flags, show_count: false do |scope|
+    ids =
+      begin
+        Stacks::ProjectLog.flagged_tracker_ids
+      rescue StandardError => e
+        Rails.logger.error("[project log] flagged trackers could not be read: #{e.class}: #{e.message}")
+        []
+      end
+    scope.where(id: ids)
+  end
 
   permit_params :name,
     :billing_model,
@@ -109,12 +124,39 @@ ActiveAdmin.register ProjectTracker do
       @last_ships_by_tracker_id || {}
     end
 
+    # The Notion Projects pages the rendered trackers point at, by Notion id,
+    # loaded once for the whole table. A page removed from Notion is absent.
+    helper_method :notion_project_pages_by_notion_id
+    def notion_project_pages_by_notion_id
+      @notion_project_pages_by_notion_id || {}
+    end
+
+    # How many flags each rendered tracker's log shows (Stacks::ProjectLog),
+    # by tracker id, counted once for the whole table. A tracker with none is
+    # absent, and so is every tracker when the log's rows cannot be read.
+    helper_method :log_flag_counts_by_tracker_id
+    def log_flag_counts_by_tracker_id
+      @log_flag_counts_by_tracker_id || {}
+    end
+
     def collection
       c = super
       if action_name == "index" && !@_preloaded_for_render
         arr = c.to_a
         ProjectTracker.preload_for_render(arr)
         @last_ships_by_tracker_id = WeeklyShip.includes(:document).latest_by_tracker(arr.map(&:id))
+        notion_ids = arr.flat_map { |pt| Array(pt.notion_project_ids) }.uniq
+        @notion_project_pages_by_notion_id =
+          notion_ids.empty? ? {} : NotionPage.projects.where(notion_id: notion_ids).index_by(&:notion_id)
+        # The index is worth more than its newest column: when the log's rows
+        # cannot be read (the sync's columns are missing, say) it shows dashes.
+        @log_flag_counts_by_tracker_id =
+          begin
+            Stacks::ProjectLog.flag_counts(arr)
+          rescue StandardError => e
+            Rails.logger.error("[project log] flag counts could not be read: #{e.class}: #{e.message}")
+            {}
+          end
         @_preloaded_for_render = true
         # Group by account lead on the Active and Dormant tabs (and on the
         # default unfiltered view). Within each lead, fall back to the
@@ -257,6 +299,20 @@ ActiveAdmin.register ProjectTracker do
       end
     end
 
+    # How many flags the project's log shows right now, linking to it. What
+    # is a flag is Notion's call (Stacks::ProjectLog). A muted dash, as Last
+    # Ship's, when there are none or the log could not be read.
+    column "Flags" do |pt|
+      count = log_flag_counts_by_tracker_id[pt.id].to_i
+      if count.zero?
+        span "—", style: "opacity: 0.4;"
+        next
+      end
+      label = "#{count} #{count == 1 ? 'Flag' : 'Flags'}"
+      a(label, href: admin_project_tracker_log_path(pt), class: "pill error log-flag-count", style: "text-decoration: none; white-space: nowrap;",
+        title: "#{label} in the project log")
+    end
+
     column :forecast_projects do |resource|
       if resource.forecast_projects.any?
         div(
@@ -289,6 +345,52 @@ ActiveAdmin.register ProjectTracker do
         a("#{resource.runn_project.name} ↗", { href: resource.runn_project.link, target: "_blank", class: "block", style: "white-space:nowrap" })
       else
         span("No Runn.io Project Connected", class: "pill error")
+      end
+    end
+
+    # One line per channel, in channel-id order. The name is plain text from
+    # Twist or from whoever typed it: Arbre escapes it, so never html_safe.
+    column "Twist" do |pt|
+      links = pt.project_tracker_links.select(&:twist_channel_id).sort_by(&:twist_channel_id)
+      if links.empty?
+        if params[:scope] == "complete" || pt.internal_client?
+          # Finished and internal projects aren't expected to have a channel.
+          span "—", style: "opacity: 0.4;"
+        else
+          span("No Twist Channel", class: "pill error")
+        end
+        next
+      end
+      unreadable = Array(pt.twist_channels_inaccessible)
+      div do
+        links.each do |link|
+          a("#{link.name.presence || ProjectTracker::TWIST_LINK_PLACEHOLDER_NAME} ↗", href: link.url, target: "_blank", class: "block", style: "white-space:nowrap")
+          # Stacksbot can only file what it sees in a channel it belongs to.
+          span("Stacksbot not invited", class: "pill error") if unreadable.include?(link.twist_channel_id)
+        end
+      end
+    end
+
+    # One line per chosen page, in the order they were chosen.
+    column "Notion" do |pt|
+      ids = Array(pt.notion_project_ids).reject(&:blank?)
+      if ids.empty?
+        if params[:scope] == "complete" || pt.internal_client?
+          span "—", style: "opacity: 0.4;"
+        else
+          span("No Notion Project", class: "pill error")
+        end
+        next
+      end
+      pages = notion_project_pages_by_notion_id
+      div do
+        ids.each do |id|
+          if (page = pages[id])
+            a("#{page.as_project.title} ↗", href: page.notion_link, target: "_blank", class: "block", style: "white-space:nowrap")
+          else
+            span("Removed from Notion", class: "pill error")
+          end
+        end
       end
     end
 
@@ -497,6 +599,20 @@ ActiveAdmin.register ProjectTracker do
     render(partial: 'show', locals: {
       burnup_data: burnup_data
     })
+
+    # What Stacksbot has filed under this project's Notion projects: the flag
+    # and win counts, the first flags, and the way into the log (app/admin/log.rb). Anyone who
+    # can open this page can read the tracker, which is the log's own rule.
+    # The module must never take this page down with it: when its rows cannot
+    # be read (the sync's columns are missing, say) it says so in one line.
+    log_summary =
+      begin
+        Stacks::ProjectLog.summary(resource)
+      rescue StandardError => e
+        Rails.logger.error("[project log] tracker #{resource.id} could not be read: #{e.class}: #{e.message}")
+        nil
+      end
+    render(partial: "admin/log/module", locals: { tracker: resource, summary: log_summary })
 
     panel "Weekly Ships" do
       ships = resource.weekly_ships.includes(:document).order(sent_at: :desc).limit(20)
