@@ -61,28 +61,11 @@ class AdminAuthorizationManagementFeeTest < ActiveSupport::TestCase
     end
   end
 
-  test "only an admin may create drafts or refresh on a pass, or read garden3d's" do
-    %i[create_management_fee_drafts refresh_management_fee_invoices read].each do |action|
+  test "only an admin may generate invoices or refresh on garden3d's pass, or read it" do
+    %i[rerun_invoice_pass_without_reminders refresh_intercompany_invoices read].each do |action|
       assert auth_for(@admin).authorized?(action, @pass), "admin should #{action}"
       refute auth_for(@lead).authorized?(action, @pass), "a lead must not #{action}"
     end
-  end
-
-  test "a lead cannot create drafts or refresh on a Sanctuary pass either" do
-    pass = sanctuary_tracker.invoice_pass
-
-    %i[create_management_fee_drafts refresh_management_fee_invoices].each do |action|
-      refute auth_for(@lead).authorized?(action, pass), "a lead must not #{action}"
-      assert auth_for(@admin).authorized?(action, pass), "admin should #{action}"
-    end
-  end
-
-  test "only an admin may open a month for garden3d" do
-    # A collection action: it is asked of the class.
-    assert auth_for(@admin).authorized?(:open_management_fee_month, InvoicePass)
-    refute auth_for(@lead).authorized?(:open_management_fee_month, InvoicePass)
-    refute trainee_auth.authorized?(:open_management_fee_month, InvoicePass)
-    assert auth_for(@lead).authorized?(:read, InvoicePass), "the index itself is unchanged for a lead"
   end
 
   def trainee_auth

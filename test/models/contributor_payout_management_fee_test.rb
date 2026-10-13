@@ -6,7 +6,7 @@ require "test_helper"
 class ContributorPayoutManagementFeeTest < ActiveSupport::TestCase
   include ManagementFeeFixtures
 
-  REFUSAL = "Contributor Payouts cannot be made against a management fee invoice.".freeze
+  REFUSAL = "Contributor Payouts cannot be made against one of garden3d's intercompany invoices.".freeze
 
   def setup
     garden3d_qbo_account
@@ -40,7 +40,7 @@ class ContributorPayoutManagementFeeTest < ActiveSupport::TestCase
 
   test "a payout on a management fee tracker is invalid" do
     tracker = attach_invoice(fee_tracker(@pass, @payer), qbo_id: "fee-9", total: "130000.0", balance: "0.0", sent: true)
-    assert tracker.management_fee_invoice?, "sanity"
+    assert tracker.intercompany_invoice?, "sanity"
     payout = payout_on(tracker)
 
     refute payout.valid?
@@ -69,7 +69,7 @@ class ContributorPayoutManagementFeeTest < ActiveSupport::TestCase
     # garden3d's seven 2025 passes each hold a Forecast tracker with a blueprint.
     tracker = attach_invoice(fee_tracker(@pass, @payer), qbo_id: "fee-11", total: "1000.0", balance: "1000.0", sent: true)
     tracker.update!(blueprint: { "lines" => {} })
-    refute tracker.management_fee_invoice?, "sanity"
+    refute tracker.intercompany_invoice?, "sanity"
     payout = payout_on(InvoiceTracker.find(tracker.id))
 
     assert payout.valid?, payout.errors.full_messages.join("; ")
@@ -96,8 +96,8 @@ class ContributorPayoutManagementFeeTest < ActiveSupport::TestCase
     # from the row already loaded and the validation adds no query.
     tracker = sanctuary_tracker
     payout = payout_on(tracker)
-    InvoicePass.any_instance.expects(:management_fee?).never
-    InvoiceTracker.any_instance.expects(:management_fee_invoice?).never
+    InvoicePass.any_instance.expects(:garden3d?).never
+    InvoiceTracker.any_instance.expects(:intercompany_invoice?).never
 
     assert payout.valid?, payout.errors.full_messages.join("; ")
   end

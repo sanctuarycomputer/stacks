@@ -60,7 +60,7 @@ module Mso
       # Managerial Services subtotal, so a variance can be traced to one.
       #
       # Reads the stored invoice mirrors. Refresh them first
-      # (Mso::ManagementFeeInvoices.refresh!) if they may be stale.
+      # (Mso::IntercompanyInvoices.refresh!) if they may be stale.
       def reconcile(date)
         month = date.to_date.beginning_of_month
         account_total = for_month(month)
@@ -143,7 +143,7 @@ module Mso
 
           fee_lines = (stored["line_items"] || []).select do |line|
             line.is_a?(Hash) &&
-              line.dig("sales_line_item_detail", "item_ref", "name") == Mso::ManagementFeeInvoices::ITEM_NAME
+              line.dig("sales_line_item_detail", "item_ref", "name") == Mso::IntercompanyInvoices::ITEM_NAME
           end
 
           {

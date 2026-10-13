@@ -221,7 +221,7 @@ class AdminAuthorizationTest < ActiveSupport::TestCase
   # covers every garden3d pass, the seven legacy 2025 ones included, and every
   # tracker on one, for every action.
 
-  PASS_ACTIONS = %i[read create_management_fee_drafts refresh_management_fee_invoices rerun_invoice_pass
+  PASS_ACTIONS = %i[read refresh_intercompany_invoices rerun_invoice_pass
                     rerun_invoice_pass_without_reminders].freeze
   TRACKER_ACTIONS = %i[read update toggle_ownership attempt_generate notify_reviewers resync_qbo_line_item_services
                        toggle_contributor_payout_acceptance].freeze

@@ -73,9 +73,8 @@ class AdminOrphanInvoiceDropdownsTest < ActionDispatch::IntegrationTest
   end
 
   test "before the migration has run the project tracker form offers every orphan and reads no new column" do
-    columns_before_migration = Enterprise.column_names - %w[management_fee_payer g3d_qbo_customer_id]
+    columns_before_migration = Enterprise.column_names - %w[g3d_qbo_customer_id]
     Enterprise.stubs(:column_names).returns(columns_before_migration)
-    Enterprise.expects(:management_fee_payers).never
 
     get edit_admin_project_tracker_path(project_tracker_with_adhoc_row)
 
@@ -136,9 +135,8 @@ class AdminOrphanInvoiceDropdownsTest < ActionDispatch::IntegrationTest
   end
 
   test "before the migration has run the contributor adjustment form offers every invoice" do
-    columns_before_migration = Enterprise.column_names - %w[management_fee_payer g3d_qbo_customer_id]
+    columns_before_migration = Enterprise.column_names - %w[g3d_qbo_customer_id]
     Enterprise.stubs(:column_names).returns(columns_before_migration)
-    Enterprise.expects(:management_fee_payers).never
 
     get new_admin_ledger_contributor_adjustment_path(ledger)
 

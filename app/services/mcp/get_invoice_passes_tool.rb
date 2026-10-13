@@ -68,7 +68,7 @@ module Mcp
       # hold a legacy Forecast tracker with a blueprint; those are reported
       # exactly as before.
       trackers = pass.invoice_trackers
-      trackers = trackers.reject { |tracker| tracker.blueprint.nil? } if pass.management_fee?
+      trackers = trackers.reject { |tracker| tracker.blueprint.nil? } if pass.garden3d?
       entities = trackers
         .group_by { |t| t.qbo_account&.enterprise&.name || 'Unknown entity' }
         .sort_by { |name, _| name }

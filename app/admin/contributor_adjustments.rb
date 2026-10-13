@@ -105,7 +105,7 @@ ActiveAdmin.register ContributorAdjustment do
       # "qa_id:qbo_id" and the adjustment takes its account from the pick.
       # The invoice this adjustment already points at is always listed, so
       # re-saving the form cannot detach it.
-      offered_invoices = QboInvoice.without_management_fees
+      offered_invoices = QboInvoice.without_intercompany
         .includes(qbo_account: :enterprise).order(Arel.sql("(data->>'doc_number')::int DESC")).to_a
       attached_invoice = f.object.qbo_invoice
       offered_invoices.unshift(attached_invoice) if attached_invoice && !offered_invoices.include?(attached_invoice)

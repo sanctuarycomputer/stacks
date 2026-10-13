@@ -28,8 +28,8 @@ class ContributorPayout < ApplicationRecord
   # reaches the question of who issues the pass, and this adds no query.
   def not_on_a_management_fee_invoice
     return if invoice_tracker.nil? || !invoice_tracker.blueprint.nil?
-    return unless invoice_tracker.management_fee_invoice?
-    errors.add(:base, "Contributor Payouts cannot be made against a management fee invoice.")
+    return unless invoice_tracker.intercompany_invoice?
+    errors.add(:base, "Contributor Payouts cannot be made against one of garden3d's intercompany invoices.")
   end
 
   def display_name

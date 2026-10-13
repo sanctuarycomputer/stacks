@@ -6,6 +6,15 @@ ActiveAdmin.register InvoicePass do
   config.per_page = 12
   actions :index, :show
 
+  # One list per enterprise that issues invoices. garden3d's passes are
+  # admin-only (AdminAuthorization), so its tab is too.
+  scope("Sanctuary", default: true) do |passes|
+    passes.where(enterprise_id: Enterprise.where(name: Enterprise::SANCTUARY_NAME).select(:id))
+  end
+  scope("garden3d", if: proc { current_admin_user.is_admin? }) do |passes|
+    passes.where(enterprise_id: Enterprise.where(name: Enterprise::GARDEN3D_NAME).select(:id))
+  end
+
   controller do
     def scoped_collection
       # surplus_chunks → calculate_surplus walks every contributor_payout's
@@ -35,6 +44,40 @@ ActiveAdmin.register InvoicePass do
       end
       collection
     end
+
+    private
+
+    # garden3d's month: a tracker for each enterprise it bills, then a $0.00
+    # draft in garden3d's QuickBooks for each tracker that has no invoice.
+    # WRITES TO QUICKBOOKS, and only ever from this click. One enterprise
+    # failing is reported and does not stop the others. An enterprise Finance
+    # already invoiced by hand is one such failure: Stacks finds that invoice,
+    # makes no second, and lists it on the tracker's edit page to attach.
+    def make_intercompany_invoices!
+      unless current_admin_user.is_admin?
+        return redirect_to admin_invoice_pass_path(resource), alert: "garden3d's invoices are made by an admin."
+      end
+
+      resource.make_trackers!
+
+      made = 0
+      failed = []
+      InvoiceTracker.where(invoice_pass_id: resource.id, qbo_invoice_id: nil).order(:id).each do |tracker|
+        tracker.make_invoice!
+        made += 1
+      rescue StandardError => e
+        failed << "#{tracker.forecast_client.name}: #{e.message}"
+      end
+
+      summary = "Created #{made} draft(s) in QuickBooks."
+      if failed.any?
+        redirect_to admin_invoice_pass_path(resource), alert: "#{summary} Failed: #{failed.join(' | ')}".truncate(1500)
+      else
+        redirect_to admin_invoice_pass_path(resource), notice: summary
+      end
+    rescue StandardError => e
+      redirect_to admin_invoice_pass_path(resource), alert: e.message
+    end
   end
 
   action_item :rerun_invoice_pass, only: :show,
@@ -43,13 +86,25 @@ ActiveAdmin.register InvoicePass do
       rerun_invoice_pass_admin_invoice_pass_path(resource), method: :post
   end
 
+  # Every pass generates its own invoices; what that means depends on the
+  # enterprise. Sanctuary's come from Forecast. garden3d's are a $0.00 draft
+  # per enterprise it bills, for Finance to fill in.
   action_item :rerun_invoice_pass_without_reminders, only: :show,
-    if: proc { resource.enterprise == Enterprise.sanctuary } do
-    link_to 'Generate Invoices',
-      rerun_invoice_pass_without_reminders_admin_invoice_pass_path(resource), method: :post
+    if: proc { resource.forecast? || resource.intercompany? } do
+    options = { method: :post }
+    if resource.intercompany?
+      options[:data] = {
+        confirm: "Create a $0.00 draft invoice in garden3d's QuickBooks for each company that does not have one " \
+                 "for #{resource.invoice_month}? Stacks first checks QuickBooks and skips any company that " \
+                 "already has an invoice dated in this month.",
+      }
+    end
+    link_to 'Generate Invoices', rerun_invoice_pass_without_reminders_admin_invoice_pass_path(resource), options
   end
 
   member_action :rerun_invoice_pass_without_reminders, method: :post do
+    return make_intercompany_invoices! if resource.intercompany?
+
     unless resource.enterprise == Enterprise.sanctuary
       return redirect_to admin_invoice_pass_path(resource),
         alert: "Forecast invoicing only runs on #{Enterprise::SANCTUARY_NAME}'s passes."
@@ -67,101 +122,18 @@ ActiveAdmin.register InvoicePass do
     redirect_to admin_invoice_pass_path(resource), notice: "Done!"
   end
 
-  # --- garden3d's management fee -------------------------------------------
-  # The ONLY places a management fee invoice is written to QuickBooks are
-  # this action and "Regenerate" on a single tracker. Both are an admin's
-  # click; nothing scheduled does it. AdminAuthorization enforces admin-only
-  # on the server -- the `if:` below only hides the button.
-
-  # Opening a month gives it garden3d's pass and a tracker per paying company
-  # (Mso::ManagementFeeInvoices.ensure_month!). DATABASE ONLY: it never calls
-  # QuickBooks. The nightly run already opens every month from the start
-  # month on, so this is for an earlier month whose hand-made invoices are to
-  # be attached, and for the current month before the nightly run reaches it.
-  action_item :open_management_fee_month, only: :index, if: proc { current_admin_user.is_admin? } do
-    months = Mso::ManagementFeeInvoices.openable_months
-    render(partial: "admin/invoice_passes/open_management_fee_month", locals: { months: months }) if months.any?
+  action_item :refresh_intercompany_invoices, only: :show, if: proc { resource.intercompany? } do
+    link_to "Refresh from QuickBooks", refresh_intercompany_invoices_admin_invoice_pass_path(resource), method: :post
   end
 
-  collection_action :open_management_fee_month, method: :post do
-    # A collection action loads no record, so ActiveAdmin authorizes nothing
-    # on its own. Admin-only, in AdminAuthorization.
-    authorize! :open_management_fee_month, InvoicePass
-
-    month =
-      begin
-        Date.strptime(params[:month].to_s, "%Y-%m")
-      rescue ArgumentError
-        nil
-      end
-    if month.nil? || month > Date.today.beginning_of_month
-      return redirect_to admin_invoice_passes_path, alert: "Choose a month, no later than the current one."
-    end
-
-    begin
-      # Raises LegacyPass for a month whose pass holds a legacy Forecast
-      # tracker, and Misconfigured when a payer is not set up.
-      pass = Mso::ManagementFeeInvoices.ensure_month!(month)
-    rescue Mso::ManagementFeeInvoices::Error => e
-      return redirect_to admin_invoice_passes_path, alert: e.message
-    end
-
-    redirect_to admin_invoice_pass_path(pass),
-      notice: "#{Enterprise::GARDEN3D_NAME}'s pass for #{pass.invoice_month} is open, with a tracker for each " \
-              "paying company. Nothing was sent to QuickBooks."
-  end
-
-  action_item :create_management_fee_drafts, only: :show,
-    if: proc { current_admin_user.is_admin? && Mso::ManagementFeeInvoices.draftable?(resource) } do
-    link_to "Create management fee drafts",
-      create_management_fee_drafts_admin_invoice_pass_path(resource),
-      method: :post,
-      data: { confirm: "Create a $0.00 draft invoice in garden3d's QuickBooks for each paying company that " \
-                       "does not have one for #{resource.invoice_month}? Stacks first checks QuickBooks and " \
-                       "skips any company that already has an invoice dated in this month." }
-  end
-
-  action_item :refresh_management_fee_invoices, only: :show,
-    if: proc {
-      current_admin_user.is_admin? && resource.management_fee? && !resource.legacy_forecast_trackers?
-    } do
-    link_to "Refresh from QuickBooks",
-      refresh_management_fee_invoices_admin_invoice_pass_path(resource), method: :post
-  end
-
-  member_action :create_management_fee_drafts, method: :post do
+  member_action :refresh_intercompany_invoices, method: :post do
     unless current_admin_user.is_admin?
-      return redirect_to admin_invoice_pass_path(resource), alert: "Management fee drafts are created by an admin."
+      return redirect_to admin_invoice_pass_path(resource), alert: "garden3d's invoices are refreshed by an admin."
     end
 
     begin
-      # Raises WrongPass off garden3d's pass, and NotDraftable before
-      # MANAGEMENT_FEE_START or on a pass holding a legacy Forecast tracker.
-      # A payer QuickBooks already holds an invoice for is reported in
-      # run.failed, with that invoice mirrored for attaching.
-      run = Mso::ManagementFeeInvoices.create_drafts!(invoice_pass: resource)
-    rescue Mso::ManagementFeeInvoices::Error => e
-      return redirect_to admin_invoice_pass_path(resource), alert: e.message
-    end
-
-    summary = "Created #{run.created.size} draft(s) in QuickBooks; " \
-              "#{run.already_drafted.size} already had an invoice."
-    if run.failed.any?
-      failures = run.failed.map { |tracker, message| "#{tracker.forecast_client.name}: #{message}" }.join(" | ")
-      redirect_to admin_invoice_pass_path(resource), alert: "#{summary} Failed: #{failures}"
-    else
-      redirect_to admin_invoice_pass_path(resource), notice: summary
-    end
-  end
-
-  member_action :refresh_management_fee_invoices, method: :post do
-    unless current_admin_user.is_admin?
-      return redirect_to admin_invoice_pass_path(resource), alert: "Management fee invoices are refreshed by an admin."
-    end
-
-    begin
-      run = Mso::ManagementFeeInvoices.refresh!(invoice_pass: resource)
-    rescue Mso::ManagementFeeInvoices::Error => e
+      run = Mso::IntercompanyInvoices.refresh!(invoice_pass: resource)
+    rescue Mso::IntercompanyInvoices::Error => e
       return redirect_to admin_invoice_pass_path(resource), alert: e.message
     end
 
@@ -228,16 +200,13 @@ ActiveAdmin.register InvoicePass do
   end
 
   show title: :invoice_month do
-    if resource.management_fee? && !resource.legacy_forecast_trackers?
+    if resource.intercompany?
       # No Forecast hours, no generator errors: this pass holds garden3d's
-      # management fee invoices and nothing else that page describes.
-      render 'management_fee_pass', {
-        invoice_pass: invoice_pass,
-        draftable: Mso::ManagementFeeInvoices.draftable?(invoice_pass),
-      }
+      # invoices to the enterprises it bills.
+      render 'intercompany_pass', { invoice_pass: invoice_pass }
     else
-      # Sanctuary's passes, and garden3d's seven 2025 passes that each hold a
-      # legacy Forecast tracker: rendered exactly as before.
+      # Sanctuary's passes, and garden3d's passes from before
+      # InvoicePass::INTERCOMPANY_START: rendered exactly as before.
       #
       # Same company-wide exposure concern as the index aggregates: the
       # missing-hours report lists every contributor's name + missing

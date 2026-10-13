@@ -85,10 +85,10 @@ module Mcp
     # garden3d's management fee invoices bill its own operating companies.
     # They are intercompany, not receivables: left in, the fee would age in
     # get_ar_aging and list_overdue_invoices next to real client debt. The rule
-    # for recognising one is QboInvoice.without_management_fees, shared with
+    # for recognising one is QboInvoice.without_intercompany, shared with
     # the admin selects; it excludes nothing until the migration has run.
     def self.without_management_fee_invoices(scope)
-      scope.merge(QboInvoice.without_management_fees)
+      scope.merge(QboInvoice.without_intercompany)
     end
     private_class_method :without_management_fee_invoices
 

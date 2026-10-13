@@ -1,7 +1,0 @@
-<%# Months with no garden3d pass. Posting one makes the pass and its trackers; no QuickBooks call. %>
-<%= form_tag open_management_fee_month_admin_invoice_passes_path, method: :post, style: "display: inline-block;" do %>
-  <%= select_tag :month,
-        options_for_select(months.map { |month| [month.strftime("%B %Y"), month.strftime("%Y-%m")] }),
-        "aria-label": "Month to open for garden3d" %>
-  <%= submit_tag "Open garden3d month" %>
-<% end %>

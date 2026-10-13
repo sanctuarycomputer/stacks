@@ -590,7 +590,7 @@ ActiveAdmin.register ProjectTracker do
         # clients, and a new tracker has none yet.
         a.input :qbo_invoice,
           as: :select,
-          collection: QboInvoice.orphans.without_management_fees
+          collection: QboInvoice.orphans.without_intercompany
       end
 
       f.has_many :project_tracker_forecast_projects, heading: false, allow_destroy: true, new_record: 'Connect a Forecast Project' do |a|

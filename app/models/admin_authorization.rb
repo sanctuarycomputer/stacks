@@ -12,15 +12,6 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
   ].freeze
   OWN_LEDGER_ITEM_DENY = [:update, :destroy].freeze
 
-  # These write to, or read from, garden3d's QuickBooks. On garden3d's own
-  # pass the admin-only rule below already covers them; this keeps them
-  # admin-only on every other pass too, where the action would only refuse.
-  # :open_management_fee_month is a collection action, asked of the class: it
-  # makes a garden3d pass.
-  MANAGEMENT_FEE_PASS_ADMIN_ACTIONS = [
-    :create_management_fee_drafts, :refresh_management_fee_invoices, :open_management_fee_month,
-  ].freeze
-
   # Narrows index pages. An admin sees everything. Everyone else never sees
   # garden3d's invoice passes or the trackers on them (see authorized?).
   # Beyond that, (actual or granted) leads see everything, and users whose
@@ -93,10 +84,6 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
     # The MSO roster decides who is paid executive compensation: admins only,
     # for every action including read. Must stay above the blanket lead grant.
     return user.is_admin? if subject.is_a?(MsoRolePeriod) || subject == MsoRolePeriod
-
-    if (subject.is_a?(InvoicePass) || subject == InvoicePass) && MANAGEMENT_FEE_PASS_ADMIN_ACTIONS.include?(action)
-      return user.is_admin?
-    end
 
     # garden3d's invoice passes hold what the operating companies pay it:
     # admins only, for every action including read, on the pass and on every
@@ -228,11 +215,11 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
   private
 
   # Is this an invoice pass issued by garden3d, or a tracker on one?
-  # InvoicePass#management_fee? is "the pass is garden3d's", legacy passes
+  # InvoicePass#garden3d? is "the pass is garden3d's", legacy passes
   # included. False for a class, and for a tracker not yet on a pass.
   def on_garden3d_pass?(subject)
     case subject
-    when InvoicePass, InvoiceTracker then subject.management_fee?
+    when InvoicePass, InvoiceTracker then subject.garden3d?
     else false
     end
   end

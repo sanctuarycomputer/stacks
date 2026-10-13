@@ -15,7 +15,7 @@ class InvoiceTrackerMakeInvoiceDispatchTest < ActiveSupport::TestCase
   end
 
   test "a management fee invoice tracker is pushed as a management fee draft" do
-    Mso::ManagementFeeInvoices.expects(:push_invoice!).once
+    Mso::IntercompanyInvoices.expects(:push_invoice!).once
       .with(invoice_tracker: @tracker).returns(:pushed)
     @tracker.expects(:configuration_errors).never
     @tracker.expects(:assignments).never
@@ -26,12 +26,12 @@ class InvoiceTrackerMakeInvoiceDispatchTest < ActiveSupport::TestCase
   test "a misconfigured management fee invoice tracker raises instead of silently doing nothing" do
     stub_garden3d_qbo(items: [qbo_item("1", "Services")], customers: [qbo_customer("2", "Payer")])
 
-    assert_raises(Mso::ManagementFeeInvoices::Misconfigured) { @tracker.make_invoice! }
+    assert_raises(Mso::IntercompanyInvoices::Misconfigured) { @tracker.make_invoice! }
   end
 
   test "a legacy garden3d tracker stays on the Forecast path" do
     @tracker.update!(blueprint: { "lines" => {} })
-    Mso::ManagementFeeInvoices.expects(:push_invoice!).never
+    Mso::IntercompanyInvoices.expects(:push_invoice!).never
     @tracker.stubs(:configuration_errors).returns([[:missing_qbo_customer]])
 
     assert_nil @tracker.make_invoice!, "the Forecast path's first guard, as today"
@@ -43,9 +43,11 @@ class InvoiceTrackerMakeInvoiceDispatchTest < ActiveSupport::TestCase
     pass = InvoicePass.create!(start_of_month: Date.new(2094, 5, 1), enterprise: enterprises(:one), data: {})
     client = ForecastClient.create!(forecast_id: 970_001, name: "External Co")
     tracker = InvoiceTracker.create!(invoice_pass: pass, forecast_client_id: client.forecast_id, qbo_account: other_qa)
-    Mso::ManagementFeeInvoices.expects(:push_invoice!).never
+    Mso::IntercompanyInvoices.expects(:push_invoice!).never
     tracker.expects(:configuration_errors).never
 
-    assert_raises(InvoicePass::UnsupportedIssuer) { tracker.make_invoice! }
+    error = assert_raises(RuntimeError) { tracker.make_invoice! }
+
+    assert_match(/makes no invoices through Stacks/, error.message)
   end
 end

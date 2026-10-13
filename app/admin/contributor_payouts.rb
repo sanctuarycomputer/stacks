@@ -134,8 +134,8 @@ ActiveAdmin.register ContributorPayout do
     invoice_tracker = InvoiceTracker.find(params["invoice_tracker_id"])
     index_path = admin_invoice_tracker_contributor_payouts_path(invoice_tracker)
     return redirect_to(index_path, alert: "Admins only.") unless current_admin_user.is_admin?
-    if invoice_tracker.management_fee_invoice?
-      return redirect_to(index_path, alert: "A management fee invoice has no contributor payouts.")
+    if invoice_tracker.intercompany_invoice?
+      return redirect_to(index_path, alert: "garden3d's intercompany invoices have no contributor payouts.")
     end
 
     begin
@@ -223,7 +223,7 @@ ActiveAdmin.register ContributorPayout do
     def authorize_garden3d_tracker!
       payout = ContributorPayout.with_deleted.find_by(id: params[:id]) if params[:id].present?
       tracker = [payout&.invoice_tracker, InvoiceTracker.find_by(id: params[:invoice_tracker_id])]
-        .compact.find(&:management_fee?)
+        .compact.find(&:garden3d?)
       return if tracker.nil?
       return if action_name == "show" && payout.present?
 

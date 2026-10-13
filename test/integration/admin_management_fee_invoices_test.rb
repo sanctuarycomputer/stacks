@@ -180,15 +180,17 @@ class AdminManagementFeeInvoicesTest < ActionDispatch::IntegrationTest
 
   # --- The pass page ---------------------------------------------------------
 
-  def create_drafts_path(pass)
-    create_management_fee_drafts_admin_invoice_pass_path(pass)
+  # "Generate Invoices": the same button every pass has. On garden3d's pass it
+  # makes the trackers and a $0.00 draft for each.
+  def generate_path(pass)
+    rerun_invoice_pass_without_reminders_admin_invoice_pass_path(pass)
   end
 
   def refresh_path(pass)
-    refresh_management_fee_invoices_admin_invoice_pass_path(pass)
+    refresh_intercompany_invoices_admin_invoice_pass_path(pass)
   end
 
-  test "garden3d's pass page offers the two management fee actions and lists who is billed" do
+  test "garden3d's pass page offers Generate Invoices and Refresh, and lists who is billed" do
     attach_invoice(fee_tracker(@pass, @payer), qbo_id: "8100", total: "130000.0", balance: "130000.0", sent: true)
     # The Forecast missing-hours report means nothing on this pass.
     Stacks::Automator.expects(:discover_people_missing_hours_for_month).never
@@ -197,14 +199,15 @@ class AdminManagementFeeInvoicesTest < ActionDispatch::IntegrationTest
     get admin_invoice_pass_path(@pass)
 
     assert_response :success
-    assert_select "a[href=?]", create_drafts_path(@pass), count: 1
+    assert_select "a[href=?]", generate_path(@pass), text: "Generate Invoices", count: 1
+    assert_select "a[href=?][data-confirm]", generate_path(@pass), count: 1
     assert_select "a[href=?]", refresh_path(@pass), count: 1
-    assert_select "a[href=?]", rerun_invoice_pass_without_reminders_admin_invoice_pass_path(@pass), count: 0
+    assert_select "a[href=?]", rerun_invoice_pass_admin_invoice_pass_path(@pass), count: 0
     assert_match(/Sanctuary Computer Inc/, response.body)
     assert_match(/\$130,000\.00/, response.body)
   end
 
-  test "a Sanctuary pass page does not offer the management fee actions" do
+  test "a Sanctuary pass page offers Generate Invoices as it always has, with no confirm, and no Refresh" do
     Stacks::Automator.stubs(:discover_people_missing_hours_for_month).returns([])
     pass = InvoicePass.create!(start_of_month: Date.new(2094, 7, 1), enterprise: enterprises(:sanctuary), data: {})
     sign_in @admin
@@ -212,28 +215,43 @@ class AdminManagementFeeInvoicesTest < ActionDispatch::IntegrationTest
     get admin_invoice_pass_path(pass)
 
     assert_response :success
-    assert_select "a[href=?]", create_drafts_path(pass), count: 0
+    assert_select "a[href=?]", generate_path(pass), text: "Generate Invoices", count: 1
+    assert_select "a[href=?][data-confirm]", generate_path(pass), count: 0
     assert_select "a[href=?]", refresh_path(pass), count: 0
   end
 
-  test "a garden3d pass from before drafting started offers Refresh but not Create drafts, and says why" do
-    pass = garden3d_pass(Mso::ManagementFeeInvoices::MANAGEMENT_FEE_START - 1.month)
-    fee_tracker(pass, @payer)
+  test "a garden3d pass from before the first month renders as it always has, with neither action" do
+    pass = garden3d_pass(InvoicePass::INTERCOMPANY_START - 1.month)
+    fee_tracker(pass, @payer).update!(blueprint: { "lines" => {} })
+    Stacks::Automator.expects(:discover_people_missing_hours_for_month).once.returns([])
     sign_in @admin
 
     get admin_invoice_pass_path(pass)
 
     assert_response :success
-    assert_select "a[href=?]", create_drafts_path(pass), count: 0
-    assert_select "a[href=?]", refresh_path(pass), count: 1
-    assert_match(/invoiced by hand/, response.body)
+    assert_select "a[href=?]", generate_path(pass), count: 0
+    assert_select "a[href=?]", refresh_path(pass), count: 0
+    assert_no_match(/Invoices to paying companies/, response.body)
+  end
+
+  test "Generate Invoices posted to a garden3d pass from before the first month makes nothing" do
+    pass = garden3d_pass(InvoicePass::INTERCOMPANY_START - 1.month)
+    Stacks::Automator.expects(:attempt_invoicing_for_invoice_pass).never
+    Quickbooks::Service::Invoice.any_instance.expects(:create).never
+    sign_in @admin
+
+    post generate_path(pass)
+
+    assert_redirected_to admin_invoice_pass_path(pass)
+    assert_match(/Forecast invoicing only runs/, flash[:alert])
+    assert_equal 0, InvoiceTracker.where(invoice_pass_id: pass.id).count
   end
 
   # August, September and October 2026 were invoiced by hand before Stacks
-  # drafted anything, and are draftable all the same: the click must find each
-  # existing invoice, create nothing, and offer it for attaching.
-  test "Create drafts on a start-month pass that was invoiced by hand refuses and lists the invoice to attach" do
-    pass = garden3d_pass(Mso::ManagementFeeInvoices::MANAGEMENT_FEE_START)
+  # drafted anything: the click must find each existing invoice, create
+  # nothing, and offer it for attaching.
+  test "Generate Invoices on a first-month pass that was invoiced by hand refuses and lists the invoice to attach" do
+    pass = garden3d_pass(InvoicePass::INTERCOMPANY_START)
     assert_equal "August 2026", pass.invoice_month
     stub_garden3d_qbo(customers: [qbo_customer("2", "Sanctuary Computer Inc")],
                       invoices_in_month: [qbo_created_invoice("4700", total: "140000", balance: "0")])
@@ -244,10 +262,9 @@ class AdminManagementFeeInvoicesTest < ActionDispatch::IntegrationTest
     get admin_invoice_pass_path(pass)
 
     assert_response :success
-    assert_select "a[href=?]", create_drafts_path(pass), count: 1
-    assert_no_match(/invoiced by hand/, response.body)
+    assert_select "a[href=?]", generate_path(pass), count: 1
 
-    post create_drafts_path(pass)
+    post generate_path(pass)
 
     assert_redirected_to admin_invoice_pass_path(pass)
     assert_nil flash[:notice]
@@ -267,24 +284,11 @@ class AdminManagementFeeInvoicesTest < ActionDispatch::IntegrationTest
     assert_equal "4700", tracker.reload.qbo_invoice_id
   end
 
-  test "a legacy garden3d pass renders as it does today, with neither action" do
-    fee_tracker(@pass, @payer).update!(blueprint: { "lines" => {} })
-    Stacks::Automator.expects(:discover_people_missing_hours_for_month).once.returns([])
-    sign_in @admin
-
-    get admin_invoice_pass_path(@pass)
-
-    assert_response :success
-    assert_select "a[href=?]", create_drafts_path(@pass), count: 0
-    assert_select "a[href=?]", refresh_path(@pass), count: 0
-    assert_no_match(/Management fee invoices/, response.body)
-  end
-
-  test "an admin creates the drafts with one click" do
+  test "an admin's Generate Invoices makes the trackers and their drafts with one click" do
     Quickbooks::Service::Invoice.any_instance.expects(:create).once.returns(qbo_created_invoice("9300"))
     sign_in @admin
 
-    post create_drafts_path(@pass)
+    post generate_path(@pass)
 
     assert_redirected_to admin_invoice_pass_path(@pass)
     assert_match(/Created 1 draft/, flash[:notice])
@@ -295,7 +299,7 @@ class AdminManagementFeeInvoicesTest < ActionDispatch::IntegrationTest
     Quickbooks::Service::Invoice.any_instance.expects(:create).never
     sign_in @lead
 
-    post create_drafts_path(@pass)
+    post generate_path(@pass)
 
     assert_response :redirect
     assert_match(/not authorized/i, flash[:error])
@@ -304,7 +308,7 @@ class AdminManagementFeeInvoicesTest < ActionDispatch::IntegrationTest
 
   test "a lead cannot refresh by posting directly, and QuickBooks is never read" do
     tracker = attach_invoice(fee_tracker(@pass, @payer), qbo_id: "8103", total: "0.0", balance: "0.0", sent: false)
-    Mso::ManagementFeeInvoices.expects(:refresh!).never
+    Mso::IntercompanyInvoices.expects(:refresh!).never
     QboInvoice.any_instance.expects(:sync!).never
     QboAccount.any_instance.expects(:fetch_invoice_by_id).never
     sign_in @lead
@@ -317,14 +321,14 @@ class AdminManagementFeeInvoicesTest < ActionDispatch::IntegrationTest
   end
 
   test "a lead posting create-drafts never reaches QuickBooks at all" do
-    Mso::ManagementFeeInvoices.expects(:create_drafts!).never
+    InvoicePass.any_instance.expects(:make_trackers!).never
     QboAccount.any_instance.expects(:fetch_all_customers).never
     Quickbooks::Service::Invoice.any_instance.expects(:query).never
     Quickbooks::Service::Invoice.any_instance.expects(:create).never
     Quickbooks::Service::Customer.any_instance.expects(:create).never
     sign_in @lead
 
-    post create_drafts_path(@pass)
+    post generate_path(@pass)
 
     assert_response :redirect
     assert_match(/not authorized/i, flash[:error])
@@ -359,18 +363,6 @@ class AdminManagementFeeInvoicesTest < ActionDispatch::IntegrationTest
 
     assert_response :redirect
     assert_match(/not authorized/i, flash[:error])
-  end
-
-  test "creating drafts on a Sanctuary pass is refused" do
-    pass = InvoicePass.create!(start_of_month: Date.new(2094, 7, 1), enterprise: enterprises(:sanctuary), data: {})
-    Quickbooks::Service::Invoice.any_instance.expects(:create).never
-    sign_in @admin
-
-    post create_drafts_path(pass)
-
-    assert_redirected_to admin_invoice_pass_path(pass)
-    assert_match(/garden3d, LLC's pass/, flash[:alert])
-    assert_equal 0, InvoiceTracker.where(invoice_pass_id: pass.id).count
   end
 
   test "an admin refreshes the attached invoices from QuickBooks" do

@@ -88,9 +88,9 @@ class Mcp::ReceivablesManagementFeeTest < ActiveSupport::TestCase
     invoice.customer_id = "2"
     invoice.due_date = @today - 10
     stub_garden3d_qbo(customers: [qbo_customer("2", "Sanctuary Computer Inc")], invoices_in_month: [invoice])
-    pass = garden3d_pass(Mso::ManagementFeeInvoices::MANAGEMENT_FEE_START)
-    assert_raises(Mso::ManagementFeeInvoices::AlreadyInvoiced) do
-      Mso::ManagementFeeInvoices.push_invoice!(invoice_tracker: fee_tracker(pass, @payer))
+    pass = garden3d_pass(InvoicePass::INTERCOMPANY_START)
+    assert_raises(Mso::IntercompanyInvoices::AlreadyInvoiced) do
+      Mso::IntercompanyInvoices.push_invoice!(invoice_tracker: fee_tracker(pass, @payer))
     end
     assert_equal 1, QboInvoice.open_receivables.where(qbo_account_id: @qbo_account.id, qbo_id: "4600").count,
                  "sanity: without the exclusion this row is a receivable"
@@ -104,7 +104,6 @@ class Mcp::ReceivablesManagementFeeTest < ActiveSupport::TestCase
 
   test "before the migration has run nothing is excluded, and the new columns are never read" do
     stub_management_fee_columns_missing
-    Enterprise.expects(:management_fee_payers).never
     receivable!(@qbo_account, "FEE-3", customer_id: "2", balance: 135_000.0)
 
     rows, _total = aging_customers
