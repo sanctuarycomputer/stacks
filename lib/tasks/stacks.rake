@@ -438,7 +438,8 @@ namespace :stacks do
     Rake::Task["stacks:sync_twist_channel_access"].invoke
     # The project log's sync joins the ride only once a first run has been
     # made by hand (rake stacks:sync_notion_log, after reading the preview),
-    # so the first, 90-day run is never a surprise at night.
+    # so the first run is never a surprise at night. Every night's run is a
+    # full one: see the task below.
     log_sync_started = begin
       Stacks::Notion::FilteredSync.marks.any?
     rescue => e
@@ -461,24 +462,26 @@ namespace :stacks do
   end
 
   # Stacksbot's Observations and Problems, for the project log
-  # (/admin/project_trackers/:id/log). Reads the rows edited since the last
-  # run, upserts them into notion_pages and never deletes a row it did not
-  # see. NOT the whole-database sync above, which must never be pointed at
-  # these two databases.
+  # (/admin/project_trackers/:id/log). Upserts into notion_pages and never
+  # deletes a row it did not see. NOT the whole-database sync above, which
+  # must never be pointed at these two databases.
   #
-  #   rake stacks:sync_notion_log            the rows edited since the last run
-  #   rake "stacks:sync_notion_log[full]"    every Problem, and 90 days of Observations
+  #   rake stacks:sync_notion_log                  every Problem, and 90 days of Observations
+  #   rake "stacks:sync_notion_log[full]"          the same, said out loud
+  #   rake "stacks:sync_notion_log[incremental]"   only the rows edited since the last run
   #
-  # Run it with [full] after changing a formula in Notion (the Flag formula,
-  # say). A formula's new result does not count as an edit of the page, so the
-  # usual run, which asks for pages edited since the last one, never sees it.
-  desc "Sync Stacksbot's Observations and Problems from Notion for the project log ([full] to re-read everything)"
+  # The nightly run is the full one, on purpose. Notion's Flag formula depends
+  # on today's date, and a formula's new result does not count as an edit of
+  # the page, so a run that asks for pages edited since the last one never
+  # sees a flag lapse (or a formula that was rewritten). A full run is about
+  # 8 Notion requests. [incremental] is for a quick look after an edit.
+  desc "Sync Stacksbot's Observations and Problems from Notion for the project log (everything; [incremental] for edits since the last run)"
   task :sync_notion_log, [:mode] => :environment do |_t, args|
     mode = args[:mode].presence
-    raise ArgumentError, "mode must be full, or left out" unless [nil, "full"].include?(mode)
+    raise ArgumentError, "mode must be full, incremental, or left out" unless [nil, "full", "incremental"].include?(mode)
     system_task = SystemTask.create!(name: "stacks:sync_notion_log")
     begin
-      stats = mode == "full" ? Stacks::Notion::FilteredSync.run!(mode: :backfill) : Stacks::Notion::FilteredSync.run!
+      stats = Stacks::Notion::FilteredSync.run!(mode: mode == "incremental" ? :incremental : :backfill)
       Rails.logger.info("[sync_notion_log] #{stats.to_json}")
       system_task.mark_as_success
     rescue => e
@@ -490,9 +493,9 @@ namespace :stacks do
   # recheck, and for each database the type Notion holds for every property
   # the log reads ("missing" when it is not there). Writes nothing and records
   # no SystemTask.
-  #   rake stacks:preview_notion_log_sync                  the next real run
-  #   rake "stacks:preview_notion_log_sync[incremental]"   the later runs' query, before there is a mark
-  desc "Count what stacks:sync_notion_log would pull, without writing ([backfill] or [incremental] to force a shape)"
+  #   rake stacks:preview_notion_log_sync                  the nightly, full run
+  #   rake "stacks:preview_notion_log_sync[incremental]"   the incremental run's query
+  desc "Count what stacks:sync_notion_log would pull, without writing ([incremental] for that run's shape)"
   task :preview_notion_log_sync, [:mode] => :environment do |_t, args|
     mode = args[:mode].presence
     raise ArgumentError, "mode must be backfill or incremental" unless [nil, "backfill", "incremental"].include?(mode)

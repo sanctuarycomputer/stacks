@@ -27,7 +27,7 @@ class SyncNotionLogRakeTest < ActiveSupport::TestCase
   end
 
   test "sync_notion_log records a successful SystemTask on a clean run" do
-    Stacks::Notion::FilteredSync.expects(:run!).once.with.returns(STATS)
+    Stacks::Notion::FilteredSync.expects(:run!).once.with(mode: :backfill).returns(STATS)
     Stacks::Notifications.expects(:report_exception).never
     assert_difference -> { SystemTask.where(name: "stacks:sync_notion_log").count }, 1 do
       Rake::Task["stacks:sync_notion_log"].invoke
@@ -37,15 +37,20 @@ class SyncNotionLogRakeTest < ActiveSupport::TestCase
     assert_nil task.notification_id
   end
 
-  # A formula's new result (the Flag formula, say) is not an edit of the page,
-  # so only a run that re-reads everything picks it up.
-  test "sync_notion_log[full] re-reads everything, and any other mode is refused before anything runs" do
+  # A formula's new result (the Flag formula, which depends on the date) is
+  # not an edit of the page, so only a run that re-reads everything picks it
+  # up. That is every run unless [incremental] is asked for by hand.
+  test "sync_notion_log[full] re-reads everything, [incremental] does not, and any other mode is refused before anything runs" do
     Stacks::Notion::FilteredSync.expects(:run!).once.with(mode: :backfill).returns(STATS)
     Stacks::Notifications.expects(:report_exception).never
     assert_difference -> { SystemTask.where(name: "stacks:sync_notion_log").count }, 1 do
       Rake::Task["stacks:sync_notion_log"].invoke("full")
     end
     assert last_task("stacks:sync_notion_log").settled_at.present?
+
+    Rake::Task["stacks:sync_notion_log"].reenable
+    Stacks::Notion::FilteredSync.expects(:run!).once.with(mode: :incremental).returns(STATS)
+    Rake::Task["stacks:sync_notion_log"].invoke("incremental")
 
     Rake::Task["stacks:sync_notion_log"].reenable
     assert_no_difference -> { SystemTask.count } do
@@ -79,7 +84,7 @@ class SyncNotionLogRakeTest < ActiveSupport::TestCase
     assert_equal 3, JSON.parse(out).dig("observations", "created")
   end
 
-  test "the preview can be made in the later runs' shape, and refuses any other word" do
+  test "the preview can be made in the incremental shape, and refuses any other word" do
     Stacks::Notion::FilteredSync.expects(:run!).once.with(dry_run: true, mode: :incremental).returns(STATS)
     capture_io { Rake::Task["stacks:preview_notion_log_sync"].invoke("incremental") }
     Rake::Task["stacks:preview_notion_log_sync"].reenable
@@ -96,11 +101,11 @@ class SyncNotionLogRakeTest < ActiveSupport::TestCase
     assert last_task("stacks:sync_twist_channel_access").settled_at.present?
   end
 
-  test "once there is a mark, the daily Notion sync runs the log sync after the Twist check" do
+  test "once there is a mark, the daily Notion sync runs the log sync, in full, after the Twist check" do
     Stacks::Notion::FilteredSync.stubs(:marks).returns({ "OBSERVATIONS" => "2026-10-12T05:00:00Z" })
     seq = sequence("after the Notion sync")
     ProjectTracker.expects(:sync_twist_channel_access!).once.in_sequence(seq).returns({})
-    Stacks::Notion::FilteredSync.expects(:run!).once.in_sequence(seq).returns(STATS)
+    Stacks::Notion::FilteredSync.expects(:run!).once.with(mode: :backfill).in_sequence(seq).returns(STATS)
     Stacks::Notifications.expects(:report_exception).never
     Rake::Task["stacks:sync_notion"].invoke
     assert last_task("stacks:sync_notion_log").settled_at.present?

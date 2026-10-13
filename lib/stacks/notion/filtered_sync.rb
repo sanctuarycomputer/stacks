@@ -1,17 +1,30 @@
-# Syncs part of a large Notion database into notion_pages: the rows edited in
-# a window, upserted one by one. It NEVER deletes a row it did not see (the
-# whole-database sync, Stacks::Notion#sync_database, does, which is why these
-# databases must never go through it).
+# Syncs part of a large Notion database into notion_pages, upserting row by
+# row. It NEVER deletes a row it did not see (the whole-database sync,
+# Stacks::Notion#sync_database, does, which is why these databases must never
+# go through it).
 #
-# Observations: the first run reads 90 days of rows that have a project. Every
-# later run reads every row edited since the last run, stores a new row only
-# when it has a project, and updates a row only when Stacks already holds it.
-# That second rule is how a row whose project was removed leaves the log.
+# EVERY RUN IS FULL unless it is asked to be incremental (:backfill, the
+# default): every Problem, and every Observation that has a project and was
+# edited in the last 90 days. It has to be. Whether a page is a flag is a
+# Notion formula that depends on today's date, and a formula's new result is
+# not an edit of the page, so a run that asked only for pages edited since the
+# last one would never see a flag lapse. A full run costs one query per 100
+# rows: 8 requests a night at about 405 Problems and 236 Observations.
+#
+# The incremental run (mode: :incremental, by hand only) reads the rows edited
+# since the last run. For Observations it stores a new row only when it has a
+# project and updates a row only when Stacks already holds it. It is quicker
+# after an edit in Notion, and blind to a formula that changed by itself.
 #
 # Problems: every row is kept, with or without a project, so the problems an
 # observation was folded into are always here for the log to read.
+#
+# A row the full query did not return (trashed, lost its project, last edited
+# over 90 days ago) is asked for by id in the recheck, at most RECHECK_LIMIT a
+# run. After a full run that is only those rows, since every row the query
+# returned was stamped as seen.
 class Stacks::Notion::FilteredSync
-  FIRST_RUN_WINDOW = 90.days
+  FIRST_RUN_WINDOW = 90.days # how far back a full run reads Observations, by last edit
   MIN_WINDOW = 3.days
   OVERLAP = 1.day
   # Where a database that is read whole starts from. Sent in the same filter
@@ -30,10 +43,10 @@ class Stacks::Notion::FilteredSync
   WRAPPERS = { OBSERVATIONS: Stacks::Notion::Observation, PROBLEMS: Stacks::Notion::Problem }.freeze
   # Whether a row must be filed under a project to be stored.
   REQUIRES_PROJECT = { OBSERVATIONS: true, PROBLEMS: false }.freeze
-  # A fallback, off. Later runs of Observations ask for every row edited in
-  # the window. Set this to true to ask only for rows that have a project, as
-  # the first run does; a row that lost its project is then noticed by the
-  # recheck instead of by the query.
+  # A fallback, off. An incremental run of Observations asks for every row
+  # edited in the window. Set this to true to ask only for rows that have a
+  # project, as the full run does; a row that lost its project is then noticed
+  # by the recheck instead of by the query.
   INCREMENTAL_KEEPS_PROJECT_CLAUSE = false
 
   # What the wrappers read and the type Notion held for each on 2026-10-12.
@@ -83,12 +96,12 @@ class Stacks::Notion::FilteredSync
     @unchanged_ids = []
   end
 
-  # [since, mode]. mode is forced only by a dry run that wants to try the
-  # later runs' query before there is a mark.
+  # [since, mode]. A full run (:backfill) unless :incremental is asked for.
+  # The mark only bounds an incremental run; with none, that reads 3 days.
   def window_for(key, mode: nil)
-    mark = self.class.last_synced_at(key)
     floor = REQUIRES_PROJECT.fetch(key) ? @now - FIRST_RUN_WINDOW : EVERYTHING_SINCE
-    return [floor, :backfill] if mode == :backfill || (mode.nil? && mark.nil?)
+    return [floor, :backfill] unless mode == :incremental
+    mark = self.class.last_synced_at(key)
     return [@now - MIN_WINDOW, :incremental] if mark.nil?
     [[[mark - OVERLAP, @now - MIN_WINDOW].min, floor].max, :incremental]
   end

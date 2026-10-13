@@ -21,7 +21,7 @@ class StacksNotionFilteredSyncTest < ActiveSupport::TestCase
     System.first.update!(notion_filtered_sync_marks: Stacks::Notion::FilteredSync.marks.merge(key.to_s => time.utc.iso8601))
   end
 
-  test "the first run asks for 90 days of rows that have a project, newest edit first" do
+  test "a run asks for 90 days of rows that have a project, newest edit first" do
     client = FakeNotion.new
     stats = sync_with(client).sync(:OBSERVATIONS)
     q = client.queries.first
@@ -43,10 +43,12 @@ class StacksNotionFilteredSyncTest < ActiveSupport::TestCase
     assert_equal "backfill", stats[:mode]
   end
 
-  # Editing a formula in Notion changes its result on every page without
-  # touching last_edited_time, so the usual run never asks for those pages.
-  # A full run asks for everything again and stores what changed.
-  test "a full run stores a formula result that changed without the page being edited" do
+  # The Flag formula depends on today's date, so its result changes without
+  # anyone touching the page (and so does every page's when the formula is
+  # rewritten). last_edited_time does not move, so a run that asks for edited
+  # pages is never sent it. Every run is full for that reason: it asks for
+  # everything again, mark or no mark, and stores what changed.
+  test "every run is full, so a formula result that changed without an edit lands on the next run" do
     edited = NOW - 20.days
     before = problem_data(name: "Timeline slipping", flag: "", edited: edited, last_seen: edited)
     sync_with(FakeNotion.new(pages: { PROB => [[before]] })).sync(:PROBLEMS)
@@ -54,14 +56,42 @@ class StacksNotionFilteredSyncTest < ActiveSupport::TestCase
     assert_not stored.as_problem.flag?
 
     after = before.deep_dup
-    after["properties"]["Flag"]["formula"]["string"] = "High severity problem. Nobody owns it yet."
+    after["properties"]["Flag"]["formula"]["string"] = "Open."
     client = FakeNotion.new(pages: { PROB => [[after]] })
     later = sync_with(client, now: NOW + 1.day)
-    assert_operator later.window_for(:PROBLEMS).first, :>, edited, "the usual run asks only for pages edited since, so it would not be sent this one"
-    stats = later.sync(:PROBLEMS, mode: :backfill)
+    assert Stacks::Notion::FilteredSync.last_synced_at(:PROBLEMS), "there is a mark from the first run"
+    assert_operator later.window_for(:PROBLEMS, mode: :incremental).first, :>, edited, "an incremental run asks only for pages edited since, so it would not be sent this one"
+    assert_equal [Stacks::Notion::FilteredSync::EVERYTHING_SINCE, :backfill], later.window_for(:PROBLEMS)
+    stats = later.sync(:PROBLEMS)
+    assert_equal "backfill", stats[:mode]
     assert_equal "2000-01-01T00:00:00Z", client.queries.first[:filter][:and].last[:last_edited_time][:on_or_after]
     assert_equal 1, stats[:updated]
-    assert_equal "High severity problem. Nobody owns it yet.", stored.reload.as_problem.flag_reason
+    assert_equal "Open.", stored.reload.as_problem.flag_reason
+  end
+
+  test "a run of Observations is full whatever the mark: 90 days of rows that have a project" do
+    mark!(:OBSERVATIONS, NOW - 6.hours)
+    client = FakeNotion.new
+    stats = sync_with(client).sync(:OBSERVATIONS)
+    assert_equal "backfill", stats[:mode]
+    assert_equal({ and: [{ property: "Projects", relation: { is_not_empty: true } },
+                         { timestamp: "last_edited_time", last_edited_time: { on_or_after: "2026-07-15T05:00:00Z" } }] },
+                 client.queries.first[:filter])
+  end
+
+  # What the nightly run costs: one query per 100 rows and no page fetch,
+  # because every stored row was returned and stamped as seen.
+  test "a full run over stored rows costs one query a page and rechecks nothing" do
+    observations = Array.new(3) { observation_data(project_ids: %w[p1]) }
+    problems = Array.new(3) { problem_data(project_ids: %w[p1]) }
+    pages = { OBS => [observations.first(2), observations.last(1)], PROB => [problems.first(2), problems.last(1)] }
+    sync_with(FakeNotion.new(pages: pages)).run_all
+    client = FakeNotion.new(pages: pages)
+    out = sync_with(client, now: NOW + 1.day).run_all
+    assert_equal 4, client.queries.size
+    assert_equal [3, 3], [out[:observations][:unchanged], out[:problems][:unchanged]]
+    assert_equal 0, out[:recheck][:candidates]
+    assert_empty client.fetched
   end
 
   test "a problem with no project is stored, under no tracker" do
@@ -73,36 +103,36 @@ class StacksNotionFilteredSyncTest < ActiveSupport::TestCase
     assert_equal "Timeline slipping", page.as_problem.title
   end
 
-  test "a later run of Problems reads from the last run less a day, however long ago, and still stores a new one" do
+  test "an incremental run of Problems reads from the last run less a day, however long ago, and still stores a new one" do
     mark!(:PROBLEMS, NOW - 200.days)
     row = problem_data(project_ids: [])
     client = FakeNotion.new(pages: { PROB => [[row]] })
-    stats = sync_with(client).sync(:PROBLEMS)
+    stats = sync_with(client).sync(:PROBLEMS, mode: :incremental)
     assert_equal({ and: [{ timestamp: "last_edited_time", last_edited_time: { on_or_after: "2026-03-26T05:00:00Z" } }] },
                  client.queries.first[:filter])
     assert_equal "incremental", stats[:mode]
     assert_equal 1, NotionPage.problems.count
   end
 
-  test "one constant puts the project clause back on later runs of Observations" do
+  test "one constant puts the project clause back on incremental runs of Observations" do
     mark!(:OBSERVATIONS, NOW - 6.hours)
     Stacks::Notion::FilteredSync.stub_const(:INCREMENTAL_KEEPS_PROJECT_CLAUSE, true) do
       client = FakeNotion.new
-      sync_with(client).sync(:OBSERVATIONS)
+      sync_with(client).sync(:OBSERVATIONS, mode: :incremental)
       assert_equal({ and: [{ property: "Projects", relation: { is_not_empty: true } },
                            { timestamp: "last_edited_time", last_edited_time: { on_or_after: "2026-10-10T05:00:00Z" } }] },
                    client.queries.first[:filter])
       problems = FakeNotion.new
-      sync_with(problems).sync(:PROBLEMS)
+      sync_with(problems).sync(:PROBLEMS, mode: :incremental)
       assert_equal 1, problems.queries.first[:filter][:and].size, "Problems never carry it"
     end
   end
 
-  test "a later run asks for every row edited since the last run less a day, and never under 3 days" do
+  test "an incremental run asks for every row edited since the last run less a day, and never under 3 days" do
     { 6.hours => "2026-10-10T05:00:00Z", 10.days => "2026-10-02T05:00:00Z", 200.days => "2026-07-15T05:00:00Z" }.each do |ago, since|
       mark!(:OBSERVATIONS, NOW - ago)
       client = FakeNotion.new
-      stats = sync_with(client).sync(:OBSERVATIONS)
+      stats = sync_with(client).sync(:OBSERVATIONS, mode: :incremental)
       assert_equal({ and: [{ timestamp: "last_edited_time", last_edited_time: { on_or_after: since } }] },
                    client.queries.first[:filter], "last run #{ago.inspect} ago")
       assert_equal "incremental", stats[:mode]
@@ -262,7 +292,7 @@ class StacksNotionFilteredSyncTest < ActiveSupport::TestCase
     assert_not sync_with(FakeNotion.new(pages: { OBS => [[row]] })).sync(:OBSERVATIONS).key?(:properties)
   end
 
-  test "a dry run can be made in the later runs' shape before there is a mark" do
+  test "a dry run can be made in the incremental shape before there is a mark" do
     client = FakeNotion.new
     stats = sync_with(client).sync(:OBSERVATIONS, dry_run: true, mode: :incremental)
     assert_equal({ and: [{ timestamp: "last_edited_time", last_edited_time: { on_or_after: "2026-10-10T05:00:00Z" } }] },
@@ -274,6 +304,7 @@ class StacksNotionFilteredSyncTest < ActiveSupport::TestCase
     System.first.update!(notion_filtered_sync_marks: { "OBSERVATIONS" => "garbage" })
     assert_nil Stacks::Notion::FilteredSync.last_synced_at(:OBSERVATIONS)
     assert_equal :backfill, sync_with(FakeNotion.new).window_for(:OBSERVATIONS).last
+    assert_equal [NOW - 3.days, :incremental], sync_with(FakeNotion.new).window_for(:OBSERVATIONS, mode: :incremental)
   end
 
   test "recheck soft-deletes a row Notion has trashed, and one Notion no longer has" do
