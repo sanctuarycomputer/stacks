@@ -60,13 +60,3 @@
     </tbody>
   </table>
 <% end %>
-
-<%# Admins only, whoever may open this pass: the snapshot is executive compensation. %>
-<% if current_admin_user.is_admin? && MsoTrueup.schema_ready? %>
-  <% mso_snapshot = MsoSnapshot.current.find_by(invoice_pass_id: invoice_pass.id) %>
-  <% if mso_snapshot %>
-    <p style="margin-top: 20px;">
-      <%= link_to "MSO compensation for this month ↗", admin_mso_snapshot_path(mso_snapshot) %>
-    </p>
-  <% end %>
-<% end %>

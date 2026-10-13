@@ -7,12 +7,10 @@ class Stacks::TaskBuilder::Discoveries::UnacceptedMsoTrueupsTest < ActiveSupport
 
   def setup
     garden3d_qbo_account
-    @pass = garden3d_pass(MONTH)
     @exec = mso_person("nag-exec")
     @ledger = garden3d_ledger(@exec)
     @role = mso_role(@exec)
-    @snapshot = mso_snapshot(@pass, lines: [mso_line(@role, @ledger, trueup: "1000.0")])
-    @trueup = mso_trueup(@snapshot, @role, @ledger, amount: "1000")
+    @trueup = mso_trueup(mso_report(MONTH), @role, @ledger, amount: "1000")
   end
 
   def teardown
@@ -41,24 +39,11 @@ class Stacks::TaskBuilder::Discoveries::UnacceptedMsoTrueupsTest < ActiveSupport
     assert_empty tasks.select { |task| task.subject == @exec }
   end
 
-  # Nobody can accept a true-up that has a QuickBooks bill (MsoTrueup::Locked),
-  # so its executive is not asked to. (An unaccepted row with a bill is what a
-  # failed "Remove QuickBooks bill" leaves behind; an admin has to act.)
-  test "a true-up with a QuickBooks bill raises no task its executive could not clear" do
+  # A sync that changed a billed true-up's amount cleared its acceptance; its
+  # executive can accept it again, so they are asked to.
+  test "an unaccepted true-up that has a QuickBooks bill is still a task" do
     @trueup.update_columns(qbo_bill_id: "77")
-    assert_raises(MsoTrueup::Locked) { MsoTrueup.find(@trueup.id).toggle_acceptance! }
 
-    assert_empty tasks.select { |task| task.subject == @exec }
-  end
-
-  # Accepting it would pay nobody: the month has to be run again first, and
-  # the run that follows asks again if the figure changed.
-  test "nobody is asked to accept a true-up whose run is no longer valid" do
-    @snapshot.invalidate!("Account 4100 now reads 90000.0")
-
-    assert_empty tasks.select { |task| task.subject == @exec }
-
-    @snapshot.update_columns(invalidated_at: nil, invalidated_reason: nil)
     assert_equal 1, tasks.count { |task| task.subject == @exec }
   end
 

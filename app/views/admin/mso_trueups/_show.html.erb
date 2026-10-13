@@ -7,8 +7,10 @@
   <%= resource.payable? ? "Payable" : "Not yet payable" %>
 </span>
 
+<% if authorized?(:read, resource.periodic_report) %>
+  <%= link_to "#{resource.periodic_report.period_label} ↗", admin_periodic_report_path(resource.periodic_report), class: "nag", style: "margin-right: 6px;" %>
+<% end %>
 <% if current_admin_user.is_admin? %>
-  <%= link_to "Snapshot ↗", admin_mso_snapshot_path(resource.mso_snapshot), class: "nag", style: "margin-right: 6px;" %>
   <% if resource.qbo_bill.present? %>
     <a href="<%= resource.qbo_bill.qbo_url %>" target="_blank" rel="noopener">
       <p class="nag" style="margin-bottom: 0px;margin-right: 6px;">QBO Bill ↗</p>
@@ -26,7 +28,7 @@
       <% unless resource.payable? %>
         <p>
           This becomes payable once every executive has accepted their own true-up for the month and garden3d's
-          management fee for the month has been confirmed as collected. It is dated
+          management fee for the month has been collected. It is dated
           <%= resource.payment_date.strftime("%m/%d/%Y") %>, the last day of the month it is for.
         </p>
       <% end %>

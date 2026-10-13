@@ -88,8 +88,8 @@ class Stacks::System
     # Deliberately NOT just "is there a role period": the roster can be
     # edited, and this runs unattended every night and its output is billed
     # in QuickBooks the same night. A month counts as an MSO month if ANY of
-    # these exist for the founder: an active role period; a line on any
-    # snapshot (current or superseded); an MSO true-up, soft-deleted included.
+    # these exist for the founder: an active role period; an MSO true-up,
+    # soft-deleted included.
     #
     # The table checks matter: migrations are run by hand on production after
     # the deploy.
@@ -100,13 +100,9 @@ class Stacks::System
       return true if roster_ready && MsoRolePeriod.where(contributor_id: founder.id).active_during(month).exists?
       return false unless MsoTrueup.schema_ready?
 
-      trueup = MsoTrueup.with_deleted.joins(:ledger, :invoice_pass)
-        .where(ledgers: { contributor_id: founder.id }, invoice_passes: { start_of_month: month.beginning_of_month })
-      return true if trueup.exists?
-
-      MsoSnapshot.joins(:invoice_pass)
-        .where(invoice_passes: { start_of_month: month.beginning_of_month })
-        .where("mso_snapshots.lines @> ?", [{ contributor_id: founder.id }].to_json)
+      MsoTrueup.with_deleted.joins(:ledger, :periodic_report)
+        .where(ledgers: { contributor_id: founder.id },
+               periodic_reports: { period_starts_at: month.beginning_of_month })
         .exists?
     end
 
@@ -115,7 +111,7 @@ class Stacks::System
 
       founder_trueup_months.each do |working_date|
         # Skipped entirely: nothing is written and an existing founder true-up
-        # for this month is not touched. Mso::MonthlyRun refuses to run the
+        # for this month is not touched. Mso::MonthlyRun refuses to compute the
         # month while one exists, and deleting it removes its bill.
         next if founder_paid_by_mso?(founder, working_date)
 

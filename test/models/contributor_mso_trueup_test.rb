@@ -7,11 +7,11 @@ class ContributorMsoTrueupTest < ActiveSupport::TestCase
 
   def setup
     garden3d_qbo_account
-    @pass = garden3d_pass(MONTH)
+    fee_collected(MONTH)
     @exec = mso_person("walk-exec")
     @ledger = garden3d_ledger(@exec)
     @role = mso_role(@exec)
-    @snapshot = mso_snapshot(@pass, lines: [mso_line(@role, @ledger, trueup: "9500.0")], collected: true)
+    @report = mso_report(MONTH)
     @period = Stacks::Period.new("June 2090", MONTH, MONTH.end_of_month)
   end
 
@@ -35,7 +35,7 @@ class ContributorMsoTrueupTest < ActiveSupport::TestCase
   # A Sanctuary payout in the same month, so the walk has two kinds of item to sort.
   def sanctuary_payout(amount)
     sanctuary = enterprises(:sanctuary)
-    pass = InvoicePass.find_by!(enterprise: sanctuary, start_of_month: MONTH)
+    pass = sanctuary_pass(MONTH)
     client = ForecastClient.create!(forecast_id: rand(1..2_000_000_000), name: "Walk Client #{SecureRandom.hex(3)}")
     tracker = InvoiceTracker.create!(invoice_pass: pass, forecast_client: client,
                                      qbo_account: Enterprise.find(sanctuary.id).qbo_account)
@@ -46,7 +46,7 @@ class ContributorMsoTrueupTest < ActiveSupport::TestCase
   end
 
   test "the walk lists an MSO true-up beside other items without failing to sort them" do
-    trueup = mso_trueup(@snapshot, @role, @ledger, amount: "9500")
+    trueup = mso_trueup(@report, @role, @ledger, amount: "9500")
     payout = sanctuary_payout(200)
 
     month = month_of(walk)
@@ -57,7 +57,7 @@ class ContributorMsoTrueupTest < ActiveSupport::TestCase
   end
 
   test "an MSO true-up counts toward the month's income and so toward elevated service" do
-    mso_trueup(@snapshot, @role, @ledger, amount: "9500")
+    mso_trueup(@report, @role, @ledger, amount: "9500")
 
     month = month_of(walk)
 
@@ -66,7 +66,7 @@ class ContributorMsoTrueupTest < ActiveSupport::TestCase
   end
 
   test "the bulk elevated-service query counts it too" do
-    mso_trueup(@snapshot, @role, @ledger, amount: "9500")
+    mso_trueup(@report, @role, @ledger, amount: "9500")
     login = login_for(@exec)
 
     ids = Contributor.elevated_service_admin_user_ids([@period], [@exec.forecast_person_id])
@@ -75,7 +75,7 @@ class ContributorMsoTrueupTest < ActiveSupport::TestCase
   end
 
   test "the bulk elevated-service query ignores a soft-deleted true-up" do
-    mso_trueup(@snapshot, @role, @ledger, amount: "9500").destroy
+    mso_trueup(@report, @role, @ledger, amount: "9500").destroy
     login = login_for(@exec)
 
     ids = Contributor.elevated_service_admin_user_ids([@period], [@exec.forecast_person_id])
@@ -84,7 +84,7 @@ class ContributorMsoTrueupTest < ActiveSupport::TestCase
   end
 
   test "profit-share elevated service counts an MSO true-up on a profit-share company's ledger" do
-    trueup = mso_trueup(@snapshot, @role, @ledger, amount: "9500")
+    trueup = mso_trueup(@report, @role, @ledger, amount: "9500")
     report = PeriodicReport.new
     report.stubs(:period).returns(Stacks::Period.new("Q2 2090", Date.new(2090, 4, 1), Date.new(2090, 6, 30), :quarter))
 
@@ -96,11 +96,10 @@ class ContributorMsoTrueupTest < ActiveSupport::TestCase
   # Decisions 29: the dashboard every logged-in user can open shows this
   # figure. It must not move when executives' true-ups are written.
   test "the company-wide balance on the dashboard leaves MSO true-ups out" do
-    past_pass = garden3d_pass(Date.new(2019, 2, 1))
-    past_snapshot = mso_snapshot(past_pass, lines: [mso_line(@role, @ledger, trueup: "700.0")], collected: true)
+    past_report = mso_report(Date.new(2019, 2, 1))
     before = Contributor.aggregated_new_deal_balance
-    mso_trueup(past_snapshot, @role, @ledger, amount: "700", accepted: true)
-    mso_trueup(@snapshot, @role, @ledger, amount: "9500")
+    mso_trueup(past_report, @role, @ledger, amount: "700", accepted: true)
+    mso_trueup(@report, @role, @ledger, amount: "9500")
 
     statements = []
     subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |*, payload|

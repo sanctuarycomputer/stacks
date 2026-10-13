@@ -17,8 +17,7 @@ module Money
       ProfitShare       => { periodic_report: :profit_shares },
       PayStub           => { pay_cycle: :pay_stubs },
       Reimbursement     => :accepted_by,
-      # payable? reads the snapshot and every true-up on it.
-      MsoTrueup         => { mso_snapshot: :mso_trueups },
+      MsoTrueup         => { periodic_report: :mso_trueups },
       # NOTE: do NOT preload ContributorAdjustment.qbo_invoice. The belongs_to
       # uses primary_key: "qbo_id" without scoping by qbo_account_id, and AR's
       # preloader can match a same-qbo_id QboInvoice from a DIFFERENT account

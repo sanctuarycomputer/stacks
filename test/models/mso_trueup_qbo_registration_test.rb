@@ -8,12 +8,11 @@ class MsoTrueupQboRegistrationTest < ActiveSupport::TestCase
 
   def setup
     @qa = garden3d_qbo_account
-    @pass = garden3d_pass(MONTH)
+    fee_collected(MONTH)
     @exec = mso_person("qbo-exec")
     @ledger = garden3d_ledger(@exec)
     @role = mso_role(@exec)
-    @snapshot = mso_snapshot(@pass, lines: [mso_line(@role, @ledger, trueup: "1200.0")], collected: true)
-    @trueup = mso_trueup(@snapshot, @role, @ledger, amount: "1200", accepted: true)
+    @trueup = mso_trueup(mso_report(MONTH), @role, @ledger, amount: "1200", accepted: true)
     @vendor = QboVendor.create!(qbo_account: @qa, qbo_id: "V-#{SecureRandom.hex(3)}", data: {})
     ContributorQboVendor.create!(contributor: @exec, qbo_account: @qa, qbo_vendor: @vendor)
 

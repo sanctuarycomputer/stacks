@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_10_14_000002) do
+ActiveRecord::Schema.define(version: 2026_10_14_000001) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -688,56 +688,21 @@ ActiveRecord::Schema.define(version: 2026_10_14_000002) do
     t.index ["contributor_id"], name: "index_mso_role_periods_on_contributor_id"
   end
 
-  create_table "mso_snapshots", force: :cascade do |t|
-    t.bigint "invoice_pass_id", null: false
-    t.bigint "sanctuary_invoice_pass_id", null: false
-    t.bigint "created_by_id"
-    t.decimal "fee_income", precision: 12, scale: 2, null: false
-    t.string "benchmark_average", null: false
-    t.integer "configured_n", null: false
-    t.integer "counted", null: false
-    t.boolean "small_sample", default: false, null: false
-    t.decimal "cap_percentage", precision: 5, scale: 4, null: false
-    t.decimal "cap", precision: 16, scale: 6, null: false
-    t.string "total_calculated", null: false
-    t.decimal "total_trueup", precision: 12, scale: 2, null: false
-    t.decimal "total_trueup_as_billed", precision: 12, scale: 2, null: false
-    t.jsonb "benchmark_members", default: [], null: false
-    t.jsonb "excluded_without_login", default: [], null: false
-    t.jsonb "lines", default: [], null: false
-    t.jsonb "drift", default: [], null: false
-    t.jsonb "reconciliation", default: {}, null: false
-    t.datetime "fee_collected_at"
-    t.datetime "invalidated_at"
-    t.text "invalidated_reason"
-    t.datetime "superseded_at"
-    t.bigint "superseded_by_id"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-    t.jsonb "run_warnings", default: {}, null: false
-    t.jsonb "income_drift", default: {}, null: false
-    t.index ["invoice_pass_id"], name: "index_mso_snapshots_on_invoice_pass_id"
-    t.index ["invoice_pass_id"], name: "index_mso_snapshots_one_current_per_pass", unique: true, where: "(superseded_at IS NULL)"
-    t.index ["superseded_by_id"], name: "index_mso_snapshots_on_superseded_by_id"
-  end
-
   create_table "mso_trueups", force: :cascade do |t|
+    t.bigint "periodic_report_id", null: false
     t.bigint "ledger_id", null: false
-    t.bigint "invoice_pass_id", null: false
-    t.bigint "mso_snapshot_id", null: false
-    t.bigint "mso_role_period_id", null: false
     t.decimal "amount", precision: 12, scale: 2, null: false
+    t.jsonb "blueprint", default: {}, null: false
     t.text "description", null: false
-    t.datetime "accepted_at"
     t.string "qbo_bill_id"
+    t.datetime "accepted_at"
     t.datetime "deleted_at"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
-    t.index ["invoice_pass_id"], name: "index_mso_trueups_on_invoice_pass_id"
-    t.index ["ledger_id", "invoice_pass_id"], name: "index_mso_trueups_one_live_per_ledger_and_pass", unique: true, where: "(deleted_at IS NULL)"
-    t.index ["mso_role_period_id"], name: "index_mso_trueups_on_mso_role_period_id"
-    t.index ["mso_snapshot_id"], name: "index_mso_trueups_on_mso_snapshot_id"
-    t.index ["qbo_bill_id"], name: "index_mso_trueups_on_qbo_bill_id"
+    t.index ["deleted_at"], name: "index_mso_trueups_on_deleted_at"
+    t.index ["ledger_id"], name: "index_mso_trueups_on_ledger_id"
+    t.index ["periodic_report_id", "ledger_id"], name: "index_mso_trueups_on_periodic_report_id_and_ledger_id", unique: true
+    t.index ["periodic_report_id"], name: "index_mso_trueups_on_periodic_report_id"
   end
 
   create_table "notifications", force: :cascade do |t|
@@ -1713,13 +1678,8 @@ ActiveRecord::Schema.define(version: 2026_10_14_000002) do
   add_foreign_key "mentions", "contacts"
   add_foreign_key "misc_payments", "contributors"
   add_foreign_key "mso_role_periods", "contributors"
-  add_foreign_key "mso_snapshots", "invoice_passes"
-  add_foreign_key "mso_snapshots", "invoice_passes", column: "sanctuary_invoice_pass_id"
-  add_foreign_key "mso_snapshots", "mso_snapshots", column: "superseded_by_id"
-  add_foreign_key "mso_trueups", "invoice_passes"
   add_foreign_key "mso_trueups", "ledgers"
-  add_foreign_key "mso_trueups", "mso_role_periods"
-  add_foreign_key "mso_trueups", "mso_snapshots"
+  add_foreign_key "mso_trueups", "periodic_reports"
   add_foreign_key "okr_period_studios", "okr_periods"
   add_foreign_key "okr_period_studios", "studios"
   add_foreign_key "okr_periods", "okrs"

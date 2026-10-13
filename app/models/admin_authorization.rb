@@ -12,9 +12,6 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
   ].freeze
   OWN_LEDGER_ITEM_DENY = [:update, :destroy].freeze
 
-  # Executive compensation. MsoRolePeriod has its own line below.
-  MSO_COMPENSATION_CLASSES = [MsoTrueup, MsoSnapshot].freeze
-
   # Narrows index pages. An admin sees everything. Everyone else never sees
   # garden3d's invoice passes or the trackers on them (see authorized?).
   # Beyond that, (actual or granted) leads see everything, and users whose
@@ -96,24 +93,22 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
     # for every action including read. Must stay above the blanket lead grant.
     return user.is_admin? if subject.is_a?(MsoRolePeriod) || subject == MsoRolePeriod
 
-    # The snapshot holds fee income, the cap and every executive's line:
-    # admins only. A true-up is READ like any other ledger item (whoever can
-    # read ledgers, and the executive it pays); everything else on it is
-    # admin-only. Must stay above the blanket lead grant.
-    if MSO_COMPENSATION_CLASSES.any? { |klass| subject == klass || subject.is_a?(klass) }
+    # A true-up is READ like any other ledger item (whoever can read ledgers,
+    # and the executive it pays); everything else on it is admin-only. Must
+    # stay above the blanket lead grant.
+    if subject == MsoTrueup || subject.is_a?(MsoTrueup)
       # Accepting a true-up is its owner's act alone. Checked BEFORE the admin
       # line: the executives are admins, and "an admin may accept" would let
       # each accept the other's.
       return own_mso_trueup?(subject) if action == :toggle_acceptance
       return true if user.is_admin?
-      return false unless action == :read && (subject == MsoTrueup || subject.is_a?(MsoTrueup))
+      return false unless action == :read
       return true if own_mso_trueup?(subject)
       # Otherwise: read falls through to the rules every ledger item gets.
     end
 
-    # Computes and writes every executive's true-up: admins only, whichever
-    # pass it is asked of.
-    if action == :run_mso_compensation && (subject.is_a?(InvoicePass) || subject == InvoicePass)
+    # Computes and writes every executive's true-up for a month: admins only.
+    if action == :sync_mso_trueups && (subject.is_a?(PeriodicReport) || subject == PeriodicReport)
       return user.is_admin?
     end
 

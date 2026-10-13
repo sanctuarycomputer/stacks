@@ -10,15 +10,14 @@ class AdminContributorMsoTrueupTest < ActionDispatch::IntegrationTest
 
   setup do
     garden3d_qbo_account
-    @pass = InvoicePass.find_or_create_by!(enterprise: garden3d, start_of_month: MONTH) { |pass| pass.data = {} }
+    InvoicePass.find_or_create_by!(enterprise: garden3d, start_of_month: MONTH) { |pass| pass.data = {} }
     @admin = mso_admin
     @lead = AdminUser.create!(email: "ledger-lead-#{SecureRandom.hex(3)}@example.com", password: "password12345")
     PermissionGrant.create!(admin_user: @lead, permission: "lead")
     @exec = mso_person("ledger-page-exec")
     @ledger = garden3d_ledger(@exec)
     role = mso_role(@exec, started_at: Date.new(2026, 10, 1))
-    snapshot = mso_snapshot(@pass, lines: [mso_line(role, @ledger, trueup: "4321.09")])
-    @trueup = mso_trueup(snapshot, role, @ledger, amount: "4321.09")
+    @trueup = mso_trueup(mso_report(MONTH), role, @ledger, amount: "4321.09")
 
     QboAccount.any_instance.stubs(:make_and_refresh_qbo_access_token)
       .raises(RuntimeError, "unexpected QuickBooks call")
@@ -42,7 +41,7 @@ class AdminContributorMsoTrueupTest < ActionDispatch::IntegrationTest
     assert_match(/4,321\.09/, body)
     assert_match(/Mso trueup/i, body)
     assert_includes body, ERB::Util.html_escape(
-      toggle_acceptance_admin_ledger_mso_trueup_path(@ledger, @trueup, amount: "4321.09"),
+      toggle_acceptance_admin_ledger_mso_trueup_path(@ledger, @trueup),
     )
   end
 
@@ -79,9 +78,10 @@ class AdminContributorMsoTrueupTest < ActionDispatch::IntegrationTest
     assert_match(/4,321\.09/, response.body)
   end
 
-  # Once a true-up has a QuickBooks bill it is owed, and moves from the
-  # tab's UNSETTLED pill to its BALANCE pill.
-  test "a billed true-up shows in the ledger tab's balance pill for everyone who can open the page" do
+  # Once a true-up is payable and billed it is owed, and moves from the tab's
+  # UNSETTLED pill to its BALANCE pill.
+  test "a payable, billed true-up shows in the ledger tab's balance pill for everyone who can open the page" do
+    InvoicePass.any_instance.stubs(:management_fee_collected?).returns(true)
     vendor = QboVendor.create!(qbo_account: garden3d_qbo_account, qbo_id: "V-#{SecureRandom.hex(3)}", data: {})
     QboBill.create!(qbo_account: garden3d_qbo_account, qbo_id: "8801", qbo_vendor_id: vendor.qbo_id,
                     data: { "balance" => "4321.09", "total_amt" => "4321.09" })

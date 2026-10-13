@@ -26,7 +26,7 @@ module Mcp
       method, basis_error = Mcp::AccountingBasis.resolve(accounting_method)
       return Responses.error(basis_error) if basis_error
 
-      reports = PeriodicReport.order(period_starts_at: :desc).to_a
+      reports = PeriodicReport.quarter.order(period_starts_at: :desc).to_a
       return Responses.error('No quarterly reports exist yet.') if reports.empty?
 
       report =

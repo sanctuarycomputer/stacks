@@ -135,6 +135,21 @@ class Mcp::QuarterlyReportToolTest < ActiveSupport::TestCase
     assert_includes err['error'], "Invalid accounting_method 'both'"
   end
 
+  # Monthly reports hold MSO true-ups, not profit shares.
+  test 'a monthly report is never the latest report, cannot be asked for, and is not offered' do
+    g3d_with_quarter!
+    report!(blueprint: generated_blueprint)
+    PeriodicReport.create!(period_gradation: :month, period_starts_at: Date.new(2026, 8, 1),
+                           period_label: 'August 2026', blueprint: { 'generated_at' => 'x', 'gross_surplus' => 1.0 })
+
+    payload = mcp_payload(Mcp::GetQuarterlyReportTool.call(server_context: {}))
+    assert_equal 'Q2, 2026', payload['period_label']
+
+    err = mcp_payload(Mcp::GetQuarterlyReportTool.call(period_label: 'August 2026', server_context: {}))
+    assert_includes err['error'], "Unknown period_label 'August 2026'"
+    assert_not_includes err['error'], 'Available: August 2026'
+  end
+
   test 'no reports at all errors instead of returning empty success' do
     err = mcp_payload(Mcp::GetQuarterlyReportTool.call(server_context: {}))
     assert_includes err['error'], 'No quarterly reports'

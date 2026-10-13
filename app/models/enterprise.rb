@@ -93,33 +93,15 @@ class Enterprise < ApplicationRecord
     return unless is_garden3d?
 
     # Each step on its own: one that raises is reported and the rest still
-    # run. Nothing here runs a month, pays anyone, or creates, changes or
-    # deletes a QuickBooks bill.
+    # run. Nothing here computes a true-up, pays anyone, or calls QuickBooks.
 
     # Database only: garden3d's invoice pass and trackers for each month it
     # has none. Nothing here may write to QuickBooks; an admin makes the
     # invoices by hand.
     garden3d_nightly_step("invoice_passes") { InvoicePass.make_intercompany_passes! }
-    # Database only: a snapshot whose fee income no longer matches the stored
-    # P&L is invalidated, so nothing computed from the old fee stays payable.
-    garden3d_nightly_step("fee_check") { Mso::MonthlyRun.invalidate_snapshots_whose_fee_moved! }
-    # Database only: recompute each recent month's run from stored data and
-    # record, on its snapshot, any true-up that would now be a different
-    # amount (income that landed after the run). Writes no true-up or bill.
-    garden3d_nightly_step("income_drift") { Mso::MonthlyRun.record_income_drift! }
-    # QuickBooks READS only: refresh the stored copy of MSO bills that already
-    # exist, so a paid one is seen as paid. Cannot create or change a bill.
-    garden3d_nightly_step("bill_mirrors") do
-      failures = MsoTrueup.refresh_bill_mirrors!
-      if failures.any?
-        # It rescues per true-up and hands the failures back; say so, or a
-        # bill that can never be read fails silently every night.
-        message = "[mso] nightly bill mirror refresh failed for " +
-                  failures.map { |id, error| "MsoTrueup #{id} (#{error})" }.join("; ").truncate(2000)
-        Rails.logger.error(message)
-        Sentry.capture_message(message, level: :error) if defined?(Sentry)
-      end
-    end
+    # Database only: a monthly report for each month that has none. Nothing
+    # nightly computes a true-up; an admin syncs them from the report.
+    garden3d_nightly_step("monthly_reports") { PeriodicReport.ensure_monthly_reports_exist! }
   end
 
   # As stacks:daily_enterprise_tasks reports its own steps: the log and Sentry.

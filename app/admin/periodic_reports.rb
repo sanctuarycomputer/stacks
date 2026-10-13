@@ -5,18 +5,20 @@ ActiveAdmin.register PeriodicReport do
   config.paginate = false
   config.sort_order = "period_starts_at_desc"
   actions :index, :show, :edit, :update
-  scope :all
+  scope("Quarterly", default: true) { |reports| reports.quarter }
+  scope("Monthly") { |reports| reports.month }
 
   permit_params :report_url
 
   controller do
     def action_methods
       return super if current_admin_user.is_admin?
-      super - %w[edit update sync_profit_shares]
+      super - %w[edit update sync_profit_shares sync_mso_trueups]
     end
 
     before_action :require_admin_to_edit_periodic_report, only: [:edit, :update]
-    before_action :require_admin_to_sync_profit_shares, only: [:sync_profit_shares]
+    before_action :require_admin_to_sync_profit_shares, only: [:sync_profit_shares, :sync_mso_trueups]
+    before_action :require_matching_gradation, only: [:sync_profit_shares, :sync_mso_trueups]
 
     private
 
@@ -29,9 +31,15 @@ ActiveAdmin.register PeriodicReport do
       return if current_admin_user.is_admin?
       redirect_to admin_periodic_report_path(params[:id]), alert: "Only admins can sync profit shares."
     end
+
+    # Profit shares hang off a quarterly report, MSO true-ups off a monthly one.
+    def require_matching_gradation
+      return if action_name == "sync_mso_trueups" ? resource.month? : resource.quarter?
+      redirect_to admin_periodic_report_path(resource), alert: "That sync does not apply to this report."
+    end
   end
 
-  action_item :sync_profit_shares, only: :show, if: proc { current_admin_user.is_admin? } do
+  action_item :sync_profit_shares, only: :show, if: proc { current_admin_user.is_admin? && resource.quarter? } do
     opts = {}
     opts[:studio] = params[:studio] if params[:studio].present?
     link_to "Sync profit shares", sync_profit_shares_admin_periodic_report_path(resource, opts), method: :post
@@ -51,14 +59,36 @@ ActiveAdmin.register PeriodicReport do
     end
   end
 
+  # Computes the month from what Stacks has stored and writes each
+  # executive's true-up. It creates no QuickBooks bill. (A true-up that is no
+  # longer owed is destroyed, and its unpaid bill with it, as for an obsolete
+  # profit share.)
+  action_item :sync_mso_trueups, only: :show, if: proc { current_admin_user.is_admin? && resource.month? } do
+    link_to "Sync MSO true-ups", sync_mso_trueups_admin_periodic_report_path(resource), method: :post
+  end
+
+  member_action :sync_mso_trueups, method: :post do
+    skipped = resource.mso_trueups.any? && resource.all_mso_trueups_accepted?
+    resource.sync_mso_trueups!
+    resource.reload
+    if skipped
+      redirect_to admin_periodic_report_path(resource), notice: "Sync skipped: all MSO true-ups already accepted."
+    elsif resource.notification.present?
+      redirect_to admin_periodic_report_path(resource), alert: "Sync recorded an error. Check the notification on this report."
+    else
+      redirect_to admin_periodic_report_path(resource), notice: "Sync completed."
+    end
+  end
+
   index do
     column :period_label
-    column :profit_share_status do |resource|
+    column :status do |resource|
+      items = resource.month? ? resource.mso_trueups : resource.profit_shares
       status =
-        if resource.profit_shares.empty?
+        if items.empty?
           resource.notification.present? ? "error" : "not_generated"
         else
-          resource.all_profit_shares_accepted? ? "all_accepted" : "some_pending"
+          items.all?(&:accepted?) ? "all_accepted" : "some_pending"
         end
 
       span(status.humanize, class: "pill #{status}")
@@ -84,6 +114,11 @@ ActiveAdmin.register PeriodicReport do
   end
 
   show do
+    if resource.month?
+      render(partial: "show_monthly", locals: { periodic_report: resource })
+      next
+    end
+
     # Prefer raw query string so tab matches what the browser sent (same source as `quarter_slice` below).
     raw_studio = params[:studio].presence || controller.request.query_parameters["studio"]
     norm = raw_studio.to_s.downcase.strip

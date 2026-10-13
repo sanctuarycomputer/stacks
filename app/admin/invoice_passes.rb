@@ -129,31 +129,10 @@ ActiveAdmin.register InvoicePass do
     link_to "Refresh from QuickBooks", refresh_intercompany_invoices_admin_invoice_pass_path(resource), method: :post
   end
 
-  # Computes every MSO executive's true-up for the month and records the run.
-  # An admin's click and nothing else: no rake task or job calls it. It reads
-  # the month's fee invoices from QuickBooks and writes nothing there.
-  action_item :run_mso_compensation, only: :show,
-    if: proc { current_admin_user.is_admin? && Mso::MonthlyRun.runnable?(resource) } do
-    link_to "Run MSO compensation",
-      run_mso_compensation_admin_invoice_pass_path(resource),
-      method: :post,
-      data: { confirm: "Compute MSO compensation for #{resource.invoice_month}? Stacks reads this month's " \
-                       "management fee invoices from QuickBooks, checks them against account 4100, and " \
-                       "writes each executive's true-up, dated the last day of the month. Running a month " \
-                       "again replaces its figures." }
-  end
-
   member_action :refresh_intercompany_invoices, method: :post do
     unless current_admin_user.is_admin?
       return redirect_to admin_invoice_pass_path(resource), alert: "garden3d's invoices are refreshed by an admin."
     end
-
-    # What Stacks holds for these invoices is about to change. Whether the fee
-    # is collected has to be confirmed again (Check collection, or a run).
-    # Withdrawn BEFORE the refresh, so it is withdrawn however the refresh
-    # ends: one that raises part-way may already have rewritten or detached
-    # an invoice, and the stamp described them as they were.
-    MsoSnapshot.unconfirm_collection!(resource.id)
 
     begin
       run = Mso::IntercompanyInvoices.refresh!(invoice_pass: resource)
@@ -173,25 +152,6 @@ ActiveAdmin.register InvoicePass do
     else
       redirect_to admin_invoice_pass_path(resource), notice: summary
     end
-  end
-
-  member_action :run_mso_compensation, method: :post do
-    # Kept even though the pass page is itself admin-only to view.
-    unless current_admin_user.is_admin?
-      return redirect_to admin_invoice_pass_path(resource), alert: "MSO compensation is run by an admin."
-    end
-
-    begin
-      snapshot = Mso::MonthlyRun.call(invoice_pass: resource, run_by: current_admin_user)
-    rescue Mso::MonthlyRun::Refused => e
-      # truncate: the flash lives in the session cookie, and a variance
-      # message lists every invoice it compared.
-      return redirect_to admin_invoice_pass_path(resource), alert: e.message.truncate(1200)
-    end
-
-    redirect_to admin_mso_snapshot_path(snapshot),
-      notice: "MSO compensation for #{resource.invoice_month} has been computed. Nobody is paid until every " \
-              "executive accepts and the fee is confirmed collected."
   end
 
   index download_links: false, title: "Monthly Invoicing" do

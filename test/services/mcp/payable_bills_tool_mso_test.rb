@@ -7,12 +7,10 @@ class Mcp::PayableBillsToolMsoTest < ActiveSupport::TestCase
 
   def setup
     @qa = garden3d_qbo_account
-    pass = garden3d_pass(MONTH)
     exec = mso_person("mcp-exec")
     ledger = garden3d_ledger(exec)
     role = mso_role(exec)
-    snapshot = mso_snapshot(pass, lines: [mso_line(role, ledger, trueup: "1200.0")])
-    @trueup = mso_trueup(snapshot, role, ledger, amount: "1200")
+    @trueup = mso_trueup(mso_report(MONTH), role, ledger, amount: "1200")
     @vendor = QboVendor.create!(qbo_account: @qa, qbo_id: "V-#{SecureRandom.hex(3)}",
                                 data: { "display_name" => "An Executive" })
     # A read tool must never destroy a bill: that deletes it in QuickBooks.

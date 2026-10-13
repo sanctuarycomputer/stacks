@@ -11,21 +11,18 @@ class MsoRolePeriodRunGuardTest < ActiveSupport::TestCase
     @exec = mso_person("guard-exec")
     @role = mso_role(@exec, tier: :chief, started_at: Date.new(2091, 1, 1))
     ledger = garden3d_ledger(@exec)
-    # March and May have been run with this role period; a superseded
-    # snapshot counts as much as a current one.
-    [MARCH, MAY].each do |month|
-      mso_snapshot(garden3d_pass(month), lines: [mso_line(@role, ledger, trueup: "100.0")])
-    end
-    MsoSnapshot.joins(:invoice_pass).where(invoice_passes: { start_of_month: MARCH })
-      .update_all(superseded_at: Time.current)
+    # March and May each have a true-up computed from this role period; a
+    # soft-deleted one counts as much as a live one.
+    [MARCH, MAY].each { |month| mso_trueup(mso_report(month), @role, ledger, amount: "100") }
+    MsoTrueup.where(periodic_report_id: mso_report(MARCH).id).each(&:destroy)
   end
 
   def teardown
     clear_enterprise_memos
   end
 
-  test "a role period a run has used cannot be destroyed; one never used can" do
-    assert_equal [MARCH, MAY], @role.months_run
+  test "a role period a true-up was computed from cannot be destroyed; one never used can" do
+    assert_equal [MARCH, MAY], @role.months_with_trueups
 
     assert_equal false, @role.destroy
     assert_match(/March 2091/, @role.errors.full_messages.to_sentence)
@@ -36,7 +33,7 @@ class MsoRolePeriodRunGuardTest < ActiveSupport::TestCase
     assert_not MsoRolePeriod.exists?(unused.id)
   end
 
-  test "its tier, person, start and end cannot be changed so as to alter a month already run" do
+  test "its tier, person, start and end cannot be changed so as to alter a month that has a true-up" do
     period = -> { MsoRolePeriod.find(@role.id) }
 
     assert_not period.call.update(tier: :principal)
@@ -48,7 +45,7 @@ class MsoRolePeriodRunGuardTest < ActiveSupport::TestCase
     record.update(tier: :principal)
     assert_match(/end this period and start a new one/, record.errors[:tier].to_sentence)
 
-    # What stays possible: ending it after the last month run, starting it
+    # What stays possible: ending it after the last month with a true-up, starting it
     # earlier, and renaming it.
     assert period.call.update(ended_at: Date.new(2091, 5, 31))
     assert period.call.update(started_at: Date.new(2090, 12, 1))

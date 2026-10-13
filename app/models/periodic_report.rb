@@ -6,6 +6,9 @@ class PeriodicReport < ApplicationRecord
   validates :period_label, presence: true
   validate :report_url_must_be_httpish, if: -> { report_url.present? }
   has_many :profit_shares, dependent: :destroy
+  # A monthly report's. An MSO true-up is to a monthly report what a profit
+  # share is to a quarterly one.
+  has_many :mso_trueups, dependent: :destroy
   belongs_to :notification, optional: true, dependent: :destroy
 
   enum period_gradation: {
@@ -43,12 +46,30 @@ class PeriodicReport < ApplicationRecord
     end
   end
 
+  # A monthly report for every month from the first MSO month through last
+  # month. Nightly (Enterprise#daily_tasks), DATABASE ONLY: it computes
+  # nothing. Syncing a report's true-ups is an admin's click.
+  def self.ensure_monthly_reports_exist!(today: Date.today)
+    month = InvoicePass::INTERCOMPANY_START
+    while month < today.beginning_of_month
+      PeriodicReport.month.find_or_create_by!(period_starts_at: month) do |report|
+        report.period_label = month.strftime("%B %Y")
+      end
+      month = month.next_month
+    end
+  end
+
   def yearly_tenure_multiplier
     @_yearly_tenure_multiplier ||= 0.25
   end
 
   def period
-    @_period ||= Stacks::Period.new(period_label, period_starts_at, period_starts_at.end_of_quarter, period_gradation)
+    @_period ||= Stacks::Period.new(
+      period_label,
+      period_starts_at,
+      month? ? period_starts_at.end_of_month : period_starts_at.end_of_quarter,
+      period_gradation,
+    )
   end
 
   def display_name
@@ -281,6 +302,7 @@ class PeriodicReport < ApplicationRecord
   end
 
   def sync_profit_shares!
+    raise ArgumentError, "profit shares belong to a quarterly report" unless quarter?
     return if profit_shares.any? && all_profit_shares_accepted?
 
     begin
@@ -340,6 +362,64 @@ class PeriodicReport < ApplicationRecord
         "total_shares" => total_shares,
         "us_cost_of_living_data" => us_cost_of_living_data
       }, notification: nil)
+    rescue => e
+      notification = Stacks::Notifications.report_exception(e)
+      update(blueprint: { "generated_at" => DateTime.now.to_s }, notification: notification.record)
+    end
+  end
+
+  def all_mso_trueups_accepted?
+    mso_trueups.all?(&:accepted?)
+  end
+
+  # Has garden3d's management fee for this month been collected? Half of
+  # MsoTrueup#payable?. Reads the stored invoice mirrors only; no pass for the
+  # month is "no". Memoized: a ledger page asks once per true-up.
+  def management_fee_collected?
+    return @_management_fee_collected if defined?(@_management_fee_collected)
+
+    pass = InvoicePass.find_by(enterprise_id: Enterprise.garden3d_id, start_of_month: period_starts_at)
+    @_management_fee_collected = pass.present? && pass.management_fee_collected?
+  end
+
+  # sync_profit_shares!, for a month. Settled (every true-up accepted) means
+  # nothing is recomputed; until then every sync recomputes the month.
+  def sync_mso_trueups!(today: Date.today)
+    raise ArgumentError, "MSO true-ups belong to a monthly report" unless month?
+    return if mso_trueups.any? && all_mso_trueups_accepted?
+
+    begin
+      computation = Mso::MonthlyRun.compute(month: period_starts_at, today: today)
+
+      ActiveRecord::Base.transaction do
+        mso_trueups_by_ledger = mso_trueups.with_deleted.index_by(&:ledger_id)
+
+        touched = []
+        computation.lines.each do |line|
+          # Out-earned their target: nothing owed, and no row.
+          next unless line.amount.positive?
+
+          mso_trueup = mso_trueups_by_ledger[line.ledger.id] || MsoTrueup.new(periodic_report: self, ledger: line.ledger)
+          # Before the update: a row that reads as deleted cannot be saved.
+          mso_trueup.recover! if mso_trueup.deleted?
+          if mso_trueup.persisted? && mso_trueup.amount != line.amount
+            mso_trueup.update!(accepted_at: nil)
+          end
+          mso_trueup.update!(amount: line.amount, blueprint: line.blueprint, description: line.description(period_starts_at))
+          touched << mso_trueup
+        end
+        # One by one, as sync_profit_shares! does and for its reason: a paid
+        # bill must not roll back everyone else's new figure.
+        (mso_trueups.reload - touched).each do |obsolete|
+          begin
+            obsolete.destroy_fully!
+          rescue SyncsAsQboBill::PaidQboBillError => e
+            Rails.logger.error("[periodic_report_sync_mso_trueups] ##{id} cannot destroy obsolete MsoTrueup ##{obsolete.id}: #{e.message}")
+          end
+        end
+      end
+
+      update!(blueprint: computation.blueprint.merge("generated_at" => DateTime.now.to_s), notification: nil)
     rescue => e
       notification = Stacks::Notifications.report_exception(e)
       update(blueprint: { "generated_at" => DateTime.now.to_s }, notification: notification.record)

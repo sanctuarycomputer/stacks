@@ -27,8 +27,8 @@ class MsoRolePeriod < ApplicationRecord
   # Only when the start date is being set: a period already on file with an
   # earlier start can still be ended.
   validate :not_before_mso_compensation_began, if: -> { new_record? || started_at_changed? }
-  validate :months_already_run_are_not_changed, on: :update
-  before_destroy :refuse_destroy_once_run
+  validate :months_with_trueups_are_not_changed, on: :update
+  before_destroy :refuse_destroy_once_paid_from
 
   # CALLERS: one period per contributor per month is enforced by a model
   # validation only (no database constraint), so two can exist after a
@@ -67,51 +67,51 @@ class MsoRolePeriod < ApplicationRecord
     MsoRolePeriod.where(contributor_id: contributor.id)
   end
 
-  # The first day of every month whose MSO run used this role period, from
-  # any snapshot, current or superseded. A run records the period's id on
-  # each line it writes.
-  def months_run
+  # The first day of every month that has an MSO true-up computed from this
+  # role period (soft-deleted ones included). A true-up records the period's
+  # id in its blueprint.
+  def months_with_trueups
     return [] if new_record? || !MsoTrueup.schema_ready?
 
-    MsoSnapshot.joins(:invoice_pass)
-      .where("mso_snapshots.lines @> ?", [{ mso_role_period_id: id }].to_json)
-      .distinct.pluck("invoice_passes.start_of_month").sort
+    MsoTrueup.with_deleted.joins(:periodic_report)
+      .where("mso_trueups.blueprint @> ?", { mso_role_period_id: id }.to_json)
+      .distinct.pluck("periodic_reports.period_starts_at").sort
   end
 
-  # Once a month has been run with this period, what it says about that month
-  # is history. Changing it would change a past month on its next re-run, and
-  # would let the nightly founder true-up come back for a month already paid
-  # through the MSO. Ending the period going forward stays possible; a
-  # promotion is "end this period and start a new one".
-  def months_already_run_are_not_changed
-    months = months_run
+  # Once a month has a true-up from this period, what the period says about
+  # that month stays. Changing it would change the month on its next sync
+  # (until it is settled), and would let the nightly founder true-up come
+  # back for a month paid through the MSO. Ending the period going forward
+  # stays possible; a promotion is "end this period and start a new one".
+  def months_with_trueups_are_not_changed
+    months = months_with_trueups
     return if months.empty?
 
     span = "#{months.first.strftime('%B %Y')} to #{months.last.strftime('%B %Y')}"
-    advice = "MSO compensation has been run with this role period (#{span}). To change someone's tier, " \
+    advice = "MSO true-ups exist for this role period (#{span}). To change someone's tier, " \
              "end this period and start a new one."
     errors.add(:tier, advice) if tier_changed?
     errors.add(:contributor, advice) if contributor_id_changed?
     if started_at_changed? && started_at && started_at > months.first
-      errors.add(:started_at, "cannot move past #{months.first.strftime('%B %Y')}, which has been run. #{advice}")
+      errors.add(:started_at, "cannot move past #{months.first.strftime('%B %Y')}, which has a true-up. #{advice}")
     end
     if ended_at_changed? && ended_at && ended_at < months.last.end_of_month
-      errors.add(:ended_at, "cannot be before the end of #{months.last.strftime('%B %Y')}, which has been run. " \
-                            "#{advice}")
+      errors.add(:ended_at, "cannot be before the end of #{months.last.strftime('%B %Y')}, which has a " \
+                            "true-up. #{advice}")
     end
   end
 
-  def refuse_destroy_once_run
-    months = months_run
+  def refuse_destroy_once_paid_from
+    months = months_with_trueups
     return if months.empty?
 
-    errors.add(:base, "MSO compensation has been run with this role period " \
+    errors.add(:base, "MSO true-ups exist for this role period " \
                       "(#{months.map { |month| month.strftime('%B %Y') }.join(', ')}), so it cannot be deleted. " \
                       "Give it an end date instead.")
     throw :abort
   end
 
-  # No month before this is ever run, so an earlier start pays nothing more.
+  # No month before this is ever computed, so an earlier start pays nothing more.
   # What it does do is silent: Stacks stops writing the founder true-up for
   # every month from the start date on, and Mso::Benchmark drops the person
   # from the pool for those months. A mistyped year would do both.

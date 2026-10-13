@@ -304,11 +304,10 @@
 
                   <span class="pill <%= li.accepted? ? "accepted" : "pending" %>" style="margin-right: 6px;">
                     <%= li.accepted? ? "Accepted" : "Pending" %>
-                    <%# The row is rendered for its owner or an admin; only the owner can accept.
-                        The amount travels with the click (see MsoTrueup#toggle_acceptance!). %>
+                    <%# The row is rendered for its owner or an admin; only the owner can accept. %>
                     <% if !li.locked? && current_admin_user == li.contributor.forecast_person&.admin_user %>
                       <span class="split">
-                        <%= link_to li.accepted? ? "Unaccept ↗" : "Accept ↗", toggle_acceptance_admin_ledger_mso_trueup_path(li.ledger, li, amount: li.amount.to_s("F")), method: :post, style: "font-size: unset;" %>
+                        <%= link_to li.accepted? ? "Unaccept ↗" : "Accept ↗", toggle_acceptance_admin_ledger_mso_trueup_path(li.ledger, li), method: :post, style: "font-size: unset;" %>
                       </span>
                     <% end %>
                   </span>

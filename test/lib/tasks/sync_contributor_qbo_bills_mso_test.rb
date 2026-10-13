@@ -17,13 +17,12 @@ class SyncContributorQboBillsMsoTest < ActiveSupport::TestCase
     Rake::Task["stacks:sync_contributor_qbo_bills"].reenable
 
     @qa = garden3d_qbo_account
-    pass = garden3d_pass(MONTH)
+    fee_collected(MONTH)
     @exec = mso_person("nightly-exec")
     ledger = garden3d_ledger(@exec)
     role = mso_role(@exec)
-    snapshot = mso_snapshot(pass, lines: [mso_line(role, ledger, trueup: "1200.0")], collected: true)
     # As payable as a true-up gets: accepted, collected, vendor mapped.
-    @trueup = mso_trueup(snapshot, role, ledger, amount: "1200", accepted: true)
+    @trueup = mso_trueup(mso_report(MONTH), role, ledger, amount: "1200", accepted: true)
     vendor = QboVendor.create!(qbo_account: @qa, qbo_id: "V-#{SecureRandom.hex(3)}", data: {})
     ContributorQboVendor.create!(contributor: @exec, qbo_account: @qa, qbo_vendor: vendor)
     assert @trueup.payable?, "sanity: nothing but the caller stands between this row and a bill"
@@ -36,7 +35,6 @@ class SyncContributorQboBillsMsoTest < ActiveSupport::TestCase
     # Mocha's expectation errors are not StandardErrors: the task's own
     # per-record rescue cannot swallow them.
     MsoTrueup.any_instance.expects(:sync_qbo_bill!).never
-    MsoTrueup.any_instance.expects(:refresh_qbo_bill_mirror!).never
     Quickbooks::Service::Bill.any_instance.expects(:create).never
     Quickbooks::Service::Bill.any_instance.expects(:update).never
     Quickbooks::Service::Bill.any_instance.expects(:delete).never
@@ -51,8 +49,7 @@ class SyncContributorQboBillsMsoTest < ActiveSupport::TestCase
     reached = []
     Trueup.any_instance.stubs(:sync_qbo_bill!).with { |**| reached << :trueup }
     sanctuary_ledger = Ledger.find_or_create_for(enterprise: enterprises(:sanctuary), contributor: @exec)
-    # (The snapshot fixture already made Sanctuary's pass for the month.)
-    pass = InvoicePass.find_by!(enterprise: enterprises(:sanctuary), start_of_month: MONTH)
+    pass = sanctuary_pass(MONTH)
     Trueup.create!(invoice_pass: pass, ledger: sanctuary_ledger, amount: "10", description: "x")
 
     Rake::Task["stacks:sync_contributor_qbo_bills"].invoke

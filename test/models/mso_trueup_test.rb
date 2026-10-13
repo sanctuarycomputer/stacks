@@ -7,42 +7,42 @@ class MsoTrueupTest < ActiveSupport::TestCase
 
   def setup
     garden3d_qbo_account
-    @pass = garden3d_pass(MONTH)
+    @report = mso_report(MONTH)
     @exec = mso_person("exec")
     @other = mso_person("other")
     @ledger = garden3d_ledger(@exec)
     @other_ledger = garden3d_ledger(@other)
     @role = mso_role(@exec)
     @other_role = mso_role(@other, tier: :principal)
-    # Nothing here may reach QuickBooks unless a test says so.
+    # Nothing here may reach QuickBooks.
     QboAccount.any_instance.stubs(:make_and_refresh_qbo_access_token)
       .raises(RuntimeError, "unexpected QuickBooks call")
+    Quickbooks::Service::Bill.any_instance.stubs(:create).raises(RuntimeError, "unexpected QuickBooks bill write")
   end
 
   def teardown
     clear_enterprise_memos
   end
 
-  def snapshot(lines: nil, collected: true)
-    lines ||= [mso_line(@role, @ledger, trueup: "1000.0")]
-    mso_snapshot(@pass, lines: lines, collected: collected)
+  def payable?(trueup)
+    MsoTrueup.find(trueup.id).payable?
   end
 
-  # Accrual dating (owner decision O2): March's true-up, run and billed in
-  # July, is March's income and its bill is dated 03/31.
-  test "it is dated the last day of the fee month, whenever it was run or billed" do
-    trueup = mso_trueup(snapshot, @role, @ledger, amount: "1000")
+  # Accrual dating: March's true-up, synced and billed in July, is March's
+  # income and its bill is dated 03/31.
+  test "it is dated the last day of the report's month, whenever it was synced or billed" do
+    trueup = mso_trueup(@report, @role, @ledger, amount: "1000")
     trueup.update_columns(created_at: Time.utc(2090, 7, 9), updated_at: Time.utc(2090, 7, 9))
     trueup = MsoTrueup.find(trueup.id)
 
+    assert_equal Date.new(2090, 3, 31), @report.period.ends_at
     assert_equal Date.new(2090, 3, 31), trueup.payment_date
     assert_equal Date.new(2090, 3, 31), trueup.effective_on_for_display
     assert_equal Date.new(2090, 3, 31), trueup.bill_txn_date
-    # (That it then counts as March's income, not July's, is Task 2's test.)
   end
 
   test "its QuickBooks bill is tagged MT and described by its admin URL" do
-    trueup = mso_trueup(snapshot, @role, @ledger, amount: "1000")
+    trueup = mso_trueup(@report, @role, @ledger, amount: "1000")
 
     assert_equal "MT", trueup.bill_doc_number_code
     assert_equal "https://stacks.garden3d.net/admin/ledgers/#{@ledger.id}/mso_trueups/#{trueup.id}",
@@ -50,7 +50,7 @@ class MsoTrueupTest < ActiveSupport::TestCase
   end
 
   test "an amount of zero or less, or no description, is invalid" do
-    base = { ledger: @ledger, invoice_pass: @pass, mso_snapshot: snapshot, mso_role_period: @role }
+    base = { ledger: @ledger, periodic_report: @report }
 
     assert_not MsoTrueup.new(base.merge(amount: 0, description: "x")).valid?
     assert_not MsoTrueup.new(base.merge(amount: -5, description: "x")).valid?
@@ -58,84 +58,82 @@ class MsoTrueupTest < ActiveSupport::TestCase
     assert MsoTrueup.new(base.merge(amount: 5, description: "x")).valid?
   end
 
-  test "it can only sit on a garden3d ledger and garden3d's pass" do
+  test "it can only sit on a garden3d ledger" do
     sanctuary_ledger = Ledger.find_or_create_for(enterprise: enterprises(:sanctuary), contributor: @exec)
-    snap = snapshot
 
-    on_wrong_ledger = MsoTrueup.new(ledger: sanctuary_ledger, invoice_pass: @pass, mso_snapshot: snap,
-                                    mso_role_period: @role, amount: 5, description: "x")
-    on_wrong_pass = MsoTrueup.new(ledger: @ledger, invoice_pass: snap.sanctuary_invoice_pass, mso_snapshot: snap,
-                                  mso_role_period: @role, amount: 5, description: "x")
+    trueup = MsoTrueup.new(ledger: sanctuary_ledger, periodic_report: @report, amount: 5, description: "x")
 
-    assert_not on_wrong_ledger.valid?
-    assert_includes on_wrong_ledger.errors[:ledger], "must be a garden3d, LLC ledger"
-    assert_not on_wrong_pass.valid?
-    assert_includes on_wrong_pass.errors[:invoice_pass], "must be garden3d, LLC's pass"
+    assert_not trueup.valid?
+    assert_includes trueup.errors[:ledger], "must be a garden3d, LLC ledger"
   end
 
-  test "one live true-up per ledger per pass, and a soft-deleted one does not block another" do
-    snap = snapshot
-    first = mso_trueup(snap, @role, @ledger, amount: "1000")
+  test "one true-up per ledger per report" do
+    mso_trueup(@report, @role, @ledger, amount: "1000")
 
-    assert_raises(ActiveRecord::RecordNotUnique) { mso_trueup(snap, @role, @ledger, amount: "900") }
-
-    first.destroy
-    assert_nothing_raised { mso_trueup(snap, @role, @ledger, amount: "900") }
-    assert_equal 2, MsoTrueup.with_deleted.where(ledger_id: @ledger.id, invoice_pass_id: @pass.id).count
+    assert_raises(ActiveRecord::RecordNotUnique) { mso_trueup(@report, @role, @ledger, amount: "900") }
   end
 
-  test "it is not payable until it is accepted" do
-    trueup = mso_trueup(snapshot, @role, @ledger, amount: "1000")
+  # payable? = every true-up on the report accepted AND the month's fee collected.
+  test "payable? truth table: accepted x everyone accepted x fee collected" do
+    mine = mso_trueup(@report, @role, @ledger, amount: "1000")
+    theirs = mso_trueup(@report, @other_role, @other_ledger, amount: "2000")
 
-    assert_equal false, trueup.payable?
-    trueup.toggle_acceptance!
-    assert_equal true, MsoTrueup.find(trueup.id).payable?
+    [
+      # mine,  theirs, collected, payable
+      [false, false, false, false],
+      [true,  false, false, false],
+      [false, true,  false, false],
+      [true,  true,  false, false],
+      [false, false, true,  false],
+      [true,  false, true,  false],
+      [false, true,  true,  false],
+      [true,  true,  true,  true],
+    ].each do |mine_accepted, theirs_accepted, collected, expected|
+      mine.update_columns(accepted_at: mine_accepted ? Time.current : nil)
+      theirs.update_columns(accepted_at: theirs_accepted ? Time.current : nil)
+      fee_collected(MONTH, collected)
+
+      assert_equal expected, payable?(mine),
+        "mine=#{mine_accepted} theirs=#{theirs_accepted} collected=#{collected}"
+    end
   end
 
-  test "it is not payable until the fee is confirmed collected" do
-    snap = snapshot(collected: false)
-    trueup = mso_trueup(snap, @role, @ledger, amount: "1000", accepted: true)
+  test "with no garden3d pass for the month, nothing is payable, and nothing is asked of a pass" do
+    mine = mso_trueup(@report, @role, @ledger, amount: "1000", accepted: true)
+    InvoicePass.any_instance.expects(:management_fee_collected?).never
 
-    assert_equal false, trueup.payable?
-    snap.update_columns(fee_collected_at: Time.current)
-    assert_equal true, MsoTrueup.find(trueup.id).payable?
+    assert_nil InvoicePass.find_by(enterprise: garden3d, start_of_month: MONTH)
+    assert_equal false, payable?(mine)
   end
 
-  test "it is not payable until every expected true-up is accepted, including one that does not exist yet" do
-    snap = snapshot(lines: [mso_line(@role, @ledger, trueup: "1000.0"),
-                            mso_line(@other_role, @other_ledger, trueup: "2000.0")])
-    mine = mso_trueup(snap, @role, @ledger, amount: "1000", accepted: true)
+  test "the fee is read from the stored invoice mirrors: uncollected, then collected" do
+    pass = garden3d_pass(MONTH)
+    tracker = fee_tracker(pass, make_payer("Truth Payer #{SecureRandom.hex(3)}"))
+    attach_invoice(tracker, qbo_id: "8101", total: "500.0", balance: "500.0", sent: true)
+    QboInvoice.any_instance.stubs(:sync!).raises(RuntimeError, "unexpected QuickBooks read")
+    mine = mso_trueup(@report, @role, @ledger, amount: "1000", accepted: true)
 
-    # The other executive's row has not been created: 1 of 1 accepted is not 2 of 2.
-    assert_equal false, mine.payable?
+    assert_equal false, payable?(mine)
 
-    theirs = mso_trueup(snap, @other_role, @other_ledger, amount: "2000")
-    assert_equal false, MsoTrueup.find(mine.id).payable?
+    invoice = QboInvoice.find_by!(qbo_account_id: garden3d_qbo_account.id, qbo_id: "8101")
+    invoice.update_columns(data: invoice.data.merge("balance" => "0.0"))
 
-    theirs.toggle_acceptance!
-    assert_equal true, MsoTrueup.find(mine.id).payable?
+    assert_equal true, payable?(mine)
   end
 
-  test "a line with a zero true-up expects no row" do
-    snap = snapshot(lines: [mso_line(@role, @ledger, trueup: "1000.0"),
-                            mso_line(@other_role, @other_ledger, trueup: "0.0")])
-    mine = mso_trueup(snap, @role, @ledger, amount: "1000", accepted: true)
+  test "the fee question is asked once per report, however many true-ups ask" do
+    fee_collected(MONTH)
+    InvoicePass.any_instance.expects(:management_fee_collected?).once.returns(true)
+    mso_trueup(@report, @role, @ledger, amount: "1000", accepted: true)
+    mso_trueup(@report, @other_role, @other_ledger, amount: "2000", accepted: true)
 
-    assert_equal [@ledger.id], snap.expected_ledger_ids
-    assert_equal true, mine.payable?
+    report = PeriodicReport.find(@report.id)
+
+    assert_equal [true, true], report.mso_trueups.map(&:payable?)
   end
 
-  test "it is not payable once its snapshot has been superseded" do
-    snap = snapshot
-    trueup = mso_trueup(snap, @role, @ledger, amount: "1000", accepted: true)
-    assert_equal true, trueup.payable?
-
-    snap.update_columns(superseded_at: Time.current)
-    assert_equal false, MsoTrueup.find(trueup.id).payable?
-  end
-
-  test "acceptance toggles, and is refused once a QuickBooks bill exists" do
-    trueup = mso_trueup(snapshot, @role, @ledger, amount: "1000")
+  test "acceptance toggles; a true-up with a QuickBooks bill cannot be un-accepted" do
+    trueup = mso_trueup(@report, @role, @ledger, amount: "1000")
 
     trueup.toggle_acceptance!
     assert trueup.reload.accepted?
@@ -149,49 +147,30 @@ class MsoTrueupTest < ActiveSupport::TestCase
     assert trueup.reload.accepted?
   end
 
-  test "sync_qbo_bill! refuses a true-up that is not payable, before any QuickBooks call" do
-    trueup = mso_trueup(snapshot(collected: false), @role, @ledger, amount: "1000", accepted: true)
-    Quickbooks::Service::Bill.any_instance.stubs(:create).raises(RuntimeError, "unexpected QuickBooks bill write")
-
-    error = assert_raises(MsoTrueup::NotPayable) { trueup.sync_qbo_bill! }
-    assert_match(/not payable/, error.message)
-    assert_nil trueup.reload.qbo_bill_id
-  end
-
-  test "a billed true-up counts as payable whatever else has changed" do
-    snap = snapshot(collected: false)
-    trueup = mso_trueup(snap, @role, @ledger, amount: "1000")
-    assert_equal false, trueup.payable?
-
+  # A sync that changed a billed true-up's amount cleared its acceptance. It
+  # has to be acceptable again, or the month could never settle.
+  test "an unaccepted true-up that has a bill can still be accepted" do
+    trueup = mso_trueup(@report, @role, @ledger, amount: "1000")
     trueup.update_columns(qbo_bill_id: "77")
 
-    assert_equal true, MsoTrueup.find(trueup.id).payable?
-  end
+    assert_not trueup.locked?
+    trueup.toggle_acceptance!
 
-  test "it is not payable while its snapshot is invalidated, and confirming collection cannot bring it back" do
-    snap = snapshot
-    trueup = mso_trueup(snap, @role, @ledger, amount: "1000", accepted: true)
-    assert_equal true, trueup.payable?
-
-    snap.invalidate!("a later run was refused")
-
-    assert_equal false, MsoTrueup.find(trueup.id).payable?
-    Mso::IntercompanyInvoices.stubs(:collected?).raises(RuntimeError, "unexpected QuickBooks read")
-    error = assert_raises(MsoSnapshot::Unusable) { MsoSnapshot.find(snap.id).check_collection! }
-    assert_match(/a later run was refused/, error.message)
-    assert_equal false, MsoTrueup.find(trueup.id).payable?
-  end
-
-  test "accepting is refused when the amount is no longer the one the person saw" do
-    trueup = mso_trueup(snapshot, @role, @ledger, amount: "1000")
-
-    error = assert_raises(MsoTrueup::AmountChanged) { trueup.toggle_acceptance!(expected_amount: "999.99") }
-    assert_match(/1000\.0/, error.message)
-    assert_raises(MsoTrueup::AmountChanged) { trueup.toggle_acceptance!(expected_amount: "not a number") }
-    assert_not trueup.reload.accepted?
-
-    trueup.toggle_acceptance!(expected_amount: "1000.0")
     assert trueup.reload.accepted?
+  end
+
+  test "sync_qbo_bill! refuses a true-up that is not payable, and writes nothing" do
+    not_accepted = mso_trueup(@report, @role, @ledger, amount: "1000")
+    fee_collected(MONTH)
+    error = assert_raises(MsoTrueup::NotPayable) { not_accepted.sync_qbo_bill! }
+    assert_match(/not payable/, error.message)
+
+    not_accepted.update_columns(accepted_at: Time.current)
+    fee_collected(MONTH, false)
+    assert_raises(MsoTrueup::NotPayable) { MsoTrueup.find(not_accepted.id).sync_qbo_bill! }
+
+    assert_nil not_accepted.reload.qbo_bill_id
+    assert_equal 0, QboBill.where(qbo_account_id: garden3d_qbo_account.id).count
   end
 
   test "schema_ready? remembers yes, and while the answer is no asks the database at most once a minute" do
@@ -209,7 +188,7 @@ class MsoTrueupTest < ActiveSupport::TestCase
   end
 
   test "deleting it takes its QuickBooks bill with it" do
-    trueup = mso_trueup(snapshot, @role, @ledger, amount: "1000")
+    trueup = mso_trueup(@report, @role, @ledger, amount: "1000")
     trueup.expects(:detach_and_destroy_qbo_bill).once
 
     trueup.destroy

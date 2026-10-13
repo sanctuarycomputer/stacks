@@ -249,7 +249,7 @@ class Ledger < ApplicationRecord
       ProfitShare.with_deleted.includes(:periodic_report).where(ledger_id: id).to_a,
       DeelInvoiceAdjustment.with_deleted.where(ledger_id: id).to_a,
       PayStub.with_deleted.includes(:pay_cycle).where(ledger_id: id).to_a,
-      (MsoTrueup.schema_ready? ? MsoTrueup.with_deleted.includes(:invoice_pass, mso_snapshot: :mso_trueups).where(ledger_id: id).to_a : []),
+      (MsoTrueup.schema_ready? ? MsoTrueup.with_deleted.includes(periodic_report: :mso_trueups).where(ledger_id: id).to_a : []),
     ].flatten
   end
 end

@@ -137,13 +137,13 @@ class Contributor < ApplicationRecord
         .where(ledgers: { contributor_id: id }).to_a
   end
 
-  # The snapshot and its true-ups are what MsoTrueup#payable? reads.
+  # The report and its true-ups are what MsoTrueup#payable? reads.
   def mso_trueups_with_deleted
     @_mso_trueups_with_deleted ||=
       if MsoTrueup.schema_ready?
         MsoTrueup.with_deleted
           .joins(:ledger)
-          .includes(:invoice_pass, mso_snapshot: :mso_trueups)
+          .includes(periodic_report: :mso_trueups)
           .where(ledgers: { contributor_id: id }).to_a
       else
         []
@@ -217,7 +217,7 @@ class Contributor < ApplicationRecord
     @_mso_trueups_with_deleted =
       if MsoTrueup.schema_ready?
         MsoTrueup.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
-          .includes(:ledger, :invoice_pass, mso_snapshot: :mso_trueups).to_a
+          .includes(:ledger, periodic_report: :mso_trueups).to_a
       else
         []
       end
@@ -655,10 +655,10 @@ class Contributor < ApplicationRecord
         .group("ledgers.contributor_id", "invoice_passes.start_of_month").sum(:amount),
     ]
     if MsoTrueup.schema_ready?
-      grouped_income << MsoTrueup.joins(:ledger).joins(:invoice_pass)
+      grouped_income << MsoTrueup.joins(:ledger).joins(:periodic_report)
         .where(ledgers: { contributor_id: contributor_ids })
-        .where("invoice_passes.start_of_month BETWEEN ? AND ?", span_start, span_end)
-        .group("ledgers.contributor_id", "invoice_passes.start_of_month").sum(:amount)
+        .where("periodic_reports.period_starts_at BETWEEN ? AND ?", span_start, span_end)
+        .group("ledgers.contributor_id", "periodic_reports.period_starts_at").sum(:amount)
     end
     grouped_income.each do |grouped|
       grouped.each do |(contributor_id, month), amt|

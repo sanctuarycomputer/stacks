@@ -40,12 +40,9 @@ class FounderTrueupMsoTest < ActiveSupport::TestCase
     MsoRolePeriod.create!(contributor: @founder, tier: :principal, title: "Founder", started_at: started_at)
   end
 
-  # February was paid through the MSO: a snapshot line and a true-up for the founder.
-  def february_run(role)
-    pass = garden3d_pass(FEBRUARY)
-    ledger = garden3d_ledger(@founder)
-    snapshot = mso_snapshot(pass, lines: [mso_line(role, ledger, trueup: "900.0")])
-    [snapshot, mso_trueup(snapshot, role, ledger, amount: "900")]
+  # February was paid through the MSO: a true-up for the founder.
+  def february_trueup(role)
+    mso_trueup(mso_report(FEBRUARY), role, garden3d_ledger(@founder), amount: "900")
   end
 
   def sync!(*months)
@@ -87,31 +84,16 @@ class FounderTrueupMsoTest < ActiveSupport::TestCase
     assert_equal BigDecimal("123.45"), existing.reload.amount
   end
 
-  test "deleting the role period after the month was run does not bring the founder true-up back" do
+  test "moving the role period off a month that has an MSO true-up does not bring the founder true-up back" do
     month_with_payouts(FEBRUARY)
     role = founder_role(FEBRUARY)
-    snapshot, trueup = february_run(role)
-    # However it happened: the roster row is gone and so is the true-up row.
-    trueup.destroy
-    MsoSnapshot.where(id: snapshot.id).update_all(lines: [])
+    # However it happened: the roster row no longer covers the month, and
+    # the true-up row is soft-deleted.
+    february_trueup(role).destroy
     MsoRolePeriod.where(id: role.id).update_all(started_at: Date.new(2091, 3, 1))
 
     assert_equal true, Stacks::System.founder_paid_by_mso?(@founder, FEBRUARY),
       "a soft-deleted MSO true-up still marks the month"
-    assert_no_difference -> { Trueup.with_deleted.count } do
-      sync!(FEBRUARY)
-    end
-  end
-
-  test "moving the role's start later does not bring the founder true-up back for a month a snapshot covers" do
-    month_with_payouts(FEBRUARY)
-    role = founder_role(FEBRUARY)
-    _snapshot, trueup = february_run(role)
-    # No true-up row at all this time; only the snapshot's line names the founder.
-    MsoTrueup.with_deleted.where(id: trueup.id).delete_all!
-    MsoRolePeriod.where(id: role.id).update_all(started_at: Date.new(2091, 3, 1))
-
-    assert_equal true, Stacks::System.founder_paid_by_mso?(@founder, FEBRUARY)
     assert_no_difference -> { Trueup.with_deleted.count } do
       sync!(FEBRUARY)
     end

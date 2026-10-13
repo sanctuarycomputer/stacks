@@ -24,8 +24,8 @@ module Ledger::QualifyingIncome
     ProfitShare => :periodic_report,
     ContributorAdjustment => nil,
     # An executive's MSO true-up. Mso::MonthlyRun passes the month's own
-    # true-ups as `excluding:`, or a re-run would net each against itself.
-    MsoTrueup => :invoice_pass,
+    # true-ups as `excluding:`, or a second sync would net each against itself.
+    MsoTrueup => :periodic_report,
   }.freeze
 
   # Mso::Benchmark deliberately narrows this (its own KLASSES leaves out

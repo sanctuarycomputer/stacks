@@ -7,11 +7,11 @@ class Ledger::MsoTrueupLedgerTest < ActiveSupport::TestCase
 
   def setup
     garden3d_qbo_account
-    @pass = garden3d_pass(MONTH)
+    fee_collected(MONTH)
     @exec = mso_person("ledger-exec")
     @ledger = garden3d_ledger(@exec)
     @role = mso_role(@exec)
-    @snapshot = mso_snapshot(@pass, lines: [mso_line(@role, @ledger, trueup: "1500.0")], collected: true)
+    @report = mso_report(MONTH)
   end
 
   def teardown
@@ -33,7 +33,7 @@ class Ledger::MsoTrueupLedgerTest < ActiveSupport::TestCase
   end
 
   test "an unaccepted true-up is unsettled, and an accepted, collected one is balance" do
-    trueup = mso_trueup(@snapshot, @role, @ledger, amount: "1500")
+    trueup = mso_trueup(@report, @role, @ledger, amount: "1500")
 
     assert_equal 1500.0, fresh_ledger.unsettled.to_f
     assert_equal 0.0, fresh_ledger.balance.to_f
@@ -44,8 +44,16 @@ class Ledger::MsoTrueupLedgerTest < ActiveSupport::TestCase
     assert_equal 1500.0, fresh_ledger.balance.to_f
   end
 
-  test "it is listed in its pass month and counts toward that month's income" do
-    trueup = mso_trueup(@snapshot, @role, @ledger, amount: "1500")
+  test "accepted but with the fee not collected, it stays unsettled" do
+    fee_collected(MONTH, false)
+    mso_trueup(@report, @role, @ledger, amount: "1500", accepted: true)
+
+    assert_equal 1500.0, fresh_ledger.unsettled.to_f
+    assert_equal 0.0, fresh_ledger.balance.to_f
+  end
+
+  test "it is listed in its report's month and counts toward that month's income" do
+    trueup = mso_trueup(@report, @role, @ledger, amount: "1500")
 
     month = month_of(grouped(fresh_ledger))
 
@@ -54,7 +62,7 @@ class Ledger::MsoTrueupLedgerTest < ActiveSupport::TestCase
   end
 
   test "a soft-deleted true-up is still listed for the strikethrough, but is in no total" do
-    trueup = mso_trueup(@snapshot, @role, @ledger, amount: "1500")
+    trueup = mso_trueup(@report, @role, @ledger, amount: "1500")
     trueup.destroy
 
     month = month_of(grouped(fresh_ledger))
@@ -65,7 +73,7 @@ class Ledger::MsoTrueupLedgerTest < ActiveSupport::TestCase
   end
 
   test "it is qualifying income, and excluding: takes it back out" do
-    trueup = mso_trueup(@snapshot, @role, @ledger, amount: "1500")
+    trueup = mso_trueup(@report, @role, @ledger, amount: "1500")
 
     assert_equal BigDecimal("1500"), Ledger::QualifyingIncome.for(ledger: @ledger, month: MONTH)
     assert_equal BigDecimal("0"), Ledger::QualifyingIncome.for(ledger: @ledger, month: MONTH, excluding: [trueup])
