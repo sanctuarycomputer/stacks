@@ -55,7 +55,9 @@ class StacksProjectLogTest < ActiveSupport::TestCase
 
   # --- what a flag is --------------------------------------------------------
 
-  test "a problem flag: open, High or Critical, nobody owns it, seen in the last 30 days" do
+  # --- interim: pages with no Flag in Notion ---------------------------------
+
+  test "interim, no Flag in Notion: a problem flag is open, High or Critical, not picked up, seen in the last 30 days" do
     prob!(name: "critical open", severity: "Critical")
     prob!(name: "high open")
     prob!(name: "high blank status", status: nil)
@@ -84,7 +86,7 @@ class StacksProjectLogTest < ActiveSupport::TestCase
                  log.other_problems.map { |p| log.not_a_flag_reason(p) }
   end
 
-  test "a problem flag clears when it has not been seen for 30 days" do
+  test "interim, no Flag in Notion: a problem flag clears when it has not been seen for 30 days" do
     prob!(name: "fresh", last_seen: NOW - 29.days)
     prob!(name: "stale", last_seen: NOW - 31.days)
     prob!(name: "stale by first seen", last_seen: nil, first_seen: NOW - 40.days)
@@ -107,7 +109,7 @@ class StacksProjectLogTest < ActiveSupport::TestCase
     assert_equal ["dated by the row only"], log.other_problems.map(&:title)
   end
 
-  test "an observation flag: Negative, High salience, not dismissed, in the last 30 days" do
+  test "interim, no Flag in Notion: an observation flag is Negative, High salience, not dismissed, in the last 30 days" do
     risk!(name: "recent high negative")
     risk!(name: "edge of the window", observed_at: NOW - 29.days)
     risk!(name: "older than 30 days", observed_at: NOW - 31.days)
@@ -189,24 +191,25 @@ class StacksProjectLogTest < ActiveSupport::TestCase
     risk!(name: "o1", source: "Twist", observed_at: Time.zone.parse("2026-10-09T10:00:00Z"))
     risk!(name: "o2", source: nil, observed_at: Time.zone.parse("2026-10-07T10:00:00Z"))
     why = log.flags.index_by(&:title).transform_values(&:why)
-    assert_equal "High severity problem. Nobody owns it yet. Seen 4 times, last on Oct 9, 2026.", why["p1"]
-    assert_equal "Critical severity problem. No status in Notion. Last seen on Oct 8, 2026.", why["p2"]
-    assert_equal "High severity problem. Status in Notion: Parked.", why["p3"]
-    assert_equal "High-salience negative observation. Seen in Twist on Oct 9, 2026.", why["o1"]
-    assert_equal "High-salience negative observation. Seen on Oct 7, 2026.", why["o2"]
+    assert_equal "Open. Seen 4 times, last on Oct 9, 2026.", why["p1"]
+    assert_equal "Critical. Last seen on Oct 8, 2026.", why["p2"]
+    assert_equal "Open.", why["p3"]
+    assert_equal "Risk, not yet tied to a problem. Seen in Twist on Oct 9, 2026.", why["o1"]
+    assert_equal "Risk, not yet tied to a problem. Seen on Oct 7, 2026.", why["o2"]
+    assert_no_match(/owns/i, why.values.join(" "), "Stacks composes no ownership wording for a flag")
   end
 
   test "why a flag: Notion's own sentence, then only when Stacks holds it came up" do
     prob!(name: "p", severity: "Medium", status: "Owned", owner: "Sam Lead", occurrences: 3,
-          flag: "High severity problem. Nobody owns it yet.", last_seen: Time.zone.parse("2026-10-09T10:00:00Z"))
+          flag: "Open.", last_seen: Time.zone.parse("2026-10-09T10:00:00Z"))
     prob!(name: "p no stop", flag: "Client is unhappy", occurrences: 1, last_seen: Time.zone.parse("2026-10-08T10:00:00Z"))
-    obs!(name: "o", valence: "Neutral", source: "Meet", flag: "High-salience risk.", observed_at: Time.zone.parse("2026-10-09T10:00:00Z"))
+    obs!(name: "o", valence: "Neutral", source: "Meet", flag: "Risk, not yet tied to a problem.", observed_at: Time.zone.parse("2026-10-09T10:00:00Z"))
     why = log.flags.index_by(&:title).transform_values(&:why)
-    assert_equal "High severity problem. Nobody owns it yet. Seen 3 times, last on Oct 9, 2026.", why["p"],
+    assert_equal "Open. Seen 3 times, last on Oct 9, 2026.", why["p"],
                  "the words are Notion's, though the row itself is Medium and Owned"
     assert_equal "Client is unhappy. Last seen on Oct 8, 2026.", why["p no stop"]
-    assert_equal "High-salience risk. Seen in Meet on Oct 9, 2026.", why["o"]
-    assert_equal ["Client is unhappy", "High severity problem. Nobody owns it yet.", "High-salience risk."],
+    assert_equal "Risk, not yet tied to a problem. Seen in Meet on Oct 9, 2026.", why["o"]
+    assert_equal ["Client is unhappy", "Open.", "Risk, not yet tied to a problem."],
                  log.flags.map { |f| f.record.flag_reason }.sort
   end
 
@@ -223,7 +226,7 @@ class StacksProjectLogTest < ActiveSupport::TestCase
   # yes and no in each shape a Flag can take: today's text formula (the
   # reason, or nothing), a boolean formula, a checkbox.
   FLAG_SHAPES = {
-    "text" => [{ flag: "High severity problem. Nobody owns it yet." }, { flag: "" }],
+    "text" => [{ flag: "Open." }, { flag: "" }],
     "empty text" => [{ flag: "Reason." }, { flag: nil, flag_shape: :text }],
     "formula" => [{ flag: true, flag_shape: :formula }, { flag: false, flag_shape: :formula }],
     "checkbox" => [{ flag: true }, { flag: false }],
@@ -250,30 +253,52 @@ class StacksProjectLogTest < ActiveSupport::TestCase
     assert_nil l.not_a_flag_reason(l.other_problems.find { |p| p.title.start_with?("text") }), "Notion said no; Stacks gives no reason of its own"
   end
 
-  test "a stale Flag never shows a closed problem or a dismissed observation, and the window still applies" do
-    prob!(name: "resolved", status: "Resolved", flag: "High severity problem. Nobody owns it yet.")
+  test "a stale Flag never shows a closed problem or a dismissed observation" do
+    prob!(name: "resolved", status: "Resolved", flag: "Open.")
     prob!(name: "dismissed", status: "Dismissed", flag: true, flag_shape: :formula)
-    prob!(name: "quiet", flag: "High severity problem. Nobody owns it yet.", last_seen: NOW - 31.days)
-    obs!(name: "dismissed observation", valence: "Negative", salience: "High", status: "Dismissed", flag: "High-salience risk.")
-    obs!(name: "old observation", valence: "Negative", salience: "High", flag: true, observed_at: NOW - 31.days)
+    obs!(name: "dismissed observation", valence: "Negative", salience: "High", status: "Dismissed", flag: "Risk, not yet tied to a problem.")
     l = log
     assert_empty l.flags
-    assert_equal ["quiet"], l.other_problems.map(&:title)
+    assert_empty l.other_problems
+    assert_equal [false], l.rows.map(&:flag)
+  end
+
+  # The 30 days are in Notion's formula now. A page that carries Flag is
+  # never tested against a window here, whichever way Notion answered.
+  test "Stacks applies no window of its own to a page Notion answered for" do
+    prob!(name: "quiet, and Notion still flags it", flag: "Open.", last_seen: NOW - 200.days)
+    prob!(name: "recent, and Notion says no", severity: "Critical", flag: "", last_seen: NOW - 1.day)
+    prob!(name: "quiet, and Notion says no", severity: "Critical", flag: "", last_seen: NOW - 200.days)
+    obs!(name: "old, and Notion still flags it", valence: "Negative", salience: "High", flag: true, observed_at: NOW - 200.days)
+    risk!(name: "recent, and Notion says no", flag: "")
+    l = log
+    assert_equal ["quiet, and Notion still flags it", "old, and Notion still flags it"], flag_titles(l)
+    assert_equal ["quiet, and Notion says no", "recent, and Notion says no"], l.other_problems.map(&:title).sort
+    l.other_problems.each { |p| assert_nil l.not_a_flag_reason(p), "#{p.title}: Notion decided, so Stacks gives no reason of its own" }
+    assert_equal({ @tracker.id => 2 }, Stacks::ProjectLog.flag_counts([@tracker], now: NOW))
+    assert_not l.interim_flag_in_use?
+  end
+
+  test "the interim rule keeps its window: only a page with no Flag is ever told it was not seen for 30 days" do
+    prob!(name: "no Flag, quiet", last_seen: NOW - 31.days)
+    risk!(name: "no Flag, old", observed_at: NOW - 31.days)
+    l = log
+    assert_empty l.flags
     assert_equal "Not a flag: not seen for 30 days.", l.not_a_flag_reason(l.other_problems.first)
-    assert_equal [false, false], l.rows.map(&:flag)
+    assert_equal({}, Stacks::ProjectLog.flag_counts([@tracker], now: NOW))
   end
 
   test "an observation Notion flags is still evidence, not a second flag, when tied to a problem flag" do
-    problem = prob!(name: "Timeline slipping", severity: "Low", flag: "High severity problem. Nobody owns it yet.")
-    obs!(name: "tied", valence: "Neutral", flag: "High-salience risk.", problem_ids: [problem.notion_id])
-    obs!(name: "alone", valence: "Neutral", flag: "High-salience risk.")
+    problem = prob!(name: "Timeline slipping", severity: "Low", flag: "Open.")
+    obs!(name: "tied", valence: "Neutral", flag: "Risk, not yet tied to a problem.", problem_ids: [problem.notion_id])
+    obs!(name: "alone", valence: "Neutral", flag: "Risk, not yet tied to a problem.")
     l = log
     assert_equal ["Timeline slipping", "alone"], flag_titles(l)
     assert_equal ["tied"], l.flags.first.evidence.map(&:title)
   end
 
   test "interim_flag_in_use? says whether any row on the page had no Flag in Notion" do
-    prob!(name: "stated", flag: "High severity problem. Nobody owns it yet.")
+    prob!(name: "stated", flag: "Open.")
     obs!(name: "stated", valence: "Positive", flag: "")
     assert_not log.interim_flag_in_use?
     obs!(name: "unstated", valence: nil)
@@ -284,7 +309,7 @@ class StacksProjectLogTest < ActiveSupport::TestCase
   # The SQL must pick exactly the rows the wrappers call flags.
   test "the flag SQL agrees with flag? row by row" do
     shapes = [[:absent, :checkbox], [true, :checkbox], [false, :checkbox], [true, :formula], [false, :formula], [nil, :formula],
-              ["High-salience risk.", :text], ["", :text], ["  \n\t ", :text], [nil, :text]]
+              ["Risk, not yet tied to a problem.", :text], ["", :text], ["  \n\t ", :text], [nil, :text]]
     shapes.each do |(flag, shape)|
       [%w[Critical Open], %w[High Owned], %w[Medium Open], ["High", nil], %w[High Resolved], [nil, "Open"]].each do |(severity, status)|
         prob!(severity: severity, status: status, flag: flag, flag_shape: shape)
@@ -377,13 +402,13 @@ class StacksProjectLogTest < ActiveSupport::TestCase
 
   test "ownership in words" do
     words = ->(**attrs) { Stacks::ProjectLog.ownership_words(NotionPage.new(notion_id: "x", data: problem_data(**attrs)).as_problem) }
-    assert_equal "Nobody owns it yet", words.(status: "Open")
+    assert_equal "Not picked up in Notion yet", words.(status: "Open")
     assert_equal "Owned by Sam Lead", words.(status: "Owned", owner: "Sam Lead")
     assert_equal "Owned, with no owner named in Notion", words.(status: "Owned")
     assert_equal "Being mitigated by Ada", words.(status: "Mitigating", owner: "Ada")
     assert_equal "Being mitigated, with no owner named in Notion", words.(status: "Mitigating")
     assert_equal "Status in Notion: Parked", words.(status: "Parked")
-    assert_equal "No status in Notion", words.(status: nil)
+    assert_equal "Not picked up in Notion yet", words.(status: nil)
   end
 
   # --- wins ------------------------------------------------------------------
@@ -569,16 +594,20 @@ class StacksProjectLogTest < ActiveSupport::TestCase
     assert_nil l.not_a_flag_reason(l.other_problems.first)
   end
 
-  test "pill_for is the valence: orange negative, green positive, grey neutral or unmarked" do
-    make = ->(valence, flag) do
-      o = NotionPage.new(notion_id: "x", data: observation_data(valence: valence, type: "FYI")).as_observation
+  test "pill_for is the valence: orange negative, green positive, grey neutral; with no valence, the Notion Type in grey" do
+    make = ->(valence, flag, type = "FYI") do
+      o = NotionPage.new(notion_id: "x", data: observation_data(valence: valence, type: type)).as_observation
       Stacks::ProjectLog::Row.new(observation: o, problems: [], flag: flag)
     end
     assert_equal ["pill at_risk", "Negative", false], Stacks::ProjectLog.pill_for(make.("Negative", true))
     assert_equal ["pill at_risk", "Negative", false], Stacks::ProjectLog.pill_for(make.("Negative", false))
     assert_equal ["pill exceptional", "Positive", false], Stacks::ProjectLog.pill_for(make.("Positive", false))
     assert_equal ["pill", "Neutral", true], Stacks::ProjectLog.pill_for(make.("Neutral", false))
-    assert_equal ["pill", "Not marked", true], Stacks::ProjectLog.pill_for(make.(nil, false))
+    assert_equal ["pill", "Neutral", true], Stacks::ProjectLog.pill_for(make.("Neutral", false, "Decision")), "a valence always wins over the Type"
+    %w[FYI Bug Decision Resourcing].each do |type|
+      assert_equal ["pill", type, true], Stacks::ProjectLog.pill_for(make.(nil, false, type))
+    end
+    assert_equal ["pill", "Not marked", true], Stacks::ProjectLog.pill_for(make.(nil, false, nil)), "only when the Type is blank too"
   end
 
   # --- the tracker page's module ---------------------------------------------
@@ -646,21 +675,24 @@ class StacksProjectLogTest < ActiveSupport::TestCase
     # Notion's own Flag in each shape (text formula, boolean formula,
     # checkbox): yes on rows the interim rule would pass over, no on rows it
     # would flag, and a stale yes on closed ones.
-    prob!(name: "text yes", severity: "Low", flag: "High severity problem. Nobody owns it yet.")
+    prob!(name: "text yes", severity: "Low", flag: "Open.")
     prob!(name: "formula yes", severity: "Medium", status: "Owned", flag: true, flag_shape: :formula)
     prob!(name: "checkbox yes", severity: "Low", flag: true)
     prob!(name: "text no", severity: "Critical", flag: "")
     prob!(name: "empty text no", severity: "Critical", flag: nil, flag_shape: :text)
     prob!(name: "formula no", severity: "High", flag: false, flag_shape: :formula)
     prob!(name: "checkbox no", severity: "Critical", flag: false)
-    prob!(name: "stale yes", status: "Resolved", flag: "High severity problem. Nobody owns it yet.")
-    obs!(name: "observation text yes", valence: "Neutral", salience: "Low", type: "Risk", flag: "High-salience risk.")
+    prob!(name: "stale yes", status: "Resolved", flag: "Open.")
+    # Notion's yes stands however old the page is: the window is Notion's.
+    prob!(name: "text yes, long quiet", severity: "Low", flag: "Open.", last_seen: NOW - 45.days)
+    obs!(name: "observation text yes, old", valence: "Neutral", flag: "Risk, not yet tied to a problem.", observed_at: NOW - 45.days)
+    obs!(name: "observation text yes", valence: "Neutral", salience: "Low", type: "Risk", flag: "Risk, not yet tied to a problem.")
     obs!(name: "observation formula yes", valence: "Positive", flag: true, flag_shape: :formula)
     obs!(name: "observation checkbox yes", valence: "Neutral", salience: "Low", flag: true)
     risk!(name: "observation text no", flag: "")
     risk!(name: "observation formula no", flag: false, flag_shape: :formula)
     risk!(name: "observation checkbox no", flag: false)
-    risk!(name: "observation stale yes", status: "Dismissed", flag: "High-salience risk.")
+    risk!(name: "observation stale yes", status: "Dismissed", flag: "Risk, not yet tied to a problem.")
     # The second project: a flag of its own, a risk filed under both projects
     # (one row, one flag), and a risk tied to the first project's flag.
     problem!(name: "retainer flag", severity: "High", status: "Open", project_ids: [second_project], last_seen: NOW - 2.days)
@@ -678,14 +710,23 @@ class StacksProjectLogTest < ActiveSupport::TestCase
     counts = Stacks::ProjectLog.flag_counts(trackers, now: NOW)
     shown = trackers.to_h { |t| [t.id, log(t).load!.flags.size] }
     assert_equal shown, trackers.to_h { |t| [t.id, counts.fetch(t.id, 0)] }
-    assert_equal [10, 11, 0, 0, 0], trackers.map { |t| counts.fetch(t.id, 0) },
-                 "first: flag, undated, lone risk, under both, and the six Notion says yes to. Both projects: those and the retainer flag; the tied retainer risk is evidence."
+    assert_equal [12, 13, 0, 0, 0], trackers.map { |t| counts.fetch(t.id, 0) },
+                 "first: flag, undated, lone risk, under both, and the eight Notion says yes to. Both projects: those and the retainer flag; the tied retainer risk is evidence."
     first = log(trackers.first).load!
     assert_equal ["absorbed (observation's side)", "absorbed (problem's side)", "checkbox yes", "flag", "formula yes",
-                  "lone risk", "observation checkbox yes", "observation formula yes", "observation text yes", "text yes",
-                  "undated", "under both"],
+                  "lone risk", "observation checkbox yes", "observation formula yes", "observation text yes",
+                  "observation text yes, old", "text yes", "text yes, long quiet", "undated", "under both"],
                  (first.flags.map(&:title) + first.flags.flat_map { |f| f.evidence.map(&:title) }).sort
     trackers.each { |t| assert_equal counts.fetch(t.id, 0), Stacks::ProjectLog.summary(t, now: NOW)[:flags], t.name }
+  end
+
+  test "flagged_tracker_ids is exactly the trackers flag_counts gives a number, and empty before the first sync" do
+    trackers = scenario!
+    counts = Stacks::ProjectLog.flag_counts(trackers, now: NOW)
+    assert_equal trackers.first(2).map(&:id).sort, counts.keys.sort
+    assert_equal counts.keys.sort, Stacks::ProjectLog.flagged_tracker_ids(now: NOW).sort
+    System.first.update!(notion_filtered_sync_marks: {})
+    assert_equal [], Stacks::ProjectLog.flagged_tracker_ids(now: NOW)
   end
 
   test "flag_counts leaves out trackers with no flags" do

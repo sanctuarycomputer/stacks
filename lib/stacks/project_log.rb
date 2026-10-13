@@ -8,29 +8,31 @@
 #
 # WHAT IS A FLAG, AND WHY, is Notion's call, not Stacks': the Flag formula on
 # a Problem or an Observation gives the reason as text when the page is a flag
-# and nothing when it is not (Stacks::Notion::Flag: flag?, flag_reason). What
-# Notion states wins outright. Only a page synced before the property existed
-# falls back to the interim rule on its wrapper (interim_flag?).
+# and nothing when it is not (Stacks::Notion::Flag: flag?, flag_reason). The
+# whole rule lives in that formula, how recent a page has to be included, and
+# Stacks applies no test of its own on top of it. The nightly sync re-reads
+# every page, so a flag that Notion drops because of the date alone is gone
+# here within a day.
 #
 # WHAT STACKS ADDS is view logic only, applied in one place (flags_for):
 #
 #   1. A problem flag: a Problem filed under one of the tracker's Notion
-#      projects whose flag? is true, that is not Resolved or Dismissed (a
-#      stale Flag on a closed problem shows nothing), and that was last seen
-#      (Problem#seen_at) within FLAG_WINDOW. A problem with no date at all
-#      still counts.
+#      projects whose Flag says so. A Resolved or Dismissed problem is never
+#      shown as one: a guard against a stale stored copy, not a rule.
 #   2. An observation flag: an observation filed under one of the tracker's
-#      Notion projects whose flag? is true, that is not Dismissed, dated
-#      within FLAG_WINDOW, and not tied to a problem flag of (1). A tie counts
-#      whichever side holds it: the observation's Problems relation or the
-#      problem's Source Observations. A tied observation is that flag's
-#      evidence instead, so nothing is counted twice.
+#      Notion projects whose Flag says so, that is not Dismissed (the same
+#      guard), and not tied to a problem flag of (1). A tie counts whichever
+#      side holds it: the observation's Problems relation or the problem's
+#      Source Observations. A tied observation is that flag's evidence
+#      instead, so nothing is counted twice.
 #
-# Nothing in Stacks clears a flag. It goes when Notion changes and the next
-# sync lands: Notion stops flagging it, the problem is Resolved or Dismissed,
-# the observation is Dismissed or folded into a problem flag, or it has not
-# come up for FLAG_WINDOW. Under the interim rule "Notion stops flagging it"
-# means someone takes the problem (Owned or Mitigating).
+# INTERIM: a page synced before the Flag property existed has no answer from
+# Notion, so the rule on its wrapper (interim_flag?) stands in, together with
+# INTERIM_FLAG_WINDOW. Everything marked INTERIM here goes once every stored
+# page carries Flag.
+#
+# Nothing in Stacks clears a flag. It goes when Notion's answer changes and
+# the next sync lands.
 #
 # The log page, the tracker page's module and the trackers index all count
 # from flags_for, so their numbers cannot differ.
@@ -41,7 +43,12 @@ class Stacks::ProjectLog
   VALENCE_PARAMS = { "positive" => "Positive", "neutral" => "Neutral", "negative" => "Negative" }.freeze
   SOURCE_PARAMS = Observation::SOURCE_GROUP_LABELS.keys.freeze
 
-  FLAG_WINDOW = 30.days # how recent a flag, and a win, has to be
+  WINS_WINDOW = 30.days # how recent a win has to be: a choice of this view
+  # INTERIM: how recent a page with no Flag in Notion has to be for the
+  # interim rule to flag it. A page that has the property is never tested
+  # against it: Notion's formula holds its own window.
+  INTERIM_FLAG_WINDOW = 30.days
+  FLAG_RULE_URL = "https://app.notion.com/p/18d6276a12aa4e0a957f013a69d5bb9a".freeze # the Problems database
   PROBLEM_LIMIT = 200   # open problems read for a tracker
   EVIDENCE_LIMIT = 5    # observations listed under one problem flag
   EVIDENCE_READ = 500   # observations read as evidence for a whole page
@@ -109,10 +116,11 @@ class Stacks::ProjectLog
       end
     end
 
-    # INTERIM: goes with interim_flag? on the wrappers.
+    # INTERIM: goes with interim_flag? on the wrappers. The words Notion's
+    # own Flag gives for the same pages.
     def interim_reason
-      if problem then "#{problem.severity} severity problem. #{Stacks::ProjectLog.ownership_words(problem)}."
-      else "High-salience negative observation."
+      if problem then problem.severity == "Critical" ? "Critical." : "Open."
+      else "Risk, not yet tied to a problem."
       end
     end
 
@@ -151,6 +159,14 @@ class Stacks::ProjectLog
     flags_for(linked, now: now).transform_values(&:size).reject { |_, count| count.zero? }
   end
 
+  # The ids of every tracker that has a flag, for the index's "Has Flags"
+  # scope: the keys of flag_counts over every tracker that names a Notion
+  # project. One query for the trackers, then flag_counts' own.
+  def self.flagged_tracker_ids(now: Time.zone.now)
+    linked = ProjectTracker.unscoped.where("cardinality(project_trackers.notion_project_ids) > 0").select(:id, :notion_project_ids)
+    flag_counts(linked.to_a, now: now).keys
+  end
+
   # The flags of any number of trackers: { tracker id => [Flag] }, the problem
   # flags worst severity first then most recently seen, then the observation
   # flags newest first. Two queries. Evidence is not read here.
@@ -166,7 +182,7 @@ class Stacks::ProjectLog
     problems = filed.(NotionPage.problems).where(problem_flag_sql).map(&:as_problem)
                     .select { |p| problem_flag?(p, now) }
                     .sort_by { |p| [p.severity_rank, -(p.seen_at || now).to_f, p.notion_id] }
-    observations = filed.(NotionPage.observations).where(observation_flag_sql, now - FLAG_WINDOW)
+    observations = filed.(NotionPage.observations).where(observation_flag_sql, now - INTERIM_FLAG_WINDOW)
                         .order(Arel.sql(NEWEST_FIRST)).map(&:as_observation)
                         .select { |o| observation_flag?(o, now) }
 
@@ -182,43 +198,50 @@ class Stacks::ProjectLog
     end
   end
 
-  # Rule (1) for one stored problem: Notion flags it (or the interim rule
-  # does), it is not closed, and it has come up within the window.
+  # Rule (1) for one stored problem. Notion's answer is final when the page
+  # has one; a closed problem is never a flag whatever a stale copy says.
+  # INTERIM: with no answer from Notion, the interim rule, for a problem that
+  # has come up within INTERIM_FLAG_WINDOW (one with no date still counts).
   def self.problem_flag?(problem, now)
-    problem.flag? && problem.open? && (problem.seen_at.nil? || problem.seen_at >= now - FLAG_WINDOW)
+    return false unless problem.open?
+    return problem.flag? unless problem.flag_inferred?
+    problem.interim_flag? && (problem.seen_at.nil? || problem.seen_at >= now - INTERIM_FLAG_WINDOW)
   end
 
-  # Rule (2) without the tie test, for one stored observation.
+  # Rule (2) without the tie test, for one stored observation. As above:
+  # Notion's answer is final, and a Dismissed row is never a flag.
   def self.observation_flag?(observation, now)
-    observation.flag? && !observation.dismissed? &&
-      observation.observed_at.present? && observation.observed_at >= now - FLAG_WINDOW
+    return false if observation.dismissed?
+    return observation.flag? unless observation.flag_inferred?
+    observation.interim_flag? && observation.observed_at.present? && observation.observed_at >= now - INTERIM_FLAG_WINDOW
   end
 
   def self.project_ids_of(tracker)
     Array(tracker.notion_project_ids).select(&:present?)
   end
 
-  # "Nobody owns it yet", "Owned by X", "Being mitigated by X": a problem's
-  # Notion status and owner, in words.
+  # "Not picked up in Notion yet", "Owned by X", "Being mitigated by X": a
+  # problem's Notion status and owner, in words, for Other open problems.
   def self.ownership_words(problem)
     names = problem.owner_names.to_sentence.presence
     case problem.status
-    when Problem::UNOWNED_STATUS then "Nobody owns it yet"
+    when Problem::UNOWNED_STATUS, nil then "Not picked up in Notion yet"
     when "Owned" then names ? "Owned by #{names}" : "Owned, with no owner named in Notion"
     when "Mitigating" then names ? "Being mitigated by #{names}" : "Being mitigated, with no owner named in Notion"
-    when nil then "No status in Notion"
     else "Status in Notion: #{problem.status}"
     end
   end
 
-  # [css class, label, grey?] for a row's valence. A bare .pill has no
-  # background, so the two grey ones are coloured by the view.
+  # [css class, label, grey?] for a row's valence. A row with no valence
+  # shows its Notion Type instead ("FYI", "Bug", "Decision"), and "Not marked"
+  # only when it has no Type either. A bare .pill has no background, so the
+  # grey ones are coloured by the view.
   def self.pill_for(row)
     case row.observation.valence
     when "Negative" then ["pill at_risk", "Negative", false]
     when "Positive" then ["pill exceptional", "Positive", false]
     when "Neutral" then ["pill", "Neutral", true]
-    else ["pill", "Not marked", true]
+    else ["pill", row.observation.type.presence || "Not marked", true]
     end
   end
 
@@ -274,8 +297,7 @@ class Stacks::ProjectLog
     bare_flags.size
   end
 
-  # Open problems that are not flags: lower severity, already taken, or not
-  # seen for a while. Worst first, then most recently seen.
+  # Open problems that are not flags. Worst first, then most recently seen.
   def other_problems
     @other_problems ||=
       if empty_reason then []
@@ -286,14 +308,14 @@ class Stacks::ProjectLog
       end
   end
 
-  # Why an open problem is not a flag, when the reason is one Stacks can
-  # state: Notion flags it but it has gone quiet, or (under the interim rule
-  # only) it would be flagged were it not already taken. nil otherwise: a
-  # lower severity, or Notion's own Flag saying no.
+  # INTERIM. Why an open problem is not a flag, for a page with no Flag in
+  # Notion only: the interim rule would flag it were it not too old or
+  # already taken. nil for every page Notion answered for: Notion decided,
+  # and Stacks gives no reason of its own.
   def not_a_flag_reason(problem)
-    return nil unless problem.open?
-    return "Not a flag: not seen for #{FLAG_WINDOW.in_days.to_i} days." if problem.flag?
-    return nil unless problem.flag_inferred? && Problem::INTERIM_FLAG_SEVERITIES.include?(problem.severity)
+    return nil unless problem.open? && problem.flag_inferred?
+    return "Not a flag: not seen for #{INTERIM_FLAG_WINDOW.in_days.to_i} days." if problem.interim_flag?
+    return nil unless Problem::INTERIM_FLAG_SEVERITIES.include?(problem.severity)
     names = problem.owner_names.to_sentence.presence
     many = problem.owner_names.size > 1
     case problem.status
@@ -373,7 +395,7 @@ class Stacks::ProjectLog
     tracker.observations
            .where("#{self.class.valence_sql} = ?", "Positive")
            .where(self.class.not_dismissed_sql)
-           .where("notion_pages.occurred_at >= ?", @now - FLAG_WINDOW)
+           .where("notion_pages.occurred_at >= ?", @now - WINS_WINDOW)
   end
 
   def open_problems
@@ -513,16 +535,19 @@ class Stacks::ProjectLog
       "COALESCE(#{stated_flag_sql}, #{interim}, FALSE)"
     end
 
-    # Rule (1) without the window: flagged and not closed.
+    # Rule (1): flagged and not closed. The interim rule's window is left to
+    # problem_flag?, which reads the date off the wrapper.
     def problem_flag_sql
       status = select_sql("notion_pages", "Status")
       "#{flag_sql(:problem)} AND (#{status} IS NULL OR #{status} NOT IN (#{quoted(Problem::CLOSED_STATUSES)}))"
     end
 
-    # Rule (2) without the tie test: flagged, not Dismissed, and dated on or
-    # after the one bound value (the start of the window).
+    # Rule (2) without the tie test, as observation_flag? has it: what Notion
+    # states when the page has a Flag, else the interim rule for a row dated
+    # on or after the one bound value (the start of INTERIM_FLAG_WINDOW); and
+    # never a Dismissed row.
     def observation_flag_sql
-      "#{flag_sql(:observation)} AND #{not_dismissed_sql} AND notion_pages.occurred_at >= ?"
+      "COALESCE(#{stated_flag_sql}, #{interim_observation_flag_sql} AND notion_pages.occurred_at >= ?, FALSE) AND #{not_dismissed_sql}"
     end
 
     # INTERIM. Problem#interim_flag?

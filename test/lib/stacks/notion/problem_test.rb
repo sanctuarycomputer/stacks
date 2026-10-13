@@ -138,10 +138,10 @@ class StacksNotionProblemTest < ActiveSupport::TestCase
 
   # What Notion holds today: a formula that gives the reason as text.
   test "a text Flag: any text is a flag and is the reason; empty text is Notion saying no" do
-    said = prob(severity: "Low", status: "Owned", flag: "  High severity problem. Nobody owns it yet. ")
+    said = prob(severity: "Low", status: "Owned", flag: "  Open. ")
     assert said.flag?
     assert_not said.flag_inferred?
-    assert_equal "High severity problem. Nobody owns it yet.", said.flag_reason
+    assert_equal "Open.", said.flag_reason
     ["", "   ", nil].each do |empty|
       quiet = prob(severity: "Critical", status: "Open", flag: empty, flag_shape: :text)
       assert_not quiet.flag?, empty.inspect

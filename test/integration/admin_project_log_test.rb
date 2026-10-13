@@ -53,12 +53,12 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
   test "one page, top to bottom: Flags, Other open problems, Wins, All Observations" do
     problem = problem!(name: "Timeline slipping", severity: "Critical", status: "Open", occurrences: 4,
                        last_seen: 4.days.ago,
-                       flag: "Critical severity problem. Nobody owns it yet.", proposed_action: "Ask Sam to confirm the date.",
+                       flag: "Critical.", proposed_action: "Ask Sam to confirm the date.",
                        project_ids: [@project])
     evidence = obs!(name: "Client asked twice for a date", text: "No answer in the channel.", valence: "Negative",
-                    salience: "High", type: "Risk", source: "Twist", flag: "High-salience risk.", problem_ids: [problem.notion_id])
+                    salience: "High", type: "Risk", source: "Twist", flag: "Risk, not yet tied to a problem.", problem_ids: [problem.notion_id])
     lone = obs!(name: "Invoice disputed", valence: "Negative", salience: "High", type: "Risk", source: "Gmail",
-                flag: "High-salience risk.", observed_at: 2.hours.ago)
+                flag: "Risk, not yet tied to a problem.", observed_at: 2.hours.ago)
     owned = problem!(name: "Scope creep", severity: "High", status: "Owned", owner: "Sam Lead", flag: "", project_ids: [@project])
     plain = obs!(name: "Design review ran long", valence: "Negative", salience: "Low", flag: "", observed_at: 3.hours.ago)
     win = obs!(name: "Launch praised", valence: "Positive", flag: "")
@@ -71,16 +71,19 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     assert_empty page.css(".log-tab"), "no view tabs"
 
     assert_equal %w[Flags 2], header_of(section("flags"))
-    assert_includes section("flags").at_css(".log-flag-rule").text.squish,
-                    "A flag clears when its problem is resolved or picked up in Notion, or when it has not come up for 30 days."
+    assert_equal "Notion decides what is a flag. See the rule in Notion ↗", section("flags").at_css(".log-flag-rule").text.squish
+    assert_equal "https://app.notion.com/p/18d6276a12aa4e0a957f013a69d5bb9a", section("flags").at_css(".log-flag-rule a")["href"]
+    assert_no_match(/30 days|severity is|nobody owns|unowned|high-salience|picked up/i, section("flags").at_css(".log-flag-rule").text,
+                    "Stacks does not describe the rule")
+    assert_no_match(/lower severity|30 days/i, section("other-open-problems").css("p").first.text)
     assert_equal ["log_flag_#{problem.notion_id}", "log_flag_#{lone.notion_id}"], section("flags").css("tr.log-flag").map { |tr| tr["id"] }
     section("flags").css("tr.log-flag").each do |tr|
       assert_equal ["pill error", "Flag"], [tr.at_css(".pill")["class"], tr.at_css(".pill").text.strip]
     end
     flag = flag_for(problem)
     assert_includes flag.text, "Timeline slipping"
-    assert_match(/\ACritical severity problem\. Nobody owns it yet\. Seen 4 times, last on \w+ \d+, \d{4}\.\z/, flag.at_css(".log-flag-why").text.strip)
-    assert_equal "Next step: Ask Sam to confirm the date.", flag.at_css(".log-flag-next").text.squish
+    assert_match(/\ACritical\. Seen 4 times, last on \w+ \d+, \d{4}\.\z/, flag.at_css(".log-flag-why").text.strip)
+    assert_equal "Stacksbot suggests: Ask Sam to confirm the date.", flag.at_css(".log-flag-next").text.squish
     nested = flag.at_css("#log_evidence_#{evidence.notion_id}")
     assert nested, "the tied observation is nested under its flag"
     assert_includes nested.text, "Client asked twice for a date"
@@ -89,8 +92,8 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     assert nested.css("a").any? { |a| a.text.strip == "Notion ↗" }
     assert flag.css("a").any? { |a| a.text.strip == "In Notion ↗" && a["href"] == problem.as_problem.notion_url }
     assert_nil flag_for(evidence), "and is not a flag of its own"
-    assert_match(/\AHigh-salience risk\. Seen in Gmail on /, flag_for(lone).at_css(".log-flag-why").text.strip)
-    assert_equal "Next step: Read the source. If it is a real problem, raise it; otherwise dismiss it in Notion.",
+    assert_match(/\ARisk, not yet tied to a problem\. Seen in Gmail on /, flag_for(lone).at_css(".log-flag-why").text.strip)
+    assert_equal "Stacksbot suggests: Read the source. If it is a real problem, raise it; otherwise dismiss it in Notion.",
                  flag_for(lone).at_css(".log-flag-next").text.squish
     assert_nil section("flags").at_css(".log-flag-interim"), "every row carries Notion's Flag"
 
@@ -136,9 +139,11 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     get admin_project_tracker_log_path(@tracker)
     assert_response :success
     assert_equal 1, page.css(".log-flag-interim").size
-    assert_match(/\AHigh severity problem\. Nobody owns it yet\. Last seen on /, flag_for(problem).at_css(".log-flag-why").text.strip)
-    assert_equal "Next step: Pick it up or resolve it in Notion.", flag_for(problem).at_css(".log-flag-next").text.squish
-    assert_match(/\AHigh-salience negative observation\. Seen in Twist on /, flag_for(risk).at_css(".log-flag-why").text.strip)
+    assert_match(/\AOpen\. Last seen on /, flag_for(problem).at_css(".log-flag-why").text.strip)
+    assert_equal "Stacksbot suggests: Pick it up or resolve it in Notion.", flag_for(problem).at_css(".log-flag-next").text.squish
+    assert_match(/\ARisk, not yet tied to a problem\. Seen in Twist on /, flag_for(risk).at_css(".log-flag-why").text.strip)
+    assert_no_match(/nobody owns/i, page.text)
+    assert_match(/\AInterim:/, page.at_css(".log-flag-interim").text.strip)
     assert_equal "Not a flag: Ada is mitigating it.", page.at_css("#log_problem_#{taken.notion_id} .log-not-a-flag").text.strip
     assert_includes page.at_css("#log_problem_#{taken.notion_id}").text.squish, "Severity: Critical · Being mitigated by Ada"
     assert_equal "Not a flag: not seen for 30 days.", page.at_css("#log_problem_#{quiet.notion_id} .log-not-a-flag").text.strip
@@ -150,8 +155,8 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     get admin_project_tracker_log_path(@tracker)
     assert_response :success
     assert_equal %w[Flags 0], header_of(section("flags"))
-    assert_includes section("flags").text.squish,
-                    "No flags. Nothing high-severity is open and unowned, and nothing high-salience and negative has come up in the last 30 days."
+    assert_equal "No flags. See the rule in Notion ↗", section("flags").at_css(".log-no-flags").text.squish
+    assert_equal Stacks::ProjectLog::FLAG_RULE_URL, section("flags").at_css(".log-no-flags a")["href"]
     assert_nil section("other-open-problems"), "the section is left out when there are none"
     assert section("wins").at_css("#log_win_#{win.notion_id}")
     assert_equal 2, section("all-observations").css("tr[id^='log_row_']").size
@@ -178,6 +183,21 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     assert_includes section("wins").text.squish, "No wins in the last 30 days."
   end
 
+  test "a row with no valence shows its Notion Type in the grey pill, and Not marked only when it has no Type either" do
+    typed = %w[FYI Bug Decision Resourcing].to_h { |type| [type, obs!(name: "A #{type}", valence: nil, type: type)] }
+    blank = obs!(name: "No type", valence: nil, type: nil)
+    neutral = obs!(name: "Scope agreed", valence: "Neutral", type: "Decision")
+    get admin_project_tracker_log_path(@tracker)
+    assert_response :success
+    typed.each do |type, row|
+      pill = row_for(row).at_css(".pill")
+      assert_equal [type, "pill"], [pill.text.strip, pill["class"]]
+      assert_match(/background-color: #cfd3d7/, pill["style"], "#{type} is grey")
+    end
+    assert_equal "Not marked", row_for(blank).at_css(".pill").text.strip
+    assert_equal "Neutral", row_for(neutral).at_css(".pill").text.strip, "a valence pill is unchanged"
+  end
+
   test "All Observations shows dismissed and unmarked rows too, each with its valence pill" do
     positive = obs!(name: "Launch praised", valence: "Positive", observed_at: 40.days.ago)
     neutral = obs!(name: "Scope agreed", valence: "Neutral")
@@ -190,7 +210,7 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     assert_match(/background-color/, row_for(neutral).at_css(".pill")["style"], "neutral is grey")
     assert_includes row_for(dismissed).text, "Dismissed"
     assert_equal ["Negative"], row_for(dismissed).css(".pill").map { |n| n.text.strip }, "a dismissed row is no flag"
-    assert_equal "Not marked", row_for(unmarked).at_css(".pill").text.strip
+    assert_equal "FYI", row_for(unmarked).at_css(".pill").text.strip
     assert_nil flag_for(dismissed)
   end
 
@@ -386,25 +406,27 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
 
   test "the tracker page has a Flags module: the counts, the first three flags with why, and a way in" do
     flags = [problem!(name: "Timeline slipping", severity: "Critical", status: "Open", occurrences: 2,
-                      flag: "Critical severity problem. Nobody owns it yet.", project_ids: [@project]),
-             obs!(name: "n1", valence: "Negative", salience: "High", flag: "High-salience risk.", source: "Twist", observed_at: 1.hour.ago),
-             obs!(name: "n2", valence: "Negative", salience: "High", flag: "High-salience risk.", observed_at: 2.hours.ago),
-             obs!(name: "n3", valence: "Negative", salience: "High", flag: "High-salience risk.", observed_at: 3.hours.ago)]
+                      flag: "Critical.", project_ids: [@project]),
+             obs!(name: "n1", valence: "Negative", salience: "High", flag: "Risk, not yet tied to a problem.", source: "Twist", observed_at: 1.hour.ago),
+             obs!(name: "n2", valence: "Negative", salience: "High", flag: "Risk, not yet tied to a problem.", observed_at: 2.hours.ago),
+             obs!(name: "n3", valence: "Negative", salience: "High", flag: "Risk, not yet tied to a problem.", observed_at: 3.hours.ago)]
     problem!(name: "Closed out", severity: "High", status: "Resolved", flag: "", project_ids: [@project])
     obs!(name: "plain negative", valence: "Negative", salience: "Low", flag: "")
     obs!(name: "a win", valence: "Positive", flag: "")
-    obs!(name: "old news", valence: "Negative", salience: "High", flag: "High-salience risk.", observed_at: 40.days.ago)
+    # Old, and Notion still flags it: the window is Notion's, so it counts.
+    flags << obs!(name: "old news", valence: "Negative", salience: "High", flag: "Risk, not yet tied to a problem.", observed_at: 40.days.ago)
+    obs!(name: "older news with no Flag", valence: "Negative", salience: "High", observed_at: 40.days.ago)
 
     get admin_project_tracker_path(@tracker)
     assert_response :success
     assert log_module, "expected the log module on the tracker page"
     assert_equal "Flags", log_module.at_css(".module-header p").text.strip
-    assert_equal ["4 Flags", "1 Win in the last 30 days"], log_module.css(".factoid").map { |f| f.text.squish }
+    assert_equal ["5 Flags", "1 Win in the last 30 days"], log_module.css(".factoid").map { |f| f.text.squish }
     assert_equal flags.first(3).map { |r| "log_flag_#{r.notion_id}" }, log_module.css("tr.log-flag").map { |tr| tr["id"] }
-    assert_match(/\ACritical severity problem\. Nobody owns it yet\. Seen 2 times, last on /, log_module.at_css(".log-flag-why").text.strip)
-    assert_match(/\AHigh-salience risk\. Seen in Twist on /, log_module.css(".log-flag-why")[1].text.strip)
+    assert_match(/\ACritical\. Seen 2 times, last on /, log_module.at_css(".log-flag-why").text.strip)
+    assert_match(/\ARisk, not yet tied to a problem\. Seen in Twist on /, log_module.css(".log-flag-why")[1].text.strip)
     assert_equal admin_project_tracker_log_path(@tracker), log_module.css("a").find { |a| a.text.strip == "Open the log →" }["href"]
-    assert log_module.css("a").any? { |a| a.text.strip == "See all 4 flags →" }
+    assert log_module.css("a").any? { |a| a.text.strip == "See all 5 flags →" }
     assert_no_match(/escalat/i, log_module.text)
     # One parse: nodes of two documents cannot be compared for order.
     doc = page
@@ -437,7 +459,8 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_equal ["0 Flags", "0 Wins in the last 30 days"], log_module.css(".factoid").map { |f| f.text.squish }
     assert_equal 1, log_module.css(".log-no-flags").size
-    assert_match(/\ANo flags/, log_module.at_css(".log-no-flags").text.strip)
+    assert_equal "No flags. See the rule in Notion ↗", log_module.at_css(".log-no-flags").text.squish
+    assert_equal Stacks::ProjectLog::FLAG_RULE_URL, log_module.at_css(".log-no-flags a")["href"]
     assert_empty log_module.css("tr.log-flag")
   end
 
@@ -578,10 +601,10 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     unlinked, = log_tracker!(name: "Unlinked", project: nil)
 
     # Text formula (what Notion holds today): yes, no over an interim yes, and a stale yes.
-    flag = problem!(name: "text yes", severity: "Low", flag: "High severity problem. Nobody owns it yet.", project_ids: [@project])
+    flag = problem!(name: "text yes", severity: "Low", flag: "Open.", project_ids: [@project])
     problem!(name: "text no", severity: "Critical", status: "Open", flag: "", project_ids: [@project])
-    problem!(name: "stale yes", severity: "High", status: "Resolved", flag: "High severity problem. Nobody owns it yet.", project_ids: [@project])
-    obs!(name: "text yes", valence: "Neutral", salience: "Low", type: "Risk", flag: "High-salience risk.")
+    problem!(name: "stale yes", severity: "High", status: "Resolved", flag: "Open.", project_ids: [@project])
+    obs!(name: "text yes", valence: "Neutral", salience: "Low", type: "Risk", flag: "Risk, not yet tied to a problem.")
     obs!(name: "text no", valence: "Negative", salience: "High", flag: "")
     # Boolean formula and checkbox.
     problem!(name: "formula yes", severity: "Medium", status: "Owned", flag: true, flag_shape: :formula, project_ids: [@project])
@@ -593,25 +616,78 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     problem!(name: "interim no", severity: "Critical", status: "Owned", project_ids: [@project])
     obs!(name: "interim yes", valence: "Negative", salience: "High")
     obs!(name: "interim no", valence: "Negative", salience: "Medium")
-    # De-duplication, from each side, and the window.
-    obs!(name: "tied (observation's side)", valence: "Negative", salience: "High", flag: "High-salience risk.", problem_ids: [flag.notion_id])
+    # De-duplication, from each side. And the window: Notion's yes stands
+    # however old the row is, and only a row with no Flag is held to 30 days.
+    obs!(name: "tied (observation's side)", valence: "Negative", salience: "High", flag: "Risk, not yet tied to a problem.", problem_ids: [flag.notion_id])
     reverse = obs!(name: "tied (problem's side)", valence: "Negative", salience: "High")
     problem!(name: "names its source", severity: "High", status: "Open", source_observation_ids: [reverse.notion_id], project_ids: [@project])
-    obs!(name: "too old", valence: "Negative", salience: "High", flag: "High-salience risk.", observed_at: 31.days.ago)
+    obs!(name: "old, and Notion still flags it", valence: "Negative", salience: "High", flag: "Risk, not yet tied to a problem.", observed_at: 31.days.ago)
+    obs!(name: "interim, too old", valence: "Negative", salience: "High", observed_at: 31.days.ago)
     # The second project.
-    problem!(name: "retainer flag", severity: "High", status: "Open", flag: "High severity problem. Nobody owns it yet.", project_ids: [second_project])
+    problem!(name: "retainer flag", severity: "High", status: "Open", flag: "Open.", project_ids: [second_project])
     observation!(name: "under both", valence: "Negative", salience: "High", project_ids: [@project, second_project], observed_at: 1.day.ago)
-    observation!(name: "retainer risk tied to the first flag", valence: "Negative", salience: "High", flag: "High-salience risk.",
+    observation!(name: "retainer risk tied to the first flag", valence: "Negative", salience: "High", flag: "Risk, not yet tied to a problem.",
                  project_ids: [second_project], observed_at: 1.day.ago, problem_ids: [flag.notion_id])
     observation!(name: "quiet win", valence: "Positive", flag: "", project_ids: [quiet_project], observed_at: 1.day.ago)
     [@tracker, both, quiet, unlinked]
   end
 
-  test "the index has a Flags column right after Notion" do
+  test "the index has a Flags column between Last Ship and Forecast Projects" do
     get admin_project_trackers_path(scope: "all")
     assert_response :success
     headers = page.css("table.index_table thead th").map { |th| th.text.strip }
-    assert_equal %w[Notion Flags], headers[headers.index("Notion"), 2]
+    assert_equal ["Last Ship", "Flags", "Forecast Projects"], headers[headers.index("Last Ship"), 3]
+    assert_equal 1, headers.count("Flags")
+  end
+
+  def index_row_ids
+    page.css("table.index_table tbody tr[id^='project_tracker_']").map { |tr| tr["id"].delete_prefix("project_tracker_").to_i }
+  end
+
+  test "the Has Flags scope lists exactly the trackers whose Flags pill is not blank" do
+    trackers = index_scenario!
+    one, one_project = log_tracker!(name: "One flag")
+    observation!(name: "lone", flag: "Risk, not yet tied to a problem.", project_ids: [one_project], observed_at: 1.day.ago)
+    get admin_project_trackers_path(scope: "all")
+    assert_response :success
+    with_pill = index_row_ids.select { |id| page.at_css("#project_tracker_#{id} td.col-flags a.log-flag-count") }
+    assert_equal [trackers[0].id, trackers[1].id, one.id].sort, with_pill.sort, "the first project's, the two-project tracker's, and the single flag"
+    assert_equal "1 Flag", index_cell(one).text.strip
+
+    get admin_project_trackers_path(scope: "has_flags")
+    assert_response :success
+    assert_equal with_pill.sort, index_row_ids.sort
+    assert_equal ["9 Flags", "10 Flags", "1 Flag"], [trackers[0], trackers[1], one].map { |t| index_cell(t).text.strip }
+    tab = page.at_css(".scopes .scope.has_flags")
+    assert_equal "Has Flags", tab.text.strip, "the tab carries no count, so no other tab pays for it"
+
+    get admin_project_trackers_path(scope: "has_flags", order: "name_asc")
+    assert_response :success
+    assert_equal with_pill.sort, index_row_ids.sort, "it is a plain relation, so sorting composes"
+  end
+
+  test "the Has Flags scope is empty, never an error, before the first sync or when the rows cannot be read" do
+    index_scenario!
+    System.first.update!(notion_filtered_sync_marks: {})
+    get admin_project_trackers_path(scope: "has_flags")
+    assert_response :success
+    assert_empty index_row_ids
+
+    Stacks::ProjectLog.stubs(:flag_counts).raises(ActiveRecord::StatementInvalid, "PG::UndefinedColumn: column notion_pages.project_ids does not exist")
+    Rails.logger.stubs(:error)
+    get admin_project_trackers_path(scope: "has_flags")
+    assert_response :success
+    assert_empty index_row_ids
+    assert_not_includes response.body, "UndefinedColumn"
+  end
+
+  test "opening another tab does not read the flagged trackers" do
+    index_scenario!
+    Stacks::ProjectLog.expects(:flagged_tracker_ids).never
+    get admin_project_trackers_path
+    assert_response :success
+    get admin_project_trackers_path(scope: "dormant")
+    assert_response :success
   end
 
   test "the index shows each tracker's flag count as a red pill linking to its log, and nothing when it has none" do
@@ -619,9 +695,9 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     get admin_project_trackers_path(scope: "all")
     assert_response :success
     pill = index_cell(tracker).at_css("a.pill.error")
-    assert_equal "8", pill.text.strip
+    assert_equal "9 Flags", pill.text.strip
     assert_equal admin_project_tracker_log_path(tracker), pill["href"]
-    assert_equal "9", index_cell(both).at_css("a.pill.error").text.strip
+    assert_equal "10 Flags", index_cell(both).at_css("a.pill.error").text.strip
     [quiet, unlinked].each do |blank|
       assert_equal "", index_cell(blank).text.strip, blank.name
       assert_empty index_cell(blank).css("a, .pill"), blank.name
@@ -640,10 +716,10 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
       [t.name, listed]
     end
     assert_equal on_page, on_index
-    assert_equal [8, 9, 0, 0], on_index.values
+    assert_equal [9, 10, 0, 0], on_index.values
 
     get admin_project_tracker_path(trackers.first)
-    assert_equal "8 Flags", page.at_css("#project_log_module .factoid").text.squish, "and the tracker page's module agrees"
+    assert_equal "9 Flags", page.at_css("#project_log_module .factoid").text.squish, "and the tracker page's module agrees"
   end
 
   test "the index's Flags column is blank, and the index still loads, before the first sync or when the rows cannot be read" do
@@ -665,7 +741,7 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     make = lambda do |n|
       n.times do
         _, project = log_tracker!
-        observation!(valence: "Negative", salience: "High", flag: "High-salience risk.", project_ids: [project], observed_at: 1.day.ago)
+        observation!(valence: "Negative", salience: "High", flag: "Risk, not yet tied to a problem.", project_ids: [project], observed_at: 1.day.ago)
         problem!(severity: "High", status: "Open", project_ids: [project])
       end
     end

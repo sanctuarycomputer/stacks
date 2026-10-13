@@ -88,7 +88,7 @@ class StacksNotionPropsTest < ActiveSupport::TestCase
     bool = ->(v) { page("Flag" => { "type" => "formula", "formula" => { "type" => "boolean", "boolean" => v } }) }
     box = ->(v) { page("Flag" => { "type" => "checkbox", "checkbox" => v }) }
 
-    assert_equal "High-salience risk.", P.formula_text(text.(" High-salience risk. "), "Flag")
+    assert_equal "Risk, not yet tied to a problem.", P.formula_text(text.(" Risk, not yet tied to a problem. "), "Flag")
     assert_equal ["", "", ""], [nil, "", 7].map { |v| P.formula_text(text.(v), "Flag") }
     assert_equal [true, false, false, false], ["x", "", "  \n", nil].map { |v| P.flagged(text.(v), "Flag") }
     assert_equal [true, false, false], [true, false, nil].map { |v| P.flagged(bool.(v), "Flag") }

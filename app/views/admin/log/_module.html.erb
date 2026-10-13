@@ -2,7 +2,7 @@
     many wins in the window, and the first flags with why each is one
     (Stacks::ProjectLog.summary). summary is nil when it could not be read;
     the module then says so in one line. %>
-<% days = Stacks::ProjectLog::FLAG_WINDOW.in_days.to_i %>
+<% days = Stacks::ProjectLog::WINS_WINDOW.in_days.to_i %>
 <div class="dashboard-modules table index_table index" id="project_log_module">
   <div class="dashboard-module">
     <div class="module-header">
@@ -36,7 +36,7 @@
     <div class="dashboard-module">
       <div class="module-body">
         <% if summary[:latest].empty? %>
-          <p class="log-no-flags">No flags: nothing Stacksbot has seen in the last <%= days %> days needs picking up.</p>
+          <p class="log-no-flags">No flags. <%= link_to "See the rule in Notion ↗", Stacks::ProjectLog::FLAG_RULE_URL, target: "_blank", rel: "noopener", class: "log-flag-rule-link" %></p>
         <% else %>
           <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
             <tbody>

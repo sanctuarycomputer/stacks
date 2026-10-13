@@ -138,9 +138,9 @@ class StacksNotionObservationTest < ActiveSupport::TestCase
 
   test "a text Flag: any text is a flag and is the reason; empty text is Notion saying no" do
     make = ->(**attrs) { NotionPage.new(notion_id: "n", data: observation_data(**attrs)).as_observation }
-    said = make.(valence: "Positive", salience: "Low", flag: "High-salience risk.")
+    said = make.(valence: "Positive", salience: "Low", flag: "Risk, not yet tied to a problem.")
     assert said.flag?
-    assert_equal "High-salience risk.", said.flag_reason
+    assert_equal "Risk, not yet tied to a problem.", said.flag_reason
     quiet = make.(valence: "Negative", salience: "High", flag: "")
     assert_not quiet.flag?
     assert_not quiet.flag_inferred?

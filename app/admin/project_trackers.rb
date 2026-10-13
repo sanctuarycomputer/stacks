@@ -20,6 +20,21 @@ ActiveAdmin.register ProjectTracker do
       .select { |pt| pt.project_capsule&.complete_but_for_admin_sign_off? }.map(&:id)
     scope.where(id: ids)
   end
+  # The trackers whose Flags pill on this index is not blank: the ids come
+  # from the same count the pill prints (Stacks::ProjectLog.flag_counts), so
+  # the two cannot disagree. show_count: false for the reason above: it is read
+  # only when this tab is opened, never on a load of another tab. Empty,
+  # never an error, before the first sync or when the log's rows cannot be read.
+  scope "Has Flags", :has_flags, show_count: false do |scope|
+    ids =
+      begin
+        Stacks::ProjectLog.flagged_tracker_ids
+      rescue StandardError => e
+        Rails.logger.error("[project log] flagged trackers could not be read: #{e.class}: #{e.message}")
+        []
+      end
+    scope.where(id: ids)
+  end
 
   permit_params :name,
     :billing_model,
@@ -284,6 +299,15 @@ ActiveAdmin.register ProjectTracker do
       end
     end
 
+    # How many flags the project's log shows right now, linking to it. What
+    # is a flag is Notion's call (Stacks::ProjectLog). Blank when there are none.
+    column "Flags" do |pt|
+      count = log_flag_counts_by_tracker_id[pt.id].to_i
+      label = "#{count} #{count == 1 ? 'Flag' : 'Flags'}"
+      a(label, href: admin_project_tracker_log_path(pt), class: "pill error log-flag-count", style: "text-decoration: none; white-space: nowrap;",
+        title: "#{label} in the project log") if count > 0
+    end
+
     column :forecast_projects do |resource|
       if resource.forecast_projects.any?
         div(
@@ -363,14 +387,6 @@ ActiveAdmin.register ProjectTracker do
           end
         end
       end
-    end
-
-    # How many flags the project's log shows right now, linking to it. What
-    # is a flag is Notion's call (Stacks::ProjectLog). Blank when there are none.
-    column "Flags" do |pt|
-      count = log_flag_counts_by_tracker_id[pt.id].to_i
-      a(count.to_s, href: admin_project_tracker_log_path(pt), class: "pill error log-flag-count", style: "text-decoration: none;",
-        title: "#{count} #{count == 1 ? 'flag' : 'flags'} in the project log") if count > 0
     end
 
     actions

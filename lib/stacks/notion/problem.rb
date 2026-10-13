@@ -49,7 +49,7 @@ class Stacks::Notion::Problem < Stacks::Notion::Base
     !CLOSED_STATUSES.include?(status)
   end
 
-  # Notion says nobody owns it yet. This is what the page prints.
+  # Notion's status says it has not been picked up yet.
   def unowned?
     status == UNOWNED_STATUS
   end

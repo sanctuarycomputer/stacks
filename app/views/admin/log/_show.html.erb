@@ -3,7 +3,7 @@
     block in app/admin/log.rb. What is a flag, and why, is Notion's statement
     (Stacks::ProjectLog); everything from Notion is escaped by ERB. %>
 <% reason = log.empty_reason %>
-<% days = Stacks::ProjectLog::FLAG_WINDOW.in_days.to_i %>
+<% days = Stacks::ProjectLog::WINS_WINDOW.in_days.to_i %>
 <% date = ->(time) { time.strftime(Stacks::ProjectLog::DATE_FORMAT) } %>
 <%# The source, valence and page parameters belong to All Observations, so
     every link that sets one lands on that section. %>
@@ -39,15 +39,16 @@
       </div>
       <div class="module-body">
         <p class="log-flag-rule" style="font-size: 13px; color: #5E6469; margin-bottom: 12px;">
-          Notion decides what is a flag. A flag clears when its problem is resolved or picked up in Notion, or when it has not come up for <%= days %> days.
+          Notion decides what is a flag.
+          <%= link_to "See the rule in Notion ↗", Stacks::ProjectLog::FLAG_RULE_URL, target: "_blank", rel: "noopener", class: "log-flag-rule-link" %>
         </p>
         <% if log.interim_flag_in_use? %>
           <p class="log-flag-interim" style="font-size: 13px; color: #5E6469; margin-bottom: 12px;">
-            Some rows here were synced before Notion had its Flag property. Until the next full sync, such a problem is a flag when it is open, Critical or High, and nobody owns it, and such an observation when it is negative, High salience and not dismissed.
+            Interim: some rows here were synced before Notion had its Flag property. Until the next nightly sync re-reads them, such a problem is a flag when it is open, Critical or High, not picked up, and seen in the last <%= Stacks::ProjectLog::INTERIM_FLAG_WINDOW.in_days.to_i %> days, and such an observation when it is negative, High salience, not dismissed and from the last <%= Stacks::ProjectLog::INTERIM_FLAG_WINDOW.in_days.to_i %> days.
           </p>
         <% end %>
         <% if log.flags.empty? %>
-          <p>No flags. Nothing high-severity is open and unowned, and nothing high-salience and negative has come up in the last <%= days %> days.</p>
+          <p class="log-no-flags">No flags. <%= link_to "See the rule in Notion ↗", Stacks::ProjectLog::FLAG_RULE_URL, target: "_blank", rel: "noopener", class: "log-flag-rule-link" %></p>
         <% else %>
           <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
             <tbody>
@@ -59,7 +60,7 @@
                   <td class="col" style="vertical-align: top;">
                     <strong><%= flag.title %></strong>
                     <div class="log-flag-why" style="margin-top: 4px;"><%= flag.why %></div>
-                    <div class="log-flag-next" style="margin-top: 4px;"><strong>Next step:</strong> <%= flag.next_step %></div>
+                    <div class="log-flag-next" style="margin-top: 4px;"><strong>Stacksbot suggests:</strong> <%= flag.next_step %></div>
                     <% if flag.evidence.any? %>
                       <ul class="log-flag-evidence" style="margin: 8px 0 0 18px; font-size: 13px; color: #5E6469; list-style: disc;">
                         <% flag.evidence.each do |o| %>
@@ -100,7 +101,7 @@
           <p><%= log.other_problems.size %></p>
         </div>
         <div class="module-body">
-          <p style="font-size: 13px; color: #5E6469; margin-bottom: 12px;">Open in Notion and not a flag: a lower severity, already picked up, or not seen for <%= days %> days.</p>
+          <p style="font-size: 13px; color: #5E6469; margin-bottom: 12px;">Open in Notion and not a flag.</p>
           <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
             <tbody>
               <% log.other_problems.each do |problem| %>
