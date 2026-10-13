@@ -16,6 +16,16 @@ class ContributorPayout < ApplicationRecord
   validates :amount, presence: true
   validate :contributor_payouts_within_cap
   validate :only_after_new_deal
+  validate :not_on_a_garden3d_invoice, on: :create
+
+  # garden3d's invoice bills another enterprise; nobody is paid out of it.
+  # InvoiceTracker#make_contributor_payouts! refuses too, but a payout can
+  # also be made by hand. On create only: the payouts already on garden3d's
+  # 2025 trackers stay as they are and can still be saved.
+  def not_on_a_garden3d_invoice
+    return unless invoice_tracker&.garden3d?
+    errors.add(:base, "Contributor Payouts cannot be made against one of garden3d's intercompany invoices.")
+  end
 
   def display_name
     inv_id = (invoice_tracker.qbo_invoice.try(:data) || {}).dig("doc_number")

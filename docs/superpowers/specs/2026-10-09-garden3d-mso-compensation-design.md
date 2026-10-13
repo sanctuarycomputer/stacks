@@ -255,7 +255,7 @@ column:
 
 ```ruby
 # InvoiceTracker
-def management_fee?
+def garden3d?
   invoice_pass.enterprise == Enterprise.garden3d
 end
 ```
@@ -346,7 +346,7 @@ Both naive forms fail:
 - "every tracker is `:paid`" — `InvoiceTracker#status` returns `:impossible` for a
   blueprint-less tracker with an invoice (`invoice_tracker.rb:128-141`), so it can
   never be `:paid`. Read `tracker.qbo_invoice&.status` directly, or add a
-  `management_fee?` branch to `InvoiceTracker#status`.
+  `garden3d?` branch to `InvoiceTracker#status`.
 - gating on unsent drafts — Stacks drafts one per payer every month, so an
   uncharged payer's unsent $0 draft would block forever.
 
@@ -368,7 +368,7 @@ one QBO line: description `"Management fee"`, amount **$0.00**, `item_ref` =
 
 Finance edits the amount in QBO and sends. Stacks never writes the amount.
 
-`make_invoice!` dispatches to `push_invoice!` when `management_fee?`; its
+`make_invoice!` dispatches to `push_invoice!` when `garden3d?`; its
 internal-client `raise` (`invoice_tracker.rb:738`) applies only to the Forecast
 path. `make_invoice!` does `return if configuration_errors.any?` — a **silent
 no-op**; `push_invoice!` must raise instead. Blueprint, `configuration_errors`
@@ -989,6 +989,170 @@ left as the record of the design.
   founder holds an MSO role.
 - **Answered:** outside referral fees must not count, and the no-login rule
   is how — referral partners are not given Stacks logins.
+
+## 13b. As built — S1
+
+S1 (management fee invoices, fee income) is built. Where the code differs from
+§3, §4.1 and §6 above, **this section governs**. The plan,
+`docs/superpowers/plans/2026-10-13-mso-management-fee-invoices.md`, holds the
+full decision list; note its Task 5 and Task 9 listings predate the final-review
+fixes below.
+
+**Corrections to the design**
+
+- garden3d's passes are **not** all management-fee trackers. Seven legacy passes
+  (2025-06 … 2025-12) hold Forecast trackers with blueprints. A management fee
+  invoice tracker is "on garden3d's pass **and** has no blueprint"
+  (`InvoiceTracker#intercompany_invoice?`); legacy passes behave as before and
+  can never be drafted or extended.
+- A garden3d enterprise fixture exists (contrary to §3.6); there is no garden3d
+  `QboAccount` fixture, so tests create one.
+- A payer can have several internal Forecast clients (Sanctuary has five); the
+  tracker uses the lowest id.
+- **Invoice lookups never cross QuickBooks accounts.** Mirrors were matched on
+  `qbo_id` alone; garden3d's are the first second-realm rows, and ids collide
+  with Sanctuary's.
+
+**Drafting**
+
+- Nothing scheduled writes to QuickBooks. The nightly job creates garden3d's
+  previous-month pass and trackers, and catches up any earlier month since the
+  start month that has none, looking back twelve months at most (database
+  only); the write is an admin click.
+- `MANAGEMENT_FEE_START = 2026-08-01`, the owner's decision: the first billing
+  month is August 2026. Earlier months are never drafted: fee invoices were
+  made by hand for nearly every month from 2024-01.
+- August, September and October 2026 were also invoiced by hand, before this
+  shipped. They are draftable, and the click is how their invoices reach
+  Stacks: the pre-flight below refuses per payer and mirrors what it found,
+  and an admin attaches each one.
+- Before writing, the push reads QuickBooks for an invoice to that customer
+  dated in the month. If one exists it refuses, and records what it found as
+  mirror rows so the invoice can be attached from the tracker's edit page.
+- A customer is created only when the stored id is blank **and** no active
+  customer has the payer's exact name; otherwise it raises naming the id.
+- `ensure_month!(date)` creates a pass and trackers for attaching hand-made
+  invoices; it refuses legacy months. An admin reaches it from Money →
+  Invoicing ("Open garden3d month"); it is database only.
+
+**Collection gate (§6.4 replaced)**
+
+- An invoice is **charged** when it is sent **or** its total is above zero. It is
+  ignored only when unsent and zero, or voided (note says voided **and** total
+  and balance are zero).
+- Collected = at least one attached invoice is charged, and every charged one is
+  fully paid with a total above zero — **and** Stacks can vouch for the whole
+  month. The gate fails closed: each of the following is *unknown*, so not
+  collected.
+  - A current payer (`management_fee_payer`) has no management fee tracker on
+    the pass. Same payer → tracker mapping as `ensure_trackers!`
+    (`Mso::ManagementFeeInvoices.payer_trackers`); a legacy Forecast tracker
+    (one with a blueprint) does not count.
+  - A management fee tracker has no invoice attached.
+  - An attached invoice's stored `txn_date` is outside the pass month, missing or
+    unreadable. Applies to every attached invoice, drafts and voided ones
+    included.
+  - garden3d's mirror holds an invoice billed to a payer's
+    `g3d_qbo_customer_id`, dated in the pass month, that is not attached to a
+    tracker on this pass (a second or hand-made invoice). It blocks whatever
+    its stored status, because nothing refreshes an unattached mirror. The one
+    exception is an invoice stored as voided (note **and** zero total and
+    balance): voiding is final. An invoice to a non-payer customer, in another
+    month, or in another company's books does not block.
+  - An attached invoice has no stored data or an unreadable amount.
+- All of the above lives in `InvoicePass#management_fee_collected?`, the pure
+  rule over stored mirrors (no QuickBooks call).
+  `Mso::ManagementFeeInvoices.collected?(invoice_pass:)` refreshes every attached
+  invoice from QuickBooks first, raises if any read fails, then asks the pure
+  rule — so the two entry points always agree. It costs one read per attached
+  invoice: call it once per run, never per row.
+- The unattached-invoice check sees only what is mirrored. garden3d's mirror
+  gains rows from a draft push, a refused push (which records what QuickBooks
+  already holds for that customer and month) and a manual
+  `QboAccount#sync_all_invoices!`; an invoice made by hand after those is
+  invisible until one of them runs again.
+
+**Fee income (§6.3)**
+
+- A month with no fee has **no 4100 row** and raises `RowMissing` (December
+  2025). S4 must decide what that means for a run.
+- `reconcile` sums only `Managerial Services` lines on attached invoices and
+  returns a per-invoice breakdown; `reconcile!` raises on variance. A fee line on
+  the `Services` item blocks S4 until Finance moves it.
+- `for_month` is a partial figure for an unfinished month.
+
+**Who can see garden3d's passes**
+
+- **Admins only**, the owner's decision, for every action including read: every
+  invoice pass garden3d issues, every tracker on one, and the payouts pages
+  under such a tracker. The seven legacy 2025 passes are included, so leads lose
+  the access they had to those. Enforced in `AdminAuthorization` above the
+  blanket lead grant; `scope_collection` keeps the same rows out of the index
+  pages. This supersedes the narrower restriction §10 asked for (hiding the pass
+  from leads-in-training only).
+- A contributor paid on a legacy garden3d tracker still sees that payout on
+  their own page and can open it; they cannot open the tracker.
+
+**Also changed**
+
+- Saving the tracker edit form no longer detaches its invoice, and only admins
+  can change which invoice a tracker points at (enforced server-side).
+- Intercompany fee invoices are excluded from the invoicing totals and from the
+  AR aging and overdue-invoice MCP tools.
+
+## 13c. S1 simplified (2026-10-13)
+
+The owner's review of S1: an enterprise makes one invoice pass a month, the
+pass makes its trackers, and who gets a tracker depends on the enterprise.
+Sanctuary: every client it worked for. garden3d: every other enterprise it
+bills. Where §6 and §13b differ from this section, **this section governs**.
+
+- **`InvoicePass#make_trackers!` is the one entry point**, and is a plain
+  `case` on the enterprise: Sanctuary, garden3d, else `NotImplementedError`.
+  The admin page does the same for "Generate Invoices" and for which page a
+  pass renders. There is no `forecast?` or `intercompany?` predicate, and
+  `invoicing_kind`, `UnsupportedIssuer` and `legacy_forecast_trackers?` are
+  gone. The start month (`InvoicePass::INTERCOMPANY_START`, August 2026) is
+  checked where garden3d's trackers are made and where a draft is pushed, so
+  the seven 2025 passes get no new trackers or drafts.
+- **`enterprises.g3d_qbo_customer_id` is picked from a dropdown** of
+  garden3d's QuickBooks customers, read live on the enterprise edit page
+  (admins only), with a text input as the fallback.
+- **Predicates are named for the enterprise, not for the fee.** A garden3d
+  invoice carries the management fee and may carry other lines (a loan
+  repayment between entities). `InvoicePass#garden3d?`,
+  `InvoiceTracker#garden3d?`, `QboInvoice.without_intercompany`. There is no
+  narrower tracker question: every tracker on a garden3d pass is treated the
+  same, the seven 2025 Forecast trackers included (owner: ancient history).
+  Their accepted payouts stay and can be saved; no new payout can be made. Fee
+  income is still counted by Managerial Services line, never by invoice total.
+- **No payer flag.** `enterprises.management_fee_payer` is not added. garden3d
+  bills every other enterprise that has a customer id in garden3d's QuickBooks
+  (`enterprises.g3d_qbo_customer_id`, `Enterprise.billed_by_garden3d`). An
+  enterprise with no id stored gets no tracker.
+- **Stacks never creates a QuickBooks customer.** Finance creates it and an
+  admin stores its id on the enterprise's edit page (admin-only field).
+- **With no enterprise stored as billed, the collection rule answers no.**
+- **The nightly step is `InvoicePass.make_intercompany_passes!`**, from
+  `Enterprise#daily_tasks` (`stacks:daily_enterprise_tasks`): garden3d's pass
+  and trackers for every month from the start month through last month that
+  has no pass. Database only. A month that already has its pass is left
+  alone, so an enterprise that starts being billed later is not added to
+  months already invoiced; "Generate Invoices" on a pass does add it. The
+  12-month catch-up bound and "open a month" by hand are gone.
+- **One button.** "Generate Invoices" on a pass makes that pass's invoices:
+  Forecast invoicing on Sanctuary's, a $0.00 draft per tracker on garden3d's.
+  "Create management fee drafts" and "Open garden3d month" are gone.
+- **The index has one tab per enterprise** (Sanctuary by default; garden3d's
+  for admins only).
+- `Mso::ManagementFeeInvoices` is now `Mso::IntercompanyInvoices` and holds
+  only the QuickBooks side: `push_invoice!` (with the pre-flight read),
+  `refresh!`, `collected?`.
+
+Unchanged: the pre-flight that refuses a second invoice and mirrors the
+existing ones for attaching, the collection rule and its fail-closed cases,
+`Mso::ManagementFeeIncome`, admin-only garden3d passes, and that nothing
+writes to QuickBooks except on an admin's click.
 
 ## 14. Out of scope
 

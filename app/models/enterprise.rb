@@ -21,6 +21,20 @@ class Enterprise < ApplicationRecord
   accepts_nested_attributes_for :qbo_account, allow_destroy: true
   VERTICAL_MATCHER = /\[(.+)\](.*)/
 
+  # The enterprises garden3d invoices each month: every other enterprise with
+  # a customer record in garden3d's QuickBooks, whose id is stored here.
+  # (Guarded for the gap between a deploy and its hand-run migration.)
+  scope :billed_by_garden3d, -> {
+    next none unless column_names.include?("g3d_qbo_customer_id")
+    where.not(name: GARDEN3D_NAME).where.not(g3d_qbo_customer_id: [nil, ""])
+  }
+
+  # Lowest Forecast id first, and queried fresh, so the choice is the same on
+  # every run and never comes from a stale association cache.
+  def internal_forecast_client_ids
+    EnterpriseForecastClient.where(enterprise_id: id).order(:forecast_client_id).pluck(:forecast_client_id)
+  end
+
   # When a new enterprise is created, every existing contributor immediately
   # gets a ledger for it. Pairs with Contributor.after_create so the
   # (contributor, enterprise) grid stays full on a long enough timeline.
@@ -61,10 +75,18 @@ class Enterprise < ApplicationRecord
     name == INDEX_SPACE_NAME
   end
 
+  def is_garden3d?
+    name == GARDEN3D_NAME
+  end
+
   # Per-enterprise daily automation, dispatched by stacks:daily_enterprise_tasks.
   # Add new per-enterprise behaviors here rather than as new rake steps.
   def daily_tasks
     Stacks::Optix.deactivate_inactive_members! if is_index?
+    # Database only: garden3d's invoice pass and trackers for each month it
+    # has none. Nothing here may write to QuickBooks; an admin makes the
+    # invoices by hand.
+    InvoicePass.make_intercompany_passes! if is_garden3d?
   end
 
   def discover_verticals

@@ -12,15 +12,14 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
   ].freeze
   OWN_LEDGER_ITEM_DENY = [:update, :destroy].freeze
 
-  # Narrows index pages for users whose only access comes from
-  # project-scoped "lead" grants. Admins and (actual or granted) leads see
-  # everything. ActiveAdmin calls this automatically for every index via
-  # apply_authorization_scope.
+  # Narrows index pages. An admin sees everything. Everyone else never sees
+  # garden3d's invoice passes or the trackers on them (see authorized?).
+  # Beyond that, (actual or granted) leads see everything, and users whose
+  # only access comes from project-scoped "lead" grants see their own
+  # projects. ActiveAdmin calls this automatically for every index, in every
+  # format, via apply_authorization_scope.
   def scope_collection(collection, action = :read)
-    return collection if user.is_admin? || user.can_act_as_lead?
-
-    scoped_ids = user.lead_scoped_project_tracker_ids
-    return collection if scoped_ids.empty?
+    return collection if user.is_admin?
 
     # ActiveAdmin calls scope_collection with whatever scoped_collection
     # returns. Resources that override scoped_collection (e.g. InvoicePass)
@@ -30,6 +29,12 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
     # Class doesn't respond to #klass. Resolve to the actual model class
     # either way rather than assuming a Relation.
     model = collection.respond_to?(:klass) ? collection.klass : collection
+
+    collection = without_garden3d_passes(collection, model)
+    return collection if user.can_act_as_lead?
+
+    scoped_ids = user.lead_scoped_project_tracker_ids
+    return collection if scoped_ids.empty?
 
     case model.name
     when "ProjectTracker"
@@ -80,6 +85,23 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
     # for every action including read. Must stay above the blanket lead grant.
     return user.is_admin? if subject.is_a?(MsoRolePeriod) || subject == MsoRolePeriod
 
+    # garden3d's invoice passes hold what the operating companies pay it:
+    # admins only, for every action including read, on the pass and on every
+    # tracker on it. The owner's decision, and it deliberately takes in the
+    # seven legacy 2025 passes and their Forecast trackers. Must stay above
+    # the blanket lead grant and the scoped-grantee branch below; hiding a
+    # button or a row in the page enforces nothing. scope_collection keeps
+    # the same rows out of the index pages.
+    unless user.is_admin?
+      return false if on_garden3d_pass?(subject)
+
+      # The payouts under such a tracker follow it (only the legacy trackers
+      # have any). The one thing kept: a contributor may still read their own.
+      if subject.is_a?(ContributorPayout) && on_garden3d_pass?(subject.invoice_tracker)
+        return action == :read && payout_owner(subject) == user
+      end
+    end
+
     # The list of Google Analytics sites Stacks syncs: admins edit it; leads may read it.
     if subject.is_a?(AnalyticsProperty) || subject == AnalyticsProperty
       return user.is_admin? unless action == :read
@@ -96,6 +118,8 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
       scoped_ids = user.lead_scoped_project_tracker_ids
       if scoped_ids.any?
         return true if [ProjectTracker, InvoiceTracker, InvoicePass].include?(subject)
+        # A scoped grantee needs passes as containers to reach their own
+        # trackers. (garden3d's passes never get this far: see above.)
         return true if subject.is_a?(InvoicePass)
         return true if subject.is_a?(ProjectTracker) && scoped_ids.include?(subject.id)
         return true if subject.is_a?(InvoiceTracker) && (subject.project_trackers.map(&:id) & scoped_ids).any?
@@ -129,8 +153,7 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
       return true if [:index, :new, :create].include?(action) && user.forecast_person&.contributor.present?
 
       # Row-level actions — require ownership and deny only updates/destroys.
-      owner = (subject.contributor&.forecast_person&.admin_user rescue nil)
-      next unless owner == user
+      next unless payout_owner(subject) == user
       return true unless OWN_LEDGER_ITEM_DENY.include?(action)
     end
 
@@ -191,5 +214,40 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
     end
 
     return false
+  end
+
+  private
+
+  # Is this an invoice pass issued by garden3d, or a tracker on one?
+  # InvoicePass#garden3d? is "the pass is garden3d's", legacy passes
+  # included. False for a class, and for a tracker not yet on a pass.
+  def on_garden3d_pass?(subject)
+    case subject
+    when InvoicePass, InvoiceTracker then subject.garden3d?
+    else false
+    end
+  end
+
+  # The admin user a ledger item pays, or nil.
+  def payout_owner(subject)
+    subject.contributor&.forecast_person&.admin_user
+  rescue StandardError
+    nil
+  end
+
+  # Index pages, for anyone but an admin: no garden3d pass, and no tracker on
+  # one. By enterprise NAME in a subquery, so a database with no garden3d row
+  # (most tests) filters nothing and raises nothing.
+  def without_garden3d_passes(collection, model)
+    garden3d_ids = Enterprise.where(name: Enterprise::GARDEN3D_NAME).select(:id)
+
+    case model.name
+    when "InvoicePass"
+      collection.where.not(enterprise_id: garden3d_ids)
+    when "InvoiceTracker"
+      collection.where.not(invoice_pass_id: InvoicePass.where(enterprise_id: garden3d_ids).select(:id))
+    else
+      collection
+    end
   end
 end

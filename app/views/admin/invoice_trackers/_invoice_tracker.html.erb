@@ -213,7 +213,8 @@
   <div id="titlebar_left">
     <h2 id="page_title">🏓 Payouts</h2>
   </div>
-  <% if invoice_tracker.invoice_pass.allows_payment_splits? && current_admin_user.is_admin? %>
+  <%# A management fee invoice has no contributor payouts, and the model refuses one. %>
+  <% if invoice_tracker.invoice_pass.allows_payment_splits? && current_admin_user.is_admin? && !invoice_tracker.garden3d? %>
     <div id="titlebar_right">
       <div class="action_items">
         <%= link_to "All Payouts ↗", admin_invoice_tracker_contributor_payouts_path(invoice_tracker) %>

@@ -700,9 +700,13 @@ ActiveAdmin.register ProjectTracker do
       end
 
       f.has_many :adhoc_invoice_trackers, heading: false, allow_destroy: true, new_record: 'Connect an Adhoc Invoice' do |a|
+        # garden3d's management fee invoices are intercompany and belong on a
+        # management fee tracker only, so they are never offered here. Not
+        # narrowed to one QuickBooks account: a tracker's projects can span
+        # clients, and a new tracker has none yet.
         a.input :qbo_invoice,
           as: :select,
-          collection: QboInvoice.orphans
+          collection: QboInvoice.orphans.without_intercompany
       end
 
       f.has_many :project_tracker_forecast_projects, heading: false, allow_destroy: true, new_record: 'Connect a Forecast Project' do |a|

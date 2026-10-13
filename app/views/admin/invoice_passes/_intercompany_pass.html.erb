@@ -1,0 +1,62 @@
+<% trackers = InvoiceTracker.where(invoice_pass_id: invoice_pass.id).order(:id).to_a %>
+
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Invoices to paying companies</p>
+    </div>
+    <div class="module-body">
+      <p>
+        "Generate Invoices" creates one $0.00 draft per company in garden3d's QuickBooks. Finance sets each amount
+        in QuickBooks and sends it; Stacks never writes an amount and never sends an invoice. An invoice can carry
+        other lines too, such as a loan repayment; only its Managerial Services lines count as management fee
+        income.
+      </p>
+      <p>
+        If a company was already invoiced by hand for this month, Stacks creates nothing for it and lists the
+        existing invoice on that tracker's edit page, to attach.
+      </p>
+      <p>
+        What is shown here is Stacks' last copy of each invoice. Use "Refresh from QuickBooks" to bring it up to
+        date.
+      </p>
+    </div>
+  </div>
+</div>
+
+<% if trackers.empty? %>
+  <div class="empty_state">
+    <p>No invoices to paying companies have been set up for this month yet.</p>
+  </div>
+<% else %>
+  <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+    <thead>
+      <tr>
+        <th class="col">Billed to</th>
+        <th class="col">Status</th>
+        <th class="col">Total</th>
+        <th class="col">Outstanding</th>
+        <th class="col col-actions"></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% trackers.each_with_index do |tracker, index| %>
+        <% status = tracker.status %>
+        <tr class="<%= index.even? ? "even" : "odd" %>">
+          <td class="col"><%= tracker.forecast_client.enterprise&.name || tracker.forecast_client.name %></td>
+          <td class="col"><span class="pill <%= status %>"><%= status.to_s.humanize %></span></td>
+          <td class="col"><%= number_to_currency(tracker.value) %></td>
+          <td class="col"><%= number_to_currency(tracker.balance) %></td>
+          <td class="col col-actions">
+            <div class="table_actions">
+              <%= link_to "Open →", admin_invoice_pass_invoice_tracker_path(invoice_pass, tracker), class: "member_link" %>
+              <% if tracker.qbo_invoice_link.present? %>
+                <%= link_to "QuickBooks ↗", tracker.qbo_invoice_link, target: "_blank", class: "member_link" %>
+              <% end %>
+            </div>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+<% end %>
