@@ -46,7 +46,9 @@ class StacksNotionPropsTest < ActiveSupport::TestCase
   test "url accepts http and https only" do
     ok = page("Source Ref" => { "type" => "url", "url" => "https://twist.com/a/133876/ch/1/t/2/" })
     assert_equal "https://twist.com/a/133876/ch/1/t/2/", P.url(ok, "Source Ref")
-    ["javascript:alert(1)", "data:text/html,x", " https://x.test", "ftp://x.test", "", nil, 5].each do |bad|
+    ["javascript:alert(1)", "data:text/html,x", " https://x.test", "ftp://x.test", "", nil, 5,
+     "x\nhttps://evil.example", "https://ok.example\njavascript:alert(1)", "javascript:alert(1)\nhttps://ok.example",
+     "https://ok.example\n"].each do |bad|
       assert_nil P.url(page("Source Ref" => { "type" => "url", "url" => bad }), "Source Ref"), bad.inspect
     end
   end

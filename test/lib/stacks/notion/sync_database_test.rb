@@ -63,4 +63,34 @@ class StacksNotionSyncDatabaseTest < ActiveSupport::TestCase
     filtered = Stacks::Notion::FILTERED_DATABASES.values.map { |d| d[:id] }
     assert_empty Stacks::Notion::DATABASE_IDS.values.map { |id| id.delete("-") } & filtered
   end
+
+  # The guard compared raw strings, so any other spelling of the id got through.
+  test "a filtered database is refused in every spelling of its id" do
+    @client.expects(:query_database).never
+    Stacks::Notion::FILTERED_DATABASES.each_value do |config|
+      id = config[:id]
+      [id, id.upcase, Stacks::Utils.dashify_uuid(id), Stacks::Utils.dashify_uuid(id).upcase, " #{id}\n", "\t#{Stacks::Utils.dashify_uuid(id)} "].each do |spelling|
+        assert_raises(ArgumentError, spelling.inspect) { @client.sync_database(spelling) }
+      end
+    end
+    assert_equal 3, NotionPage.observations.count + NotionPage.problems.count
+  end
+
+  # The sweep is keyed on the first result's parent. An answer that is not
+  # from the database asked for must not choose what is swept.
+  test "a response whose first result is under another database sweeps nothing" do
+    row = lead_row
+    row["parent"] = { "type" => "database_id", "database_id" => Stacks::Notion.filtered_parent_id(:OBSERVATIONS) }
+    @client.expects(:query_database).once.with(LEADS, nil).returns({ "results" => [row], "next_cursor" => nil })
+    Rails.logger.expects(:warn).with(regexp_matches(/sync_database.*#{LEADS}.*skipped/m)).once
+    @client.sync_database(LEADS)
+    assert_nil NotionPage.with_deleted.find(@observation.id).deleted_at, "a stored observation is not swept"
+    assert_nil NotionPage.with_deleted.find(@stale_lead.id).deleted_at
+  end
+
+  test "the sweep still runs when the database is asked for by its dashed id" do
+    @client.expects(:query_database).once.returns({ "results" => [lead_row], "next_cursor" => nil })
+    @client.sync_database(LEADS_PARENT.upcase)
+    assert NotionPage.with_deleted.find(@stale_lead.id).deleted?
+  end
 end

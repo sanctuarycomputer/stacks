@@ -404,4 +404,127 @@ class StacksNotionFilteredSyncTest < ActiveSupport::TestCase
     assert_empty client.fetched
     assert_empty Stacks::Notion::FilteredSync.marks
   end
+
+  # --- review fixes ----------------------------------------------------------
+
+  # With Notion down every fetch pays the client's whole retry ladder, and
+  # the pass holds the lock inside the nightly task.
+  test "recheck stops after 5 fetch failures in a row and says Notion looks unavailable" do
+    rows = Array.new(8) { |i| observation!(project_ids: %w[p1], synced_at: NOW - (20 - i).hours) }
+    client = FakeNotion.new(fail_ids: rows[1..].map(&:notion_id), by_id: { rows[0].notion_id => rows[0].data })
+    error = assert_raises(Stacks::Notion::Error) { sync_with(client).recheck }
+    assert_equal rows.first(6).map(&:notion_id), client.fetched, "one answer, five failures, then no more calls"
+    assert_match(/after 6 page fetches/, error.message)
+    assert_match(/5 in a row failed/, error.message)
+    assert_match(/Notion looks unavailable/, error.message)
+    assert_equal 8, NotionPage.observations.count, "nothing is deleted"
+  end
+
+  test "fewer than 5 failures in a row do not stop the recheck: an answer resets the count" do
+    rows = Array.new(10) { |i| observation!(project_ids: %w[p1], synced_at: NOW - (20 - i).hours) }
+    answered = [rows[4], rows[9]]
+    client = FakeNotion.new(fail_ids: (rows - answered).map(&:notion_id), by_id: answered.to_h { |r| [r.notion_id, r.data] })
+    stats = sync_with(client).recheck
+    assert_equal 10, client.fetched.size
+    assert_equal({ checked: 10, errors: 8, unchanged: 2 }, stats.slice(:checked, :errors, :unchanged))
+  end
+
+  test "a page Notion no longer has is an answer too: it resets the count of failures" do
+    rows = Array.new(9) { |i| observation!(project_ids: %w[p1], synced_at: NOW - (20 - i).hours) }
+    client = FakeNotion.new(fail_ids: (rows - [rows[4]]).map(&:notion_id))
+    stats = sync_with(client).recheck
+    assert_equal({ checked: 9, errors: 8, gone: 1 }, stats.slice(:checked, :errors, :gone))
+  end
+
+  # GET /v1/pages/<id> answers with a top-level request_id that is new on
+  # every call. Stored, it would make every rechecked row look changed.
+  test "recheck of an unchanged row whose body differs only by request_id rewrites nothing" do
+    stored = observation!(project_ids: %w[p1], synced_at: NOW - 1.day)
+    client = FakeNotion.new(by_id: { stored.notion_id => stored.data.merge("request_id" => SecureRandom.uuid) })
+    writes = []
+    grab = ->(*, payload) { writes << payload[:sql] if payload[:sql].match?(/\A\s*(UPDATE|INSERT|DELETE)/i) }
+    stats = ActiveSupport::Notifications.subscribed(grab, "sql.active_record") { sync_with(client).recheck }
+    assert_equal({ updated: 0, unchanged: 1 }, stats.slice(:updated, :unchanged))
+    assert_equal 1, writes.size, "one statement, which records that the row was seen"
+    assert_match(/synced_at/, writes.first)
+    assert_no_match(/"data"/, writes.first)
+    stored.reload
+    assert_equal NOW, stored.synced_at
+    assert_not stored.data.key?("request_id")
+  end
+
+  test "request_id is never stored, by a query or by a recheck" do
+    row = observation_data(project_ids: %w[p1]).merge("request_id" => SecureRandom.uuid)
+    sync_with(FakeNotion.new(pages: { OBS => [[row]] })).sync(:OBSERVATIONS)
+    assert_not NotionPage.find_by!(notion_id: row["id"]).data.key?("request_id")
+  end
+
+  # A 200 that is not the page asked for says nothing about it. Left alone,
+  # the row's synced_at never moved and it was fetched first every night.
+  test "a recheck answer with no body, or with another page's id, is a failed fetch and goes to the back of the line" do
+    empty = observation!(project_ids: %w[p1], synced_at: NOW - 4.days)
+    other = observation!(project_ids: %w[p1], synced_at: NOW - 3.days)
+    live = observation!(project_ids: %w[p1], synced_at: NOW - 1.day)
+    client = FakeNotion.new(by_id: {
+      empty.notion_id => {},
+      other.notion_id => observation_data(id: SecureRandom.uuid, status: "Dismissed", project_ids: [], archived: true),
+      live.notion_id => live.data,
+    })
+    stats = sync_with(client).recheck
+    assert_equal({ candidates: 3, checked: 3, gone: 0, trashed: 0, updated: 0, unchanged: 1, errors: 2 }, stats)
+    [empty, other].each do |row|
+      row.reload
+      assert_nil row.deleted_at
+      assert_equal NOW, row.synced_at, "rotated to the back"
+      assert_equal "New", row.as_observation.status, "another page's body is not stored over this row"
+    end
+  end
+
+  test "answers that are not the page asked for count toward the 5 failures in a row" do
+    rows = Array.new(6) { |i| observation!(project_ids: %w[p1], synced_at: NOW - (20 - i).hours) }
+    client = FakeNotion.new(by_id: rows.to_h { |r| [r.notion_id, { "object" => "page", "id" => SecureRandom.uuid }] })
+    error = assert_raises(Stacks::Notion::Error) { sync_with(client).recheck }
+    assert_equal 5, client.fetched.size
+    assert_match(/Notion looks unavailable/, error.message)
+  end
+
+  test "a page with in_trash and no archived key is trashed, from a query and from a recheck" do
+    queried = observation!(project_ids: %w[p1], synced_at: NOW - 2.days)
+    fetched = problem!(project_ids: %w[p1], synced_at: NOW - 1.day)
+    in_trash = ->(data) { data.except("archived").merge("in_trash" => true) }
+    stats = sync_with(FakeNotion.new(pages: { OBS => [[in_trash.(queried.data)]] })).sync(:OBSERVATIONS)
+    assert_equal 1, stats[:trashed]
+    assert NotionPage.with_deleted.find(queried.id).deleted?
+    stats = sync_with(FakeNotion.new(by_id: { fetched.notion_id => in_trash.(fetched.data) })).recheck
+    assert_equal 1, stats[:trashed]
+    assert NotionPage.with_deleted.find(fetched.id).deleted?
+  end
+
+  test "a dry run does not soft-delete a row Notion reports as trashed, and moves no synced_at" do
+    trashed = observation!(project_ids: %w[p1], synced_at: NOW - 2.days)
+    same = observation!(project_ids: %w[p1], synced_at: NOW - 3.days)
+    changed = observation!(status: "New", project_ids: %w[p1], synced_at: NOW - 4.days)
+    rows = [trashed.data.merge("archived" => true), same.data,
+            observation_data(id: changed.notion_id, status: "Dismissed", project_ids: %w[p1])]
+    stats = sync_with(FakeNotion.new(pages: { OBS => [rows] })).sync(:OBSERVATIONS, dry_run: true)
+    assert_equal({ trashed: 1, unchanged: 1, updated: 1 }, stats.slice(:trashed, :unchanged, :updated))
+    assert_nil NotionPage.with_deleted.find(trashed.id).deleted_at
+    assert_equal [NOW - 2.days, NOW - 3.days, NOW - 4.days], [trashed, same, changed].map { |r| r.reload.synced_at }
+  end
+
+  test "a sync whose cursor never ends stops at its bound of calls, says so and writes no mark" do
+    Stacks::Notion::FilteredSync.stub_const(:MAX_CALLS, 2) do
+      batches = Array.new(4) { [observation_data(project_ids: %w[p1])] }
+      client = FakeNotion.new(pages: { OBS => batches })
+      error = assert_raises(Stacks::Notion::Error) { sync_with(client).sync(:OBSERVATIONS) }
+      assert_match(/did not end after 2 calls/, error.message)
+      assert_equal 2, client.queries.size
+      assert_equal 2, NotionPage.observations.count
+      assert_nil Stacks::Notion::FilteredSync.last_synced_at(:OBSERVATIONS)
+    end
+    exact = FakeNotion.new(pages: { OBS => [[observation_data(project_ids: %w[p1])], [observation_data(project_ids: %w[p1])]] })
+    Stacks::Notion::FilteredSync.stub_const(:MAX_CALLS, 2) do
+      assert_equal 2, sync_with(exact).sync(:OBSERVATIONS)[:calls], "a sync that ends on its last allowed call is not stopped"
+    end
+  end
 end

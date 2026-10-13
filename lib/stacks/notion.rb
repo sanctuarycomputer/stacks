@@ -42,13 +42,15 @@ class Stacks::Notion
   attr_writer :sleeper
 
   # Strips what changes on every read (icons, covers and file properties
-  # carry hourly-expiring S3 URLs), so a stored page diffs clean against a
-  # fresh one. File properties keep "name" and "type" so superpowers_pdf?
-  # (array presence) still works. Returns the page title: the first fragment
-  # of the title property.
+  # carry hourly-expiring S3 URLs, and a page fetched by id carries a
+  # request_id that is new on every call), so a stored page diffs clean
+  # against a fresh one. File properties keep "name" and "type" so
+  # superpowers_pdf? (array presence) still works. Returns the page title:
+  # the first fragment of the title property.
   def self.normalize_page!(r)
     r.delete("icon")
     r.delete("cover")
+    r.delete("request_id")
     props = r["properties"]
     return "" unless props.is_a?(Hash)
     props.each_value do |prop|
@@ -162,8 +164,14 @@ class Stacks::Notion
     { status: status, body: parsed }
   end
 
+  # A database id as bare lowercase hex, so two spellings of one id compare equal.
+  def self.bare_id(id)
+    id.to_s.downcase.delete("^0-9a-f")
+  end
+
   def sync_database(database_id)
-    if FILTERED_DATABASES.values.any? { |d| d[:id] == database_id.to_s.delete("-") }
+    asked_for = self.class.bare_id(database_id)
+    if FILTERED_DATABASES.values.any? { |d| self.class.bare_id(d[:id]) == asked_for }
       raise ArgumentError, "#{database_id} is read by the filtered sync only: a whole-database sync would delete its rows"
     end
     database_entries_touched = []
@@ -200,6 +208,16 @@ class Stacks::Notion
     end
 
     return if database_entries_touched.empty?
+    # The sweep deletes every row under the first result's parent that this
+    # run did not see, so that parent must be the database that was asked for.
+    swept_parent_id = database_entries_touched.first[:notion_parent_id]
+    unless swept_parent_id == Stacks::Utils.dashify_uuid(asked_for)
+      Rails.logger.warn(
+        "[Stacks::Notion#sync_database] #{database_id}: the first result is under #{swept_parent_id.inspect}, " \
+        "not the database asked for, so the delete sweep was skipped"
+      )
+      return
+    end
     NotionPage
       .where(
         notion_parent_type: database_entries_touched.first[:notion_parent_type],

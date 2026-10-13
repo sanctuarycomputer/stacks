@@ -21,6 +21,10 @@ class Stacks::Notion::FilteredSync
   RECHECK_LIMIT = 200  # page fetches a run, to notice rows trashed in Notion
   RECHECK_WINDOW = 90.days
   RECHECK_PAUSE = 0.35 # seconds between page fetches: under Notion's three a second
+  # Page fetches that may fail in a row before the recheck gives up. Each one
+  # has already paid the client's whole retry ladder, so with Notion down a
+  # pass that kept going would hold the lock for hours.
+  RECHECK_MAX_FAILURES_IN_A_ROW = 5
   ADVISORY_LOCK_KEY = 84_217_297
   SORTS = [{ timestamp: "last_edited_time", direction: "descending" }].freeze
   WRAPPERS = { OBSERVATIONS: Stacks::Notion::Observation, PROBLEMS: Stacks::Notion::Problem }.freeze
@@ -122,8 +126,10 @@ class Stacks::Notion::FilteredSync
   # seeing. Every stored Problem is in scope; Observations for 90 days.
   #
   # One page Notion refuses must not stop the pass: it is counted, sent to
-  # the back of the line and skipped. Only a pass in which every fetch failed
-  # raises, because that is Notion or the token, not a page.
+  # the back of the line and skipped. A 200 that does not carry the page asked
+  # for is treated the same way. Five failures in a row stop the pass, and so
+  # does a pass in which every fetch failed, because that is Notion or the
+  # token, not a page.
   def recheck(dry_run: false)
     observations = Stacks::Notion.filtered_parent_id(:OBSERVATIONS)
     problems = Stacks::Notion.filtered_parent_id(:PROBLEMS)
@@ -138,30 +144,44 @@ class Stacks::Notion::FilteredSync
     @unchanged_ids = []
     failed_ids = []
     last_error = nil
+    failures_in_a_row = 0
     scope.order(Arel.sql("notion_pages.synced_at ASC NULLS FIRST, notion_pages.id ASC")).limit(RECHECK_LIMIT).each do |page|
       @sleeper.call(RECHECK_PAUSE) if stats[:checked] > 0
       stats[:checked] += 1
       begin
         result = @client.fetch_page(page.notion_id)
+        body = result[:body]
+        unless result[:status] == 404 || (body.is_a?(Hash) && body["id"] == page.notion_id)
+          raise Stacks::Notion::Error.new("Notion fetch of page #{page.notion_id} answered without that page", status: result[:status])
+        end
       rescue Stacks::Notion::Error => e
         stats[:errors] += 1
         failed_ids << page.id
         last_error = e
+        failures_in_a_row += 1
+        break if failures_in_a_row >= RECHECK_MAX_FAILURES_IN_A_ROW
         next
       end
-      body = result[:body]
+      failures_in_a_row = 0
       if result[:status] == 404
         # Trusted because this run has just queried the same database: the
         # integration can read it, so a missing page is a deleted page.
         page.destroy
         stats[:gone] += 1
-      elsif body.is_a?(Hash) && body["id"] == page.notion_id
+      else
         key = page.notion_parent_id == observations ? :OBSERVATIONS : :PROBLEMS
         upsert(body, key, page, counts, dry_run: false, keep_without_project: true)
       end
     end
     seen_ids = @unchanged_ids + failed_ids
     NotionPage.where(id: seen_ids).update_all(synced_at: @now) if seen_ids.any?
+    if failures_in_a_row >= RECHECK_MAX_FAILURES_IN_A_ROW
+      raise Stacks::Notion::Error.new(
+        "Notion recheck stopped after #{stats[:checked]} page fetches: #{failures_in_a_row} in a row failed, " \
+        "so Notion looks unavailable. Last: #{last_error.message}",
+        status: last_error.status, code: last_error.code
+      )
+    end
     if stats[:checked] > 0 && stats[:errors] == stats[:checked]
       raise Stacks::Notion::Error.new(
         "Notion recheck failed: #{stats[:errors]} of #{stats[:checked]} page fetches failed. Last: #{last_error.message}",
