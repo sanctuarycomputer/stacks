@@ -65,18 +65,6 @@ class ContributorMsoTrueupTest < ActiveSupport::TestCase
     assert_equal true, month[:elevated_service]
   end
 
-  test "include_mso_trueups: false hides it and its income from the walk and the balance" do
-    mso_trueup(@snapshot, @role, @ledger, amount: "9500")
-
-    month = month_of(walk(include_mso_trueups: false))
-
-    assert_equal [], month[:items]
-    assert_equal 0, month[:total_income]
-    assert_equal false, month[:elevated_service]
-    assert_equal({ balance: 0.0, unsettled: 9500.0 }, fresh.new_deal_balance)
-    assert_equal({ balance: 0.0, unsettled: 0.0 }, fresh.new_deal_balance(nil, include_mso_trueups: false))
-  end
-
   test "the bulk elevated-service query counts it too" do
     mso_trueup(@snapshot, @role, @ledger, amount: "9500")
     login = login_for(@exec)

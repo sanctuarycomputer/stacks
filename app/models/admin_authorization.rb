@@ -97,18 +97,18 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
     return user.is_admin? if subject.is_a?(MsoRolePeriod) || subject == MsoRolePeriod
 
     # The snapshot holds fee income, the cap and every executive's line:
-    # admins only. A true-up is for admins and for the executive whose ledger
-    # it is on, who may read it. Class-level subjects (:index, :new, :create)
-    # are admin-only, which is why MsoTrueup is NOT in OWN_LEDGER_ITEM_CLASSES.
-    # Must stay above the blanket lead grant: every executive is likely to be
-    # a lead, and a lead reads all.
+    # admins only. A true-up is READ like any other ledger item (whoever can
+    # read ledgers, and the executive it pays); everything else on it is
+    # admin-only. Must stay above the blanket lead grant.
     if MSO_COMPENSATION_CLASSES.any? { |klass| subject == klass || subject.is_a?(klass) }
       # Accepting a true-up is its owner's act alone. Checked BEFORE the admin
       # line: the executives are admins, and "an admin may accept" would let
       # each accept the other's.
       return own_mso_trueup?(subject) if action == :toggle_acceptance
       return true if user.is_admin?
-      return action == :read && own_mso_trueup?(subject)
+      return false unless action == :read && (subject == MsoTrueup || subject.is_a?(MsoTrueup))
+      return true if own_mso_trueup?(subject)
+      # Otherwise: read falls through to the rules every ledger item gets.
     end
 
     # Computes and writes every executive's true-up: admins only, whichever

@@ -115,25 +115,19 @@ class Ledger < ApplicationRecord
   #              Items where the QBO bill IS paid drop from BOTH buckets — they're
   #              settled in QBO and shouldn't show up in either Stacks total. This
   #              keeps the qbo_bound ledger one-to-one with the QBO vendor record.
-  #
-  # include_mso_trueups: false leaves MSO true-ups out. An MSO true-up is
-  # executive compensation; the ledger page passes false when the viewer is
-  # neither an admin nor the contributor whose ledger this is.
-  def balance(include_mso_trueups: true)
-    sum_for_bucket(payable: true, include_mso_trueups: include_mso_trueups)
+  def balance
+    sum_for_bucket(payable: true)
   end
 
-  def unsettled(include_mso_trueups: true)
-    sum_for_bucket(payable: false, include_mso_trueups: include_mso_trueups)
+  def unsettled
+    sum_for_bucket(payable: false)
   end
 
   # Per-ledger by-month grouping for display. Includes soft-deleted rows so the contributor
   # admin show page can render strikethrough lines. No elevated_service / total_hours /
   # partial_salary / fulltime — those are cross-enterprise concepts and live on Contributor.
-  def items_grouped_by_month(override_starts_at = nil, override_ends_at = nil, min_ends_at: nil,
-                             include_mso_trueups: true)
+  def items_grouped_by_month(override_starts_at = nil, override_ends_at = nil, min_ends_at: nil)
     all_items = all_items_with_deleted
-    all_items = all_items.reject { |li| li.is_a?(MsoTrueup) } unless include_mso_trueups
 
     ledger_ends_at =
       if override_ends_at.present?
@@ -179,7 +173,7 @@ class Ledger < ApplicationRecord
   protected
 
   # Non-deleted only — used by balance/unsettled sums.
-  def visible_items(include_mso_trueups: true)
+  def visible_items
     [
       contributor_payouts.to_a,
       contributor_adjustments.to_a,
@@ -188,14 +182,14 @@ class Ledger < ApplicationRecord
       profit_shares.to_a,
       deel_invoice_adjustments.to_a,
       pay_stubs.to_a,
-      (include_mso_trueups && MsoTrueup.schema_ready? ? mso_trueups.to_a : []),
+      (MsoTrueup.schema_ready? ? mso_trueups.to_a : []),
     ].flatten
   end
 
   # qbo_bound mode: drop audit-only rows. The remaining items are then split
   # by `qbo_bound_open_items` (paid bills drop too) and bucketed by `payable?`.
-  def qbo_bound_visible_items(include_mso_trueups: true)
-    visible_items(include_mso_trueups: include_mso_trueups)
+  def qbo_bound_visible_items
+    visible_items
       .reject { |li| self.class.audit_only_under_qbo_bound?(li) }
   end
 
@@ -204,8 +198,8 @@ class Ledger < ApplicationRecord
   # is fully Paid is dropped — paid bills are settled in QBO and shouldn't
   # show up in Stacks at all. Partial-paid bills survive (their remaining
   # balance is the contribution).
-  def qbo_bound_open_items(include_mso_trueups: true)
-    qbo_bound_visible_items(include_mso_trueups: include_mso_trueups)
+  def qbo_bound_open_items
+    qbo_bound_visible_items
       .reject { |li| li.try(:qbo_bill)&.paid? }
   end
 
@@ -227,12 +221,12 @@ class Ledger < ApplicationRecord
     self.payment_methods = self.class.payment_methods_for(contributor)
   end
 
-  def sum_for_bucket(payable:, include_mso_trueups: true)
+  def sum_for_bucket(payable:)
     if legacy?
-      visible_items(include_mso_trueups: include_mso_trueups)
+      visible_items
         .select { |li| li.payable? == payable }.sum(&:signed_amount)
     elsif qbo_bound?
-      qbo_bound_open_items(include_mso_trueups: include_mso_trueups)
+      qbo_bound_open_items
         .select { |li| li.payable? == payable }.sum { |li| qbo_bound_contribution(li) }
     else
       raise "Unknown ledger mode: #{mode.inspect}"

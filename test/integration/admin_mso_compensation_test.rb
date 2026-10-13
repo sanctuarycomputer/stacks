@@ -168,15 +168,12 @@ class AdminMsoCompensationTest < ActionDispatch::IntegrationTest
     assert_not_authorized
   end
 
-  test "a true-up's page gives its figures to nobody else as JSON either" do
-    [@lead, @other_login].each do |viewer|
-      sign_in viewer
-      get admin_ledger_mso_trueup_path(@ledger, @mine, format: :json)
-
-      assert_not response.successful?, "#{viewer.email} must not get the true-up as JSON"
-      assert_no_match(/1234\.56/, response.body)
-      sign_out viewer
-    end
+  test "someone who cannot read ledgers gets no true-up as JSON, and a lead gets no snapshot" do
+    sign_in @other_login
+    get admin_ledger_mso_trueup_path(@ledger, @mine, format: :json)
+    assert_not response.successful?
+    assert_no_match(/1234\.56/, response.body)
+    sign_out @other_login
 
     sign_in @lead
     get admin_mso_snapshot_path(@snapshot, format: :json)
@@ -229,11 +226,11 @@ class AdminMsoCompensationTest < ActionDispatch::IntegrationTest
     assert_not @mine.reload.accepted?
   end
 
-  test "a lead can neither open nor accept a true-up" do
+  test "a lead can open a true-up, like any ledger item, but not accept it" do
     sign_in @lead
 
     get admin_ledger_mso_trueup_path(@ledger, @mine)
-    assert_not_authorized
+    assert_response :success
 
     accept(@ledger, @mine)
     assert_not_authorized

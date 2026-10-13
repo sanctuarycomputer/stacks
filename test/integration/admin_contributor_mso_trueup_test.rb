@@ -34,14 +34,6 @@ class AdminContributorMsoTrueupTest < ActionDispatch::IntegrationTest
     response.body
   end
 
-  test "who may see an executive's MSO true-ups" do
-    assert_equal true, @exec.mso_trueups_visible_to?(@admin)
-    assert_equal true, @exec.mso_trueups_visible_to?(login_for(@exec))
-    assert_equal false, @exec.mso_trueups_visible_to?(@lead)
-    assert_equal false, @exec.mso_trueups_visible_to?(login_for(mso_person("ledger-page-other")))
-    assert_equal false, @exec.mso_trueups_visible_to?(nil)
-  end
-
   test "the executive sees their true-up on their own ledger, with a way to accept it" do
     sign_in login_for(@exec)
 
@@ -63,44 +55,33 @@ class AdminContributorMsoTrueupTest < ActionDispatch::IntegrationTest
     assert_not_includes body, "toggle_acceptance"
   end
 
-  test "a lead sees neither the row nor its amount in any total" do
+  test "a lead sees it like any other ledger item, and is not offered the owner's Accept" do
     sign_in @lead
 
     body = ledger_page
 
-    assert_no_match(/4,321/, body)
-    assert_no_match(/mso_trueups/, body)
-    assert_no_match(/Mso trueup/i, body)
+    assert_match(/4,321\.09/, body)
+    assert_match(/Mso trueup/i, body)
+    assert_not_includes body, "toggle_acceptance"
   end
 
-  # The same page without ?ledger= is the "All" view, which also carries each
-  # month's income in its Elevated/Standard Service badge; and the person's
-  # user page carries their balance. Both are open to every lead.
-  test "a lead does not see it on the All view or on the person's user page either" do
+  # The same page without ?ledger= is the "All" view; the person's user page
+  # carries their balance. Both are open to every lead.
+  test "a lead sees it on the All view and on the person's user page too" do
     sign_in @lead
 
     get admin_contributor_path(@exec)
     assert_response :success
-    assert_no_match(/4,321/, response.body)
-    assert_no_match(/mso_trueups/, response.body)
-    assert_no_match(/Mso trueup/i, response.body)
+    assert_match(/4,321\.09/, response.body)
 
     get admin_admin_user_path(login_for(@exec))
     assert_response :success
-    assert_no_match(/4,321/, response.body)
-    sign_out @lead
-
-    # Not vacuous: the same two pages do show it to an admin.
-    sign_in @admin
-    get admin_contributor_path(@exec)
-    assert_match(/4,321\.09/, response.body)
-    get admin_admin_user_path(login_for(@exec))
     assert_match(/4,321\.09/, response.body)
   end
 
-  # An unaccepted true-up shows in the tab's UNSETTLED pill (covered above).
-  # Once it has a QuickBooks bill it is owed, and moves to the BALANCE pill.
-  test "a billed true-up's balance pill on the ledger tab is for its owner and admins only" do
+  # Once a true-up has a QuickBooks bill it is owed, and moves from the
+  # tab's UNSETTLED pill to its BALANCE pill.
+  test "a billed true-up shows in the ledger tab's balance pill for everyone who can open the page" do
     vendor = QboVendor.create!(qbo_account: garden3d_qbo_account, qbo_id: "V-#{SecureRandom.hex(3)}", data: {})
     QboBill.create!(qbo_account: garden3d_qbo_account, qbo_id: "8801", qbo_vendor_id: vendor.qbo_id,
                     data: { "balance" => "4321.09", "total_amt" => "4321.09" })
@@ -109,16 +90,7 @@ class AdminContributorMsoTrueupTest < ActionDispatch::IntegrationTest
     assert_in_delta 4321.09, ledger.balance.to_f, 0.001
     assert_equal 0.0, ledger.unsettled.to_f, "sanity: only the balance pill can carry it"
 
-    sign_in @lead
-    [admin_contributor_path(@exec, ledger: @ledger.id), admin_contributor_path(@exec)].each do |path|
-      get path
-      assert_response :success
-      assert_select "span.notifier--balance", count: 0
-      assert_no_match(/4,321/, response.body)
-    end
-    sign_out @lead
-
-    [@admin, login_for(@exec)].each do |viewer|
+    [@lead, @admin, login_for(@exec)].each do |viewer|
       sign_in viewer
       get admin_contributor_path(@exec, ledger: @ledger.id)
       assert_response :success

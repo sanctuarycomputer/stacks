@@ -44,16 +44,6 @@ class Ledger::MsoTrueupLedgerTest < ActiveSupport::TestCase
     assert_equal 1500.0, fresh_ledger.balance.to_f
   end
 
-  test "include_mso_trueups: false leaves it out of the balance, the unsettled total and the month" do
-    mso_trueup(@snapshot, @role, @ledger, amount: "1500")
-
-    assert_equal 0.0, fresh_ledger.unsettled(include_mso_trueups: false).to_f
-    assert_equal 0.0, fresh_ledger.balance(include_mso_trueups: false).to_f
-    hidden = month_of(grouped(fresh_ledger, include_mso_trueups: false))
-    assert_equal [], hidden[:items]
-    assert_equal 0, hidden[:total_income]
-  end
-
   test "it is listed in its pass month and counts toward that month's income" do
     trueup = mso_trueup(@snapshot, @role, @ledger, amount: "1500")
 

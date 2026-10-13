@@ -322,14 +322,6 @@ class Contributor < ApplicationRecord
     forecast_person&.admin_user == admin_user
   end
 
-  # An MSO true-up is executive compensation. Its rows and its amount are
-  # shown to admins and to the executive themself; anyone else who can open
-  # this contributor's page (every lead can) sees the ledger without them.
-  def mso_trueups_visible_to?(admin_user)
-    return false if admin_user.nil?
-    admin_user.is_admin? || forecast_person&.admin_user == admin_user
-  end
-
   # Sums Ledger#balance / Ledger#unsettled across the contributor's ledgers.
   # Delegating per-ledger keeps the summary card consistent with the per-ledger
   # pills in _ledger_tabs (both apply the same legacy-vs-qbo_bound rules per
@@ -338,10 +330,10 @@ class Contributor < ApplicationRecord
   # ledger, paid-bills + audit-only rows inflated the summary above what each
   # ledger pill reported.
   # The `ledger_items` argument is now unused; kept for caller compatibility.
-  def new_deal_balance(_ledger_items = nil, include_mso_trueups: true)
+  def new_deal_balance(_ledger_items = nil)
     ledgers.reduce({ balance: 0, unsettled: 0 }) do |acc, l|
-      acc[:balance]   += l.balance(include_mso_trueups: include_mso_trueups).to_f
-      acc[:unsettled] += l.unsettled(include_mso_trueups: include_mso_trueups).to_f
+      acc[:balance]   += l.balance.to_f
+      acc[:unsettled] += l.unsettled.to_f
       acc
     end
   end
@@ -408,7 +400,7 @@ class Contributor < ApplicationRecord
   # lives here, not on Ledger. Per-enterprise views should use Ledger#items_grouped_by_month
   # instead, which omits elevated_service / total_hours / partial_salary / fulltime.
   def all_items_grouped_by_month(include_salary = true, override_ledger_starts_at = nil, override_ledger_ends_at = nil,
-                                 min_ends_at: nil, include_mso_trueups: true)
+                                 min_ends_at: nil)
     preloaded_contributor_payouts = contributor_payouts_with_deleted
     preloaded_reimbursements = reimbursements_with_deleted
     preloaded_trueups = trueups_with_deleted
@@ -416,8 +408,7 @@ class Contributor < ApplicationRecord
     preloaded_adjustments = contributor_adjustments_with_deleted
     preloaded_deel_invoice_adjustments = deel_invoice_adjustments_with_deleted
     preloaded_pay_stubs = pay_stubs_with_deleted
-    # Executive compensation: left out when the viewer may not see it.
-    preloaded_mso_trueups = include_mso_trueups ? mso_trueups_with_deleted : []
+    preloaded_mso_trueups = mso_trueups_with_deleted
 
     if override_ledger_ends_at.present?
       ledger_ends_at = override_ledger_ends_at

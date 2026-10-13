@@ -63,12 +63,18 @@ class AdminAuthorizationMsoTest < ActiveSupport::TestCase
     assert auth.authorized?(:read, @snapshot)
   end
 
-  test "a full lead can do nothing with any MSO subject, reading included" do
+  test "a full lead reads a true-up like any ledger item, and can do nothing else with any MSO subject" do
     auth = auth_for(@lead)
     # The premise: this user really does have the blanket lead grant.
     assert auth.authorized?(:read, Studio)
 
-    [MsoTrueup, MsoSnapshot, @mine, @theirs, @snapshot, MsoTrueup.new, MsoSnapshot.new].each do |subject|
+    [MsoTrueup, @mine, @theirs].each { |subject| assert auth.authorized?(:read, subject), "lead reads #{subject}" }
+    [MsoTrueup, @mine, @theirs, MsoTrueup.new].each do |subject|
+      (EVERY_ACTION - [:read]).each do |action|
+        refute auth.authorized?(action, subject), "lead must not #{action} #{subject}"
+      end
+    end
+    [MsoSnapshot, @snapshot, MsoSnapshot.new].each do |subject|
       EVERY_ACTION.each { |action| refute auth.authorized?(action, subject), "lead must not #{action} #{subject}" }
     end
   end
@@ -98,13 +104,15 @@ class AdminAuthorizationMsoTest < ActiveSupport::TestCase
     [:index, :new, :create, :read].each { |action| refute auth.authorized?(action, MsoTrueup) }
   end
 
-  test "an executive who is also a lead still sees only their own true-up" do
+  test "an executive who is also a lead reads the others' true-ups, accepts only their own, and never the snapshot" do
     PermissionGrant.create!(admin_user: @exec_login, permission: "lead")
     auth = auth_for(AdminUser.find(@exec_login.id))
     assert auth.authorized?(:read, Studio)
 
     assert auth.authorized?(:read, @mine)
-    refute auth.authorized?(:read, @theirs)
+    assert auth.authorized?(:read, @theirs)
+    assert auth.authorized?(:toggle_acceptance, @mine)
+    refute auth.authorized?(:toggle_acceptance, @theirs)
     refute auth.authorized?(:read, @snapshot)
     refute auth.authorized?(:read, MsoSnapshot)
   end
