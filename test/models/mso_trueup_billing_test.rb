@@ -178,6 +178,116 @@ class MsoTrueupBillingTest < ActiveSupport::TestCase
     assert_kind_of MsoTrueup::MissingVendor, mine.first.last
   end
 
+  # --- a bill that has gone from QuickBooks ------------------------------------
+
+  GONE = "Object Not Found: Something you're trying to use has been made inactive".freeze
+
+  test "a billed true-up whose bill was deleted in QuickBooks is refused, never re-created" do
+    mirror!("910", { "balance" => "1200", "total_amt" => "1200" })
+    @trueup.update_columns(qbo_bill_id: "910")
+    QboAccount.any_instance.stubs(:fetch_bill_by_id).raises(RuntimeError, GONE)
+    Quickbooks::Service::Bill.any_instance.expects(:create).never
+    Quickbooks::Service::Bill.any_instance.expects(:update).never
+    # The first-bill checks are not what stops it: they would pass.
+    Mso::ManagementFeeInvoices.expects(:collected?).never
+
+    error = assert_raises(MsoTrueup::BillGone) { fresh.sync_qbo_bill! }
+
+    assert_kind_of MsoTrueup::SyncRefused, error
+    assert_match(/QuickBooks bill 910 .*no longer exists/, error.message)
+    assert_match(/run the month again/i, error.message)
+    assert_match(/No bill was written/, error.message)
+    assert_nil fresh.qbo_bill_id
+    assert_not fresh.locked?
+    assert_not fresh.accepted?
+    assert_equal false, fresh.payable?
+    assert @snapshot.reload.invalidated?
+    assert_nil QboBill.find_by(qbo_account_id: @qa.id, qbo_id: "910")
+  end
+
+  test "the same when the row was already unaccepted and its snapshot already invalid" do
+    @trueup.update_columns(qbo_bill_id: "911", accepted_at: nil)
+    @snapshot.invalidate!("a later run was refused")
+    QboAccount.any_instance.stubs(:fetch_bill_by_id).raises(RuntimeError, GONE)
+    Quickbooks::Service::Bill.any_instance.expects(:create).never
+
+    assert_raises(MsoTrueup::BillGone) { fresh.sync_qbo_bill! }
+
+    assert_nil fresh.qbo_bill_id
+    assert_equal false, fresh.payable?
+  end
+
+  # The override cannot reach bill CREATION except straight from the
+  # first-bill checks: here the bill vanishes between the check that it
+  # exists and the write.
+  test "a bill that vanishes between the existence check and the write is not re-created either" do
+    mirror!("912", { "balance" => "1200", "total_amt" => "1200" })
+    @trueup.update_columns(qbo_bill_id: "912")
+    MsoTrueup.any_instance.stubs(:refresh_qbo_bill_mirror!).returns(:refreshed)
+    QboAccount.any_instance.stubs(:fetch_bill_by_id).raises(RuntimeError, GONE)
+    QboBill.any_instance.stubs(:delete_qbo_bill!)
+    Quickbooks::Service::Bill.any_instance.expects(:create).never
+
+    error = assert_raises(MsoTrueup::BillUnreadable) { fresh.sync_qbo_bill! }
+
+    assert_kind_of MsoTrueup::SyncRefused, error
+    assert_match(/No bill was written/, error.message)
+  end
+
+  test "a billed true-up whose bill cannot be read at the write is not given a second bill" do
+    mirror!("913", { "balance" => "1200", "total_amt" => "1200" })
+    @trueup.update_columns(qbo_bill_id: "913")
+    MsoTrueup.any_instance.stubs(:refresh_qbo_bill_mirror!).returns(:refreshed)
+    QboAccount.any_instance.stubs(:fetch_bill_by_id).raises(RuntimeError, "execution expired")
+    Quickbooks::Service::Bill.any_instance.expects(:create).never
+
+    assert_raises(MsoTrueup::BillUnreadable) { fresh.sync_qbo_bill! }
+
+    assert_equal "913", fresh.qbo_bill_id
+    assert fresh.accepted?
+  end
+
+  test "a QuickBooks failure reading a billed true-up's bill is passed on, and nothing is written" do
+    mirror!("914", { "balance" => "1200", "total_amt" => "1200" })
+    @trueup.update_columns(qbo_bill_id: "914")
+    QboAccount.any_instance.stubs(:fetch_bill_by_id).raises(RuntimeError, "execution expired")
+    Quickbooks::Service::Bill.any_instance.expects(:create).never
+
+    assert_match(/execution expired/, assert_raises(RuntimeError) { fresh.sync_qbo_bill! }.message)
+
+    assert_equal "914", fresh.qbo_bill_id
+    assert fresh.accepted?
+    assert_not @snapshot.reload.invalidated?
+  end
+
+  test "the Money page's sync-all refuses a vanished bill, says why, and carries on with the other rows" do
+    other_exec = mso_person("bill-other")
+    other_ledger = garden3d_ledger(other_exec)
+    other_role = mso_role(other_exec)
+    other = MsoTrueup.create!(ledger: other_ledger, invoice_pass: @pass, mso_snapshot: @snapshot,
+                              mso_role_period: other_role, amount: "800", description: "MSO true-up",
+                              accepted_at: Time.current)
+    other_vendor = QboVendor.create!(qbo_account: @qa, qbo_id: "V-#{SecureRandom.hex(3)}", data: {})
+    ContributorQboVendor.create!(contributor: other_exec, qbo_account: @qa, qbo_vendor: other_vendor)
+    mirror!("915", { "balance" => "1200", "total_amt" => "1200" })
+    @trueup.update_columns(qbo_bill_id: "915")
+    mirror!("916", { "balance" => "800", "total_amt" => "800" })
+    other.update_columns(qbo_bill_id: "916")
+    QboAccount.any_instance.stubs(:fetch_bill_by_id).with("915").raises(RuntimeError, GONE)
+    QboAccount.any_instance.stubs(:fetch_bill_by_id).with("916")
+      .returns(remote_bill("916", balance: "800", total: "800"))
+    Quickbooks::Service::Bill.any_instance.expects(:create).never
+    Quickbooks::Service::Bill.any_instance.expects(:update).once
+      .returns(remote_bill("916", balance: "800", total: "800"))
+
+    failures = Money::RefreshPayableQboBills.call(qbo_account: @qa)
+
+    assert_equal [@trueup.id], failures.map { |host, _| host.id }
+    assert_kind_of MsoTrueup::BillGone, failures.first.last
+    assert_nil fresh.qbo_bill_id
+    assert_equal "916", other.reload.qbo_bill_id
+  end
+
   # --- after the bill --------------------------------------------------------------
 
   test "a billed true-up stays in the balance when its snapshot is invalidated, and leaves it when the bill is paid" do

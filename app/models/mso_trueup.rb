@@ -22,6 +22,10 @@ class MsoTrueup < ApplicationRecord
   class NotCollected < SyncRefused; end
   class FiguresChanged < SyncRefused; end
   class BooksClosed < SyncRefused; end
+  # The true-up had a bill and QuickBooks no longer has it.
+  class BillGone < SyncRefused; end
+  # The true-up has a bill and QuickBooks did not hand it over at the write.
+  class BillUnreadable < SyncRefused; end
 
   class Locked < StandardError; end
   class AmountChanged < StandardError; end
@@ -126,13 +130,25 @@ class MsoTrueup < ApplicationRecord
   # For the FIRST bill this makes QuickBooks reads (the chart of accounts and
   # one per management fee invoice) and one full computation of the month.
   # It is an admin's click on the Money page.
+  #
+  # A bill is CREATED only straight from the first-bill checks, in the same
+  # call. A true-up that already had a bill never gets another one here: if
+  # QuickBooks no longer has it (someone deleted it there), the row is
+  # unlocked exactly as the nightly refresh would unlock it and the sync is
+  # refused; the month has to be run again before anything is billed.
   def sync_qbo_bill!(accounts_cache: nil)
     accounts_cache ||= Qbo::AccountsCache.new
 
     # Outside the lock and its transaction: a stamp these checks withdraw
     # must stay withdrawn when the sync is then refused.
     assert_can_be_billed!(accounts_cache)
-    assert_first_bill_is_still_right! unless locked?
+    if locked?
+      first_bill_checked = false
+      assert_bill_still_exists!
+    else
+      assert_first_bill_is_still_right!
+      first_bill_checked = true
+    end
 
     # The row lock makes a double click safe: the second caller waits here,
     # reloads, finds the bill the first one created and updates it instead
@@ -141,6 +157,9 @@ class MsoTrueup < ApplicationRecord
       raise NotPayable, not_payable_message unless payable?
 
       begin
+        # Read by load_qbo_bill! below, which is where the concern decides
+        # between updating a bill and creating one.
+        @bill_sync = { first_bill_checked: first_bill_checked }
         super(accounts_cache: accounts_cache)
       rescue Quickbooks::IntuitRequestException => e
         # The bill is dated the last day of the fee month. Once that month is
@@ -152,8 +171,34 @@ class MsoTrueup < ApplicationRecord
                            "the date this bill must carry. Finance has to reopen the period (or move the " \
                            "closing date) in QuickBooks; then sync again. MSO bills need creating before " \
                            "the month is closed. No bill was written. (QuickBooks said: #{e.message})"
+      ensure
+        @bill_sync = nil
       end
     end
+  end
+
+  # SyncsAsQboBill#sync_qbo_bill! does `load_qbo_bill! || a new bill`, and
+  # load_qbo_bill! answers nil three ways: the row has no bill; the bill is
+  # gone from QuickBooks (it also clears the row's bill id); or QuickBooks
+  # could not be read at all. Inside a sync, only the first may go on to
+  # create a bill, and only when this same call passed the first-bill checks.
+  # Outside a sync (removing a bill) it behaves as the concern's does.
+  def load_qbo_bill!
+    sync = @bill_sync
+    return super if sync.nil?
+
+    had_bill = qbo_bill_id.present?
+    bill_id = qbo_bill_id
+    remote = super
+    return remote unless remote.nil?
+    return nil if !had_bill && sync[:first_bill_checked]
+
+    if had_bill
+      raise BillUnreadable, "QuickBooks bill #{bill_id} for MsoTrueup #{id} could not be read just now, or has " \
+                            "just been deleted there. No bill was written. Sync again in a moment."
+    end
+    raise SyncRefused, "MsoTrueup #{id} has no QuickBooks bill and was not checked for a first one in this " \
+                       "sync. No bill was written. Sync again."
   end
 
   # An admin's way to unfreeze a true-up whose figure needs to change. Reads
@@ -263,6 +308,19 @@ class MsoTrueup < ApplicationRecord
                                   "QuickBooks; its account number then replaces the placeholder in " \
                                   "app/services/qbo/bill_router.rb. No bill was written. (#{e.message})"
     end
+  end
+
+  # For a true-up that already has a bill: ONE QuickBooks read. If the bill
+  # is gone, refresh_qbo_bill_mirror! has already cleared the bill id and the
+  # acceptance and invalidated the snapshot (outside any transaction here, so
+  # it stays done). Any other QuickBooks failure is passed on as it is.
+  def assert_bill_still_exists!
+    bill_id = qbo_bill_id
+    return unless refresh_qbo_bill_mirror! == :bill_gone
+
+    raise BillGone, "QuickBooks bill #{bill_id} for MsoTrueup #{id} no longer exists: someone deleted it in " \
+                    "QuickBooks. This true-up is no longer billed or accepted and the month's run is marked " \
+                    "invalid. Run the month again; it will then need accepting again. No bill was written."
   end
 
   # Only before the FIRST bill. Afterwards the amount is in QuickBooks and

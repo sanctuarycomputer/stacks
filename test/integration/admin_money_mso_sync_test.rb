@@ -1,4 +1,5 @@
 require "test_helper"
+require "ostruct"
 
 class AdminMoneyMsoSyncTest < ActionDispatch::IntegrationTest
   include Devise::Test::IntegrationHelpers
@@ -34,6 +35,50 @@ class AdminMoneyMsoSyncTest < ActionDispatch::IntegrationTest
     assert_response :redirect
     assert_match(/MsoTrueup##{@trueup.id}/, flash[:alert])
     assert_match(/no vendor in garden3d, LLC's QuickBooks/, flash[:alert])
+    assert_nil @trueup.reload.qbo_bill_id
+  end
+
+  # A bill someone deleted in QuickBooks: never re-created at the old amount.
+  def bill_gone!
+    vendor = QboVendor.create!(qbo_account: @qa, qbo_id: "V-#{SecureRandom.hex(3)}", data: {})
+    ContributorQboVendor.create!(contributor: @trueup.contributor, qbo_account: @qa, qbo_vendor: vendor)
+    QboAccount.any_instance.stubs(:fetch_all_accounts).returns([OpenStruct.new(acct_num: "6200", id: 62)])
+    Qbo::BillRouter.any_instance.stubs(:enterprise_gl_map)
+      .returns(Qbo::BillRouter::CONCEPT_GL_BY_ENTERPRISE[:garden3d].merge(mso_compensation: "6200"))
+    QboBill.create!(qbo_account: @qa, qbo_id: "7001", qbo_vendor_id: vendor.qbo_id,
+                    data: { "balance" => "1200", "total_amt" => "1200" })
+    @trueup.update_columns(qbo_bill_id: "7001")
+    QboAccount.any_instance.stubs(:fetch_bill_by_id)
+      .raises(RuntimeError, "Object Not Found: Something you're trying to use has been made inactive")
+    Quickbooks::Service::Bill.any_instance.expects(:create).never
+    Quickbooks::Service::Bill.any_instance.expects(:update).never
+  end
+
+  test "syncing one billed true-up whose bill is gone from QuickBooks says so and creates nothing" do
+    bill_gone!
+    sign_in @admin
+
+    post admin_money_refresh_bill_path(qbo_account_id: @qa.id, host_class: "MsoTrueup", host_id: @trueup.id)
+
+    assert_response :redirect
+    assert_match(/Sync failed for MsoTrueup ##{@trueup.id}/, flash[:alert])
+    assert_match(/QuickBooks bill 7001 .*no longer exists/, flash[:alert])
+    assert_match(/run the month again/i, flash[:alert])
+    @trueup.reload
+    assert_nil @trueup.qbo_bill_id
+    assert_not @trueup.accepted?
+    assert @snapshot.reload.invalidated?
+  end
+
+  test "Sync all says a billed true-up's bill is gone, and creates nothing" do
+    bill_gone!
+    sign_in @admin
+
+    post admin_money_refresh_tab_path(qbo_account_id: @qa.id)
+
+    assert_response :redirect
+    assert_match(/MsoTrueup##{@trueup.id}/, flash[:alert])
+    assert_match(/no longer exists/, flash[:alert])
     assert_nil @trueup.reload.qbo_bill_id
   end
 
