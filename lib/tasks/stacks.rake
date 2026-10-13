@@ -433,8 +433,19 @@ namespace :stacks do
     rescue => e
       Rails.logger.error("[sync_notion] task cache clear failed: #{e.class}: #{e.message}")
     end
-    # Rides on this daily task so no scheduler entry is needed.
+    # Both ride on this daily task so no scheduler entry is needed. Each
+    # records its own SystemTask and rescues its own errors.
     Rake::Task["stacks:sync_twist_channel_access"].invoke
+    # The project log's sync joins the ride only once a first run has been
+    # made by hand (rake stacks:sync_notion_log, after reading the preview),
+    # so the first, 90-day run is never a surprise at night.
+    log_sync_started = begin
+      Stacks::Notion::FilteredSync.marks.any?
+    rescue => e
+      Rails.logger.error("[sync_notion] could not read the log sync's mark: #{e.class}: #{e.message}")
+      false
+    end
+    Rake::Task["stacks:sync_notion_log"].invoke if log_sync_started
   end
 
   desc "Record which project Twist channels the Stacksbot account can see"
@@ -447,6 +458,37 @@ namespace :stacks do
     rescue => e
       system_task.mark_as_error(e)
     end
+  end
+
+  # Stacksbot's Observations and Problems, for the project log
+  # (/admin/project_trackers/:id/log). Reads the rows edited since the last
+  # run, upserts them into notion_pages and never deletes a row it did not
+  # see. NOT the whole-database sync above, which must never be pointed at
+  # these two databases.
+  desc "Sync Stacksbot's Observations and Problems from Notion for the project log"
+  task :sync_notion_log => :environment do
+    system_task = SystemTask.create!(name: "stacks:sync_notion_log")
+    begin
+      stats = Stacks::Notion::FilteredSync.run!
+      Rails.logger.info("[sync_notion_log] #{stats.to_json}")
+      system_task.mark_as_success
+    rescue => e
+      system_task.mark_as_error(e)
+    end
+  end
+
+  # Runs the same queries and prints what a real run would create, update and
+  # recheck, and for each database the type Notion holds for every property
+  # the log reads ("missing" when it is not there). Writes nothing and records
+  # no SystemTask.
+  #   rake stacks:preview_notion_log_sync                  the next real run
+  #   rake "stacks:preview_notion_log_sync[incremental]"   the later runs' query, before there is a mark
+  desc "Count what stacks:sync_notion_log would pull, without writing ([backfill] or [incremental] to force a shape)"
+  task :preview_notion_log_sync, [:mode] => :environment do |_t, args|
+    mode = args[:mode].presence
+    raise ArgumentError, "mode must be backfill or incremental" unless [nil, "backfill", "incremental"].include?(mode)
+    stats = Stacks::Notion::FilteredSync.run!(dry_run: true, mode: mode&.to_sym)
+    puts JSON.pretty_generate(stats)
   end
 
   # One-off, for the deploy that moved a tracker from one Notion project to a
