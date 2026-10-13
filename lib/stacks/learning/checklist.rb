@@ -47,9 +47,12 @@ module Stacks
         end
 
         # Sticky: a ModuleCompletion row keeps a module done even if steps or
-        # questions are added to it later.
+        # questions are added to it later. A module with nothing in it is a
+        # half-authored draft, never done.
         def done?
-          completion.present? || (steps_done? && (!has_quiz? || passed?))
+          return true if completion.present?
+          return false if steps.empty? && !has_quiz?
+          steps_done? && (!has_quiz? || passed?)
         end
       end
 

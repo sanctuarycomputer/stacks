@@ -108,4 +108,54 @@ class StacksLearningChecklistTest < ActiveSupport::TestCase
     a = learning_assign!(learning_person!, learning_course!(modules: []))
     assert_not CL.new(a).all_done?
   end
+
+  test "a sign-off at the head of a later module waits for the earlier module" do
+    person = learning_person!
+    first = learning_module!(steps: ["read"])
+    last = learning_module!(steps: ["admin_sign_off", "read"])
+    a = learning_assign!(person, learning_course!(modules: [first, last]))
+
+    assert_empty CL.new(a).ready_sign_off_steps
+    complete_step!(person, first.module_steps.first)
+    assert_equal [last.module_steps.first], CL.new(a).ready_sign_off_steps
+  end
+
+  test "an earlier module with an unpassed quiz still blocks a later sign-off" do
+    person = learning_person!
+    first = learning_module!(steps: ["read"], questions: 1)
+    last = learning_module!(steps: ["admin_sign_off"])
+    a = learning_assign!(person, learning_course!(modules: [first, last]))
+    complete_step!(person, first.module_steps.first)
+
+    assert_empty CL.new(a).ready_sign_off_steps
+
+    QuizAttempt.create!(admin_user: person, learning_module: first, correct_count: 1, question_count: 1, passed: true)
+    assert_equal [last.module_steps.first], CL.new(a).ready_sign_off_steps
+  end
+
+  test "a sign-off added to a module the person already completed is not ready" do
+    person = learning_person!
+    mod = learning_module!(steps: ["read"])
+    a = learning_assign!(person, learning_course!(modules: [mod]))
+    complete_step!(person, mod.module_steps.first)
+    ModuleCompletion.create!(admin_user: person, learning_module: mod, completed_at: Time.current)
+    mod.module_steps.create!(position: 9, kind: "admin_sign_off", title: "added later")
+
+    assert_empty CL.new(a).ready_sign_off_steps
+  end
+
+  test "a module with neither steps nor questions is not done, but one with only questions can be" do
+    person = learning_person!
+    empty = learning_module!(steps: [])
+    quiz_only = learning_module!(steps: [], questions: 1)
+    a = learning_assign!(person, learning_course!(modules: [empty, quiz_only]))
+
+    assert_not CL.new(a).module_state(empty).done?
+    assert_not CL.new(a).module_state(quiz_only).done?
+    QuizAttempt.create!(admin_user: person, learning_module: quiz_only, correct_count: 1, question_count: 1, passed: true)
+    assert CL.new(a).module_state(quiz_only).done?
+
+    ModuleCompletion.create!(admin_user: person, learning_module: empty, completed_at: Time.current)
+    assert CL.new(a).module_state(empty).done?
+  end
 end

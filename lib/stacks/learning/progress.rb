@@ -5,23 +5,40 @@ module Stacks
     class Progress
       def self.refresh!(admin_user, context: nil)
         context ||= AutoChecks::Context.new
+        first_error = nil
         admin_user.course_assignments.outstanding.includes(:course).each do |assignment|
-          complete_auto_checks(assignment, admin_user, context)
+          refresh_assignment!(admin_user, assignment, context)
+        rescue => e
+          Rails.logger.error("Stacks::Learning::Progress.refresh! failed for CourseAssignment##{assignment.id}: #{e.class}: #{e.message}")
+          Sentry.capture_exception(e) if defined?(Sentry)
+          first_error ||= e
+        end
+        raise first_error if first_error
+      end
 
-          checklist = Checklist.new(assignment)
-          checklist.modules.each do |state|
-            next if state.completion.present? || !state.done?
+      def self.refresh_assignment!(admin_user, assignment, context)
+        complete_auto_checks(assignment, admin_user, context)
+
+        checklist = Checklist.new(assignment)
+        checklist.modules.each do |state|
+          next unless state.done?
+          if state.completion.nil?
             ensure_row(ModuleCompletion, admin_user_id: admin_user.id, learning_module_id: state.learning_module.id) do |row|
               row.completed_at = Time.current
             end
-            grant(admin_user, state.learning_module.qualification)
           end
+          # Granted even when the completion row already existed, so a grant
+          # that failed last time self-heals.
+          grant(admin_user, state.learning_module.qualification)
+        end
 
-          next unless checklist.all_done?
+        return unless checklist.all_done?
+        ActiveRecord::Base.transaction(requires_new: true) do
           assignment.update!(completed_at: Time.current)
           grant(admin_user, assignment.course.qualification)
         end
       end
+      private_class_method :refresh_assignment!
 
       def self.refresh_all!
         context = AutoChecks::Context.new

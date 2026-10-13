@@ -85,11 +85,12 @@ class StacksLearningProgressTest < ActiveSupport::TestCase
     person = learning_person!
     manual = QualificationGrant.create!(admin_user: person, qualification: qual, granted_at: 1.year.ago, granted_by: admin, note: "by hand")
     mod = learning_module!(steps: ["read"])
-    learning_assign!(person, learning_course!(modules: [mod], qualification: qual))
+    assignment = learning_assign!(person, learning_course!(modules: [mod], qualification: qual))
     complete_step!(person, mod.module_steps.first)
 
     P.refresh!(person)
 
+    assert assignment.reload.completed_at.present?
     assert_equal [manual.id], QualificationGrant.where(admin_user: person, qualification: qual).pluck(:id)
     assert_equal admin.id, manual.reload.granted_by_id
     assert_equal "by hand", manual.note
@@ -132,5 +133,53 @@ class StacksLearningProgressTest < ActiveSupport::TestCase
 
     assert_nothing_raised { P.refresh_all! }
     assert good_assignment.reload.completed_at.present?
+  end
+
+  test "a module completion without its badge grant is healed on the next refresh" do
+    badge = Qualification.create!(name: "Badge #{SecureRandom.hex(3)}", kind: "badge")
+    person = learning_person!
+    mod = learning_module!(steps: ["read"], qualification: badge)
+    learning_assign!(person, learning_course!(modules: [mod, learning_module!]))
+    complete_step!(person, mod.module_steps.first)
+    ModuleCompletion.create!(admin_user: person, learning_module: mod, completed_at: Time.current)
+    assert_equal 0, QualificationGrant.where(admin_user: person, qualification: badge).count
+
+    P.refresh!(person)
+
+    assert_equal 1, QualificationGrant.where(admin_user: person, qualification: badge).count
+  end
+
+  test "a failed course grant leaves the assignment outstanding and a later refresh finishes it" do
+    qual = Qualification.create!(name: "Qual #{SecureRandom.hex(3)}", kind: "qualification")
+    person = learning_person!
+    mod = learning_module!(steps: ["read"])
+    a = learning_assign!(person, learning_course!(modules: [mod], qualification: qual))
+    complete_step!(person, mod.module_steps.first)
+
+    QualificationGrant.stubs(:find_or_create_by!).raises(StandardError, "boom")
+    assert_raises(StandardError) { P.refresh!(person) }
+    assert_nil a.reload.completed_at
+
+    QualificationGrant.unstub(:find_or_create_by!)
+    P.refresh!(person)
+    assert a.reload.completed_at.present?
+    assert_equal 1, QualificationGrant.where(admin_user: person, qualification: qual).count
+  end
+
+  test "one assignment failing does not stop the person's other assignments" do
+    qual = Qualification.create!(name: "Qual #{SecureRandom.hex(3)}", kind: "qualification")
+    person = learning_person!
+    m1 = learning_module!(steps: ["read"])
+    m2 = learning_module!(steps: ["read"])
+    first = learning_assign!(person, learning_course!(modules: [m1], qualification: qual))
+    second = learning_assign!(person, learning_course!(modules: [m2]))
+    complete_step!(person, m1.module_steps.first)
+    complete_step!(person, m2.module_steps.first)
+
+    QualificationGrant.stubs(:find_or_create_by!).raises(StandardError, "boom")
+    assert_raises(StandardError) { P.refresh!(person) }
+
+    assert_nil first.reload.completed_at
+    assert second.reload.completed_at.present?
   end
 end
