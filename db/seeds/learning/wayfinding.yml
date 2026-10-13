@@ -1,0 +1,240 @@
+qualification:
+  name: "Onboarded to garden3d"
+  description: "Has signed the GCA, set up payment and core accounts, and read how garden3d pays, communicates and expects people to behave."
+course:
+  name: "Wayfinding"
+  slug: "wayfinding"
+  learner_title: "Getting on board at garden3d"
+  description: "Everything you need to get set up, get paid and find your way around garden3d. Work through it in your first two weeks."
+  grace_period_days: 14
+modules:
+  - slug: "paperwork-and-payment"
+    name: "Paperwork and payment"
+    summary: "You need a signed Governing Contractor Agreement (GCA) before you can be assigned roles or paid, and a linked payment profile so we can send you money."
+    notion_url: "https://app.notion.com/p/2352c13ed1754e9db815dc964e32cd06"
+    badge: null
+    steps:
+      - kind: admin_sign_off
+        title: "Your signed GCA is on file"
+        notion_url: null
+      - kind: auto_check
+        title: "Link your payment profile (QuickBooks Bill Pay or Deel)"
+        auto_check_key: payment_profile
+        notion_url: "https://app.notion.com/p/225131fea2c78007ad7ef57b41c7a60f"
+    questions: []
+
+  - slug: "your-accounts"
+    name: "Your accounts"
+    summary: "Get into the software we use every day. Use **Login with Google** with your company email address; if you get stuck, email `admin@garden3d.net`."
+    notion_url: "https://app.notion.com/p/2352c13ed1754e9db815dc964e32cd06"
+    badge: null
+    steps:
+      - kind: auto_check
+        title: "Join Harvest Forecast with your company email"
+        auto_check_key: forecast_account
+        notion_url: "https://app.notion.com/p/2352c13ed1754e9db815dc964e32cd06"
+      - kind: do
+        title: "Sign in to Twist with Google"
+        notion_url: "https://app.notion.com/p/2352c13ed1754e9db815dc964e32cd06"
+      - kind: do
+        title: "Set up 1Password"
+        notion_url: "https://app.notion.com/p/2352c13ed1754e9db815dc964e32cd06"
+      - kind: do
+        title: "Set up your Notion task board"
+        notion_url: "https://app.notion.com/p/287131fea2c780c7ababe9a19a713fca"
+    questions: []
+
+  - slug: "how-you-get-paid"
+    name: "How you get paid"
+    summary: "How roles are compensated, why you are paid when the client pays, how to record your hours in Harvest Forecast, and how to accept and draw a payout in Stacks."
+    notion_url: "https://app.notion.com/p/205131fea2c780878f9aca942d7afb5c"
+    badge: "How you get paid"
+    steps:
+      - kind: read
+        title: "Read Roles and Compensation"
+        notion_url: "https://app.notion.com/p/205131fea2c780878f9aca942d7afb5c"
+      - kind: read
+        title: "Read how pay-when-paid works"
+        notion_url: "https://app.notion.com/p/2352c13ed1754e9db815dc964e32cd06"
+      - kind: read
+        title: "Read how to record your working time"
+        notion_url: "https://app.notion.com/p/ff971848f66d40cf818b930f05cfc533"
+      - kind: read
+        title: "Read how to draw payment under the New Deal"
+        notion_url: "https://app.notion.com/p/225131fea2c78007ad7ef57b41c7a60f"
+    questions:
+      - prompt: "As an Individual Contributor, what is the most you can be paid for your work on a client engagement?"
+        choices:
+          - "5% of net amounts billed to the client for the whole engagement"
+          - "8% of net amounts billed to the client for the first year"
+          - "54% of net amounts billed to the client specifically for your work"
+          - "100% of your hourly rate, regardless of what the client is billed"
+        correct_index: 2
+        explanation: "Roles and Compensation: the Individual Contributor is paid a maximum of 54% of net amounts billed to the client specifically from their work. The Account Lead is paid 8% and the Project Lead 5%."
+      - prompt: "Under pay when paid, when is your compensation for a pay period released?"
+        choices:
+          - "On the earlier of: the client paying the corresponding invoice, or 90 days after your submitted invoice"
+          - "On the later of: the client paying the corresponding invoice, or 90 days after your submitted invoice"
+          - "Always 15 days after the client is invoiced, whether or not they have paid"
+          - "Only once the client pays, however long that takes"
+        correct_index: 0
+        explanation: "Wayfinding, 'Pay when paid': compensation is released on the earlier of (a) the client paying the corresponding invoice or (b) 90 days after your submitted invoice."
+      - prompt: "You forget to record some hours until after the client's invoice has been sent. What happens to those hours?"
+        choices:
+          - "The client's invoice is reissued with the extra hours added"
+          - "They are written off and cannot be paid"
+          - "They are paid out of the Account Lead's percentage"
+          - "They are moved to the following month and paid in the following pay cycle"
+        correct_index: 3
+        explanation: "Roles and Compensation FAQ: clients do not like invoices being increased after they are sent, so hours entered late are moved to the following month and paid in the following pay cycle."
+      - prompt: "The client has paid and you have accepted your payout, but the Payments Team still cannot process your payment. According to the payment guide, what blocks them?"
+        choices:
+          - "Your Human Operating Manual is missing a bio"
+          - "You have pending tasks in Stacks that you have not completed"
+          - "You have not attended that month's retro"
+          - "Your Project Lead has not approved your timesheet"
+        correct_index: 1
+        explanation: "How to draw payment under the New Deal: the Payments Team is blocked from processing your payment until you complete any pending tasks in Stacks."
+      - prompt: "You are booked on the same client project for the next three months. How should you handle your hours in Harvest Forecast?"
+        choices:
+          - "Pre-fill all three months now and correct them if plans change"
+          - "Pre-fill one month ahead at a time"
+          - "Do not pre-record future hours; Forecast must show what actually happened"
+          - "Leave Forecast empty and send your Account Lead a total at month end"
+        correct_index: 2
+        explanation: "How to Record your Working Time: please do not pre-record future hours in Harvest Forecast. It needs to represent exactly what actually happened, because invoices are generated from it."
+
+  - slug: "policies"
+    name: "Policies"
+    summary: "Under your GCA you are expected to have read and to uphold these four policies. Failing to do so may result in Termination for Cause."
+    notion_url: "https://app.notion.com/p/2352c13ed1754e9db815dc964e32cd06"
+    badge: "Policies"
+    steps:
+      - kind: read
+        title: "Read: Code of Conduct"
+        notion_url: "https://app.notion.com/p/c3a8ded07f4b40d28aed7c54babc1d8d"
+      - kind: read
+        title: "Read: Policy on External Projects, Conflicts of Interest, and Confidentiality"
+        notion_url: "https://app.notion.com/p/087c0b5a433f4f71882cf64d11720c50"
+      - kind: read
+        title: "Read: How We Communicate"
+        notion_url: "https://app.notion.com/p/4bad966bdf6041278cb2da735f520a10"
+      - kind: read
+        title: "Read: What an inclusive meeting looks like"
+        notion_url: "https://app.notion.com/p/f8dc4e0221044d6b978df11afb89846e"
+    questions:
+      - prompt: "You witness something you believe violated the Code of Conduct and want to report it on behalf of the person affected. What should you do first?"
+        choices:
+          - "Post about it in a public Twist thread so there is a record"
+          - "Get that person's consent to report the incident"
+          - "Report it straight away without telling them, to protect them"
+          - "Confront the person responsible yourself before telling anyone"
+        correct_index: 1
+        explanation: "Code of Conduct, 'Reporting & Enforcement': if you want to report on behalf of another individual, respect their privacy by getting their consent to report the incident."
+      - prompt: "How do you decide whether something about garden3d's work is confidential?"
+        choices:
+          - "Only work covered by a separate client NDA is confidential"
+          - "Work is confidential until the project has been invoiced"
+          - "Only new business leads are confidential; project work is not"
+          - "If it is not public on the internet, treat it as confidential"
+        correct_index: 3
+        explanation: "Policy on External Projects, Conflicts of Interest, and Confidentiality: 'If it's not public on the internet, it should be considered confidential.' This includes leads, unlaunched projects, strategies, design concepts and development processes."
+      - prompt: "You suspect your freelance work might create a conflict of interest with garden3d. What does the policy tell you to do?"
+        choices:
+          - "Email the associates at associates@garden3d.net immediately"
+          - "Raise it at the next monthly retro"
+          - "Carry on unless a client complains"
+          - "Finish the freelance work first, then disclose it"
+        correct_index: 0
+        explanation: "Policy on External Projects, Conflicts of Interest, and Confidentiality, 'What to Do If You Suspect a Conflict': bring it to the attention of the associates immediately by emailing associates@garden3d.net."
+      - prompt: "You have a question for a teammate about how part of a project works. Where does How We Communicate say it should usually go?"
+        choices:
+          - "A Twist DM, so you do not notify other people"
+          - "An internal email, so there is a paper trail"
+          - "A Twist thread, so the answer is searchable by everyone"
+          - "A quick video call, so it is resolved in real time"
+        correct_index: 2
+        explanation: "How We Communicate: almost any question belongs in a Twist thread. You should almost never use DMs or internal emails; DMs are a last resort for logistics and minutia."
+      - prompt: "What is the camera default for meetings at garden3d?"
+        choices:
+          - "Camera on for every meeting"
+          - "Camera off for every meeting, including with clients"
+          - "Camera on internally, camera off with clients"
+          - "Camera off internally, camera on for client-facing meetings"
+        correct_index: 3
+        explanation: "What an inclusive meeting looks like: camera-off is assumed as the default, but the default for client-facing meetings should always be having your camera on, as a way to show hospitality."
+
+  - slug: "how-we-communicate"
+    name: "How we communicate"
+    summary: "Who to go to for what, which company meetings exist, how we expect people to show up for each other, and how to introduce yourself to the team."
+    notion_url: "https://app.notion.com/p/2352c13ed1754e9db815dc964e32cd06"
+    badge: "How we communicate"
+    steps:
+      - kind: read
+        title: "Read who to ask for what"
+        notion_url: "https://app.notion.com/p/2352c13ed1754e9db815dc964e32cd06"
+      - kind: read
+        title: "Read about our company-wide meetings"
+        notion_url: "https://app.notion.com/p/2352c13ed1754e9db815dc964e32cd06"
+      - kind: read
+        title: "Read How to Be"
+        notion_url: "https://app.notion.com/p/2352c13ed1754e9db815dc964e32cd06"
+      - kind: do
+        title: "Introduce yourself in Twist"
+        notion_url: "https://app.notion.com/p/2352c13ed1754e9db815dc964e32cd06"
+      - kind: auto_check
+        title: "Add your Human Operating Manual"
+        auto_check_key: human_operating_manual
+        notion_url: "https://app.notion.com/p/5d59dcd95bfb458a9747ce7d6ce9e009"
+    questions:
+      - prompt: "You have a question about craft or process on your project. Who does Wayfinding say to ask?"
+        choices:
+          - "Your Account Lead"
+          - "Your Project Lead"
+          - "The contact for payments and software access"
+          - "admin@garden3d.net"
+        correct_index: 1
+        explanation: "Wayfinding, 'Who to ask': project-related questions, craft and process go to the Project Lead. Client and account questions (scope, hiring, team underperformance) go to the Account Lead."
+      - prompt: "You have a general question about how to navigate the organization and do not know who owns it. What is your first port of call?"
+        choices:
+          - "DM Christian Perez on Twist"
+          - "Email your client contact"
+          - "Wait for the Quarterly Business Review"
+          - "Ask your Account Lead to raise it at the Business Meeting"
+        correct_index: 0
+        explanation: "Wayfinding, 'Who to ask': for general questions about navigating the organization, DM Christian on Twist as your first port of call. He is also the contact for payments, Wayfinding, software access and GCA contracts."
+      - prompt: "Which company meeting is mainly for Account Leads, Project Leads and Operations to sync on new business and current projects?"
+        choices:
+          - "The Monthly Retro"
+          - "The Quarterly Business Review"
+          - "The daily standup"
+          - "The bi-weekly Business Meeting"
+        correct_index: 3
+        explanation: "Wayfinding, 'Company-wide Meetings': the bi-weekly Business Meeting is mainly for Account Leads, Project Leads and Operations. The Monthly Retro and the Quarterly Business Review are optional and open to everyone."
+      - prompt: "You are about to do a task and are not sure you have permission. What does How to Be ask you to do?"
+        choices:
+          - "Wait until your Project Lead explicitly approves it"
+          - "Do it quietly and mention it only if someone asks"
+          - "Tell your teammates what you are going to do, then do it"
+          - "Bring it to the next Monthly Retro for a decision"
+        correct_index: 2
+        explanation: "Wayfinding, 'How to Be': 'Don't ask for permission, radiate intent.' If you are unsure, let your teammates know 'I'm going to do this task' so they can help you."
+      - prompt: "You are going to travel and work from a different timezone for a few weeks. What does How to Be ask you to do?"
+        choices:
+          - "Nothing, as long as you still log 8 hours a day"
+          - "Update your timezone in the Human Operating Manuals and in Google Calendar"
+          - "Mark the whole period as Time Off in Harvest Forecast"
+          - "Hand your role off until you are back"
+        correct_index: 1
+        explanation: "Wayfinding, 'How to Be', 'Mindful about timezone': update your timezone on Timezones & Human Operating Manuals and in Google Calendar when you travel and work from a different timezone."
+
+  - slug: "onboarding-sign-off"
+    name: "Onboarding sign-off"
+    summary: "The last step is ours: an admin checks everything above and confirms you are set up."
+    notion_url: null
+    badge: null
+    steps:
+      - kind: admin_sign_off
+        title: "An admin confirms you're all set"
+        notion_url: null
+    questions: []
