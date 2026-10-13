@@ -1,5 +1,11 @@
 # Project Log Page Implementation Plan
 
+> **Superseded in part, 2026-10-13.** The three views, the `escalated` flag and `escalating?` described
+> below were replaced after review: the page is now one page (Flags, Other open problems, Wins, All
+> Observations), and what is a flag is read from Notion's `Flag` formula. The current design is Part 5
+> of `docs/superpowers/specs/2026-10-12-project-log-design.md`; where this plan differs, the spec and
+> the code are right.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Each project tracker gets a log at `/admin/project_trackers/:id/log` of what Stacksbot observed about it, so risk can be read off Stacks without asking anyone.

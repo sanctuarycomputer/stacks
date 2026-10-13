@@ -35,8 +35,8 @@ projects can be read off Stacks without asking anyone.
 2. The tracker's Notion Project page is chosen from a dropdown, and is the join key.
 3. An Observation reaches a tracker through its Project. No second attribution path.
 4. No bespoke observations table. Stacks syncs the Notion tables and filters.
-5. Observations are the first step of the loop, so the log shows a gated subset by default. Showing
-   everything is a view, and not the default.
+5. Observations are the first step of the loop, so the log leads with the few that need someone: its
+   flags (Part 5). Everything else is further down the same page.
 6. The log lives at `/admin/project_trackers/:id/log`.
 
 ## Who does what
@@ -209,27 +209,72 @@ Where it differs from the ship matcher, and why:
 ## Part 5. The log page
 
 `ActiveAdmin.register_page "Log"`, `belongs_to :project_tracker`, at
-`/admin/project_trackers/:id/log`. Built from the tracker page's dashboard modules. The view is a
-`?view=` parameter, shown as tabs.
+`/admin/project_trackers/:id/log`. Built from the tracker page's dashboard modules. One page with no
+view tabs (reworked 2026-10-13; an old `?view=` link still loads it and the parameter is ignored).
 
-| View | Shows | Default |
-|---|---|---|
-| Needs attention | Open Problems for the project, then Negative observations from the last 30 days, the escalated ones first | yes |
-| Highlights | Every gated observation, all three valences, newest first, grouped by week | |
-| Everything | Every observation synced for the project, gated or not, including dismissed | |
+### What a flag is
 
-- **Gate** (Needs attention and Highlights): the row has a valence and its status is not Dismissed.
-  Stacks applies no other test; what earns a valence is Stacksbot's call (Part 3).
-- **A row**: valence pill (green Positive, grey Neutral or none, orange Negative, red when escalated), the observation's name
-  and text, source and date, a link to the source, and the Problem it was folded into when there is
-  one. Model-written text is escaped.
-- **Filters**: source (Twist, Meet, mail, Notion) and valence, as chips, combinable with any view.
+Notion decides, not Stacks. Problems and Observations each carry a `Flag` formula whose result is
+text: the reason, in a sentence, when the page is a flag, and nothing when it is not.
+
+- `flag?` is true when the stored `Flag` text is not blank, and `flag_reason` is that text
+  (`Stacks::Notion::Flag`, included by both wrappers). A boolean formula or a checkbox named `Flag` is
+  read as yes or no too, with no reason text.
+- What Notion states wins outright, yes or no. Only a page whose stored data has no `Flag` property
+  (it was synced before the property existed) falls back to an interim rule, `interim_flag?` on each
+  wrapper: a Problem that is open, Critical or High, and not Owned or Mitigating; an Observation that
+  is Negative, High salience and not Dismissed. The page says so in one note when any row on it used
+  the interim rule. Delete the interim rule once every stored page carries `Flag`.
+- The SQL the counts use reads the same property in the same order (`Stacks::ProjectLog.flag_sql`);
+  a test holds it to the wrappers row by row.
+
+Stacks adds view logic only, in one place (`Stacks::ProjectLog.flags_for`):
+
+1. A **problem flag** is a flagged Problem under one of the tracker's Notion projects that is not
+   Resolved or Dismissed and was last seen within 30 days (`FLAG_WINDOW`; Last Seen, else First Seen,
+   else the stored row's date; a problem with no date still counts).
+2. An **observation flag** is a flagged Observation under one of the tracker's Notion projects that is
+   not Dismissed, is dated within 30 days, and is not tied to a problem flag of (1) from either side
+   (its `Problems` relation or the problem's `Source Observations`). A tied observation is shown under
+   that flag as evidence, so nothing is counted twice.
+
+A tracker's flag count is (1) + (2). Nothing in Stacks clears a flag. It goes when Notion changes and
+the next sync lands: Notion stops flagging it (today that means the problem is picked up), the
+problem is Resolved or Dismissed, the observation is Dismissed or folded into a problem flag, or it
+has not come up for 30 days.
+
+**After changing the `Flag` formula in Notion, run one full sync:**
+`rake "stacks:sync_notion_log[full]"`. A formula's new result is not an edit of the page, so the
+nightly run, which asks only for pages edited since the last one, does not see it. The full run
+re-reads every Problem and the last 90 days of Observations.
+
+### The page, top to bottom
+
+1. **Flags**, with the count, and one line on how a flag clears. Problem flags first (worst severity,
+   then most recently seen), then observation flags (newest first). A row has a red "Flag" pill, the
+   title, why it is a flag (Notion's sentence, then what Stacks holds about when it came up: "Seen 4
+   times, last on Oct 9, 2026." or "Seen in Twist on Oct 9, 2026."), a next step (the Problem's
+   `Proposed Action`, else a fixed line), up to five tied observations, and a link to Notion.
+2. **Other open problems**, only when there are any: open Problems that are not flags. Severity and
+   ownership in words, and "Not a flag: ..." when Stacks can state the reason (not seen for 30 days,
+   or, under the interim rule, someone has it).
+3. **Wins**, with the count: Positive observations of the last 30 days that are not Dismissed, newest
+   first, 20 shown, with a link to all of them.
+4. **All Observations**: every observation synced for the project, dismissed ones included, newest
+   first, 200 a page. Source and valence filters and Newer/Older paging apply to this section only and
+   their links land on it (`#all-observations`). The pill is the valence (green Positive, grey
+   Neutral or none, orange Negative); a row that is a flag, or evidence of one, also says "Flag".
+
+- Valence is Stacksbot's call (Part 3), with the interim Type mapping until it writes Valence.
+- Everything from Notion is escaped, and only an http(s) address is ever linked.
 - **Empty states** say why: no Notion project chosen, no Twist channel, Stacksbot not in the channel,
   or nothing seen yet. Each links to the fix.
-- **Tracker page**: one module beside Weekly Ships with the count of open Problems, the count of
-  Negative observations in the last 30 days (and how many are escalated), the latest three rows and "Open the log →".
-- **Trackers index**: out of scope for this pass. A risk column is the obvious next step once the log
-  has earned trust.
+- **Tracker page**: a "Flags" module above Weekly Ships with the flag count, the wins of the last 30
+  days, the first three flags with why, and "Open the log →".
+- **Trackers index**: a "Flags" column after "Notion": the count as a red pill linking to the log,
+  blank when zero. `Stacks::ProjectLog.flag_counts(trackers)` counts the whole table in four queries
+  from the same `flags_for`, so it equals what each log page lists. Blank, never an error, before the
+  first sync or when the rows cannot be read.
 
 ## Order of work
 
