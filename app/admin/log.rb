@@ -1,7 +1,8 @@
 # The project log: what Stacksbot has seen about a project, at
-# /admin/project_trackers/:id/log. Stacks only filters and draws rows the
-# filtered Notion sync stored (Stacks::ProjectLog); every judgement in them is
-# Stacksbot's. Read-only: triage stays in Notion.
+# /admin/project_trackers/:id/log. One page: Flags, Other open problems, Wins,
+# All Observations. Stacks only filters and draws rows the filtered Notion
+# sync stored (Stacks::ProjectLog); every judgement in them, what is a flag
+# included, is Notion's. Read-only: triage stays in Notion.
 #
 # Who may read it: whoever may read the tracker. ActiveAdmin checks the page
 # itself first (AdminAuthorization lets admins, leads and anyone holding a
@@ -23,12 +24,13 @@ ActiveAdmin.register_page "Log" do
       @log_tracker
     end
 
-    # Only these four parameters are read, and each is whitelisted inside
-    # Stacks::ProjectLog. A registered page runs no Ransack, so ?q and ?order
-    # do nothing here.
+    # Only these three parameters are read, and each is whitelisted inside
+    # Stacks::ProjectLog. They filter and page All Observations; the flags and
+    # wins above it do not move. A registered page runs no Ransack, so ?q and
+    # ?order do nothing here, and neither does the ?view of an old link.
     def project_log
       @project_log ||= Stacks::ProjectLog.new(
-        @log_tracker, view: params[:view], source: params[:source], valence: params[:valence], page: params[:page]
+        @log_tracker, source: params[:source], valence: params[:valence], page: params[:page]
       )
     end
 

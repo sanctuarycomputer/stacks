@@ -116,6 +116,14 @@ ActiveAdmin.register ProjectTracker do
       @notion_project_pages_by_notion_id || {}
     end
 
+    # How many flags each rendered tracker's log shows (Stacks::ProjectLog),
+    # by tracker id, counted once for the whole table. A tracker with none is
+    # absent, and so is every tracker when the log's rows cannot be read.
+    helper_method :log_flag_counts_by_tracker_id
+    def log_flag_counts_by_tracker_id
+      @log_flag_counts_by_tracker_id || {}
+    end
+
     def collection
       c = super
       if action_name == "index" && !@_preloaded_for_render
@@ -125,6 +133,15 @@ ActiveAdmin.register ProjectTracker do
         notion_ids = arr.flat_map { |pt| Array(pt.notion_project_ids) }.uniq
         @notion_project_pages_by_notion_id =
           notion_ids.empty? ? {} : NotionPage.projects.where(notion_id: notion_ids).index_by(&:notion_id)
+        # The index is worth more than its newest column: when the log's rows
+        # cannot be read (the sync's columns are missing, say) it stays blank.
+        @log_flag_counts_by_tracker_id =
+          begin
+            Stacks::ProjectLog.flag_counts(arr)
+          rescue StandardError => e
+            Rails.logger.error("[project log] flag counts could not be read: #{e.class}: #{e.message}")
+            {}
+          end
         @_preloaded_for_render = true
         # Group by account lead on the Active and Dormant tabs (and on the
         # default unfiltered view). Within each lead, fall back to the
@@ -348,6 +365,14 @@ ActiveAdmin.register ProjectTracker do
       end
     end
 
+    # How many flags the project's log shows right now, linking to it. What
+    # is a flag is Notion's call (Stacks::ProjectLog). Blank when there are none.
+    column "Flags" do |pt|
+      count = log_flag_counts_by_tracker_id[pt.id].to_i
+      a(count.to_s, href: admin_project_tracker_log_path(pt), class: "pill error log-flag-count", style: "text-decoration: none;",
+        title: "#{count} #{count == 1 ? 'flag' : 'flags'} in the project log") if count > 0
+    end
+
     actions
   end
 
@@ -554,8 +579,8 @@ ActiveAdmin.register ProjectTracker do
       burnup_data: burnup_data
     })
 
-    # What Stacksbot has filed under this project's Notion projects: counts,
-    # the first rows, and the way into the log (app/admin/log.rb). Anyone who
+    # What Stacksbot has filed under this project's Notion projects: the flag
+    # and win counts, the first flags, and the way into the log (app/admin/log.rb). Anyone who
     # can open this page can read the tracker, which is the log's own rule.
     # The module must never take this page down with it: when its rows cannot
     # be read (the sync's columns are missing, say) it says so in one line.
