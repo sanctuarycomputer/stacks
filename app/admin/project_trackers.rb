@@ -498,6 +498,11 @@ ActiveAdmin.register ProjectTracker do
       burnup_data: burnup_data
     })
 
+    # What Stacksbot has filed under this project's Notion projects: counts,
+    # the first rows, and the way into the log (app/admin/log.rb). Anyone who
+    # can open this page can read the tracker, which is the log's own rule.
+    render(partial: "admin/log/module", locals: { tracker: resource, summary: Stacks::ProjectLog.summary(resource) })
+
     panel "Weekly Ships" do
       ships = resource.weekly_ships.includes(:document).order(sent_at: :desc).limit(20)
       if ships.any?

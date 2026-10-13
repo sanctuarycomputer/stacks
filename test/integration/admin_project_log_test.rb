@@ -278,4 +278,66 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     get admin_project_tracker_log_path(@tracker)
     assert_response :redirect
   end
+
+  def log_module
+    page.at_css("#project_log_module")
+  end
+
+  test "the tracker page has a module with the counts, the first three rows and a way in" do
+    problem!(name: "Timeline slipping", severity: "High", status: "Open", project_ids: [@project])
+    problem!(name: "Closed out", severity: "High", status: "Resolved", project_ids: [@project])
+    rows = [obs!(name: "n1", valence: "Negative", salience: "High", observed_at: 1.hour.ago),
+            obs!(name: "n2", valence: "Negative", salience: "Low", observed_at: 2.hours.ago),
+            obs!(name: "n3", valence: "Negative", salience: "Low", observed_at: 3.hours.ago),
+            obs!(name: "n4", valence: "Negative", salience: "Low", observed_at: 4.hours.ago)]
+    obs!(name: "a win", valence: "Positive")
+    obs!(name: "old news", valence: "Negative", observed_at: 40.days.ago)
+
+    get admin_project_tracker_path(@tracker)
+    assert_response :success
+    assert log_module, "expected the log module on the tracker page"
+    facts = log_module.css(".factoid").map { |f| f.text.squish }
+    assert_equal ["1 Open problems", "4 Negative in the last 30 days, 1 escalated"], facts
+    assert_equal rows.first(3).map { |r| "log_row_#{r.notion_id}" }, log_module.css("tr[id^='log_row_']").map { |tr| tr["id"] }
+    assert_equal admin_project_tracker_log_path(@tracker), log_module.css("a").find { |a| a.text.strip == "Open the log →" }["href"]
+    # One parse: nodes of two documents cannot be compared for order.
+    doc = page
+    ships = doc.css(".panel").find { |panel| panel.at_css("h3")&.text&.strip == "Weekly Ships" }
+    assert ships, "expected the Weekly Ships panel"
+    assert_equal(-1, doc.at_css("#project_log_module") <=> ships, "the module sits above the Weekly Ships panel")
+  end
+
+  test "the module on a tracker with no Notion project says why, and the page still renders" do
+    bare, = log_tracker!(name: "Unlinked", project: nil)
+    get admin_project_tracker_path(bare)
+    assert_response :success
+    assert_includes log_module.text, "no Notion project chosen"
+    assert_empty log_module.css(".factoid")
+    assert log_module.css("a").any? { |a| a["href"] == admin_project_tracker_log_path(bare) }
+  end
+
+  test "the module is useful before Valence exists" do
+    obs!(name: "Budget at risk", valence: nil, valence_property: false, type: "Risk")
+    get admin_project_tracker_path(@tracker)
+    assert_response :success
+    assert_equal "1 Negative in the last 30 days, 0 escalated", log_module.css(".factoid").last.text.squish
+  end
+
+  test "the module with rows but nothing needing attention shows zeroes, not an error" do
+    obs!(name: "Routine note", valence: nil, type: "FYI")
+    get admin_project_tracker_path(@tracker)
+    assert_response :success
+    assert_equal ["0 Open problems", "0 Negative in the last 30 days, 0 escalated"], log_module.css(".factoid").map { |f| f.text.squish }
+    assert_empty log_module.css("tr[id^='log_row_']")
+  end
+
+  test "a scoped grantee sees the module on their tracker" do
+    obs!(name: "Mine to read", valence: "Negative")
+    trainee = scoped_grantee!
+    sign_out @admin
+    sign_in trainee
+    get admin_project_tracker_path(@tracker)
+    assert_response :success
+    assert_includes log_module.text, "Mine to read"
+  end
 end

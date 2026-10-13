@@ -1,0 +1,40 @@
+<%# The project log's module on the Project Tracker page: the counts and first
+    rows of its "Needs attention" view (Stacks::ProjectLog.summary). %>
+<div class="dashboard-modules table index_table index" id="project_log_module">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>What Stacksbot has seen</p>
+      <%= link_to "Open the log →", admin_project_tracker_log_path(tracker) %>
+    </div>
+    <% if summary[:empty_reason] %>
+      <div class="module-body">
+        <%= render "admin/log/empty", tracker: tracker, reason: summary[:empty_reason] %>
+      </div>
+    <% else %>
+      <%# height: the factoid body is sized for a module with no header. %>
+      <div class="module-body factoid-parent" style="flex-direction: row; justify-content: space-around; height: auto; padding: 30px 20px;">
+        <div class="factoid">
+          <h2 class="<%= "color-red" if summary[:open_problems] > 0 %>"><%= summary[:open_problems] %></h2>
+          <p>Open problems</p>
+        </div>
+        <div class="factoid">
+          <h2 class="<%= "color-orange" if summary[:negatives] > 0 %>"><%= summary[:negatives] %></h2>
+          <p>Negative in the last <%= Stacks::ProjectLog::ATTENTION_WINDOW.in_days.to_i %> days, <%= summary[:escalated] %> escalated</p>
+        </div>
+      </div>
+    <% end %>
+  </div>
+
+  <% if summary[:latest].any? %>
+    <div class="dashboard-module">
+      <div class="module-header">
+        <p>Needs attention</p>
+      </div>
+      <div class="module-body">
+        <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+          <tbody><%= render partial: "admin/log/row", collection: summary[:latest], as: :row %></tbody>
+        </table>
+      </div>
+    </div>
+  <% end %>
+</div>
