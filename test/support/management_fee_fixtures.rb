@@ -13,11 +13,11 @@ module ManagementFeeFixtures
     enterprises(:garden3d)
   end
 
-  # The database between a deploy and the hand-run migration: the two
-  # enterprises columns are not there yet. (The test database always has
+  # The database between a deploy and the hand-run migration: the
+  # enterprises column is not there yet. (The test database always has
   # them, so every pre-migration guard needs this to be exercised at all.)
   def stub_management_fee_columns_missing
-    columns = Enterprise.column_names - %w[management_fee_payer g3d_qbo_customer_id]
+    columns = Enterprise.column_names - %w[g3d_qbo_customer_id]
     Enterprise.stubs(:column_names).returns(columns)
   end
 
@@ -31,10 +31,11 @@ module ManagementFeeFixtures
     InvoicePass.create!(start_of_month: month, enterprise: garden3d, data: {})
   end
 
-  # A management fee payer with one internal Forecast client per forecast id.
-  def make_payer(name, customer_id: nil, forecast_ids: [rand(1_000_000..2_000_000_000)])
+  # An enterprise garden3d bills -- it has a customer id in garden3d's
+  # QuickBooks -- with one internal Forecast client per forecast id.
+  def make_payer(name, customer_id: rand(100..999_999).to_s, forecast_ids: [rand(1_000_000..2_000_000_000)])
     payer = Enterprise.find_by(name: name) || Enterprise.create!(name: name)
-    payer.update!(management_fee_payer: true, g3d_qbo_customer_id: customer_id)
+    payer.update!(g3d_qbo_customer_id: customer_id)
     forecast_ids.each do |forecast_id|
       ForecastClient.create!(forecast_id: forecast_id, name: "#{name} internal #{forecast_id}")
       EnterpriseForecastClient.create!(enterprise: payer, forecast_client_id: forecast_id)

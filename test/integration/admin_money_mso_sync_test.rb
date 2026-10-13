@@ -86,7 +86,7 @@ class AdminMoneyMsoSyncTest < ActionDispatch::IntegrationTest
     sign_in @admin
     assert @snapshot.fee_collected?
 
-    post refresh_management_fee_invoices_admin_invoice_pass_path(@pass)
+    post refresh_intercompany_invoices_admin_invoice_pass_path(@pass)
 
     assert_response :redirect
     assert_not @snapshot.reload.fee_collected?

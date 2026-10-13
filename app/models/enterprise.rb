@@ -21,18 +21,18 @@ class Enterprise < ApplicationRecord
   accepts_nested_attributes_for :qbo_account, allow_destroy: true
   VERTICAL_MATCHER = /\[(.+)\](.*)/
 
-  scope :management_fee_payers, -> { where(management_fee_payer: true) }
+  # The enterprises garden3d invoices each month: every other enterprise with
+  # a customer record in garden3d's QuickBooks, whose id is stored here.
+  # (Guarded for the gap between a deploy and its hand-run migration.)
+  scope :billed_by_garden3d, -> {
+    next none unless column_names.include?("g3d_qbo_customer_id")
+    where.not(name: GARDEN3D_NAME).where.not(g3d_qbo_customer_id: [nil, ""])
+  }
 
-  # garden3d issues the management fee; it can never also pay it.
-  #
-  # The has_attribute? guard matters: migrations are run by hand on production,
-  # after the deploy. Until the column exists this validation must not run, or
-  # every Enterprise save -- including the nightly generate_snapshot! -- raises.
-  validate :garden3d_is_never_a_management_fee_payer, if: -> { has_attribute?(:management_fee_payer) }
-
-  def garden3d_is_never_a_management_fee_payer
-    return unless is_garden3d? && management_fee_payer?
-    errors.add(:management_fee_payer, "cannot be set on #{GARDEN3D_NAME}: it issues the management fee")
+  # Lowest Forecast id first, and queried fresh, so the choice is the same on
+  # every run and never comes from a stale association cache.
+  def internal_forecast_client_ids
+    EnterpriseForecastClient.where(enterprise_id: id).order(:forecast_client_id).pluck(:forecast_client_id)
   end
 
   # When a new enterprise is created, every existing contributor immediately
@@ -96,10 +96,10 @@ class Enterprise < ApplicationRecord
     # run. Nothing here runs a month, pays anyone, or creates, changes or
     # deletes a QuickBooks bill.
 
-    # Database only: garden3d's pass and trackers for last month, and for any
-    # earlier month since the start that has none. Nothing here may write to
-    # QuickBooks; an admin creates the drafts by hand.
-    garden3d_nightly_step("ensure_previous_month") { Mso::ManagementFeeInvoices.ensure_previous_month! }
+    # Database only: garden3d's invoice pass and trackers for each month it
+    # has none. Nothing here may write to QuickBooks; an admin makes the
+    # invoices by hand.
+    garden3d_nightly_step("invoice_passes") { InvoicePass.make_intercompany_passes! }
     # Database only: a snapshot whose fee income no longer matches the stored
     # P&L is invalidated, so nothing computed from the old fee stays payable.
     garden3d_nightly_step("fee_check") { Mso::MonthlyRun.invalidate_snapshots_whose_fee_moved! }

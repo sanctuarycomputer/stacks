@@ -30,7 +30,7 @@ class Mso::MonthlyRunTest < ActiveSupport::TestCase
     @principal_role = mso_role(@principal, tier: :principal, title: "Founder")
 
     # The one QuickBooks-touching call a run makes. Everything else raises.
-    Mso::ManagementFeeInvoices.stubs(:collected?).returns(true)
+    Mso::IntercompanyInvoices.stubs(:collected?).returns(true)
     QboProfitAndLossReport.stubs(:find_or_fetch_for_range).raises(RuntimeError, "unexpected QuickBooks read")
     QboInvoice.any_instance.stubs(:sync!).raises(RuntimeError, "unexpected QuickBooks read")
     QboAccount.any_instance.stubs(:make_and_refresh_qbo_access_token)
@@ -395,18 +395,13 @@ class Mso::MonthlyRunTest < ActiveSupport::TestCase
   test "it refuses any pass that is not a runnable garden3d month" do
     assert_match(/garden3d, LLC's pass/, refused(pass: @sanctuary_pass).message)
 
-    start = Mso::ManagementFeeInvoices::MANAGEMENT_FEE_START
+    start = InvoicePass::INTERCOMPANY_START
     early = InvoicePass.find_or_create_by!(enterprise: garden3d, start_of_month: start - 1.month) { |p| p.data = {} }
     assert_match(/#{start.strftime('%B %Y')} onward/, refused(pass: early).message)
     assert_equal false, Mso::MonthlyRun.runnable?(early)
 
-    legacy = garden3d_pass(Date.new(2093, 8, 1))
-    client = ForecastClient.create!(forecast_id: rand(1..2_000_000_000), name: "Legacy #{SecureRandom.hex(3)}")
-    InvoiceTracker.create!(invoice_pass: legacy, forecast_client: client, qbo_account: garden3d_qbo_account,
-                           blueprint: { "lines" => { "Line" => { "quantity" => 1, "unit_price" => 1 } } })
-    assert_match(/Forecast-driven tracker/, refused(pass: legacy, today: Date.new(2093, 9, 10)).message)
-    assert_equal false, Mso::MonthlyRun.runnable?(legacy)
-
+    # garden3d's seven 2025 passes, each holding a Forecast tracker, are all
+    # before the start month, so the date refusal above covers them.
     assert_equal true, Mso::MonthlyRun.runnable?(@pass)
     assert_equal false, Mso::MonthlyRun.runnable?(@sanctuary_pass)
   end
@@ -461,7 +456,7 @@ class Mso::MonthlyRunTest < ActiveSupport::TestCase
   end
 
   test "it asks QuickBooks about collection exactly once, and an uncollected month is not payable" do
-    Mso::ManagementFeeInvoices.expects(:collected?).with(invoice_pass: @pass).once.returns(false)
+    Mso::IntercompanyInvoices.expects(:collected?).with(invoice_pass: @pass).once.returns(false)
 
     snapshot = run!
 
@@ -472,8 +467,8 @@ class Mso::MonthlyRunTest < ActiveSupport::TestCase
   end
 
   test "it refuses when a fee invoice cannot be read from QuickBooks" do
-    Mso::ManagementFeeInvoices.stubs(:collected?)
-      .raises(Mso::ManagementFeeInvoices::RefreshFailed, "Could not read the QuickBooks invoice on InvoiceTracker 1")
+    Mso::IntercompanyInvoices.stubs(:collected?)
+      .raises(Mso::IntercompanyInvoices::RefreshFailed, "Could not read the QuickBooks invoice on InvoiceTracker 1")
 
     assert_match(/Could not read the QuickBooks invoice/, refused.message)
     assert_nothing_written
@@ -623,7 +618,7 @@ class Mso::MonthlyRunTest < ActiveSupport::TestCase
   end
 
   test "preview computes the same amounts, writes nothing and asks QuickBooks nothing" do
-    Mso::ManagementFeeInvoices.stubs(:collected?).raises(RuntimeError, "preview asked QuickBooks")
+    Mso::IntercompanyInvoices.stubs(:collected?).raises(RuntimeError, "preview asked QuickBooks")
 
     amounts = Mso::MonthlyRun.preview(invoice_pass: @pass, today: TODAY)
 
@@ -634,7 +629,7 @@ class Mso::MonthlyRunTest < ActiveSupport::TestCase
     assert_nothing_written
 
     # It refuses where a run would, and a refused preview invalidates nothing.
-    Mso::ManagementFeeInvoices.stubs(:collected?).returns(true)
+    Mso::IntercompanyInvoices.stubs(:collected?).returns(true)
     first = run!
     charge_fee("100000.0", account_total: "130000.0")
     assert_raises(Mso::MonthlyRun::Refused) { Mso::MonthlyRun.preview(invoice_pass: @pass, today: TODAY) }
@@ -786,7 +781,7 @@ class Mso::MonthlyRunTest < ActiveSupport::TestCase
     QboAccount.any_instance.expects(:make_and_refresh_qbo_access_token).never
     QboProfitAndLossReport.expects(:find_or_fetch_for_range).never
     QboInvoice.any_instance.expects(:sync!).never
-    Mso::ManagementFeeInvoices.expects(:collected?).never
+    Mso::IntercompanyInvoices.expects(:collected?).never
     Mso::MonthlyRun.expects(:call).never
     MsoTrueup.any_instance.expects(:sync_qbo_bill!).never
     MsoTrueup.any_instance.expects(:refresh_qbo_bill_mirror!).never

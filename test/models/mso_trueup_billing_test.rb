@@ -25,7 +25,7 @@ class MsoTrueupBillingTest < ActiveSupport::TestCase
     Qbo::BillRouter.any_instance.stubs(:enterprise_gl_map).returns(@pinned)
 
     # The two checks made before a first bill. Tests override these.
-    Mso::ManagementFeeInvoices.stubs(:collected?).returns(true)
+    Mso::IntercompanyInvoices.stubs(:collected?).returns(true)
     Mso::MonthlyRun.stubs(:preview).returns({ @ledger.id => BigDecimal("1200") })
 
     # Any QuickBooks write a test did not ask for fails it.
@@ -82,7 +82,7 @@ class MsoTrueupBillingTest < ActiveSupport::TestCase
   end
 
   test "collection is re-checked live before the first bill, and an unpaid fee stops it" do
-    Mso::ManagementFeeInvoices.expects(:collected?).with(invoice_pass: @pass).once.returns(false)
+    Mso::IntercompanyInvoices.expects(:collected?).with(invoice_pass: @pass).once.returns(false)
 
     error = assert_raises(MsoTrueup::NotCollected) { fresh.sync_qbo_bill! }
 
@@ -93,8 +93,8 @@ class MsoTrueupBillingTest < ActiveSupport::TestCase
   end
 
   test "a fee invoice that cannot be read stops the first bill" do
-    Mso::ManagementFeeInvoices.stubs(:collected?)
-      .raises(Mso::ManagementFeeInvoices::RefreshFailed, "Could not read the QuickBooks invoice on InvoiceTracker 9")
+    Mso::IntercompanyInvoices.stubs(:collected?)
+      .raises(Mso::IntercompanyInvoices::RefreshFailed, "Could not read the QuickBooks invoice on InvoiceTracker 9")
 
     error = assert_raises(MsoTrueup::NotCollected) { fresh.sync_qbo_bill! }
 
@@ -123,7 +123,7 @@ class MsoTrueupBillingTest < ActiveSupport::TestCase
   end
 
   test "when everything holds, one bill is created; syncing again updates it without re-checking" do
-    Mso::ManagementFeeInvoices.expects(:collected?).once.returns(true)
+    Mso::IntercompanyInvoices.expects(:collected?).once.returns(true)
     Mso::MonthlyRun.expects(:preview).once.returns({ @ledger.id => BigDecimal("1200") })
     Quickbooks::Service::Bill.any_instance.expects(:create).once.returns(remote_bill("900"))
 
@@ -219,7 +219,7 @@ class MsoTrueupBillingTest < ActiveSupport::TestCase
     Quickbooks::Service::Bill.any_instance.expects(:create).never
     Quickbooks::Service::Bill.any_instance.expects(:update).never
     # The first-bill checks are not what stops it: they would pass.
-    Mso::ManagementFeeInvoices.expects(:collected?).never
+    Mso::IntercompanyInvoices.expects(:collected?).never
 
     error = assert_raises(MsoTrueup::BillGone) { fresh.sync_qbo_bill! }
 
@@ -446,7 +446,7 @@ class MsoTrueupBillingTest < ActiveSupport::TestCase
   end
 
   test "garden3d's nightly step runs the fee check, the drift check and the read-only refresh, and nothing that writes a bill" do
-    Mso::ManagementFeeInvoices.stubs(:ensure_previous_month!)
+    InvoicePass.stubs(:make_intercompany_passes!)
     Mso::MonthlyRun.expects(:invalidate_snapshots_whose_fee_moved!).once.returns([])
     Mso::MonthlyRun.expects(:record_income_drift!).once.returns([])
     MsoTrueup.expects(:refresh_bill_mirrors!).once.returns([])
@@ -459,7 +459,7 @@ class MsoTrueupBillingTest < ActiveSupport::TestCase
   end
 
   test "a nightly garden3d step that fails does not skip the others; every failure is reported and none leaves" do
-    Mso::ManagementFeeInvoices.expects(:ensure_previous_month!).once.raises(RuntimeError, "step one broke")
+    InvoicePass.expects(:make_intercompany_passes!).once.raises(RuntimeError, "step one broke")
     Mso::MonthlyRun.expects(:invalidate_snapshots_whose_fee_moved!).once.raises(ActiveRecord::StatementInvalid, "step two broke")
     Mso::MonthlyRun.expects(:record_income_drift!).once.returns([])
     MsoTrueup.expects(:refresh_bill_mirrors!).once.returns([[@trueup.id, "RuntimeError: QuickBooks is down"]])
@@ -472,7 +472,7 @@ class MsoTrueupBillingTest < ActiveSupport::TestCase
   end
 
   test "the nightly garden3d steps are quiet when nothing fails" do
-    Mso::ManagementFeeInvoices.stubs(:ensure_previous_month!)
+    InvoicePass.stubs(:make_intercompany_passes!)
     Mso::MonthlyRun.stubs(:invalidate_snapshots_whose_fee_moved!).returns([])
     Mso::MonthlyRun.stubs(:record_income_drift!).returns([])
     MsoTrueup.stubs(:refresh_bill_mirrors!).returns([])

@@ -227,13 +227,13 @@ class InvoicePassManagementFeeCollectedTest < ActiveSupport::TestCase
     invoice_for(@sanctuary, "c-61", total: "130000.0", balance: "0.0", sent: true)
     invoice_for(@index, "c-62", total: "0.0", balance: "0.0", sent: false)
     assert collected?, "sanity"
-    Enterprise.create!(name: "Clientless #{SecureRandom.hex(3)}", management_fee_payer: true)
+    Enterprise.create!(name: "Clientless #{SecureRandom.hex(3)}", g3d_qbo_customer_id: "9")
 
     refute collected?
   end
 
   test "a payer's tracker on any of its internal Forecast clients counts" do
-    # ensure_trackers! reuses a tracker on any of a payer's clients.
+    # make_trackers! reuses a tracker on any of a payer's clients.
     ForecastClient.create!(forecast_id: 992_003, name: "Index second internal")
     EnterpriseForecastClient.create!(enterprise: @index, forecast_client_id: 992_003)
     invoice_for(@sanctuary, "c-63", total: "130000.0", balance: "0.0", sent: true)
@@ -335,16 +335,6 @@ class InvoicePassManagementFeeCollectedTest < ActiveSupport::TestCase
 
     mirror_invoice(sanctuary_qa, qbo_id: "c-79", total: "500.0", balance: "500.0", sent: true,
                                  txn_date: Date.new(2091, 6, 15), customer_id: "5")
-
-    assert collected?
-  end
-
-  test "an unattached invoice to an enterprise that is no longer a payer does not block" do
-    collected_pass_with_customer_ids
-    former = Enterprise.create!(name: "Former #{SecureRandom.hex(3)}", g3d_qbo_customer_id: "7")
-
-    mirror_invoice(@qbo_account, qbo_id: "c-80", total: "500.0", balance: "500.0", sent: true,
-                                 txn_date: Date.new(2091, 6, 15), customer_id: former.g3d_qbo_customer_id)
 
     assert collected?
   end

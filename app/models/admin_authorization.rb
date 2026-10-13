@@ -12,17 +12,6 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
   ].freeze
   OWN_LEDGER_ITEM_DENY = [:update, :destroy].freeze
 
-  # These write to, or read from, garden3d's QuickBooks. On garden3d's own
-  # pass the admin-only rule below already covers them; this keeps them
-  # admin-only on every other pass too, where the action would only refuse.
-  # :open_management_fee_month is a collection action, asked of the class: it
-  # makes a garden3d pass.
-  MANAGEMENT_FEE_PASS_ADMIN_ACTIONS = [
-    :create_management_fee_drafts, :refresh_management_fee_invoices, :open_management_fee_month,
-    # Computes and writes every executive's true-up for the month.
-    :run_mso_compensation,
-  ].freeze
-
   # Executive compensation. MsoRolePeriod has its own line below.
   MSO_COMPENSATION_CLASSES = [MsoTrueup, MsoSnapshot].freeze
 
@@ -122,7 +111,9 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
       return action == :read && own_mso_trueup?(subject)
     end
 
-    if (subject.is_a?(InvoicePass) || subject == InvoicePass) && MANAGEMENT_FEE_PASS_ADMIN_ACTIONS.include?(action)
+    # Computes and writes every executive's true-up: admins only, whichever
+    # pass it is asked of.
+    if action == :run_mso_compensation && (subject.is_a?(InvoicePass) || subject == InvoicePass)
       return user.is_admin?
     end
 
@@ -256,11 +247,11 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
   private
 
   # Is this an invoice pass issued by garden3d, or a tracker on one?
-  # InvoicePass#management_fee? is "the pass is garden3d's", legacy passes
+  # InvoicePass#garden3d? is "the pass is garden3d's", legacy passes
   # included. False for a class, and for a tracker not yet on a pass.
   def on_garden3d_pass?(subject)
     case subject
-    when InvoicePass, InvoiceTracker then subject.management_fee?
+    when InvoicePass, InvoiceTracker then subject.garden3d?
     else false
     end
   end

@@ -1,5 +1,7 @@
 # MSO True-up and Monthly Run Implementation Plan
 
+> **Names changed after this was written (2026-10-13).** S1 was simplified: `Mso::ManagementFeeInvoices` is `Mso::IntercompanyInvoices`, the nightly step is `InvoicePass.make_intercompany_passes!`, and `management_fee?` / `legacy_forecast_trackers?` are `garden3d?` / `intercompany?`. See the spec's §13c.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give each MSO executive a monthly true-up on their garden3d ledger (target minus what they already earned that month across all their ledgers, never negative), produced by one admin click that records every input and output of the calculation so a past month can be reproduced.

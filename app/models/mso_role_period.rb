@@ -116,7 +116,7 @@ class MsoRolePeriod < ApplicationRecord
   # every month from the start date on, and Mso::Benchmark drops the person
   # from the pool for those months. A mistyped year would do both.
   def not_before_mso_compensation_began
-    start = Mso::ManagementFeeInvoices::MANAGEMENT_FEE_START
+    start = InvoicePass::INTERCOMPANY_START
     return if started_at.nil? || started_at >= start
 
     errors.add(:started_at, "cannot be before #{start.strftime('%B %Y')}, the first month MSO compensation " \

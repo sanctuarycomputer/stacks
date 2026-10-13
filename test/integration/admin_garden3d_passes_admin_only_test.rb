@@ -43,9 +43,9 @@ class AdminGarden3dPassesAdminOnlyTest < ActionDispatch::IntegrationTest
     # Nothing here may reach QuickBooks, Twist or Forecast.
     QboInvoice.any_instance.stubs(:sync!).returns(true)
     Stacks::Automator.stubs(:discover_people_missing_hours_for_month).returns([])
-    Mso::ManagementFeeInvoices.expects(:create_drafts!).never
-    Mso::ManagementFeeInvoices.expects(:refresh!).never
-    Mso::ManagementFeeInvoices.expects(:push_invoice!).never
+    InvoicePass.any_instance.expects(:make_trackers!).never
+    Mso::IntercompanyInvoices.expects(:refresh!).never
+    Mso::IntercompanyInvoices.expects(:push_invoice!).never
     Stacks::Twist.expects(:new).never
   end
 
@@ -102,10 +102,10 @@ class AdminGarden3dPassesAdminOnlyTest < ActionDispatch::IntegrationTest
         get trackers_path(pass, format: :csv)
         assert_no_match(/8300|8301/, response.body, "#{pass.invoice_month} trackers index as CSV")
 
-        post create_management_fee_drafts_admin_invoice_pass_path(pass)
-        assert_denied "#{pass.invoice_month} create drafts"
+        post rerun_invoice_pass_without_reminders_admin_invoice_pass_path(pass)
+        assert_denied "#{pass.invoice_month} generate invoices"
 
-        post refresh_management_fee_invoices_admin_invoice_pass_path(pass)
+        post refresh_intercompany_invoices_admin_invoice_pass_path(pass)
         assert_denied "#{pass.invoice_month} refresh"
       end
     end
@@ -206,10 +206,21 @@ class AdminGarden3dPassesAdminOnlyTest < ActionDispatch::IntegrationTest
   test "an admin sees garden3d's passes in the index and can open every one of their pages" do
     sign_in @admin
 
+    # One tab per enterprise: Sanctuary's by default, garden3d's on its own.
     get admin_invoice_passes_path
 
     assert_response :success
-    [@sanctuary_pass, @fee_pass, @legacy_pass].each do |pass|
+    assert_select "a[href=?]", trackers_path(@sanctuary_pass), count: 1
+    [@fee_pass, @legacy_pass].each do |pass|
+      assert_select "a[href=?]", trackers_path(pass), count: 0
+    end
+    assert_select "a[href=?]", admin_invoice_passes_path(scope: "garden3d"), count: 1
+
+    get admin_invoice_passes_path(scope: "garden3d")
+
+    assert_response :success
+    assert_select "a[href=?]", trackers_path(@sanctuary_pass), count: 0
+    [@fee_pass, @legacy_pass].each do |pass|
       assert_select "a[href=?]", trackers_path(pass), count: 1
     end
 

@@ -57,7 +57,7 @@ ActiveAdmin.register MsoSnapshot do
 
     begin
       collected = resource.check_collection!
-    rescue Mso::ManagementFeeInvoices::Error, MsoSnapshot::Unusable => e
+    rescue Mso::IntercompanyInvoices::Error, MsoSnapshot::Unusable => e
       redirect_to admin_mso_snapshot_path(resource), alert: e.message.truncate(1200)
       return
     end

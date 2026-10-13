@@ -169,7 +169,7 @@ class MsoSnapshot < ApplicationRecord
                       "before confirming collection"
     end
 
-    collected = Mso::ManagementFeeInvoices.collected?(invoice_pass: invoice_pass)
+    collected = Mso::IntercompanyInvoices.collected?(invoice_pass: invoice_pass)
     update_columns(fee_collected_at: collected ? Time.current : nil)
     collected
   end

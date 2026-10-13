@@ -43,7 +43,7 @@ class MsoSnapshotTest < ActiveSupport::TestCase
 
   test "check_collection! asks QuickBooks once and stamps the answer" do
     snapshot = mso_snapshot(@pass)
-    Mso::ManagementFeeInvoices.expects(:collected?).with(invoice_pass: @pass).once.returns(true)
+    Mso::IntercompanyInvoices.expects(:collected?).with(invoice_pass: @pass).once.returns(true)
 
     assert_equal true, snapshot.check_collection!
     assert snapshot.reload.fee_collected?
@@ -51,7 +51,7 @@ class MsoSnapshotTest < ActiveSupport::TestCase
 
   test "check_collection! clears the stamp when the fee is no longer collected" do
     snapshot = mso_snapshot(@pass, collected: true)
-    Mso::ManagementFeeInvoices.expects(:collected?).with(invoice_pass: @pass).once.returns(false)
+    Mso::IntercompanyInvoices.expects(:collected?).with(invoice_pass: @pass).once.returns(false)
 
     assert_equal false, snapshot.check_collection!
     assert_not snapshot.reload.fee_collected?
@@ -60,7 +60,7 @@ class MsoSnapshotTest < ActiveSupport::TestCase
   test "check_collection! refuses a superseded snapshot without asking QuickBooks" do
     snapshot = mso_snapshot(@pass)
     snapshot.update_columns(superseded_at: Time.current)
-    Mso::ManagementFeeInvoices.stubs(:collected?).raises(RuntimeError, "unexpected QuickBooks read")
+    Mso::IntercompanyInvoices.stubs(:collected?).raises(RuntimeError, "unexpected QuickBooks read")
 
     error = assert_raises(MsoSnapshot::Unusable) { snapshot.check_collection! }
     assert_match(/superseded/, error.message)

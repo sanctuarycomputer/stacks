@@ -1,5 +1,7 @@
 # MSO Management Fee Invoices Implementation Plan
 
+> **Superseded in part (2026-10-13).** The owner asked for a simplification pass after this was built. Names and structure below are as first built; the spec's §13c lists what changed and governs.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give garden3d one invoice tracker per paying company each month, let an admin create a $0.00 draft invoice for each in garden3d's QuickBooks with one click, and read garden3d's management fee income for a month from its P&L.

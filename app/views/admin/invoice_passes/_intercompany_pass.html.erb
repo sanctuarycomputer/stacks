@@ -3,21 +3,19 @@
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
     <div class="module-header">
-      <p>Management fee invoices</p>
+      <p>Invoices to paying companies</p>
     </div>
     <div class="module-body">
-      <% if draftable %>
-        <p>
-          One $0.00 draft per paying company in garden3d's QuickBooks. Finance sets each amount in QuickBooks and
-          sends it. Stacks never writes an amount and never sends an invoice.
-        </p>
-      <% else %>
-        <p>
-          This month was invoiced by hand in QuickBooks, so Stacks does not create drafts for it. Attach each
-          existing invoice from its tracker's edit page; it is listed there once garden3d's invoices have been
-          synced into Stacks.
-        </p>
-      <% end %>
+      <p>
+        "Generate Invoices" creates one $0.00 draft per company in garden3d's QuickBooks. Finance sets each amount
+        in QuickBooks and sends it; Stacks never writes an amount and never sends an invoice. An invoice can carry
+        other lines too, such as a loan repayment; only its Managerial Services lines count as management fee
+        income.
+      </p>
+      <p>
+        If a company was already invoiced by hand for this month, Stacks creates nothing for it and lists the
+        existing invoice on that tracker's edit page, to attach.
+      </p>
       <p>
         What is shown here is Stacks' last copy of each invoice. Use "Refresh from QuickBooks" to bring it up to
         date.
@@ -28,7 +26,7 @@
 
 <% if trackers.empty? %>
   <div class="empty_state">
-    <p>No management fee invoices have been set up for this month yet.</p>
+    <p>No invoices to paying companies have been set up for this month yet.</p>
   </div>
 <% else %>
   <table border="0" cellspacing="0" cellpadding="0" class="index_table index">

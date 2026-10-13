@@ -159,7 +159,7 @@ class MsoRolePeriodTest < ActiveSupport::TestCase
   # true-up for every month since, and take the person out of the benchmark
   # pool for old months.
   test "a period cannot start before the first month MSO compensation is run for" do
-    start = Mso::ManagementFeeInvoices::MANAGEMENT_FEE_START
+    start = InvoicePass::INTERCOMPANY_START
 
     [start - 1.month, Date.new(start.year - 10, start.month, 1)].each do |early|
       period = build_period(make_contributor("early"), started_at: early)
@@ -170,7 +170,7 @@ class MsoRolePeriodTest < ActiveSupport::TestCase
   end
 
   test "a period already on file with an earlier start can still be ended, but not moved to another early date" do
-    start = Mso::ManagementFeeInvoices::MANAGEMENT_FEE_START
+    start = InvoicePass::INTERCOMPANY_START
     period = build_period(make_contributor("onfile"), started_at: start - 3.months)
     period.save!(validate: false)
 

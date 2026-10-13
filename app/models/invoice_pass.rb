@@ -9,44 +9,50 @@ class InvoicePass < ApplicationRecord
   # Only garden3d's passes ever have any.
   has_many :mso_snapshots
 
-  class UnsupportedIssuer < StandardError; end
-
-  # What a tracker on this pass IS depends on who issues the pass:
+  # An enterprise makes one pass a month, and the pass makes its trackers.
+  # Who gets a tracker depends on the enterprise (see make_trackers!):
   #
-  #   Sanctuary  -> Forecast-driven (blueprint, contributor payouts)
-  #   garden3d   -> a management fee invoice to each paying company
-  #   otherwise  -> unsupported
+  #   Sanctuary -> every client it did work for that month, from Forecast
+  #   garden3d  -> every other enterprise it bills: one invoice each, holding
+  #                the management fee and whatever else Finance bills on it
+  #                (a loan repayment between entities, say)
   #
   # There is no column for this; the enterprise decides.
+
+  # The first month garden3d's invoices are made through Stacks: the billing
+  # month of August 2026, the owner's decision. Every earlier month was
+  # invoiced by hand in QuickBooks, and garden3d's seven 2025 passes each hold
+  # a Forecast-driven tracker from before passes were per-enterprise. Those
+  # passes are left exactly as they are.
+  INTERCOMPANY_START = Date.new(2026, 8, 1)
+
   def forecast?
     enterprise == Enterprise.sanctuary
   end
 
-  # Checks forecast? first so a Sanctuary pass -- nearly every pass -- never
-  # depends on a garden3d row existing.
-  def management_fee?
-    return false if forecast?
-    enterprise == Enterprise.garden3d
+  # Asked of the issuing enterprise, not of what the invoices hold: a garden3d
+  # invoice is not only a management fee. By name, so no pass depends on a
+  # garden3d row existing.
+  def garden3d?
+    enterprise&.is_garden3d? || false
   end
 
-  # For anything that ACTS on a pass. Index Space and USB Club both have
-  # QuickBooks accounts, so a pass for either is constructible; treating it as
-  # one of the two known kinds is how the wrong company gets invoiced.
-  def invoicing_kind
-    return :forecast if forecast?
-    return :management_fee if management_fee?
-
-    raise UnsupportedIssuer, "InvoicePass #{id} belongs to #{enterprise&.name || 'no enterprise'}. Only " \
-                             "#{Enterprise::SANCTUARY_NAME} (Forecast invoicing) and " \
-                             "#{Enterprise::GARDEN3D_NAME} (management fee) issue invoices."
+  # A garden3d pass whose invoices Stacks makes and tracks.
+  def intercompany?
+    garden3d? && start_of_month >= INTERCOMPANY_START
   end
 
-  # garden3d's 2025 passes each hold one Forecast-driven tracker (a blueprint,
-  # accepted payouts) from before passes were per-enterprise. A pass holding
-  # one is left exactly as it was: Stacks never drafts on it. Always a fresh
-  # query, so it cannot read a stale association.
-  def legacy_forecast_trackers?
-    InvoiceTracker.where(invoice_pass_id: id).where.not(blueprint: nil).exists?
+  # garden3d's pass, with its trackers, for every month from
+  # INTERCOMPANY_START through last month. Run nightly (Enterprise#daily_tasks).
+  # DATABASE ONLY: it never calls QuickBooks. An admin's click makes the
+  # invoices.
+  def self.make_intercompany_passes!(today: Date.today)
+    garden3d = Enterprise.garden3d
+    month = INTERCOMPANY_START
+    while month < today.beginning_of_month
+      find_or_create_by!(enterprise: garden3d, start_of_month: month) { |pass| pass.data = {} }.make_trackers!
+      month = month.next_month
+    end
   end
 
   # Has garden3d been paid the management fee it charged for this month?
@@ -55,7 +61,7 @@ class InvoicePass < ApplicationRecord
   # stored as an unsent $0.00 draft and not updated until someone refreshes.
   #
   #   To decide whether anyone is PAID, call
-  #   Mso::ManagementFeeInvoices.collected?(invoice_pass:) instead. It
+  #   Mso::IntercompanyInvoices.collected?(invoice_pass:) instead. It
   #   refreshes from QuickBooks first and raises if it cannot.
   #
   # An invoice is CHARGED when it was sent OR its total is above zero. It is
@@ -67,10 +73,9 @@ class InvoicePass < ApplicationRecord
   # rule FAILS CLOSED on anything it cannot see. All of these are unknown,
   # and unknown is not collected:
   #
-  # - A current payer (Enterprise.management_fee_payers) with NO management
-  #   fee tracker on this pass: flagged after the pass was made, or its
-  #   tracker was deleted. The payer -> tracker mapping is the one
-  #   ensure_trackers! uses (Mso::ManagementFeeInvoices.payer_trackers).
+  # - An enterprise garden3d bills (Enterprise.billed_by_garden3d) with NO
+  #   tracker on this pass: its customer id was stored after the pass was
+  #   made, or its tracker was deleted.
   # - A management fee tracker with NO invoice attached. Stacks cannot see
   #   whether that payer was charged -- the pre-flight refuses to draft when
   #   Finance already invoiced by hand, and that invoice stays invisible here
@@ -100,21 +105,22 @@ class InvoicePass < ApplicationRecord
   #   never hides an amount.
   # - No stored data, or an unreadable amount, is unknown: not collected.
   def management_fee_collected?
-    unless management_fee?
+    unless garden3d?
       raise "management_fee_collected? only applies to #{Enterprise::GARDEN3D_NAME}'s passes " \
             "(this pass belongs to #{enterprise.name})"
     end
 
     own_account_ids = QboAccount.where(enterprise_id: enterprise_id).pluck(:id)
-    payers = Enterprise.management_fee_payers.order(:id).to_a
+    payers = Enterprise.billed_by_garden3d.order(:id).to_a
     charged = []
     attached = []
 
     # Every current payer needs a fee tracker here, or its invoice is unseen.
     # (A legacy Forecast tracker, which has a blueprint, is not one.)
     payers.each do |payer|
-      fee_trackers = Mso::ManagementFeeInvoices.payer_trackers(invoice_pass: self, payer: payer)
-      return false unless fee_trackers.where(blueprint: nil).exists?
+      return false unless InvoiceTracker.where(
+        invoice_pass_id: id, forecast_client_id: payer.internal_forecast_client_ids, blueprint: nil,
+      ).exists?
     end
 
     # Fresh queries throughout, by the (account, id) pair: never the cached
@@ -194,28 +200,17 @@ class InvoicePass < ApplicationRecord
     invoice_trackers.map(&:balance).compact.reduce(&:+)
   end
 
+  # Makes this month's trackers: one per company this enterprise invoices.
+  # Idempotent. DATABASE ONLY -- no QuickBooks call.
   def make_trackers!
-    # Everything below is Forecast-driven invoicing, which only Sanctuary does.
-    # Every non-internal client bills through Sanctuary, so on any other
-    # enterprise's pass there is nothing for this to create.
-    unless enterprise == Enterprise.sanctuary
-      raise "make_trackers! is Forecast invoicing and only runs on #{Enterprise::SANCTUARY_NAME}'s passes (this pass belongs to #{enterprise.name})"
-    end
-    return if statuses == :missing_hours
-
-    qa = enterprise.qbo_account
-    raise "#{enterprise.name} has no connected QboAccount" if qa.nil?
-
-    # Internal clients (mapped via enterprise_forecast_clients) generate pay
-    # stubs against their enterprise's pay cycles instead of being invoiced.
-    # Skip them here so they never enter the InvoiceTracker pipeline.
-    clients_served.reject(&:is_internal?).each do |c|
-      InvoiceTracker.find_or_create_by!(
-        forecast_client_id: c.forecast_id,
-        invoice_pass: self,
-      ) do |t|
-        t.qbo_account = qa
-      end
+    if forecast?
+      make_forecast_trackers!
+    elsif intercompany?
+      make_intercompany_trackers!
+    else
+      raise "InvoicePass #{id} (#{enterprise.name}, #{invoice_month}) makes no invoices through Stacks: only " \
+            "#{Enterprise::SANCTUARY_NAME}'s passes, and #{Enterprise::GARDEN3D_NAME}'s from " \
+            "#{INTERCOMPANY_START.strftime('%B %Y')}, do."
     end
   end
 
@@ -254,6 +249,47 @@ class InvoicePass < ApplicationRecord
   end
 
   private
+
+  # Sanctuary: every external client served this month, from Forecast.
+  def make_forecast_trackers!
+    return if statuses == :missing_hours
+
+    qa = enterprise.qbo_account
+    raise "#{enterprise.name} has no connected QboAccount" if qa.nil?
+
+    # Internal clients (mapped via enterprise_forecast_clients) generate pay
+    # stubs against their enterprise's pay cycles instead of being invoiced.
+    # Skip them here so they never enter the InvoiceTracker pipeline.
+    clients_served.reject(&:is_internal?).each do |c|
+      InvoiceTracker.find_or_create_by!(
+        forecast_client_id: c.forecast_id,
+        invoice_pass: self,
+      ) do |t|
+        t.qbo_account = qa
+      end
+    end
+  end
+
+  # garden3d: every other enterprise it bills. A tracker needs a Forecast
+  # client, so each one hangs on the enterprise's internal client. An
+  # enterprise can have several; a tracker on any of them counts, so
+  # remapping clients never makes a second.
+  def make_intercompany_trackers!
+    # Ordered query, not enterprise.qbo_account: has_one is unordered.
+    qa = QboAccount.where(enterprise_id: enterprise_id).order(:id).first
+    raise "#{enterprise.name} has no connected QboAccount" if qa.nil?
+
+    Enterprise.billed_by_garden3d.order(:id).each do |payer|
+      client_ids = payer.internal_forecast_client_ids
+      if client_ids.empty?
+        raise "#{enterprise.name} bills #{payer.name}, but #{payer.name} has no internal Forecast client to " \
+              "hang its invoice tracker on"
+      end
+      next if InvoiceTracker.where(invoice_pass_id: id, forecast_client_id: client_ids).exists?
+
+      InvoiceTracker.create!(invoice_pass: self, forecast_client_id: client_ids.first, qbo_account: qa)
+    end
+  end
 
   # The mirror stores amounts as Strings ("130000.0"). nil when unparseable.
   def stored_amount(value)

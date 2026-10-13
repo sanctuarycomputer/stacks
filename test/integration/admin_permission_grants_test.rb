@@ -180,9 +180,11 @@ class AdminPermissionGrantsTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "admin_user_requires_superpowers_assessment"
   end
 
-  test "the Generate Invoices action is not offered on a non-Sanctuary pass" do
+  # Sanctuary's passes and garden3d's (from InvoicePass::INTERCOMPANY_START)
+  # generate invoices; no other enterprise's do.
+  test "the Generate Invoices action is not offered on another enterprise's pass" do
     pass = InvoicePass.create!(start_of_month: Date.new(2090, 1, 1),
-                               enterprise: enterprises(:garden3d), data: {})
+                               enterprise: enterprises(:one), data: {})
     sign_in @admin
 
     get admin_invoice_pass_path(pass)
@@ -192,9 +194,9 @@ class AdminPermissionGrantsTest < ActionDispatch::IntegrationTest
       rerun_invoice_pass_without_reminders_admin_invoice_pass_path(pass), count: 0
   end
 
-  test "POSTing the Generate Invoices action directly on a non-Sanctuary pass is refused" do
+  test "POSTing the Generate Invoices action directly on another enterprise's pass is refused" do
     pass = InvoicePass.create!(start_of_month: Date.new(2090, 2, 1),
-                               enterprise: enterprises(:garden3d), data: {})
+                               enterprise: enterprises(:one), data: {})
     sign_in @admin
     Stacks::Automator.expects(:attempt_invoicing_for_invoice_pass).never
 

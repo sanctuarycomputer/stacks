@@ -342,7 +342,7 @@ class MsoTrueup < ApplicationRecord
     collected =
       begin
         mso_snapshot.check_collection!
-      rescue Mso::ManagementFeeInvoices::Error, MsoSnapshot::Unusable => e
+      rescue Mso::IntercompanyInvoices::Error, MsoSnapshot::Unusable => e
         raise NotCollected, "#{e.message}. No bill was written."
       end
     unless collected

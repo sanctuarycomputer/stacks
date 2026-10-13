@@ -176,7 +176,7 @@ class MsoTrueupTest < ActiveSupport::TestCase
     snap.invalidate!("a later run was refused")
 
     assert_equal false, MsoTrueup.find(trueup.id).payable?
-    Mso::ManagementFeeInvoices.stubs(:collected?).raises(RuntimeError, "unexpected QuickBooks read")
+    Mso::IntercompanyInvoices.stubs(:collected?).raises(RuntimeError, "unexpected QuickBooks read")
     error = assert_raises(MsoSnapshot::Unusable) { MsoSnapshot.find(snap.id).check_collection! }
     assert_match(/a later run was refused/, error.message)
     assert_equal false, MsoTrueup.find(trueup.id).payable?

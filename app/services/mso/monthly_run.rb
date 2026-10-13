@@ -8,7 +8,7 @@ module Mso
   #
   # NOTHING SCHEDULED CALLS .call. It is reached from an admin's click on
   # garden3d's pass. It makes one QuickBooks READ per management fee invoice
-  # (through Mso::ManagementFeeInvoices.collected?) and no QuickBooks write.
+  # (through Mso::IntercompanyInvoices.collected?) and no QuickBooks write.
   # It pays nobody: a true-up becomes payable only after its executive
   # accepts it, every other executive accepts theirs, and the fee is confirmed
   # collected; and it reaches QuickBooks only when an admin syncs it from the
@@ -66,10 +66,7 @@ module Mso
       # depends on the month's state; see #call.)
       def runnable?(invoice_pass)
         # Migrations are run by hand after the deploy: no tables, no run.
-        MsoTrueup.schema_ready? &&
-          invoice_pass.management_fee? &&
-          invoice_pass.start_of_month >= Mso::ManagementFeeInvoices::MANAGEMENT_FEE_START &&
-          !invoice_pass.legacy_forecast_trackers?
+        MsoTrueup.schema_ready? && invoice_pass.intercompany?
       end
 
       # One role period per person per month is a model validation only; the
@@ -320,15 +317,11 @@ module Mso
         raise Refused, "The MSO compensation tables are not on this database yet. Run the pending " \
                        "migrations (db/migrate/20261014000001 and 20261014000002), then run the month again."
       end
-      unless @pass.management_fee?
+      unless @pass.garden3d?
         raise Refused, "MSO compensation is run on #{Enterprise::GARDEN3D_NAME}'s pass; InvoicePass " \
                        "#{@pass.id} belongs to #{@pass.enterprise.name}."
       end
-      if @pass.legacy_forecast_trackers?
-        raise Refused, "#{@pass.invoice_month}'s pass holds a Forecast-driven tracker from before passes " \
-                       "were per-company. MSO compensation is not run for that month."
-      end
-      start = Mso::ManagementFeeInvoices::MANAGEMENT_FEE_START
+      start = InvoicePass::INTERCOMPANY_START
       if @month < start
         raise Refused, "MSO compensation is run from #{start.strftime('%B %Y')} onward; " \
                        "#{@pass.invoice_month} is before that."
@@ -368,8 +361,8 @@ module Mso
     # ONE call per run. It refreshes every attached fee invoice from
     # QuickBooks (a read each) and raises if any cannot be read.
     def fee_collected!
-      Mso::ManagementFeeInvoices.collected?(invoice_pass: @pass)
-    rescue Mso::ManagementFeeInvoices::Error => e
+      Mso::IntercompanyInvoices.collected?(invoice_pass: @pass)
+    rescue Mso::IntercompanyInvoices::Error => e
       raise Refused, "#{e.message}. Nothing was written; try again."
     end
 
@@ -388,7 +381,7 @@ module Mso
                      "is missing from the list above, attach it to that company's tracker on this pass; " \
                      "(2) if an invoice's Managerial Services figure is lower than its total and the " \
                      "difference is fee, Finance moves that line to the " \
-                     "#{Mso::ManagementFeeInvoices::ITEM_NAME} item in QuickBooks; (3) if account 4100 " \
+                     "#{Mso::IntercompanyInvoices::ITEM_NAME} item in QuickBooks; (3) if account 4100 " \
                      "holds income that is not a management fee, Finance moves it to another account, and " \
                      "Stacks sees that after the nightly sync; (4) if an invoice is dated in another month, " \
                      "Finance corrects the date. Then run again."

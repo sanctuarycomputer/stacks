@@ -1,6 +1,6 @@
 require "test_helper"
 
-class Mso::ManagementFeeInvoicesCollectedTest < ActiveSupport::TestCase
+class Mso::IntercompanyInvoicesCollectedTest < ActiveSupport::TestCase
   include ManagementFeeFixtures
 
   def setup
@@ -21,7 +21,7 @@ class Mso::ManagementFeeInvoicesCollectedTest < ActiveSupport::TestCase
       .returns(qbo_created_invoice("k-1", total: "130000", balance: "0", email_status: "EmailSent",
                                           txn_date: Date.new(2091, 7, 31)))
 
-    assert Mso::ManagementFeeInvoices.collected?(invoice_pass: @pass)
+    assert Mso::IntercompanyInvoices.collected?(invoice_pass: @pass)
   end
 
   test "it reads QuickBooks first, so a stale paid snapshot cannot hide an unpaid invoice" do
@@ -32,7 +32,7 @@ class Mso::ManagementFeeInvoicesCollectedTest < ActiveSupport::TestCase
       .returns(qbo_created_invoice("k-1", total: "130000", balance: "130000", email_status: "EmailSent",
                                           txn_date: Date.new(2091, 7, 31)))
 
-    refute Mso::ManagementFeeInvoices.collected?(invoice_pass: @pass)
+    refute Mso::IntercompanyInvoices.collected?(invoice_pass: @pass)
   end
 
   # --- the refreshed answer is the pure rule's, fail-closed parts included ----
@@ -44,20 +44,20 @@ class Mso::ManagementFeeInvoicesCollectedTest < ActiveSupport::TestCase
   test "a refreshed invoice that turns out to be dated another month is not collected" do
     QboAccount.any_instance.expects(:fetch_invoice_by_id).once.returns(paid_in(Date.new(2091, 8, 1)))
 
-    refute Mso::ManagementFeeInvoices.collected?(invoice_pass: @pass)
+    refute Mso::IntercompanyInvoices.collected?(invoice_pass: @pass)
   end
 
   test "a refreshed invoice with no date is not collected" do
     QboAccount.any_instance.expects(:fetch_invoice_by_id).once.returns(paid_in(nil))
 
-    refute Mso::ManagementFeeInvoices.collected?(invoice_pass: @pass)
+    refute Mso::IntercompanyInvoices.collected?(invoice_pass: @pass)
   end
 
   test "a payer with no tracker on the pass is not collected, however the refresh goes" do
     QboAccount.any_instance.expects(:fetch_invoice_by_id).once.returns(paid_in(Date.new(2091, 7, 31)))
     make_payer(Enterprise::INDEX_SPACE_NAME, forecast_ids: [992_103])
 
-    refute Mso::ManagementFeeInvoices.collected?(invoice_pass: @pass)
+    refute Mso::IntercompanyInvoices.collected?(invoice_pass: @pass)
   end
 
   test "an unattached invoice to a payer in the pass month is not collected, and is not read" do
@@ -67,7 +67,7 @@ class Mso::ManagementFeeInvoicesCollectedTest < ActiveSupport::TestCase
     mirror_invoice(@qbo_account, qbo_id: "k-9", total: "5000.0", balance: "0.0", sent: true,
                                  txn_date: Date.new(2091, 7, 20), customer_id: "2")
 
-    refute Mso::ManagementFeeInvoices.collected?(invoice_pass: @pass)
+    refute Mso::IntercompanyInvoices.collected?(invoice_pass: @pass)
   end
 
   test "an unattached invoice to a non-payer, or in another month, does not stop a collected answer" do
@@ -78,14 +78,14 @@ class Mso::ManagementFeeInvoicesCollectedTest < ActiveSupport::TestCase
     mirror_invoice(@qbo_account, qbo_id: "k-11", total: "5000.0", balance: "5000.0", sent: true,
                                  txn_date: Date.new(2091, 8, 1), customer_id: "2")
 
-    assert Mso::ManagementFeeInvoices.collected?(invoice_pass: @pass)
+    assert Mso::IntercompanyInvoices.collected?(invoice_pass: @pass)
   end
 
   test "it raises when an invoice cannot be read, rather than answer from a stale copy" do
     QboAccount.any_instance.expects(:fetch_invoice_by_id).once.raises(RuntimeError, "QuickBooks is down")
 
-    error = assert_raises(Mso::ManagementFeeInvoices::RefreshFailed) do
-      Mso::ManagementFeeInvoices.collected?(invoice_pass: @pass)
+    error = assert_raises(Mso::IntercompanyInvoices::RefreshFailed) do
+      Mso::IntercompanyInvoices.collected?(invoice_pass: @pass)
     end
 
     assert_match(/InvoiceTracker #{@tracker.id}/, error.message)
@@ -100,7 +100,7 @@ class Mso::ManagementFeeInvoicesCollectedTest < ActiveSupport::TestCase
     QboAccount.any_instance.stubs(:fetch_invoice_by_id).with("k-1")
       .raises(RuntimeError, "Object Not Found: Something you're trying to use has been made inactive.")
 
-    refute Mso::ManagementFeeInvoices.collected?(invoice_pass: @pass)
+    refute Mso::IntercompanyInvoices.collected?(invoice_pass: @pass)
     assert_nil InvoiceTracker.find(@tracker.id).qbo_invoice_id
   end
 
@@ -108,8 +108,8 @@ class Mso::ManagementFeeInvoicesCollectedTest < ActiveSupport::TestCase
     pass = InvoicePass.create!(start_of_month: Date.new(2091, 7, 1), enterprise: enterprises(:sanctuary), data: {})
     QboAccount.any_instance.expects(:fetch_invoice_by_id).never
 
-    assert_raises(Mso::ManagementFeeInvoices::WrongPass) do
-      Mso::ManagementFeeInvoices.collected?(invoice_pass: pass)
+    assert_raises(Mso::IntercompanyInvoices::Error) do
+      Mso::IntercompanyInvoices.collected?(invoice_pass: pass)
     end
   end
 end

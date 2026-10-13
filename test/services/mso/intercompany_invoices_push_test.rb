@@ -1,6 +1,6 @@
 require "test_helper"
 
-class Mso::ManagementFeeInvoicesPushTest < ActiveSupport::TestCase
+class Mso::IntercompanyInvoicesPushTest < ActiveSupport::TestCase
   include ManagementFeeFixtures
 
   def setup
@@ -32,17 +32,11 @@ class Mso::ManagementFeeInvoicesPushTest < ActiveSupport::TestCase
   end
 
   def push
-    Mso::ManagementFeeInvoices.push_invoice!(invoice_tracker: @tracker)
+    Mso::IntercompanyInvoices.push_invoice!(invoice_tracker: @tracker)
   end
 
   def unattached?
     InvoiceTracker.find(@tracker.id).qbo_invoice_id.nil?
-  end
-
-  # No id stored, and no active customer carrying the payer's name.
-  def blank_customer_id!(customers: [qbo_customer("55", "Someone Else")])
-    @payer.update_columns(g3d_qbo_customer_id: nil)
-    stub_garden3d_qbo(customers: customers)
   end
 
   # --- the draft -------------------------------------------------------------
@@ -98,66 +92,10 @@ class Mso::ManagementFeeInvoicesPushTest < ActiveSupport::TestCase
     @payer.update_columns(g3d_qbo_customer_id: "404")
     forbid_writes
 
-    error = assert_raises(Mso::ManagementFeeInvoices::Misconfigured) { push }
+    error = assert_raises(Mso::IntercompanyInvoices::Misconfigured) { push }
 
     assert_match(/404/, error.message)
     assert unattached?
-  end
-
-  test "a blank customer id creates the customer once, named after the enterprise, and stores its id" do
-    blank_customer_id!
-    created_customers = []
-    Quickbooks::Service::Customer.any_instance.expects(:create).once
-      .with { |customer| created_customers << customer }
-      .returns(qbo_customer("77", Enterprise::SANCTUARY_NAME))
-    sent = expect_one_draft
-
-    push
-
-    assert_equal Enterprise::SANCTUARY_NAME, created_customers.first.display_name
-    assert_equal "77", @payer.reload.g3d_qbo_customer_id
-    assert_equal "77", sent.first.customer_ref.value
-  end
-
-  test "a created customer's id survives the invoice push failing" do
-    blank_customer_id!
-    Quickbooks::Service::Customer.any_instance.expects(:create).once
-      .returns(qbo_customer("77", Enterprise::SANCTUARY_NAME))
-    Quickbooks::Service::Invoice.any_instance.expects(:create).once.raises(RuntimeError, "QuickBooks is down")
-
-    assert_raises(RuntimeError) { push }
-
-    assert_equal "77", @payer.reload.g3d_qbo_customer_id, "or the next attempt creates a second customer"
-    assert unattached?
-  end
-
-  test "a blank id with an active customer already carrying the payer's name raises; it neither creates nor adopts" do
-    # What a lost response leaves behind: QuickBooks made the customer, Stacks
-    # never learned its id.
-    blank_customer_id!(customers: [qbo_customer("55", "Someone Else"),
-                                    qbo_customer("77", Enterprise::SANCTUARY_NAME.upcase)])
-    forbid_writes
-
-    error = assert_raises(Mso::ManagementFeeInvoices::Misconfigured) { push }
-
-    assert_match(/\b77\b/, error.message)
-    assert_nil @payer.reload.g3d_qbo_customer_id
-    assert unattached?
-  end
-
-  test "QuickBooks refusing the name as a duplicate is the same configuration error" do
-    # Names are unique across customers, vendors and employees, and across
-    # inactive ones, none of which the active-customer check above can see.
-    blank_customer_id!
-    duplicate = Quickbooks::IntuitRequestException.new("Duplicate Name Exists Error:\n\tThe name supplied already exists.")
-    duplicate.code = "6240"
-    Quickbooks::Service::Customer.any_instance.expects(:create).once.raises(duplicate)
-    Quickbooks::Service::Invoice.any_instance.expects(:create).never
-
-    error = assert_raises(Mso::ManagementFeeInvoices::Misconfigured) { push }
-
-    assert_match(/already has that name/, error.message)
-    assert_nil @payer.reload.g3d_qbo_customer_id
   end
 
   # --- configuration ---------------------------------------------------------
@@ -166,7 +104,7 @@ class Mso::ManagementFeeInvoicesPushTest < ActiveSupport::TestCase
     stub_garden3d_qbo(items: [qbo_item("1", "Services")], customers: @customers)
     forbid_writes
 
-    error = assert_raises(Mso::ManagementFeeInvoices::Misconfigured) { push }
+    error = assert_raises(Mso::IntercompanyInvoices::Misconfigured) { push }
 
     assert_match(/Managerial Services/, error.message)
   end
@@ -175,7 +113,7 @@ class Mso::ManagementFeeInvoicesPushTest < ActiveSupport::TestCase
     stub_garden3d_qbo(terms: [qbo_term("1", "Net 30", 30)], customers: @customers)
     forbid_writes
 
-    error = assert_raises(Mso::ManagementFeeInvoices::Misconfigured) { push }
+    error = assert_raises(Mso::IntercompanyInvoices::Misconfigured) { push }
 
     assert_match(/15 days/, error.message)
   end
@@ -184,7 +122,7 @@ class Mso::ManagementFeeInvoicesPushTest < ActiveSupport::TestCase
     @tracker = attach_invoice(@tracker, qbo_id: "8000", total: "0.0", balance: "0.0", sent: false)
     forbid_writes
 
-    error = assert_raises(Mso::ManagementFeeInvoices::PushFailed) { push }
+    error = assert_raises(Mso::IntercompanyInvoices::PushFailed) { push }
 
     assert_match(/already has QuickBooks invoice 8000/, error.message)
   end
@@ -203,7 +141,7 @@ class Mso::ManagementFeeInvoicesPushTest < ActiveSupport::TestCase
     Quickbooks::Service::Invoice.any_instance.expects(:query).never
     forbid_writes
 
-    error = assert_raises(Mso::ManagementFeeInvoices::PushFailed) { push }
+    error = assert_raises(Mso::IntercompanyInvoices::PushFailed) { push }
 
     assert_match(/already has QuickBooks invoice 7777/, error.message)
     assert_equal "7777", InvoiceTracker.find(@tracker.id).qbo_invoice_id
@@ -231,7 +169,7 @@ class Mso::ManagementFeeInvoicesPushTest < ActiveSupport::TestCase
     Quickbooks::Service::Invoice.any_instance.expects(:query).never
     forbid_writes
 
-    error = assert_raises(Mso::ManagementFeeInvoices::Misconfigured) { push }
+    error = assert_raises(Mso::IntercompanyInvoices::Misconfigured) { push }
 
     assert_match(/InvoiceTracker #{@tracker.id} is bound to a QuickBooks account that is not garden3d, LLC's/,
                  error.message)
@@ -246,22 +184,30 @@ class Mso::ManagementFeeInvoicesPushTest < ActiveSupport::TestCase
                                       qbo_account: sanctuary_qa)
     forbid_writes
 
-    assert_raises(Mso::ManagementFeeInvoices::WrongPass) { push }
+    assert_raises(Mso::IntercompanyInvoices::Misconfigured) { push }
   end
 
-  test "a tracker whose client is not a flagged payer's is refused" do
-    @payer.update_columns(management_fee_payer: false)
+  test "an enterprise with no stored customer id is not billed: Stacks never creates a customer" do
+    @payer.update_columns(g3d_qbo_customer_id: nil)
     forbid_writes
 
-    error = assert_raises(Mso::ManagementFeeInvoices::Misconfigured) { push }
+    error = assert_raises(Mso::IntercompanyInvoices::Misconfigured) { push }
 
-    assert_match(/does not belong to a management fee payer/, error.message)
+    assert_match(/not on the internal Forecast client of an enterprise garden3d, LLC bills/, error.message)
+    assert unattached?
+  end
+
+  test "a legacy garden3d tracker, which has a blueprint, is refused" do
+    @tracker.update!(blueprint: { "lines" => {} })
+    forbid_writes
+
+    assert_raises(Mso::IntercompanyInvoices::Misconfigured) { push }
   end
 
   test "QuickBooks answering without an invoice is a failure, not a success" do
     Quickbooks::Service::Invoice.any_instance.expects(:create).once.returns(nil)
 
-    assert_raises(Mso::ManagementFeeInvoices::PushFailed) { push }
+    assert_raises(Mso::IntercompanyInvoices::PushFailed) { push }
 
     assert unattached?
     assert_equal 0, QboInvoice.where(qbo_account_id: @qbo_account.id).count
@@ -274,7 +220,7 @@ class Mso::ManagementFeeInvoicesPushTest < ActiveSupport::TestCase
                       invoices_in_month: [qbo_created_invoice("4411", total: "135000"), qbo_created_invoice("4412")])
     forbid_writes
 
-    error = assert_raises(Mso::ManagementFeeInvoices::AlreadyInvoiced) { push }
+    error = assert_raises(Mso::IntercompanyInvoices::AlreadyInvoiced) { push }
 
     assert_match(/4411/, error.message)
     assert_match(/4412/, error.message)
@@ -290,7 +236,7 @@ class Mso::ManagementFeeInvoicesPushTest < ActiveSupport::TestCase
                                           qbo_created_invoice("4412")])
     forbid_writes
 
-    error = assert_raises(Mso::ManagementFeeInvoices::AlreadyInvoiced) { push }
+    error = assert_raises(Mso::IntercompanyInvoices::AlreadyInvoiced) { push }
 
     mirrors = QboInvoice.where(qbo_id: %w[4411 4412]).order(:qbo_id).to_a
     assert_equal %w[4411 4412], mirrors.map(&:qbo_id)
@@ -306,14 +252,14 @@ class Mso::ManagementFeeInvoicesPushTest < ActiveSupport::TestCase
 
   test "a second refused push does not duplicate the mirrored invoices, and stores what QuickBooks says now" do
     stub_garden3d_qbo(customers: @customers, invoices_in_month: [qbo_created_invoice("4411", total: "135000")])
-    assert_raises(Mso::ManagementFeeInvoices::AlreadyInvoiced) { push }
+    assert_raises(Mso::IntercompanyInvoices::AlreadyInvoiced) { push }
 
     stub_garden3d_qbo(customers: @customers,
                       invoices_in_month: [qbo_created_invoice("4411", total: "140000", email_status: "EmailSent")])
     forbid_writes
 
     assert_no_difference -> { QboInvoice.count } do
-      assert_raises(Mso::ManagementFeeInvoices::AlreadyInvoiced) { push }
+      assert_raises(Mso::IntercompanyInvoices::AlreadyInvoiced) { push }
     end
 
     stored = QboInvoice.find_by!(qbo_account_id: @qbo_account.id, qbo_id: "4411").read_attribute(:data)
@@ -327,7 +273,7 @@ class Mso::ManagementFeeInvoicesPushTest < ActiveSupport::TestCase
     stub_garden3d_qbo(customers: @customers, invoices_in_month: [qbo_created_invoice("4411", total: "135000")])
     forbid_writes
 
-    assert_raises(Mso::ManagementFeeInvoices::AlreadyInvoiced) { push }
+    assert_raises(Mso::IntercompanyInvoices::AlreadyInvoiced) { push }
 
     assert_equal "4411", InvoiceTracker.find(elsewhere.id).qbo_invoice_id
     assert_equal 1, QboInvoice.where(qbo_account_id: @qbo_account.id, qbo_id: "4411").count
@@ -350,37 +296,15 @@ class Mso::ManagementFeeInvoicesPushTest < ActiveSupport::TestCase
   end
 
   test "a pass before the start month is refused without asking QuickBooks anything" do
-    pass = garden3d_pass(Mso::ManagementFeeInvoices::MANAGEMENT_FEE_START - 1.month)
+    pass = garden3d_pass(InvoicePass::INTERCOMPANY_START - 1.month)
     @tracker = fee_tracker(pass, @payer)
     QboAccount.any_instance.expects(:fetch_all_items).never
     QboAccount.any_instance.expects(:fetch_all_customers).never
     Quickbooks::Service::Invoice.any_instance.expects(:query).never
     forbid_writes
 
-    error = assert_raises(Mso::ManagementFeeInvoices::NotDraftable) { push }
-
-    assert_match(/August 2026/, error.message)
+    assert_raises(Mso::IntercompanyInvoices::Misconfigured) { push }
+    assert_equal Date.new(2026, 8, 1), InvoicePass::INTERCOMPANY_START
   end
 
-  test "a pass holding a legacy Forecast tracker is refused" do
-    other = make_payer("Legacy Neighbour #{SecureRandom.hex(3)}")
-    fee_tracker(@pass, other).update!(blueprint: { "lines" => {} })
-    forbid_writes
-
-    assert_raises(Mso::ManagementFeeInvoices::NotDraftable) { push }
-  end
-
-  test "draftable? is garden3d's pass, from the start month, with no legacy tracker" do
-    start = Mso::ManagementFeeInvoices::MANAGEMENT_FEE_START
-    sanctuary_pass = InvoicePass.create!(start_of_month: start, enterprise: enterprises(:sanctuary), data: {})
-
-    assert_equal Date.new(2026, 8, 1), start
-    assert Mso::ManagementFeeInvoices.draftable?(garden3d_pass(start))
-    refute Mso::ManagementFeeInvoices.draftable?(garden3d_pass(start - 1.month))
-    refute Mso::ManagementFeeInvoices.draftable?(sanctuary_pass)
-
-    assert Mso::ManagementFeeInvoices.draftable?(@pass)
-    @tracker.update!(blueprint: { "lines" => {} })
-    refute Mso::ManagementFeeInvoices.draftable?(@pass)
-  end
 end

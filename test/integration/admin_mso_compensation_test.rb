@@ -308,8 +308,8 @@ class AdminMsoCompensationTest < ActionDispatch::IntegrationTest
   test "an executive who is not an admin can reach nothing but their own true-up" do
     sign_in @exec_login
     Mso::MonthlyRun.stubs(:call).raises(RuntimeError, "a non-admin reached the run")
-    Mso::ManagementFeeInvoices.stubs(:collected?).raises(RuntimeError, "a non-admin reached QuickBooks")
-    Mso::ManagementFeeInvoices.stubs(:refresh!).raises(RuntimeError, "a non-admin reached QuickBooks")
+    Mso::IntercompanyInvoices.stubs(:collected?).raises(RuntimeError, "a non-admin reached QuickBooks")
+    Mso::IntercompanyInvoices.stubs(:refresh!).raises(RuntimeError, "a non-admin reached QuickBooks")
     @snapshot.update_columns(fee_collected_at: Time.current)
 
     get admin_mso_snapshots_path
@@ -321,7 +321,7 @@ class AdminMsoCompensationTest < ActionDispatch::IntegrationTest
     post check_collection_admin_mso_snapshot_path(@snapshot)
     assert_not_authorized
 
-    post refresh_management_fee_invoices_admin_invoice_pass_path(@pass)
+    post refresh_intercompany_invoices_admin_invoice_pass_path(@pass)
     assert_not_authorized
     assert @snapshot.reload.fee_collected?, "a refused request withdraws nothing"
 
@@ -333,11 +333,11 @@ class AdminMsoCompensationTest < ActionDispatch::IntegrationTest
 
   test "refreshing the pass's invoices withdraws the collection stamp" do
     @snapshot.update_columns(fee_collected_at: Time.current)
-    run = Mso::ManagementFeeInvoices::RefreshRun.new(attempted: 1, succeeded: 1, detached: 0, failed: [])
-    Mso::ManagementFeeInvoices.expects(:refresh!).once.returns(run)
+    run = Mso::IntercompanyInvoices::RefreshRun.new(attempted: 1, succeeded: 1, detached: 0, failed: [])
+    Mso::IntercompanyInvoices.expects(:refresh!).once.returns(run)
     sign_in @admin
 
-    post refresh_management_fee_invoices_admin_invoice_pass_path(@pass)
+    post refresh_intercompany_invoices_admin_invoice_pass_path(@pass)
 
     assert_redirected_to admin_invoice_pass_path(@pass)
     assert_match(/Refreshed 1 of 1/, flash[:notice])
@@ -350,15 +350,15 @@ class AdminMsoCompensationTest < ActionDispatch::IntegrationTest
     sign_in @admin
 
     @snapshot.update_columns(fee_collected_at: Time.current)
-    Mso::ManagementFeeInvoices.stubs(:refresh!).raises(Mso::ManagementFeeInvoices::Error, "QuickBooks said no")
-    post refresh_management_fee_invoices_admin_invoice_pass_path(@pass)
+    Mso::IntercompanyInvoices.stubs(:refresh!).raises(Mso::IntercompanyInvoices::Error, "QuickBooks said no")
+    post refresh_intercompany_invoices_admin_invoice_pass_path(@pass)
     assert_redirected_to admin_invoice_pass_path(@pass)
     assert_match(/QuickBooks said no/, flash[:alert])
     assert_not @snapshot.reload.fee_collected?
 
     @snapshot.update_columns(fee_collected_at: Time.current)
-    Mso::ManagementFeeInvoices.stubs(:refresh!).raises(RuntimeError, "connection reset half-way")
-    assert_raises(RuntimeError) { post refresh_management_fee_invoices_admin_invoice_pass_path(@pass) }
+    Mso::IntercompanyInvoices.stubs(:refresh!).raises(RuntimeError, "connection reset half-way")
+    assert_raises(RuntimeError) { post refresh_intercompany_invoices_admin_invoice_pass_path(@pass) }
     assert_not @snapshot.reload.fee_collected?
   end
 
@@ -405,7 +405,7 @@ class AdminMsoCompensationTest < ActionDispatch::IntegrationTest
   test "a lead cannot post the run or Check collection" do
     sign_in @lead
     Mso::MonthlyRun.stubs(:call).raises(RuntimeError, "a lead reached the run")
-    Mso::ManagementFeeInvoices.stubs(:collected?).raises(RuntimeError, "a lead reached QuickBooks")
+    Mso::IntercompanyInvoices.stubs(:collected?).raises(RuntimeError, "a lead reached QuickBooks")
 
     post run_mso_compensation_admin_invoice_pass_path(@pass)
     assert_not_authorized
@@ -417,7 +417,7 @@ class AdminMsoCompensationTest < ActionDispatch::IntegrationTest
 
   test "Check collection asks QuickBooks once and records the answer" do
     sign_in @admin
-    Mso::ManagementFeeInvoices.expects(:collected?).with(invoice_pass: @pass).once.returns(true)
+    Mso::IntercompanyInvoices.expects(:collected?).with(invoice_pass: @pass).once.returns(true)
 
     post check_collection_admin_mso_snapshot_path(@snapshot)
 

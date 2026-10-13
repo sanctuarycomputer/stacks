@@ -12,8 +12,8 @@ ActiveAdmin.register InvoiceTracker do
 
   action_item :attempt_generate, only: :show, if: proc { current_admin_user.is_admin? } do
     options = { method: :post }
-    if resource.management_fee_invoice?
-      # On a management fee invoice this writes to QuickBooks.
+    if resource.intercompany_invoice?
+      # On an intercompany invoice this writes to QuickBooks.
       options[:data] = {
         confirm: "Create a $0.00 draft invoice in garden3d's QuickBooks for " \
                  "#{resource.invoice_pass.invoice_month}? If Finance already invoiced this month by hand, " \
@@ -216,13 +216,13 @@ ActiveAdmin.register InvoiceTracker do
   end
 
   member_action :attempt_generate, method: :post do
-    # A management fee invoice tracker's make_invoice! returns a QboInvoice or
+    # An intercompany tracker's make_invoice! returns a QboInvoice or
     # raises; the checks below are for the Forecast path.
-    if resource.management_fee_invoice?
+    if resource.intercompany_invoice?
       tracker_page = admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource)
       begin
         resource.make_invoice!
-      rescue Mso::ManagementFeeInvoices::Error => e
+      rescue Mso::IntercompanyInvoices::Error => e
         return redirect_to(tracker_page, alert: e.message)
       rescue StandardError => e
         # QuickBooks timed out, refused, or answered something unexpected. The
@@ -388,7 +388,7 @@ ActiveAdmin.register InvoiceTracker do
     # Only for garden3d's passes: a contributor accepting their own payout on
     # a Sanctuary tracker has no read on that pass and needs none.
     def authorize_garden3d_pass!
-      authorize!(:read, parent) if parent.management_fee?
+      authorize!(:read, parent) if parent.garden3d?
     end
 
     # Only an admin may change which QuickBooks invoice a tracker points at.

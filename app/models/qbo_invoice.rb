@@ -28,31 +28,29 @@ class QboInvoice < ApplicationRecord
     scope.where("(qbo_invoices.qbo_account_id, qbo_invoices.qbo_id) NOT IN (#{values_sql})")
   }
 
-  # Everything except garden3d's management fee invoices. Those bill its own
-  # operating companies: they are intercompany, they belong on a management
-  # fee tracker and nowhere else, and they are not receivables. Used by the
+  # Everything except garden3d's invoices to its own operating companies
+  # (the management fee, loan repayments between entities). They belong on
+  # one of garden3d's trackers and nowhere else, and they are not receivables. Used by the
   # AR tools (Mcp::QboReceivables) and by the admin selects that offer
   # invoices to attach. Two ways to recognise one, both in SQL (never through
   # QboInvoice#data):
   #
   #   - a garden3d-account invoice billed to a payer's stored garden3d
   #     customer id. This covers the hand-made history, attached or not.
-  #   - an invoice attached to a management fee tracker (garden3d's pass, no
+  #   - an invoice attached to an intercompany tracker (garden3d's pass, no
   #     blueprint), by the exact (qbo_account_id, qbo_id) pair.
   #
   # A garden3d invoice to anyone else, a legacy Forecast tracker's invoice,
   # and another company's invoice that merely shares the customer id value
   # all stay in.
-  scope :without_management_fees, -> {
+  scope :without_intercompany, -> {
     scope = all
     return scope unless management_fee_schema_ready?
     garden3d = Enterprise.find_by(name: Enterprise::GARDEN3D_NAME)
     return scope if garden3d.nil?
 
     account_ids = QboAccount.where(enterprise_id: garden3d.id).pluck(:id)
-    customer_ids = Enterprise.management_fee_payers
-      .where.not(g3d_qbo_customer_id: [nil, ''])
-      .pluck(:g3d_qbo_customer_id)
+    customer_ids = Enterprise.billed_by_garden3d.pluck(:g3d_qbo_customer_id)
     if account_ids.any? && customer_ids.any?
       # COALESCE: a row with no customer_ref must compare false, not NULL,
       # or NOT (...) would drop it from the result.
@@ -75,11 +73,10 @@ class QboInvoice < ApplicationRecord
   }
 
   # Migrations are run by hand on production, after the deploy. Until the
-  # columns exist without_management_fees excludes nothing, rather than every
+  # columns exist without_intercompany excludes nothing, rather than every
   # caller raising.
   def self.management_fee_schema_ready?
     Enterprise.column_names.include?('g3d_qbo_customer_id') &&
-      Enterprise.column_names.include?('management_fee_payer') &&
       InvoicePass.column_names.include?('enterprise_id')
   end
 

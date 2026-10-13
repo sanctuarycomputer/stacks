@@ -31,7 +31,7 @@ class InvoiceTracker < ApplicationRecord
 
   # Runs on every invoice attach for EVERY company, so: by id against a
   # memoized id (no enterprise is loaded), and no raise on a database that has
-  # no garden3d (InvoicePass#management_fee? would find_by! it).
+  # no garden3d (InvoicePass#garden3d? would find_by! it).
   def withdraw_mso_collection_stamp
     garden3d_id = Enterprise.garden3d_id
     return if garden3d_id.nil? || invoice_pass.nil? || invoice_pass.enterprise_id != garden3d_id
@@ -40,19 +40,21 @@ class InvoiceTracker < ApplicationRecord
 
   delegate :billing_enterprise, to: :forecast_client
 
-  # A tracker on garden3d's pass bills a paying company its management fee.
-  # It has no blueprint and no contributor payouts; Finance sets the amount in
-  # QuickBooks. See InvoicePass#invoicing_kind and Mso::ManagementFeeInvoices.
-  def management_fee?
-    invoice_pass.present? && invoice_pass.management_fee?
+  # Is this tracker on a pass garden3d issues? See InvoicePass#garden3d?.
+  def garden3d?
+    invoice_pass.present? && invoice_pass.garden3d?
   end
 
-  # The narrower question every behaviour change asks: is this a tracker made
-  # to bill a paying company its fee? True on garden3d's pass with no
-  # blueprint. garden3d's seven 2025 passes each hold a legacy Forecast
-  # tracker WITH a blueprint; those answer false and behave as they always have.
-  def management_fee_invoice?
-    management_fee? && blueprint.nil?
+  # The narrower question every behaviour change asks: is this garden3d
+  # billing one of its paying companies? True on garden3d's pass with no
+  # blueprint. Such an invoice carries the management fee and may carry other
+  # intercompany lines (a loan repayment); it has no contributor payouts, and
+  # Finance sets every amount in QuickBooks. Only its Managerial Services
+  # lines are fee income (Mso::ManagementFeeIncome counts by line).
+  # garden3d's seven 2025 passes each hold a legacy Forecast tracker WITH a
+  # blueprint; those answer false and behave as they always have.
+  def intercompany_invoice?
+    garden3d? && blueprint.nil?
   end
 
   def display_name
@@ -155,8 +157,8 @@ class InvoiceTracker < ApplicationRecord
         nil
       elsif contributor_payouts.loaded? ? contributor_payouts.any? : contributor_payouts.exists?
         (contributor_payouts.loaded? ? contributor_payouts.all?(&:accepted?) : contributor_payouts.where(accepted_at: nil).none?) ? :all_accepted : :some_pending
-      elsif management_fee_invoice?
-        # A management fee invoice never has payouts, so "no payouts" is not a
+      elsif intercompany_invoice?
+        # An intercompany invoice never has payouts, so "no payouts" is not a
         # state worth a pill. (A legacy garden3d tracker carries a blueprint, so
         # it never reaches this branch and reports exactly as before.)
         nil
@@ -173,10 +175,10 @@ class InvoiceTracker < ApplicationRecord
         :deleted
       end
     else
-      # A management fee tracker never has a blueprint -- Finance sets the
+      # An intercompany tracker never has a blueprint -- Finance sets the
       # amount in QuickBooks -- so for it "an invoice and no blueprint" is the
       # normal case, not an impossible one.
-      if blueprint.nil? && !management_fee?
+      if blueprint.nil? && !garden3d?
         :impossible
       else
         qbo_invoice.status
@@ -269,8 +271,8 @@ class InvoiceTracker < ApplicationRecord
   def configuration_errors
     # These checks match the Forecast client to a QuickBooks customer BY NAME.
     # A management fee invoice resolves its customer by stored id instead, and
-    # Mso::ManagementFeeInvoices.push_invoice! raises on anything missing.
-    return [] if management_fee_invoice?
+    # Mso::IntercompanyInvoices.push_invoice! raises on anything missing.
+    return [] if intercompany_invoice?
 
     err = []
     qa = qbo_account
@@ -430,8 +432,8 @@ class InvoiceTracker < ApplicationRecord
   def make_contributor_payouts!(created_by, build: nil, allow_over_cap: false)
     raise "Payment splits are not supported for this invoice pass" unless invoice_pass.allows_payment_splits?
     return [] if qbo_invoice.nil?
-    if management_fee_invoice?
-      raise "Management fee invoices have no contributor payouts (InvoiceTracker #{id})"
+    if intercompany_invoice?
+      raise "garden3d's intercompany invoices have no contributor payouts (InvoiceTracker #{id})"
     end
 
     @written_payout_build = nil
@@ -620,16 +622,17 @@ class InvoiceTracker < ApplicationRecord
   end
 
   def make_invoice!
-    # Which pipeline this tracker belongs to is decided by its pass's issuer.
-    # invoicing_kind raises for a pass that is neither Sanctuary's nor
-    # garden3d's. A management fee invoice tracker must leave here BEFORE the
-    # Forecast path's two guards below: the first is a silent no-op, and the
-    # second refuses internal clients, which every paying company is.
-    #
-    # blueprint.nil? keeps garden3d's legacy Forecast trackers (2025, each
-    # with a blueprint) on the path they have always taken.
-    if invoice_pass.invoicing_kind == :management_fee && blueprint.nil?
-      return Mso::ManagementFeeInvoices.push_invoice!(invoice_tracker: self)
+    # garden3d's invoice to an enterprise it bills is a $0.00 draft Finance
+    # fills in, not a Forecast invoice. It must leave here BEFORE the Forecast
+    # path's guards below: the first is a silent no-op, and the second refuses
+    # internal clients, which every enterprise garden3d bills is.
+    return Mso::IntercompanyInvoices.push_invoice!(invoice_tracker: self) if intercompany_invoice?
+
+    # Everything below is the Forecast path: Sanctuary's trackers, and
+    # garden3d's legacy ones from 2025 (each has a blueprint). Index Space and
+    # USB Club have QuickBooks accounts too; never invoice from them.
+    unless invoice_pass.forecast? || invoice_pass.garden3d?
+      raise "InvoicePass #{invoice_pass.id} (#{invoice_pass.enterprise&.name}) makes no invoices through Stacks"
     end
 
     return if configuration_errors.any?
