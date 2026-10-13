@@ -260,6 +260,10 @@ ActiveAdmin.register Contributor do
     # eager-loads tailored to the partial's needs.
     resource.preload_for_ledger_view!
 
+    # Executive compensation: rows and totals are computed without MSO
+    # true-ups unless the viewer is an admin or this contributor.
+    show_mso_trueups = resource.mso_trueups_visible_to?(current_admin_user)
+
     # Resolve which ledger view to render. Default = "all" (aggregated, with elevated_service).
     ledger_param = params[:ledger]
 
@@ -295,9 +299,9 @@ ActiveAdmin.register Contributor do
 
     items_result =
       if view_mode == :all
-        resource.all_items_grouped_by_month(min_ends_at: floor)
+        resource.all_items_grouped_by_month(min_ends_at: floor, include_mso_trueups: show_mso_trueups)
       else
-        current_ledger.items_grouped_by_month(min_ends_at: floor)
+        current_ledger.items_grouped_by_month(min_ends_at: floor, include_mso_trueups: show_mso_trueups)
       end
 
     projected_by_month =
@@ -316,9 +320,12 @@ ActiveAdmin.register Contributor do
     # the items list rendered below (which IS scoped to current_ledger).
     balance =
       if view_mode == :ledger && current_ledger
-        { balance: current_ledger.balance.to_f, unsettled: current_ledger.unsettled.to_f }
+        {
+          balance: current_ledger.balance(include_mso_trueups: show_mso_trueups).to_f,
+          unsettled: current_ledger.unsettled(include_mso_trueups: show_mso_trueups).to_f,
+        }
       else
-        resource.new_deal_balance
+        resource.new_deal_balance(nil, include_mso_trueups: show_mso_trueups)
       end
     admin = resource.forecast_person&.admin_user
     pending_tasks = admin&.pending_tasks || []
@@ -347,6 +354,7 @@ ActiveAdmin.register Contributor do
       projection_months: horizon.months.size,
       projection_error: projection_error,
       runn_link: runn_link,
+      include_mso_trueups: show_mso_trueups,
     })
   end
 end

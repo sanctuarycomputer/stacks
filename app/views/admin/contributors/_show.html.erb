@@ -2,7 +2,8 @@
       contributor: contributor,
       ledgers: ledgers,
       current_ledger: current_ledger,
-      view_mode: view_mode %>
+      view_mode: view_mode,
+      include_mso_trueups: include_mso_trueups %>
 
 <% if pending_tasks.any? %>
   <div class="dashboard-modules table index_table index">
@@ -139,7 +140,7 @@
                 <%= li.invoice_tracker.invoice_pass.start_of_month.strftime("%B %d, %Y") %>
               <% elsif li.is_a?(Reimbursement) %>
                 <%= li.created_at.strftime("%B %d, %Y") %>
-              <% elsif li.is_a?(Trueup) %>
+              <% elsif li.is_a?(Trueup) || li.is_a?(MsoTrueup) %>
                 <%= li.payment_date.strftime("%B %d, %Y") %>
               <% elsif li.is_a?(ProfitShare) %>
                 <%= li.applied_at.strftime("%B %d, %Y") %>
@@ -195,6 +196,15 @@
                   </span>
                 <% end %>
 
+              <% elsif li.is_a?(MsoTrueup) %>
+                <% if li.deleted_at.present? %>
+                  <span class="pill deleted">Deleted</span>
+                <% else %>
+                  <span class="pill <%= li.payable? ? "paid" : "pending" %>">
+                    MSO true-up
+                    <span class="split"><%= li.payable? ? "Payable" : "Not yet payable" %></span>
+                  </span>
+                <% end %>
               <% elsif li.is_a?(Trueup) %>
                 <span class="pill <%= li.deleted_at.present? ? "deleted" : "paid" %>">
                   <%= li.deleted_at.present? ? "deleted" : "scheduled" %>
@@ -287,6 +297,23 @@
                   <% end %>
                 </span>
 
+              <% elsif li.is_a?(MsoTrueup) %>
+                <% if li.deleted_at.present? %>
+                  <del><%= number_to_currency(li.amount) %></del>
+                <% else %>
+                  + <%= number_to_currency(li.amount) %>
+
+                  <span class="pill <%= li.accepted? ? "accepted" : "pending" %>" style="margin-right: 6px;">
+                    <%= li.accepted? ? "Accepted" : "Pending" %>
+                    <%# The row is rendered for its owner or an admin; only the owner can accept.
+                        The amount travels with the click (see MsoTrueup#toggle_acceptance!). %>
+                    <% if !li.locked? && current_admin_user == li.contributor.forecast_person&.admin_user %>
+                      <span class="split">
+                        <%= link_to li.accepted? ? "Unaccept ↗" : "Accept ↗", toggle_acceptance_admin_ledger_mso_trueup_path(li.ledger, li, amount: li.amount.to_s("F")), method: :post, style: "font-size: unset;" %>
+                      </span>
+                    <% end %>
+                  </span>
+                <% end %>
               <% elsif li.is_a?(Trueup) %>
                 <% if li.deleted_at.present? %>
                   <del><%= number_to_currency(li.amount) %></del>
@@ -333,6 +360,8 @@
                   <%= link_to "#{li.periodic_report.display_name} ↗", admin_periodic_report_path(li.periodic_report) %>
                 <% elsif li.is_a?(Reimbursement) %>
                   <%= link_to "Info ↗", admin_ledger_reimbursement_path(li.ledger, li) %>
+                <% elsif li.is_a?(MsoTrueup) %>
+                  <%= link_to "Info ↗", admin_ledger_mso_trueup_path(li.ledger, li) %>
                 <% elsif li.is_a?(Trueup) %>
                   <%= link_to "Info ↗", admin_ledger_trueup_path(li.ledger, li) %>
                 <% elsif li.is_a?(ContributorAdjustment) %>

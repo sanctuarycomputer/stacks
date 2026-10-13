@@ -322,6 +322,14 @@ class Contributor < ApplicationRecord
     forecast_person&.admin_user == admin_user
   end
 
+  # An MSO true-up is executive compensation. Its rows and its amount are
+  # shown to admins and to the executive themself; anyone else who can open
+  # this contributor's page (every lead can) sees the ledger without them.
+  def mso_trueups_visible_to?(admin_user)
+    return false if admin_user.nil?
+    admin_user.is_admin? || forecast_person&.admin_user == admin_user
+  end
+
   # Sums Ledger#balance / Ledger#unsettled across the contributor's ledgers.
   # Delegating per-ledger keeps the summary card consistent with the per-ledger
   # pills in _ledger_tabs (both apply the same legacy-vs-qbo_bound rules per

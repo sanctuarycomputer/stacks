@@ -32,7 +32,8 @@
     </div>
     <div class="module-body text-center">
       <% if has_contributor %>
-        <% new_deal_balance = resource.forecast_person.contributor.new_deal_balance %>
+        <% ledger_contributor = resource.forecast_person.contributor %>
+        <% new_deal_balance = ledger_contributor.new_deal_balance(nil, include_mso_trueups: ledger_contributor.mso_trueups_visible_to?(current_admin_user)) %>
         <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
           <thead>
             <tr>
