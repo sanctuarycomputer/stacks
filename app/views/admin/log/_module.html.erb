@@ -1,12 +1,17 @@
 <%# The project log's module on the Project Tracker page: the counts and first
-    rows of its "Needs attention" view (Stacks::ProjectLog.summary). %>
+    rows of its "Needs attention" view (Stacks::ProjectLog.summary). summary is
+    nil when it could not be read; the module then says so in one line. %>
 <div class="dashboard-modules table index_table index" id="project_log_module">
   <div class="dashboard-module">
     <div class="module-header">
       <p>What Stacksbot has seen</p>
       <%= link_to "Open the log →", admin_project_tracker_log_path(tracker) %>
     </div>
-    <% if summary[:empty_reason] %>
+    <% if summary.nil? %>
+      <div class="module-body">
+        <p>The project log is unavailable right now.</p>
+      </div>
+    <% elsif summary[:empty_reason] %>
       <div class="module-body">
         <%= render "admin/log/empty", tracker: tracker, reason: summary[:empty_reason] %>
       </div>
@@ -25,7 +30,7 @@
     <% end %>
   </div>
 
-  <% if summary[:latest].any? %>
+  <% if summary && summary[:latest].any? %>
     <div class="dashboard-module">
       <div class="module-header">
         <p>Needs attention</p>

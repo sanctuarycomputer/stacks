@@ -17,7 +17,7 @@ ActiveAdmin.register_page "Log" do
 
     # The content block is Arbre and does not see controller ivars, so the
     # two things it needs are helpers (as in app/admin/project_trackers.rb).
-    helper_method :log_tracker, :project_log
+    helper_method :log_tracker, :project_log, :loaded_project_log
 
     def log_tracker
       @log_tracker
@@ -32,11 +32,28 @@ ActiveAdmin.register_page "Log" do
       )
     end
 
+    # The log with its rows already read, or nil when they cannot be read
+    # (the sync's columns are missing, say). The page then says so inside its
+    # usual frame rather than answering with a 500.
+    def loaded_project_log
+      return @loaded_project_log if defined?(@loaded_project_log)
+      @loaded_project_log =
+        begin
+          project_log.load!
+        rescue StandardError => e
+          Rails.logger.error("[project log] tracker #{@log_tracker.id} could not be read: #{e.class}: #{e.message}")
+          nil
+        end
+    end
+
     private
 
-    # HTML only: there is no CSV, JSON or XML form of the log.
+    # HTML only: there is no CSV, JSON or XML form of the log. A request that
+    # names no type, or accepts any ("Accept: */*", as curl sends), gets HTML.
     def refuse_other_formats
-      raise ActionController::UnknownFormat unless request.format&.html?
+      return if request.format&.html?
+      raise ActionController::UnknownFormat unless params[:format].blank? && request.format == Mime::ALL
+      request.format = :html
     end
 
     def load_and_authorize_tracker
@@ -46,6 +63,10 @@ ActiveAdmin.register_page "Log" do
   end
 
   content title: "Project Log" do
-    render(partial: "show", locals: { tracker: log_tracker, log: project_log })
+    if loaded_project_log
+      render(partial: "show", locals: { tracker: log_tracker, log: loaded_project_log })
+    else
+      render(partial: "unavailable", locals: { tracker: log_tracker })
+    end
   end
 end

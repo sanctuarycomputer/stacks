@@ -340,4 +340,94 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_includes log_module.text, "Mine to read"
   end
+
+  # --- review fixes ----------------------------------------------------------
+
+  UNAVAILABLE = "The project log is unavailable right now."
+
+  # The module's data comes from columns a rolled-back migration takes away.
+  # The tracker page is worth more than its newest module.
+  test "the tracker page still renders when the log's summary raises, with one line in the module" do
+    obs!(name: "NOT-SHOWN", valence: "Negative")
+    Stacks::ProjectLog.stubs(:summary).raises(ActiveRecord::StatementInvalid, "PG::UndefinedColumn: column notion_pages.project_ids does not exist")
+    Rails.logger.expects(:error).with(regexp_matches(/project log.*#{@tracker.id}.*UndefinedColumn/m)).at_least_once
+    get admin_project_tracker_path(@tracker)
+    assert_response :success
+    assert log_module, "the module is still drawn"
+    assert_includes log_module.text, UNAVAILABLE
+    assert_empty log_module.css(".factoid")
+    assert_empty log_module.css("tr[id^='log_row_']")
+    assert_not_includes response.body, "UndefinedColumn"
+    assert page.css(".panel").any? { |panel| panel.at_css("h3")&.text&.strip == "Weekly Ships" }, "the rest of the page is there"
+  end
+
+  test "the log page says it is unavailable, inside the page, when its data cannot be read" do
+    obs!(name: "NOT-SHOWN", valence: "Negative")
+    %i[empty_reason rows problems].each do |reader|
+      Stacks::ProjectLog.any_instance.stubs(reader).raises(ActiveRecord::StatementInvalid, "PG::UndefinedColumn: boom")
+      Rails.logger.expects(:error).with(regexp_matches(/project log.*#{@tracker.id}.*UndefinedColumn/m)).at_least_once
+      get admin_project_tracker_log_path(@tracker)
+      assert_response :success, "#{reader} raising is not a 500"
+      assert_includes response.body, UNAVAILABLE
+      assert_not_includes response.body, "UndefinedColumn"
+      assert page.at_css("a[href='#{admin_project_tracker_path(@tracker)}']"), "the way back to the tracker is there"
+      assert_empty page.css(".log-tab")
+      assert_empty page.css("tr[id^='log_row_']")
+      Stacks::ProjectLog.any_instance.unstub(reader)
+    end
+  end
+
+  test "a request that accepts anything, or names no type, gets the HTML page" do
+    row = obs!(name: "Something negative", valence: "Negative")
+    ["*/*", "", nil, "text/html", "text/html,application/xhtml+xml,*/*;q=0.8"].each do |accept|
+      get admin_project_tracker_log_path(@tracker), headers: accept.nil? ? {} : { "Accept" => accept }
+      assert_response :success, "Accept: #{accept.inspect}"
+      assert_match(%r{\Atext/html}, response.media_type)
+      assert row_for(row), "Accept: #{accept.inspect}"
+    end
+  end
+
+  test "an explicit other format is still refused, whatever the Accept header" do
+    obs!(name: "QUOTED-FROM-A-CHANNEL", valence: "Negative")
+    asks = %w[json csv xml].flat_map do |format|
+      [[admin_project_tracker_log_path(@tracker, format: format), { "Accept" => "*/*" }],
+       ["#{admin_project_tracker_log_path(@tracker)}?format=#{format}", { "Accept" => "*/*" }],
+       ["#{admin_project_tracker_log_path(@tracker)}?format=#{format}", {}]]
+    end
+    asks += [[admin_project_tracker_log_path(@tracker), { "Accept" => "application/json" }],
+             [admin_project_tracker_log_path(@tracker), { "Accept" => "text/csv" }]]
+    asks.each do |(path, headers)|
+      begin
+        get path, headers: headers
+      rescue ActionController::UnknownFormat, ActionController::RoutingError
+        next
+      end
+      assert_not_equal 200, response.status, "#{path} #{headers.inspect} should not be served"
+      assert_not_includes response.body, "QUOTED-FROM-A-CHANNEL"
+    end
+  end
+
+  test "the source label, a problem's status and owner, and the folded-into title are escaped" do
+    problem = problem!(name: "<b>folded</b> title", severity: "High", status: "<u>status</u>", owner: "<em>owner</em>",
+                       project_ids: [@project])
+    unowned = problem!(name: "Plain", severity: "<i>sev</i>", status: "<s>odd</s>", project_ids: [])
+    row = obs!(name: "Row", source: "<i>src</i>", valence: "Negative", problem_ids: [problem.notion_id, unowned.notion_id])
+    get admin_project_tracker_log_path(@tracker)
+    assert_response :success
+    %w[<b>folded</b> <u>status</u> <em>owner</em> <i>src</i> <s>odd</s>].each do |raw|
+      assert_not_includes response.body, raw
+    end
+    assert_empty page.css("tr[id^='log_row_'] i, tr[id^='log_row_'] b, tr[id^='log_row_'] u, tr[id^='log_row_'] s, tr[id^='log_problem_'] u, tr[id^='log_problem_'] em, tr[id^='log_problem_'] b")
+    assert_includes row_for(row).css("td")[2].text, "<i>src</i>"
+    assert_includes row_for(row).text, "Folded into <b>folded</b> title"
+    assert_includes row_for(row).text, "<u>status</u>"
+    assert_includes row_for(row).text, "<s>odd</s>"
+    listed = page.at_css("#log_problem_#{problem.notion_id}")
+    assert_includes listed.text, "<u>status</u>, <em>owner</em>"
+
+    get admin_project_tracker_path(@tracker)
+    assert_not_includes response.body, "<i>src</i>"
+    assert_not_includes response.body, "<b>folded</b>"
+    assert_includes log_module.text, "<i>src</i>"
+  end
 end

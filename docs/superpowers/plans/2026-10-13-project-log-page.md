@@ -3584,6 +3584,8 @@ Tasks 1 to 8 change nothing a person can see and can merge ahead of Tasks 9 to 1
 - The Notion client's other calls (`sync_database`, `get_page`, the write helpers) still have no retry. Only the two new calls do.
 - A page restored from the trash in Notion comes back only if the restore bumps its `last_edited_time`, so that a query returns it. The recheck skips rows Stacks has already soft-deleted.
 - `notion_pages` holds about 22,000 rows in production. The two indexes are still built concurrently, and that is still right at that size.
+- Trash is only looked for on Observations of the last 90 days (`RECHECK_WINDOW`), so an older observation trashed in Notion stays in the log under Everything; this is an accepted limit.
+- The recheck queue has no bound on its length: it is every stored Problem plus 90 days of Observations, read 200 a night, so the lag before a trashed row is noticed grows with the queue; this is an accepted limit.
 
 ---
 
