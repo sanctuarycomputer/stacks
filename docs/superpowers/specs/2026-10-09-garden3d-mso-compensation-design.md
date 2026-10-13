@@ -1123,13 +1123,16 @@ bills. Where §6 and §13b differ from this section, **this section governs**.
   bills every other enterprise that has a customer id in garden3d's QuickBooks
   (`enterprises.g3d_qbo_customer_id`, `Enterprise.billed_by_garden3d`). An
   enterprise with no id stored gets no tracker.
-- **Stacks never creates a QuickBooks customer.** Finance creates it and its
-  id is stored on the enterprise.
+- **Stacks never creates a QuickBooks customer.** Finance creates it and an
+  admin stores its id on the enterprise's edit page (admin-only field).
+- **With no enterprise stored as billed, the collection rule answers no.**
 - **The nightly step is `InvoicePass.make_intercompany_passes!`**, from
   `Enterprise#daily_tasks` (`stacks:daily_enterprise_tasks`): garden3d's pass
-  and trackers for every month from the start month through last month.
-  Database only. The 12-month catch-up bound and "open a month" by hand are
-  gone.
+  and trackers for every month from the start month through last month that
+  has no pass. Database only. A month that already has its pass is left
+  alone, so an enterprise that starts being billed later is not added to
+  months already invoiced; "Generate Invoices" on a pass does add it. The
+  12-month catch-up bound and "open a month" by hand are gone.
 - **One button.** "Generate Invoices" on a pass makes that pass's invoices:
   Forecast invoicing on Sanctuary's, a $0.00 draft per tracker on garden3d's.
   "Create management fee drafts" and "Open garden3d month" are gone.

@@ -62,7 +62,8 @@ ActiveAdmin.register InvoicePass do
 
       made = 0
       failed = []
-      InvoiceTracker.where(invoice_pass_id: resource.id, qbo_invoice_id: nil).order(:id).each do |tracker|
+      InvoiceTracker.where(invoice_pass_id: resource.id, blueprint: nil, qbo_invoice_id: [nil, ""])
+                    .order(:id).each do |tracker|
         tracker.make_invoice!
         made += 1
       rescue StandardError => e
