@@ -3582,6 +3582,8 @@ Tasks 1 to 8 change nothing a person can see and can merge ahead of Tasks 9 to 1
 - `System` settings are one jsonb column written whole (Storext), so a mark written at the same moment as another setting could lose one of the two writes. `runn_synced_at` has the same exposure today.
 - Offset paging over rows that arrive while someone pages can repeat or skip a row at a page edge.
 - The Notion client's other calls (`sync_database`, `get_page`, the write helpers) still have no retry. Only the two new calls do.
+- A page restored from the trash in Notion comes back only if the restore bumps its `last_edited_time`, so that a query returns it. The recheck skips rows Stacks has already soft-deleted.
+- `notion_pages` holds about 22,000 rows in production. The two indexes are still built concurrently, and that is still right at that size.
 
 ---
 
