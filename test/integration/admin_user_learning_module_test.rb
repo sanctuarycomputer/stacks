@@ -58,4 +58,23 @@ class AdminUserLearningModuleTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Badges"
     assert_includes response.body, badge.name
   end
+
+  test "past due with only an admin sign-off left reads as waiting on an admin, not as overdue" do
+    mod = learning_module!(steps: ["read", "admin_sign_off"])
+    course = learning_course!(modules: [mod])
+    learning_assign!(@person, course, due_on: Date.today - 2)
+    complete_step!(@person, mod.module_steps.first)
+    sign_in @person
+    get admin_admin_user_path(@person)
+    assert_includes response.body, "Waiting on an admin"
+    assert_not_includes response.body, "Was due"
+  end
+
+  test "past due with the person's own work left still reads as was due" do
+    learning_assign!(@person, @course, due_on: Date.today - 2)
+    sign_in @person
+    get admin_admin_user_path(@person)
+    assert_includes response.body, "Was due"
+    assert_not_includes response.body, "Waiting on an admin"
+  end
 end

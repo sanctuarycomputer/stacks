@@ -32,6 +32,13 @@ class AdminCourseAssignmentsTest < ActionDispatch::IntegrationTest
     @mod.quiz_questions.to_h { |q| [q.id.to_s, ((q.correct_index + 1) % q.choices.size).to_s] }
   end
 
+  def assert_person_facing_language(body)
+    visible = body.gsub(/\s(href|action|for|name|id|value|src|class|data-[\w-]+)="[^"]*"/, "")
+    %w[quiz Quiz lesson training learner course Course].each do |word|
+      assert_not_includes visible, word, "person-facing page says #{word.inspect}"
+    end
+  end
+
   # ── the person ────────────────────────────────────────────────────────────
 
   test "a person sees their own checklist in getting-set-up language" do
@@ -41,9 +48,16 @@ class AdminCourseAssignmentsTest < ActionDispatch::IntegrationTest
     assert_includes response.body, @course.learner_title
     assert_includes response.body, @read.title
     assert_includes response.body, "Quick check"
-    %w[quiz Quiz lesson training learner].each do |word|
-      assert_not_includes response.body.gsub(/href="[^"]*"|action="[^"]*"/, ""), word, "person-facing page says #{word.inspect}"
-    end
+    assert_person_facing_language(response.body)
+  end
+
+  test "the quick check form uses the same person-facing language" do
+    finish_steps!
+    sign_in @person
+    get quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id)
+    assert_response :success
+    assert_includes response.body, "Submit answers", "positive control: this is the form"
+    assert_person_facing_language(response.body)
   end
 
   test "a person ticks a read step" do
@@ -88,7 +102,7 @@ class AdminCourseAssignmentsTest < ActionDispatch::IntegrationTest
     [@read, @auto, @sign_off].each { |s| complete_step!(@other, s) }
     get quiz_admin_course_assignment_path(theirs, learning_module_id: @mod.id)
     assert_not_equal 200, response.status
-    post submit_quiz_admin_course_assignment_path(theirs, learning_module_id: @mod.id), params: { answers: all_right }
+    post submit_quiz_admin_course_assignment_path(theirs, learning_module_id: @mod.id), params: { answers: all_right, fingerprint: quiz_fingerprint(@mod) }
     assert_equal 0, QuizAttempt.count
 
     sign_out @person
@@ -136,7 +150,7 @@ class AdminCourseAssignmentsTest < ActionDispatch::IntegrationTest
     sign_in @person
     get quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id)
     assert_redirected_to admin_course_assignment_path(@assignment)
-    post submit_quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id), params: { answers: all_right }
+    post submit_quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id), params: { answers: all_right, fingerprint: quiz_fingerprint(@mod) }
     assert_equal 0, QuizAttempt.count
   end
 
@@ -154,17 +168,17 @@ class AdminCourseAssignmentsTest < ActionDispatch::IntegrationTest
   test "failing shows the score only, then locks after the second attempt" do
     finish_steps!
     sign_in @person
-    post submit_quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id), params: { answers: all_wrong }
+    post submit_quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id), params: { answers: all_wrong, fingerprint: quiz_fingerprint(@mod) }
     assert_redirected_to admin_course_assignment_path(@assignment)
     follow_redirect!
     assert_includes response.body, "0 of 2"
     assert_not_includes response.body, "Because 0."
 
-    post submit_quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id), params: { answers: all_wrong }
+    post submit_quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id), params: { answers: all_wrong, fingerprint: quiz_fingerprint(@mod) }
     follow_redirect!
     assert_includes response.body, "out of attempts"
 
-    post submit_quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id), params: { answers: all_right }
+    post submit_quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id), params: { answers: all_right, fingerprint: quiz_fingerprint(@mod) }
     assert_equal 2, QuizAttempt.where(admin_user: @person).count
     assert_nil @assignment.reload.completed_at
 
@@ -175,12 +189,68 @@ class AdminCourseAssignmentsTest < ActionDispatch::IntegrationTest
   test "passing completes the checklist, and only then are explanations shown" do
     finish_steps!
     sign_in @person
-    post submit_quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id), params: { answers: all_right }
+    post submit_quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id), params: { answers: all_right, fingerprint: quiz_fingerprint(@mod) }
     assert @assignment.reload.completed_at.present?
 
     get quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id)
     assert_response :success
     assert_includes response.body, "Because 0."
+  end
+
+  test "a stale fingerprint records nothing and asks the person to answer again" do
+    finish_steps!
+    sign_in @person
+    stale = quiz_fingerprint(@mod)
+    q = @mod.quiz_questions.first
+    q.update!(choices: q.choices.reverse, correct_index: 3)
+    post submit_quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id), params: { answers: all_right, fingerprint: stale }
+    assert_equal 0, QuizAttempt.count
+    follow_redirect!
+    assert_includes response.body, "just updated"
+
+    post submit_quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id), params: { answers: all_right }
+    assert_equal 0, QuizAttempt.count, "a web post with no fingerprint is a mismatch"
+
+    post submit_quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id), params: { answers: @mod.reload.quiz_questions.to_h { |x| [x.id.to_s, x.correct_index.to_s] }, fingerprint: quiz_fingerprint(@mod) }
+    assert_equal 1, QuizAttempt.count, "positive control: the current fingerprint is scored"
+  end
+
+  test "the quick check form carries the fingerprint and the needed count" do
+    finish_steps!
+    sign_in @person
+    get quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id)
+    assert_includes response.body, %(name="fingerprint")
+    assert_includes response.body, quiz_fingerprint(@mod)
+    assert_includes response.body, "You need 2 of 2"
+  end
+
+  test "a waived or completed assignment cannot be taken, but a real pass can still be reviewed" do
+    finish_steps!
+    sign_in @person
+    get quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id)
+    assert_response :success, "positive control: open and outstanding"
+
+    @assignment.update!(waived_at: Time.current)
+    get quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id)
+    assert_redirected_to admin_course_assignment_path(@assignment)
+    assert_not_nil flash[:alert]
+
+    @assignment.update!(waived_at: nil, completed_at: Time.current)
+    get quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id)
+    assert_redirected_to admin_course_assignment_path(@assignment)
+
+    QuizAttempt.create!(admin_user: @person, learning_module: @mod, correct_count: 2, question_count: 2, passed: true)
+    get quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id)
+    assert_response :success
+    assert_includes response.body, "Because 0."
+  end
+
+  test "asking for the quick check as json does not raise" do
+    finish_steps!
+    sign_in @person
+    get quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id, format: :json)
+    assert_not_equal 200, response.status
+    assert_not_includes response.body, "Question 0?"
   end
 
   # ── admins ────────────────────────────────────────────────────────────────
@@ -274,7 +344,7 @@ class AdminCourseAssignmentsTest < ActionDispatch::IntegrationTest
     post complete_step_admin_course_assignment_path(@assignment), params: { step_id: { x: 1 } }
     assert_response :redirect
     [@read, @sign_off].each { |s| complete_step!(@person, s) unless done?(@person, s) }
-    post submit_quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id), params: { answers: ["1"] }
+    post submit_quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id), params: { answers: ["1"], fingerprint: quiz_fingerprint(@mod) }
     assert_response :redirect
     assert_equal 0, QuizAttempt.count
   end
@@ -319,7 +389,7 @@ class AdminCourseAssignmentsTest < ActionDispatch::IntegrationTest
     post sign_off_step_admin_course_assignment_path(@assignment, step_id: @sign_off.id)
     assert_not done?(@person, @sign_off)
     complete_step!(@person, @sign_off, source: "admin")
-    post submit_quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id), params: { answers: all_right }
+    post submit_quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id), params: { answers: all_right, fingerprint: quiz_fingerprint(@mod) }
     assert_equal 0, QuizAttempt.count
     post waive_admin_course_assignment_path(@assignment)
     assert_nil @assignment.reload.waived_at
@@ -362,6 +432,17 @@ class AdminCourseAssignmentsTest < ActionDispatch::IntegrationTest
     assert_redirected_to admin_course_assignments_path
     get edit_admin_course_assignment_path(@assignment)
     assert_redirected_to admin_course_assignments_path
+  end
+
+  test "an admin assigning a course to themselves cannot choose the due date; to someone else they can" do
+    sign_in @admin
+    course = learning_course!(modules: [learning_module!])
+    post admin_course_assignments_path, params: { course_assignment: { admin_user_id: @admin.id, course_id: course.id, due_on: "2099-01-01" } }
+    mine = CourseAssignment.find_by!(admin_user: @admin, course: course)
+    assert_equal Date.today + course.grace_period_days, mine.due_on
+
+    post admin_course_assignments_path, params: { course_assignment: { admin_user_id: @other.id, course_id: course.id, due_on: "2099-01-01" } }
+    assert_equal Date.new(2099, 1, 1), CourseAssignment.find_by!(admin_user: @other, course: course).due_on
   end
 
   test "an admin cannot change the due date on their own assignment, but can on someone else's" do

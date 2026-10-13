@@ -164,4 +164,34 @@ class StacksLearningQuizTest < ActiveSupport::TestCase
     assert_equal :passed, result.status
     assert QuizAttempt.exists?(admin_user: @person, learning_module: @mod, passed: true)
   end
+
+  test "needed_count is public and rounds up" do
+    assert_equal 4, Q.needed_count(@mod, 5)
+    assert_equal 3, Q.needed_count(learning_module!(questions: 3, pass_percent: 80), 3)
+  end
+
+  test "fingerprint changes when a question's choices, prompt or correct index change" do
+    base = Q.fingerprint(@mod)
+    assert_match(/\A\h{64}\z/, base)
+    assert_equal base, Q.fingerprint(@mod.reload)
+    q = @mod.quiz_questions.first
+    q.update!(choices: q.choices.reverse, correct_index: 3)
+    assert_not_equal base, Q.fingerprint(@mod.reload)
+  end
+
+  test "a stale fingerprint is rejected and records no attempt" do
+    stale = Q.fingerprint(@mod)
+    q = @mod.quiz_questions.first
+    q.update!(choices: q.choices.reverse, correct_index: 3)
+    result = Q.submit!(assignment: @assignment, learning_module: @mod.reload, answers: answers(right: 5), fingerprint: stale)
+    assert_equal :rejected, result.status
+    assert_equal "These questions were just updated. Please answer them again.", result.message
+    assert_equal 0, QuizAttempt.where(admin_user: @person).count
+  end
+
+  test "a blank fingerprint is rejected; a matching or omitted one is scored normally" do
+    assert_equal :rejected, Q.submit!(assignment: @assignment, learning_module: @mod, answers: answers(right: 5), fingerprint: "").status
+    assert_equal 0, QuizAttempt.where(admin_user: @person).count
+    assert_equal :passed, Q.submit!(assignment: @assignment, learning_module: @mod, answers: answers(right: 5), fingerprint: Q.fingerprint(@mod)).status
+  end
 end

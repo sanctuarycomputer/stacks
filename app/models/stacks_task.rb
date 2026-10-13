@@ -67,7 +67,7 @@ class StacksTask
 
     # Onboarding course issues
     course_assignment_overdue: "Assigned checklist is overdue",
-    course_assignment_needs_admin_sign_off: "Checklist needs an admin sign-off",
+    course_assignment_needs_admin_sign_off: "Checklist is waiting on an admin",
   }.freeze
 
   # type    — Symbol classifying the task (:project_capsule_incomplete, :survey, …)

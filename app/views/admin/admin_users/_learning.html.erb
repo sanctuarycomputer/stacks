@@ -24,8 +24,10 @@
                       <span class="pill ready">Done</span>
                     <% elsif assignment.waived? %>
                       <span class="pill">Waived</span>
-                    <% elsif assignment.due_on < Date.today %>
+                    <% elsif checklist.overdue? %>
                       <span class="pill at_risk">Was due <%= assignment.due_on.to_s(:long) %></span>
+                    <% elsif assignment.due_on < Date.today %>
+                      Waiting on an admin
                     <% else %>
                       Due <%= assignment.due_on.to_s(:long) %>
                     <% end %>

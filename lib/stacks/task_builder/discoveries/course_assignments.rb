@@ -7,7 +7,8 @@ module Stacks
       #              (a sign-off, a quiz retry grant) never makes someone overdue,
       #              because the pending-task pill on payables holds their payout.
       #   sign-off — owned by every admin except the assignee, while a sign-off
-      #              step is ready.
+      #              step is ready, or once past due while an admin-owned
+      #              auto-check (payment profile) is still outstanding.
       class CourseAssignments < Base
         OVERDUE = :course_assignment_overdue
         SIGN_OFF = :course_assignment_needs_admin_sign_off
@@ -29,8 +30,11 @@ module Stacks
 
           checklist = Stacks::Learning::Checklist.new(assignment)
           types = []
-          types << OVERDUE if assignment.due_on < today && checklist.own_work_remaining?
-          types << SIGN_OFF if checklist.ready_sign_off_steps.any?
+          types << OVERDUE if checklist.overdue?(today)
+          # Past due and only an admin can unblock it (e.g. link a payment
+          # profile): the admins get the task, the person never does.
+          waiting_on_admin = assignment.due_on < today && checklist.pending_admin_auto_check_steps.any?
+          types << SIGN_OFF if checklist.ready_sign_off_steps.any? || waiting_on_admin
           types
         end
 

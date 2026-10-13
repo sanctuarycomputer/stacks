@@ -69,7 +69,11 @@
                       <%= button_to "Mark as done", complete_step_admin_course_assignment_path(assignment, step_id: step.id), method: :post %>
                     <% end %>
                   <% when "auto_check" %>
-                    Not yet — Stacks checks this automatically
+                    <% if Stacks::Learning::AutoChecks.owner(step.auto_check_key) == :admin %>
+                      Not yet — an admin links this once your payment setup is done
+                    <% else %>
+                      Not yet — Stacks checks this automatically
+                    <% end %>
                   <% when "admin_sign_off" %>
                     <% if acting_as_admin? && step_state.ready %>
                       <%= button_to "Sign off", sign_off_step_admin_course_assignment_path(assignment, step_id: step.id), method: :post %>

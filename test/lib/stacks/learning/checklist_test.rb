@@ -144,18 +144,73 @@ class StacksLearningChecklistTest < ActiveSupport::TestCase
     assert_empty CL.new(a).ready_sign_off_steps
   end
 
-  test "a module with neither steps nor questions is not done, but one with only questions can be" do
+  test "a module with neither steps nor questions is skipped; one with only questions can be done" do
     person = learning_person!
     empty = learning_module!(steps: [])
     quiz_only = learning_module!(steps: [], questions: 1)
     a = learning_assign!(person, learning_course!(modules: [empty, quiz_only]))
 
-    assert_not CL.new(a).module_state(empty).done?
+    assert_nil CL.new(a).module_state(empty)
     assert_not CL.new(a).module_state(quiz_only).done?
     QuizAttempt.create!(admin_user: person, learning_module: quiz_only, correct_count: 1, question_count: 1, passed: true)
     assert CL.new(a).module_state(quiz_only).done?
+  end
 
+  test "an empty module with a completion row is still shown" do
+    person = learning_person!
+    empty = learning_module!(steps: [])
+    a = learning_assign!(person, learning_course!(modules: [empty]))
     ModuleCompletion.create!(admin_user: person, learning_module: empty, completed_at: Time.current)
     assert CL.new(a).module_state(empty).done?
+  end
+
+  test "an empty module does not block the course: [empty, normal] completes when the normal one is done" do
+    person = learning_person!
+    empty = learning_module!(steps: [])
+    normal = learning_module!(steps: ["read", "admin_sign_off"])
+    a = learning_assign!(person, learning_course!(modules: [empty, normal]))
+    cl = CL.new(a)
+    assert_equal [normal], cl.modules.map(&:learning_module)
+    assert_not cl.all_done?
+    complete_step!(person, normal.module_steps.first)
+    assert_equal [normal.module_steps.last], CL.new(a).ready_sign_off_steps, "the empty module does not hold up the sign-off"
+    complete_step!(person, normal.module_steps.last, source: "admin")
+    assert CL.new(a).all_done?
+  end
+
+  test "a course whose only modules are empty is never all done" do
+    a = learning_assign!(learning_person!, learning_course!(modules: [learning_module!(steps: [])]))
+    assert_not CL.new(a).all_done?
+  end
+
+  test "own_work_remaining? does not count an admin-owned auto_check step, but does count a person-owned one" do
+    person = learning_person!
+    mod = learning_module!(steps: [["auto_check", "payment_profile"]])
+    a = learning_assign!(person, learning_course!(modules: [mod]))
+    assert_not CL.new(a).own_work_remaining?
+
+    mod2 = learning_module!(steps: [["auto_check", "forecast_account"]])
+    b = learning_assign!(person, learning_course!(modules: [mod2]))
+    assert CL.new(b).own_work_remaining?
+  end
+
+  test "pending_admin_auto_check_steps lists incomplete admin-owned auto-checks in modules not done" do
+    person = learning_person!
+    mod = learning_module!(steps: [["auto_check", "payment_profile"], ["auto_check", "forecast_account"]])
+    a = learning_assign!(person, learning_course!(modules: [mod]))
+    assert_equal [mod.module_steps.first], CL.new(a).pending_admin_auto_check_steps
+    complete_step!(person, mod.module_steps.first, source: "auto")
+    assert_empty CL.new(a).pending_admin_auto_check_steps
+  end
+
+  test "overdue? needs outstanding, past due, and own work remaining" do
+    person = learning_person!
+    mod = learning_module!(steps: ["read"])
+    a = learning_assign!(person, learning_course!(modules: [mod]), due_on: Date.today - 1)
+    assert CL.new(a).overdue?
+    assert_not CL.new(a).overdue?(Date.today - 1), "due today is not overdue"
+    complete_step!(person, mod.module_steps.first)
+    ModuleCompletion.create!(admin_user: person, learning_module: mod, completed_at: Time.current)
+    assert_not CL.new(a).overdue?
   end
 end

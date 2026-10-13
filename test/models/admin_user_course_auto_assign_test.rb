@@ -49,4 +49,10 @@ class AdminUserCourseAutoAssignTest < ActiveSupport::TestCase
     person = learning_person!
     assert_no_difference(-> { CourseAssignment.count }) { person.assign_auto_assigned_courses! }
   end
+
+  test "the hook is an after-commit callback, never an after-create one" do
+    names = ->(chain) { chain.map(&:filter) }
+    assert_includes names.call(AdminUser._commit_callbacks), :assign_auto_assigned_courses!
+    assert_not_includes names.call(AdminUser._create_callbacks), :assign_auto_assigned_courses!
+  end
 end

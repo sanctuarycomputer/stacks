@@ -47,11 +47,10 @@ module Stacks
         end
 
         # Sticky: a ModuleCompletion row keeps a module done even if steps or
-        # questions are added to it later. A module with nothing in it is a
-        # half-authored draft, never done.
+        # questions are added to it later. (Modules with nothing in them are
+        # never built into a checklist, so they cannot reach here.)
         def done?
           return true if completion.present?
-          return false if steps.empty? && !has_quiz?
           steps_done? && (!has_quiz? || passed?)
         end
       end
@@ -82,12 +81,26 @@ module Stacks
       end
 
       # True when the person still has something only they can do. Admin
-      # sign-offs and quizzes locked pending an admin's retry grant are not theirs.
+      # sign-offs, admin-owned auto-checks (a payment profile only an admin can
+      # link) and quizzes locked pending an admin's retry grant are not theirs.
       def own_work_remaining?
         modules.any? do |m|
           next false if m.done?
-          m.steps.any? { |s| !s.done? && s.step.kind != "admin_sign_off" } || m.quiz_state == :open
+          m.steps.any? { |s| !s.done? && person_step?(s.step) } || m.quiz_state == :open
         end
+      end
+
+      # Incomplete auto-checks that only an admin can make pass, in modules not yet done.
+      def pending_admin_auto_check_steps
+        modules.reject(&:done?).flat_map do |m|
+          m.steps.reject(&:done?).map(&:step).select { |s| admin_auto_check?(s) }
+        end
+      end
+
+      # The one definition of "overdue": past due with something of their own
+      # left to do. Shared by the profile, the assignments index and the task.
+      def overdue?(today = Date.today)
+        assignment.outstanding? && assignment.due_on < today && own_work_remaining?
       end
 
       def ready_sign_off_steps
@@ -104,11 +117,27 @@ module Stacks
 
       private
 
+      def admin_auto_check?(step)
+        step.kind == "auto_check" && AutoChecks.owner(step.auto_check_key) == :admin
+      end
+
+      def person_step?(step)
+        step.kind != "admin_sign_off" && !admin_auto_check?(step)
+      end
+
       def build
         user_id = assignment.admin_user_id
         learning_modules = assignment.course.course_modules
           .includes(learning_module: [:module_steps, :quiz_questions])
           .map(&:learning_module)
+        module_ids = learning_modules.map(&:id)
+        module_completions = ModuleCompletion.where(admin_user_id: user_id, learning_module_id: module_ids)
+          .index_by(&:learning_module_id)
+        # A module with nothing in it can never be done and would deadlock the
+        # checklist, so it is skipped (unless it was already completed).
+        learning_modules = learning_modules.reject do |m|
+          m.module_steps.empty? && m.quiz_questions.empty? && module_completions[m.id].nil?
+        end
         module_ids = learning_modules.map(&:id)
         step_ids = learning_modules.flat_map { |m| m.module_steps.map(&:id) }
 
@@ -118,8 +147,6 @@ module Stacks
           .order(:created_at, :id).group_by(&:learning_module_id)
         retry_grants = QuizRetryGrant.where(admin_user_id: user_id, learning_module_id: module_ids)
           .group(:learning_module_id).count
-        module_completions = ModuleCompletion.where(admin_user_id: user_id, learning_module_id: module_ids)
-          .index_by(&:learning_module_id)
 
         earlier_modules_done = true
         learning_modules.map do |mod|

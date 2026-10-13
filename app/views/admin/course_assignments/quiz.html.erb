@@ -18,10 +18,11 @@
       <p><%= link_to "← Back", admin_course_assignment_path(assignment) %></p>
     <% else %>
       <p>
-        Answer every question. You need <%= (mod.quiz_pass_percent * questions.size / 100.0).ceil %> of <%= questions.size %> to pass,
+        Answer every question. You need <%= Stacks::Learning::Quiz.needed_count(mod, questions.size) %> of <%= questions.size %> to pass,
         and you have <%= pluralize(@module_state.attempts_left, "attempt") %> left. After that an admin has to allow another, so read the pages first.
       </p>
       <%= form_tag submit_quiz_admin_course_assignment_path(assignment, learning_module_id: mod.id), method: :post do %>
+        <%= hidden_field_tag :fingerprint, Stacks::Learning::Quiz.fingerprint(mod), id: nil %>
         <% questions.each_with_index do |q, i| %>
           <fieldset style="margin-bottom: 16px;">
             <p><strong><%= i + 1 %>. <%= q.prompt %></strong></p>

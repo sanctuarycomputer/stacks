@@ -88,6 +88,16 @@ ActiveAdmin.register CourseAssignment do
       checklist.module_state(params[:learning_module_id])
     end
 
+    # An admin can't pick their own deadline: for themselves the course's
+    # grace period applies.
+    def create
+      submitted = params[:course_assignment]
+      if submitted.respond_to?(:key?) && submitted[:admin_user_id].to_s == current_admin_user.id.to_s
+        params[:course_assignment] = submitted.except(:due_on)
+      end
+      super
+    end
+
     # Only due_on is editable after creation.
     def update
       submitted = params[:course_assignment]
@@ -107,7 +117,8 @@ ActiveAdmin.register CourseAssignment do
     column :state do |a|
       if a.completed? then status_tag("Done", class: "yes")
       elsif a.waived? then status_tag("Waived")
-      elsif a.due_on < Date.today then status_tag("Overdue", class: "no")
+      elsif Stacks::Learning::Checklist.new(a).overdue? then status_tag("Overdue", class: "no")
+      elsif a.due_on < Date.today then status_tag("Waiting on an admin")
       else status_tag("In progress")
       end
     end
@@ -150,6 +161,7 @@ ActiveAdmin.register CourseAssignment do
   end
 
   member_action :quiz, method: :get do
+    next head(:not_acceptable) unless request.format.html?
     @module_state = module_state_from_params
     if @module_state.nil? || !@module_state.has_quiz?
       next back(alert: "There is no quick check here.")
@@ -162,6 +174,7 @@ ActiveAdmin.register CourseAssignment do
     when :open
       next back(alert: "Stop impersonating first.") if impersonating?
       next back(alert: "Only the person can take their quick check.") unless acting_as_assignee?
+      next back(alert: "This checklist is closed.") unless resource.outstanding?
       @review = false
     else
       next back(alert: "The quick check isn't open.") unless acting_as_admin?
@@ -175,7 +188,8 @@ ActiveAdmin.register CourseAssignment do
     next unless require_assignee!
     learning_module = module_state_from_params&.learning_module
     next back(alert: "There is no quick check here.") if learning_module.nil?
-    result = Stacks::Learning::Quiz.submit!(assignment: resource, learning_module: learning_module, answers: params[:answers])
+    result = Stacks::Learning::Quiz.submit!(assignment: resource, learning_module: learning_module, answers: params[:answers],
+                                         fingerprint: params[:fingerprint].to_s)
     back(result.status == :passed ? { notice: result.message } : { alert: result.message })
   end
 

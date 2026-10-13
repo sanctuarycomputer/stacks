@@ -113,7 +113,38 @@ class StacksTaskBuilderCourseAssignmentsDiscoveryTest < ActiveSupport::TestCase
     assert_equal "#{@person.email} — #{@course.learner_title}", task.subject_display_name
     assert_equal "#{@person.email} — #{@course.learner_title}", task.subject_display_name(redact_amounts: true)
     assert_equal "course_assignments", task.subject_class_key
-    assert_equal "Checklist needs an admin sign-off", StacksTask::HUMANIZED_TYPES[D::SIGN_OFF]
+    assert_equal "Checklist is waiting on an admin", StacksTask::HUMANIZED_TYPES[D::SIGN_OFF]
+  end
+
+  test "past due with only an admin-owned auto-check left: no overdue for the person, a sign-off task for admins" do
+    mod = learning_module!(steps: [["auto_check", "payment_profile"]])
+    course = learning_course!(modules: [mod])
+    @extra_course_ids = [course.id]
+    a = learning_assign!(@person, course, due_on: Date.today - 1)
+
+    found = tasks.select { |t| t.subject == a }
+    assert_equal [D::SIGN_OFF], found.map(&:type)
+    assert_includes found.first.owners, @admin
+    assert_not_includes found.first.owners, @person
+
+    complete_step!(@person, mod.module_steps.first, source: "auto")
+    assert_empty tasks.select { |t| t.subject == a }
+  end
+
+  test "before the due date an admin-owned auto-check produces no tasks" do
+    mod = learning_module!(steps: [["auto_check", "payment_profile"]])
+    course = learning_course!(modules: [mod])
+    @extra_course_ids = [course.id]
+    a = learning_assign!(@person, course, due_on: Date.today + 3)
+    assert_empty tasks.select { |t| t.subject == a }
+  end
+
+  test "past due with a person-owned auto-check left is overdue for the person" do
+    mod = learning_module!(steps: [["auto_check", "forecast_account"], ["auto_check", "payment_profile"]])
+    course = learning_course!(modules: [mod])
+    @extra_course_ids = [course.id]
+    a = learning_assign!(@person, course, due_on: Date.today - 1)
+    assert_equal [D::OVERDUE, D::SIGN_OFF].sort, tasks.select { |t| t.subject == a }.map(&:type).sort
   end
 
   test "the discovery is registered" do

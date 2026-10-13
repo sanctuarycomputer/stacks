@@ -51,4 +51,12 @@ class StacksLearningAutoChecksTest < ActiveSupport::TestCase
     assert_equal AC.keys.sort, AC.options_for_select.map(&:last).sort
     assert AC.options_for_select.all? { |label, _| label.present? }
   end
+
+  test "owner: only an admin can link a payment profile" do
+    assert_equal :admin, AC.owner("payment_profile")
+    assert_equal :person, AC.owner("forecast_account")
+    assert_equal :person, AC.owner("human_operating_manual")
+    assert_equal :person, AC.owner("nonsense")
+    assert AC::CHECKS.values.all? { |e| e.key?(:owner) }
+  end
 end

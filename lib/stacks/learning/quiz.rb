@@ -6,7 +6,18 @@ module Stacks
     class Quiz
       Result = Struct.new(:status, :attempt, :message, :attempts_left, keyword_init: true)
 
-      def self.submit!(assignment:, learning_module:, answers:)
+      STALE_MESSAGE = "These questions were just updated. Please answer them again.".freeze
+
+      # Identifies the exact questions (and their answer key) a form was built
+      # from, so an edit between load and submit can't be scored against.
+      def self.fingerprint(learning_module)
+        parts = learning_module.quiz_questions.map { |q| [q.id, q.prompt, q.choices, q.correct_index] }
+        Digest::SHA256.hexdigest(parts.to_json)
+      end
+
+      # fingerprint: nil skips the check (internal callers); a given value,
+      # including a blank string, must match the current questions.
+      def self.submit!(assignment:, learning_module:, answers:, fingerprint: nil)
         user = assignment.admin_user
         result = nil
 
@@ -25,6 +36,11 @@ module Stacks
           end
 
           questions = state.learning_module.quiz_questions.to_a
+          if !fingerprint.nil? && fingerprint.to_s != self.fingerprint(state.learning_module)
+            result = rejected(STALE_MESSAGE, state)
+            next
+          end
+
           chosen = parse(answers, questions)
           if chosen.nil?
             result = rejected("Answer every question before submitting. This didn't use up an attempt.", state)
@@ -76,10 +92,10 @@ module Stacks
       private_class_method :parse
 
       # Smallest correct count that meets the pass mark (integer ceiling).
+      # Public: the form shows the same number.
       def self.needed_count(learning_module, total)
         (learning_module.quiz_pass_percent * total + 99) / 100
       end
-      private_class_method :needed_count
 
       def self.failed_message(correct, total, need, left)
         tail = left.positive? ? "You have #{left} #{"attempt".pluralize(left)} left, so re-read the pages first." : "You're out of attempts. Ask an admin to allow another."

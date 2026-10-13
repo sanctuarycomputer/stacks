@@ -36,6 +36,11 @@ module LearningTestHelpers
     CourseAssignment.create!(admin_user: person, course: course, assigned_on: assigned_on, due_on: due_on)
   end
 
+  # The hidden field the quick-check form carries; web posts must include it.
+  def quiz_fingerprint(learning_module)
+    Stacks::Learning::Quiz.fingerprint(learning_module.reload)
+  end
+
   def complete_step!(person, step, source: "self", by: nil)
     StepCompletion.create!(admin_user: person, module_step: step, completed_at: Time.current,
                            source: source, completed_by: by)

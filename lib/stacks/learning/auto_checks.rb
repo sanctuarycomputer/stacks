@@ -11,13 +11,18 @@ module Stacks
         end
       end
 
+      # owner: who can make the check pass. :person means the person can act on
+      # it themselves; :admin means only an admin can (so it is never held
+      # against the person).
       CHECKS = {
         "forecast_account" => {
           label: "Has a Harvest Forecast account under their company email",
+          owner: :person,
           check: ->(user, _context) { user.forecast_person.present? },
         },
         "payment_profile" => {
           label: "Has a payment profile linked (Deel, or a QuickBooks vendor)",
+          owner: :admin,
           check: ->(user, _context) {
             contributor = user.forecast_person&.contributor
             contributor.present? && (contributor.deel_person_id.present? || contributor.contributor_qbo_vendors.exists?)
@@ -25,6 +30,7 @@ module Stacks
         },
         "human_operating_manual" => {
           label: "Has a Human Operating Manual in Notion (or is exempt)",
+          owner: :person,
           check: ->(user, context) {
             !user.requires_human_operating_manual? || context.manual_emails.include?(user.email.to_s.downcase)
           },
@@ -37,6 +43,10 @@ module Stacks
 
       def self.options_for_select
         CHECKS.map { |key, entry| [entry[:label], key] }
+      end
+
+      def self.owner(key)
+        CHECKS.dig(key.to_s, :owner) || :person
       end
 
       # Never raises: a check that blows up counts as "not yet".
