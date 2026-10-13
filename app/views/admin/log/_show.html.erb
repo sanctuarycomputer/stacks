@@ -15,29 +15,34 @@
       <% if reason %>
         <%= render "admin/log/empty", tracker: tracker, reason: reason %>
       <% else %>
+        <%# The view or chip in use is a filled pill; the rest are plain links. %>
+        <% on = ->(current, size) {
+             base = "display: inline-block; margin-right: 6px; padding: 4px 12px; border-radius: 999px; font-size: #{size}; text-decoration: none;"
+             current ? "#{base} background-color: #1a1a1a; color: #fff;" : base
+           } %>
         <p style="margin-bottom: 12px;">
           <% Stacks::ProjectLog::VIEW_LABELS.each do |view, label| %>
             <%= link_to label, link_for.({ view: (view unless view == "attention") }),
                   class: "log-tab#{' current' if log.view == view}",
-                  style: "margin-right: 16px;#{' font-weight: 700; text-decoration: none;' if log.view == view}" %>
+                  style: on.(log.view == view, "18px") %>
           <% end %>
         </p>
         <p style="font-size: 13px; margin-bottom: 6px;">
           Source:
           <%= link_to "All", link_for.({ source: nil }), class: "log-chip#{' current' if log.source.nil?}",
-                style: "margin-right: 8px;#{' font-weight: 700;' if log.source.nil?}" %>
+                style: on.(log.source.nil?, "13px") %>
           <% Stacks::Notion::Observation::SOURCE_GROUP_LABELS.each do |key, label| %>
             <%= link_to label, link_for.({ source: key }), class: "log-chip#{' current' if log.source == key}",
-                  style: "margin-right: 8px;#{' font-weight: 700;' if log.source == key}" %>
+                  style: on.(log.source == key, "13px") %>
           <% end %>
         </p>
         <p style="font-size: 13px; margin-bottom: 6px;">
           Valence:
           <%= link_to "All", link_for.({ valence: nil }), class: "log-chip#{' current' if log.valence.nil?}",
-                style: "margin-right: 8px;#{' font-weight: 700;' if log.valence.nil?}" %>
+                style: on.(log.valence.nil?, "13px") %>
           <% Stacks::ProjectLog::VALENCE_PARAMS.each do |key, label| %>
             <%= link_to label, link_for.({ valence: key }), class: "log-chip#{' current' if log.valence == key}",
-                  style: "margin-right: 8px;#{' font-weight: 700;' if log.valence == key}" %>
+                  style: on.(log.valence == key, "13px") %>
           <% end %>
         </p>
         <p style="font-size: 13px; color: #5E6469;">
