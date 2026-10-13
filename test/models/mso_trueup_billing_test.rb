@@ -141,6 +141,36 @@ class MsoTrueupBillingTest < ActiveSupport::TestCase
     assert_equal 1, QboBill.where(qbo_account_id: @qa.id).count
   end
 
+  # The checks before the first bill run outside the row lock (they make
+  # QuickBooks reads). Whatever happened while they ran is seen by the check
+  # made again under the lock, on a reloaded row.
+  test "a true-up un-accepted while its first bill was being checked gets no bill" do
+    # The acceptance is withdrawn during the last of the checks made outside the lock.
+    Mso::MonthlyRun.stubs(:preview).with do |**|
+      MsoTrueup.where(id: @trueup.id).update_all(accepted_at: nil)
+      true
+    end.returns({ @ledger.id => BigDecimal("1200") })
+    Quickbooks::Service::Bill.any_instance.expects(:create).never
+
+    row = fresh
+    assert row.payable?, "sanity: payable when the sync began"
+    error = assert_raises(MsoTrueup::NotPayable) { row.sync_qbo_bill! }
+
+    assert_match(/not payable yet/, error.message)
+    assert_nil fresh.qbo_bill_id
+  end
+
+  test "a snapshot invalidated while a first bill was being checked gets no bill" do
+    Mso::MonthlyRun.stubs(:preview).with do |**|
+      MsoSnapshot.find(@snapshot.id).invalidate!("a run was refused meanwhile")
+      true
+    end.returns({ @ledger.id => BigDecimal("1200") })
+    Quickbooks::Service::Bill.any_instance.expects(:create).never
+
+    assert_raises(MsoTrueup::NotPayable) { fresh.sync_qbo_bill! }
+    assert_nil fresh.qbo_bill_id
+  end
+
   # Accrual dating (owner decision O2): the bill is dated the last day of the
   # fee month. If garden3d's books for that month are already closed,
   # QuickBooks rejects it; say so in words Finance can act on.

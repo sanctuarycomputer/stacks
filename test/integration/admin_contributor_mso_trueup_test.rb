@@ -97,4 +97,33 @@ class AdminContributorMsoTrueupTest < ActionDispatch::IntegrationTest
     get admin_admin_user_path(login_for(@exec))
     assert_match(/4,321\.09/, response.body)
   end
+
+  # An unaccepted true-up shows in the tab's UNSETTLED pill (covered above).
+  # Once it has a QuickBooks bill it is owed, and moves to the BALANCE pill.
+  test "a billed true-up's balance pill on the ledger tab is for its owner and admins only" do
+    vendor = QboVendor.create!(qbo_account: garden3d_qbo_account, qbo_id: "V-#{SecureRandom.hex(3)}", data: {})
+    QboBill.create!(qbo_account: garden3d_qbo_account, qbo_id: "8801", qbo_vendor_id: vendor.qbo_id,
+                    data: { "balance" => "4321.09", "total_amt" => "4321.09" })
+    @trueup.update_columns(accepted_at: Time.current, qbo_bill_id: "8801")
+    ledger = Ledger.find(@ledger.id)
+    assert_in_delta 4321.09, ledger.balance.to_f, 0.001
+    assert_equal 0.0, ledger.unsettled.to_f, "sanity: only the balance pill can carry it"
+
+    sign_in @lead
+    [admin_contributor_path(@exec, ledger: @ledger.id), admin_contributor_path(@exec)].each do |path|
+      get path
+      assert_response :success
+      assert_select "span.notifier--balance", count: 0
+      assert_no_match(/4,321/, response.body)
+    end
+    sign_out @lead
+
+    [@admin, login_for(@exec)].each do |viewer|
+      sign_in viewer
+      get admin_contributor_path(@exec, ledger: @ledger.id)
+      assert_response :success
+      assert_select "span.notifier--balance", text: "$4,321"
+      sign_out viewer
+    end
+  end
 end

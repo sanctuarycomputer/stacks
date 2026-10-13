@@ -113,12 +113,25 @@ Read this before the tasks. Each item is a decision the owner made, a place wher
 32. **Acceptance and re-runs.** A re-run that changes an accepted amount clears the acceptance; one that leaves it the same keeps it. The run writes the new amount and the cleared acceptance in one statement while holding the row's lock, which Accept and Sync also take.
 33. **Safe between merge and migrate.** `MsoTrueup.schema_ready?` guards every registration point. It remembers "yes" for the life of the process and, while the answer is "no", asks the database at most once a minute, so a ledger page before the migration costs no extra query per balance and no dyno restart is needed afterwards. `sync_founder_trueups!` also guards `mso_role_periods`.
 34. **The run is three steps, and only the last is transactional.** Refuse early; refresh and reconcile (QuickBooks reads, outside the transaction); then lock garden3d's pass row and compute and write in one transaction. Two runs of one month are serialised by that lock; the partial unique index on current snapshots is the backstop.
-35. **The snapshot's figures are immutable.** Only the stamps change after creation.
+35. **The snapshot's figures are immutable.** Only the stamps change after creation, and the nightly check's `income_drift` note (item 43).
 36. **A soft-deleted true-up is restored, not re-inserted**, keeping its id; its acceptance is cleared.
 37. **A superseded snapshot's page is drawn from its own stored lines**, not from today's rows, which now belong to a later run.
 38. **Sync failures say what to do** (review I5). A missing vendor used to make `sync_qbo_bill!` return `nil`, which "Sync all" reported as success; a router raise showed only a class name. Both are now named errors with an instruction, and the Money page's "Sync all" alert shows each failure's message.
 39. **A line's `reduction` is not exactly zero under the cap**: the calculator reports `calculated − final` and `final` is rounded (`app/services/mso/compensation.rb:65,97`). Stored as computed, shown rounded.
 40. **Not built:** a nightly run; a reconciliation override; an early-release hatch (spec §14); the `btree_gist` exclusion constraint; an edit form for a true-up or a snapshot.
+
+### Changed by the final review (after the tasks below were built)
+
+Where a task below says otherwise, these stand.
+
+41. **A true-up that has had a bill never gets a second one from a sync.** Task 8 skipped the first-bill checks for a row that already had a bill, and the shared sync then created a new bill, at the old amount, when QuickBooks no longer had the old one or could not be read. Now a billed true-up's bill is read first. If it is gone, the row is unlocked exactly as the nightly refresh unlocks it (bill id and acceptance cleared, snapshot invalidated) and the sync raises `MsoTrueup::BillGone`: the month has to be run again. `MsoTrueup#load_qbo_bill!` is overridden so that, inside a sync, a bill is created only by the call that passed the first-bill checks; a bill that cannot be read at the write raises `BillUnreadable` and nothing is written.
+42. **Only an admin can delete a founder true-up** (`Trueup`). Deleting one deletes its QuickBooks bill in that company's books, and for an MSO month the nightly sync will not write it again. `AdminAuthorization` refuses `:destroy` to everyone else, above the blanket lead grant, and ActiveAdmin hides the Delete control with it. Testing the refusal with a real `Quickbooks::Model::Bill` also showed that `SyncsAsQboBill#detach_and_destroy_qbo_bill` never used the bill it had just read (it asked for `total_amt`; the gem calls it `total`) and decided on the stored copy instead. It now reads either. This applies to every ledger item, not only these.
+43. **Income that lands after the run is noticed, in two ways.** Netting is across all of a person's ledgers, but the run waits only for Sanctuary's pass.
+    - *At the run, a warning and never a refusal:* the snapshot's `run_warnings` lists every other company's pass for the month that is not complete, and every unaccepted payout to someone on the roster (ids and counts). August is run in October on purpose; waiting would let one person freeze everyone's pay.
+    - *Nightly, database only:* `Mso::MonthlyRun.record_income_drift!` recomputes each current, valid snapshot whose month is within the last **six** months (`DRIFT_WINDOW_MONTHS`) with `.preview`, and writes on the snapshot, with the time, each executive whose true-up would now be a different amount (stored and now), including someone who has joined or left the month's roster. If such a true-up has **no** QuickBooks bill, the snapshot is invalidated, as the fee check invalidates it; if it **has** a bill, the drift is recorded only and a person decides. A month that can no longer be computed at all (a refused preview) is recorded and not invalidated: the fee check and the first-bill check already deal with what stops it. It makes no QuickBooks call (a month with no stored P&L is skipped rather than fetched), writes no true-up and no bill, and nothing raises out of the job. There is no cheap sound test for "nothing can have changed" (a deleted payout leaves no timestamp), so every snapshot in the window is recomputed, about a thousand queries each; the window is the bound.
+    - Both are on the snapshot page, the drift above the figures. Two new columns, in a second migration (`20261014000002`); everything is guarded until it has been run.
+44. **`get_enterprise_health`'s `raw_rows` leaves out people-cost accounts.** It returned every P&L row by account label, so it would have reported total executive pay once MSO bills post to their own account. Rows now go through `Stacks::PeopleCostAccounts.rows_without_people_costs`: the account's own row, everything under a people-cost header, and their Total rows, everywhere except the income sections. This also hides the payroll, benefit, contractor, payout and intercompany rows `raw_rows` showed until now, which is how the financial outlook already treats them. Section totals stay (the snapshot datapoints report the same figures), so for a company whose costs are mostly people, the hidden amount is still roughly "total expenses less the rows shown".
+45. **Smaller ones.** garden3d's nightly steps each run on their own and report a failure to the log and Sentry. The nightly bill refresh still reads a settled bill while its month is within six months (a payment voided later is seen). An MSO role period cannot start before `MANAGEMENT_FEE_START`. With the MSO tables absent, the run is not offered and a posted one is refused in words. Nobody is asked to accept a true-up on an invalidated snapshot. Orphan cleanup never deletes an MSO bill that has a payment.
 
 ### Questions for the owner
 
@@ -6593,17 +6606,21 @@ Merging to `main` deploys once `main`'s own CI is green. **Migrations are run by
 | The Money page and its sync buttons | unchanged, except "Sync all" now shows each failure's message | they iterate `Money::PayableQboBills.host_klasses` (Task 4) |
 | Nightly `stacks:sync_founder_trueups` | unchanged | `founder_paid_by_mso?` returns false while the tables are missing (Task 9) |
 | Nightly `stacks:sync_contributor_qbo_bills` | unchanged | not modified; never touches an `MsoTrueup` |
-| Nightly garden3d step | unchanged | the fee check and the bill refresh return `[]` while the tables are missing (Tasks 7, 8) |
+| Nightly garden3d step | unchanged | the fee check, the drift check and the bill refresh return `[]` while the tables are missing (Tasks 7, 8; item 43); each step is isolated and a failure is reported, not raised |
 | Saving an `InvoiceTracker`, editing or deleting a role period | unchanged | the new callback and validations ask `schema_ready?` (Tasks 8, 9) |
 | Task discoveries, `list_payable_bills`, the financial outlook | unchanged; the outlook additionally hides any account named for compensation, the MSO or executives (none exists today) | guarded (Tasks 5, 12) |
-| **Run MSO compensation**, the MSO Compensation menu, a true-up page | an error page | new features; nothing scheduled reaches them |
+| **Run MSO compensation** | the button is not shown; a posted run is refused with "run the pending migrations" | `Mso::MonthlyRun.runnable?` and the run itself ask `schema_ready?` (item 45) |
+| The MSO Compensation menu, a true-up page | an error page | new features; nothing scheduled reaches them |
 
-Two behaviours change at deploy whether or not the migration has run:
+These behaviours change at deploy whether or not the migrations have run:
 
-- **Deleting a founder true-up now deletes its QuickBooks bill** (and is refused if the bill has a payment). Before, the bill was left behind.
+- **Deleting a founder true-up now deletes its QuickBooks bill** (and is refused if the bill has a payment, judged on the bill as QuickBooks has it at that moment). Before, the bill was left behind.
+- **Only an admin can delete a founder true-up** (item 42). A lead no longer sees the Delete control and a DELETE by URL is refused.
+- **`get_enterprise_health` with `raw_rows: true` no longer lists people-cost accounts** (payroll, benefits, contractors, payouts, intercompany) for any company (item 44).
+- An MSO role period can no longer be given a start date before August 2026. One already on file is unaffected and can still be ended.
 - An `MsoTrueup` can no longer be routed to `:subcontractor`. None exists.
 
-No dyno restart is needed after migrating.
+There are **two** migrations, `20261014000001` (the tables) and `20261014000002` (the snapshot's `run_warnings` and `income_drift`). Run them together and no dyno restart is needed. If the first was ever run on its own, restart the dynos after the second: a process that has already loaded `mso_snapshots` does not see new columns, and until it does a run records no warnings and the nightly drift check does nothing (both are guarded; nothing fails).
 
 ### The first three MSO months: August, September and October 2026
 
@@ -6635,7 +6652,7 @@ Neither month's cap binds (August: cap 77,000 against 56,076.34 calculated; Sept
 3. **Enter the role periods** on Money → MSO Roles, each starting **2026-08-01**. Do this before 1 November 2026: from that night the founder sync would otherwise write October's founder true-up.
    - From the next nightly run, the founder sync **skips August onward**. It does not remove what it already wrote: Trueups 203 and 204 are still there, and the nightly bill sync keeps their bills in step with them.
    - June and July (Trueups 201, 202) are before the role period: they keep being recomputed and billed exactly as today.
-4. **Delete the August and September founder true-ups** (Trueup 203 and 204), each from its own page: open contributor 3's Sanctuary ledger, open the true-up, Delete. This now also deletes its bill in Sanctuary's QuickBooks, after re-reading the bill.
+4. **Delete the August and September founder true-ups** (Trueup 203 and 204), each from its own page, **as an admin** (item 42): open contributor 3's Sanctuary ledger, open the true-up, Delete. This now also deletes its bill in Sanctuary's QuickBooks, after re-reading the bill.
    - **If the bill has any payment, the delete is refused** and nothing changes: the message names the bill. Then there are two ways forward, and it is Finance's call which: (a) void that payment in Sanctuary's QuickBooks and delete again; or (b) leave that month paid the old way, and move the role periods' start to the first month whose founder true-up can be removed (possible while no MSO month has been run). Do not try to do both: the run refuses while the founder true-up exists.
    - Do not delete a founder true-up until its month is ready to run. Between the delete and the MSO true-up's bill, that month's top-up exists nowhere.
    - Nothing recreates it: the role period is active for the month, and once the month has been run the snapshot keeps it skipped even if the roster is later edited.
@@ -6649,6 +6666,8 @@ Neither month's cap binds (August: cap 77,000 against 56,076.34 calculated; Sept
 ### Every month after that
 
 After the month has ended and Sanctuary's invoices and payouts for it exist: check the pass's invoices are attached; **Run MSO compensation**; executives accept; if payouts change, run again (accepted true-ups whose amount did not change stay accepted); when the fee is paid, **Check collection**; then sync each true-up from the Money page **before the month is hard-closed**. At that last click Stacks re-checks collection with QuickBooks and recomputes the month; if a figure has moved it refuses and asks for the month to be run again.
+
+Two things to look at on the snapshot page in between (item 43). **Not finished when this month was run** lists what the run did not wait for. **FIGURES HAVE MOVED SINCE THIS RUN** is the nightly check: a true-up without a bill has had its run marked invalid, so run the month again; a true-up that already has a bill is left alone, and a person decides whether to remove the bill and run again. If a bill is deleted in QuickBooks itself, syncing that true-up is refused (item 41) and the month has to be run again.
 
 ### Rollback
 

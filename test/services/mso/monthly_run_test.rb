@@ -585,6 +585,27 @@ class Mso::MonthlyRunTest < ActiveSupport::TestCase
     assert_equal [], second.drift
   end
 
+  # 20000 - 179.804 = 19820.196: down is .19, the nearest cent is .20. Paying
+  # the nearest cent would pay more than `final - earned`, and over a full
+  # roster more than the cap.
+  test "a true-up is rounded DOWN to the cent, not to the nearest cent" do
+    sanctuary_ledger = Ledger.find_or_create_for(enterprise: @sanctuary, contributor: @chief)
+    Mso::MonthlyRun.stubs(:already_earned).returns({})
+    Mso::MonthlyRun.stubs(:already_earned).with(has_entry(contributor_id: @chief.id))
+      .returns({ sanctuary_ledger.id => BigDecimal("179.804") })
+
+    snapshot = run!
+
+    line = line_for(snapshot, @chief)
+    assert_equal "19820.196", line["trueup_before_rounding"]
+    assert_equal "19820.19", line["trueup"]
+    assert_equal BigDecimal("19820.19"), trueup_for(@chief).amount
+    assert_equal BigDecimal("42820.19"), snapshot.total_trueup
+    assert_equal({ garden3d_ledger(@chief).id => BigDecimal("19820.19"),
+                   garden3d_ledger(@principal).id => BigDecimal("23000") },
+                 Mso::MonthlyRun.preview(invoice_pass: @pass, today: TODAY))
+  end
+
   test "a true-up of less than a cent creates no row and expects no acceptance" do
     sanctuary_ledger = Ledger.find_or_create_for(enterprise: @sanctuary, contributor: @chief)
     Mso::MonthlyRun.stubs(:already_earned).returns({})
