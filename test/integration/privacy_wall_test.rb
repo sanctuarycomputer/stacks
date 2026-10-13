@@ -102,6 +102,22 @@ class PrivacyWallTest < ActiveSupport::TestCase
     assert_includes out, 'last_weekly_ship', 'the ship itself (its date) is still reported'
   end
 
+  test "a walled-off ship email gives no Notion projects, even handed straight to the lookup" do
+    tracker = ProjectTracker.new(name: 'Wall Tracker 3', notion_project_ids: %w[proj-walled])
+    tracker.save!(validate: false)
+    doc = Document.create!(source: :google_groups, external_id: '<w3@x>', title: 'zebracanary ship', excluded: :not_excluded,
+                           excluded_reason: :none, raw_metadata: { 'group_email' => Document::SHIPS_GROUP_EMAIL })
+    ship = WeeklyShip.new(document: doc, project_tracker: tracker, sent_at: 1.day.ago, matched_by: :llm)
+    ship.via_sweep = true
+    ship.save!
+    assert_equal %w[proj-walled], Mcp::DocumentProjects.for([doc]).fetch(doc.id)[:notion_project_ids]
+
+    doc.update_columns(excluded: Document.excludeds[:manually_excluded])
+    assert_equal [], Mcp::DocumentProjects.for([doc.reload]).fetch(doc.id)[:notion_project_ids]
+    refute_includes mcp_payload(Mcp::ListDocumentsTool.call(server_context: {})).to_json, 'proj-walled'
+    assert_equal({ 'error' => 'Document not found' }, mcp_payload(Mcp::GetDocumentTool.call(id: doc.id, server_context: {})))
+  end
+
   # ---- Tripwire -----------------------------------------------------------------------------
   # Every MCP tool file that touches corpus-derived data, and how it stays behind the wall.
   # A NEW tool that touches these models fails this test until someone reviews it and adds it
@@ -113,6 +129,7 @@ class PrivacyWallTest < ActiveSupport::TestCase
     'search_tool.rb' => 'Stacks::Etl::Search, which starts from Chunk.corpus_eligible',
     'list_documents_tool.rb' => 'Document.corpus_eligible',
     'get_document_tool.rb' => 'Document.corpus_eligible; segments only for the transcript doc itself',
+    'document_projects.rb' => 'ids only, for documents its callers read through Document.corpus_eligible; ship links through WeeklyShip.corpus_eligible',
     'list_weekly_ships_tool.rb' => 'weekly_ships.corpus_eligible',
     'get_weekly_ship_block_tool.rb' => 'WeeklyShip.corpus_eligible',
     'get_project_burnup_tool.rb' => 'weekly_ships.corpus_eligible',

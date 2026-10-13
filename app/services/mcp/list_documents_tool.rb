@@ -2,7 +2,9 @@ module Mcp
   class ListDocumentsTool < MCP::Tool
     tool_name 'list_documents'
     description 'List corpus-eligible documents (newest first), optionally filtered by source and occurred_at range, with offset pagination. ' \
-                'project_tracker_ids lists the project tracker(s) a meeting document was matched to (empty when none, or not a meeting).'
+                'project_tracker_ids lists the project tracker(s) a meeting document was matched to (empty when none, or not a meeting). ' \
+                'notion_project_ids lists the Notion project page ids of every tracker the document is linked to: the trackers its meeting was matched to, ' \
+                'or for a ships@ email the trackers of its weekly ship. De-duplicated and sorted; empty when it is linked to no tracker or its trackers name no Notion project.'
     input_schema(properties: {
       source: { type: 'string' },
       occurred_after: { type: 'string', description: 'ISO8601 lower bound on occurred_at (inclusive)' },
@@ -19,12 +21,11 @@ module Mcp
       scope = scope.where(occurred_at: range) if range
       scope = scope.order(occurred_at: :desc).offset(offset).limit(limit)
       docs = scope.to_a
-      # One query for the page: a transcript and its notes share their Meeting's match.
-      meeting_ids = docs.select { |d| d.source_record_type == 'Meeting' }.map(&:source_record_id)
-      tracker_ids = Meeting.project_tracker_ids_by_meeting(meeting_ids)
+      # Read once for the whole page, never per document: a transcript and its
+      # notes share their Meeting's match.
+      projects = Mcp::DocumentProjects.for(docs)
       payload = docs.map do |d|
-        matched = d.source_record_type == 'Meeting' ? tracker_ids.fetch(d.source_record_id, []) : []
-        { id: d.id, title: d.title, source: d.source, occurred_at: d.occurred_at, project_tracker_ids: matched }
+        { id: d.id, title: d.title, source: d.source, occurred_at: d.occurred_at }.merge(projects.fetch(d.id))
       end
       Responses.ok(payload)
     end
