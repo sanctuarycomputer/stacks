@@ -18,6 +18,10 @@ class Stacks::Notion::FilteredSync
   # shape as every other run, so there is one query shape per database.
   EVERYTHING_SINCE = Time.utc(2000, 1, 1)
   MAX_CALLS = 500 # a runaway cursor stops here: 50,000 rows in one run is not real
+  RECHECK_LIMIT = 200  # page fetches a run, to notice rows trashed in Notion
+  RECHECK_WINDOW = 90.days
+  RECHECK_PAUSE = 0.35 # seconds between page fetches: under Notion's three a second
+  ADVISORY_LOCK_KEY = 84_217_297
   SORTS = [{ timestamp: "last_edited_time", direction: "descending" }].freeze
   WRAPPERS = { OBSERVATIONS: Stacks::Notion::Observation, PROBLEMS: Stacks::Notion::Problem }.freeze
   # Whether a row must be filed under a project to be stored.
@@ -54,9 +58,22 @@ class Stacks::Notion::FilteredSync
     Stacks::Notion::Props.parse_time(marks[key.to_s])
   end
 
-  def initialize(client:, now: Time.zone.now)
+  # The one entry point for the rake tasks. Two runs at once would race on the
+  # unique notion_id index, so the second does nothing.
+  def self.run!(dry_run: false, mode: nil, client: Stacks::Notion.new, now: Time.zone.now)
+    conn = ActiveRecord::Base.connection
+    return { skipped: "another run holds the lock" } unless conn.select_value("SELECT pg_try_advisory_lock(#{ADVISORY_LOCK_KEY})")
+    begin
+      new(client: client, now: now).run_all(dry_run: dry_run, mode: mode)
+    ensure
+      conn.execute("SELECT pg_advisory_unlock(#{ADVISORY_LOCK_KEY})")
+    end
+  end
+
+  def initialize(client:, now: Time.zone.now, sleeper: nil)
     @client = client
     @now = now
+    @sleeper = sleeper || ->(seconds) { sleep(seconds) }
     @unchanged_ids = []
   end
 
@@ -90,6 +107,68 @@ class Stacks::Notion::FilteredSync
     end
     write_mark(key) unless dry_run
     stats
+  end
+
+  def run_all(dry_run: false, mode: nil)
+    {
+      observations: sync(:OBSERVATIONS, dry_run: dry_run, mode: mode),
+      problems: sync(:PROBLEMS, dry_run: dry_run, mode: mode),
+      recheck: recheck(dry_run: dry_run),
+    }
+  end
+
+  # A database query never returns a trashed page, so trash is noticed here:
+  # each run asks Notion, by id, about the rows it has gone longest without
+  # seeing. Every stored Problem is in scope; Observations for 90 days.
+  #
+  # One page Notion refuses must not stop the pass: it is counted, sent to
+  # the back of the line and skipped. Only a pass in which every fetch failed
+  # raises, because that is Notion or the token, not a page.
+  def recheck(dry_run: false)
+    observations = Stacks::Notion.filtered_parent_id(:OBSERVATIONS)
+    problems = Stacks::Notion.filtered_parent_id(:PROBLEMS)
+    scope = NotionPage
+      .where(notion_parent_type: "database_id", notion_parent_id: [observations, problems])
+      .where("notion_pages.synced_at IS NULL OR notion_pages.synced_at < ?", @now)
+      .where("notion_pages.notion_parent_id = ? OR notion_pages.occurred_at >= ?", problems, @now - RECHECK_WINDOW)
+    stats = { candidates: scope.count, checked: 0, gone: 0, trashed: 0, updated: 0, unchanged: 0, errors: 0 }
+    return stats if dry_run
+
+    counts = Hash.new(0)
+    @unchanged_ids = []
+    failed_ids = []
+    last_error = nil
+    scope.order(Arel.sql("notion_pages.synced_at ASC NULLS FIRST, notion_pages.id ASC")).limit(RECHECK_LIMIT).each do |page|
+      @sleeper.call(RECHECK_PAUSE) if stats[:checked] > 0
+      stats[:checked] += 1
+      begin
+        result = @client.fetch_page(page.notion_id)
+      rescue Stacks::Notion::Error => e
+        stats[:errors] += 1
+        failed_ids << page.id
+        last_error = e
+        next
+      end
+      body = result[:body]
+      if result[:status] == 404
+        # Trusted because this run has just queried the same database: the
+        # integration can read it, so a missing page is a deleted page.
+        page.destroy
+        stats[:gone] += 1
+      elsif body.is_a?(Hash) && body["id"] == page.notion_id
+        key = page.notion_parent_id == observations ? :OBSERVATIONS : :PROBLEMS
+        upsert(body, key, page, counts, dry_run: false, keep_without_project: true)
+      end
+    end
+    seen_ids = @unchanged_ids + failed_ids
+    NotionPage.where(id: seen_ids).update_all(synced_at: @now) if seen_ids.any?
+    if stats[:checked] > 0 && stats[:errors] == stats[:checked]
+      raise Stacks::Notion::Error.new(
+        "Notion recheck failed: #{stats[:errors]} of #{stats[:checked]} page fetches failed. Last: #{last_error.message}",
+        status: last_error.status, code: last_error.code
+      )
+    end
+    stats.merge(trashed: counts[:trashed], updated: counts[:updated], unchanged: counts[:unchanged])
   end
 
   # Stores one row. `stored` is the NotionPage Stacks holds for it (deleted or

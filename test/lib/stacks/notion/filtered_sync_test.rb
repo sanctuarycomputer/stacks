@@ -12,8 +12,9 @@ class StacksNotionFilteredSyncTest < ActiveSupport::TestCase
     System.create!(settings: {})
   end
 
+  # The recheck pauses between page fetches; no test waits for it.
   def sync_with(client, now: NOW)
-    Stacks::Notion::FilteredSync.new(client: client, now: now)
+    Stacks::Notion::FilteredSync.new(client: client, now: now, sleeper: ->(_seconds) {})
   end
 
   def mark!(key, time)
@@ -252,5 +253,155 @@ class StacksNotionFilteredSyncTest < ActiveSupport::TestCase
     System.first.update!(notion_filtered_sync_marks: { "OBSERVATIONS" => "garbage" })
     assert_nil Stacks::Notion::FilteredSync.last_synced_at(:OBSERVATIONS)
     assert_equal :backfill, sync_with(FakeNotion.new).window_for(:OBSERVATIONS).last
+  end
+
+  test "recheck soft-deletes a row Notion has trashed, and one Notion no longer has" do
+    trashed = observation!(project_ids: %w[p1], synced_at: NOW - 3.days)
+    gone = problem!(project_ids: %w[p1], synced_at: NOW - 2.days)
+    live = observation!(project_ids: %w[p1], synced_at: NOW - 1.day)
+    client = FakeNotion.new(by_id: {
+      trashed.notion_id => observation_data(id: trashed.notion_id, project_ids: %w[p1], archived: true),
+      live.notion_id => live.data,
+    })
+    stats = sync_with(client).recheck
+    assert_equal [trashed.notion_id, gone.notion_id, live.notion_id], client.fetched, "least recently checked first"
+    assert_equal({ candidates: 3, checked: 3, gone: 1, trashed: 1, updated: 0, unchanged: 1, errors: 0 }, stats)
+    assert NotionPage.with_deleted.find(trashed.id).deleted?
+    assert NotionPage.with_deleted.find(gone.id).deleted?
+    assert_nil live.reload.deleted_at
+    assert_equal NOW, live.synced_at
+  end
+
+  test "recheck picks up a change the queries missed, and a row that lost its project stays stored" do
+    stored = observation!(status: "New", project_ids: %w[p1], synced_at: NOW - 1.day)
+    client = FakeNotion.new(by_id: { stored.notion_id => observation_data(id: stored.notion_id, status: "Dismissed", project_ids: []) })
+    stats = sync_with(client).recheck
+    assert_equal 1, stats[:updated]
+    assert_equal [], stored.reload.project_ids
+    assert stored.as_observation.dismissed?
+    assert_nil stored.deleted_at
+  end
+
+  test "recheck leaves alone a row this run already saw, an old observation, and other databases" do
+    observation!(project_ids: %w[p1], synced_at: NOW)
+    observation!(project_ids: %w[p1], synced_at: NOW - 5.days, observed_at: NOW - 91.days)
+    NotionPage.create!(notion_id: SecureRandom.uuid, notion_parent_type: "database_id",
+                       notion_parent_id: Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:LEADS]), data: {})
+    old_problem = problem!(project_ids: %w[p1], synced_at: NOW - 5.days, last_seen: NOW - 200.days)
+    client = FakeNotion.new(by_id: { old_problem.notion_id => old_problem.data })
+    sync_with(client).recheck
+    assert_equal [old_problem.notion_id], client.fetched, "every stored problem is rechecked, whatever its age"
+  end
+
+  test "recheck takes at most 200 rows" do
+    rows = Array.new(203) { |i| observation!(project_ids: %w[p1], synced_at: NOW - (i + 1).hours) }
+    client = FakeNotion.new(by_id: rows.to_h { |r| [r.notion_id, r.data] })
+    stats = sync_with(client).recheck
+    assert_equal 200, client.fetched.size
+    assert_equal 203, stats[:candidates]
+    assert_equal 200, stats[:checked]
+    assert_equal rows.last.notion_id, client.fetched.first
+  end
+
+  test "run! does nothing while another run holds the lock" do
+    other = ActiveRecord::Base.connection_pool.checkout
+    begin
+      other.execute("SELECT pg_advisory_lock(#{Stacks::Notion::FilteredSync::ADVISORY_LOCK_KEY})")
+      client = FakeNotion.new
+      out = Stacks::Notion::FilteredSync.run!(client: client, now: NOW)
+      assert_equal({ skipped: "another run holds the lock" }, out)
+      assert_empty client.queries
+    ensure
+      other.execute("SELECT pg_advisory_unlock(#{Stacks::Notion::FilteredSync::ADVISORY_LOCK_KEY})")
+      ActiveRecord::Base.connection_pool.checkin(other)
+    end
+  end
+
+  test "run! releases the lock when the sync raises" do
+    client = FakeNotion.new(fail_on_page: 0)
+    assert_raises(Stacks::Notion::Error) { Stacks::Notion::FilteredSync.run!(client: client, now: NOW) }
+    assert_not Stacks::Notion::FilteredSync.run!(client: FakeNotion.new, now: NOW).key?(:skipped),
+               "a run after a failed one is not skipped"
+  end
+
+  test "recheck pauses between page fetches, not before the first" do
+    rows = Array.new(3) { |i| observation!(project_ids: %w[p1], synced_at: NOW - (i + 1).hours) }
+    slept = []
+    sync = Stacks::Notion::FilteredSync.new(client: FakeNotion.new(by_id: rows.to_h { |r| [r.notion_id, r.data] }),
+                                            now: NOW, sleeper: ->(seconds) { slept << seconds })
+    sync.recheck
+    assert_equal [0.35, 0.35], slept
+  end
+
+  test "one page Notion refuses does not stop the recheck: it is counted and goes to the back of the line" do
+    bad = observation!(project_ids: %w[p1], synced_at: NOW - 3.days)
+    trashed = problem!(project_ids: %w[p1], synced_at: NOW - 2.days)
+    live = observation!(project_ids: %w[p1], synced_at: NOW - 1.day)
+    client = FakeNotion.new(fail_ids: [bad.notion_id], by_id: {
+      trashed.notion_id => problem_data(id: trashed.notion_id, project_ids: %w[p1], archived: true),
+      live.notion_id => live.data,
+    })
+    stats = sync_with(client).recheck
+    assert_equal [bad.notion_id, trashed.notion_id, live.notion_id], client.fetched
+    assert_equal({ candidates: 3, checked: 3, gone: 0, trashed: 1, updated: 0, unchanged: 1, errors: 1 }, stats)
+    assert_nil bad.reload.deleted_at, "a refused fetch is not evidence the row is gone"
+    assert_equal NOW, bad.synced_at
+    assert NotionPage.with_deleted.find(trashed.id).deleted?
+    assert_equal NOW, live.reload.synced_at
+  end
+
+  test "a recheck in which every fetch failed raises, and deletes nothing" do
+    rows = Array.new(3) { |i| observation!(project_ids: %w[p1], synced_at: NOW - (i + 1).hours) }
+    client = FakeNotion.new(fail_ids: rows.map(&:notion_id))
+    error = assert_raises(Stacks::Notion::Error) { sync_with(client).recheck }
+    assert_match(/3 of 3/, error.message)
+    assert_equal 3, client.fetched.size
+    assert_equal 3, NotionPage.observations.count
+  end
+
+  test "a dry run makes no by-id call and says how many it would make" do
+    observation!(project_ids: %w[p1], synced_at: NOW - 1.day)
+    client = FakeNotion.new
+    assert_equal({ candidates: 1, checked: 0 }, sync_with(client).recheck(dry_run: true).slice(:candidates, :checked))
+    assert_empty client.fetched
+  end
+
+  test "run_all syncs observations, then problems, then rechecks" do
+    problem = problem_data(project_ids: [])
+    obs = observation_data(project_ids: %w[p1], problem_ids: [problem["id"]])
+    client = FakeNotion.new(pages: { OBS => [[obs]], PROB => [[problem, problem_data(project_ids: %w[p1])]] })
+    out = sync_with(client).run_all
+    assert_equal %i[observations problems recheck], out.keys
+    assert_equal [OBS, PROB], client.queries.map { |q| q[:database_id] }
+    assert_equal 1, out[:observations][:created]
+    assert_equal 2, out[:problems][:created]
+    assert_equal 0, out[:recheck][:candidates], "everything was seen by this run"
+    assert_empty client.fetched
+    assert NotionPage.problems.exists?(notion_id: problem["id"]), "the problem the observation names is in the table"
+  end
+
+  test "a whole run that sees nothing deletes nothing, in these databases or any other" do
+    mark!(:OBSERVATIONS, NOW - 1.day)
+    mark!(:PROBLEMS, NOW - 1.day)
+    observation = observation!(project_ids: %w[p1], synced_at: NOW - 1.day)
+    old = observation!(project_ids: %w[p1], synced_at: NOW - 1.day, observed_at: NOW - 200.days)
+    problem = problem!(project_ids: [], synced_at: NOW - 1.day)
+    lead = NotionPage.create!(notion_id: SecureRandom.uuid, notion_parent_type: "database_id",
+                              notion_parent_id: Stacks::Utils.dashify_uuid(Stacks::Notion::DATABASE_IDS[:LEADS]), data: {})
+    client = FakeNotion.new(by_id: { observation.notion_id => observation.data, problem.notion_id => problem.data })
+    out = sync_with(client).run_all
+    assert_equal 0, out[:observations][:seen] + out[:problems][:seen]
+    [observation, old, problem, lead].each { |row| assert_nil NotionPage.with_deleted.find(row.id).deleted_at }
+    assert_equal [observation.notion_id, problem.notion_id].sort, client.fetched.sort
+  end
+
+  test "a dry run of everything writes nothing and makes no by-id call" do
+    stored = observation!(project_ids: %w[p1], synced_at: NOW - 1.day)
+    client = FakeNotion.new(pages: { OBS => [[observation_data(project_ids: %w[p1])]], PROB => [[problem_data]] })
+    out = sync_with(client).run_all(dry_run: true)
+    assert_equal [1, 1, 1], [out[:observations][:created], out[:problems][:created], out[:recheck][:candidates]]
+    assert_equal [stored.id], NotionPage.pluck(:id)
+    assert_empty client.fetched
+    assert_empty Stacks::Notion::FilteredSync.marks
   end
 end

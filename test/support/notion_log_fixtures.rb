@@ -94,10 +94,12 @@ module NotionLogFixtures
   class FakeNotion
     attr_reader :queries, :fetched
 
-    def initialize(pages: {}, by_id: {}, fail_on_page: nil)
+    # fail_ids: page ids whose fetch raises, as a page id Notion rejects does.
+    def initialize(pages: {}, by_id: {}, fail_on_page: nil, fail_ids: [])
       @pages = pages
       @by_id = by_id
       @fail_on_page = fail_on_page
+      @fail_ids = fail_ids
       @queries = []
       @fetched = []
     end
@@ -113,6 +115,7 @@ module NotionLogFixtures
 
     def fetch_page(page_id)
       @fetched << page_id
+      raise Stacks::Notion::Error.new("Notion fetch of page #{page_id} failed (400): bad id", status: 400) if @fail_ids.include?(page_id)
       body = @by_id[page_id]
       body ? { status: 200, body: body.deep_dup } : { status: 404, body: { "code" => "object_not_found" } }
     end
