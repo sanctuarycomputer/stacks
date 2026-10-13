@@ -43,9 +43,12 @@ class Stacks::ProjectLog
   end
 
   # A Negative observation that is High salience, or that was folded into a
-  # Problem of severity High or Critical that nobody is known to own.
+  # Problem of severity High or Critical that nobody is known to own. A
+  # Dismissed row is never escalated: the SQL only ever sees rows the gate let
+  # through, and Everything shows the dismissed ones too.
   # Derived, never stored. Its SQL twin is escalated_sql.
   def self.escalated?(observation, problems)
+    return false if observation.dismissed?
     observation.negative? && (observation.salience == "High" || problems.any?(&:escalating?))
   end
 
@@ -70,6 +73,16 @@ class Stacks::ProjectLog
     negatives, escalated = log.attention_counts
     { empty_reason: nil, open_problems: log.open_problem_count, negatives: negatives, escalated: escalated,
       latest: log.first_attention_rows(SUMMARY_ROWS) }
+  end
+
+  # Reads everything the log page prints, so a read that fails does so here,
+  # before any of the page is drawn. Returns self.
+  def load!
+    return self if empty_reason
+    problems
+    rows
+    older_page
+    self
   end
 
   # Why the whole log is empty, most basic cause first; nil when the project
@@ -261,20 +274,35 @@ class Stacks::ProjectLog
 
   # self.escalated? for a row already known to be Negative: High salience, or
   # linked from either side to a Problem that is Problem#escalating?.
+  #
+  # The escalating Problems are read once a query, not once a row: neither
+  # subquery below names the outer row, so the database runs each one time and
+  # keeps its array. A row is then tested against the arrays alone.
   def escalated_sql
     severity = select_sql("log_problems", "Severity")
     status = select_sql("log_problems", "Status")
+    sources = relation_sql("log_problems", "Source Observations")
+    escalating = <<~SQL.squish
+      log_problems.deleted_at IS NULL
+        AND log_problems.notion_parent_type = 'database_id'
+        AND log_problems.notion_parent_id = #{quoted(Stacks::Notion.filtered_parent_id(:PROBLEMS))}
+        AND #{severity} IN (#{quoted(Problem::ESCALATING_SEVERITIES)})
+        AND (#{status} IS NULL OR #{status} NOT IN (#{quoted(Problem::OWNED_STATUSES + Problem::CLOSED_STATUSES)}))
+    SQL
     <<~SQL.squish
-      (#{select_sql('notion_pages', 'Salience')} = 'High' OR EXISTS (
-        SELECT 1 FROM notion_pages log_problems
-        WHERE log_problems.deleted_at IS NULL
-          AND log_problems.notion_parent_type = 'database_id'
-          AND log_problems.notion_parent_id = #{quoted(Stacks::Notion.filtered_parent_id(:PROBLEMS))}
-          AND #{severity} IN (#{quoted(Problem::ESCALATING_SEVERITIES)})
-          AND (#{status} IS NULL OR #{status} NOT IN (#{quoted(Problem::OWNED_STATUSES + Problem::CLOSED_STATUSES)}))
-          AND ((#{relation_sql('notion_pages', 'Problems')}) @> jsonb_build_array(jsonb_build_object('id', log_problems.notion_id))
-               OR (#{relation_sql('log_problems', 'Source Observations')}) @> jsonb_build_array(jsonb_build_object('id', notion_pages.notion_id)))
-      ))
+      (#{select_sql('notion_pages', 'Salience')} = 'High'
+        OR (#{relation_sql('notion_pages', 'Problems')}) @> ANY (ARRAY(
+          SELECT jsonb_build_array(jsonb_build_object('id', log_problems.notion_id))
+          FROM notion_pages log_problems WHERE #{escalating}
+        ))
+        OR notion_pages.notion_id = ANY (ARRAY(
+          SELECT log_source.value ->> 'id'
+          FROM notion_pages log_problems
+          CROSS JOIN LATERAL jsonb_array_elements(
+            CASE WHEN jsonb_typeof(#{sources}) = 'array' THEN #{sources} ELSE '[]'::jsonb END
+          ) log_source
+          WHERE #{escalating} AND jsonb_typeof(log_source.value -> 'id') = 'string'
+        )))
     SQL
   end
 

@@ -375,4 +375,68 @@ class StacksProjectLogTest < ActiveSupport::TestCase
     assert_equal :nothing_seen, s[:empty_reason]
     assert_equal [0, 0, 0, []], s.values_at(:open_problems, :negatives, :escalated, :latest)
   end
+
+  # --- review fixes ----------------------------------------------------------
+
+  # Needs attention never holds a Dismissed row, so the SQL never counts one.
+  # Everything does, and the Ruby rule must not paint it red there.
+  test "escalated: a Dismissed row is never escalated, by salience or by problem" do
+    unowned = problem!(severity: "Critical", status: "Open", project_ids: [])
+    obs!(name: "dismissed high", valence: "Negative", salience: "High", status: "Dismissed", observed_at: NOW - 1.day)
+    obs!(name: "dismissed folded", valence: "Negative", salience: "Low", status: "Dismissed",
+         problem_ids: [unowned.notion_id], observed_at: NOW - 2.days)
+    obs!(name: "live high", valence: "Negative", salience: "High", observed_at: NOW - 3.days)
+    everything = log(view: "everything")
+    assert_equal ["dismissed high", "dismissed folded", "live high"], titles(everything)
+    assert_equal [false, false, true], everything.rows.map(&:escalated)
+    assert_equal ["Negative", "Negative", "Escalated"], everything.rows.map { |r| Stacks::ProjectLog.pill_for(r)[1] }
+    assert_equal [1, 1], log.attention_counts, "the SQL counts agree"
+  end
+
+  test "escalated in SQL: a row whose only problem is Owned or Mitigating is not escalated" do
+    owned = problem!(severity: "Critical", status: "Owned", project_ids: [])
+    obs!(name: "owned", valence: "Negative", salience: "Low", problem_ids: [owned.notion_id], observed_at: NOW - 1.day)
+    mitigated = obs!(name: "mitigating", valence: "Negative", salience: "Low", observed_at: NOW - 2.days)
+    problem!(severity: "High", status: "Mitigating", project_ids: [], source_observation_ids: [mitigated.notion_id])
+    closed = problem!(severity: "Critical", status: "Resolved", project_ids: [])
+    obs!(name: "resolved", valence: "Negative", salience: "Low", problem_ids: [closed.notion_id], observed_at: NOW - 3.days)
+    open = problem!(severity: "High", status: "Open", project_ids: [])
+    obs!(name: "open", valence: "Negative", salience: "Low", problem_ids: [open.notion_id], observed_at: NOW - 4.days)
+    assert_equal [4, 1], log.attention_counts
+    assert_equal %w[open owned mitigating resolved], titles(log), "only the open one sorts as escalated"
+    assert_equal [true, false, false, false], log.rows.map(&:escalated)
+  end
+
+  test "in SQL a stored Valence beats the interim Type mapping" do
+    obs!(name: "risk marked positive", type: "Risk", valence: "Positive", salience: "High")
+    obs!(name: "win marked negative", type: "Win", valence: "Negative")
+    obs!(name: "risk marked neutral", type: "Risk", valence: "Neutral")
+    assert_equal ["win marked negative"], titles(log)
+    assert_equal [1, 0], log.attention_counts
+    assert_equal ["risk marked positive"], titles(log(view: "everything", valence: "positive"))
+    assert_equal ["win marked negative"], titles(log(view: "everything", valence: "negative"))
+  end
+
+  # The set of escalating problems is worked out once a query, not once a row.
+  test "the escalated SQL reads the problems once a query, however many rows and problems there are" do
+    make = lambda do |n|
+      n.times do |i|
+        folded = problem!(severity: "High", status: "Open", project_ids: [])
+        row = obs!(valence: "Negative", salience: "Low", problem_ids: [folded.notion_id], observed_at: NOW - (i + 1).hours)
+        problem!(severity: "Critical", status: nil, project_ids: [], source_observation_ids: [row.notion_id])
+        problem!(severity: "Critical", status: "Owned", project_ids: [])
+      end
+    end
+    read = -> { l = log; [l.rows.map(&:escalated), l.attention_counts, Stacks::ProjectLog.summary(@tracker, now: NOW)[:escalated]] }
+    make.(2)
+    few = count_queries { assert_equal [[true, true], [2, 2], 2], read.call }
+    make.(7)
+    many = count_queries { assert_equal [[true] * 9, [9, 9], 9], read.call }
+    assert_equal few, many
+
+    l = log
+    plan = l.send(:attention_scope).order(Arel.sql(l.send(:attention_order_sql))).explain.to_s
+    assert_no_match(/SubPlan/, plan, "no subquery is run again for each row")
+    assert_match(/InitPlan/, plan, "the escalating problems are read once, before the rows")
+  end
 end
