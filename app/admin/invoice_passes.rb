@@ -91,9 +91,9 @@ ActiveAdmin.register InvoicePass do
   # enterprise. Sanctuary's come from Forecast. garden3d's are a $0.00 draft
   # per enterprise it bills, for Finance to fill in.
   action_item :rerun_invoice_pass_without_reminders, only: :show,
-    if: proc { resource.forecast? || resource.intercompany? } do
+    if: proc { [Enterprise::SANCTUARY_NAME, Enterprise::GARDEN3D_NAME].include?(resource.enterprise.name) } do
     options = { method: :post }
-    if resource.intercompany?
+    if resource.garden3d?
       options[:data] = {
         confirm: "Create a $0.00 draft invoice in garden3d's QuickBooks for each company that does not have one " \
                  "for #{resource.invoice_month}? Stacks first checks QuickBooks and skips any company that " \
@@ -104,14 +104,16 @@ ActiveAdmin.register InvoicePass do
   end
 
   member_action :rerun_invoice_pass_without_reminders, method: :post do
-    return make_intercompany_invoices! if resource.intercompany?
-
-    unless resource.enterprise == Enterprise.sanctuary
-      return redirect_to admin_invoice_pass_path(resource),
-        alert: "Forecast invoicing only runs on #{Enterprise::SANCTUARY_NAME}'s passes."
+    case resource.enterprise.name
+    when Enterprise::SANCTUARY_NAME
+      Stacks::Automator.attempt_invoicing_for_invoice_pass(resource, false)
+      redirect_to admin_invoice_pass_path(resource), notice: "Done!"
+    when Enterprise::GARDEN3D_NAME
+      make_intercompany_invoices!
+    else
+      redirect_to admin_invoice_pass_path(resource),
+        alert: "#{resource.enterprise.name} makes no invoices through Stacks."
     end
-    Stacks::Automator.attempt_invoicing_for_invoice_pass(resource, false)
-    redirect_to admin_invoice_pass_path(resource), notice: "Done!"
   end
 
   member_action :rerun_invoice_pass, method: :post do
@@ -123,7 +125,7 @@ ActiveAdmin.register InvoicePass do
     redirect_to admin_invoice_pass_path(resource), notice: "Done!"
   end
 
-  action_item :refresh_intercompany_invoices, only: :show, if: proc { resource.intercompany? } do
+  action_item :refresh_intercompany_invoices, only: :show, if: proc { resource.garden3d? } do
     link_to "Refresh from QuickBooks", refresh_intercompany_invoices_admin_invoice_pass_path(resource), method: :post
   end
 
@@ -241,14 +243,11 @@ ActiveAdmin.register InvoicePass do
   end
 
   show title: :invoice_month do
-    if resource.intercompany?
+    if resource.garden3d?
       # No Forecast hours, no generator errors: this pass holds garden3d's
       # invoices to the enterprises it bills.
       render 'intercompany_pass', { invoice_pass: invoice_pass }
     else
-      # Sanctuary's passes, and garden3d's passes from before
-      # InvoicePass::INTERCOMPANY_START: rendered exactly as before.
-      #
       # Same company-wide exposure concern as the index aggregates: the
       # missing-hours report lists every contributor's name + missing
       # allocation, not just those tied to the viewer's scoped projects.

@@ -180,8 +180,8 @@ class AdminPermissionGrantsTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "admin_user_requires_superpowers_assessment"
   end
 
-  # Sanctuary's passes and garden3d's (from InvoicePass::INTERCOMPANY_START)
-  # generate invoices; no other enterprise's do.
+  # Sanctuary's passes and garden3d's generate invoices; no other
+  # enterprise's do.
   test "the Generate Invoices action is not offered on another enterprise's pass" do
     pass = InvoicePass.create!(start_of_month: Date.new(2090, 1, 1),
                                enterprise: enterprises(:one), data: {})
@@ -203,7 +203,6 @@ class AdminPermissionGrantsTest < ActionDispatch::IntegrationTest
     post rerun_invoice_pass_without_reminders_admin_invoice_pass_path(pass)
 
     assert_redirected_to admin_invoice_pass_path(pass)
-    assert_equal "Forecast invoicing only runs on #{Enterprise::SANCTUARY_NAME}'s passes.",
-      flash[:alert]
+    assert_equal "#{enterprises(:one).name} makes no invoices through Stacks.", flash[:alert]
   end
 end

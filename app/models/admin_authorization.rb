@@ -155,6 +155,10 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
         return true if subject.is_a?(InvoicePass)
         return true if subject.is_a?(ProjectTracker) && scoped_ids.include?(subject.id)
         return true if subject.is_a?(InvoiceTracker) && (subject.project_trackers.map(&:id) & scoped_ids).any?
+        # The project log (app/admin/log.rb) is nested under a tracker. This
+        # only opens the page's own gate; the page then checks the tracker
+        # itself, which the line above limits to the granted ones.
+        return true if subject.is_a?(ActiveAdmin::Page) && subject.name == "Log"
       end
     end
 

@@ -1,0 +1,24 @@
+<%# Why a project's log is empty, and where to fix it. Used by the log page and
+    by the module on the tracker page. %>
+<% can_edit = authorized?(:update, tracker) %>
+<% if reason == :no_notion_project %>
+  <p style="margin-bottom: 6px;">This project has no Notion project chosen, so nothing Stacksbot sees can be filed under it.</p>
+  <% if can_edit %>
+    <%= link_to "Choose its Notion project →", edit_admin_project_tracker_path(tracker) %>
+  <% else %>
+    <p>Ask a project lead or an admin to choose one.</p>
+  <% end %>
+<% elsif reason == :never_synced %>
+  <p>Stacks has not synced Stacksbot's observations yet. The sync runs every night, so check back tomorrow.</p>
+<% elsif reason == :nothing_seen %>
+  <p style="margin-bottom: 6px;">Stacksbot has not filed anything under this project yet.</p>
+  <% unreadable = Array(tracker.twist_channels_inaccessible).size %>
+  <% if tracker.twist_channel_ids.empty? %>
+    <p style="margin-bottom: 6px;">It has no Twist channel linked, and the channel is where most of what Stacksbot sees comes from.</p>
+    <%= link_to "Link its Twist channel →", edit_admin_project_tracker_path(tracker) if can_edit %>
+  <% elsif unreadable > 0 %>
+    <p>Stacksbot is not in <%= unreadable %> of this project's Twist channels. Invite the Stacksbot account to <%= unreadable == 1 ? "it" : "them" %> in Twist and it will start reading.</p>
+  <% else %>
+    <p>Its Twist channel and Notion project are linked, so this fills in as Stacksbot reads them.</p>
+  <% end %>
+<% end %>

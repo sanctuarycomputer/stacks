@@ -66,7 +66,8 @@ module Mso
       # depends on the month's state; see #call.)
       def runnable?(invoice_pass)
         # Migrations are run by hand after the deploy: no tables, no run.
-        MsoTrueup.schema_ready? && invoice_pass.intercompany?
+        MsoTrueup.schema_ready? && invoice_pass.garden3d? &&
+          invoice_pass.start_of_month >= InvoicePass::INTERCOMPANY_START
       end
 
       # One role period per person per month is a model validation only; the

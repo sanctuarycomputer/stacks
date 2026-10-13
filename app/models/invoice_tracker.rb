@@ -631,8 +631,9 @@ class InvoiceTracker < ApplicationRecord
     # Everything below is the Forecast path: Sanctuary's trackers, and
     # garden3d's legacy ones from 2025 (each has a blueprint). Index Space and
     # USB Club have QuickBooks accounts too; never invoice from them.
-    unless invoice_pass.forecast? || invoice_pass.garden3d?
-      raise "InvoicePass #{invoice_pass.id} (#{invoice_pass.enterprise&.name}) makes no invoices through Stacks"
+    issuer = invoice_pass.enterprise
+    unless [Enterprise::SANCTUARY_NAME, Enterprise::GARDEN3D_NAME].include?(issuer.name)
+      raise NotImplementedError, "#{issuer.name} makes no invoices through Stacks (InvoicePass #{invoice_pass.id})"
     end
 
     return if configuration_errors.any?

@@ -34,6 +34,24 @@ class NotionPage < ApplicationRecord
     Stacks::Notion::Project.new(self)
   end
 
+  # Stacksbot's Observations and Problems, synced in part by
+  # Stacks::Notion::FilteredSync for the project log.
+  scope :observations, -> {
+    where(notion_parent_type: "database_id", notion_parent_id: Stacks::Notion.filtered_parent_id(:OBSERVATIONS))
+  }
+
+  def as_observation
+    Stacks::Notion::Observation.new(self)
+  end
+
+  scope :problems, -> {
+    where(notion_parent_type: "database_id", notion_parent_id: Stacks::Notion.filtered_parent_id(:PROBLEMS))
+  }
+
+  def as_problem
+    Stacks::Notion::Problem.new(self)
+  end
+
   def notion_link
     "https://www.notion.so/garden3d/#{notion_id.gsub('-', '')}"
   end

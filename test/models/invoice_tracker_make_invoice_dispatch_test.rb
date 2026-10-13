@@ -46,7 +46,7 @@ class InvoiceTrackerMakeInvoiceDispatchTest < ActiveSupport::TestCase
     Mso::IntercompanyInvoices.expects(:push_invoice!).never
     tracker.expects(:configuration_errors).never
 
-    error = assert_raises(RuntimeError) { tracker.make_invoice! }
+    error = assert_raises(NotImplementedError) { tracker.make_invoice! }
 
     assert_match(/makes no invoices through Stacks/, error.message)
   end

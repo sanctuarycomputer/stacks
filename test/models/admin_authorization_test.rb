@@ -344,4 +344,23 @@ class AdminAuthorizationTest < ActiveSupport::TestCase
     assert_includes passes, world[:sanctuary_pass].id
     assert_empty auth_for(scoped).scope_collection(InvoiceTracker.all).pluck(:id) & [world[:fee].id, world[:legacy].id]
   end
+
+  test "a project-scoped grantee passes the Log page's gate, and no other page's" do
+    namespace = ActiveAdmin.application.namespace(:admin)
+    log_page = ActiveAdmin::Page.new(namespace, "Log", {})
+    other_page = ActiveAdmin::Page.new(namespace, "Project Cost Explorer", {})
+
+    scoped = make_user("scoped-log@sanctuary.computer")
+    PermissionGrant.create!(admin_user: scoped, permission: "lead", subject: make_project_tracker("Granted"))
+    assert auth_for(scoped).authorized?(:read, log_page)
+    refute auth_for(scoped).authorized?(:update, log_page)
+    refute auth_for(scoped).authorized?(:read, other_page)
+
+    nobody = make_user("nobody-log@sanctuary.computer")
+    refute auth_for(nobody).authorized?(:read, log_page)
+
+    lead = make_user("lead-log@sanctuary.computer")
+    PermissionGrant.create!(admin_user: lead, permission: "lead")
+    assert auth_for(lead).authorized?(:read, log_page)
+  end
 end
