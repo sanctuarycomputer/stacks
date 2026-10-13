@@ -51,9 +51,11 @@ module NotionLogFixtures
 
   def problem_data(id: SecureRandom.uuid, name: "Problem", kind: "delivery", severity: "High", status: "Open",
                    owner: nil, occurrences: 1, last_seen: Time.zone.now, first_seen: nil, proposed_action: nil,
-                   flag: :absent, flag_shape: :checkbox,
+                   flag: :absent, flag_shape: :checkbox, not_a_flag_because: :absent,
                    project_ids: [], source_observation_ids: [], edited: Time.zone.now, archived: false)
     flag_prop = flag == :absent ? {} : { "Flag" => nl_flag(flag, flag_shape) }
+    # Notion's Not A Flag Because: a text formula, "" for a flag or a closed problem.
+    flag_prop["Not A Flag Because"] = nl_flag(not_a_flag_because, :text) unless not_a_flag_because == :absent
     { "object" => "page", "id" => id, "url" => "https://www.notion.so/#{id.delete('-')}",
       "created_time" => (last_seen || edited).utc.iso8601, "last_edited_time" => edited.utc.iso8601,
       "archived" => archived,

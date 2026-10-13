@@ -149,4 +149,31 @@ class StacksNotionProblemTest < ActiveSupport::TestCase
       assert_nil quiet.flag_reason, empty.inspect
     end
   end
+
+  test "Not A Flag Because: Notion's sentence, nothing when it is blank, and absent told apart from blank" do
+    said = prob(status: "Owned", flag: "", not_a_flag_because: "  Someone has picked it up. ")
+    assert_equal "Someone has picked it up.", said.not_a_flag_because
+    assert said.not_a_flag_because_stated?
+    ["", "   ", nil].each do |empty|
+      blank = prob(flag: "Open.", not_a_flag_because: empty)
+      assert_nil blank.not_a_flag_because, empty.inspect
+      assert blank.not_a_flag_because_stated?, "#{empty.inspect}: Notion has the formula and gives nothing"
+    end
+    absent = prob(status: "Owned", flag: "")
+    assert_nil absent.not_a_flag_because
+    assert_not absent.not_a_flag_because_stated?, "synced before the formula existed"
+  end
+
+  test "Not A Flag Because of another shape, or broken data, reads as absent and never raises" do
+    data = problem_data(status: "Owned")
+    [{ "type" => "rich_text", "rich_text" => [] }, { "type" => "formula", "formula" => { "type" => "boolean", "boolean" => true } }, "text", nil].each do |shape|
+      data["properties"]["Not A Flag Because"] = shape
+      p = NotionPage.new(notion_id: "n-3", data: data).as_problem
+      assert_nil p.not_a_flag_because, shape.inspect
+      assert_not p.not_a_flag_because_stated?, shape.inspect
+    end
+    broken = NotionPage.new(notion_id: "n-4", data: { "properties" => [] }).as_problem
+    assert_nil broken.not_a_flag_because
+    assert_not broken.not_a_flag_because_stated?
+  end
 end

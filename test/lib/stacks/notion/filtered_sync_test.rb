@@ -289,6 +289,7 @@ class StacksNotionFilteredSyncTest < ActiveSupport::TestCase
     assert_equal "missing", stats[:properties]["Valence"]
     assert_equal Stacks::Notion::FilteredSync::EXPECTED_PROPERTIES[:OBSERVATIONS].keys.sort, stats[:properties].keys.sort
     assert_equal({}, sync_with(FakeNotion.new).sync(:PROBLEMS, dry_run: true)[:properties], "no row, nothing to report")
+    assert_equal "formula", Stacks::Notion::FilteredSync::EXPECTED_PROPERTIES[:PROBLEMS]["Not A Flag Because"], "the preview looks for the reason formula"
     assert_not sync_with(FakeNotion.new(pages: { OBS => [[row]] })).sync(:OBSERVATIONS).key?(:properties)
   end
 

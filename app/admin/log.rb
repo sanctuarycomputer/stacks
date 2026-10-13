@@ -64,6 +64,12 @@ ActiveAdmin.register_page "Log" do
     end
   end
 
+  # The way back to the tracker. Breadcrumbs are off across this admin
+  # (config.breadcrumb), so the page carries the link itself.
+  action_item :tracker do
+    link_to "← #{log_tracker.name}", admin_project_tracker_path(log_tracker), class: "log-back-to-tracker"
+  end
+
   content title: "Project Log" do
     if loaded_project_log
       render(partial: "show", locals: { tracker: log_tracker, log: loaded_project_log })

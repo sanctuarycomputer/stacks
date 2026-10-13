@@ -34,6 +34,10 @@
 # Nothing in Stacks clears a flag. It goes when Notion's answer changes and
 # the next sync lands.
 #
+# The page does say, in plain English, what a flag is (FLAG_DESCRIPTION) and
+# why each other open problem is not one (Notion's own sentence, from the
+# Problem's Not A Flag Because formula). Both only describe Notion's rule.
+#
 # The log page, the tracker page's module and the trackers index all count
 # from flags_for, so their numbers cannot differ.
 class Stacks::ProjectLog
@@ -48,7 +52,14 @@ class Stacks::ProjectLog
   # interim rule to flag it. A page that has the property is never tested
   # against it: Notion's formula holds its own window.
   INTERIM_FLAG_WINDOW = 30.days
-  FLAG_RULE_URL = "https://app.notion.com/p/18d6276a12aa4e0a957f013a69d5bb9a".freeze # the Problems database
+  # What a flag is, in plain English, for the reader of the page. THE RULE
+  # ITSELF LIVES IN NOTION, in the `Flag` formulas on the Problems and
+  # Observations databases (and `Not A Flag Because` on Problems). This
+  # sentence only describes them and decides nothing, so it must be edited
+  # together with those formulas: change one, change the other.
+  FLAG_DESCRIPTION = "A flag is a High or Critical problem that is still open, has not been picked up, and has come up " \
+                     "in the last 30 days. A high-salience risk that is not yet tied to a problem is a flag too. " \
+                     "A flag clears when the problem is resolved or picked up in Notion, or goes quiet for 30 days.".freeze
   PROBLEM_LIMIT = 200   # open problems read for a tracker
   EVIDENCE_LIMIT = 5    # observations listed under one problem flag
   EVIDENCE_READ = 500   # observations read as evidence for a whole page
@@ -232,16 +243,17 @@ class Stacks::ProjectLog
     end
   end
 
-  # [css class, label, grey?] for a row's valence. A row with no valence
-  # shows its Notion Type instead ("FYI", "Bug", "Decision"), and "Not marked"
-  # only when it has no Type either. A bare .pill has no background, so the
-  # grey ones are coloured by the view.
+  # [css class, label, grey?] for a row's pill. The label is the row's kind,
+  # its Notion Type ("Risk", "Win", "FYI", "Bug", "Decision"), for every row,
+  # and "Not marked" only when the Type is blank. The colour is its valence:
+  # Negative red, Positive green, Neutral or none grey. A bare .pill has no
+  # background, so the grey ones are coloured by the view.
   def self.pill_for(row)
+    label = row.observation.type.presence || "Not marked"
     case row.observation.valence
-    when "Negative" then ["pill at_risk", "Negative", false]
-    when "Positive" then ["pill exceptional", "Positive", false]
-    when "Neutral" then ["pill", "Neutral", true]
-    else ["pill", row.observation.type.presence || "Not marked", true]
+    when "Negative" then ["pill at_risk", label, false]
+    when "Positive" then ["pill exceptional", label, false]
+    else ["pill", label, true]
     end
   end
 
@@ -308,19 +320,61 @@ class Stacks::ProjectLog
       end
   end
 
-  # INTERIM. Why an open problem is not a flag, for a page with no Flag in
-  # Notion only: the interim rule would flag it were it not too old or
-  # already taken. nil for every page Notion answered for: Notion decided,
-  # and Stacks gives no reason of its own.
+  # Why an open problem is not a flag, as "Not a flag: <sentence>". The
+  # sentence is Notion's own (Problem#not_a_flag_because). When the problem
+  # is Owned or Mitigating and Notion names who, that follows it: a fact
+  # Stacks holds, not a rule. nil when Notion's formula gives nothing, and
+  # for a page synced before the formula existed when the interim rule has
+  # nothing to say either.
   def not_a_flag_reason(problem)
-    return nil unless problem.open? && problem.flag_inferred?
-    return "Not a flag: not seen for #{INTERIM_FLAG_WINDOW.in_days.to_i} days." if problem.interim_flag?
+    return nil unless problem.open?
+    return interim_not_a_flag_reason(problem) unless problem.not_a_flag_because_stated?
+    stated = problem.not_a_flag_because
+    return nil if stated.nil?
+    stated = "#{stated}." unless stated.match?(/[.!?]\z/)
+    taken = Problem::OWNED_STATUSES.include?(problem.status) && problem.owner_names.any?
+    ["Not a flag: #{stated}", ("#{self.class.ownership_words(problem)}." if taken)].compact.join(" ")
+  end
+
+  # Whether not_a_flag_reason(problem) is Notion's sentence. The view leaves
+  # the severity and ownership out of the line beneath it then, since the
+  # sentence states them.
+  def notion_gave_reason?(problem)
+    problem.open? && problem.not_a_flag_because.present?
+  end
+
+  # INTERIM, for a page whose stored data has no Not A Flag Because (it was
+  # synced before Notion had the formula): the reason as the interim flag
+  # rule sees it, for a High or Critical problem that is too old or already
+  # taken. nil when it cannot tell. Once every stored page carries the
+  # property, delete this and have not_a_flag_reason read Notion alone.
+  def interim_not_a_flag_reason(problem)
+    days = INTERIM_FLAG_WINDOW.in_days.to_i
+    if problem.interim_flag?
+      quiet = problem.seen_at.present? && problem.seen_at < @now - INTERIM_FLAG_WINDOW
+      return quiet ? "Not a flag: not seen for #{days} days." : nil
+    end
     return nil unless Problem::INTERIM_FLAG_SEVERITIES.include?(problem.severity)
     names = problem.owner_names.to_sentence.presence
     many = problem.owner_names.size > 1
     case problem.status
     when "Owned" then names ? "Not a flag: #{names} #{many ? 'own' : 'owns'} it." : "Not a flag: it is owned."
     when "Mitigating" then names ? "Not a flag: #{names} #{many ? 'are' : 'is'} mitigating it." : "Not a flag: it is being mitigated."
+    end
+  end
+
+  # The small facts under an other open problem. When Notion gave the reason
+  # it is not a flag, that sentence already states the severity and whether
+  # it was picked up, so only what it leaves out is listed.
+  def problem_facts(problem)
+    seen = problem.seen_at && "Last seen #{problem.seen_at.strftime(DATE_FORMAT)}"
+    times = problem.occurrences.to_i > 1 ? "Seen #{problem.occurrences} times" : nil
+    words = self.class.ownership_words(problem)
+    if notion_gave_reason?(problem)
+      known = [Problem::UNOWNED_STATUS, nil, *Problem::OWNED_STATUSES].include?(problem.status)
+      [(words unless known), times, seen].compact
+    else
+      [problem.severity ? "Severity: #{problem.severity}" : "No severity in Notion", words, times, seen].compact
     end
   end
 

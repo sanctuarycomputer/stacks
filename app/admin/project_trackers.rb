@@ -20,7 +20,7 @@ ActiveAdmin.register ProjectTracker do
       .select { |pt| pt.project_capsule&.complete_but_for_admin_sign_off? }.map(&:id)
     scope.where(id: ids)
   end
-  # The trackers whose Flags pill on this index is not blank: the ids come
+  # The trackers that have a Flags pill on this index: the ids come
   # from the same count the pill prints (Stacks::ProjectLog.flag_counts), so
   # the two cannot disagree. show_count: false for the reason above: it is read
   # only when this tab is opened, never on a load of another tab. Empty,
@@ -149,7 +149,7 @@ ActiveAdmin.register ProjectTracker do
         @notion_project_pages_by_notion_id =
           notion_ids.empty? ? {} : NotionPage.projects.where(notion_id: notion_ids).index_by(&:notion_id)
         # The index is worth more than its newest column: when the log's rows
-        # cannot be read (the sync's columns are missing, say) it stays blank.
+        # cannot be read (the sync's columns are missing, say) it shows dashes.
         @log_flag_counts_by_tracker_id =
           begin
             Stacks::ProjectLog.flag_counts(arr)
@@ -300,12 +300,17 @@ ActiveAdmin.register ProjectTracker do
     end
 
     # How many flags the project's log shows right now, linking to it. What
-    # is a flag is Notion's call (Stacks::ProjectLog). Blank when there are none.
+    # is a flag is Notion's call (Stacks::ProjectLog). A muted dash, as Last
+    # Ship's, when there are none or the log could not be read.
     column "Flags" do |pt|
       count = log_flag_counts_by_tracker_id[pt.id].to_i
+      if count.zero?
+        span "—", style: "opacity: 0.4;"
+        next
+      end
       label = "#{count} #{count == 1 ? 'Flag' : 'Flags'}"
       a(label, href: admin_project_tracker_log_path(pt), class: "pill error log-flag-count", style: "text-decoration: none; white-space: nowrap;",
-        title: "#{label} in the project log") if count > 0
+        title: "#{label} in the project log")
     end
 
     column :forecast_projects do |resource|

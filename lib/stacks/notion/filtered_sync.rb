@@ -63,7 +63,7 @@ class Stacks::Notion::FilteredSync
       "Problem" => "title", "Kind" => "select", "Severity" => "select", "Status" => "select", "Owner" => "people",
       "Owner Name" => "rich_text", "Project" => "relation", "Source Observations" => "relation",
       "Occurrences" => "number", "First Seen" => "date", "Last Seen" => "date", "Proposed Action" => "rich_text",
-      Stacks::Notion::Flag::PROPERTY => "formula",
+      Stacks::Notion::Flag::PROPERTY => "formula", Stacks::Notion::Problem::NOT_A_FLAG_PROPERTY => "formula",
     }.freeze,
   }.freeze
 

@@ -1,6 +1,7 @@
 <%# The project log, in the same modules as the Project Tracker page: Flags,
-    Other open problems, Wins, All Observations. Locals come from the content
-    block in app/admin/log.rb. What is a flag, and why, is Notion's statement
+    Other open problems, Wins, All Observations, then one grey line saying
+    when it was last synced. Locals come from the content block in
+    app/admin/log.rb. What is a flag, and why, is Notion's statement
     (Stacks::ProjectLog); everything from Notion is escaped by ERB. %>
 <% reason = log.empty_reason %>
 <% days = Stacks::ProjectLog::WINS_WINDOW.in_days.to_i %>
@@ -11,24 +12,22 @@
      admin_project_tracker_log_path(tracker, { source: log.source, valence: log.valence }.merge(changes).compact.merge(anchor: "all-observations"))
    } %>
 
-<div class="dashboard-modules table index_table index">
-  <div class="dashboard-module">
-    <div class="module-header">
-      <p>What Stacksbot has seen</p>
-      <%= link_to "#{tracker.name} →", admin_project_tracker_path(tracker) %>
-    </div>
-    <div class="module-body">
-      <% if reason %>
+<%# An empty log keeps its one framed module: why it is empty, and where to
+    fix it. A log with rows starts at Flags; the way back to the tracker is
+    the page's action item (app/admin/log.rb). %>
+<% if reason %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-header">
+        <p>What Stacksbot has seen</p>
+        <%= link_to "#{tracker.name} →", admin_project_tracker_path(tracker) %>
+      </div>
+      <div class="module-body">
         <%= render "admin/log/empty", tracker: tracker, reason: reason %>
-      <% else %>
-        <p style="font-size: 13px; color: #5E6469;">
-          Stacksbot writes these rows in Notion, and Stacks only shows them. Triage happens in Notion.
-          <% if log.last_synced_at %>Last synced <%= time_ago_in_words(log.last_synced_at) %> ago.<% end %>
-        </p>
-      <% end %>
+      </div>
     </div>
   </div>
-</div>
+<% end %>
 
 <% unless reason %>
   <div class="dashboard-modules table index_table index" id="flags">
@@ -38,18 +37,18 @@
         <p><%= log.flags.size %></p>
       </div>
       <div class="module-body">
-        <p class="log-flag-rule" style="font-size: 13px; color: #5E6469; margin-bottom: 12px;">
-          Notion decides what is a flag.
-          <%= link_to "See the rule in Notion ↗", Stacks::ProjectLog::FLAG_RULE_URL, target: "_blank", rel: "noopener", class: "log-flag-rule-link" %>
-        </p>
+        <%# What a flag is, in words. The rule itself is Notion's: see
+            Stacks::ProjectLog::FLAG_DESCRIPTION before changing either. %>
+        <% if log.flags.empty? %>
+          <p class="log-no-flags" style="margin-bottom: 6px;">No flags.</p>
+        <% end %>
+        <p class="log-flag-rule" style="font-size: 13px; color: #5E6469; margin-bottom: 12px;"><%= Stacks::ProjectLog::FLAG_DESCRIPTION %></p>
         <% if log.interim_flag_in_use? %>
           <p class="log-flag-interim" style="font-size: 13px; color: #5E6469; margin-bottom: 12px;">
             Interim: some rows here were synced before Notion had its Flag property. Until the next nightly sync re-reads them, such a problem is a flag when it is open, Critical or High, not picked up, and seen in the last <%= Stacks::ProjectLog::INTERIM_FLAG_WINDOW.in_days.to_i %> days, and such an observation when it is negative, High salience, not dismissed and from the last <%= Stacks::ProjectLog::INTERIM_FLAG_WINDOW.in_days.to_i %> days.
           </p>
         <% end %>
-        <% if log.flags.empty? %>
-          <p class="log-no-flags">No flags. <%= link_to "See the rule in Notion ↗", Stacks::ProjectLog::FLAG_RULE_URL, target: "_blank", rel: "noopener", class: "log-flag-rule-link" %></p>
-        <% else %>
+        <% if log.flags.any? %>
           <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
             <tbody>
               <% log.flags.each do |flag| %>
@@ -61,6 +60,8 @@
                     <strong><%= flag.title %></strong>
                     <div class="log-flag-why" style="margin-top: 4px;"><%= flag.why %></div>
                     <div class="log-flag-next" style="margin-top: 4px;"><strong>Stacksbot suggests:</strong> <%= flag.next_step %></div>
+                    <%# The evidence links to where it was said only. Each row is
+                        one click from the flag's own Notion link beside it. %>
                     <% if flag.evidence.any? %>
                       <ul class="log-flag-evidence" style="margin: 8px 0 0 18px; font-size: 13px; color: #5E6469; list-style: disc;">
                         <% flag.evidence.each do |o| %>
@@ -69,11 +70,10 @@
                             · <%= o.source || "Unknown source" %>
                             · <%= o.observed_at ? date.(o.observed_at) : "No date" %>
                             <% if o.source_url %> · <%= link_to "Source ↗", o.source_url, target: "_blank", rel: "noopener", class: "log-source" %><% end %>
-                            · <%= link_to "Notion ↗", o.notion_url, target: "_blank", rel: "noopener" %>
                           </li>
                         <% end %>
                         <% if flag.evidence_more > 0 %>
-                          <li class="log-flag-evidence-more">and <%= flag.evidence_more %> more, in Notion</li>
+                          <li class="log-flag-evidence-more">and <%= flag.evidence_more %> more</li>
                         <% end %>
                       </ul>
                     <% end %>
@@ -101,21 +101,22 @@
           <p><%= log.other_problems.size %></p>
         </div>
         <div class="module-body">
-          <p style="font-size: 13px; color: #5E6469; margin-bottom: 12px;">Open in Notion and not a flag.</p>
+          <p style="font-size: 13px; color: #5E6469; margin-bottom: 12px;">Problems that are open but not flagged, with the reason.</p>
           <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
             <tbody>
               <% log.other_problems.each do |problem| %>
                 <tr id="log_problem_<%= problem.notion_id %>">
                   <td class="col" style="vertical-align: top;">
                     <strong><%= problem.title %></strong>
-                    <div style="font-size: 13px; color: #5E6469;">
-                      <%= problem.severity ? "Severity: #{problem.severity}" : "No severity in Notion" %>
-                      · <%= Stacks::ProjectLog.ownership_words(problem) %>
-                      <% if problem.occurrences && problem.occurrences > 1 %> · Seen <%= problem.occurrences %> times<% end %>
-                      <% if problem.seen_at %> · Last seen <%= date.(problem.seen_at) %><% end %>
-                    </div>
+                    <%# Notion's sentence when the page has one. Otherwise the
+                        interim line, which says on hover that Stacks worked it out. %>
                     <% if (why_not = log.not_a_flag_reason(problem)) %>
-                      <div class="log-not-a-flag" style="font-size: 13px; color: #5E6469;"><%= why_not %></div>
+                      <div class="log-not-a-flag" style="margin-top: 4px;"
+                           <% unless log.notion_gave_reason?(problem) %>title="Stacks worked this out: the row was synced before Notion gave its own reason. The next nightly sync replaces it."<% end %>><%= why_not %></div>
+                    <% end %>
+                    <% facts = log.problem_facts(problem) %>
+                    <% if facts.any? %>
+                      <div class="log-problem-facts" style="font-size: 13px; color: #5E6469; margin-top: 4px;"><%= facts.join(" · ") %></div>
                     <% end %>
                   </td>
                   <td class="col text-right" style="white-space: nowrap; vertical-align: top;">
@@ -182,7 +183,7 @@
           <% end %>
         </p>
         <% if log.interim_in_use? %>
-          <p class="log-valence-interim" style="font-size: 13px; color: #5E6469; margin-bottom: 12px;">Stacksbot has not marked these rows yet. Until it does, a row whose type is Risk is shown as Negative and one whose type is Win as Positive. Hover a pill to see which rows that applies to.</p>
+          <p class="log-valence-interim" style="font-size: 13px; color: #5E6469; margin-bottom: 12px;">Colour shows whether Stacksbot read it as positive or negative. Until it marks rows itself, Risk shows red and Win green.</p>
         <% end %>
 
         <% if log.rows.empty? %>
@@ -209,4 +210,8 @@
       </div>
     </div>
   </div>
+
+  <% if log.last_synced_at %>
+    <p class="log-last-synced" style="font-size: 12px; color: #9aa0a6; margin-top: 4px;">Last synced <%= time_ago_in_words(log.last_synced_at) %> ago</p>
+  <% end %>
 <% end %>

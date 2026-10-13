@@ -250,7 +250,8 @@ class StacksProjectLogTest < ActiveSupport::TestCase
     assert_equal (yeses + ["no Flag: interim says yes", "no Flag: interim says yes (observation)"]).sort, flag_titles(l).sort
     assert_equal (FLAG_SHAPES.keys.map { |shape| "#{shape} problem: no beats Critical and Open" } + ["no Flag: interim says no"]).sort,
                  l.other_problems.map(&:title).sort
-    assert_nil l.not_a_flag_reason(l.other_problems.find { |p| p.title.start_with?("text") }), "Notion said no; Stacks gives no reason of its own"
+    assert_nil l.not_a_flag_reason(l.other_problems.find { |p| p.title.start_with?("text") }),
+               "Notion said no and gave no sentence yet; the interim rule cannot tell why, so nothing is claimed"
   end
 
   test "a stale Flag never shows a closed problem or a dismissed observation" do
@@ -274,7 +275,11 @@ class StacksProjectLogTest < ActiveSupport::TestCase
     l = log
     assert_equal ["quiet, and Notion still flags it", "old, and Notion still flags it"], flag_titles(l)
     assert_equal ["quiet, and Notion says no", "recent, and Notion says no"], l.other_problems.map(&:title).sort
-    l.other_problems.each { |p| assert_nil l.not_a_flag_reason(p), "#{p.title}: Notion decided, so Stacks gives no reason of its own" }
+    # Neither page carries Not A Flag Because yet, so the reason is the interim
+    # line: the quiet one is told so, and nothing is guessed for the recent one.
+    reasons = l.other_problems.to_h { |p| [p.title, l.not_a_flag_reason(p)] }
+    assert_equal "Not a flag: not seen for 30 days.", reasons["quiet, and Notion says no"]
+    assert_nil reasons["recent, and Notion says no"]
     assert_equal({ @tracker.id => 2 }, Stacks::ProjectLog.flag_counts([@tracker], now: NOW))
     assert_not l.interim_flag_in_use?
   end
@@ -398,6 +403,81 @@ class StacksProjectLogTest < ActiveSupport::TestCase
     assert_equal "Not a flag: it is being mitigated.", reasons["critical owned"]
     assert_nil reasons["medium"], "a Medium problem would not be a flag whoever owned it"
     assert_nil reasons["low new"]
+  end
+
+  # --- why an open problem is not a flag --------------------------------------
+
+  NOTION_REASONS = {
+    picked_up: "Someone has picked it up.",
+    no_severity: "It has no severity yet.",
+    medium: "Its severity is Medium, and only High or Critical problems are flagged.",
+    quiet: "It has not come up in the last 30 days.",
+  }.freeze
+
+  test "not a flag: Notion's own sentence, for each of the reasons it gives" do
+    prob!(name: "picked up", status: "Owned", flag: "", not_a_flag_because: NOTION_REASONS[:picked_up])
+    prob!(name: "no severity", severity: nil, flag: "", not_a_flag_because: NOTION_REASONS[:no_severity])
+    prob!(name: "medium", severity: "Medium", flag: "", not_a_flag_because: NOTION_REASONS[:medium])
+    prob!(name: "quiet", last_seen: NOW - 45.days, flag: "", not_a_flag_because: NOTION_REASONS[:quiet])
+    l = log
+    reasons = l.other_problems.to_h { |p| [p.title, l.not_a_flag_reason(p)] }
+    assert_equal "Not a flag: Someone has picked it up.", reasons["picked up"], "no owner is named in Notion, so none is added"
+    assert_equal "Not a flag: It has no severity yet.", reasons["no severity"]
+    assert_equal "Not a flag: Its severity is Medium, and only High or Critical problems are flagged.", reasons["medium"]
+    assert_equal "Not a flag: It has not come up in the last 30 days.", reasons["quiet"]
+    l.other_problems.each { |p| assert l.notion_gave_reason?(p), p.title }
+  end
+
+  test "not a flag: the owners Stacks holds follow Notion's sentence when the problem is Owned or Mitigating" do
+    prob!(name: "owned", status: "Owned", owner: "Sam Lead", flag: "", not_a_flag_because: NOTION_REASONS[:picked_up])
+    prob!(name: "mitigating", status: "Mitigating", owner: "Ada", flag: "", not_a_flag_because: NOTION_REASONS[:picked_up])
+    prob!(name: "open with an owner", severity: "Medium", owner: "Ada", flag: "", not_a_flag_because: NOTION_REASONS[:medium])
+    prob!(name: "no full stop", status: "Owned", owner: "Sam Lead", flag: "", not_a_flag_because: " Someone has picked it up ")
+    l = log
+    reasons = l.other_problems.to_h { |p| [p.title, l.not_a_flag_reason(p)] }
+    assert_equal "Not a flag: Someone has picked it up. Owned by Sam Lead.", reasons["owned"]
+    assert_equal "Not a flag: Someone has picked it up. Being mitigated by Ada.", reasons["mitigating"]
+    assert_equal "Not a flag: Its severity is Medium, and only High or Critical problems are flagged.", reasons["open with an owner"],
+                 "an owner is only named for a problem that was picked up"
+    assert_equal "Not a flag: Someone has picked it up. Owned by Sam Lead.", reasons["no full stop"]
+  end
+
+  test "not a flag: a page synced before Notion had the formula falls back to the interim line" do
+    prob!(name: "absent, owned", severity: "Critical", status: "Owned", owner: "Sam Lead", flag: "")
+    prob!(name: "absent, quiet", last_seen: NOW - 45.days, flag: "")
+    prob!(name: "absent, medium", severity: "Medium", flag: "")
+    prob!(name: "absent everything, quiet", last_seen: NOW - 45.days)
+    prob!(name: "blank", severity: "Critical", status: "Owned", owner: "Sam Lead", flag: "", not_a_flag_because: "")
+    l = log
+    by_title = l.other_problems.index_by(&:title)
+    reasons = by_title.transform_values { |p| l.not_a_flag_reason(p) }
+    assert_equal "Not a flag: Sam Lead owns it.", reasons["absent, owned"]
+    assert_equal "Not a flag: not seen for 30 days.", reasons["absent, quiet"]
+    assert_nil reasons["absent, medium"], "the interim rule has no sentence for it; the Severity line beneath says it"
+    assert_equal "Not a flag: not seen for 30 days.", reasons["absent everything, quiet"]
+    assert_nil reasons["blank"], "Notion has the formula and gives nothing: Stacks does not make one up"
+    by_title.each_value { |p| assert_not l.notion_gave_reason?(p), p.title }
+  end
+
+  test "the facts under an other open problem leave out what Notion's sentence already states" do
+    prob!(name: "with reason", severity: "Medium", occurrences: 3, last_seen: NOW - 2.days, flag: "", not_a_flag_because: NOTION_REASONS[:medium])
+    prob!(name: "owned with reason", status: "Owned", owner: "Sam Lead", flag: "", not_a_flag_because: NOTION_REASONS[:picked_up])
+    prob!(name: "odd status with reason", severity: "Medium", status: "Parked", flag: "", not_a_flag_because: NOTION_REASONS[:medium])
+    prob!(name: "no reason", severity: "Medium", occurrences: 3, last_seen: NOW - 2.days, flag: "")
+    l = log
+    facts = l.other_problems.to_h { |p| [p.title, l.problem_facts(p)] }
+    assert_equal ["Seen 3 times", "Last seen Oct 11, 2026"], facts["with reason"], "no Severity line, and the date stays"
+    assert_equal ["Last seen Oct 12, 2026"], facts["owned with reason"]
+    assert_equal ["Status in Notion: Parked", "Last seen Oct 12, 2026"], facts["odd status with reason"], "a status the sentence does not cover is kept"
+    assert_equal ["Severity: Medium", "Not picked up in Notion yet", "Seen 3 times", "Last seen Oct 11, 2026"], facts["no reason"]
+  end
+
+  test "the flag description is one sentence in one place, and names no Notion page" do
+    text = Stacks::ProjectLog::FLAG_DESCRIPTION
+    assert_equal "A flag is a High or Critical problem that is still open, has not been picked up, and has come up in the last 30 days. " \
+                 "A high-salience risk that is not yet tied to a problem is a flag too. " \
+                 "A flag clears when the problem is resolved or picked up in Notion, or goes quiet for 30 days.", text
+    assert_not Stacks::ProjectLog.const_defined?(:FLAG_RULE_URL)
   end
 
   test "ownership in words" do
@@ -594,20 +674,24 @@ class StacksProjectLogTest < ActiveSupport::TestCase
     assert_nil l.not_a_flag_reason(l.other_problems.first)
   end
 
-  test "pill_for is the valence: orange negative, green positive, grey neutral; with no valence, the Notion Type in grey" do
+  test "pill_for names the Notion Type on every row, and the valence is only the colour" do
     make = ->(valence, flag, type = "FYI") do
       o = NotionPage.new(notion_id: "x", data: observation_data(valence: valence, type: type)).as_observation
       Stacks::ProjectLog::Row.new(observation: o, problems: [], flag: flag)
     end
-    assert_equal ["pill at_risk", "Negative", false], Stacks::ProjectLog.pill_for(make.("Negative", true))
-    assert_equal ["pill at_risk", "Negative", false], Stacks::ProjectLog.pill_for(make.("Negative", false))
-    assert_equal ["pill exceptional", "Positive", false], Stacks::ProjectLog.pill_for(make.("Positive", false))
-    assert_equal ["pill", "Neutral", true], Stacks::ProjectLog.pill_for(make.("Neutral", false))
-    assert_equal ["pill", "Neutral", true], Stacks::ProjectLog.pill_for(make.("Neutral", false, "Decision")), "a valence always wins over the Type"
-    %w[FYI Bug Decision Resourcing].each do |type|
-      assert_equal ["pill", type, true], Stacks::ProjectLog.pill_for(make.(nil, false, type))
+    assert_equal ["pill at_risk", "FYI", false], Stacks::ProjectLog.pill_for(make.("Negative", true))
+    assert_equal ["pill at_risk", "Bug", false], Stacks::ProjectLog.pill_for(make.("Negative", false, "Bug"))
+    assert_equal ["pill exceptional", "Decision", false], Stacks::ProjectLog.pill_for(make.("Positive", false, "Decision"))
+    assert_equal ["pill", "Decision", true], Stacks::ProjectLog.pill_for(make.("Neutral", false, "Decision")), "Neutral is grey"
+    %w[FYI Bug Decision Question Commitment Resourcing].each do |type|
+      assert_equal ["pill", type, true], Stacks::ProjectLog.pill_for(make.(nil, false, type)), "no valence is grey"
     end
-    assert_equal ["pill", "Not marked", true], Stacks::ProjectLog.pill_for(make.(nil, false, nil)), "only when the Type is blank too"
+    # INTERIM: with no stored valence, Risk colours as Negative and Win as Positive.
+    assert_equal ["pill at_risk", "Risk", false], Stacks::ProjectLog.pill_for(make.(nil, false, "Risk"))
+    assert_equal ["pill exceptional", "Win", false], Stacks::ProjectLog.pill_for(make.(nil, false, "Win"))
+    assert_equal ["pill exceptional", "Risk", false], Stacks::ProjectLog.pill_for(make.("Positive", false, "Risk")), "a stored valence colours it, whatever the Type"
+    assert_equal ["pill", "Not marked", true], Stacks::ProjectLog.pill_for(make.(nil, false, nil)), "only when the Type is blank"
+    assert_equal ["pill at_risk", "Not marked", false], Stacks::ProjectLog.pill_for(make.("Negative", false, nil))
   end
 
   # --- the tracker page's module ---------------------------------------------

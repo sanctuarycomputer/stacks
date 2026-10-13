@@ -59,9 +59,12 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
                     salience: "High", type: "Risk", source: "Twist", flag: "Risk, not yet tied to a problem.", problem_ids: [problem.notion_id])
     lone = obs!(name: "Invoice disputed", valence: "Negative", salience: "High", type: "Risk", source: "Gmail",
                 flag: "Risk, not yet tied to a problem.", observed_at: 2.hours.ago)
-    owned = problem!(name: "Scope creep", severity: "High", status: "Owned", owner: "Sam Lead", flag: "", project_ids: [@project])
-    plain = obs!(name: "Design review ran long", valence: "Negative", salience: "Low", flag: "", observed_at: 3.hours.ago)
-    win = obs!(name: "Launch praised", valence: "Positive", flag: "")
+    owned = problem!(name: "Scope creep", severity: "High", status: "Owned", owner: "Sam Lead", flag: "", last_seen: 6.days.ago,
+                     not_a_flag_because: "Someone has picked it up.", project_ids: [@project])
+    medium = problem!(name: "Staging is slow", severity: "Medium", status: "Open", flag: "", last_seen: 9.days.ago,
+                      not_a_flag_because: "Its severity is Medium, and only High or Critical problems are flagged.", project_ids: [@project])
+    plain = obs!(name: "Design review ran long", valence: "Negative", salience: "Low", type: "FYI", flag: "", observed_at: 3.hours.ago)
+    win = obs!(name: "Launch praised", valence: "Positive", type: "Win", flag: "")
 
     get admin_project_tracker_log_path(@tracker)
     assert_response :success
@@ -70,12 +73,25 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     assert_equal ids, doc.css(ids.map { |id| "##{id}" }.join(", ")).map { |n| n["id"] }, "in this order down the page"
     assert_empty page.css(".log-tab"), "no view tabs"
 
+    assert_nil module_titled("What Stacksbot has seen"), "the page starts at Flags"
+    assert_equal "flags", doc.at_css("#main_content .dashboard-modules")["id"]
+    assert_no_match(/Stacksbot writes these rows|Triage happens in Notion/, doc.text)
+    back = doc.at_css("#titlebar_right a.log-back-to-tracker")
+    assert_equal [admin_project_tracker_path(@tracker), "← Harvey Build"], [back["href"], back.text.strip], "the way back is an action item"
+    assert_equal 1, doc.css(".log-last-synced").size
+    assert_equal "Last synced about 2 hours ago", doc.at_css(".log-last-synced").text.squish
+    assert_equal(-1, doc.at_css("#all-observations") <=> doc.at_css(".log-last-synced"), "the last thing on the page")
+    assert_no_match(/Last synced/, doc.css(".dashboard-module").text)
+    assert_equal doc.css("a.log-chip").size, section("all-observations").css("a.log-chip").size, "every filter chip is inside All Observations"
+    assert_equal 10, section("all-observations").css("a.log-chip").size
+
     assert_equal %w[Flags 2], header_of(section("flags"))
-    assert_equal "Notion decides what is a flag. See the rule in Notion ↗", section("flags").at_css(".log-flag-rule").text.squish
-    assert_equal "https://app.notion.com/p/18d6276a12aa4e0a957f013a69d5bb9a", section("flags").at_css(".log-flag-rule a")["href"]
-    assert_no_match(/30 days|severity is|nobody owns|unowned|high-salience|picked up/i, section("flags").at_css(".log-flag-rule").text,
-                    "Stacks does not describe the rule")
-    assert_no_match(/lower severity|30 days/i, section("other-open-problems").css("p").first.text)
+    assert_equal Stacks::ProjectLog::FLAG_DESCRIPTION, section("flags").at_css(".log-flag-rule").text.squish
+    assert_empty section("flags").css(".log-flag-rule a"), "the description links nowhere"
+    assert_nil section("flags").at_css(".log-no-flags")
+    assert_no_match(/See the rule|Notion decides/, doc.text)
+    assert doc.css("a").none? { |a| a["href"].to_s.include?("18d6276a12aa4e0a957f013a69d5bb9a") }, "no link to the Problems database"
+    assert_equal "Problems that are open but not flagged, with the reason.", section("other-open-problems").css(".module-body p").first.text.squish
     assert_equal ["log_flag_#{problem.notion_id}", "log_flag_#{lone.notion_id}"], section("flags").css("tr.log-flag").map { |tr| tr["id"] }
     section("flags").css("tr.log-flag").each do |tr|
       assert_equal ["pill error", "Flag"], [tr.at_css(".pill")["class"], tr.at_css(".pill").text.strip]
@@ -88,8 +104,9 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     assert nested, "the tied observation is nested under its flag"
     assert_includes nested.text, "Client asked twice for a date"
     assert_includes nested.text, "Twist"
-    assert_equal "https://twist.com/a/133876/ch/1/t/2/", nested.at_css("a.log-source")["href"]
-    assert nested.css("a").any? { |a| a.text.strip == "Notion ↗" }
+    assert_equal [["Source ↗", "https://twist.com/a/133876/ch/1/t/2/"]], nested.css("a").map { |a| [a.text.strip, a["href"]] },
+                 "evidence links to its source only, never to Notion"
+    assert_equal 1, flag.css("a").count { |a| a["href"].to_s.include?("notion.so") }, "one Notion link per flag: the problem's own"
     assert flag.css("a").any? { |a| a.text.strip == "In Notion ↗" && a["href"] == problem.as_problem.notion_url }
     assert_nil flag_for(evidence), "and is not a flag of its own"
     assert_match(/\ARisk, not yet tied to a problem\. Seen in Gmail on /, flag_for(lone).at_css(".log-flag-why").text.strip)
@@ -98,22 +115,32 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     assert_nil section("flags").at_css(".log-flag-interim"), "every row carries Notion's Flag"
 
     others = section("other-open-problems")
-    assert_equal ["Other open problems", "1"], header_of(others)
+    assert_equal ["Other open problems", "2"], header_of(others)
     listed = others.at_css("#log_problem_#{owned.notion_id}")
-    assert_includes listed.text.squish, "Severity: High · Owned by Sam Lead"
+    assert_equal "Not a flag: Someone has picked it up. Owned by Sam Lead.", listed.at_css(".log-not-a-flag").text.squish
+    assert_nil listed.at_css(".log-not-a-flag")["title"], "Notion's own sentence carries no interim hover"
+    assert_match(/\ALast seen \w+ \d+, \d{4}\z/, listed.at_css(".log-problem-facts").text.squish)
     assert_empty listed.css(".pill"), "no bare coloured severity pill"
+    assert listed.css("a").any? { |a| a.text.strip == "In Notion ↗" && a["href"] == owned.as_problem.notion_url }
+    listed = others.at_css("#log_problem_#{medium.notion_id}")
+    assert_equal "Not a flag: Its severity is Medium, and only High or Critical problems are flagged.", listed.at_css(".log-not-a-flag").text.squish
+    assert_match(/\ALast seen \w+ \d+, \d{4}\z/, listed.at_css(".log-problem-facts").text.squish)
+    assert_no_match(/Severity:/, others.text, "the sentence states the severity, so there is no separate line")
 
     assert_equal %w[Wins 1], header_of(section("wins"))
-    assert section("wins").at_css("#log_win_#{win.notion_id}")
-    assert_equal "pill exceptional", section("wins").at_css("#log_win_#{win.notion_id} .pill")["class"]
+    won = section("wins").at_css("#log_win_#{win.notion_id}")
+    assert_equal ["pill exceptional", "Win"], [won.at_css(".pill")["class"], won.at_css(".pill").text.strip]
+    assert_equal ["Source ↗", "In Notion ↗"], won.css("td").last.css("a").map { |a| a.text.strip }
 
     all = section("all-observations")
     assert_equal ["All Observations", "4"], header_of(all)
     assert_equal [win, lone, plain, evidence].map { |r| "log_row_#{r.notion_id}" }.sort, all.css("tr[id^='log_row_']").map { |tr| tr["id"] }.sort
-    assert_equal ["Negative", "Flag"], row_for(evidence).css(".pill").map { |n| n.text.strip }, "valence, and that it is part of a flag"
-    assert_equal ["Negative", "Flag"], row_for(lone).css(".pill").map { |n| n.text.strip }
-    assert_equal ["Negative"], row_for(plain).css(".pill").map { |n| n.text.strip }
-    assert_equal "pill at_risk", row_for(plain).at_css(".pill")["class"]
+    assert_equal ["Risk", "Flag"], row_for(evidence).css(".pill").map { |n| n.text.strip }, "its kind, and that it is part of a flag"
+    assert_equal ["Risk", "Flag"], row_for(lone).css(".pill").map { |n| n.text.strip }
+    assert_equal ["FYI"], row_for(plain).css(".pill").map { |n| n.text.strip }
+    assert_equal "pill at_risk", row_for(plain).at_css(".pill")["class"], "the colour is the valence"
+    assert_equal ["Source ↗", "In Notion ↗"], row_for(plain).css("td").last.css("a").map { |a| a.text.strip }
+    assert_nil all.at_css(".log-valence-interim"), "every row carries a valence"
     assert_includes row_for(evidence).text, "No answer in the channel."
     assert_includes row_for(evidence).text, "Folded into"
 
@@ -145,8 +172,54 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     assert_no_match(/nobody owns/i, page.text)
     assert_match(/\AInterim:/, page.at_css(".log-flag-interim").text.strip)
     assert_equal "Not a flag: Ada is mitigating it.", page.at_css("#log_problem_#{taken.notion_id} .log-not-a-flag").text.strip
+    assert_match(/\AStacks worked this out/, page.at_css("#log_problem_#{taken.notion_id} .log-not-a-flag")["title"])
     assert_includes page.at_css("#log_problem_#{taken.notion_id}").text.squish, "Severity: Critical · Being mitigated by Ada"
     assert_equal "Not a flag: not seen for 30 days.", page.at_css("#log_problem_#{quiet.notion_id} .log-not-a-flag").text.strip
+  end
+
+  # Flag is there (Notion said no) and Not A Flag Because is not: the row was
+  # synced between the two formulas. The interim line stands in, with the
+  # Severity line it always had.
+  test "an other open problem synced before Not A Flag Because existed gets the interim line and keeps its Severity line" do
+    taken = problem!(name: "Scope creep", severity: "High", status: "Owned", owner: "Sam Lead", flag: "", project_ids: [@project])
+    medium = problem!(name: "Staging is slow", severity: "Medium", status: "Open", flag: "", project_ids: [@project])
+    blank = problem!(name: "Odd one", severity: "High", status: "Open", flag: "", not_a_flag_because: "", project_ids: [@project])
+    get admin_project_tracker_log_path(@tracker)
+    assert_response :success
+    listed = page.at_css("#log_problem_#{taken.notion_id}")
+    assert_equal "Not a flag: Sam Lead owns it.", listed.at_css(".log-not-a-flag").text.squish
+    assert_match(/\AStacks worked this out/, listed.at_css(".log-not-a-flag")["title"])
+    assert_match(/\ASeverity: High · Owned by Sam Lead · Last seen /, listed.at_css(".log-problem-facts").text.squish)
+    listed = page.at_css("#log_problem_#{medium.notion_id}")
+    assert_nil listed.at_css(".log-not-a-flag"), "the interim rule has no sentence for a Medium problem"
+    assert_match(/\ASeverity: Medium · Not picked up in Notion yet · Last seen /, listed.at_css(".log-problem-facts").text.squish)
+    assert_nil page.at_css("#log_problem_#{blank.notion_id} .log-not-a-flag"), "Notion's formula is blank, and Stacks makes nothing up"
+    assert_equal "Problems that are open but not flagged, with the reason.", section("other-open-problems").css(".module-body p").first.text.squish
+  end
+
+  test "evidence under a flag links to its source only: no Notion link, no link at all without a source, and a plain count of the rest" do
+    Stacks::ProjectLog.stub_const(:EVIDENCE_LIMIT, 2) do
+      problem = problem!(name: "Timeline slipping", severity: "High", status: "Open", flag: "Open.", project_ids: [@project])
+      sourced = obs!(name: "With a source", valence: "Negative", type: "Risk", flag: "", problem_ids: [problem.notion_id], observed_at: 1.hour.ago)
+      bare = obs!(name: "Without a source", valence: "Negative", type: "Risk", flag: "", source_ref: nil, problem_ids: [problem.notion_id], observed_at: 2.hours.ago)
+      2.times { |i| obs!(name: "Older #{i}", valence: "Negative", flag: "", problem_ids: [problem.notion_id], observed_at: (i + 3).hours.ago) }
+      lone = obs!(name: "Invoice disputed", valence: "Negative", salience: "High", type: "Risk", flag: "Risk, not yet tied to a problem.")
+      get admin_project_tracker_log_path(@tracker)
+      assert_response :success
+      flag = flag_for(problem)
+      assert_equal ["Source ↗"], flag.at_css("#log_evidence_#{sourced.notion_id}").css("a").map { |a| a.text.strip }
+      assert_empty flag.at_css("#log_evidence_#{bare.notion_id}").css("a"), "no source address, no link"
+      assert_equal 2, flag.css("li[id^='log_evidence_']").size
+      more = flag.at_css(".log-flag-evidence-more")
+      assert_equal "and 2 more", more.text.squish
+      assert_empty more.css("a")
+      assert_no_match(/Notion/, flag.at_css(".log-flag-evidence").text)
+      assert_equal [["In Notion ↗", problem.as_problem.notion_url]], flag.css("td").last.css("a").map { |a| [a.text.strip, a["href"]] }
+      assert_equal [["Source ↗", lone.as_observation.source_url], ["In Notion ↗", lone.as_observation.notion_url]],
+                   flag_for(lone).css("td").last.css("a").map { |a| [a.text.strip, a["href"]] }, "an observation flag links to the observation"
+      assert_equal ["Source ↗", "In Notion ↗"], row_for(sourced).css("td").last.css("a").map { |a| a.text.strip }, "All Observations keeps both"
+      assert_equal ["In Notion ↗"], row_for(bare).css("td").last.css("a").map { |a| a.text.strip }
+    end
   end
 
   test "no flags: says so, and the rest of the page is still there" do
@@ -155,8 +228,10 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     get admin_project_tracker_log_path(@tracker)
     assert_response :success
     assert_equal %w[Flags 0], header_of(section("flags"))
-    assert_equal "No flags. See the rule in Notion ↗", section("flags").at_css(".log-no-flags").text.squish
-    assert_equal Stacks::ProjectLog::FLAG_RULE_URL, section("flags").at_css(".log-no-flags a")["href"]
+    assert_equal "No flags.", section("flags").at_css(".log-no-flags").text.squish
+    assert_equal "No flags. #{Stacks::ProjectLog::FLAG_DESCRIPTION}",
+                 section("flags").css(".log-no-flags, .log-flag-rule").map { |p| p.text.squish }.join(" "), "No flags, then what a flag is"
+    assert_empty section("flags").css(".module-body a")
     assert_nil section("other-open-problems"), "the section is left out when there are none"
     assert section("wins").at_css("#log_win_#{win.notion_id}")
     assert_equal 2, section("all-observations").css("tr[id^='log_row_']").size
@@ -183,10 +258,14 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     assert_includes section("wins").text.squish, "No wins in the last 30 days."
   end
 
-  test "a row with no valence shows its Notion Type in the grey pill, and Not marked only when it has no Type either" do
-    typed = %w[FYI Bug Decision Resourcing].to_h { |type| [type, obs!(name: "A #{type}", valence: nil, type: type)] }
+  test "every row's pill names its Notion Type, and the colour is the valence" do
+    typed = %w[FYI Bug Decision Question Commitment Resourcing].to_h { |type| [type, obs!(name: "A #{type}", valence: nil, type: type)] }
     blank = obs!(name: "No type", valence: nil, type: nil)
     neutral = obs!(name: "Scope agreed", valence: "Neutral", type: "Decision")
+    bad = obs!(name: "Login broken", valence: "Negative", type: "Bug")
+    good = obs!(name: "Signed off", valence: "Positive", type: "Decision")
+    risk = obs!(name: "Budget tight", valence: "Negative", salience: "High", type: "Risk", flag: "Risk, not yet tied to a problem.")
+    win = obs!(name: "Launch praised", valence: "Positive", type: "Win")
     get admin_project_tracker_log_path(@tracker)
     assert_response :success
     typed.each do |type, row|
@@ -195,7 +274,25 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
       assert_match(/background-color: #cfd3d7/, pill["style"], "#{type} is grey")
     end
     assert_equal "Not marked", row_for(blank).at_css(".pill").text.strip
-    assert_equal "Neutral", row_for(neutral).at_css(".pill").text.strip, "a valence pill is unchanged"
+    pill = ->(node) { [node.at_css(".pill")["class"], node.at_css(".pill").text.strip] }
+    assert_equal ["pill", "Decision"], pill.(row_for(neutral))
+    assert_match(/background-color: #cfd3d7/, row_for(neutral).at_css(".pill")["style"], "Neutral is grey")
+    assert_equal ["pill at_risk", "Bug"], pill.(row_for(bad))
+    assert_equal ["pill exceptional", "Decision"], pill.(row_for(good))
+    assert_equal ["pill exceptional", "Win"], pill.(row_for(win))
+    assert_equal ["Risk", "Flag"], row_for(risk).css(".pill").map { |n| n.text.strip }, "a flag keeps its extra marker"
+    assert_equal ["pill at_risk", "pill error log-row-flag"], row_for(risk).css(".pill").map { |n| n["class"] }
+    wins = section("wins")
+    assert_equal ["pill exceptional", "Decision"], pill.(wins.at_css("#log_win_#{good.notion_id}")), "Wins names the kind too"
+    assert_equal ["pill exceptional", "Win"], pill.(wins.at_css("#log_win_#{win.notion_id}"))
+    assert_empty page.css("tr[id^='log_row_'] .pill, tr[id^='log_win_'] .pill").select { |n| %w[Negative Positive Neutral].include?(n.text.strip) },
+                 "no pill is labelled with a valence"
+    assert_nil page.at_css(".log-valence-interim"), "no row here takes its colour from its Type"
+
+    get admin_project_tracker_log_path(@tracker, valence: "negative")
+    assert_equal [bad, risk].map { |r| "log_row_#{r.notion_id}" }.sort, page.css("tr[id^='log_row_']").map { |tr| tr["id"] }.sort,
+                 "the valence chips still filter by valence"
+    assert_equal "Negative", page.css("a.log-chip.current").map { |a| a.text.strip }.last
   end
 
   test "All Observations shows dismissed and unmarked rows too, each with its valence pill" do
@@ -209,7 +306,8 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     assert_equal "pill exceptional", row_for(positive).at_css(".pill")["class"]
     assert_match(/background-color/, row_for(neutral).at_css(".pill")["style"], "neutral is grey")
     assert_includes row_for(dismissed).text, "Dismissed"
-    assert_equal ["Negative"], row_for(dismissed).css(".pill").map { |n| n.text.strip }, "a dismissed row is no flag"
+    assert_equal ["FYI"], row_for(dismissed).css(".pill").map { |n| n.text.strip }, "a dismissed row is no flag"
+    assert_equal "pill at_risk", row_for(dismissed).at_css(".pill")["class"]
     assert_equal "FYI", row_for(unmarked).at_css(".pill").text.strip
     assert_nil flag_for(dismissed)
   end
@@ -279,9 +377,11 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     obs!(name: "Plain note", valence: nil, valence_property: false, type: "FYI")
     get admin_project_tracker_log_path(@tracker)
     assert_response :success
-    assert_equal "pill at_risk", row_for(risk).at_css(".pill")["class"]
+    assert_equal ["pill at_risk", "Risk"], [row_for(risk).at_css(".pill")["class"], row_for(risk).at_css(".pill").text.strip]
+    assert_equal "Stacksbot has not marked this row yet. Coloured as negative because its type is Risk.", row_for(risk).at_css(".pill")["title"]
     assert_equal 1, section("all-observations").css(".log-valence-interim").size
-    assert_includes response.body, "Stacksbot has not marked these rows yet"
+    assert_equal "Colour shows whether Stacksbot read it as positive or negative. Until it marks rows itself, Risk shows red and Win green.",
+                 section("all-observations").at_css(".log-valence-interim").text.squish
     assert_equal 2, page.css("tr[id^='log_row_']").size
   end
 
@@ -292,6 +392,8 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "no Notion project chosen"
     assert page.at_css("a[href='#{edit_admin_project_tracker_path(bare)}']")
     assert_empty page.css("#flags, #wins, #all-observations"), "no sections over an empty log"
+    assert module_titled("What Stacksbot has seen"), "the empty state keeps its frame"
+    assert_no_match(/A flag is a High or Critical|Last synced/, page.text)
   end
 
   test "nothing synced yet: says the sync has not run" do
@@ -459,8 +561,9 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_equal ["0 Flags", "0 Wins in the last 30 days"], log_module.css(".factoid").map { |f| f.text.squish }
     assert_equal 1, log_module.css(".log-no-flags").size
-    assert_equal "No flags. See the rule in Notion ↗", log_module.at_css(".log-no-flags").text.squish
-    assert_equal Stacks::ProjectLog::FLAG_RULE_URL, log_module.at_css(".log-no-flags a")["href"]
+    assert_equal "No flags.", log_module.at_css(".log-no-flags").text.squish
+    assert_empty log_module.css(".log-no-flags a")
+    assert_no_match(/See the rule|A flag is a High or Critical/, log_module.text, "just the two words on the tracker page")
     assert_empty log_module.css("tr.log-flag")
   end
 
@@ -644,7 +747,7 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     page.css("table.index_table tbody tr[id^='project_tracker_']").map { |tr| tr["id"].delete_prefix("project_tracker_").to_i }
   end
 
-  test "the Has Flags scope lists exactly the trackers whose Flags pill is not blank" do
+  test "the Has Flags scope lists exactly the trackers that have a Flags pill" do
     trackers = index_scenario!
     one, one_project = log_tracker!(name: "One flag")
     observation!(name: "lone", flag: "Risk, not yet tied to a problem.", project_ids: [one_project], observed_at: 1.day.ago)
@@ -690,7 +793,7 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
-  test "the index shows each tracker's flag count as a red pill linking to its log, and nothing when it has none" do
+  test "the index shows each tracker's flag count as a red pill linking to its log, and Last Ship's muted dash when it has none" do
     tracker, both, quiet, unlinked = index_scenario!
     get admin_project_trackers_path(scope: "all")
     assert_response :success
@@ -699,8 +802,10 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     assert_equal admin_project_tracker_log_path(tracker), pill["href"]
     assert_equal "10 Flags", index_cell(both).at_css("a.pill.error").text.strip
     [quiet, unlinked].each do |blank|
-      assert_equal "", index_cell(blank).text.strip, blank.name
+      assert_equal "—", index_cell(blank).text.strip, blank.name
       assert_empty index_cell(blank).css("a, .pill"), blank.name
+      # The markup Last Ship uses for its own empty state (app/admin/project_trackers.rb).
+      assert_equal ['<span style="opacity: 0.4;">—</span>'], index_cell(blank).css("span").map(&:to_html), blank.name
     end
   end
 
@@ -722,18 +827,20 @@ class AdminProjectLogTest < ActionDispatch::IntegrationTest
     assert_equal "9 Flags", page.at_css("#project_log_module .factoid").text.squish, "and the tracker page's module agrees"
   end
 
-  test "the index's Flags column is blank, and the index still loads, before the first sync or when the rows cannot be read" do
+  test "the index's Flags column shows the dash, and the index still loads, before the first sync or when the rows cannot be read" do
     tracker, = index_scenario!
     System.first.update!(notion_filtered_sync_marks: {})
     get admin_project_trackers_path(scope: "all")
     assert_response :success
-    assert_equal "", index_cell(tracker).text.strip
+    assert_equal "—", index_cell(tracker).text.strip
+    assert_equal "opacity: 0.4;", index_cell(tracker).at_css("span")["style"]
 
     Stacks::ProjectLog.stubs(:flag_counts).raises(ActiveRecord::StatementInvalid, "PG::UndefinedColumn: column notion_pages.project_ids does not exist")
     Rails.logger.expects(:error).with(regexp_matches(/project log.*flag counts.*UndefinedColumn/m)).at_least_once
     get admin_project_trackers_path(scope: "all")
     assert_response :success
-    assert_equal "", index_cell(tracker).text.strip
+    assert_equal "—", index_cell(tracker).text.strip
+    assert_empty index_cell(tracker).css("a, .pill")
     assert_not_includes response.body, "UndefinedColumn"
   end
 

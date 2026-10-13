@@ -14,6 +14,10 @@ class Stacks::Notion::Problem < Stacks::Notion::Base
   # carries Flag, delete this constant and interim_flag?, and have flag? read
   # the property alone.
   INTERIM_FLAG_SEVERITIES = %w[Critical High].freeze
+  # Notion's second text formula: for an open problem that is not a flag, the
+  # reason in a plain sentence ("Someone has picked it up."). Empty for a
+  # flag and for a closed problem.
+  NOT_A_FLAG_PROPERTY = "Not A Flag Because".freeze
 
   def self.project_ids_in(data)
     P.relation_ids(data, "Project")
@@ -59,6 +63,18 @@ class Stacks::Notion::Problem < Stacks::Notion::Base
   # the same reason it counts as open.
   def interim_flag?
     open? && !OWNED_STATUSES.include?(status) && INTERIM_FLAG_SEVERITIES.include?(severity)
+  end
+
+  # Notion's sentence for why this open problem is not a flag. nil when the
+  # formula gives nothing (it is a flag, or closed) and when the stored page
+  # has no such property; not_a_flag_because_stated? tells the two apart.
+  def not_a_flag_because
+    P.formula_text(notion_page.data, NOT_A_FLAG_PROPERTY).presence
+  end
+
+  # false for a page synced before Notion had the formula.
+  def not_a_flag_because_stated?
+    !P.formula_text(notion_page.data, NOT_A_FLAG_PROPERTY).nil?
   end
 
   def owner_names
