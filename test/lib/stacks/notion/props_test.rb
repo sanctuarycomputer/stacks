@@ -82,4 +82,27 @@ class StacksNotionPropsTest < ActiveSupport::TestCase
     assert_equal "x", P.top({ "url" => "x" }, "url")
     assert_nil P.top(nil, "url")
   end
+
+  test "formula_text, boolean and flagged tell what Notion states from what it does not say" do
+    text = ->(v) { page("Flag" => { "type" => "formula", "formula" => { "type" => "string", "string" => v } }) }
+    bool = ->(v) { page("Flag" => { "type" => "formula", "formula" => { "type" => "boolean", "boolean" => v } }) }
+    box = ->(v) { page("Flag" => { "type" => "checkbox", "checkbox" => v }) }
+
+    assert_equal "High-salience risk.", P.formula_text(text.(" High-salience risk. "), "Flag")
+    assert_equal ["", "", ""], [nil, "", 7].map { |v| P.formula_text(text.(v), "Flag") }
+    assert_equal [true, false, false, false], ["x", "", "  \n", nil].map { |v| P.flagged(text.(v), "Flag") }
+    assert_equal [true, false, false], [true, false, nil].map { |v| P.flagged(bool.(v), "Flag") }
+    assert_equal [true, false], [true, false].map { |v| P.flagged(box.(v), "Flag") }
+    assert_equal [true, false], [true, false].map { |v| P.boolean(box.(v), "Flag") }
+
+    unsaid = [nil, {}, page({}), page("Flag" => "x"), box.("true"), box.(nil),
+              page("Flag" => { "type" => "select", "select" => { "name" => "true" } }),
+              page("Flag" => { "type" => "formula", "formula" => { "type" => "number", "number" => 1 } }),
+              page("Flag" => { "type" => "formula", "formula" => nil })]
+    unsaid.each do |data|
+      assert_nil P.flagged(data, "Flag"), data.inspect
+      assert_nil P.formula_text(data, "Flag"), data.inspect
+      assert_nil P.boolean(data, "Flag"), data.inspect
+    end
+  end
 end

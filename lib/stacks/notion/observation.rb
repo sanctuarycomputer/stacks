@@ -2,6 +2,7 @@
 # was written by Stacksbot or edited by a person, so every reader goes through
 # Stacks::Notion::Props and none of them raises.
 class Stacks::Notion::Observation < Stacks::Notion::Base
+  include Stacks::Notion::Flag # flag?, flag_inferred?, flag_reason
   P = Stacks::Notion::Props
 
   VALENCE_PROPERTY = "Valence".freeze
@@ -13,6 +14,13 @@ class Stacks::Notion::Observation < Stacks::Notion::Base
   # valence shows the valence its Type implies. A stored valence always wins.
   # To remove the rule, replace this value with {}.freeze.
   INTERIM_VALENCE_BY_TYPE = { "Risk" => "Negative", "Win" => "Positive" }.freeze
+
+  # INTERIM, for pages synced before Notion had a Flag property: a page with
+  # no Flag in its stored data is flagged by interim_flag? below. A Flag that
+  # Notion states always wins (Stacks::Notion::Flag). Once every stored page
+  # carries Flag, delete this constant and interim_flag?, and have flag? read
+  # the property alone.
+  INTERIM_FLAG_SALIENCE = "High".freeze
 
   # How the Source select groups for the log's chips. Display only.
   SOURCE_GROUPS = {
@@ -100,6 +108,11 @@ class Stacks::Notion::Observation < Stacks::Notion::Base
 
   def negative?
     valence == "Negative"
+  end
+
+  # INTERIM (see INTERIM_FLAG_SALIENCE): Negative, High salience, not dismissed.
+  def interim_flag?
+    negative? && salience == INTERIM_FLAG_SALIENCE && !dismissed?
   end
 
   def project_ids

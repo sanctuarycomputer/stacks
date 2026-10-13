@@ -1,13 +1,19 @@
 # Wraps a NotionPage row from Stacksbot's Problems database. See
 # Stacks::Notion::Observation: same rules, nothing here raises.
 class Stacks::Notion::Problem < Stacks::Notion::Base
+  include Stacks::Notion::Flag # flag?, flag_inferred?, flag_reason
   P = Stacks::Notion::Props
 
   SEVERITIES = %w[Critical High Medium Low].freeze # worst first
   CLOSED_STATUSES = %w[Resolved Dismissed].freeze
   UNOWNED_STATUS = "Open".freeze
   OWNED_STATUSES = %w[Owned Mitigating].freeze
-  ESCALATING_SEVERITIES = %w[Critical High].freeze
+  # INTERIM, for pages synced before Notion had a Flag property: a page with
+  # no Flag in its stored data is flagged by interim_flag? below. A Flag that
+  # Notion states always wins (Stacks::Notion::Flag). Once every stored page
+  # carries Flag, delete this constant and interim_flag?, and have flag? read
+  # the property alone.
+  INTERIM_FLAG_SEVERITIES = %w[Critical High].freeze
 
   def self.project_ids_in(data)
     P.relation_ids(data, "Project")
@@ -48,10 +54,11 @@ class Stacks::Notion::Problem < Stacks::Notion::Base
     status == UNOWNED_STATUS
   end
 
-  # High or Critical and not known to be owned or closed. A blank or unknown
-  # status escalates like Open does, for the same reason it counts as open.
-  def escalating?
-    open? && !OWNED_STATUSES.include?(status) && ESCALATING_SEVERITIES.include?(severity)
+  # INTERIM (see INTERIM_FLAG_SEVERITIES): open, High or Critical, and not
+  # known to be owned. A blank or unknown status flags like Open does, for
+  # the same reason it counts as open.
+  def interim_flag?
+    open? && !OWNED_STATUSES.include?(status) && INTERIM_FLAG_SEVERITIES.include?(severity)
   end
 
   def owner_names
@@ -70,6 +77,17 @@ class Stacks::Notion::Problem < Stacks::Notion::Base
 
   def first_seen_at
     P.time(notion_page.data, "First Seen")
+  end
+
+  # When it last came up: Last Seen, else First Seen, else the date the sync
+  # stored on the row. nil when Notion gives none of them.
+  def seen_at
+    last_seen_at || first_seen_at || notion_page.occurred_at
+  end
+
+  # What Stacksbot suggests doing about it, as plain text. "" when blank.
+  def proposed_action
+    P.text(notion_page.data, "Proposed Action")
   end
 
   def project_ids

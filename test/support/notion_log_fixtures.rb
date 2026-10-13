@@ -14,6 +14,15 @@ module NotionLogFixtures
     { "type" => type, type => value.nil? ? [] : [{ "type" => "text", "plain_text" => value }] }
   end
 
+  # Notion's Flag. A String (or shape :text) is what Notion holds today: a
+  # formula giving the reason as text, empty when the page is no flag. true
+  # and false make a checkbox, or a boolean formula with shape :formula.
+  def nl_flag(value, shape = :checkbox)
+    return { "type" => "formula", "formula" => { "type" => "string", "string" => value } } if value.is_a?(String) || shape == :text
+    return { "type" => "checkbox", "checkbox" => value } if shape == :checkbox
+    { "type" => "formula", "formula" => { "type" => "boolean", "boolean" => value } }
+  end
+
   def nl_date(time)
     { "type" => "date", "date" => time && { "start" => time.iso8601 } }
   end
@@ -23,6 +32,7 @@ module NotionLogFixtures
   def observation_data(id: SecureRandom.uuid, name: "Observation", text: "Seen.", source: "Twist",
                        source_ref: "https://twist.com/a/133876/ch/1/t/2/", observed_at: Time.zone.now,
                        salience: "Medium", type: "FYI", status: "New", valence: nil, valence_property: true,
+                       flag: :absent, flag_shape: :checkbox,
                        project_ids: [], problem_ids: [], edited: Time.zone.now, archived: false)
     props = {
       "Name" => nl_text("title", name), "Observation" => nl_text("rich_text", text),
@@ -31,6 +41,7 @@ module NotionLogFixtures
       "Status" => nl_select(status), "Projects" => nl_relation(project_ids), "Problems" => nl_relation(problem_ids),
     }
     props["Valence"] = nl_select(valence) if valence_property || valence
+    props["Flag"] = nl_flag(flag, flag_shape) unless flag == :absent
     { "object" => "page", "id" => id, "url" => "https://www.notion.so/#{id.delete('-')}",
       "created_time" => (observed_at || edited).utc.iso8601, "last_edited_time" => edited.utc.iso8601,
       "archived" => archived,
@@ -39,19 +50,22 @@ module NotionLogFixtures
   end
 
   def problem_data(id: SecureRandom.uuid, name: "Problem", kind: "delivery", severity: "High", status: "Open",
-                   owner: nil, occurrences: 1, last_seen: Time.zone.now, project_ids: [],
-                   source_observation_ids: [], edited: Time.zone.now, archived: false)
+                   owner: nil, occurrences: 1, last_seen: Time.zone.now, first_seen: nil, proposed_action: nil,
+                   flag: :absent, flag_shape: :checkbox,
+                   project_ids: [], source_observation_ids: [], edited: Time.zone.now, archived: false)
+    flag_prop = flag == :absent ? {} : { "Flag" => nl_flag(flag, flag_shape) }
     { "object" => "page", "id" => id, "url" => "https://www.notion.so/#{id.delete('-')}",
       "created_time" => (last_seen || edited).utc.iso8601, "last_edited_time" => edited.utc.iso8601,
       "archived" => archived,
       "parent" => { "type" => "database_id", "database_id" => Stacks::Notion.filtered_parent_id(:PROBLEMS) },
-      "properties" => {
+      "properties" => flag_prop.merge({
         "Problem" => nl_text("title", name), "Kind" => nl_select(kind), "Severity" => nl_select(severity),
         "Status" => nl_select(status),
         "Owner" => { "type" => "people", "people" => owner ? [{ "name" => owner }] : [] },
         "Occurrences" => { "type" => "number", "number" => occurrences }, "Last Seen" => nl_date(last_seen),
+        "First Seen" => nl_date(first_seen), "Proposed Action" => nl_text("rich_text", proposed_action),
         "Project" => nl_relation(project_ids), "Source Observations" => nl_relation(source_observation_ids),
-      } }
+      }) }
   end
 
   def store_log_row!(data, key, wrapper, synced_at: Time.zone.now)

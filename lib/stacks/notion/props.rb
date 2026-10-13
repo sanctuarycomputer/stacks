@@ -70,6 +70,36 @@ module Stacks::Notion::Props
     v.is_a?(Numeric) ? v : nil
   end
 
+  # The text a formula gives, trimmed: "" when the formula's result is empty.
+  # nil when the page has no such property or it is not a text formula, which
+  # is "Notion does not say" and not the same as an empty answer.
+  def formula_text(data, name)
+    formula = value(data, name, "formula")
+    return nil unless formula.is_a?(Hash) && formula["type"] == "string"
+    formula["string"].is_a?(String) ? formula["string"].strip : ""
+  end
+
+  # A yes or no that Notion states, from a checkbox or from a formula whose
+  # result is a boolean (an empty result reads as false). nil when the page
+  # has no such property or it is of another shape.
+  def boolean(data, name)
+    checkbox = value(data, name, "checkbox")
+    return checkbox if checkbox == true || checkbox == false
+    formula = value(data, name, "formula")
+    return formula["boolean"] == true if formula.is_a?(Hash) && formula["type"] == "boolean"
+    nil
+  end
+
+  # Whether a page is flagged, from a property that is either a text formula
+  # (flagged when it gives any text, which is the reason) or a yes/no (a
+  # boolean formula or a checkbox). true or false when Notion states it, nil
+  # when the page has no such property or it is of another shape.
+  # Its SQL twin is Stacks::ProjectLog.stated_flag_sql.
+  def flagged(data, name)
+    text = formula_text(data, name)
+    text.nil? ? boolean(data, name) : text.present?
+  end
+
   def people_names(data, name)
     v = value(data, name, "people")
     return [] unless v.is_a?(Array)

@@ -119,4 +119,32 @@ class StacksNotionObservationTest < ActiveSupport::TestCase
   test "a source link that is not a web address is not offered" do
     assert_nil obs(source_ref: "javascript:alert(1)").source_url
   end
+
+  test "flag? is Notion's Flag when the page has one, in either shape, and the interim rule only when it has none" do
+    make = ->(**attrs) { NotionPage.new(notion_id: "n", data: observation_data(**attrs)).as_observation }
+    %i[checkbox formula].each do |shape|
+      assert make.(valence: "Positive", salience: "Low", flag: true, flag_shape: shape).flag?, shape.to_s
+      assert_not make.(valence: "Negative", salience: "High", flag: false, flag_shape: shape).flag?, shape.to_s
+      assert_not make.(flag: true, flag_shape: shape).flag_inferred?
+      assert_not make.(flag: false, flag_shape: shape).flag_inferred?
+    end
+    assert make.(valence: "Negative", salience: "High").flag?
+    assert make.(valence: nil, valence_property: false, type: "Risk", salience: "High").flag?, "the interim valence feeds the interim flag"
+    assert_not make.(valence: "Negative", salience: "Medium").flag?
+    assert_not make.(valence: "Positive", salience: "High").flag?
+    assert_not make.(valence: "Negative", salience: "High", status: "Dismissed").flag?
+    assert make.(valence: "Negative", salience: "High").flag_inferred?
+  end
+
+  test "a text Flag: any text is a flag and is the reason; empty text is Notion saying no" do
+    make = ->(**attrs) { NotionPage.new(notion_id: "n", data: observation_data(**attrs)).as_observation }
+    said = make.(valence: "Positive", salience: "Low", flag: "High-salience risk.")
+    assert said.flag?
+    assert_equal "High-salience risk.", said.flag_reason
+    quiet = make.(valence: "Negative", salience: "High", flag: "")
+    assert_not quiet.flag?
+    assert_not quiet.flag_inferred?
+    assert_nil quiet.flag_reason
+    assert_nil make.(valence: "Negative", salience: "High").flag_reason
+  end
 end

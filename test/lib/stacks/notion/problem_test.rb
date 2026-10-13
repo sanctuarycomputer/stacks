@@ -18,7 +18,7 @@ class StacksNotionProblemTest < ActiveSupport::TestCase
     assert_equal "Open", p.status
     assert p.open?
     assert p.unowned?
-    assert p.escalating?
+    assert p.interim_flag?
     assert_equal ["Sam Lead"], p.owner_names
     assert_equal 4, p.occurrences
     assert_equal seen, p.last_seen_at
@@ -26,15 +26,15 @@ class StacksNotionProblemTest < ActiveSupport::TestCase
     assert_equal %w[o1 o2], p.source_observation_ids
   end
 
-  # A blank or unknown status counts as open, for escalation too: a problem
+  # A blank or unknown status counts as open, for the interim flag too: a problem
   # nobody is known to own should fail visible.
-  test "escalating means High or Critical and not known to be owned or closed" do
+  test "the interim flag rule means High or Critical and not known to be owned or closed" do
     table = { %w[Open Critical] => true, %w[Open High] => true, %w[Open Medium] => false, %w[Open Low] => false,
               %w[Owned Critical] => false, %w[Mitigating High] => false, %w[Resolved Critical] => false,
               %w[Dismissed High] => false, ["Open", nil] => false, [nil, "High"] => true,
               %w[Parked Critical] => true, %w[Parked Medium] => false, [nil, nil] => false }
     table.each do |(status, severity), expected|
-      assert_equal expected, prob(status: status, severity: severity).escalating?, [status, severity].inspect
+      assert_equal expected, prob(status: status, severity: severity).interim_flag?, [status, severity].inspect
     end
   end
 
@@ -49,7 +49,7 @@ class StacksNotionProblemTest < ActiveSupport::TestCase
     p = NotionPage.new(notion_id: "n", data: data).as_problem
     assert_equal "Resolved", p.status
     assert_not p.open?
-    assert_not p.escalating?
+    assert_not p.interim_flag?
   end
 
   test "open means not Resolved and not Dismissed; a blank or odd status stays visible" do
@@ -77,7 +77,7 @@ class StacksNotionProblemTest < ActiveSupport::TestCase
       assert_nil p.severity
       assert_equal 4, p.severity_rank
       assert p.open?
-      assert_not p.escalating?
+      assert_not p.interim_flag?
       assert_equal [], p.owner_names
       assert_nil p.occurrences
       assert_nil p.last_seen_at
@@ -96,5 +96,57 @@ class StacksNotionProblemTest < ActiveSupport::TestCase
     assert_not_includes NotionPage.observations.pluck(:id) + NotionPage.problems.pluck(:id), lead.id
     assert_kind_of Stacks::Notion::Observation, o.as_observation
     assert_kind_of Stacks::Notion::Problem, p.as_problem
+  end
+
+  test "the proposed action is read as plain text, blank when there is none" do
+    assert_equal "Ask Sam to confirm the date.", prob(proposed_action: "  Ask Sam to confirm the date. ").proposed_action
+    assert_equal "", prob(proposed_action: nil).proposed_action
+    data = problem_data
+    data["properties"]["Proposed Action"] = { "type" => "select", "select" => { "name" => "x" } }
+    assert_equal "", NotionPage.new(notion_id: "n", data: data).as_problem.proposed_action
+    data["properties"].delete("Proposed Action")
+    assert_equal "", NotionPage.new(notion_id: "n", data: data).as_problem.proposed_action
+  end
+
+  test "seen_at is Last Seen, then First Seen, then the stored row's date, else nil" do
+    last = Time.zone.parse("2026-10-05T12:00:00Z")
+    first = Time.zone.parse("2026-09-01T12:00:00Z")
+    row = Time.zone.parse("2026-08-01T12:00:00Z")
+    make = ->(occurred_at, **attrs) { NotionPage.new(notion_id: "n", occurred_at: occurred_at, data: problem_data(**attrs)).as_problem }
+    assert_equal last, make.(row, last_seen: last, first_seen: first).seen_at
+    assert_equal first, make.(row, last_seen: nil, first_seen: first).seen_at
+    assert_equal row, make.(row, last_seen: nil, first_seen: nil).seen_at
+    assert_nil make.(nil, last_seen: nil, first_seen: nil).seen_at
+  end
+
+  test "flag? is Notion's Flag when the page has one, in either shape, and the interim rule only when it has none" do
+    %i[checkbox formula].each do |shape|
+      assert prob(severity: "Low", status: "Owned", flag: true, flag_shape: shape).flag?, shape.to_s
+      assert_not prob(severity: "Critical", status: "Open", flag: false, flag_shape: shape).flag?, shape.to_s
+      assert_not prob(flag: true, flag_shape: shape).flag_inferred?
+      assert_not prob(flag: false, flag_shape: shape).flag_inferred?
+    end
+    assert_not prob(severity: "Critical", flag: nil, flag_shape: :formula).flag?, "an empty boolean formula is Notion saying no"
+    assert_nil prob(flag: true).flag_reason
+    assert_nil prob.flag_reason
+    assert prob(severity: "Critical", status: "Open").flag?
+    assert_not prob(severity: "Critical", status: "Owned").flag?
+    assert_not prob(severity: "Medium", status: "Open").flag?
+    assert prob.flag_inferred?
+    assert prob(severity: "High", status: "Resolved", flag: true).flag?, "what Notion states is read as stated; the log leaves a closed problem out"
+  end
+
+  # What Notion holds today: a formula that gives the reason as text.
+  test "a text Flag: any text is a flag and is the reason; empty text is Notion saying no" do
+    said = prob(severity: "Low", status: "Owned", flag: "  High severity problem. Nobody owns it yet. ")
+    assert said.flag?
+    assert_not said.flag_inferred?
+    assert_equal "High severity problem. Nobody owns it yet.", said.flag_reason
+    ["", "   ", nil].each do |empty|
+      quiet = prob(severity: "Critical", status: "Open", flag: empty, flag_shape: :text)
+      assert_not quiet.flag?, empty.inspect
+      assert_not quiet.flag_inferred?, empty.inspect
+      assert_nil quiet.flag_reason, empty.inspect
+    end
   end
 end
