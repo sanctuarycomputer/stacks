@@ -127,6 +127,10 @@ Step kinds:
 | `auto_check` | Stacks | a registered check returns true |
 | `admin_sign_off` | any admin other than the person | button on the checklist page |
 
+Steps and modules are always ordered by `(position, id)`, so ties are
+deterministic. Positions are not unique-indexed (that would make reordering in
+a nested form fail mid-save).
+
 **`quiz_questions`** — `learning_module_id`, `position`, `prompt` (text,
 required), `choices` (jsonb array of 2–6 non-blank strings), `correct_index`
 (integer, within `choices`), `explanation` (text, optional). A module "has a
@@ -139,15 +143,17 @@ quiz" when it has at least one question.
 `due_on` defaults to `assigned_on + course.grace_period_days` when blank.
 
 **`step_completions`** — `admin_user_id`, `module_step_id`, `completed_at`,
-`completed_by_id` (optional; set for sign-offs), `source` (string: `self`,
-`auto`, `admin`). Unique on `[admin_user_id, module_step_id]`.
+`completed_by_id` (optional; set whenever an admin completed it), `source`
+(string: `self`, `auto`, `admin`). Unique on `[admin_user_id, module_step_id]`.
 
 **`quiz_attempts`** — `admin_user_id`, `learning_module_id`, `answers` (jsonb:
 question id → chosen index), `correct_count`, `question_count`, `passed`
-(boolean).
+(boolean). `correct_count`, `question_count` and `passed` are fixed at
+submission and never recomputed; `answers` is a record only, so editing a
+question later cannot change a past result.
 
 **`quiz_retry_grants`** — `admin_user_id`, `learning_module_id`,
-`granted_by_id`, `note`. Each row allows one more attempt.
+`granted_by_id` (optional), `note`. Each row allows one more attempt.
 
 **`module_completions`** — `admin_user_id`, `learning_module_id`,
 `completed_at`. Unique on `[admin_user_id, learning_module_id]`.
@@ -156,10 +162,22 @@ question id → chosen index), `correct_count`, `question_count`, `passed`
 `granted_by_id` (optional; null means earned), `note`. Unique on
 `[admin_user_id, qualification_id]`.
 
-Deleting an `AdminUser` destroys their assignments, completions, attempts,
-retry grants and qualification grants (`Stacks::Team.discover!` destroys users
-on foreign domains). Deleting a course, module, step or qualification that has
-any assignment, completion, attempt or grant is refused (`restrict_with_error`).
+**Deleting an `AdminUser`** (`Stacks::Team.discover!` calls `destroy!` on
+foreign-domain users inside the daily run, so this must never raise):
+
+- Rows the person **owns** (`admin_user_id` on assignments, step completions,
+  attempts, retry grants, module completions, qualification grants) are
+  deleted: `dependent: :delete_all` on `AdminUser`, and the foreign key is
+  `on_delete: :cascade`.
+- Rows where the person was only the **actor** (`assigned_by_id`,
+  `waived_by_id`, `completed_by_id`, `granted_by_id`) keep the row and null the
+  column: those columns are all nullable and their foreign keys are
+  `on_delete: :nullify`.
+
+Deleting a course, module, step or qualification that has any assignment,
+completion, attempt or grant is refused (`restrict_with_error`). Course
+assignments cannot be deleted from the admin at all (an admin waives instead),
+so delete-and-recreate cannot reset a due date.
 
 ## Rules
 
@@ -196,16 +214,20 @@ One idempotent service applies all of the above for one person, in order:
 1. For each incomplete `auto_check` step in any module of any of the person's
    open assignments, run the check; if true, create a `StepCompletion` with
    `source: "auto"`.
-2. Create missing `ModuleCompletion`s and their badge grants.
+2. For each module of any of the person's open assignments, create a missing
+   `ModuleCompletion` and its badge grant.
 3. Set `completed_at` on assignments whose modules are all done, and grant the
    course qualification.
 
 It is called after a person ticks a step, after a quiz attempt, after an admin
-sign-off, after an assignment is created, from a "Check again" button on the
-checklist page, and for every person with an open assignment in the daily
-`stacks:daily_tasks` run (before `TaskBuilder#refresh!`, isolated in its own
-`begin/rescue` with Sentry capture like its neighbours). A check that raises is
-logged, captured and treated as false; it never fails the refresh.
+completes or signs off a step, after an assignment is created (in
+`after_create_commit`, rescued), from a "Check again" button on the checklist
+page, and for every person with an open assignment in the daily
+`stacks:daily_tasks` run via `Stacks::Learning::Progress.refresh_all!` (before
+`TaskBuilder#refresh!`, isolated in its own `begin/rescue` with Sentry capture
+like its neighbours; one person's failure does not stop the others). A check
+that raises is logged, captured and treated as false; it never fails the
+refresh.
 
 An "open" assignment is one with neither `completed_at` nor `waived_at`.
 
@@ -217,17 +239,42 @@ taking an `AdminUser`:
 | Key | True when |
 |---|---|
 | `forecast_account` | `admin_user.forecast_person` is present |
-| `payment_profile` | the person's `Contributor` has a `deel_person_id` or at least one `ContributorQboVendor` |
-| `human_operating_manual` | a Human Operating Manual in the Notion mirror lists their email (same match as the existing discovery: downcased email) |
+| `payment_profile` | `c = admin_user.forecast_person&.contributor` is present and (`c.deel_person_id.present?` or `c.contributor_qbo_vendors.exists?`). A vendor in any enterprise counts. |
+| `human_operating_manual` | `!admin_user.requires_human_operating_manual?` (exempt people pass), or a Human Operating Manual in the Notion mirror lists their downcased email (same match as the existing discovery) |
+
+`payment_profile` therefore needs a Forecast account first; that is how Stacks
+finds a person's ledger at all.
 
 `ModuleStep` validates `auto_check_key` against the registry's keys. The admin
-form offers the registry as a select.
+form offers the registry as a select. `refresh_all!` builds the set of manual
+emails once and passes it to the check, rather than scanning the Notion mirror
+per person.
+
+### Admin override of a step
+
+Some checks can never come true for some people (no Forecast seat, paid by
+payroll rather than Deel or QuickBooks). Any admin can mark **any** step done
+for another person from the checklist page ("Mark done for them"). It creates
+a `StepCompletion` with `source: "admin"` and `completed_by` set. There is no
+override for a quiz; an admin who wants to excuse one waives the assignment.
 
 ### Ticking a step
 
 A person may tick `read` and `do` steps of modules in their own open
 assignments, in any order. They can never complete an `auto_check` or
 `admin_sign_off` step. Ticking is one-way; there is no untick.
+
+### Impersonation and self-service
+
+Admins can impersonate anyone (`ApplicationController#current_admin_user`
+returns the impersonated person). To keep the record honest:
+
+- `complete_step` and `submit_quiz` are refused while `impersonating?`.
+- Every admin action (`sign_off_step`, `complete_step_for`, `grant_quiz_retry`,
+  `waive`, assigning, granting a qualification by hand) is authorised against
+  and stamped with `true_admin_user`, never the impersonated person.
+- An admin cannot sign off or mark done a step on, grant a retry on, or waive
+  their **own** assignment, and cannot grant themselves a qualification.
 
 ### Quizzes
 
@@ -256,18 +303,23 @@ assignments, in any order. They can never complete an `auto_check` or
 ### Admin sign-off
 
 A sign-off step is **ready** when every earlier step in its module is done and
-every earlier module in the course (by `position`) is done. Only ready
-sign-offs show a "Sign off" button and produce an admin task. An admin cannot
-sign off a step on their own assignment. Signing creates a `StepCompletion`
-with `source: "admin"` and `completed_by` set.
+every earlier module in the course is done. Readiness is evaluated per
+assignment (the same module may be ready in one course and not in another);
+once signed, the step is done for that person everywhere. Only ready sign-offs
+produce an admin task. Signing creates a `StepCompletion` with
+`source: "admin"` and `completed_by` set.
 
 ### Assignment
 
-- `AdminUser` gains `after_create :assign_auto_assigned_courses!`, which
-  creates a `CourseAssignment` for every `Course.where(auto_assign: true)`.
+- `AdminUser` gains `after_create_commit :assign_auto_assigned_courses!`,
+  which creates a `CourseAssignment` for every `Course.where(auto_assign:
+  true)`, only when the email ends in `@sanctuary.computer` or `@xxix.co`.
   This covers both discovery paths (`Stacks::Team.discover!` and first Google
-  sign-in). Failures are rescued, logged and captured so they can never block
-  account creation.
+  sign-in). It must be `after_create_commit`, not `after_create`: the latter
+  runs inside the INSERT's transaction, where a rescued database error leaves
+  the transaction aborted and silently rolls the new account back. Failures
+  are rescued, logged and captured so they can never block account creation.
+- `assigned_on` is the day the assignment is created; `due_on` counts from it.
 - Because it runs only on create, people who already exist get nothing.
 - Admins can assign any course to anyone by hand, edit `due_on`, and **waive**
   an assignment (records who and when, with a note). A waived assignment
@@ -283,19 +335,52 @@ Two new `StacksTask` types, produced by a new discovery
 
 | Type | Label | Owners | Emitted when |
 |---|---|---|---|
-| `course_assignment_overdue` | "Onboarding checklist is overdue" | the person | assignment is open, `due_on < Date.today`, the person is `active.not_ignored`, and the person has something of their own left to do |
-| `course_assignment_needs_admin_sign_off` | "Onboarding checklist needs an admin sign-off" | all admins except the assignee | assignment is open and has at least one ready, incomplete sign-off step |
+| `course_assignment_overdue` | "Assigned checklist is overdue" | the person | assignment is open, `due_on < Date.today`, the person is eligible, and the person has something of their own left to do |
+| `course_assignment_needs_admin_sign_off` | "Checklist needs an admin sign-off" | all admins except the assignee | assignment is open, the person is eligible, and it has at least one ready, incomplete sign-off step |
+
+A person is **eligible** when they are not `ignore`d and have not left: they
+have no `full_time_periods` at all (a brand-new account, before Christian adds
+one) or they have a current one. The `active` scope alone would exclude every
+brand-new account, which is exactly the audience. Marking a bot or shared
+mailbox account `ignore` silences both tasks for it.
 
 "Something of their own left to do" means an incomplete `read`, `do` or
-`auto_check` step, or a module whose steps are done but whose quiz is not
-passed. A person waiting only on an admin sign-off is not overdue, so an
-admin's delay never puts a pill on someone's payout.
+`auto_check` step, or a module whose steps are done and whose quiz is not
+passed **and still has attempts left**. A person waiting only on an admin
+sign-off, or locked out of a quiz and waiting for an admin to allow another
+attempt, is not overdue: an admin's delay never puts a pill on someone's
+payout. Auto-checks count as the person's own because each needs them to act
+first (accept the QuickBooks invite, finish Deel, join Forecast); where that
+is not true for someone, an admin marks the step done for them.
 
-Both link to the checklist page. `StacksTask#subject_display_name` shows
-"`<email>` — `<course name>`". `CourseAssignment`, `StepCompletion`,
-`QuizAttempt`, `QuizRetryGrant` and `ModuleCompletion` include
-`BustsTaskCache`. Date-driven transitions (becoming overdue) are picked up by
-the existing daily `TaskBuilder#refresh!`.
+If the sign-off task would have no owner (the assignee is the only admin), it
+is not emitted; it must not fall back to the assignee.
+
+Task plumbing, all required for a new subject class:
+
+- `lib/stacks/task_builder.rb`: `require_relative`, an entry in
+  `DISCOVERY_CLASSES`, and `SUBJECT_PRELOADS["CourseAssignment"] =
+  [:admin_user, :course]`.
+- `app/models/stacks_task.rb`: both labels in `HUMANIZED_TYPES`; a
+  `CourseAssignment` branch in `subject_display_name` placed above the
+  `redact_amounts` fallback, showing "`<email>` — `<learner_title>`"; a
+  `CourseAssignment` branch in `subject_url` returning the checklist page.
+
+`CourseAssignment`, `StepCompletion`, `QuizAttempt`, `QuizRetryGrant` and
+`ModuleCompletion` include `BustsTaskCache`. Date-driven transitions (becoming
+overdue) are picked up by the existing daily `TaskBuilder#refresh!`.
+
+**Stale cache.** Production's `Rails.cache` is a per-process `:memory_store`,
+so `BustsTaskCache` only clears the worker that served the request; the other
+workers would keep showing "overdue" (and the payables pill) for up to 24
+hours after someone finishes. Because that pill is the payout block,
+`TaskBuilder` re-validates course-assignment descriptors on every read: after
+loading the cached descriptors it drops any whose `subject_type` is
+`"CourseAssignment"` and whose type is no longer in
+`Discoveries::CourseAssignments.task_types_for(assignment)`, computed live
+from the database. This applies to `tasks`, `tasks_for`, `task_count` and
+`task_count_for`, costs nothing when there are no such descriptors, and only
+removes tasks; newly due tasks still wait for the next rebuild.
 
 Before the due date an assignment is not a task. It shows only on the profile.
 
@@ -313,8 +398,10 @@ person themselves, and only when the person has at least one assignment:
 
 - One row per assignment: the course's `learner_title`, "n of m steps done",
   the due date (or "Done" / "Waived"), and a link to the checklist.
-- A "Badges" line listing the names of the person's qualification grants, if
-  any.
+- A "Badges" line listing the names of the person's qualification grants.
+
+The module renders when the person has an assignment **or** a qualification
+grant.
 
 ### The checklist page (`CourseAssignment` show)
 
@@ -327,6 +414,8 @@ page rendered by an ERB partial. For each module in order: its name, summary
 - `auto_check`: done tick, or "Not yet — Stacks checks this automatically".
 - `admin_sign_off`: done tick with who signed, or "Waiting on an admin"; admins
   see a "Sign off" button when it is ready.
+- Admins viewing someone else's checklist also see "Mark done for them" on
+  every incomplete step that is not a sign-off.
 - Then, if the module has a quiz: "Quick check" with its state — not yet open,
   open (link to the quiz page), passed, or locked.
 
@@ -342,8 +431,12 @@ Member actions on `CourseAssignment`:
 | `submit_quiz` (`learning_module_id`, `answers`) | POST | the assignee |
 | `recheck` | POST | the assignee, admins |
 | `sign_off_step` (`step_id`) | POST | admins, not the assignee |
-| `grant_quiz_retry` (`learning_module_id`, `note`) | POST | admins |
-| `waive` (`waive_note`) | POST | admins |
+| `complete_step_for` (`step_id`) | POST | admins, not the assignee |
+| `grant_quiz_retry` (`learning_module_id`, `note`) | POST | admins, not the assignee |
+| `waive` (`waive_note`) | POST | admins, not the assignee |
+
+"The assignee" means the signed-in person and not an admin impersonating them;
+"admins" means `true_admin_user.is_admin?`.
 
 Every action re-verifies in the controller that the step or module belongs to
 this assignment's course, and that the acting user is allowed, independent of
@@ -359,7 +452,8 @@ ActiveAdmin resources, admin-only, under a new "Onboarding" menu:
   (choices edited as one-per-line text).
 - **Qualifications**: name, description, kind.
 - **Course Assignments**: index across people (person, course, assigned, due,
-  state, steps done); `new` to assign by hand; `edit` for `due_on`.
+  state, steps done); `new` to assign by hand; `edit` for `due_on` only. No
+  destroy.
 - **Qualification Grants**: index, and `new` to grant by hand
   (`granted_by` stamped server-side).
 
@@ -382,9 +476,11 @@ The profile module is hidden from leads viewing someone else's profile.
 ## Wayfinding: the first course
 
 Seeded by an idempotent rake task, `stacks:seed_wayfinding_course`, from
-`db/seeds/learning/wayfinding.yml`. Rows are matched by slug (course, module),
-name (qualification) and position within their module (steps, questions). An
-existing row is never updated, so edits made in the admin survive a re-run.
+`db/seeds/learning/wayfinding.yml`. Qualifications are matched by name, the course and modules by slug. A module
+that already exists is left entirely alone, steps and questions included; its
+steps and questions are created only in the run that creates the module. The
+course's module list is created only in the run that creates the course. So
+edits made in the admin always survive a re-run.
 `auto_assign` is false. Qualification: **Onboarded to garden3d**.
 
 | # | Module (slug) | Steps | Quiz | Badge |
@@ -392,7 +488,7 @@ existing row is never updated, so edits made in the admin survive a re-run.
 | 1 | Paperwork and payment (`paperwork-and-payment`) | sign-off: GCA signed and returned; auto: payment profile linked | no | — |
 | 2 | Your accounts (`your-accounts`) | auto: Forecast account under your company email; do: sign in to Twist; do: set up 1Password; do: set up your Notion task board | no | — |
 | 3 | How you get paid (`how-you-get-paid`) | read: Roles & Compensation; read: pay when paid; read: time tracking; read: how to draw payment | yes | How you get paid |
-| 4 | Policies (`policies`) | read ×4, one per policy page | yes | Policies |
+| 4 | Policies (`policies`) | read ×4: Code of Conduct; External Projects, Conflicts of Interest, and Confidentiality; How We Communicate; What an inclusive meeting looks like | yes | Policies |
 | 5 | How we communicate (`how-we-communicate`) | read: who to ask; read: company meetings; read: How to Be; do: post your intro in Twist; auto: Human Operating Manual | yes | How we communicate |
 | 6 | Onboarding sign-off (`onboarding-sign-off`) | sign-off: an admin confirms setup is complete | no | — |
 
@@ -400,7 +496,9 @@ Each quiz has 5 questions at an 80% pass mark (4 of 5). Questions are drafted
 from the linked Notion pages and test facts and procedures a person needs
 (for example when hours become final, when payment is released, where to ask
 a payments question), not trivia. Every step's `notion_url` is the URL of the
-real Notion page or section it refers to.
+real Notion page it refers to, or of the Wayfinding page where the content is
+a section of it; sign-off steps have none. Questions avoid the facts on which
+Notion currently contradicts itself (see "Open follow-ups").
 
 ## How the Project Lead course fits
 
@@ -425,11 +523,21 @@ stubs, integration tests with Devise helpers).
   a retry grant allows exactly one more; incomplete submission does not count;
   no attempt after a pass; quiz closed until steps are done.
 - **Discovery:** not overdue before `due_on`; overdue after; not overdue when
-  only a sign-off remains; inactive or ignored people skipped; waived and
-  completed skipped; sign-off task only when ready and never owned by the
-  assignee.
+  only a sign-off remains or when the only thing left is a locked quiz; a
+  brand-new person with no full-time period is eligible; ignored and departed
+  people are skipped; waived and completed skipped; sign-off task only when
+  ready, never owned by the assignee, and not emitted when there is no other
+  admin.
 - **Auto-assign:** creating an `AdminUser` assigns `auto_assign` courses and
-  not others; a failure inside does not prevent creation.
+  not others; a real database error inside (a pre-existing duplicate
+  assignment is not possible, so force one by stubbing `CourseAssignment.create!`
+  to raise `ActiveRecord::StatementInvalid`) leaves the account persisted.
+- **Deleting people:** destroying an `AdminUser` who owns progress and who
+  acted on other people's (signed off, granted, waived, assigned) succeeds,
+  removes their own rows and nulls the actor columns.
+- **Stale cache:** with a cached overdue descriptor, completing the assignment
+  without clearing the cache removes the task from `tasks_for` and
+  `task_count_for`.
 - **Integration (authorization), each with a positive control:**
   - a non-admin sees their own checklist, ticks a step, takes the quiz;
   - a non-admin cannot see, tick or submit on someone else's;
@@ -438,8 +546,10 @@ stubs, integration tests with Devise helpers).
     see the profile module on someone else's profile;
   - a non-admin cannot tick an `auto_check` or `admin_sign_off` step, sign
     off, grant a retry or waive;
-  - an admin can sign off, grant a retry and waive, and cannot sign off their
-    own;
+  - an admin can sign off, mark a step done for someone, grant a retry and
+    waive, and can do none of those on their own assignment;
+  - while impersonating, `complete_step` and `submit_quiz` are refused, and
+    admin actions are stamped with the true admin;
   - the quiz page and a failed result contain no correct-answer or
     explanation text.
 - **Seed:** running the task twice creates each row once; an edited row is not
@@ -462,3 +572,10 @@ Then run `stacks:seed_wayfinding_course`. Nothing is assigned to anyone until
 - A task for admins when someone is locked out of a quiz. For now the person
   asks, as Hugh specified.
 - Legal review (Max) of mandatory, payout-gated onboarding for contractors.
+- Notion contradicts itself in places the checklist points at, found while
+  drafting questions: when hours become final (24 hours after the invoicing
+  period starts vs end of the last day of the month); whether lead percentages
+  are of net or gross; the lead volunteering window (1 business day vs 4
+  hours); who to ask when a payout looks wrong; and "a fully set up Sanctuary
+  with your bank account linked" in the payment guide, which looks like a typo
+  for QuickBooks.
