@@ -359,6 +359,22 @@ class LearningModelsTest < ActiveSupport::TestCase
     assert ModuleStep.exists?(step.id)
   end
 
+  test "a module refuses, without raising, to drop a completed step or to be destroyed with progress" do
+    mod = learning_module!(steps: ["read", "do"])
+    done_step, other_step = mod.module_steps.to_a
+    complete_step!(learning_person!, done_step)
+
+    assert_not mod.update(module_steps_attributes: [{ id: done_step.id, _destroy: "1" }])
+    assert_match(/completed/, mod.errors.full_messages.join)
+    assert ModuleStep.exists?(done_step.id)
+
+    assert mod.reload.update(module_steps_attributes: [{ id: other_step.id, _destroy: "1" }])
+    assert_not ModuleStep.exists?(other_step.id)
+
+    assert_not mod.reload.destroy
+    assert LearningModule.exists?(mod.id)
+  end
+
   test "destroying a person removes their own progress and nulls where they were the actor" do
     badge = Qualification.create!(name: "Badge #{SecureRandom.hex(3)}", kind: "badge")
     mod = learning_module!(steps: ["admin_sign_off"], questions: 1)
@@ -465,8 +481,28 @@ class LearningModule < ApplicationRecord
   validates :slug, presence: true, uniqueness: true
   validates :quiz_pass_percent, numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 100 }
 
+  # dependent: :destroy and nested _destroy both call destroy! on each step, so
+  # ModuleStep's restrict_with_error would surface as RecordNotDestroyed (a 500
+  # in the admin form). Refuse cleanly up front instead.
+  validate :no_completed_step_marked_for_destruction
+  before_destroy :refuse_destroy_when_steps_have_completions, prepend: true
+
   def display_name
     name
+  end
+
+  private
+
+  def no_completed_step_marked_for_destruction
+    doomed = module_steps.select(&:marked_for_destruction?).select { |step| step.step_completions.exists? }
+    return if doomed.empty?
+    errors.add(:base, "Can't remove a step people have completed: #{doomed.map(&:title).join(", ")}")
+  end
+
+  def refuse_destroy_when_steps_have_completions
+    return unless StepCompletion.where(module_step_id: module_steps.select(:id)).exists?
+    errors.add(:base, "People have progress on this module")
+    throw :abort
   end
 end
 ```
@@ -1155,12 +1191,12 @@ module Stacks
       end
 
       def module_state(learning_module)
-        id = learning_module.respond_to?(:id) ? learning_module.id : learning_module.to_i
+        id = learning_module.respond_to?(:id) ? learning_module.id : learning_module.to_s.to_i
         modules.find { |m| m.learning_module.id == id }
       end
 
       def step_state(step)
-        id = step.respond_to?(:id) ? step.id : step.to_i
+        id = step.respond_to?(:id) ? step.id : step.to_s.to_i
         modules.each do |m|
           found = m.steps.find { |s| s.step.id == id }
           return found if found
@@ -1217,7 +1253,10 @@ module Stacks
           earlier_steps_done = true
           steps = mod.module_steps.map do |step|
             completion = completions[step.id]
-            ready = step.kind == "admin_sign_off" && completion.nil? && earlier_modules_done && earlier_steps_done
+            # A step added to a module the person already finished is never
+            # "ready": the module stays done, so nobody is asked to sign it.
+            ready = step.kind == "admin_sign_off" && completion.nil? && module_completions[mod.id].nil? &&
+              earlier_modules_done && earlier_steps_done
             earlier_steps_done &&= completion.present?
             StepState.new(step: step, completion: completion, ready: ready)
           end
@@ -1300,8 +1339,8 @@ module Stacks
       # find_or_create_by! that tolerates a concurrent insert of the same row.
       def self.ensure_row(klass, attrs, &block)
         klass.find_or_create_by!(attrs, &block)
-      rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid
-        klass.find_by!(attrs)
+      rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
+        klass.find_by(attrs) || raise(e)
       end
       private_class_method :ensure_row
     end
@@ -1431,6 +1470,9 @@ class StacksLearningQuizTest < ActiveSupport::TestCase
     junk = answers(right: 5).transform_values { "abc" }
     assert_equal :rejected, Q.submit!(assignment: @assignment, learning_module: @mod, answers: junk).status
     assert_equal :rejected, Q.submit!(assignment: @assignment, learning_module: @mod, answers: nil).status
+    assert_equal :rejected, Q.submit!(assignment: @assignment, learning_module: @mod, answers: ["0"]).status
+    hexish = answers(right: 5).transform_values { "0x0" }
+    assert_equal :rejected, Q.submit!(assignment: @assignment, learning_module: @mod, answers: hexish).status
     assert_equal 0, QuizAttempt.where(admin_user: @person).count
   end
 
@@ -1520,12 +1562,13 @@ module Stacks
       # question id (Integer) => chosen index (Integer), or nil unless every
       # question has an in-range integer answer.
       def self.parse(answers, questions)
-        return nil unless answers.respond_to?(:[])
+        return nil unless answers.respond_to?(:key?)
         chosen = {}
         questions.each do |q|
           raw = answers[q.id.to_s] || answers[q.id]
-          index = Integer(raw.to_s, exception: false)
-          return nil if index.nil? || !index.between?(0, q.choices.size - 1)
+          return nil unless raw.to_s.match?(/\A\d{1,2}\z/)
+          index = raw.to_s.to_i
+          return nil unless index.between?(0, q.choices.size - 1)
           chosen[q.id] = index
         end
         chosen
@@ -1648,7 +1691,7 @@ class AdminUserCourseAutoAssignTest < ActiveSupport::TestCase
 
   test "calling it twice does not duplicate" do
     person = learning_person!
-    assert_no_difference -> { CourseAssignment.count } { person.assign_auto_assigned_courses! }
+    assert_no_difference(-> { CourseAssignment.count }) { person.assign_auto_assigned_courses! }
   end
 end
 ```
@@ -1710,7 +1753,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Create: `lib/stacks/task_builder/discoveries/course_assignments.rb`
 - Modify: `lib/stacks/task_builder.rb` (require, `DISCOVERY_CLASSES`, `SUBJECT_PRELOADS`, `cached_descriptors`)
 - Modify: `app/models/stacks_task.rb` (`HUMANIZED_TYPES`, `subject_display_name`, `subject_url`)
-- Modify: `lib/tasks/stacks.rake` (`daily_tasks`: call `refresh_all!` before the `TaskBuilder#refresh!` at line ~628)
+- Modify: `lib/tasks/stacks.rake` (`daily_tasks`: call `refresh_all!` before the `Stacks::TaskBuilder.new.refresh!` call, near line 667)
 - Test: `test/lib/stacks/task_builder/discoveries/course_assignments_test.rb`, `test/lib/stacks/task_builder/course_assignment_live_revalidation_test.rb`
 
 **Interfaces:**
@@ -1972,29 +2015,51 @@ In `lib/stacks/task_builder.rb`:
 1. After the last `require_relative` line add `require_relative "task_builder/discoveries/course_assignments"`.
 2. Add `Discoveries::CourseAssignments,` as the last entry of `DISCOVERY_CLASSES`.
 3. Add to `SUBJECT_PRELOADS`: `"CourseAssignment" => [:admin_user, :course],`.
-4. Replace `cached_descriptors` with:
+4. Leave `cached_descriptors` as it is. Change the four public readers so each filters stale course-assignment descriptors out of **only the descriptors it is about to use** (the nag banner builds a `TaskBuilder` on every page for every user, so the per-user paths must not re-validate everyone's assignments):
 
 ```ruby
-    def cached_descriptors
-      @_cached_descriptors ||= drop_stale_course_assignment_descriptors(
-        Rails.cache.fetch(CACHE_KEY, expires_in: CACHE_TTL) do
-          build_tasks.map { |t| descriptor_for(t) }
-        end
-      )
+    def tasks
+      hydrate(drop_stale_course_assignment_descriptors(cached_descriptors))
     end
 
+    def tasks_for(admin_user)
+      return [] unless admin_user&.id
+      relevant = cached_descriptors.select { |d| d[:owner_ids].include?(admin_user.id) }
+      hydrate(drop_stale_course_assignment_descriptors(relevant))
+    end
+
+    def task_count
+      drop_stale_course_assignment_descriptors(cached_descriptors).length
+    end
+
+    def task_count_for(admin_user)
+      return 0 unless admin_user&.id
+      relevant = cached_descriptors.select { |d| d[:owner_ids].include?(admin_user.id) }
+      drop_stale_course_assignment_descriptors(relevant).length
+    end
+```
+
+Keep each method's existing comment. Add, in the `private` section:
+
+```ruby
     # Rails.cache is a per-process memory store in production, so clear_cache!
     # only reaches the worker that handled the write; the others would go on
     # showing a finished checklist as overdue (and holding the payout pill) for
-    # up to CACHE_TTL. Re-check these descriptors against the database on every
-    # read. Removal only: newly due tasks still wait for the next rebuild.
+    # up to CACHE_TTL. Re-check these descriptors against the database on read.
+    # Removal only: newly due tasks still wait for the next rebuild. Costs
+    # nothing when the given descriptors include no course assignment.
     def drop_stale_course_assignment_descriptors(descriptors)
       ids = descriptors.select { |d| d[:subject_type] == "CourseAssignment" }.map { |d| d[:subject_id] }.uniq
       return descriptors if ids.empty?
 
-      live = Discoveries::CourseAssignments.live_types_by_id(ids)
+      @_live_course_assignment_types ||= {}
+      missing = ids - @_live_course_assignment_types.keys
+      if missing.any?
+        found = Discoveries::CourseAssignments.live_types_by_id(missing)
+        missing.each { |id| @_live_course_assignment_types[id] = found.fetch(id, []) }
+      end
       descriptors.reject do |d|
-        d[:subject_type] == "CourseAssignment" && !live.fetch(d[:subject_id], []).include?(d[:type])
+        d[:subject_type] == "CourseAssignment" && !@_live_course_assignment_types[d[:subject_id]].include?(d[:type])
       end
     end
 ```
@@ -2022,7 +2087,7 @@ In `app/models/stacks_task.rb`:
       helpers.respond_to?(:admin_course_assignment_path) ? helpers.admin_course_assignment_path(subject) : nil
 ```
 
-In `lib/tasks/stacks.rake`, inside `task :daily_tasks`, immediately before the line that calls `Stacks::TaskBuilder.new.refresh!` (around line 628), add at the same indentation:
+In `lib/tasks/stacks.rake`, inside `task :daily_tasks`, immediately before the line that calls `Stacks::TaskBuilder.new.refresh!` (near line 667), add at the same indentation:
 
 ```ruby
       # Tick off what Stacks can now see for itself (Forecast account, payment
@@ -2036,7 +2101,7 @@ In `lib/tasks/stacks.rake`, inside `task :daily_tasks`, immediately before the l
       end
 ```
 
-Read the 20 lines around line 628 first and match how neighbouring blocks log and rescue.
+Read the 20 lines around that call first and match how neighbouring blocks log and rescue.
 
 - [ ] **Step 4: Run to verify they pass**
 
@@ -2045,7 +2110,7 @@ Expected: all pass.
 
 - [ ] **Step 5: Mutation check, then commit**
 
-Temporarily make `drop_stale_course_assignment_descriptors` return `descriptors` unchanged; the first live-revalidation test must fail. Restore. Temporarily remove `&& checklist.own_work_remaining?`; the "only an admin sign-off remains" and "locked quiz" tests must fail. Restore.
+Temporarily make `drop_stale_course_assignment_descriptors` return `descriptors` unchanged; the first live-revalidation test must fail. Also add to that test file a test that a person with no course-assignment task triggers no `live_types_by_id` call: `Stacks::TaskBuilder::Discoveries::CourseAssignments.expects(:live_types_by_id).never` around `Stacks::TaskBuilder.new.tasks_for(other_person)` after the cache is warm (warm it first with a separate `Stacks::TaskBuilder.new.tasks_for(@person)` call made before setting the expectation). Restore. Temporarily remove `&& checklist.own_work_remaining?`; the "only an admin sign-off remains" and "locked quiz" tests must fail. Restore.
 
 ```bash
 git rev-parse --abbrev-ref HEAD
@@ -2246,7 +2311,8 @@ class AdminCourseAssignmentsTest < ActionDispatch::IntegrationTest
     sign_in @admin
     get admin_course_assignment_path(@assignment)
     assert_response :success
-    assert_includes response.body, "Sign off"
+    assert_includes response.body, "Mark done for them"
+    assert_not_includes response.body, "Sign off", "the sign-off is not ready yet"
     get admin_course_assignments_path
     assert_response :success
     assert_includes response.body, @person.email
@@ -2278,8 +2344,12 @@ class AdminCourseAssignmentsTest < ActionDispatch::IntegrationTest
     assert_not done?(@person, @sign_off)
   end
 
-  test "an admin grants a retry and waives" do
+  test "an admin grants a retry only once the person is locked out, and waives" do
     sign_in @admin
+    post grant_quiz_retry_admin_course_assignment_path(@assignment, learning_module_id: @mod.id)
+    assert_equal 0, QuizRetryGrant.count, "not locked yet"
+    [@read, @auto, @sign_off].each { |s| complete_step!(@person, s) }
+    2.times { QuizAttempt.create!(admin_user: @person, learning_module: @mod, correct_count: 0, question_count: 2) }
     post grant_quiz_retry_admin_course_assignment_path(@assignment, learning_module_id: @mod.id), params: { note: "was ill" }
     grant = QuizRetryGrant.find_by!(admin_user: @person, learning_module: @mod)
     assert_equal [@admin.id, "was ill"], [grant.granted_by_id, grant.note]
@@ -2305,6 +2375,28 @@ class AdminCourseAssignmentsTest < ActionDispatch::IntegrationTest
     assert_equal 0, QuizRetryGrant.count
     post waive_admin_course_assignment_path(mine)
     assert_nil mine.reload.waived_at
+  end
+
+  test "nothing can be signed off or marked done on a waived checklist" do
+    @assignment.update!(waived_at: Time.current)
+    sign_in @admin
+    post complete_step_for_admin_course_assignment_path(@assignment, step_id: @auto.id)
+    assert_not done?(@person, @auto)
+  end
+
+  test "check again runs the automatic checks, and malformed ids do not 500" do
+    ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: @person.email, data: {})
+    sign_in @person
+    post recheck_admin_course_assignment_path(@assignment)
+    assert_redirected_to admin_course_assignment_path(@assignment)
+    assert_equal "auto", StepCompletion.find_by!(admin_user: @person, module_step: @auto).source
+
+    post complete_step_admin_course_assignment_path(@assignment), params: { step_id: { x: 1 } }
+    assert_response :redirect
+    [@read, @sign_off].each { |s| complete_step!(@person, s) unless done?(@person, s) }
+    post submit_quiz_admin_course_assignment_path(@assignment, learning_module_id: @mod.id), params: { answers: ["1"] }
+    assert_response :redirect
+    assert_equal 0, QuizAttempt.count
   end
 
   test "an admin cannot delete an assignment" do
@@ -2350,6 +2442,16 @@ class AdminCourseAssignmentsTest < ActionDispatch::IntegrationTest
     assert_nil @assignment.reload.waived_at
     post grant_quiz_retry_admin_course_assignment_path(@assignment, learning_module_id: @mod.id)
     assert_equal 0, QuizRetryGrant.count
+  end
+
+  test "an admin impersonating another admin still cannot act on a checklist" do
+    second = learning_person!(prefix: "second", roles: ["admin"])
+    sign_in @admin
+    post impersonate_admin_admin_user_path(second)
+    post complete_step_for_admin_course_assignment_path(@assignment, step_id: @auto.id)
+    assert_not done?(@person, @auto)
+    post waive_admin_course_assignment_path(@assignment)
+    assert_nil @assignment.reload.waived_at
   end
 
   # ── past project leads (the blanket grant in AdminAuthorization) ──────────
@@ -2458,8 +2560,12 @@ ActiveAdmin.register CourseAssignment do
     end
 
     def require_admin!
-      return true if acting_as_admin?
-      back(alert: impersonating? ? "Stop impersonating first." : "Only an admin can do that, and not on their own checklist.")
+      unless acting_as_admin?
+        back(alert: impersonating? ? "Stop impersonating first." : "Only an admin can do that, and not on their own checklist.")
+        return false
+      end
+      return true if resource.outstanding?
+      back(alert: "This checklist is already closed.")
       false
     end
 
@@ -2591,7 +2697,7 @@ ActiveAdmin.register CourseAssignment do
   member_action :grant_quiz_retry, method: :post do
     next unless require_admin!
     state = module_state_from_params
-    next back(alert: "There is no quick check here.") if state.nil? || !state.has_quiz?
+    next back(alert: "They aren't out of attempts.") if state.nil? || state.quiz_state != :locked
     QuizRetryGrant.create!(admin_user: resource.admin_user, learning_module: state.learning_module,
                            granted_by: current_admin_user, note: params[:note].presence)
     back(notice: "Allowed one more attempt.")
@@ -2599,7 +2705,6 @@ ActiveAdmin.register CourseAssignment do
 
   member_action :waive, method: :post do
     next unless require_admin!
-    next back(alert: "This checklist is already closed.") unless resource.outstanding?
     resource.update!(waived_at: Time.current, waived_by: current_admin_user, waive_note: params[:waive_note].presence)
     back(notice: "Waived.")
   end
@@ -2922,6 +3027,16 @@ class AdminCourseAuthoringTest < ActionDispatch::IntegrationTest
     assert grant.granted_at.present?
   end
 
+  test "a lead and an ordinary person cannot grant a qualification by POSTing" do
+    target = learning_person!
+    [lead!, learning_person!].each do |user|
+      sign_in user
+      post admin_qualification_grants_path, params: { qualification_grant: { admin_user_id: target.id, qualification_id: @qual.id } }
+      sign_out user
+    end
+    assert_equal 0, QualificationGrant.count
+  end
+
   test "an admin cannot grant themselves a qualification" do
     sign_in @admin
     post admin_qualification_grants_path, params: { qualification_grant: { admin_user_id: @admin.id, qualification_id: @qual.id } }
@@ -3051,6 +3166,10 @@ ActiveAdmin.register QualificationGrant do
     # Granted by hand: stamped with the acting admin, never from the client,
     # never while impersonating, and never to oneself.
     def create
+      # This override bypasses build_resource, which is where ActiveAdmin
+      # normally authorizes a create. Without this line anyone signed in could
+      # POST a grant.
+      authorize! :create, QualificationGrant
       attrs = permitted_params[:qualification_grant] || {}
       if impersonating?
         return redirect_to admin_qualification_grants_path, alert: "Stop impersonating first."
@@ -3298,7 +3417,9 @@ If the "Onboarding" parent menu shows for non-admins as an empty item, that is a
 In `app/views/admin/admin_users/_show.html.erb`, insert this single line immediately after the closing `</div>` of the first `<div class="dashboard-modules table index_table index">` block that contains "Balance" and "Pending Tasks" (i.e. directly before the `<% if current_admin_user.is_admin? && resource.permission_grants.any? %>` line):
 
 ```erb
-<%= render partial: "admin/admin_users/learning" %>
+<%# table_exists? guard: migrations are run by hand after a deploy, and this is
+    everyone's home page. Without it every profile would 500 until then. %>
+<%= render partial: "admin/admin_users/learning" if CourseAssignment.table_exists? %>
 ```
 
 - [ ] **Step 5: Run to verify they pass**
@@ -3569,7 +3690,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 1. Confirm no other `rails test` is running (`ps -ax | grep "[r]ails test"`), then run the full suite once:
    `DATABASE_URL=postgres:///stacks_test_onboarding_courses RAILS_ENV=test bin/rails test --exclude "/EtlRakeTest/"`
 2. Normalise commit trailers if any subagent substituted its own model name.
-3. Push and open the PR; PR body ends with `🤖 Generated with [Claude Code](https://claude.com/claude-code)` and includes the rollout steps from the spec (migrate → `heroku restart` → `stacks:seed_wayfinding_course`; nothing is assigned until `auto_assign` is switched on).
+3. Push and open the PR; PR body ends with `🤖 Generated with [Claude Code](https://claude.com/claude-code)` and includes the rollout steps from the spec (migrate **immediately** after the release lands → `heroku restart` → `stacks:seed_wayfinding_course`; nothing is assigned until `auto_assign` is switched on).
 4. Adversarial review of the PR diff; fix; wait for Heroku CI.
 
 ## Spec coverage
