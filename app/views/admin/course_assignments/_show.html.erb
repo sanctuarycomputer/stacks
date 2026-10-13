@@ -1,0 +1,126 @@
+<%# app/views/admin/course_assignments/_show.html.erb
+  The person-facing checklist. Copy here must read as getting set up: never
+  "course", "lesson", "training", "learner" or "quiz" (a quiz is a "Quick check").
+  Locals: assignment (CourseAssignment), checklist (Stacks::Learning::Checklist).
+%>
+<% course = assignment.course %>
+<div class="dashboard-modules table index_table index">
+  <div class="dashboard-module">
+    <div class="module-body">
+      <% if course.description.present? %>
+        <div class="markdown-body"><%= raw RDiscount.new(course.description).to_html %></div>
+      <% end %>
+      <p>
+        <strong><%= checklist.steps_done %> of <%= checklist.steps_total %> steps done.</strong>
+        <% if assignment.completed? %>
+          <span class="pill ready">All done <%= assignment.completed_at.to_date.to_s(:long) %></span>
+        <% elsif assignment.waived? %>
+          <span class="pill">Waived<%= " by #{assignment.waived_by.email}" if assignment.waived_by %></span>
+        <% else %>
+          Please finish by <strong><%= assignment.due_on.to_s(:long) %></strong>.
+        <% end %>
+      </p>
+      <% if assignment.outstanding? && !impersonating? %>
+        <%= button_to "Check again", recheck_admin_course_assignment_path(assignment), method: :post, form: { style: "display:inline" } %>
+      <% end %>
+      <% if assignment.outstanding? && acting_as_admin? %>
+        <%= form_tag waive_admin_course_assignment_path(assignment), method: :post, style: "display:inline; margin-left: 12px;" do %>
+          <%= text_field_tag :waive_note, nil, placeholder: "Why waive? (optional)" %>
+          <%= submit_tag "Waive", data: { confirm: "Waive this for #{assignment.admin_user.email}? Nothing will be granted." } %>
+        <% end %>
+      <% end %>
+    </div>
+  </div>
+</div>
+
+<% checklist.modules.each do |mod_state| %>
+  <% mod = mod_state.learning_module %>
+  <div class="panel">
+    <h3>
+      <%= mod.name %>
+      <% if mod_state.done? %><span class="pill ready">Done</span><% end %>
+    </h3>
+    <div class="panel_contents">
+      <% if mod.summary.present? %>
+        <div class="markdown-body"><%= raw RDiscount.new(mod.summary).to_html %></div>
+      <% end %>
+      <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+        <tbody>
+          <% mod_state.steps.each_with_index do |step_state, idx| %>
+            <% step = step_state.step %>
+            <tr class="<%= idx.even? ? "even" : "odd" %>">
+              <td class="col" style="width: 32px;"><%= step_state.done? ? "✅" : "⬜" %></td>
+              <td class="col">
+                <%= step.title %>
+                <% if step.notion_url.present? %>
+                  &nbsp;<%= link_to "Open in Notion ↗", step.notion_url, target: "_blank", rel: "noopener" %>
+                <% end %>
+              </td>
+              <td class="col text-right">
+                <% if step_state.done? %>
+                  <% c = step_state.completion %>
+                  <%= c.completed_at.to_date.to_s(:long) %><%= " · #{c.completed_by.email}" if c.completed_by %>
+                <% elsif !assignment.outstanding? %>
+                  —
+                <% else %>
+                  <% case step.kind %>
+                  <% when "read", "do" %>
+                    <% if acting_as_assignee? %>
+                      <%= button_to "Mark as done", complete_step_admin_course_assignment_path(assignment, step_id: step.id), method: :post %>
+                    <% end %>
+                  <% when "auto_check" %>
+                    <% if Stacks::Learning::AutoChecks.owner(step.auto_check_key) == :admin %>
+                      Not yet — an admin links this once payment setup is done
+                    <% else %>
+                      Not yet — Stacks checks this automatically
+                    <% end %>
+                  <% when "admin_sign_off" %>
+                    <% if acting_as_admin? && step_state.ready %>
+                      <%= button_to "Sign off", sign_off_step_admin_course_assignment_path(assignment, step_id: step.id), method: :post %>
+                    <% else %>
+                      Waiting on an admin
+                    <% end %>
+                  <% end %>
+                  <% if acting_as_admin? && step.kind != "admin_sign_off" %>
+                    <%= button_to "Mark done for them", complete_step_for_admin_course_assignment_path(assignment, step_id: step.id), method: :post, data: { confirm: "Mark this done for #{assignment.admin_user.email}?" } %>
+                  <% end %>
+                <% end %>
+              </td>
+            </tr>
+          <% end %>
+          <% if mod_state.has_quiz? %>
+            <tr>
+              <td class="col"><%= mod_state.quiz_state == :passed ? "✅" : "⬜" %></td>
+              <td class="col"><strong>Quick check</strong></td>
+              <td class="col text-right">
+                <% case mod_state.quiz_state %>
+                <% when :passed %>
+                  Passed · <%= link_to "Review answers", quiz_admin_course_assignment_path(assignment, learning_module_id: mod.id) %>
+                <% when :not_open %>
+                  Opens when the steps above are done
+                <% when :open %>
+                  <% if acting_as_assignee? %>
+                    <%= link_to "Take the quick check →", quiz_admin_course_assignment_path(assignment, learning_module_id: mod.id) %>
+                    (<%= pluralize(mod_state.attempts_left, "attempt") %> left)
+                  <% else %>
+                    Open · <%= pluralize(mod_state.attempts_left, "attempt") %> left
+                  <% end %>
+                <% when :locked %>
+                  <% if acting_as_admin? %>
+                    Out of attempts.
+                    <%= form_tag grant_quiz_retry_admin_course_assignment_path(assignment, learning_module_id: mod.id), method: :post, style: "display:inline" do %>
+                      <%= text_field_tag :note, nil, placeholder: "Note (optional)" %>
+                      <%= submit_tag "Allow another attempt" %>
+                    <% end %>
+                  <% else %>
+                    You're out of attempts. Ask an admin to allow another.
+                  <% end %>
+                <% end %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+<% end %>

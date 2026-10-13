@@ -14,6 +14,7 @@ require_relative "task_builder/discoveries/legacy_ledgers_pending_qbo_migration"
 require_relative "task_builder/discoveries/auto_paused_recurring_ledger_adjustments"
 require_relative "task_builder/discoveries/runn_mirror"
 require_relative "task_builder/discoveries/unaccepted_payouts"
+require_relative "task_builder/discoveries/course_assignments"
 
 module Stacks
   # Single source of truth for "what needs attention right now" across the system.
@@ -59,11 +60,12 @@ module Stacks
       Discoveries::AutoPausedRecurringLedgerAdjustments,
       Discoveries::RunnMirror,
       Discoveries::UnacceptedPayouts,
+      Discoveries::CourseAssignments,
     ].freeze
 
     # Returns Array<StacksTask> — every open task system-wide.
     def tasks
-      hydrate(cached_descriptors)
+      hydrate(drop_stale_course_assignment_descriptors(cached_descriptors))
     end
 
     # Returns Array<StacksTask> assigned to the given AdminUser. Filters
@@ -71,13 +73,13 @@ module Stacks
     def tasks_for(admin_user)
       return [] unless admin_user&.id
       relevant = cached_descriptors.select { |d| d[:owner_ids].include?(admin_user.id) }
-      hydrate(relevant)
+      hydrate(drop_stale_course_assignment_descriptors(relevant))
     end
 
     # Total count across the system. Cheap — just a length on the cached
     # descriptor array, no hydration.
     def task_count
-      cached_descriptors.length
+      drop_stale_course_assignment_descriptors(cached_descriptors).length
     end
 
     # Pending-task count for one AdminUser. Descriptor filtering only — no
@@ -85,7 +87,8 @@ module Stacks
     # (e.g. the payable-bills page header pills).
     def task_count_for(admin_user)
       return 0 unless admin_user&.id
-      cached_descriptors.count { |d| d[:owner_ids].include?(admin_user.id) }
+      relevant = cached_descriptors.select { |d| d[:owner_ids].include?(admin_user.id) }
+      drop_stale_course_assignment_descriptors(relevant).length
     end
 
     def refresh!
@@ -102,6 +105,27 @@ module Stacks
     end
 
     private
+
+    # Rails.cache is a per-process memory store in production, so clear_cache!
+    # only reaches the worker that handled the write; the others would go on
+    # showing a finished checklist as overdue (and holding the payout pill) for
+    # up to CACHE_TTL. Re-check these descriptors against the database on read.
+    # Removal only: newly due tasks still wait for the next rebuild. Costs
+    # nothing when the given descriptors include no course assignment.
+    def drop_stale_course_assignment_descriptors(descriptors)
+      ids = descriptors.select { |d| d[:subject_type] == "CourseAssignment" }.map { |d| d[:subject_id] }.uniq
+      return descriptors if ids.empty?
+
+      @_live_course_assignment_types ||= {}
+      missing = ids - @_live_course_assignment_types.keys
+      if missing.any?
+        found = Discoveries::CourseAssignments.live_types_by_id(missing)
+        missing.each { |id| @_live_course_assignment_types[id] = found.fetch(id, []) }
+      end
+      descriptors.reject do |d|
+        d[:subject_type] == "CourseAssignment" && !@_live_course_assignment_types[d[:subject_id]].include?(d[:type])
+      end
+    end
 
     def cached_descriptors
       @_cached_descriptors ||= Rails.cache.fetch(CACHE_KEY, expires_in: CACHE_TTL) do
@@ -157,6 +181,7 @@ module Stacks
       "PayCycle" => [:enterprise],
       "ProjectSatisfactionSurvey" => { project_capsule: :project_tracker },
       "Reimbursement" => { ledger: { contributor: :forecast_person } },
+      "CourseAssignment" => [:admin_user, :course],
     }.freeze
 
     def batch_load_subjects(descriptors)

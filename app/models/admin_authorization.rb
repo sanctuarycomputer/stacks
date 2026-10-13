@@ -12,6 +12,16 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
   ].freeze
   OWN_LEDGER_ITEM_DENY = [:update, :destroy].freeze
 
+  # Onboarding courses. Authoring, and every record of someone's progress, is
+  # admin-only: Hugh's rule is that only admins see a person's progress.
+  LEARNING_ADMIN_ONLY = [
+    Course, LearningModule, CourseModule, ModuleStep, QuizQuestion,
+    Qualification, QualificationGrant, QuizAttempt, QuizRetryGrant,
+    StepCompletion, ModuleCompletion,
+  ].freeze
+  # What a person may do on their OWN CourseAssignment.
+  COURSE_ASSIGNMENT_ASSIGNEE_ACTIONS = [:read, :complete_step, :quiz, :submit_quiz, :recheck].freeze
+
   # Narrows index pages for users whose only access comes from
   # project-scoped "lead" grants. Admins and (actual or granted) leads see
   # everything. ActiveAdmin calls this automatically for every index via
@@ -84,6 +94,16 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
     if subject.is_a?(AnalyticsProperty) || subject == AnalyticsProperty
       return user.is_admin? unless action == :read
     end
+
+    # Must sit above the blanket lead grant below, or every past project lead
+    # could read anyone's checklist and sign off or waive it.
+    if subject == CourseAssignment || subject.is_a?(CourseAssignment)
+      return true if user.is_admin?
+      return subject.is_a?(CourseAssignment) &&
+        subject.admin_user_id == user.id &&
+        COURSE_ASSIGNMENT_ASSIGNEE_ACTIONS.include?(action)
+    end
+    return user.is_admin? if LEARNING_ADMIN_ONLY.any? { |klass| subject == klass || subject.is_a?(klass) }
 
     return true if (user.is_admin? || user.can_act_as_lead?)
 

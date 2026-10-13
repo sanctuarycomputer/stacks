@@ -88,6 +88,10 @@
   </div>
 </div>
 
+<%# table_exists? guard: migrations are run by hand after a deploy, and this is
+    everyone's home page. Without it every profile would 500 until then. %>
+<%= render partial: "admin/admin_users/learning" if CourseAssignment.table_exists? %>
+
 <% if current_admin_user.is_admin? && resource.permission_grants.any? %>
   <div class="panel">
     <h3>Permission Grants</h3>

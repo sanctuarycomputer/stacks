@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_10_13_090000) do
+ActiveRecord::Schema.define(version: 2026_10_13_120000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -262,6 +262,51 @@ ActiveRecord::Schema.define(version: 2026_10_13_090000) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.index ["forecast_person_id"], name: "index_contributors_on_forecast_person_id"
+  end
+
+  create_table "course_assignments", force: :cascade do |t|
+    t.bigint "admin_user_id", null: false
+    t.bigint "course_id", null: false
+    t.date "assigned_on", null: false
+    t.date "due_on", null: false
+    t.bigint "assigned_by_id"
+    t.datetime "completed_at"
+    t.datetime "waived_at"
+    t.bigint "waived_by_id"
+    t.text "waive_note"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id", "course_id"], name: "index_course_assignments_on_admin_user_id_and_course_id", unique: true
+    t.index ["admin_user_id"], name: "index_course_assignments_on_admin_user_id"
+    t.index ["assigned_by_id"], name: "index_course_assignments_on_assigned_by_id"
+    t.index ["course_id"], name: "index_course_assignments_on_course_id"
+    t.index ["waived_by_id"], name: "index_course_assignments_on_waived_by_id"
+  end
+
+  create_table "course_modules", force: :cascade do |t|
+    t.bigint "course_id", null: false
+    t.bigint "learning_module_id", null: false
+    t.integer "position", default: 0, null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["course_id", "learning_module_id"], name: "index_course_modules_on_course_id_and_learning_module_id", unique: true
+    t.index ["course_id"], name: "index_course_modules_on_course_id"
+    t.index ["learning_module_id"], name: "index_course_modules_on_learning_module_id"
+  end
+
+  create_table "courses", force: :cascade do |t|
+    t.string "name", null: false
+    t.string "slug", null: false
+    t.string "learner_title", null: false
+    t.text "description"
+    t.integer "grace_period_days", default: 14, null: false
+    t.boolean "auto_assign", default: false, null: false
+    t.bigint "qualification_id"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["name"], name: "index_courses_on_name", unique: true
+    t.index ["qualification_id"], name: "index_courses_on_qualification_id"
+    t.index ["slug"], name: "index_courses_on_slug", unique: true
   end
 
   create_table "deel_contracts", force: :cascade do |t|
@@ -553,6 +598,19 @@ ActiveRecord::Schema.define(version: 2026_10_13_090000) do
     t.check_constraint "(target_margin_override >= (0)::numeric) AND (target_margin_override <= (1)::numeric)", name: "check_target_margin_override_range"
   end
 
+  create_table "learning_modules", force: :cascade do |t|
+    t.string "name", null: false
+    t.string "slug", null: false
+    t.text "summary"
+    t.string "notion_url"
+    t.integer "quiz_pass_percent", default: 80, null: false
+    t.bigint "qualification_id"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["qualification_id"], name: "index_learning_modules_on_qualification_id"
+    t.index ["slug"], name: "index_learning_modules_on_slug", unique: true
+  end
+
   create_table "ledgers", force: :cascade do |t|
     t.bigint "enterprise_id", null: false
     t.bigint "contributor_id", null: false
@@ -674,6 +732,29 @@ ActiveRecord::Schema.define(version: 2026_10_13_090000) do
     t.bigint "contributor_id", null: false
     t.index ["contributor_id"], name: "index_misc_payments_on_contributor_id"
     t.index ["deleted_at"], name: "index_misc_payments_on_deleted_at"
+  end
+
+  create_table "module_completions", force: :cascade do |t|
+    t.bigint "admin_user_id", null: false
+    t.bigint "learning_module_id", null: false
+    t.datetime "completed_at", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id", "learning_module_id"], name: "index_module_completions_on_user_and_module", unique: true
+    t.index ["admin_user_id"], name: "index_module_completions_on_admin_user_id"
+    t.index ["learning_module_id"], name: "index_module_completions_on_learning_module_id"
+  end
+
+  create_table "module_steps", force: :cascade do |t|
+    t.bigint "learning_module_id", null: false
+    t.integer "position", default: 0, null: false
+    t.string "kind", null: false
+    t.string "title", null: false
+    t.string "notion_url"
+    t.string "auto_check_key"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["learning_module_id"], name: "index_module_steps_on_learning_module_id"
   end
 
   create_table "mso_role_periods", force: :cascade do |t|
@@ -1227,11 +1308,71 @@ ActiveRecord::Schema.define(version: 2026_10_13_090000) do
     t.index ["qbo_account_id"], name: "index_qbo_vendors_on_qbo_account_id"
   end
 
+  create_table "qualification_grants", force: :cascade do |t|
+    t.bigint "admin_user_id", null: false
+    t.bigint "qualification_id", null: false
+    t.datetime "granted_at", null: false
+    t.bigint "granted_by_id"
+    t.text "note"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id", "qualification_id"], name: "index_qualification_grants_on_user_and_qualification", unique: true
+    t.index ["admin_user_id"], name: "index_qualification_grants_on_admin_user_id"
+    t.index ["granted_by_id"], name: "index_qualification_grants_on_granted_by_id"
+    t.index ["qualification_id"], name: "index_qualification_grants_on_qualification_id"
+  end
+
+  create_table "qualifications", force: :cascade do |t|
+    t.string "name", null: false
+    t.text "description"
+    t.string "kind", default: "qualification", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["name"], name: "index_qualifications_on_name", unique: true
+  end
+
   create_table "quickbooks_tokens", force: :cascade do |t|
     t.string "token"
     t.string "refresh_token"
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
+  end
+
+  create_table "quiz_attempts", force: :cascade do |t|
+    t.bigint "admin_user_id", null: false
+    t.bigint "learning_module_id", null: false
+    t.jsonb "answers", default: {}, null: false
+    t.integer "correct_count", null: false
+    t.integer "question_count", null: false
+    t.boolean "passed", default: false, null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_quiz_attempts_on_admin_user_id"
+    t.index ["learning_module_id"], name: "index_quiz_attempts_on_learning_module_id"
+  end
+
+  create_table "quiz_questions", force: :cascade do |t|
+    t.bigint "learning_module_id", null: false
+    t.integer "position", default: 0, null: false
+    t.text "prompt", null: false
+    t.jsonb "choices", default: [], null: false
+    t.integer "correct_index", null: false
+    t.text "explanation"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["learning_module_id"], name: "index_quiz_questions_on_learning_module_id"
+  end
+
+  create_table "quiz_retry_grants", force: :cascade do |t|
+    t.bigint "admin_user_id", null: false
+    t.bigint "learning_module_id", null: false
+    t.bigint "granted_by_id"
+    t.text "note"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id"], name: "index_quiz_retry_grants_on_admin_user_id"
+    t.index ["granted_by_id"], name: "index_quiz_retry_grants_on_granted_by_id"
+    t.index ["learning_module_id"], name: "index_quiz_retry_grants_on_learning_module_id"
   end
 
   create_table "recurring_assignment_occurrences", force: :cascade do |t|
@@ -1440,6 +1581,20 @@ ActiveRecord::Schema.define(version: 2026_10_13_090000) do
     t.index ["system_task_id"], name: "index_source_syncs_on_system_task_id"
   end
 
+  create_table "step_completions", force: :cascade do |t|
+    t.bigint "admin_user_id", null: false
+    t.bigint "module_step_id", null: false
+    t.datetime "completed_at", null: false
+    t.bigint "completed_by_id"
+    t.string "source", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["admin_user_id", "module_step_id"], name: "index_step_completions_on_admin_user_id_and_module_step_id", unique: true
+    t.index ["admin_user_id"], name: "index_step_completions_on_admin_user_id"
+    t.index ["completed_by_id"], name: "index_step_completions_on_completed_by_id"
+    t.index ["module_step_id"], name: "index_step_completions_on_module_step_id"
+  end
+
   create_table "studio_memberships", force: :cascade do |t|
     t.bigint "admin_user_id", null: false
     t.bigint "studio_id", null: false
@@ -1623,6 +1778,13 @@ ActiveRecord::Schema.define(version: 2026_10_13_090000) do
   add_foreign_key "contributor_qbo_vendors", "contributors"
   add_foreign_key "contributor_qbo_vendors", "qbo_accounts"
   add_foreign_key "contributor_qbo_vendors", "qbo_vendors"
+  add_foreign_key "course_assignments", "admin_users", column: "assigned_by_id", on_delete: :nullify
+  add_foreign_key "course_assignments", "admin_users", column: "waived_by_id", on_delete: :nullify
+  add_foreign_key "course_assignments", "admin_users", on_delete: :cascade
+  add_foreign_key "course_assignments", "courses"
+  add_foreign_key "course_modules", "courses"
+  add_foreign_key "course_modules", "learning_modules"
+  add_foreign_key "courses", "qualifications"
   add_foreign_key "deel_invoice_adjustments", "deel_contracts", primary_key: "deel_id"
   add_foreign_key "deel_invoice_adjustments", "ledgers"
   add_foreign_key "document_contacts", "contacts"
@@ -1640,6 +1802,7 @@ ActiveRecord::Schema.define(version: 2026_10_13_090000) do
   add_foreign_key "invoice_trackers", "invoice_passes"
   add_foreign_key "invoice_trackers", "qbo_accounts"
   # Composite FK fk_invoice_trackers_qbo_invoice managed by migration (not expressible in schema.rb)
+  add_foreign_key "learning_modules", "qualifications"
   add_foreign_key "ledgers", "contributors"
   add_foreign_key "ledgers", "enterprises"
   add_foreign_key "mailing_list_subscribers", "mailing_lists"
@@ -1654,6 +1817,9 @@ ActiveRecord::Schema.define(version: 2026_10_13_090000) do
   add_foreign_key "mentions", "chunks"
   add_foreign_key "mentions", "contacts"
   add_foreign_key "misc_payments", "contributors"
+  add_foreign_key "module_completions", "admin_users", on_delete: :cascade
+  add_foreign_key "module_completions", "learning_modules"
+  add_foreign_key "module_steps", "learning_modules"
   add_foreign_key "mso_role_periods", "contributors"
   add_foreign_key "okr_period_studios", "okr_periods"
   add_foreign_key "okr_period_studios", "studios"
@@ -1713,6 +1879,15 @@ ActiveRecord::Schema.define(version: 2026_10_13_090000) do
   add_foreign_key "qbo_profit_and_loss_reports", "qbo_accounts"
   add_foreign_key "qbo_tokens", "qbo_accounts"
   add_foreign_key "qbo_vendors", "qbo_accounts"
+  add_foreign_key "qualification_grants", "admin_users", column: "granted_by_id", on_delete: :nullify
+  add_foreign_key "qualification_grants", "admin_users", on_delete: :cascade
+  add_foreign_key "qualification_grants", "qualifications"
+  add_foreign_key "quiz_attempts", "admin_users", on_delete: :cascade
+  add_foreign_key "quiz_attempts", "learning_modules"
+  add_foreign_key "quiz_questions", "learning_modules"
+  add_foreign_key "quiz_retry_grants", "admin_users", column: "granted_by_id", on_delete: :nullify
+  add_foreign_key "quiz_retry_grants", "admin_users", on_delete: :cascade
+  add_foreign_key "quiz_retry_grants", "learning_modules"
   add_foreign_key "recurring_assignment_occurrences", "recurring_assignments"
   add_foreign_key "recurring_ledger_adjustments", "ledgers"
   add_foreign_key "reimbursements", "admin_users", column: "accepted_by_id"
@@ -1726,6 +1901,9 @@ ActiveRecord::Schema.define(version: 2026_10_13_090000) do
   add_foreign_key "scores", "traits"
   add_foreign_key "ship_scans", "documents"
   add_foreign_key "source_syncs", "system_tasks"
+  add_foreign_key "step_completions", "admin_users", column: "completed_by_id", on_delete: :nullify
+  add_foreign_key "step_completions", "admin_users", on_delete: :cascade
+  add_foreign_key "step_completions", "module_steps"
   add_foreign_key "studio_memberships", "admin_users"
   add_foreign_key "studio_memberships", "studios"
   add_foreign_key "survey_free_text_question_responses", "survey_free_text_questions"
