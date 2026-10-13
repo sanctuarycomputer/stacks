@@ -1,0 +1,63 @@
+<%# The project log's module on the Project Tracker page: how many flags, how
+    many wins in the window, and the first flags with why each is one
+    (Stacks::ProjectLog.summary). summary is nil when it could not be read;
+    the module then says so in one line. %>
+<% days = Stacks::ProjectLog::WINS_WINDOW.in_days.to_i %>
+<div class="dashboard-modules table index_table index" id="project_log_module">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>Flags</p>
+      <%= link_to "Open the log →", admin_project_tracker_log_path(tracker) %>
+    </div>
+    <% if summary.nil? %>
+      <div class="module-body">
+        <p>The project log is unavailable right now.</p>
+      </div>
+    <% elsif summary[:empty_reason] %>
+      <div class="module-body">
+        <%= render "admin/log/empty", tracker: tracker, reason: summary[:empty_reason] %>
+      </div>
+    <% else %>
+      <%# height: the factoid body is sized for a module with no header. %>
+      <div class="module-body factoid-parent" style="flex-direction: row; justify-content: space-around; height: auto; padding: 30px 20px;">
+        <div class="factoid">
+          <h2 class="<%= "color-red" if summary[:flags] > 0 %>"><%= summary[:flags] %></h2>
+          <p><%= summary[:flags] == 1 ? "Flag" : "Flags" %></p>
+        </div>
+        <div class="factoid">
+          <h2><%= summary[:wins] %></h2>
+          <p><%= summary[:wins] == 1 ? "Win" : "Wins" %> in the last <%= days %> days</p>
+        </div>
+      </div>
+    <% end %>
+  </div>
+
+  <% if summary && summary[:empty_reason].nil? %>
+    <div class="dashboard-module">
+      <div class="module-body">
+        <% if summary[:latest].empty? %>
+          <p class="log-no-flags">No flags.</p>
+        <% else %>
+          <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+            <tbody>
+              <% summary[:latest].each do |flag| %>
+                <tr id="log_flag_<%= flag.notion_id %>" class="log-flag">
+                  <td class="col" style="white-space: nowrap; width: 1%; vertical-align: top;">
+                    <span class="pill error">Flag</span>
+                  </td>
+                  <td class="col" style="vertical-align: top;">
+                    <strong><%= flag.title %></strong>
+                    <div class="log-flag-why" style="font-size: 13px; color: #5E6469;"><%= flag.why %></div>
+                  </td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+          <% if summary[:flags] > summary[:latest].size %>
+            <p style="margin-top: 12px;"><%= link_to "See all #{summary[:flags]} flags →", admin_project_tracker_log_path(tracker) %></p>
+          <% end %>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+</div>

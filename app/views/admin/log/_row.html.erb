@@ -1,0 +1,40 @@
+<%# One observation, in Wins (prefix "log_win") or All Observations (prefix
+    "log_row"). Everything printed here was written by a model or a person in
+    Notion: it is escaped by ERB, and never passed through raw. The pill names
+    the row's kind (its Notion Type) and its colour is the valence; a row that
+    is a flag, or evidence of one, says so too. %>
+<% o = row.observation %>
+<% pill_class, pill_label, grey = Stacks::ProjectLog.pill_for(row) %>
+<tr id="<%= prefix %>_<%= o.notion_id %>">
+  <td class="col" style="white-space: nowrap; width: 1%; vertical-align: top;">
+    <%# A bare .pill has no background, so the grey is set here. %>
+    <span class="<%= pill_class %>" <% if grey %>style="background-color: #cfd3d7;"<% end %>
+          <% if o.valence_inferred? %>title="Stacksbot has not marked this row yet. Coloured as <%= o.valence.downcase %> because its type is <%= o.type %>."<% end %>><%= pill_label %></span>
+    <% if row.flag %>
+      <div style="margin-top: 4px;"><a href="#flags" class="pill error log-row-flag" style="text-decoration: none;">Flag</a></div>
+    <% end %>
+  </td>
+  <td class="col" style="vertical-align: top;">
+    <strong><%= o.title %></strong>
+    <% if o.dismissed? %><span style="font-size: 13px; color: #5E6469;"> · Dismissed</span><% end %>
+    <% if o.text.present? %>
+      <div style="margin-top: 4px;"><%= o.text %></div>
+    <% end %>
+    <% row.problems.each do |problem| %>
+      <div style="margin-top: 4px; font-size: 13px; color: #5E6469;">
+        Folded into <%= link_to problem.title, problem.notion_url, target: "_blank", rel: "noopener" %>
+        (<%= [problem.severity, problem.status].compact.join(", ").presence || "no severity yet" %>)
+      </div>
+    <% end %>
+  </td>
+  <td class="col" style="white-space: nowrap; vertical-align: top;">
+    <%= o.source || "Unknown source" %>
+    <div style="font-size: 13px; color: #5E6469;"><%= o.observed_at ? o.observed_at.strftime(Stacks::ProjectLog::DATE_FORMAT) : "No date" %></div>
+  </td>
+  <td class="col text-right" style="white-space: nowrap; vertical-align: top;">
+    <% if o.source_url %>
+      <%= link_to "Source ↗", o.source_url, target: "_blank", rel: "noopener", class: "log-source" %><br>
+    <% end %>
+    <%= link_to "In Notion ↗", o.notion_url, target: "_blank", rel: "noopener" %>
+  </td>
+</tr>
