@@ -1,0 +1,43 @@
+<%# app/views/admin/course_assignments/quiz.html.erb
+  @review false: the form (prompts and choices only — never answers).
+  @review true:  read-only, with the correct answer and explanation. Reached
+                 only after a pass, or by an admin.
+%>
+<% assignment = resource %>
+<% mod = @module_state.learning_module %>
+<% questions = mod.quiz_questions.to_a %>
+<div class="panel">
+  <h3>Quick check: <%= mod.name %></h3>
+  <div class="panel_contents">
+    <% if @review %>
+      <% questions.each_with_index do |q, i| %>
+        <p><strong><%= i + 1 %>. <%= q.prompt %></strong></p>
+        <p>Answer: <%= q.choices[q.correct_index] %></p>
+        <% if q.explanation.present? %><p><em><%= q.explanation %></em></p><% end %>
+      <% end %>
+      <p><%= link_to "← Back", admin_course_assignment_path(assignment) %></p>
+    <% else %>
+      <p>
+        Answer every question. You need <%= (mod.quiz_pass_percent * questions.size / 100.0).ceil %> of <%= questions.size %> to pass,
+        and you have <%= pluralize(@module_state.attempts_left, "attempt") %> left. After that an admin has to allow another, so read the pages first.
+      </p>
+      <%= form_tag submit_quiz_admin_course_assignment_path(assignment, learning_module_id: mod.id), method: :post do %>
+        <% questions.each_with_index do |q, i| %>
+          <fieldset style="margin-bottom: 16px;">
+            <p><strong><%= i + 1 %>. <%= q.prompt %></strong></p>
+            <% q.choices.each_with_index.to_a.shuffle.each do |choice, original_index| %>
+              <p>
+                <label>
+                  <%= radio_button_tag "answers[#{q.id}]", original_index, false, required: true %>
+                  <%= choice %>
+                </label>
+              </p>
+            <% end %>
+          </fieldset>
+        <% end %>
+        <%= submit_tag "Submit answers", data: { confirm: "Submit? This uses one attempt." } %>
+        &nbsp;<%= link_to "Not yet", admin_course_assignment_path(assignment) %>
+      <% end %>
+    <% end %>
+  </div>
+</div>
