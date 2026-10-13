@@ -67,16 +67,20 @@ class MsoRolePeriod < ApplicationRecord
     MsoRolePeriod.where(contributor_id: contributor.id)
   end
 
-  # The first day of every month that has an ACCEPTED MSO true-up computed
-  # from this role period. A true-up records the period's id in its
-  # blueprint. Until someone accepts, a month is recomputed on every sync, so
-  # a mistyped tier is corrected by editing the period and syncing again.
+  # The first day of every month this role period covers (as saved) in which
+  # somebody has ACCEPTED an MSO true-up. Any executive's: the cap ties the
+  # month's lines together, and a founder owed nothing has no row of their
+  # own. Until someone accepts, a month is recomputed on every sync, so a
+  # mistyped tier is corrected by editing the period and syncing again.
   def months_with_trueups
     return [] if new_record? || !MsoTrueup.schema_ready?
 
-    MsoTrueup.where.not(accepted_at: nil).joins(:periodic_report)
-      .where("mso_trueups.blueprint @> ?", { mso_role_period_id: id }.to_json)
-      .distinct.pluck("periodic_reports.period_starts_at").sort
+    from = started_at_in_database
+    through = ended_at_in_database
+    reports = PeriodicReport.month.where("period_starts_at >= ?", from)
+    reports = reports.where("period_starts_at <= ?", through) if through
+    reports.where(id: MsoTrueup.where.not(accepted_at: nil).select(:periodic_report_id))
+      .order(:period_starts_at).pluck(:period_starts_at)
   end
 
   # Once someone has accepted a true-up from this period, what the period
@@ -89,7 +93,7 @@ class MsoRolePeriod < ApplicationRecord
     return if months.empty?
 
     span = "#{months.first.strftime('%B %Y')} to #{months.last.strftime('%B %Y')}"
-    advice = "Accepted MSO true-ups exist for this role period (#{span}). To change someone's tier, " \
+    advice = "Accepted MSO true-ups exist in this role period's months (#{span}). To change someone's tier, " \
              "end this period and start a new one."
     errors.add(:tier, advice) if tier_changed?
     errors.add(:contributor, advice) if contributor_id_changed?
@@ -106,7 +110,7 @@ class MsoRolePeriod < ApplicationRecord
     months = months_with_trueups
     return if months.empty?
 
-    errors.add(:base, "Accepted MSO true-ups exist for this role period " \
+    errors.add(:base, "Accepted MSO true-ups exist in this role period's months " \
                       "(#{months.map { |month| month.strftime('%B %Y') }.join(', ')}), so it cannot be deleted. " \
                       "Give it an end date instead.")
     throw :abort

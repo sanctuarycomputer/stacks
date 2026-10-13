@@ -1218,8 +1218,16 @@ Where §7–§13b differ from this section, **this section governs**.
   page; `MsoTrueup` stays out of the nightly `stacks:sync_contributor_qbo_bills`
   task. `sync_qbo_bill!` refuses unless `payable?`, and says so when the
   contributor has no garden3d vendor or the MSO account is not configured.
-  The first-bill recomputation, bill-gone handling, `remove_qbo_bill!` and the
-  read-only bill mirror refresh are removed.
+  The first-bill recomputation, bill-gone handling and `remove_qbo_bill!` are
+  removed. A small read-only refresh stays in the nightly garden3d step: it
+  re-reads each unpaid MSO bill so a paid one is seen as paid (other ledger
+  items learn that from the nightly bill sync, which MSO true-ups are kept out
+  of), and detaches a bill that was deleted in QuickBooks. It writes nothing
+  to QuickBooks.
+- **A billed month stays settled**: once any true-up on a report has a
+  QuickBooks bill, no accepted true-up on that report can be un-accepted.
+- **A role period** cannot be changed or deleted for a month it covers in
+  which somebody has accepted a true-up. Before that it is freely editable.
 - **Reports**: the nightly garden3d step makes sure a monthly report exists for
   every month from `InvoicePass::INTERCOMPANY_START` through last month
   (database only). **Syncing is an admin's click** on the report, as for profit

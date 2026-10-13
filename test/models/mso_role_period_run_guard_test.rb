@@ -23,8 +23,8 @@ class MsoRolePeriodRunGuardTest < ActiveSupport::TestCase
 
   test "until a true-up is accepted, the role period it was computed from can be changed or deleted" do
     exec = mso_person("guard-unsettled")
-    role = mso_role(exec, tier: :chief, started_at: Date.new(2091, 1, 1))
-    mso_trueup(mso_report(MARCH), role, garden3d_ledger(exec), amount: "100")
+    role = mso_role(exec, tier: :chief, started_at: Date.new(2092, 1, 1))
+    mso_trueup(mso_report(Date.new(2092, 3, 1)), role, garden3d_ledger(exec), amount: "100")
 
     assert_equal [], role.months_with_trueups
     assert role.update(tier: :principal)
@@ -38,9 +38,19 @@ class MsoRolePeriodRunGuardTest < ActiveSupport::TestCase
     assert_match(/March 2091/, @role.errors.full_messages.to_sentence)
     assert MsoRolePeriod.exists?(@role.id)
 
-    unused = mso_role(mso_person("guard-unused"), started_at: Date.new(2091, 1, 1))
+    unused = mso_role(mso_person("guard-unused"), started_at: Date.new(2092, 1, 1))
     assert unused.destroy
     assert_not MsoRolePeriod.exists?(unused.id)
+  end
+
+  # The founder out-earns the target and has no true-up row; the others accept.
+  test "a period with no true-up of its own is still held by a month somebody else accepted" do
+    rowless = mso_role(mso_person("guard-rowless"), started_at: Date.new(2091, 1, 1))
+
+    assert_equal [MARCH, MAY], rowless.months_with_trueups
+    assert_equal false, rowless.destroy
+    assert_not MsoRolePeriod.find(rowless.id).update(started_at: Date.new(2091, 4, 1))
+    assert MsoRolePeriod.find(rowless.id).update(ended_at: Date.new(2091, 5, 31))
   end
 
   test "its tier, person, start and end cannot be changed so as to alter a month that has a true-up" do

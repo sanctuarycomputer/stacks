@@ -147,8 +147,25 @@ class MsoTrueupTest < ActiveSupport::TestCase
     assert trueup.reload.accepted?
   end
 
-  # A sync that changed a billed true-up's amount cleared its acceptance. It
-  # has to be acceptable again, or the month could never settle.
+  test "once another executive's true-up for the month has a bill, nobody on it can un-accept" do
+    mine = mso_trueup(@report, @role, @ledger, amount: "1000", accepted: true)
+    other = mso_person("lock-sibling")
+    theirs = mso_trueup(@report, mso_role(other), garden3d_ledger(other), amount: "500", accepted: true)
+    assert_not MsoTrueup.find(mine.id).locked?, "sanity: no bill on the month yet"
+
+    theirs.update_columns(qbo_bill_id: "78")
+
+    assert MsoTrueup.find(mine.id).locked?
+    assert_raises(MsoTrueup::Locked) { MsoTrueup.find(mine.id).toggle_acceptance! }
+    assert mine.reload.accepted?
+
+    # A bill on another month's report locks nothing here.
+    later = mso_trueup(mso_report(@report.period_starts_at.next_month), @role, @ledger, amount: "1000", accepted: true)
+    assert_not later.locked?
+  end
+
+  # A true-up can be billed and unaccepted only by hand; it has to be
+  # acceptable, or the month could never settle.
   test "an unaccepted true-up that has a bill can still be accepted" do
     trueup = mso_trueup(@report, @role, @ledger, amount: "1000")
     trueup.update_columns(qbo_bill_id: "77")

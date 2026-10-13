@@ -10,7 +10,8 @@ ActiveAdmin.register MsoRolePeriod do
       super.includes(contributor: :forecast_person)
     end
 
-    # A role period a run has used refuses to be destroyed. Say why.
+    # A role period covering a month with an accepted true-up refuses to be
+    # destroyed. Say why.
     def destroy
       destroy! do |_success, failure|
         failure.html do

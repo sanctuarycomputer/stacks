@@ -3,7 +3,8 @@ module Mso
   #
   #   Mso::MonthlyRun.compute(month: Date.new(2026, 8, 1))
   #
-  # It WRITES NOTHING and calls nothing outside the database.
+  # It WRITES NOTHING. (Its one call outside the database is a QuickBooks
+  # READ: garden3d's P&L for the month, fetched when none is stored.)
   # PeriodicReport#sync_mso_trueups! is what turns the answer into MsoTrueups,
   # on an admin's click, and records any Refused raised here as the report's
   # notification.

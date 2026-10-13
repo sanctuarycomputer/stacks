@@ -103,6 +103,25 @@ class AdminMsoCompensationTest < ActionDispatch::IntegrationTest
     assert_match(/April 2094 has not ended/, response.body)
   end
 
+  # Migrations are run by hand after the deploy, and the nightly job makes
+  # monthly reports as soon as the code is live.
+  test "before the true-ups table exists, monthly pages render and the sync says to migrate" do
+    MsoTrueup.stubs(:schema_ready?).returns(false)
+    PeriodicReport.any_instance.expects(:mso_trueups).never
+    PeriodicReport.any_instance.expects(:sync_mso_trueups!).never
+    sign_in @admin
+
+    get admin_periodic_report_path(@report)
+    assert_response :success
+
+    get admin_periodic_reports_path(scope: "monthly")
+    assert_response :success
+
+    post sync_mso_trueups_admin_periodic_report_path(@report)
+    assert_redirected_to admin_periodic_report_path(@report)
+    assert_match(/Run the pending migrations/, flash[:alert])
+  end
+
   test "the reports index lists quarters by default and months on their own tab" do
     quarter = PeriodicReport.create!(period_gradation: :quarter, period_starts_at: Date.new(2094, 1, 1),
                                      period_label: "Q1, 2094")

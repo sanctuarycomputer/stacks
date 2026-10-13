@@ -372,6 +372,12 @@ class PeriodicReport < ApplicationRecord
     mso_trueups.all?(&:accepted?)
   end
 
+  # For pages: migrations are run by hand after the deploy, and the nightly
+  # job makes monthly reports as soon as the code is live.
+  def mso_trueups_if_ready
+    MsoTrueup.schema_ready? ? mso_trueups : MsoTrueup.none
+  end
+
   # Has garden3d's management fee for this month been collected? Half of
   # MsoTrueup#payable?. Reads the stored invoice mirrors only; no pass for the
   # month is "no". Memoized: a ledger page asks once per true-up.

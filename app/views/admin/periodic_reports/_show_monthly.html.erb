@@ -1,5 +1,5 @@
 <% blueprint = periodic_report.blueprint || {} %>
-<% mso_trueups = periodic_report.mso_trueups.includes(ledger: { contributor: :forecast_person }).order(:id).to_a %>
+<% mso_trueups = periodic_report.mso_trueups_if_ready.includes(ledger: { contributor: :forecast_person }).order(:id).to_a %>
 
 <div class="title_bar" id="title_bar" style="padding: 0px 0px 20px 0px;">
   <div id="titlebar_left">

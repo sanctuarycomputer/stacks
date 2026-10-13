@@ -29,7 +29,7 @@ ActiveAdmin.register PeriodicReport do
 
     def require_admin_to_sync_profit_shares
       return if current_admin_user.is_admin?
-      redirect_to admin_periodic_report_path(params[:id]), alert: "Only admins can sync profit shares."
+      redirect_to admin_periodic_report_path(params[:id]), alert: "Only admins can sync a report."
     end
 
     # Profit shares hang off a quarterly report, MSO true-ups off a monthly one.
@@ -68,6 +68,10 @@ ActiveAdmin.register PeriodicReport do
   end
 
   member_action :sync_mso_trueups, method: :post do
+    unless MsoTrueup.schema_ready?
+      return redirect_to admin_periodic_report_path(resource),
+        alert: "The MSO true-ups table is not on this database yet. Run the pending migrations first."
+    end
     skipped = resource.mso_trueups.any? && resource.all_mso_trueups_accepted?
     resource.sync_mso_trueups!
     resource.reload
@@ -83,7 +87,7 @@ ActiveAdmin.register PeriodicReport do
   index do
     column :period_label
     column :status do |resource|
-      items = resource.month? ? resource.mso_trueups : resource.profit_shares
+      items = resource.month? ? resource.mso_trueups_if_ready.to_a : resource.profit_shares
       status =
         if items.empty?
           resource.notification.present? ? "error" : "not_generated"

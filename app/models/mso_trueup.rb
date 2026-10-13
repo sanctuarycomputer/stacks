@@ -70,14 +70,16 @@ class MsoTrueup < ApplicationRecord
     accepted_at.present?
   end
 
-  # Accepted and billed: the amount is in QuickBooks, so the acceptance stays.
+  # Accepted, and the month has a QuickBooks bill (this true-up's or another
+  # executive's): an amount is in QuickBooks, so the month stays settled.
+  # Un-accepting would let the next sync rewrite a billed amount.
   def locked?
-    accepted? && qbo_bill_id.present?
+    accepted? && periodic_report.mso_trueups.where.not(qbo_bill_id: nil).exists?
   end
 
   def toggle_acceptance!
     if locked?
-      raise Locked, "This true-up has a QuickBooks bill, so it can no longer be un-accepted."
+      raise Locked, "A true-up for this month has a QuickBooks bill, so it can no longer be un-accepted."
     end
 
     update!(accepted_at: accepted? ? nil : DateTime.now)
