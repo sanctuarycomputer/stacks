@@ -40,9 +40,13 @@ module Stacks
           # rows are soft-deleted still surfaces a migration task that the
           # readiness check then declares trivial (visible_items is empty),
           # spamming the Tasks dashboard.
-          PAYABLE_TABLES.map do |t|
+          payable_tables.map do |t|
             "SELECT 1 FROM #{t} WHERE #{t}.ledger_id = ledgers.id AND #{t}.deleted_at IS NULL"
           end.join(" UNION ALL ")
+        end
+
+        def payable_tables
+          MsoTrueup.schema_ready? ? PAYABLE_TABLES + ["mso_trueups"] : PAYABLE_TABLES
         end
       end
     end

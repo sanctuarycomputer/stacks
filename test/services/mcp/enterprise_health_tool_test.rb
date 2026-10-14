@@ -131,4 +131,52 @@ class Mcp::EnterpriseHealthToolTest < ActiveSupport::TestCase
     without = mcp_payload(Mcp::GetEnterpriseHealthTool.call(entity: 'Index Space, LLC', server_context: {}))
     refute without.key?('raw_rows'), 'raw_rows must be opt-in'
   end
+
+  # HR and compensation stay walled, as in the financial outlook: an MSO
+  # compensation account's row is every executive's pay for the month.
+  test 'raw_rows never carries a people-cost account, by name or by amount; income and ordinary costs stay' do
+    ent = enterprise!
+    qa = QboAccount.create!(enterprise: ent, client_id: 'c', client_secret: 's', realm_id: "r#{SecureRandom.hex(3)}")
+    rows = [
+      ['Income', nil],
+      ['4000 Consulting Income', '900.0'], # "consult" is a people cost only as a cost
+      ['4100 Management Fee Income', '100.0'],
+      ['Total Income', '1000.0'],
+      ['Expenses', nil],
+      ['6100 Software and Subscriptions', '50.0'],
+      ['6200 MSO Compensation', '43000.11'],
+      ['6000 Payroll Expenses', nil],
+      ['Processing fees', '5.22'],
+      ['Total 6000 Payroll Expenses', '5.22'],
+      # QuickBooks sometimes totals an account that also posts: its children go with it.
+      ['6300 Executive Pay', '10.33'],
+      ['Something innocuous', '4.44'],
+      ['Total 6300 Executive Pay', '14.77'],
+      ['6400 Rent', '100.0'],
+      ['Total Expenses', '43170.1'],
+      ['Net Income', '-42170.1'],
+      # Outside any section Stacks recognises: still filtered.
+      ['Officer Compensation', '77.77'],
+    ]
+    QboProfitAndLossReport.create!(
+      qbo_account: qa, starts_at: Date.new(2026, 6, 1), ends_at: Date.new(2026, 6, 30),
+      data: { accrual: { rows: rows }, cash: { rows: [] } },
+    )
+
+    result = Mcp::GetEnterpriseHealthTool.call(entity: 'Index Space, LLC', raw_rows: true, server_context: {})
+    raw = mcp_payload(result)['raw_rows']
+
+    assert_equal(
+      [
+        ['Income', nil], ['4000 Consulting Income', '900.0'], ['4100 Management Fee Income', '100.0'],
+        ['Total Income', '1000.0'], ['Expenses', nil], ['6100 Software and Subscriptions', '50.0'],
+        ['6400 Rent', '100.0'], ['Total Expenses', '43170.1'], ['Net Income', '-42170.1']
+      ],
+      raw['rows'],
+    )
+    json = result.content.first[:text]
+    ['MSO Compensation', '43000.11', 'Payroll', '5.22', 'Executive Pay', '10.33', '4.44', '14.77', 'Officer',
+     '77.77'].each { |hidden| refute_includes json, hidden }
+    assert_match(/people-cost/i, Mcp::GetEnterpriseHealthTool.description)
+  end
 end

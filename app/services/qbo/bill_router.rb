@@ -9,6 +9,10 @@ module Qbo
   #   1. Routing  (#concept_lines)  — pure: item -> [{amount, description, concept}]
   #   2. Resolution (#resolve)      — concept -> concrete QBO account by GL code
   class BillRouter
+    # A concept has no account in the enterprise's chart. A RuntimeError, as
+    # it was when this was a bare `raise`, so nothing that rescued it stops.
+    class UnmappedAccount < RuntimeError; end
+
     # Concepts whose missing account falls back to :subcontractor_default rather
     # than raising. Everything else (subcontractor_default, marketing, salaries,
     # profit_share_liability) raises when absent — silently misrouting payroll or
@@ -62,6 +66,12 @@ module Qbo
         bonuses:                "6100",
         commission:             "6100",
         profit_share_liability: "6100",
+        # MSO executive compensation (MsoTrueup). Finance has not created the
+        # account yet. "____" matches no account, and :mso_compensation is NOT
+        # in FALLBACKABLE_CONCEPTS, so routing RAISES rather than filing
+        # executive pay under 6100. Replace with the account's acct_num once
+        # it exists. No other enterprise has this key: nil raises the same way.
+        mso_compensation:       "____",
         subcontractor_by_studio: {},
       },
       usb_club: {
@@ -110,12 +120,12 @@ module Qbo
         fallback = find_account(fallback_gl)
         return fallback if fallback
 
-        raise "Qbo::BillRouter: no account for concept #{concept.inspect} " \
+        raise UnmappedAccount, "Qbo::BillRouter: no account for concept #{concept.inspect} " \
               "(gl #{gl.inspect}) and fallback :subcontractor_default " \
               "(gl #{fallback_gl.inspect}) in enterprise #{enterprise.name.inspect}"
       end
 
-      raise "Qbo::BillRouter: no account for concept #{concept.inspect} " \
+      raise UnmappedAccount, "Qbo::BillRouter: no account for concept #{concept.inspect} " \
             "(gl #{gl.inspect}) in enterprise #{enterprise.name.inspect}"
     end
 
@@ -127,6 +137,10 @@ module Qbo
         [single_line(:profit_share_liability)]
       when ContributorPayout
         payout_concept_lines
+      when MsoTrueup
+        # Must be named here: anything unnamed falls to :subcontractor below,
+        # which is fallbackable and would land on the enterprise's catch-all.
+        [single_line(:mso_compensation)]
       else # Trueup, ContributorAdjustment
         [single_line(:subcontractor)]
       end

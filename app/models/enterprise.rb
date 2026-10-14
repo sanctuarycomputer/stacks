@@ -71,6 +71,13 @@ class Enterprise < ApplicationRecord
     Thread.current[:garden3d_enterprise] ||= Enterprise.find_by!(name: GARDEN3D_NAME)
   end
 
+  # garden3d's id, or nil on a database that has no garden3d. Never raises.
+  # Shares .garden3d's memo, so it costs a query only until garden3d has been
+  # found once on this thread.
+  def self.garden3d_id
+    (Thread.current[:garden3d_enterprise] ||= Enterprise.find_by(name: GARDEN3D_NAME))&.id
+  end
+
   def is_index?
     name == INDEX_SPACE_NAME
   end
@@ -83,11 +90,38 @@ class Enterprise < ApplicationRecord
   # Add new per-enterprise behaviors here rather than as new rake steps.
   def daily_tasks
     Stacks::Optix.deactivate_inactive_members! if is_index?
+    return unless is_garden3d?
+
+    # Each step on its own: one that raises is reported and the rest still
+    # run. Nothing here computes a true-up, pays anyone, or calls QuickBooks.
+
     # Database only: garden3d's invoice pass and trackers for each month it
     # has none. Nothing here may write to QuickBooks; an admin makes the
     # invoices by hand.
-    InvoicePass.make_intercompany_passes! if is_garden3d?
+    garden3d_nightly_step("invoice_passes") { InvoicePass.make_intercompany_passes! }
+    # Database only: a monthly report for each month that has none. Nothing
+    # nightly computes a true-up; an admin syncs them from the report.
+    garden3d_nightly_step("monthly_reports") { PeriodicReport.ensure_monthly_reports_exist! }
+    # QuickBooks READS only: re-read MSO bills that already exist, so a paid
+    # one is seen as paid. Cannot create or change a bill.
+    garden3d_nightly_step("bill_mirrors") do
+      failures = MsoTrueup.refresh_bill_mirrors!
+      if failures.any?
+        raise "bill mirror refresh failed for " +
+              failures.map { |id, error| "MsoTrueup #{id} (#{error})" }.join("; ").truncate(2000)
+      end
+    end
   end
+
+  # As stacks:daily_enterprise_tasks reports its own steps: the log and Sentry.
+  def garden3d_nightly_step(name)
+    yield
+  rescue StandardError => e
+    Rails.logger.error("[mso] nightly garden3d step #{name} failed: #{e.class}: #{e.message}")
+    Sentry.capture_exception(e) if defined?(Sentry)
+    nil
+  end
+  private :garden3d_nightly_step
 
   def discover_verticals
     qbo_account.qbo_profit_and_loss_reports.reduce([]) do |acc, qbo_profit_and_loss_report|

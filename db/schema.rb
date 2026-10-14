@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_10_13_100000) do
+ActiveRecord::Schema.define(version: 2026_10_14_000001) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -686,6 +686,23 @@ ActiveRecord::Schema.define(version: 2026_10_13_100000) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.index ["contributor_id"], name: "index_mso_role_periods_on_contributor_id"
+  end
+
+  create_table "mso_trueups", force: :cascade do |t|
+    t.bigint "periodic_report_id", null: false
+    t.bigint "ledger_id", null: false
+    t.decimal "amount", precision: 12, scale: 2, null: false
+    t.jsonb "blueprint", default: {}, null: false
+    t.text "description", null: false
+    t.string "qbo_bill_id"
+    t.datetime "accepted_at"
+    t.datetime "deleted_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["deleted_at"], name: "index_mso_trueups_on_deleted_at"
+    t.index ["ledger_id"], name: "index_mso_trueups_on_ledger_id"
+    t.index ["periodic_report_id", "ledger_id"], name: "index_mso_trueups_on_periodic_report_id_and_ledger_id", unique: true
+    t.index ["periodic_report_id"], name: "index_mso_trueups_on_periodic_report_id"
   end
 
   create_table "notifications", force: :cascade do |t|
@@ -1661,6 +1678,8 @@ ActiveRecord::Schema.define(version: 2026_10_13_100000) do
   add_foreign_key "mentions", "contacts"
   add_foreign_key "misc_payments", "contributors"
   add_foreign_key "mso_role_periods", "contributors"
+  add_foreign_key "mso_trueups", "ledgers"
+  add_foreign_key "mso_trueups", "periodic_reports"
   add_foreign_key "okr_period_studios", "okr_periods"
   add_foreign_key "okr_period_studios", "studios"
   add_foreign_key "okr_periods", "okrs"

@@ -6,7 +6,11 @@ module Mcp
                 'per business vertical. Figures are as of the nightly sync. For the All ' \
                 'vertical, net_revenue and profit_margin are operating figures (revenue - ' \
                 'COGS - expenses) that exclude below-the-line Other Income/Expense, so ' \
-                "they may differ from QBO's Net Income."
+                "they may differ from QBO's Net Income. raw_rows leaves out every people-cost " \
+                'account (payroll, benefits, contractors, payments to people, executive ' \
+                'compensation, intercompany), the same accounts get_financial_outlook leaves ' \
+                'out of spend; income rows and section totals are kept, so the rows shown do ' \
+                'not add up to the totals.'
     GRADATIONS = Studio::SNAPSHOT_GRADATIONS.map(&:to_s).freeze
 
     input_schema(
@@ -16,7 +20,7 @@ module Mcp
         vertical: { type: 'string', description: 'A vertical tag (see available_verticals in output); default All' },
         accounting_method: Mcp::AccountingBasis::SCHEMA,
         periods: { type: 'integer', description: 'How many trailing periods, default 6, max 24' },
-        raw_rows: { type: 'boolean', description: 'Include the raw cached P&L rows for the most recent period (label/value pairs). Default false.' },
+        raw_rows: { type: 'boolean', description: 'Include the raw cached P&L rows for the most recent period (label/value pairs), less the people-cost accounts. Default false.' },
       },
       required: ['entity']
     )
@@ -106,7 +110,10 @@ module Mcp
       {
         starts_at: report.starts_at,
         ends_at: report.ends_at,
-        rows: Array(report.data.dig(accounting_method, 'rows')),
+        # HR and compensation stay walled, as in the financial outlook: no
+        # payroll, contractor, payout, intercompany or MSO compensation
+        # account, by name or by amount.
+        rows: Stacks::PeopleCostAccounts.rows_without_people_costs(report.data.dig(accounting_method, 'rows')),
       }
     end
   end

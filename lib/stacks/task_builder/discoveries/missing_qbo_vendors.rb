@@ -43,9 +43,15 @@ module Stacks
         # at least one payable row attached (avoids checking every empty
         # ledger across the org).
         def any_payable_subquery
-          PAYABLE_TABLES.map do |t|
+          payable_tables.map do |t|
             "SELECT 1 FROM #{t} WHERE #{t}.ledger_id = ledgers.id"
           end.join(" UNION ALL ")
+        end
+
+        # An MSO true-up needs a vendor in garden3d's QuickBooks before it can
+        # become a bill. Guarded: the table arrives by hand after the deploy.
+        def payable_tables
+          MsoTrueup.schema_ready? ? PAYABLE_TABLES + ["mso_trueups"] : PAYABLE_TABLES
         end
       end
     end

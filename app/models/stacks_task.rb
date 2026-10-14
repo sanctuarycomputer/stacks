@@ -58,6 +58,7 @@ class StacksTask
     legacy_ledger_needs_qbo_migration: "Legacy ledger needs migration to QBO-bound",
     auto_paused_recurring_on_qbo_bound: "Recurring deduction auto-paused on QBO-bound ledger (would never deduct)",
     unaccepted_payouts: "Contributor has unaccepted payout(s)",
+    unaccepted_mso_trueup: "Contributor has an MSO true-up to accept",
 
     # Runn mirror / projection issues
     runn_project_not_linked_to_project_tracker: "Runn project has forward hours but no project tracker (cannot be projected)",

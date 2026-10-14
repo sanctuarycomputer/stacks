@@ -21,6 +21,7 @@ class Ledger < ApplicationRecord
   has_many :profit_shares
   has_many :deel_invoice_adjustments
   has_many :pay_stubs
+  has_many :mso_trueups
   has_many :recurring_ledger_adjustments, dependent: :destroy
 
   validates :enterprise_id, uniqueness: { scope: :contributor_id }
@@ -148,7 +149,8 @@ class Ledger < ApplicationRecord
       sorted = items_in_period.sort_by { |li| li.effective_on_for_display }.reverse
 
       total_income = sorted.sum do |li|
-        (li.is_a?(ContributorPayout) || li.is_a?(Trueup) || li.is_a?(PayStub)) ? li.amount.to_f : 0
+        income = li.is_a?(ContributorPayout) || li.is_a?(Trueup) || li.is_a?(PayStub) || li.is_a?(MsoTrueup)
+        income ? li.amount.to_f : 0
       end
 
       acc[:all] = acc[:all] + sorted
@@ -180,13 +182,15 @@ class Ledger < ApplicationRecord
       profit_shares.to_a,
       deel_invoice_adjustments.to_a,
       pay_stubs.to_a,
+      (MsoTrueup.schema_ready? ? mso_trueups.to_a : []),
     ].flatten
   end
 
   # qbo_bound mode: drop audit-only rows. The remaining items are then split
   # by `qbo_bound_open_items` (paid bills drop too) and bucketed by `payable?`.
   def qbo_bound_visible_items
-    visible_items.reject { |li| self.class.audit_only_under_qbo_bound?(li) }
+    visible_items
+      .reject { |li| self.class.audit_only_under_qbo_bound?(li) }
   end
 
   # qbo_bound mode: items that should still appear somewhere (balance or
@@ -195,7 +199,8 @@ class Ledger < ApplicationRecord
   # show up in Stacks at all. Partial-paid bills survive (their remaining
   # balance is the contribution).
   def qbo_bound_open_items
-    qbo_bound_visible_items.reject { |li| li.try(:qbo_bill)&.paid? }
+    qbo_bound_visible_items
+      .reject { |li| li.try(:qbo_bill)&.paid? }
   end
 
   # qbo_bound mode: per-item dollar amount. Uses the QBO bill's remaining
@@ -218,9 +223,11 @@ class Ledger < ApplicationRecord
 
   def sum_for_bucket(payable:)
     if legacy?
-      visible_items.select { |li| li.payable? == payable }.sum(&:signed_amount)
+      visible_items
+        .select { |li| li.payable? == payable }.sum(&:signed_amount)
     elsif qbo_bound?
-      qbo_bound_open_items.select { |li| li.payable? == payable }.sum { |li| qbo_bound_contribution(li) }
+      qbo_bound_open_items
+        .select { |li| li.payable? == payable }.sum { |li| qbo_bound_contribution(li) }
     else
       raise "Unknown ledger mode: #{mode.inspect}"
     end
@@ -242,6 +249,7 @@ class Ledger < ApplicationRecord
       ProfitShare.with_deleted.includes(:periodic_report).where(ledger_id: id).to_a,
       DeelInvoiceAdjustment.with_deleted.where(ledger_id: id).to_a,
       PayStub.with_deleted.includes(:pay_cycle).where(ledger_id: id).to_a,
+      (MsoTrueup.schema_ready? ? MsoTrueup.with_deleted.includes(periodic_report: :mso_trueups).where(ledger_id: id).to_a : []),
     ].flatten
   end
 end

@@ -242,6 +242,13 @@ class QboAccount < ApplicationRecord
       ProfitShare.with_deleted.where(qbo_bill_id: deleted_qbo_ids).update_all(qbo_bill_id: nil)
       PayStub.with_deleted.where(qbo_bill_id: deleted_qbo_ids).update_all(qbo_bill_id: nil)
       Reimbursement.with_deleted.where(qbo_bill_id: deleted_qbo_ids).update_all(qbo_bill_id: nil)
+      if MsoTrueup.schema_ready?
+        # Scoped to this account's own ledgers: a bill id is unique only
+        # within one QuickBooks account.
+        MsoTrueup.with_deleted
+          .where(qbo_bill_id: deleted_qbo_ids, ledger_id: Ledger.where(enterprise_id: enterprise_id).select(:id))
+          .update_all(qbo_bill_id: nil)
+      end
     end
     deleted_bills.delete_all
   end
@@ -264,6 +271,20 @@ class QboAccount < ApplicationRecord
         klass = PayStub
       when "RB"
         klass = Reimbursement
+      when "MT"
+        # Migrations are run by hand after the deploy: with no table there is
+        # no row to ask, and "nobody answers for this bill" is not known.
+        next unless MsoTrueup.schema_ready?
+        # An MSO bill with any payment is never deleted from here, whatever
+        # became of its row: that would orphan the BillPayment (as
+        # SyncsAsQboBill#detach_and_destroy_qbo_bill refuses to). `b` was read
+        # from QuickBooks a moment ago.
+        if b.balance.present? && b.total.present? && b.balance.to_f < b.total.to_f
+          Rails.logger.warn("[cleanup_orphaned_qbo_objects] qbo_account=#{id}: leaving MSO bill #{b.id} " \
+                            "(#{b.doc_number}) alone, it has a payment")
+          next
+        end
+        klass = MsoTrueup
       when "ContributorPayout", /^Contri/
         klass = ContributorPayout
       when "Trueup"
@@ -285,7 +306,10 @@ class QboAccount < ApplicationRecord
           # never actually fired (the local QboBill row and the remote bill
           # both stuck around as orphans).
           bill = deleted_obj.qbo_bill
-          deleted_obj.update(qbo_bill_id: nil)
+          # update_all, not `deleted_obj.update`: acts_as_paranoid makes a
+          # soft-deleted row `destroyed?`, and Rails refuses to save one
+          # (`update` returns false, no error), so the id was never nulled.
+          klass.with_deleted.where(id: deleted_obj.id).update_all(qbo_bill_id: nil)
           bill.destroy! if bill.present?
           next
         end
@@ -298,7 +322,7 @@ class QboAccount < ApplicationRecord
       # enterprise → qbo_account) is critical — host.qbo_bill_id is just a
       # string, so without the scope a host in a DIFFERENT QBO realm with the
       # same id would falsely satisfy `exists?` and leak this orphan forever.
-      next if Money::PayableQboBills::HOST_KLASSES.any? do |k|
+      next if Money::PayableQboBills.host_klasses.any? do |k|
         k.with_deleted
           .joins(ledger: { enterprise: :qbo_account })
           .where(qbo_accounts: { id: id })

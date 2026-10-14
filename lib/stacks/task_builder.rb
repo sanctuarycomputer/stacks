@@ -14,6 +14,7 @@ require_relative "task_builder/discoveries/legacy_ledgers_pending_qbo_migration"
 require_relative "task_builder/discoveries/auto_paused_recurring_ledger_adjustments"
 require_relative "task_builder/discoveries/runn_mirror"
 require_relative "task_builder/discoveries/unaccepted_payouts"
+require_relative "task_builder/discoveries/unaccepted_mso_trueups"
 
 module Stacks
   # Single source of truth for "what needs attention right now" across the system.
@@ -59,6 +60,7 @@ module Stacks
       Discoveries::AutoPausedRecurringLedgerAdjustments,
       Discoveries::RunnMirror,
       Discoveries::UnacceptedPayouts,
+      Discoveries::UnacceptedMsoTrueups,
     ].freeze
 
     # Returns Array<StacksTask> — every open task system-wide.

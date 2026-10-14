@@ -316,7 +316,10 @@ ActiveAdmin.register Contributor do
     # the items list rendered below (which IS scoped to current_ledger).
     balance =
       if view_mode == :ledger && current_ledger
-        { balance: current_ledger.balance.to_f, unsettled: current_ledger.unsettled.to_f }
+        {
+          balance: current_ledger.balance.to_f,
+          unsettled: current_ledger.unsettled.to_f,
+        }
       else
         resource.new_deal_balance
       end

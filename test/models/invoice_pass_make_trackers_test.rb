@@ -217,10 +217,43 @@ class InvoicePassMakeTrackersTest < ActiveSupport::TestCase
     assert_equal 2, trackers(InvoicePass.find_by!(enterprise: garden3d, start_of_month: START)).size
   end
 
-  test "garden3d's daily tasks run the nightly step, and no other enterprise's do" do
+  test "garden3d's daily tasks run the nightly steps, and no other enterprise's do" do
     InvoicePass.expects(:make_intercompany_passes!).once
+    PeriodicReport.expects(:ensure_monthly_reports_exist!).once
 
     garden3d.daily_tasks
     enterprises(:one).daily_tasks
+  end
+
+  test "nightly: the monthly reports are made, nothing is computed, and QuickBooks is never called" do
+    QboAccount.any_instance.stubs(:make_and_refresh_qbo_access_token)
+      .raises(RuntimeError, "unexpected QuickBooks call")
+    Mso::MonthlyRun.expects(:compute).never
+    PeriodicReport.any_instance.expects(:sync_mso_trueups!).never
+    MsoTrueup.any_instance.expects(:sync_qbo_bill!).never
+    Sentry.expects(:capture_exception).never
+    PeriodicReport.month.delete_all
+    start = InvoicePass::INTERCOMPANY_START
+
+    travel_to start + 2.months + 12.days do
+      assert_difference -> { PeriodicReport.month.count }, 2 do
+        garden3d.daily_tasks
+      end
+      assert_no_difference -> { PeriodicReport.count } do
+        garden3d.daily_tasks
+      end
+    end
+
+    assert_equal [start, start + 1.month], PeriodicReport.month.order(:period_starts_at).pluck(:period_starts_at)
+    assert_equal 0, MsoTrueup.count
+    assert PeriodicReport.month.all? { |report| report.blueprint == {} }
+  end
+
+  test "nightly: a garden3d step that fails does not skip the other, and no failure leaves" do
+    InvoicePass.expects(:make_intercompany_passes!).once.raises(RuntimeError, "step one broke")
+    PeriodicReport.expects(:ensure_monthly_reports_exist!).once.raises(ActiveRecord::StatementInvalid, "step two broke")
+    Sentry.expects(:capture_exception).twice.with { |error| error.message.match?(/step (one|two) broke/) }
+
+    assert_nothing_raised { garden3d.daily_tasks }
   end
 end

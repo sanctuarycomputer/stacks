@@ -68,6 +68,14 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
       return user.is_admin?
     end
 
+    # Deleting a founder true-up deletes its QuickBooks bill in that company's
+    # books (Trueup's before_destroy), and for a month the MSO pays the
+    # nightly sync will not write it again. Must stay above the blanket lead
+    # grant; ActiveAdmin hides the Delete control from whoever this refuses.
+    if (subject.is_a?(Trueup) || subject == Trueup) && action == :destroy
+      return user.is_admin?
+    end
+
     # Opt-out sign-off polices project leads, so it must sit above the blanket
     # lead grant below — otherwise every lead could approve their own bypass.
     if subject.is_a?(ProjectCapsule) || subject == ProjectCapsule
@@ -84,6 +92,25 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
     # The MSO roster decides who is paid executive compensation: admins only,
     # for every action including read. Must stay above the blanket lead grant.
     return user.is_admin? if subject.is_a?(MsoRolePeriod) || subject == MsoRolePeriod
+
+    # A true-up is READ like any other ledger item (whoever can read ledgers,
+    # and the executive it pays); everything else on it is admin-only. Must
+    # stay above the blanket lead grant.
+    if subject == MsoTrueup || subject.is_a?(MsoTrueup)
+      # Accepting a true-up is its owner's act alone. Checked BEFORE the admin
+      # line: the executives are admins, and "an admin may accept" would let
+      # each accept the other's.
+      return own_mso_trueup?(subject) if action == :toggle_acceptance
+      return true if user.is_admin?
+      return false unless action == :read
+      return true if own_mso_trueup?(subject)
+      # Otherwise: read falls through to the rules every ledger item gets.
+    end
+
+    # Computes and writes every executive's true-up for a month: admins only.
+    if action == :sync_mso_trueups && (subject.is_a?(PeriodicReport) || subject == PeriodicReport)
+      return user.is_admin?
+    end
 
     # garden3d's invoice passes hold what the operating companies pay it:
     # admins only, for every action including read, on the pass and on every
@@ -233,6 +260,13 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
     subject.contributor&.forecast_person&.admin_user
   rescue StandardError
     nil
+  end
+
+  def own_mso_trueup?(subject)
+    return false unless subject.is_a?(MsoTrueup) && subject.persisted?
+
+    owner = subject.ledger&.contributor&.forecast_person&.admin_user
+    owner.present? && owner == user
   end
 
   # Index pages, for anyone but an admin: no garden3d pass, and no tracker on

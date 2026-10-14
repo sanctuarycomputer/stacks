@@ -57,9 +57,13 @@ module SyncsAsQboBill
     # bypass paid? (balance > 0) but still have BillPayments that would
     # orphan if we destroyed the bill. If remote balance/total are present
     # use them; otherwise (atypical/partial response) fall back to cached.
+    # Quickbooks::Model::Bill calls the total `total` (from TotalAmt); it has
+    # no `total_amt`. Asking only for total_amt meant the bill just read was
+    # never used and the stored copy, hours stale, decided.
+    remote_total = remote.try(:total_amt) || remote.try(:total)
     has_payments =
-      if remote.try(:balance).present? && remote.try(:total_amt).present?
-        remote.balance.to_f < remote.total_amt.to_f
+      if remote.try(:balance).present? && remote_total.present?
+        remote.balance.to_f < remote_total.to_f
       else
         bill.has_payments?
       end
@@ -107,7 +111,9 @@ module SyncsAsQboBill
   # - bill_doc_number_code   → Short 2-char tag in the QBO Bill doc_number
   #   (must be unique across all host models). Current mappings:
   #     CP = ContributorPayout, TU = Trueup, CA = ContributorAdjustment,
-  #     PS = ProfitShare, SB = PayStub.
+  #     PS = ProfitShare, SB = PayStub, RB = Reimbursement, MT = MsoTrueup.
+  #   A new code also needs a `when` arm in
+  #   QboAccount#cleanup_orphaned_qbo_objects!.
 
   def payable?
     false
