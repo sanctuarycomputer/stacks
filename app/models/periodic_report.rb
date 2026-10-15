@@ -59,6 +59,38 @@ class PeriodicReport < ApplicationRecord
     end
   end
 
+  # NIGHTLY, from garden3d's daily step. For each finished month that is not
+  # settled, re-reads garden3d's invoices for it from QuickBooks (READS only)
+  # and, once every one of them is paid ("green"), syncs its MSO true-ups.
+  # It creates no QuickBooks bill and pays nobody: a true-up still needs its
+  # executive's acceptance, and a bill still needs an admin's click on the
+  # Money page.
+  #
+  # A month whose last sync failed is skipped: the failure has already been
+  # reported once, and an admin's "Sync MSO true-ups" click retries it (and
+  # clears the error when it succeeds). One month failing does not stop the
+  # next; failures are handed back.
+  def self.sync_collected_mso_months!(today: Date.today)
+    return [] unless MsoTrueup.schema_ready?
+
+    garden3d = Enterprise.garden3d
+    failures = []
+    month.where(period_starts_at: InvoicePass::INTERCOMPANY_START...today.beginning_of_month)
+         .order(:period_starts_at).each do |report|
+      next if report.notification_id.present?
+      next if report.mso_trueups.any? && report.all_mso_trueups_accepted?
+
+      pass = InvoicePass.find_by(enterprise: garden3d, start_of_month: report.period_starts_at)
+      next if pass.nil?
+      next unless Mso::IntercompanyInvoices.collected?(invoice_pass: pass)
+
+      report.sync_mso_trueups!(today: today)
+    rescue StandardError => e
+      failures << [report.id, "#{e.class}: #{e.message}"]
+    end
+    failures
+  end
+
   def yearly_tenure_multiplier
     @_yearly_tenure_multiplier ||= 0.25
   end

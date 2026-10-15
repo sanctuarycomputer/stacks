@@ -93,15 +93,24 @@ class Enterprise < ApplicationRecord
     return unless is_garden3d?
 
     # Each step on its own: one that raises is reported and the rest still
-    # run. Nothing here computes a true-up, pays anyone, or calls QuickBooks.
+    # run. Nothing here pays anyone or writes to QuickBooks.
 
     # Database only: garden3d's invoice pass and trackers for each month it
     # has none. Nothing here may write to QuickBooks; an admin makes the
     # invoices by hand.
     garden3d_nightly_step("invoice_passes") { InvoicePass.make_intercompany_passes! }
-    # Database only: a monthly report for each month that has none. Nothing
-    # nightly computes a true-up; an admin syncs them from the report.
+    # Database only: a monthly report for each month that has none.
     garden3d_nightly_step("monthly_reports") { PeriodicReport.ensure_monthly_reports_exist! }
+    # QuickBooks READS, then database: for each unsettled month, re-read
+    # garden3d's invoices and, once all are paid, sync its MSO true-ups.
+    # Each still needs its executive's acceptance; no bill is created.
+    garden3d_nightly_step("mso_sync") do
+      failures = PeriodicReport.sync_collected_mso_months!
+      if failures.any?
+        raise "MSO sync failed for " +
+              failures.map { |id, error| "PeriodicReport #{id} (#{error})" }.join("; ").truncate(2000)
+      end
+    end
     # QuickBooks READS only: re-read MSO bills that already exist, so a paid
     # one is seen as paid. Cannot create or change a bill.
     garden3d_nightly_step("bill_mirrors") do
