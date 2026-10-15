@@ -1230,8 +1230,13 @@ Where §7–§13b differ from this section, **this section governs**.
   which somebody has accepted a true-up. Before that it is freely editable.
 - **Reports**: the nightly garden3d step makes sure a monthly report exists for
   every month from `InvoicePass::INTERCOMPANY_START` through last month
-  (database only). **Syncing is an admin's click** on the report, as for profit
-  shares. The reports index has "Quarterly" (default) and "Monthly" scopes; a
+  (database only). **Syncing** is an admin's click on the report, and also
+  nightly (owner, 2026-10-15): for each finished, unsettled month whose last
+  sync did not fail, the garden3d step re-reads that month's invoices from
+  QuickBooks (reads only) and syncs once every one is fully paid ("green").
+  A failed sync is reported once and then skipped until an admin's click
+  retries it. A month goes green only when each whole invoice is paid,
+  loan-repayment lines included (owner). The reports index has "Quarterly" (default) and "Monthly" scopes; a
   monthly report's page shows the month's figures and its true-ups. Reports
   are read by whoever can read them today (admins and leads). Anything that
   lists `PeriodicReport`s for quarterly purposes filters to quarters.
