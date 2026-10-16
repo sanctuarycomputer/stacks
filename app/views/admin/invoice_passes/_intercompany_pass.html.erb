@@ -53,8 +53,11 @@
           <td class="col"><%= number_to_currency(tracker.value) %></td>
           <td class="col"><%= number_to_currency(tracker.balance) %></td>
           <td class="col">
-            <% if tracker.payer_qbo_bill_id.present? %>
-              <%= link_to "Bill ↗", Mso::IntercompanyBills.bill_url(tracker), target: "_blank", rel: "noopener" %>
+            <%# try: the column arrives with a migration run by hand after the deploy. %>
+            <% if tracker.try(:payer_qbo_bill_id).present? %>
+              <%= link_to "Bill #{tracker.payer_qbo_bill_id} ↗", Mso::IntercompanyBills.bill_url(tracker),
+                    target: "_blank", rel: "noopener",
+                    title: "Opens in the QuickBooks company you are signed into: switch to the paying company first." %>
             <% else %>
               &mdash;
             <% end %>

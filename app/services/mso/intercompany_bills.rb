@@ -46,9 +46,14 @@ module Mso
         if invoice_tracker.qbo_invoice_id.blank?
           raise NotReady, "InvoiceTracker #{invoice_tracker.id} has no garden3d invoice yet. Generate it first."
         end
+        unless invoice_tracker.qbo_account.enterprise_id == pass.enterprise_id
+          raise Misconfigured, "InvoiceTracker #{invoice_tracker.id} is bound to a QuickBooks account that is " \
+                               "not #{pass.enterprise.name}'s"
+        end
 
         payer = Mso::IntercompanyInvoices.payer_for!(invoice_tracker)
-        payer_qbo = payer.qbo_account
+        # Ordered query, not payer.qbo_account: has_one is unordered.
+        payer_qbo = QboAccount.where(enterprise_id: payer.id).order(:id).first
         raise Misconfigured, "#{payer.name} has no QuickBooks account connected to Stacks" if payer_qbo.nil?
         accounts_by_item = ACCOUNTS[payer.name]
         raise Misconfigured, "Stacks has no bill accounts for #{payer.name} (Mso::IntercompanyBills::ACCOUNTS)" if accounts_by_item.nil?
@@ -114,6 +119,8 @@ module Mso
       private
 
       # One bill line per invoice line with an amount, on its item's account.
+      # The bill must come to the invoice's total: a discount, a bundle or
+      # sales tax would make them differ, so any of those refuses the bill.
       def bill_lines!(invoice, accounts_by_item, payer, payer_qbo)
         if invoice.doc_number.blank? || invoice.txn_date.blank?
           raise NotReady, "garden3d invoice #{invoice.id} has no number or date yet"
@@ -122,8 +129,14 @@ module Mso
           raise NotReady, "garden3d invoice #{invoice.doc_number} is $0.00. Set its amount in QuickBooks first."
         end
 
+        unsupported = invoice.line_items.reject { |line| line.sales_item? || line.sub_total_item? }
+        if unsupported.any?
+          raise Misconfigured, "garden3d invoice #{invoice.doc_number} has #{unsupported.map(&:detail_type).uniq.join(', ')} " \
+                               "lines. Stacks mirrors item lines only; adjust the bill by hand. No bill was written."
+        end
+
         chart = payer_qbo.fetch_all_accounts
-        invoice.line_items.select(&:sales_item?).reject { |line| line.amount.to_d.zero? }.map do |line|
+        lines = invoice.line_items.select(&:sales_item?).reject { |line| line.amount.to_d.zero? }.map do |line|
           item = line.sales_line_item_detail&.item_ref&.name.to_s
           number = accounts_by_item[item]
           if number.nil?
@@ -137,6 +150,14 @@ module Mso
           end
           { amount: line.amount.to_d, description: line.description.presence || item, account: account }
         end
+
+        bill_total = lines.sum(BigDecimal("0")) { |line| line[:amount] }
+        unless bill_total == invoice.total.to_d
+          raise Misconfigured, "garden3d invoice #{invoice.doc_number} totals #{invoice.total.to_d.to_s('F')} but its " \
+                               "item lines come to #{bill_total.to_s('F')} (sales tax?). Adjust the bill by hand. " \
+                               "No bill was written."
+        end
+        lines
       end
 
       def vendor!(payer, payer_qbo)
@@ -189,7 +210,7 @@ module Mso
         bill.doc_number = invoice.doc_number
         bill.txn_date = invoice.txn_date
         bill.due_date = invoice.txn_date + DUE_DAYS
-        bill.sales_term_ref = Quickbooks::Model::BaseReference.new(term.name, value: term.id)
+        bill.sales_term_ref = Quickbooks::Model::BaseReference.new(term.id, name: term.name)
         bill.private_note = "garden3d invoice #{invoice.doc_number}, #{pass.invoice_month}"
         bill.line_items = lines.map do |data|
           line = Quickbooks::Model::BillLineItem.new(description: data[:description], amount: data[:amount])

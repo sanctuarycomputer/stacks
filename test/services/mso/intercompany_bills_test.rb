@@ -179,6 +179,38 @@ class Mso::IntercompanyBillsTest < ActiveSupport::TestCase
     assert_nil bill_id
   end
 
+  test "a discount line on the invoice refuses the bill, so the two never disagree" do
+    discounted = invoice(lines: [["Managerial Services", nil, "1000"]])
+    discount = Quickbooks::Model::InvoiceLineItem.new
+    discount.amount = BigDecimal("100")
+    discount.discount_item! { |detail| detail.percent_based = false }
+    discounted.line_items << discount
+    QboAccount.any_instance.stubs(:fetch_invoice_by_id).returns(discounted)
+    Quickbooks::Service::Bill.any_instance.expects(:create).never
+
+    error = assert_raises(Mso::IntercompanyBills::Misconfigured) { sync! }
+
+    assert_match(/DiscountLineDetail/, error.message)
+  end
+
+  test "an invoice whose total is more than its item lines (sales tax) refuses the bill" do
+    taxed = invoice(lines: [["Managerial Services", nil, "1000"]])
+    taxed.total = BigDecimal("1080")
+    QboAccount.any_instance.stubs(:fetch_invoice_by_id).returns(taxed)
+    Quickbooks::Service::Bill.any_instance.expects(:create).never
+
+    error = assert_raises(Mso::IntercompanyBills::Misconfigured) { sync! }
+
+    assert_match(/totals 1080.0 but its item lines come to 1000.0/, error.message)
+  end
+
+  test "a tracker bound to another company's QuickBooks account is refused" do
+    @tracker.update_columns(qbo_account_id: @payer_qbo.id)
+    Quickbooks::Service::Bill.any_instance.expects(:create).never
+
+    assert_raises(Mso::IntercompanyBills::Misconfigured) { sync! }
+  end
+
   test "a tracker on a month before intercompany invoicing began is refused" do
     old_pass = garden3d_pass(Date.new(2025, 8, 1))
     @tracker.update_columns(invoice_pass_id: old_pass.id)

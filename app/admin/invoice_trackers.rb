@@ -30,7 +30,8 @@ ActiveAdmin.register InvoiceTracker do
   # garden3d's invoice, mirrored as a bill in the paying company's QuickBooks.
   # Writes to that QuickBooks, so an admin's click only.
   action_item :sync_payer_bill, only: :show, if: proc {
-    current_admin_user.is_admin? && resource.garden3d? && resource.qbo_invoice_id.present? &&
+    current_admin_user.is_admin? && resource.has_attribute?(:payer_qbo_bill_id) &&
+      resource.garden3d? && resource.qbo_invoice_id.present? &&
       resource.invoice_pass.start_of_month >= InvoicePass::INTERCOMPANY_START
   } do
     payer = resource.forecast_client.enterprise&.name || "the paying company"
