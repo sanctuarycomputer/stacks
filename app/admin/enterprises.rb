@@ -24,6 +24,11 @@ ActiveAdmin.register Enterprise do
     if current_admin_user.is_admin? && Enterprise.column_names.include?("g3d_qbo_customer_id")
       permitted.unshift(:g3d_qbo_customer_id)
     end
+    # The vendor garden3d's mirrored bills come from, in this enterprise's own
+    # QuickBooks.
+    if current_admin_user.is_admin? && Enterprise.column_names.include?("g3d_qbo_vendor_id")
+      permitted.unshift(:g3d_qbo_vendor_id)
+    end
     permitted
   end
 
@@ -138,6 +143,38 @@ ActiveAdmin.register Enterprise do
           f.input :g3d_qbo_customer_id,
             label: "Customer id in garden3d's QuickBooks",
             hint: "#{billing_hint} QuickBooks unreachable — paste the customer id manually."
+        end
+      end
+
+      if current_admin_user.is_admin? && f.object.has_attribute?(:g3d_qbo_vendor_id) && !f.object.is_garden3d? &&
+         f.object.qbo_account.present?
+        # Fetched live from THIS enterprise's QuickBooks, as the customer above
+        # is from garden3d's. Falls back to a plain text input if unreachable.
+        vendor_options = begin
+          f.object.qbo_account.fetch_all_vendors.select(&:active?)
+            .map { |v| ["#{v.display_name} (#{v.id})", v.id.to_s] }.sort
+        rescue StandardError => e
+          Rails.logger.warn("[Admin::Enterprises#form] couldn't fetch #{f.object.name}'s QuickBooks vendors: #{e.message}")
+          nil
+        end
+        vendor_hint = "garden3d's invoices to this enterprise are mirrored as bills from this vendor in its " \
+                      "QuickBooks. Stacks never creates the vendor."
+
+        if vendor_options
+          stored_id = f.object.g3d_qbo_vendor_id.to_s
+          if stored_id.present? && vendor_options.none? { |_, id| id == stored_id }
+            vendor_options.unshift(["Not an active vendor (#{stored_id})", stored_id])
+          end
+          f.input :g3d_qbo_vendor_id,
+            as: :select,
+            collection: vendor_options,
+            include_blank: "(none)",
+            label: "garden3d's vendor in this enterprise's QuickBooks",
+            hint: "#{vendor_hint} Pulled live from this enterprise's QuickBooks."
+        else
+          f.input :g3d_qbo_vendor_id,
+            label: "garden3d's vendor id in this enterprise's QuickBooks",
+            hint: "#{vendor_hint} QuickBooks unreachable — paste the vendor id manually."
         end
       end
 

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_10_14_000001) do
+ActiveRecord::Schema.define(version: 2026_10_17_000001) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -380,6 +380,7 @@ ActiveRecord::Schema.define(version: 2026_10_14_000001) do
     t.string "deel_legal_entity_id"
     t.string "pay_cycle_cadence"
     t.string "g3d_qbo_customer_id"
+    t.string "g3d_qbo_vendor_id"
     t.index ["deel_legal_entity_id"], name: "index_enterprises_on_deel_legal_entity_id", unique: true, where: "(deel_legal_entity_id IS NOT NULL)"
   end
 
@@ -544,6 +545,7 @@ ActiveRecord::Schema.define(version: 2026_10_14_000001) do
     t.text "payout_cap_override_reason"
     t.decimal "payout_cap_override_payout_percentage"
     t.decimal "payout_cap_override_cap_percentage"
+    t.string "payer_qbo_bill_id"
     t.index ["admin_user_id"], name: "index_invoice_trackers_on_admin_user_id"
     t.index ["forecast_client_id", "invoice_pass_id"], name: "idx_invoice_trackers_on_forecast_client_id_and_invoice_pass_id", unique: true
     t.index ["forecast_client_id"], name: "index_invoice_trackers_on_forecast_client_id"

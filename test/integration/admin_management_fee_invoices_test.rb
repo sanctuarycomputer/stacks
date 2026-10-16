@@ -398,4 +398,53 @@ class AdminManagementFeeInvoicesTest < ActionDispatch::IntegrationTest
     assert_match(/Refreshed 0 of 1 invoice/, flash[:alert])
     assert_match(/#{tracker.id}/, flash[:alert])
   end
+
+  # --- the bill in the paying company's QuickBooks ---------------------------
+
+  def sync_payer_bill_path(tracker)
+    sync_payer_bill_admin_invoice_pass_invoice_tracker_path(tracker.invoice_pass, tracker)
+  end
+
+  test "an admin is offered the bill once the tracker has an invoice, and creating it says so" do
+    tracker = fee_tracker(@pass, @payer)
+    attach_invoice(tracker, qbo_id: "9100", total: "10.0", balance: "10.0", sent: true)
+    QboInvoice.any_instance.stubs(:sync!).returns(true) # the show page's own refresh
+    sign_in @admin
+
+    get tracker_path(tracker)
+    assert_includes response.body, "Create bill in Sanctuary Computer Inc&#39;s QuickBooks"
+
+    bill = Quickbooks::Model::Bill.new
+    bill.doc_number = "1052"
+    Mso::IntercompanyBills.expects(:sync_bill!).once.returns(bill)
+    post sync_payer_bill_path(tracker)
+
+    assert_redirected_to tracker_path(tracker)
+    assert_match(/Bill 1052 is up to date/, flash[:notice])
+  end
+
+  test "a refused bill says why" do
+    tracker = fee_tracker(@pass, @payer)
+    attach_invoice(tracker, qbo_id: "9100", total: "10.0", balance: "10.0", sent: true)
+    Mso::IntercompanyBills.expects(:sync_bill!).raises(Mso::IntercompanyBills::PaidBill, "has a payment against it")
+    sign_in @admin
+
+    post sync_payer_bill_path(tracker)
+
+    assert_match(/has a payment against it/, flash[:alert])
+  end
+
+  test "no bill button without an invoice, and only an admin can write a bill" do
+    tracker = fee_tracker(@pass, @payer)
+    sign_in @admin
+    get tracker_path(tracker)
+    assert_not_includes response.body, "bill in Sanctuary"
+    sign_out @admin
+
+    Mso::IntercompanyBills.expects(:sync_bill!).never
+    sign_in @lead
+    post sync_payer_bill_path(tracker)
+    assert_response :redirect
+  end
 end
+

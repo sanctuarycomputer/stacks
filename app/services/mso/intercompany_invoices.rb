@@ -160,6 +160,19 @@ module Mso
         InvoicePass.find(invoice_pass.id).management_fee_collected?
       end
 
+      # The payer is the enterprise the tracker's Forecast client is internal to.
+      # Also Mso::IntercompanyBills'.
+      def payer_for!(invoice_tracker)
+        payer = Enterprise.billed_by_garden3d
+          .joins(:enterprise_forecast_clients)
+          .find_by(enterprise_forecast_clients: { forecast_client_id: invoice_tracker.forecast_client_id })
+        if payer.nil?
+          raise Misconfigured, "InvoiceTracker #{invoice_tracker.id} is not on the internal Forecast client of " \
+                               "an enterprise #{Enterprise::GARDEN3D_NAME} bills"
+        end
+        payer
+      end
+
       private
 
       def assert_no_invoice!(invoice_tracker)
@@ -218,18 +231,6 @@ module Mso
 
         raise AlreadyInvoiced, "#{refusal} They are now listed on the tracker's edit page: attach the right " \
                                "one there."
-      end
-
-      # The payer is the enterprise the tracker's Forecast client is internal to.
-      def payer_for!(invoice_tracker)
-        payer = Enterprise.billed_by_garden3d
-          .joins(:enterprise_forecast_clients)
-          .find_by(enterprise_forecast_clients: { forecast_client_id: invoice_tracker.forecast_client_id })
-        if payer.nil?
-          raise Misconfigured, "InvoiceTracker #{invoice_tracker.id} is not on the internal Forecast client of " \
-                               "an enterprise #{Enterprise::GARDEN3D_NAME} bills"
-        end
-        payer
       end
 
       def managerial_services_item!(qbo_account)
