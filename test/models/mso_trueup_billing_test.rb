@@ -62,7 +62,7 @@ class MsoTrueupBillingTest < ActiveSupport::TestCase
   end
 
   test "with no MSO compensation account the sync raises and says who has to act" do
-    Qbo::BillRouter.any_instance.unstub(:enterprise_gl_map) # back to the real "____"
+    Qbo::BillRouter.any_instance.unstub(:enterprise_gl_map) # the real 6130, which this chart lacks
 
     error = assert_raises(MsoTrueup::AccountNotConfigured) { fresh.sync_qbo_bill! }
 

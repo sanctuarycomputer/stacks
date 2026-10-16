@@ -16,7 +16,7 @@ class MsoTrueupQboRegistrationTest < ActiveSupport::TestCase
     @vendor = QboVendor.create!(qbo_account: @qa, qbo_id: "V-#{SecureRandom.hex(3)}", data: {})
     ContributorQboVendor.create!(contributor: @exec, qbo_account: @qa, qbo_vendor: @vendor)
 
-    # garden3d's chart as it is today: the 6100 catch-all and nothing for MSO.
+    # A chart with the 6100 catch-all and no MSO compensation account.
     QboAccount.any_instance.stubs(:fetch_all_accounts).returns([account("6100", 61)])
     # Anything that would write to QuickBooks fails the test.
     QboAccount.any_instance.stubs(:make_and_refresh_qbo_access_token)
@@ -52,25 +52,22 @@ class MsoTrueupQboRegistrationTest < ActiveSupport::TestCase
     assert_equal @trueup.bill_description, lines.first[:description]
   end
 
-  test "mso_compensation can never fall back, and garden3d's account is deliberately unmatched" do
+  test "mso_compensation can never fall back, and garden3d's MSO pay goes to 6130" do
     assert_not_includes Qbo::BillRouter::FALLBACKABLE_CONCEPTS, :mso_compensation
-    assert_equal "____", Qbo::BillRouter::CONCEPT_GL_BY_ENTERPRISE[:garden3d][:mso_compensation]
+    assert_equal "6130", Qbo::BillRouter::CONCEPT_GL_BY_ENTERPRISE[:garden3d][:mso_compensation]
   end
 
-  test "routing raises rather than filing executive pay under Platform Infrastructure" do
+  test "without 6130 in the chart, routing raises rather than filing MSO pay under Platform Infrastructure" do
     error = assert_raises(RuntimeError) { router.lines }
 
     assert_match(/mso_compensation/, error.message)
-    assert_match(/____/, error.message)
+    assert_match(/6130/, error.message)
   end
 
-  test "once the account number is pinned and the account exists, it routes there" do
-    QboAccount.any_instance.stubs(:fetch_all_accounts).returns([account("6100", 61), account("6200", 62)])
-    pinned = router
-    pinned.stubs(:enterprise_gl_map)
-      .returns(Qbo::BillRouter::CONCEPT_GL_BY_ENTERPRISE[:garden3d].merge(mso_compensation: "6200"))
+  test "with 6130 in garden3d's chart, an MSO true-up routes there" do
+    QboAccount.any_instance.stubs(:fetch_all_accounts).returns([account("6100", 61), account("6130", 63)])
 
-    assert_equal [62], pinned.lines.map { |line| line[:account].id }
+    assert_equal [63], router.lines.map { |line| line[:account].id }
   end
 
   # --- the Money page ----------------------------------------------------------

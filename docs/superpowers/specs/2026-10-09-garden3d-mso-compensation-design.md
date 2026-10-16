@@ -385,14 +385,14 @@ Until its `acct_num` is known:
 ```ruby
 FALLBACKABLE_CONCEPTS = %i[subcontractor bonuses commission].freeze  # unchanged —
                                                                       # mso_compensation NOT added
-CONCEPT_GL_BY_ENTERPRISE[:garden3d][:mso_compensation] = "____"       # raises until pinned
+CONCEPT_GL_BY_ENTERPRISE[:garden3d][:mso_compensation] = "6130"       # Contractors - MSO Compensation
 ```
 
 `"____"` is the codebase's existing convention for "intentionally unmatched so it
 raises rather than misroutes". `MsoTrueup` routes to `:mso_compensation`, which is
 **not** fallbackable, so S4 cannot silently file executive compensation under
-Platform Infrastructure. Pin the real `acct_num` when Finance confirms it; S4's
-unit tests run before then, end-to-end QBO verification does not.
+Platform Infrastructure. It was `"____"` until Finance created 6130 "Contractors - MSO
+Compensation" (2026-10-16); if that account ever goes missing, routing raises again.
 
 ## 7. Subsystem 2 — Roster and benchmark
 
@@ -805,7 +805,7 @@ surfaces.
 | garden3d pass missing | `Mso::MonthlyRun` creates it. |
 | "Generate Invoices" clicked on garden3d's pass | Refused (§5.4). |
 | Non-`qbo_bound` garden3d ledger | All 188 are `qbo_bound` today; a `legacy` one makes a true-up invisible on the Money page — assert and surface. |
-| MSO comp unmapped in `BillRouter` | Raises (`"____"`, non-fallbackable). |
+| MSO comp account missing from the chart | Raises (non-fallbackable). |
 | Rounding | Largest-remainder in both branches; `Σ final <= cap` always. |
 
 ## 12. Testing
@@ -857,8 +857,8 @@ multiple ledgers; floors at zero; `effective_on_for_display` equals
 `payment_date` so a recompute buckets into the original month; `payable?` false
 until collected; `payable?` false until **every expected** true-up is accepted;
 present in `PayableQboBills`; `"MT"` round-trips through
-`cleanup_orphaned_qbo_objects!`; **`Qbo::BillRouter` raises for `MsoTrueup` while
-`:mso_compensation` is `"____"`** (and maps to the real account once pinned);
+`cleanup_orphaned_qbo_objects!`; **`Qbo::BillRouter` raises for `MsoTrueup` when
+6130 is not in garden3d's chart**, and routes there when it is;
 `ledger_item_path` resolves; appears in `Ledger#balance` and in
 `items_grouped_by_month`'s income total; counts toward
 `PeriodicReport#elevated_service?`; run refused when the Sanctuary pass is absent,
