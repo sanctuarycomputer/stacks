@@ -27,6 +27,48 @@ ActiveAdmin.register InvoiceTracker do
     )
   end
 
+  # garden3d's invoice, mirrored as a bill in the paying company's QuickBooks.
+  # Writes to that QuickBooks, so an admin's click only.
+  action_item :sync_payer_bill, only: :show, if: proc {
+    current_admin_user.is_admin? && resource.has_attribute?(:payer_qbo_bill_id) &&
+      resource.garden3d? && resource.qbo_invoice_id.present? &&
+      resource.invoice_pass.start_of_month >= InvoicePass::INTERCOMPANY_START
+  } do
+    payer = resource.forecast_client.enterprise&.name || "the paying company"
+    verb = resource.payer_qbo_bill_id.present? ? "Update" : "Create"
+    link_to(
+      "#{verb} bill in #{payer}'s QuickBooks",
+      sync_payer_bill_admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource),
+      method: :post,
+      data: {
+        confirm: "#{verb} the bill for this invoice in #{payer}'s QuickBooks, to match the invoice as it is " \
+                 "now? Stacks never marks it paid.",
+      }
+    )
+  end
+
+  member_action :sync_payer_bill, method: :post do
+    tracker_page = admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource)
+    unless current_admin_user.is_admin?
+      return redirect_to(tracker_page, alert: "Bills are written by an admin.")
+    end
+
+    begin
+      bill = Mso::IntercompanyBills.sync_bill!(invoice_tracker: resource)
+    rescue Mso::IntercompanyBills::Error, Mso::IntercompanyInvoices::Error => e
+      return redirect_to(tracker_page, alert: e.message)
+    rescue StandardError => e
+      # The bill may or may not have been written.
+      return redirect_to(
+        tracker_page,
+        alert: "QuickBooks did not confirm the bill (#{e.class}: #{e.message}). Check the paying company's " \
+               "QuickBooks before trying again: Stacks finds a bill with the invoice's number and attaches it " \
+               "rather than create a second."
+      )
+    end
+    redirect_to tracker_page, notice: "Bill #{bill.doc_number} is up to date in the paying company's QuickBooks."
+  end
+
   action_item :resync_qbo_line_item_services, only: :show, if: proc { current_admin_user.is_admin? } do
     link_to(
       "Resync QBO service categories",
