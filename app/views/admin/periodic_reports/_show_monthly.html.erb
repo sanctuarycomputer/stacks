@@ -1,7 +1,10 @@
 <% blueprint = periodic_report.blueprint || {} %>
 <% mso_trueups = periodic_report.mso_trueups_if_ready.includes(ledger: { contributor: :forecast_person }).order(:id).to_a %>
 
-<div class="title_bar" id="title_bar" style="padding: 0px 0px 20px 0px;">
+<%= render "okrs", periodic_report: periodic_report, scope_param: scope_param, scope_studio: scope_studio,
+                   studio_tabs: studio_tabs, collective_okrs: collective_okrs %>
+
+<div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
   <div id="titlebar_left">
     <h2 id="page_title">MSO compensation</h2>
   </div>
@@ -19,39 +22,37 @@
   </div>
 <% end %>
 
+<% if periodic_report.mso_trueups_out_of_sync? %>
+  <div class="flash flash_alert" style="margin-bottom: 1em;">The MSO payments are out of sync with the actual earnings for the MSO that month.</div>
+<% end %>
+
 <% if blueprint["fee_income"].present? %>
-  <div class="dashboard-modules table index_table index">
-    <% [
-      ["fee_income", "Management fee income (account 4100)"],
-      ["cap", "Cap (#{(blueprint["cap_percentage"].to_f * 100).round(2)}% of fee income)"],
-      ["benchmark_average", "Benchmark (top #{blueprint["counted"]} of #{blueprint["configured_n"]})"],
-      ["total_calculated", "Calculated before the cap"],
-      ["total_trueup", "Total true-ups"],
-    ].each do |key, label| %>
-      <div class="dashboard-module">
-        <div class="module-body factoid-parent">
-          <div class="factoid">
-            <h2><%= number_to_currency(blueprint[key]) %></h2>
-            <p><%= label %></p>
+  <% [
+    ["fee_income", "Management fee income (account 4100)"],
+    ["cap", "Cap (#{(blueprint["cap_percentage"].to_f * 100).round(2)}% of fee income)"],
+    ["benchmark_average", "Benchmark (top #{blueprint["counted"]} of #{blueprint["configured_n"]})"],
+    ["total_trueup", "Total true-ups"],
+  ].each_slice(2) do |row| %>
+    <div class="dashboard-modules table index_table index">
+      <% row.each do |key, label| %>
+        <div class="dashboard-module">
+          <div class="module-body factoid-parent">
+            <div class="factoid">
+              <h2><%= number_to_currency(blueprint[key]) %></h2>
+              <p><%= label %></p>
+            </div>
           </div>
         </div>
-      </div>
-    <% end %>
-  </div>
-  <p class="okr_hint">
-    Computed <%= blueprint["generated_at"] %>.
-    Management fee <%= periodic_report.management_fee_collected? ? "collected" : "not yet collected" %>.
-    <% if blueprint["small_sample"] %>The benchmark was measured from fewer people than configured.<% end %>
-    <% variance = blueprint.dig("reconciliation", "variance") %>
-    <% if variance.present? %>Account 4100 against the attached invoices: variance <%= number_to_currency(variance) %>.<% end %>
-  </p>
+      <% end %>
+    </div>
+  <% end %>
 <% end %>
 
 <% if mso_trueups.any? %>
   <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
     <thead>
       <tr>
-        <th class="col">Executive</th>
+        <th class="col">Contributor</th>
         <th class="col">Tier</th>
         <th class="col">Calculated</th>
         <th class="col">After cap</th>

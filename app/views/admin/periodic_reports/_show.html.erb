@@ -1,49 +1,5 @@
-<script>
-function update(a, b) {
-  var searchParams = new URLSearchParams(window.location.search);
-  if (b !== '')
-    searchParams.set(a, b);
-  else
-    searchParams.delete(a);
-  window.location.search = searchParams.toString();
-}
-</script>
-
-<% all_studio_keys = PeriodicReport::STUDIO_TAB_KEYS %>
-<% current_studio = all_studio_keys.include?(scope_param.to_s) ? scope_param : "g3d" %>
-<div style="margin-bottom: 20px">
-  <% studio_tabs.each do |tab| %>
-    <a onclick='update("studio", "<%= tab[:key] %>");' style="margin-right: 6px">
-      <p class="nag pill <%= current_studio == tab[:key] ? "complete" : "" %>" style="margin-bottom: 0px;margin-right: 6px;">
-        <%= tab[:label] %>
-      </p>
-    </a>
-  <% end %>
-</div>
-
-<% if periodic_report.report_url.present? %>
-  <a href="<%= periodic_report.report_url %>" target="_blank" rel="noopener noreferrer">
-    <p class="nag" style="margin-bottom: 20px;margin-right: 6px;">
-      📖 Read the quarterly report ↗
-    </p>
-  </a>
-<% end %>
-
-<% if collective_okrs.any? %>
-  <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
-    <div id="titlebar_left">
-      <h2 id="page_title">📈 OKRs</h2>
-    </div>
-    <% if scope_studio.present? %>
-    <div id="titlebar_right">
-      <div class="action_items">
-        <%= link_to "See all #{scope_studio.name} OKRs ↗", admin_studio_path(scope_studio, gradation: "quarter") %>
-      </div>
-    </div>
-    <% end %>
-  </div>
-  <%= render "okr_chips", collective_okrs: collective_okrs, okr_empty_hint: "No OKR data for this quarter in the snapshot." %>
-<% end %>
+<%= render "okrs", periodic_report: periodic_report, scope_param: scope_param, scope_studio: scope_studio,
+                   studio_tabs: studio_tabs, collective_okrs: collective_okrs %>
 
 <div class="title_bar" id="title_bar" style="padding: 80px 0px 20px 0px;">
   <div id="titlebar_left">

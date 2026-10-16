@@ -197,6 +197,31 @@ class PeriodicReportMsoTrueupsTest < ActiveSupport::TestCase
     assert_equal BigDecimal("20000"), trueup_for(@chief).amount
   end
 
+  test "true-ups are out of sync when the month, computed now, would give different amounts" do
+    sync!
+    report = PeriodicReport.find(@report.id)
+    assert_equal false, report.mso_trueups_out_of_sync?(today: TODAY)
+
+    trueup_for(@chief).toggle_acceptance!
+    trueup_for(@principal).toggle_acceptance!
+    charge_fee("60000.0")
+
+    assert_equal true, PeriodicReport.find(@report.id).mso_trueups_out_of_sync?(today: TODAY)
+  end
+
+  test "true-ups are out of sync when the month can no longer be computed" do
+    sync!
+    Mso::MonthlyRun.stubs(:compute).raises(Mso::MonthlyRun::Refused, "4100 does not reconcile")
+
+    assert_equal true, PeriodicReport.find(@report.id).mso_trueups_out_of_sync?(today: TODAY)
+  end
+
+  test "a month with no true-ups is never out of sync, and is not computed" do
+    Mso::MonthlyRun.expects(:compute).never
+
+    assert_equal false, @report.mso_trueups_out_of_sync?(today: TODAY)
+  end
+
   test "an executive no longer owed loses their row; everyone else's figure is still updated" do
     sync!
     chief_id = trueup_for(@chief).id

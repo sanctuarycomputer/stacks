@@ -199,10 +199,22 @@
                 <% if li.deleted_at.present? %>
                   <span class="pill deleted">Deleted</span>
                 <% else %>
-                  <span class="pill <%= li.payable? ? "paid" : "pending" %>">
-                    MSO true-up
-                    <span class="split"><%= li.payable? ? "Payable" : "Not yet payable" %></span>
+                  <% all_accepted = li.periodic_report.all_mso_trueups_accepted? %>
+                  <span class="pill <%= all_accepted ? "accepted" : "pending" %>" style="margin-right: 6px;">
+                    MSO Acceptance
+                    <span class="split"><%= all_accepted ? "All Accepted" : "Some Pending" %></span>
                   </span>
+                  <% fee_paid = li.periodic_report.management_fee_collected? %>
+                  <span class="pill <%= fee_paid ? "paid" : "pending" %>" style="margin-right: 6px;">
+                    Fee Invoices
+                    <span class="split"><%= fee_paid ? "Paid" : "Unpaid" %></span>
+                  </span>
+                  <% if li.qbo_vendor.nil? %>
+                    <span class="pill pending" style="margin-right: 6px;">
+                      QBO Vendor
+                      <span class="split">Missing</span>
+                    </span>
+                  <% end %>
                 <% end %>
               <% elsif li.is_a?(Trueup) %>
                 <span class="pill <%= li.deleted_at.present? ? "deleted" : "paid" %>">
