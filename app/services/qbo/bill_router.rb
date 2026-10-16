@@ -66,12 +66,12 @@ module Qbo
         bonuses:                "6100",
         commission:             "6100",
         profit_share_liability: "6100",
-        # MSO executive compensation (MsoTrueup). Finance has not created the
-        # account yet. "____" matches no account, and :mso_compensation is NOT
-        # in FALLBACKABLE_CONCEPTS, so routing RAISES rather than filing
-        # executive pay under 6100. Replace with the account's acct_num once
-        # it exists. No other enterprise has this key: nil raises the same way.
-        mso_compensation:       "____",
+        # MSO compensation (MsoTrueup): "Contractors - MSO Compensation"
+        # (Finance, 2026-10-16). :mso_compensation is NOT in
+        # FALLBACKABLE_CONCEPTS, so if the account goes missing routing RAISES
+        # rather than filing MSO pay under 6100. No other enterprise has this
+        # key: nil raises the same way.
+        mso_compensation:       "6130",
         subcontractor_by_studio: {},
       },
       usb_club: {

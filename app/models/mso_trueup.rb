@@ -126,9 +126,9 @@ class MsoTrueup < ApplicationRecord
         Qbo::BillRouter.new(self, accounts_cache: accounts_cache).lines
       rescue Qbo::BillRouter::UnmappedAccount => e
         raise AccountNotConfigured, "#{enterprise.name} has no MSO compensation account that Stacks can post " \
-                                    "to (concept mso_compensation). Finance creates the account in " \
-                                    "QuickBooks; its account number then replaces the placeholder in " \
-                                    "app/services/qbo/bill_router.rb. No bill was written. (#{e.message})"
+                                    "to (concept mso_compensation). Finance checks the account exists in " \
+                                    "QuickBooks with the number set in app/services/qbo/bill_router.rb. " \
+                                    "No bill was written. (#{e.message})"
       end
     end
 
