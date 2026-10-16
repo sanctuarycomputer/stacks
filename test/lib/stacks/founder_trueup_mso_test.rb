@@ -113,4 +113,19 @@ class FounderTrueupMsoTest < ActiveSupport::TestCase
     Trueup.find(trueup.id).destroy
     assert_nil Trueup.find_by(id: trueup.id)
   end
+
+  # The 2025 garden3d trackers were moved off Sanctuary's passes onto their own
+  # passes. The payouts on them still count toward the founder's month.
+  test "payouts on another enterprise's pass for the month still count" do
+    pass = month_with_payouts(JANUARY)
+    g3d_pass = garden3d_pass(JANUARY)
+    client = ForecastClient.create!(forecast_id: rand(1..2_000_000_000), name: "FT g3d #{SecureRandom.hex(3)}")
+    tracker = InvoiceTracker.create!(invoice_pass: g3d_pass, forecast_client: client, qbo_account: garden3d_qbo_account)
+    ContributorPayout.new(ledger: @founder_ledger, invoice_tracker: tracker, created_by: mso_admin, amount: 700)
+                     .save!(validate: false)
+
+    sync!(JANUARY)
+
+    assert_equal BigDecimal("3300"), Trueup.find_by!(invoice_pass: pass, ledger: @founder_ledger).amount
+  end
 end

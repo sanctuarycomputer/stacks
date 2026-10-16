@@ -116,12 +116,17 @@ class Stacks::System
         next if founder_paid_by_mso?(founder, working_date)
 
         invoice_pass = InvoicePass
-          .includes(invoice_trackers: :contributor_payouts)
           .where(start_of_month: working_date, enterprise: Enterprise.sanctuary)
           .first
         raise "No invoice pass found for #{working_date}" unless invoice_pass.present?
 
-        contributor_payouts_by_contributor = invoice_pass.invoice_trackers.reduce({}) do |acc, invoice_tracker|
+        # Every pass for the month, not just Sanctuary's: the 2025 garden3d
+        # trackers were moved onto garden3d's own passes, and the payouts on
+        # them are still part of the month.
+        month_trackers = InvoiceTracker.includes(:contributor_payouts)
+          .joins(:invoice_pass).where(invoice_passes: { start_of_month: working_date })
+
+        contributor_payouts_by_contributor = month_trackers.reduce({}) do |acc, invoice_tracker|
           invoice_tracker.contributor_payouts.each do |contributor_payout|
             acc[contributor_payout.contributor] ||= { payouts: [], amount: 0 }
             acc[contributor_payout.contributor][:payouts] << contributor_payout
