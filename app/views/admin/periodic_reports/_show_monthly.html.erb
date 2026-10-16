@@ -22,7 +22,7 @@
   </div>
 <% end %>
 
-<% if periodic_report.mso_trueups_out_of_sync? %>
+<% if blueprint["out_of_sync"] && periodic_report.mso_trueups_if_ready.any? %>
   <div class="flash flash_alert" style="margin-bottom: 1em;">The MSO payments are out of sync with the actual earnings for the MSO that month.</div>
 <% end %>
 

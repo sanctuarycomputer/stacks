@@ -422,6 +422,23 @@ class PeriodicReport < ApplicationRecord
     @_management_fee_collected = pass.present? && pass.management_fee_collected?
   end
 
+  # NIGHTLY, after the MSO sync. Records mso_trueups_out_of_sync? on each
+  # monthly report that has true-ups, as blueprint["out_of_sync"], for the
+  # page's banner: computing a month is too heavy for every page view. A sync
+  # replaces the blueprint, so it clears the flag. Failures are handed back.
+  def self.record_mso_out_of_sync!(today: Date.today)
+    return [] unless MsoTrueup.schema_ready?
+
+    failures = []
+    month.where(id: MsoTrueup.select(:periodic_report_id)).find_each do |report|
+      out_of_sync = report.mso_trueups_out_of_sync?(today: today)
+      report.update_columns(blueprint: (report.blueprint || {}).merge("out_of_sync" => out_of_sync))
+    rescue StandardError => e
+      failures << [report.id, "#{e.class}: #{e.message}"]
+    end
+    failures
+  end
+
   # Would a sync now give different true-ups from the ones stored? Computes
   # the month again (Stacks reads only, nothing saved) and compares amounts
   # per ledger. A month that can no longer be computed is out of sync too.

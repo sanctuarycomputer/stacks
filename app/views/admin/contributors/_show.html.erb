@@ -209,7 +209,7 @@
                     Fee Invoices
                     <span class="split"><%= fee_paid ? "Paid" : "Unpaid" %></span>
                   </span>
-                  <% if li.qbo_vendor.nil? %>
+                  <% if li.qbo_account_for_bill && li.qbo_vendor.nil? %>
                     <span class="pill pending" style="margin-right: 6px;">
                       QBO Vendor
                       <span class="split">Missing</span>

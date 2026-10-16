@@ -80,7 +80,7 @@ class MsoTrueup < ApplicationRecord
     reasons = []
     reasons << "Everyone on the team has to accept their true-up for the month." unless periodic_report.all_mso_trueups_accepted?
     reasons << "garden3d's management fee invoices for the month have to be paid." unless periodic_report.management_fee_collected?
-    reasons << "The contributor needs a vendor in garden3d's QuickBooks." if qbo_vendor.nil?
+    reasons << "The contributor needs a vendor in garden3d's QuickBooks." if qbo_account_for_bill && qbo_vendor.nil?
     reasons
   end
 

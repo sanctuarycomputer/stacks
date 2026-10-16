@@ -31,7 +31,7 @@
   <a href="<%= qbo_vendor.qbo_url %>" target="_blank" rel="noopener">
     <p class="nag" style="margin-bottom: 0px;margin-right: 6px;">QBO Vendor ↗</p>
   </a>
-<% else %>
+<% elsif resource.qbo_account_for_bill %>
   <p class="pill nag pending" style="margin-right: 6px">No QBO Vendor</p>
 <% end %>
 

@@ -216,6 +216,26 @@ class PeriodicReportMsoTrueupsTest < ActiveSupport::TestCase
     assert_equal true, PeriodicReport.find(@report.id).mso_trueups_out_of_sync?(today: TODAY)
   end
 
+  test "the nightly check stores whether a month is out of sync, and a sync clears it" do
+    sync!
+    trueup_for(@chief).toggle_acceptance!
+    trueup_for(@principal).toggle_acceptance!
+    charge_fee("60000.0")
+
+    assert_equal [], PeriodicReport.record_mso_out_of_sync!(today: TODAY)
+    assert_equal true, PeriodicReport.find(@report.id).blueprint["out_of_sync"]
+
+    trueup_for(@chief).update_columns(accepted_at: nil)
+    report = sync!
+    assert_nil report.blueprint["out_of_sync"]
+  end
+
+  test "garden3d's nightly tasks record the out-of-sync check" do
+    PeriodicReport.expects(:record_mso_out_of_sync!).once.returns([])
+
+    Enterprise.garden3d.daily_tasks
+  end
+
   test "a month with no true-ups is never out of sync, and is not computed" do
     Mso::MonthlyRun.expects(:compute).never
 

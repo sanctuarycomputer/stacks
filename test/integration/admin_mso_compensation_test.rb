@@ -86,6 +86,21 @@ class AdminMsoCompensationTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "sync_mso_trueups"
   end
 
+  test "the out-of-sync banner shows from the stored nightly check, without computing the month" do
+    banner = "The MSO payments are out of sync with the actual earnings for the MSO that month."
+    Mso::MonthlyRun.expects(:compute).never
+    sign_in @lead
+
+    get admin_periodic_report_path(@report)
+    assert_response :success
+    assert_not_includes response.body, banner
+
+    @report.update_columns(blueprint: @report.blueprint.merge("out_of_sync" => true))
+    get admin_periodic_report_path(@report)
+    assert_response :success
+    assert_includes response.body, banner
+  end
+
   test "a monthly report that has not been synced, or whose sync failed, still renders" do
     sign_in @admin
     empty = mso_report(MONTH + 1.month)

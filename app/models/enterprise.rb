@@ -120,6 +120,16 @@ class Enterprise < ApplicationRecord
               failures.map { |id, error| "MsoTrueup #{id} (#{error})" }.join("; ").truncate(2000)
       end
     end
+    # Do each month's stored true-ups still match what the month computes to
+    # now? Stored for the monthly report's banner. Writes the database only; at
+    # most a QuickBooks READ of garden3d's P&L when it is not stored yet.
+    garden3d_nightly_step("mso_out_of_sync") do
+      failures = PeriodicReport.record_mso_out_of_sync!
+      if failures.any?
+        raise "MSO out-of-sync check failed for " +
+              failures.map { |id, error| "PeriodicReport #{id} (#{error})" }.join("; ").truncate(2000)
+      end
+    end
   end
 
   # As stacks:daily_enterprise_tasks reports its own steps: the log and Sentry.
