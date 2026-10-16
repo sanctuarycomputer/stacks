@@ -70,6 +70,20 @@ class MsoTrueup < ApplicationRecord
     accepted_at.present?
   end
 
+  # The vendor its bill is written to, in garden3d's QuickBooks.
+  def qbo_vendor
+    contributor.qbo_vendor_for(qbo_account_for_bill)
+  end
+
+  # Everything standing between this true-up and a bill, for the pages.
+  def not_ready_to_pay_reasons
+    reasons = []
+    reasons << "Everyone on the team has to accept their true-up for the month." unless periodic_report.all_mso_trueups_accepted?
+    reasons << "garden3d's management fee invoices for the month have to be paid." unless periodic_report.management_fee_collected?
+    reasons << "The contributor needs a vendor in garden3d's QuickBooks." if qbo_account_for_bill && qbo_vendor.nil?
+    reasons
+  end
+
   # Accepted, and the month has a QuickBooks bill (this true-up's or another
   # executive's): an amount is in QuickBooks, so the month stays settled.
   # Un-accepting would let the next sync rewrite a billed amount.
@@ -94,7 +108,7 @@ class MsoTrueup < ApplicationRecord
     accounts_cache ||= Qbo::AccountsCache.new
 
     unless payable?
-      raise NotPayable, "MsoTrueup #{id} is not payable yet: every executive has to accept their true-up for " \
+      raise NotPayable, "MsoTrueup #{id} is not payable yet: everyone on the team has to accept their true-up for " \
                         "the month, and the month's management fee has to be collected. No bill was written."
     end
 

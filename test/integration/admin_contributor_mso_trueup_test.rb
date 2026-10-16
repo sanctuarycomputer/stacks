@@ -98,4 +98,32 @@ class AdminContributorMsoTrueupTest < ActionDispatch::IntegrationTest
       sign_out viewer
     end
   end
+
+  test "the ledger says why a true-up is not ready to pay: acceptance, fee invoices and vendor apart" do
+    sign_in login_for(@exec)
+
+    body = ledger_page
+
+    assert_match(/MSO Acceptance\s*<span class="split">Some Pending/, body)
+    assert_match(/Fee Invoices\s*<span class="split">Unpaid/, body)
+    assert_match(/QBO Vendor\s*<span class="split">Missing/, body)
+  end
+
+  test "the true-up page shows each status as its own pill, the vendor without a bill, and what is missing" do
+    vendor = QboVendor.create!(qbo_account: garden3d_qbo_account, qbo_id: "V-#{SecureRandom.hex(3)}", data: {})
+    ContributorQboVendor.create!(contributor: @exec, qbo_vendor: vendor, qbo_account: garden3d_qbo_account)
+    @trueup.update_columns(accepted_at: Time.current)
+    sign_in login_for(@exec)
+
+    get admin_ledger_mso_trueup_path(@ledger, @trueup)
+    assert_response :success
+
+    assert_select "p.pill.nag.accepted", text: "Accepted"
+    assert_select "p.pill.nag.accepted", text: "All Accepted"
+    assert_select "p.pill.nag.pending", text: "Fee Invoices Unpaid"
+    assert_includes response.body, vendor.qbo_url
+    assert_not_includes response.body, "No QBO Vendor"
+    assert_includes response.body, "management fee invoices for the month have to be paid"
+    assert_not_includes response.body, "Everyone on the team has to accept"
+  end
 end

@@ -142,15 +142,17 @@ class PeriodicReport < ApplicationRecord
     @_garden3d_snapshot ||= quarter_slice_for_studio(Studio.garden3d)
   end
 
-  # Quarter row for a studio's snapshot (same label as this report's period).
+  # This report's row in a studio's snapshot, by label: its quarter ("Q3,
+  # 2026", as this report's period) or its month (the snapshot writes
+  # "August, 2026"; this report's label has no comma).
   def quarter_slice_for_studio(studio)
     return nil unless studio&.snapshot
     snap = studio.snapshot
-    quarters = snap["quarter"] || snap[:quarter]
-    return nil unless quarters.is_a?(Array)
+    rows = snap[period_gradation] || snap[period_gradation.to_sym]
+    return nil unless rows.is_a?(Array)
 
-    want = period.label.to_s.strip
-    quarters.find do |row|
+    want = month? ? period_starts_at.strftime("%B, %Y") : period.label.to_s.strip
+    rows.find do |row|
       next false unless row.is_a?(Hash)
       lab = row["label"] || row[:label]
       lab.to_s.strip == want
@@ -418,6 +420,36 @@ class PeriodicReport < ApplicationRecord
 
     pass = InvoicePass.find_by(enterprise_id: Enterprise.garden3d_id, start_of_month: period_starts_at)
     @_management_fee_collected = pass.present? && pass.management_fee_collected?
+  end
+
+  # NIGHTLY, after the MSO sync. Records mso_trueups_out_of_sync? on each
+  # monthly report that has true-ups, as blueprint["out_of_sync"], for the
+  # page's banner: computing a month is too heavy for every page view. A sync
+  # replaces the blueprint, so it clears the flag. Failures are handed back.
+  def self.record_mso_out_of_sync!(today: Date.today)
+    return [] unless MsoTrueup.schema_ready?
+
+    failures = []
+    month.where(id: MsoTrueup.select(:periodic_report_id)).find_each do |report|
+      out_of_sync = report.mso_trueups_out_of_sync?(today: today)
+      report.update_columns(blueprint: (report.blueprint || {}).merge("out_of_sync" => out_of_sync))
+    rescue StandardError => e
+      failures << [report.id, "#{e.class}: #{e.message}"]
+    end
+    failures
+  end
+
+  # Would a sync now give different true-ups from the ones stored? Computes
+  # the month again (Stacks reads only, nothing saved) and compares amounts
+  # per ledger. A month that can no longer be computed is out of sync too.
+  def mso_trueups_out_of_sync?(today: Date.today)
+    return false unless month? && mso_trueups_if_ready.any?
+
+    computation = Mso::MonthlyRun.compute(month: period_starts_at, today: today)
+    now = computation.lines.select { |line| line.amount.positive? }.to_h { |line| [line.ledger.id, line.amount] }
+    now != mso_trueups.to_h { |mso_trueup| [mso_trueup.ledger_id, mso_trueup.amount] }
+  rescue Mso::MonthlyRun::Refused
+    true
   end
 
   # sync_profit_shares!, for a month. Settled (every true-up accepted) means

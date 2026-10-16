@@ -118,11 +118,6 @@ ActiveAdmin.register PeriodicReport do
   end
 
   show do
-    if resource.month?
-      render(partial: "show_monthly", locals: { periodic_report: resource })
-      next
-    end
-
     # Prefer raw query string so tab matches what the browser sent (same source as `quarter_slice` below).
     raw_studio = params[:studio].presence || controller.request.query_parameters["studio"]
     norm = raw_studio.to_s.downcase.strip
@@ -131,14 +126,26 @@ ActiveAdmin.register PeriodicReport do
     accounting_method = session[:accounting_method] || "cash"
     quarter_slice = resource.quarter_slice_for_studio(scope_studio)
     collective_okrs = resource.collective_okrs_for_studio_tab(accounting_method, scope_param, scope_studio)
-    filtered_shares = resource.profit_shares_for_studio(scope_studio)
-    filtered_total_shares = filtered_shares.sum { |ps| ps.blueprint&.dig("shares").to_f }
 
     studio_tabs =
       PeriodicReport::STUDIO_TAB_KEYS.map do |key|
         tab_studio = PeriodicReport.scope_studio_from_param(key)
         { key: key, label: tab_studio&.name.presence || key.humanize }
       end
+
+    if resource.month?
+      render(partial: "show_monthly", locals: {
+        periodic_report: resource,
+        scope_studio: scope_studio,
+        scope_param: scope_param,
+        collective_okrs: collective_okrs,
+        studio_tabs: studio_tabs,
+      })
+      next
+    end
+
+    filtered_shares = resource.profit_shares_for_studio(scope_studio)
+    filtered_total_shares = filtered_shares.sum { |ps| ps.blueprint&.dig("shares").to_f }
 
     render(partial: "show", locals: {
       periodic_report: resource,

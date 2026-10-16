@@ -86,6 +86,21 @@ class AdminMsoCompensationTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "sync_mso_trueups"
   end
 
+  test "the out-of-sync banner shows from the stored nightly check, without computing the month" do
+    banner = "The MSO payments are out of sync with the actual earnings for the MSO that month."
+    Mso::MonthlyRun.expects(:compute).never
+    sign_in @lead
+
+    get admin_periodic_report_path(@report)
+    assert_response :success
+    assert_not_includes response.body, banner
+
+    @report.update_columns(blueprint: @report.blueprint.merge("out_of_sync" => true))
+    get admin_periodic_report_path(@report)
+    assert_response :success
+    assert_includes response.body, banner
+  end
+
   test "a monthly report that has not been synced, or whose sync failed, still renders" do
     sign_in @admin
     empty = mso_report(MONTH + 1.month)
@@ -305,5 +320,29 @@ class AdminMsoCompensationTest < ActionDispatch::IntegrationTest
     assert_raises(ActionController::RoutingError) do
       post "/admin/ledgers/#{@ledger.id}/mso_trueups/#{@mine.id}/remove_qbo_bill"
     end
+  end
+
+  test "a monthly report shows the month's OKRs from the studio's snapshot, as a quarterly report shows its quarter's" do
+    _thoughtbot, g3d = make_studio!
+    okrs = ->(margin) { { "okrs" => { "Profit Margin" => { "value" => margin, "unit" => "percentage", "target" => 30.0,
+                                                           "tolerance" => 5.0, "health" => "healthy", "hint" => "margin" } } } }
+    g3d.update!(snapshot: {
+      "month" => [
+        { "label" => "March, 2094", "period_starts_at" => "03/01/2094", "cash" => okrs.call(41.25), "accrual" => okrs.call(1.0) },
+        { "label" => "April, 2094", "period_starts_at" => "04/01/2094", "cash" => okrs.call(77.5), "accrual" => okrs.call(1.0) },
+      ],
+      "quarter" => [
+        { "label" => "Q1, 2094", "period_starts_at" => "01/01/2094", "cash" => okrs.call(66.75), "accrual" => okrs.call(1.0) },
+      ],
+    })
+    sign_in @lead
+
+    get admin_periodic_report_path(@report)
+    assert_response :success
+
+    assert_includes response.body, "OKRs"
+    assert_includes response.body, "41.25%"
+    assert_not_includes response.body, "77.5%"
+    assert_not_includes response.body, "66.75%"
   end
 end
