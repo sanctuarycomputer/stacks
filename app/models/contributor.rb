@@ -298,6 +298,7 @@ class Contributor < ApplicationRecord
     contributor_payouts.each { |cp| cp.sync_qbo_bill!(accounts_cache: cache) }
     contributor_adjustments.each { |adj| adj.sync_qbo_bill!(accounts_cache: cache) }
     profit_shares.each { |ps| ps.sync_qbo_bill!(accounts_cache: cache) }
+    mso_trueups.each { |trueup| trueup.sync_qbo_bill!(accounts_cache: cache) if trueup.payable? } if MsoTrueup.schema_ready?
     # Reimbursement is a SyncsAsQboBill host too — without this it would be
     # silently skipped by any caller that expects "sync everything for this
     # contributor" (admin button, daily cron rake task). Filter to accepted

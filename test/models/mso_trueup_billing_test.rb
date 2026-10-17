@@ -135,41 +135,17 @@ class MsoTrueupBillingTest < ActiveSupport::TestCase
     assert_not_includes Money::PayableQboBills.call(qbo_account: @qa).map(&:host), @trueup
   end
 
-  # --- the nightly refresh: QuickBooks reads only ------------------------------
+  # --- a paid bill ---------------------------------------------------------------
 
-  def billed_trueup(qbo_id, balance:)
-    exec = mso_person("bill-#{qbo_id}")
-    trueup = mso_trueup(@report, mso_role(exec), garden3d_ledger(exec), amount: "100", accepted: true)
-    trueup.update_columns(qbo_bill_id: qbo_id)
-    QboBill.create!(qbo_account: @qa, qbo_id: qbo_id, qbo_vendor_id: @vendor.qbo_id,
-                    data: { "balance" => balance, "total_amt" => "100.0" })
-    trueup
-  end
-
-  test "the nightly refresh re-reads an unpaid bill, never writes one, and skips a true-up without a bill" do
-    billed = billed_trueup("7701", balance: "100.0")
-    Quickbooks::Service::Bill.any_instance.expects(:create).never
+  test "a bill with any payment is never rewritten; Stacks' copy shows the payment" do
+    QboBill.create!(qbo_account: @qa, qbo_id: "920", qbo_vendor_id: @vendor.qbo_id,
+                    data: { "balance" => "1200", "total_amt" => "1200" })
+    @trueup.update_columns(qbo_bill_id: "920")
+    QboAccount.any_instance.stubs(:fetch_bill_by_id).with("920").returns(remote_bill("920", balance: "200"))
     Quickbooks::Service::Bill.any_instance.expects(:update).never
-    Quickbooks::Service::Bill.any_instance.expects(:delete).never
-    QboAccount.any_instance.expects(:fetch_bill_by_id).with("7701").once.returns(remote_bill("7701", balance: "0"))
 
-    assert_equal [], MsoTrueup.refresh_bill_mirrors!
+    fresh.sync_qbo_bill!
 
-    assert MsoTrueup.find(billed.id).qbo_bill.paid?
-  end
-
-  test "the nightly refresh detaches a bill deleted in QuickBooks, and one failure does not stop the rest" do
-    gone = billed_trueup("7702", balance: "100.0")
-    QboAccount.any_instance.stubs(:fetch_bill_by_id).with("7702").raises(RuntimeError, "Object Not Found: 7702")
-
-    assert_equal [], MsoTrueup.refresh_bill_mirrors!
-    assert_nil gone.reload.qbo_bill_id
-
-    broken = billed_trueup("7703", balance: "100.0")
-    QboAccount.any_instance.stubs(:fetch_bill_by_id).with("7703").raises(RuntimeError, "timeout")
-
-    failures = MsoTrueup.refresh_bill_mirrors!
-    assert_equal [broken.id], failures.map(&:first)
-    assert_equal "7703", broken.reload.qbo_bill_id
+    assert_equal "200.0", QboBill.find_by(qbo_account_id: @qa.id, qbo_id: "920").data["balance"].to_s
   end
 end

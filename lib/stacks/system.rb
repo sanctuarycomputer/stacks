@@ -3,10 +3,6 @@ class Stacks::System
     # The first date of the New Deal
     NEW_DEAL_START_AT = Date.new(2025, 6, 1)
 
-    # The founder, whose pay is topped up to the highest earner's each month
-    # (sync_founder_trueups!) until they are paid through the MSO.
-    FOUNDER_EMAIL = "hugh@sanctuary.computer".freeze
-
     # This is the first date that every fulltimer at
     # garden3d was required to start accounting for
     # all of their hours in Harvest Forecast
@@ -62,96 +58,6 @@ class Stacks::System
         .where('end_date >= ? AND start_date <= ?', start_of_period, end_of_period)
 
       assignments.map{|a| a.forecast_project.forecast_client}.compact.uniq
-    end
-
-    # Every completed month from the New Deal start up to (but not
-    # including) the current, still-in-progress month.
-    def founder_trueup_months
-      months = []
-      working_date = NEW_DEAL_START_AT.clone
-      loop do
-        break if working_date >= Date.today.beginning_of_month
-
-        months << working_date
-        working_date = working_date.advance(months: 1)
-      end
-      months
-    end
-
-    def founder_contributor
-      ForecastPerson.find_by(email: FOUNDER_EMAIL)&.contributor
-    end
-
-    # Is, or was, the founder paid through the MSO for this month? Then the
-    # founder true-up must not be written for it.
-    #
-    # Deliberately NOT just "is there a role period": the roster can be
-    # edited, and this runs unattended every night and its output is billed
-    # in QuickBooks the same night. A month counts as an MSO month if ANY of
-    # these exist for the founder: an active role period; an MSO true-up,
-    # soft-deleted included.
-    #
-    # The table checks matter: migrations are run by hand on production after
-    # the deploy.
-    def founder_paid_by_mso?(founder, month)
-      return false if founder.nil?
-
-      roster_ready = ActiveRecord::Base.connection.data_source_exists?(MsoRolePeriod.table_name)
-      return true if roster_ready && MsoRolePeriod.where(contributor_id: founder.id).active_during(month).exists?
-      return false unless MsoTrueup.schema_ready?
-
-      MsoTrueup.with_deleted.joins(:ledger, :periodic_report)
-        .where(ledgers: { contributor_id: founder.id },
-               periodic_reports: { period_starts_at: month.beginning_of_month })
-        .exists?
-    end
-
-    def sync_founder_trueups!
-      founder = founder_contributor
-
-      founder_trueup_months.each do |working_date|
-        # Skipped entirely: nothing is written and an existing founder true-up
-        # for this month is not touched. Mso::MonthlyRun refuses to compute the
-        # month while one exists, and deleting it removes its bill.
-        next if founder_paid_by_mso?(founder, working_date)
-
-        invoice_pass = InvoicePass
-          .where(start_of_month: working_date, enterprise: Enterprise.sanctuary)
-          .first
-        raise "No invoice pass found for #{working_date}" unless invoice_pass.present?
-
-        # Every pass for the month, not just Sanctuary's: the 2025 garden3d
-        # trackers were moved onto garden3d's own passes, and the payouts on
-        # them are still part of the month.
-        month_trackers = InvoiceTracker.includes(:contributor_payouts)
-          .joins(:invoice_pass).where(invoice_passes: { start_of_month: working_date })
-
-        contributor_payouts_by_contributor = month_trackers.reduce({}) do |acc, invoice_tracker|
-          invoice_tracker.contributor_payouts.each do |contributor_payout|
-            acc[contributor_payout.contributor] ||= { payouts: [], amount: 0 }
-            acc[contributor_payout.contributor][:payouts] << contributor_payout
-            acc[contributor_payout.contributor][:amount] += contributor_payout.amount
-          end
-          acc
-        end
-
-        highest_contributor, highest_contributor_data = contributor_payouts_by_contributor.max_by{|k, v| v[:amount]}
-
-        hugh = founder
-        hugh_ledger = Ledger.find_or_create_for(enterprise: Enterprise.sanctuary, contributor: hugh)
-        trueup = Trueup.find_or_initialize_by(invoice_pass: invoice_pass, ledger: hugh_ledger)
-        founder_trueup_amount = highest_contributor_data[:amount] - contributor_payouts_by_contributor[hugh][:amount]
-
-        trueup.update!(
-          amount: founder_trueup_amount,
-          description: <<~HEREDOC
-          # Trueup for #{working_date.strftime("%B %Y")}
-          - **Highest Paid Contributor:** #{highest_contributor.forecast_person.email}
-          - **Amount:** #{ActionController::Base.helpers.number_to_currency(highest_contributor_data[:amount])}
-          - **Trueup Amount:** #{ActionController::Base.helpers.number_to_currency(founder_trueup_amount)}
-          HEREDOC
-        )
-      end
     end
   end
 end
