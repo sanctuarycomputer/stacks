@@ -326,10 +326,11 @@ module InvoicePayouts
         end
       end
 
+      chunks = []
       paid.each do |payee|
         payee.entries.select { |e| e.role == "IndividualContributor" }.each do |ic|
           line = @lines.find { |l| l.entries.any? { |e| e.equal?(ic) } }
-          add_surplus(line, ic.amount, ic.metadata)
+          chunks << { person: payee.forecast_person, line: line, ic_amount: ic.amount, metadata: ic.metadata }
         end
       end
 
@@ -338,19 +339,26 @@ module InvoicePayouts
           next unless entry.is_a?(Hash) && entry["blueprint_metadata"].is_a?(Hash)
           line = @lines.find { |l| l.qbo_line_item["id"].to_s == entry["blueprint_metadata"]["id"].to_s }
           next unless line
-          add_surplus(line, entry["amount"], ContributorPayout.slim_metadata(entry["blueprint_metadata"]))
+          chunks << { person: cp.contributor.forecast_person, line: line, ic_amount: entry["amount"], metadata: ContributorPayout.slim_metadata(entry["blueprint_metadata"]) }
         end
+      end
+
+      # A contributor's lines on one project net against each other (see
+      # BillingModel::Rules#surpluses_for); lines on other projects don't.
+      chunks.select { |c| c[:line].project_tracker.present? }.group_by { |c| [c[:person], c[:line].project_tracker] }.each do |(_, pt), group|
+        surpluses = pt.billing_rules.surpluses_for(group.map { |c|
+          { working_amount: c[:line].billed - @surplus_commissions[c[:line].qbo_line_item["id"].to_s], ic_amount: c[:ic_amount] }
+        })
+        group.zip(surpluses).each { |c, surplus| add_surplus(c[:line], surplus, c[:metadata]) }
       end
     end
 
     # One IC chunk's surplus on its line, shared out to the line's leads.
-    def add_surplus(line, ic_amount, metadata)
-      pt = line.project_tracker
-      return unless pt.present?
-
-      rules = pt.billing_rules
-      surplus = rules.surplus_for(working_amount: line.billed - @surplus_commissions[line.qbo_line_item["id"].to_s], ic_amount: ic_amount)
+    def add_surplus(line, surplus, metadata)
       return unless surplus > 0
+
+      pt = line.project_tracker
+      rules = pt.billing_rules
 
       lead_share = (surplus * rules.surplus_lead_share).round(2).to_f
       lead_pct = "#{(rules.surplus_lead_share * 100).round(2)}%"
