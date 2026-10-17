@@ -191,6 +191,51 @@ class ContributorPayoutTest < ActiveSupport::TestCase
     assert_in_delta 570.0, chunk[:maximum], 0.001
   end
 
+  def two_line_surplus_cp(tracker_a, tracker_b)
+    qbo_invoice = mock("qbo_invoice")
+    qbo_invoice.stubs(:line_items).returns([
+      { "id" => "5", "amount" => 4680.0, "description" => "WMB-1 Design" },
+      { "id" => "6", "amount" => 0.0, "description" => "WMB-2 Design (free)" },
+    ])
+    invoice_tracker = mock("invoice_tracker")
+    invoice_tracker.stubs(:qbo_invoice).returns(qbo_invoice)
+    invoice_tracker.stubs(:project_trackers).returns([tracker_a, tracker_b].uniq)
+    invoice_tracker.stubs(:commission_total_for_line).returns(0.0)
+
+    cp = ContributorPayout.new(
+      amount: 2520.0,
+      blueprint: {
+        "IndividualContributor" => [
+          { "amount" => 1440.0, "blueprint_metadata" => { "id" => "5", "forecast_project" => 98 } },
+          { "amount" => 1080.0, "blueprint_metadata" => { "id" => "6", "forecast_project" => 99 } },
+        ],
+      },
+    )
+    cp.stubs(:invoice_tracker).returns(invoice_tracker)
+    cp.stubs(:contributor).returns(mock("contributor"))
+    cp.stubs(:in_sync?).returns(true)
+    cp
+  end
+
+  test "calculate_surplus nets a contributor's lines on the same project" do
+    pt = ProjectTracker.new(name: "WM Brown", billing_model: "new_deal_v1")
+    pt.stubs(:forecast_project_ids).returns([98, 99])
+
+    chunks = two_line_surplus_cp(pt, pt).calculate_surplus
+    assert_equal [147.6, 0.0], chunks.map { |c| c[:surplus] }
+    assert_equal [1440.0, 1080.0], chunks.map { |c| c[:actual] }
+    assert_not chunks.first.key?(:rules), "internal working keys stay internal"
+  end
+
+  test "calculate_surplus keeps lines on different projects apart" do
+    a = ProjectTracker.new(name: "A", billing_model: "new_deal_v1")
+    a.stubs(:forecast_project_ids).returns([98])
+    b = ProjectTracker.new(name: "B", billing_model: "new_deal_v1")
+    b.stubs(:forecast_project_ids).returns([99])
+
+    assert_equal [1227.6, 0.0], two_line_surplus_cp(a, b).calculate_surplus.map { |c| c[:surplus] }
+  end
+
   # A client-level payout is shared by every ProjectTracker on that client, so
   # attribution has to come from each entry's forecast_project. Blueprints grew a
   # Commission key in May 2026; the exact-key-set matching this replaced stopped
