@@ -1,5 +1,5 @@
 ActiveAdmin.register PeriodicReport do
-  menu parent: "Dashboard", label: "Quarterly Reports"
+  menu parent: "Dashboard", label: "Periodic Reports"
 
   config.filters = false
   config.paginate = false
