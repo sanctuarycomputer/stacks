@@ -148,6 +148,19 @@ module SyncsAsQboBill
     return if amount.to_f <= 0
 
     bill = load_qbo_bill! || Quickbooks::Model::Bill.new
+
+    # A bill with any payment is never rewritten: its period may be closed,
+    # and a new amount would leave the payment wrong. Stacks' copy is brought
+    # up to date so the payment shows, and nothing is sent to QuickBooks.
+    if bill.id.present? && bill.balance.present? && bill.total.present? && bill.balance.to_f < bill.total.to_f
+      QboBill.find_by(qbo_account_id: qa.id, qbo_id: bill.id.to_s)&.update!(data: bill.as_json)
+      if bill.total.to_f != amount.to_f
+        Rails.logger.warn("[sync_qbo_bill] #{self.class.name} ##{id}: bill #{bill.id} has a payment, so it keeps " \
+                          "#{bill.total.to_f} although Stacks now says #{amount.to_f}")
+      end
+      return
+    end
+
     bill.txn_date = bill_txn_date
     bill.due_date = bill_txn_date
     bill.doc_number = "Stacks_#{id}_#{bill_doc_number_code}" # QBO has a 21-char limit

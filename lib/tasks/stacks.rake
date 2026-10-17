@@ -616,6 +616,9 @@ namespace :stacks do
       end
       Trueup.find_each(&sync_record)
       PayStub.where.not(accepted_at: nil).find_each(&sync_record)
+      # As a profit share: billed once payable (everyone has accepted, and
+      # garden3d's management fee for the month is collected).
+      MsoTrueup.find_each { |trueup| sync_record.call(trueup) if trueup.payable? } if MsoTrueup.schema_ready?
     rescue => e
       system_task.mark_as_error(e)
       next
@@ -634,16 +637,6 @@ namespace :stacks do
       system_task.mark_as_error(RuntimeError.new(message))
     else
       system_task.mark_as_success
-    end
-  end
-
-  desc "Sync Founder Trueups"
-  task :sync_founder_trueups => :environment do
-    system_task = SystemTask.create!(name: "stacks:sync_founder_trueups")
-    begin
-      Stacks::System.sync_founder_trueups!
-    rescue => e
-      system_task.mark_as_error(e)
     end
   end
 

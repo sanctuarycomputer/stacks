@@ -111,15 +111,6 @@ class Enterprise < ApplicationRecord
               failures.map { |id, error| "PeriodicReport #{id} (#{error})" }.join("; ").truncate(2000)
       end
     end
-    # QuickBooks READS only: re-read MSO bills that already exist, so a paid
-    # one is seen as paid. Cannot create or change a bill.
-    garden3d_nightly_step("bill_mirrors") do
-      failures = MsoTrueup.refresh_bill_mirrors!
-      if failures.any?
-        raise "bill mirror refresh failed for " +
-              failures.map { |id, error| "MsoTrueup #{id} (#{error})" }.join("; ").truncate(2000)
-      end
-    end
     # Do each month's stored true-ups still match what the month computes to
     # now? Stored for the monthly report's banner. Writes the database only; at
     # most a QuickBooks READ of garden3d's P&L when it is not stored yet.

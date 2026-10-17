@@ -100,10 +100,9 @@ class MsoTrueup < ApplicationRecord
   end
 
   # SyncsAsQboBill#sync_qbo_bill! has no guard of its own and returns nil
-  # without a word when the contributor has no vendor. Only an admin's click
-  # on the Money page reaches this: MsoTrueup is deliberately not in the
-  # nightly stacks:sync_contributor_qbo_bills task, and this refuses anything
-  # not payable even if it is ever added there.
+  # without a word when the contributor has no vendor. The nightly
+  # stacks:sync_contributor_qbo_bills task calls this for payable true-ups only,
+  # as the Money page does; this refuses anything not payable all the same.
   def sync_qbo_bill!(accounts_cache: nil)
     accounts_cache ||= Qbo::AccountsCache.new
 
@@ -133,50 +132,6 @@ class MsoTrueup < ApplicationRecord
     end
 
     super(accounts_cache: accounts_cache)
-  end
-
-  # NIGHTLY, QuickBooks READS only. Other ledger items learn their bill was
-  # paid because the nightly bill sync rewrites each bill; MsoTrueup is kept
-  # out of that task (nothing unattended may write an MSO bill), so this
-  # re-reads each unpaid MSO bill instead. It never creates or changes a
-  # bill. One failure does not stop the rest; failures are handed back.
-  def self.refresh_bill_mirrors!
-    return [] unless schema_ready?
-
-    failures = []
-    where.not(qbo_bill_id: nil).find_each do |trueup|
-      next if trueup.qbo_bill&.paid?
-
-      trueup.refresh_qbo_bill_mirror!
-    rescue => e
-      failures << [trueup.id, "#{e.class}: #{e.message}"]
-    end
-    failures
-  end
-
-  def refresh_qbo_bill_mirror!
-    qbo_account = qbo_account_for_bill
-    return if qbo_account.nil? || qbo_bill_id.blank?
-
-    mirrors = QboBill.where(qbo_account_id: qbo_account.id, qbo_id: qbo_bill_id)
-    begin
-      remote = qbo_account.fetch_bill_by_id(qbo_bill_id)
-    rescue => e
-      raise unless e.message.to_s.start_with?("Object Not Found:")
-
-      # Deleted in QuickBooks. delete_all, not destroy: QboBill#destroy would
-      # call QuickBooks to delete it again.
-      mirrors.delete_all
-      update_columns(qbo_bill_id: nil)
-      return
-    end
-
-    if mirrors.exists?
-      mirrors.update_all(data: remote.as_json)
-    else
-      QboBill.create!(qbo_id: qbo_bill_id, qbo_account_id: qbo_account.id, data: remote.as_json,
-                      qbo_vendor_id: remote.vendor_ref&.value)
-    end
   end
 
   # SyncsAsQboBill contract. The bill's txn_date and due_date are both this:
