@@ -224,7 +224,7 @@ class ContributorPayout < ApplicationRecord
     project_trackers = invoice_tracker.project_trackers
     default_rules = Stacks::BillingModel.for(Stacks::BillingModel::DEFAULT)
 
-    blueprint["IndividualContributor"].map do |ic|
+    chunks = blueprint["IndividualContributor"].map do |ic|
       blueprint_metadata = ic.dig("blueprint_metadata")
       qbo_line_item = qbo_inv.line_items.find{|li| li["id"] == blueprint_metadata.dig("id")} || {}
       amount_paid = ic.dig("amount").try(:to_f) || 0
@@ -238,12 +238,11 @@ class ContributorPayout < ApplicationRecord
       project_tracker = project_trackers.find{|pt| pt.forecast_project_ids.include?(blueprint_metadata.dig("forecast_project"))}
       rules = project_tracker&.billing_rules || default_rules
 
-      surplus = rules.surplus_for(working_amount: working_amount, ic_amount: amount_paid)
-
       {
         project_tracker: project_tracker,
         contributor: contributor,
-        surplus: surplus,
+        rules: rules,
+        working_amount: working_amount,
         actual: amount_paid,
         maximum: (rules.ic_ceiling * working_amount).to_f,
         chunk: ic,
@@ -251,6 +250,15 @@ class ContributorPayout < ApplicationRecord
         blueprint_metadata: blueprint_metadata,
       }
     end
+
+    # This payout's lines on one project net against each other (see
+    # BillingModel::Rules#surpluses_for); lines on other projects don't.
+    chunks.group_by { |c| c[:project_tracker] }.each_value do |group|
+      surpluses = group.first[:rules].surpluses_for(group.map { |c| { working_amount: c[:working_amount], ic_amount: c[:actual] } })
+      group.zip(surpluses).each { |c, surplus| c[:surplus] = surplus }
+    end
+
+    chunks.map { |c| c.except(:rules, :working_amount) }
   end
 
   def accrual_date

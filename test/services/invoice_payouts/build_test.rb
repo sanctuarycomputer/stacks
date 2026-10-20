@@ -45,6 +45,41 @@ class InvoicePayoutsBuildTest < ActiveSupport::TestCase
     assert_includes build.lines.first.entries.map(&:role), "ProjectLeadSurplus"
   end
 
+  # WM Brown, August 2026: hours given to the client through a 0p/h project,
+  # paid at 60p/h. Pay on the $0 line nets against the billed line's surplus
+  # when both projects sit on one tracker.
+  def free_hours_build(same_tracker:)
+    pt = build_tracker("new_deal_v1")
+    @project.update!(notes: "#{@ic.email}:20p/h")
+    free = ForecastProject.create!(forecast_id: 710_009, client_id: @client.forecast_id, name: "Guard Free", code: "MG-2", tags: ["0p/h"], notes: "#{@ic.email}:60p/h")
+    if same_tracker
+      ProjectTrackerForecastProject.create!(project_tracker: pt, forecast_project: free)
+    else
+      build_tracker("new_deal_v1", project: free)
+    end
+    it = build_invoice_tracker([
+      { id: "1", person: @ic, hours: 100.0, rate: 100.0 },
+      { id: "2", person: @ic, project: free, hours: 30.0, rate: 0.0 },
+    ])
+    InvoicePayouts::Build.new(it)
+  end
+
+  test "pay on a free line nets against the surplus of its project's billed line" do
+    build = free_hours_build(same_tracker: true)
+    assert_in_delta 2000.0 + 1800.0, payee(build, @ic).amount, 0.001
+    # pooled: 0.57 * 10,000 - 3,800 = 1,900 → 285 to each lead
+    assert_in_delta 800.0 + 285.0, payee(build, @al).amount, 0.001
+    assert_in_delta 500.0 + 285.0, payee(build, @pl).amount, 0.001
+    assert_equal 1, payee(build, @al).blueprint["AccountLeadSurplus"].length
+  end
+
+  test "pay on a free line on another project leaves this project's surplus alone" do
+    build = free_hours_build(same_tracker: false)
+    # margin 0.80, threshold 0.43 → surplus 3700 → 555 to each lead
+    assert_in_delta 800.0 + 555.0, payee(build, @al).amount, 0.001
+    assert_in_delta 500.0 + 555.0, payee(build, @pl).amount, 0.001
+  end
+
   test "a full-time lead is listed but not paid, base or surplus" do
     build_tracker("new_deal_v1")
     @project.update!(notes: "#{@ic.email}:20p/h")

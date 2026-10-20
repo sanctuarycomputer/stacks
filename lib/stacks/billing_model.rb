@@ -46,6 +46,25 @@ module Stacks::BillingModel
       [((margin - surplus_threshold) * working).round(2), 0.0].max.to_f
     end
 
+    # Surplus for one contributor's lines on one project, which net against
+    # each other: pay on a line that bills little or nothing (e.g. hours given
+    # to the client at $0) eats into the surplus of the lines that do bill.
+    # Takes [{ working_amount:, ic_amount: }, ...] and returns each line's
+    # share of the pooled surplus, in proportion to the line's own surplus, so
+    # a lone line comes back exactly as surplus_for prices it.
+    #
+    # Lines the IC wasn't paid for stay out of the pool, as they generate no
+    # surplus on their own.
+    def surpluses_for(lines)
+      own = lines.map { |l| surplus_for(**l) }
+      total = own.sum
+      return own if total.zero?
+
+      paid = lines.select { |l| l[:ic_amount].to_f > 0 }
+      pooled = [(1 - surplus_threshold) * paid.sum { |l| l[:working_amount].to_f } - paid.sum { |l| l[:ic_amount].to_f }, 0.0].max
+      own.map { |s| (s * pooled / total).round(2).to_f }
+    end
+
     def label
       "#{name} — #{(treasury_share * 100).to_i}% treasury, #{(ic_ceiling * 100).to_i}% IC ceiling"
     end

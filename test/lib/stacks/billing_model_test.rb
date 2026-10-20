@@ -44,6 +44,49 @@ class StacksBillingModelTest < ActiveSupport::TestCase
     assert_equal 0.0, rules.surplus_for(working_amount: 1000.0, ic_amount: 0.0)
   end
 
+  test "surpluses_for prices a lone line exactly as surplus_for does" do
+    rules = Stacks::BillingModel.for("new_deal_v1")
+    assert_equal [1227.6], rules.surpluses_for([{ working_amount: 4680.0, ic_amount: 1440.0 }])
+  end
+
+  # WM Brown, August 2026: 18 hours given to the client at $0 but paid at $60.
+  test "surpluses_for nets pay on a $0 line against the surplus of a billed one" do
+    rules = Stacks::BillingModel.for("new_deal_v1")
+    surpluses = rules.surpluses_for([
+      { working_amount: 4680.0, ic_amount: 1440.0 },
+      { working_amount: 0.0, ic_amount: 1080.0 },
+    ])
+    assert_equal [147.6, 0.0], surpluses
+    assert surpluses.all? { |s| s.is_a?(Float) }
+  end
+
+  test "surpluses_for spreads the pooled surplus in proportion to each line's own" do
+    rules = Stacks::BillingModel.for("new_deal_v2")
+    # Own: 140, 70 and 0 (the third is paid over the ceiling).
+    # Pooled: 0.54 * 2000 - 1000 = 80, spread 140:70.
+    assert_equal [53.33, 26.67, 0.0], rules.surpluses_for([
+      { working_amount: 1000.0, ic_amount: 400.0 },
+      { working_amount: 500.0, ic_amount: 200.0 },
+      { working_amount: 500.0, ic_amount: 400.0 },
+    ])
+  end
+
+  test "surpluses_for never goes negative when the pay outweighs the billing" do
+    rules = Stacks::BillingModel.for("new_deal_v1")
+    assert_equal [0.0, 0.0], rules.surpluses_for([
+      { working_amount: 1000.0, ic_amount: 400.0 },
+      { working_amount: 0.0, ic_amount: 500.0 },
+    ])
+  end
+
+  test "surpluses_for leaves unpaid lines out of the pool" do
+    rules = Stacks::BillingModel.for("new_deal_v1")
+    assert_equal [170.0, 0.0], rules.surpluses_for([
+      { working_amount: 1000.0, ic_amount: 400.0 },
+      { working_amount: 5000.0, ic_amount: 0.0 },
+    ])
+  end
+
   test "for raises on an unknown model" do
     assert_raises(ArgumentError) { Stacks::BillingModel.for("old_deal") }
     assert_raises(ArgumentError) { Stacks::BillingModel.for(nil) }
