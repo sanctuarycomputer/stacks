@@ -324,13 +324,13 @@
   </div>
 </div>
 
-<% surplus_chunks = invoice_tracker.surplus_chunks.select{|c| c[:surplus] > 0 } %>
+<% surplus_rows = invoice_tracker.surplus_rows %>
 <%
   ceilings = invoice_tracker.project_trackers.map { |pt| pt.billing_rules.ic_ceiling }.uniq
   ceiling_pct = ((ceilings.max || Stacks::BillingModel.for(Stacks::BillingModel::DEFAULT).ic_ceiling) * 100).round(2)
   ceiling_label = ceilings.size > 1 ? "#{ceiling_pct}% (highest across trackers)" : "#{ceiling_pct}%"
 %>
-<% surplus = invoice_tracker.surplus(surplus_chunks) %>
+<% surplus = surplus_rows.sum { |r| r[:surplus] } %>
 
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
@@ -368,10 +368,10 @@
       </tr>
     </thead>
     <tbody>
-      <% surplus_chunks.each_with_index do |c, index| %>
+      <% surplus_rows.each_with_index do |c, index| %>
         <tr class="<%= index.even? ? "even" : "odd" %>">
           <td class="col">
-            <%= c.dig(:qbo_line_item, "description") %>
+            <%= safe_join(c[:descriptions], tag.br) %>
           </td>
           <td class="col">
             <%= link_to c.dig(:contributor)&.forecast_person&.email, admin_contributor_path(c.dig(:contributor)) %>

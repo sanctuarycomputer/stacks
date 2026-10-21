@@ -349,6 +349,22 @@ class InvoiceTracker < ApplicationRecord
     chunks.sum{|c| c[:surplus]}
   end
 
+  # The Profit Sharing table: one row per contributor per project, the unit
+  # surplus nets over (BillingModel::Rules#surpluses_for), so a row's actual
+  # payout includes pay on lines that bill nothing. Lines the IC wasn't paid
+  # for stay out, as they stay out of the pool, so maximum - actual = surplus.
+  def surplus_rows(chunks = surplus_chunks)
+    chunks.select { |c| c[:actual].to_f > 0 }.group_by { |c| [c[:contributor], c[:project_tracker]] }.map do |(contributor, _), group|
+      {
+        contributor: contributor,
+        descriptions: group.map { |c| c.dig(:qbo_line_item, "description") }.compact,
+        maximum: group.sum { |c| c[:maximum] },
+        actual: group.sum { |c| c[:actual] },
+        surplus: group.sum { |c| c[:surplus] }.round(2),
+      }
+    end.select { |r| r[:surplus] > 0 }
+  end
+
   def n2c(*args, **kwargs, &b)
     ActionController::Base.helpers.number_to_currency(*args, **kwargs, &b)
   end

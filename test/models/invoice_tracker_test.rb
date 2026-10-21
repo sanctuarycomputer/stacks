@@ -252,4 +252,30 @@ class InvoiceTrackerBillingEnterpriseTest < ActiveSupport::TestCase
     err = assert_raises(RuntimeError) { it.make_invoice! }
     assert_match(/internal client/i, err.message)
   end
+
+  # WM Brown, September 2026: Dary's billed line plus 16 free hours paid at
+  # 60p/h on the same project. The row shows what she was paid in total, so
+  # maximum - actual reads as the surplus.
+  test "surplus_rows shows one row per contributor per project" do
+    dary, james = Object.new, Object.new
+    wm_brown, other = Object.new, Object.new
+    chunks = [
+      { contributor: dary, project_tracker: wm_brown, maximum: 2445.30, actual: 1320.0, surplus: 165.30, qbo_line_item: { "description" => "WMB-1 Website Daryna" } },
+      { contributor: dary, project_tracker: wm_brown, maximum: 0.0, actual: 960.0, surplus: 0.0, qbo_line_item: { "description" => "WMB-1 WM Brown ($0p/h) Daryna" } },
+      { contributor: dary, project_tracker: wm_brown, maximum: 1140.0, actual: 0.0, surplus: 0.0, qbo_line_item: { "description" => "WMB-1 Unpaid Daryna" } },
+      { contributor: dary, project_tracker: other, maximum: 570.0, actual: 400.0, surplus: 170.0, qbo_line_item: { "description" => "OTH-1 Daryna" } },
+      { contributor: james, project_tracker: wm_brown, maximum: 1778.40, actual: 1778.40, surplus: 0.0, qbo_line_item: { "description" => "WMB-1 Website James" } },
+    ]
+
+    rows = InvoiceTracker.new.surplus_rows(chunks)
+    assert_equal 2, rows.length, "a project with no surplus is left out, and projects stay apart"
+    # The unpaid line is out of the pool, so it stays out of the row.
+    row = rows.first
+    assert_same dary, row[:contributor]
+    assert_equal ["WMB-1 Website Daryna", "WMB-1 WM Brown ($0p/h) Daryna"], row[:descriptions]
+    assert_in_delta 2445.30, row[:maximum], 0.001
+    assert_in_delta 2280.0, row[:actual], 0.001
+    assert_in_delta 165.30, row[:surplus], 0.001
+    assert_in_delta 170.0, rows.last[:surplus], 0.001
+  end
 end
