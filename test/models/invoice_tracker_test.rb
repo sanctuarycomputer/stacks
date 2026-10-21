@@ -262,12 +262,14 @@ class InvoiceTrackerBillingEnterpriseTest < ActiveSupport::TestCase
     chunks = [
       { contributor: dary, project_tracker: wm_brown, maximum: 2445.30, actual: 1320.0, surplus: 165.30, qbo_line_item: { "description" => "WMB-1 Website Daryna" } },
       { contributor: dary, project_tracker: wm_brown, maximum: 0.0, actual: 960.0, surplus: 0.0, qbo_line_item: { "description" => "WMB-1 WM Brown ($0p/h) Daryna" } },
+      { contributor: dary, project_tracker: wm_brown, maximum: 1140.0, actual: 0.0, surplus: 0.0, qbo_line_item: { "description" => "WMB-1 Unpaid Daryna" } },
       { contributor: dary, project_tracker: other, maximum: 570.0, actual: 400.0, surplus: 170.0, qbo_line_item: { "description" => "OTH-1 Daryna" } },
       { contributor: james, project_tracker: wm_brown, maximum: 1778.40, actual: 1778.40, surplus: 0.0, qbo_line_item: { "description" => "WMB-1 Website James" } },
     ]
 
     rows = InvoiceTracker.new.surplus_rows(chunks)
     assert_equal 2, rows.length, "a project with no surplus is left out, and projects stay apart"
+    # The unpaid line is out of the pool, so it stays out of the row.
     row = rows.first
     assert_same dary, row[:contributor]
     assert_equal ["WMB-1 Website Daryna", "WMB-1 WM Brown ($0p/h) Daryna"], row[:descriptions]
