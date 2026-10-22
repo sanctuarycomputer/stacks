@@ -1,0 +1,51 @@
+<%# A person's checklists and badges. Shown only to the person themselves and to
+  admins — never to leads viewing someone else's profile.
+%>
+<% viewer_allowed = current_admin_user.is_admin? || current_admin_user.id == resource.id %>
+<% assignments = viewer_allowed ? resource.course_assignments.includes(:course).order(:assigned_on, :id).to_a : [] %>
+<% grants = viewer_allowed ? resource.qualification_grants.includes(:qualification).order(:granted_at).to_a : [] %>
+<% if assignments.any? || grants.any? %>
+  <div class="dashboard-modules table index_table index">
+    <div class="dashboard-module">
+      <div class="module-header">
+        <p>Getting on board</p>
+      </div>
+      <div class="module-body">
+        <% if assignments.any? %>
+          <table border="0" cellspacing="0" cellpadding="0" class="index_table index">
+            <tbody>
+              <% assignments.each_with_index do |assignment, idx| %>
+                <% checklist = Stacks::Learning::Checklist.new(assignment) %>
+                <tr class="<%= idx.even? ? "even" : "odd" %>">
+                  <td class="col"><%= link_to "#{assignment.course.learner_title} →", admin_course_assignment_path(assignment) %></td>
+                  <td class="col"><%= checklist.steps_done %> of <%= checklist.steps_total %> steps done</td>
+                  <td class="col text-right">
+                    <% if assignment.completed? %>
+                      <span class="pill ready">Done</span>
+                    <% elsif assignment.waived? %>
+                      <span class="pill">Waived</span>
+                    <% elsif checklist.overdue? %>
+                      <span class="pill at_risk">Was due <%= assignment.due_on.to_s(:long) %></span>
+                    <% elsif assignment.due_on < Date.today %>
+                      Waiting on an admin
+                    <% else %>
+                      Due <%= assignment.due_on.to_s(:long) %>
+                    <% end %>
+                  </td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        <% end %>
+        <% if grants.any? %>
+          <p style="margin-top: 12px;">
+            <strong>Badges:</strong>
+            <% grants.each do |grant| %>
+              <span class="pill ready" style="margin-left: 4px;"><%= grant.qualification.name %></span>
+            <% end %>
+          </p>
+        <% end %>
+      </div>
+    </div>
+  </div>
+<% end %>

@@ -55,6 +55,10 @@ class AdminUser < ApplicationRecord
   has_many :peer_reviews, dependent: :nullify
 
   after_create :sync_salary_windows!
+  # after_create_commit, not after_create: after_create runs inside the INSERT's
+  # transaction, where a rescued database error leaves the transaction aborted
+  # and silently rolls the new account back.
+  after_create_commit :assign_auto_assigned_courses!
 
   def self.find_or_create_by_g3d_uid!(email)
     return nil unless (email.ends_with?("@sanctuary.computer") || email.ends_with?("@xxix.co"))
@@ -549,6 +553,19 @@ class AdminUser < ApplicationRecord
   has_many :administered_enterprises, through: :enterprise_admins, source: :enterprise
 
   has_many :permission_grants, dependent: :destroy
+
+  # Onboarding courses. delete_all (not destroy): Stacks::Team.discover!
+  # destroys foreign-domain users inside the daily run, and these rows have no
+  # callbacks worth running. Rows where this person was only the actor
+  # (assigned_by, waived_by, completed_by, granted_by) are nulled by the
+  # database's ON DELETE SET NULL.
+  has_many :course_assignments, dependent: :delete_all
+  has_many :step_completions, dependent: :delete_all
+  has_many :quiz_attempts, dependent: :delete_all
+  has_many :quiz_retry_grants, dependent: :delete_all
+  has_many :module_completions, dependent: :delete_all
+  has_many :qualification_grants, dependent: :delete_all
+
   accepts_nested_attributes_for :permission_grants, allow_destroy: true
 
   def admin_of?(enterprise)
@@ -600,6 +617,20 @@ class AdminUser < ApplicationRecord
   def sync_salary_windows!
     syncer = Stacks::AdminUserSalaryWindowSyncer.new(self)
     syncer.sync!
+  end
+
+  # Every newly discovered company-email person gets the courses flagged
+  # auto_assign. Runs only on create, so existing people are never assigned
+  # retroactively. Must never prevent an account from being created.
+  def assign_auto_assigned_courses!
+    return unless email.to_s.ends_with?("@sanctuary.computer") || email.to_s.ends_with?("@xxix.co")
+
+    Course.auto_assigned.where.not(id: course_assignments.select(:course_id)).each do |course|
+      CourseAssignment.create!(admin_user: self, course: course)
+    end
+  rescue => e
+    Rails.logger.error("AdminUser##{id} course auto-assign failed: #{e.class}: #{e.message}")
+    Sentry.capture_exception(e) if defined?(Sentry)
   end
 
   def latest_key_metrics

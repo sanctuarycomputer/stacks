@@ -11,6 +11,12 @@ namespace :stacks do
     end
   end
 
+  desc "Create the Wayfinding onboarding course from db/seeds/learning/wayfinding.yml (safe to re-run; never overwrites edits)"
+  task :seed_wayfinding_course => :environment do
+    course = Stacks::Learning::Seeder.call(Rails.root.join("db/seeds/learning/wayfinding.yml"))
+    puts "Wayfinding course ##{course.id}: #{course.course_modules.count} modules, auto_assign=#{course.auto_assign}"
+  end
+
   desc "Freshen Enterprise Qbo Tokens"
   task :refresh_enterprise_qbo_tokens => :environment do
     system_task = SystemTask.create!(name: "stacks:refresh_enterprise_qbo_tokens")
@@ -709,6 +715,16 @@ namespace :stacks do
 
       puts "~~~> DOING MISC"
       Stacks::Notifications.make_notifications!
+
+      # Tick off what Stacks can now see for itself (Forecast account, payment
+      # profile, Human Operating Manual) before tasks are rebuilt. Isolated so
+      # a failure here never fails the daily pass.
+      begin
+        Stacks::Learning::Progress.refresh_all!
+      rescue => e
+        Rails.logger.error("[stacks:daily_tasks] Course progress refresh failed: #{e.class}: #{e.message}")
+        Sentry.capture_exception(e) if defined?(Sentry)
+      end
 
       puts "~~~> WARMING TASK BUILDER CACHE"
       Stacks::TaskBuilder.new.refresh!
