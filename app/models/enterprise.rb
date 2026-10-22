@@ -21,6 +21,20 @@ class Enterprise < ApplicationRecord
   accepts_nested_attributes_for :qbo_account, allow_destroy: true
   VERTICAL_MATCHER = /\[(.+)\](.*)/
 
+  # The enterprises garden3d invoices each month: every other enterprise with
+  # a customer record in garden3d's QuickBooks, whose id is stored here.
+  # (Guarded for the gap between a deploy and its hand-run migration.)
+  scope :billed_by_garden3d, -> {
+    next none unless column_names.include?("g3d_qbo_customer_id")
+    where.not(name: GARDEN3D_NAME).where.not(g3d_qbo_customer_id: [nil, ""])
+  }
+
+  # Lowest Forecast id first, and queried fresh, so the choice is the same on
+  # every run and never comes from a stale association cache.
+  def internal_forecast_client_ids
+    EnterpriseForecastClient.where(enterprise_id: id).order(:forecast_client_id).pluck(:forecast_client_id)
+  end
+
   # When a new enterprise is created, every existing contributor immediately
   # gets a ledger for it. Pairs with Contributor.after_create so the
   # (contributor, enterprise) grid stays full on a long enough timeline.
@@ -57,15 +71,67 @@ class Enterprise < ApplicationRecord
     Thread.current[:garden3d_enterprise] ||= Enterprise.find_by!(name: GARDEN3D_NAME)
   end
 
+  # garden3d's id, or nil on a database that has no garden3d. Never raises.
+  # Shares .garden3d's memo, so it costs a query only until garden3d has been
+  # found once on this thread.
+  def self.garden3d_id
+    (Thread.current[:garden3d_enterprise] ||= Enterprise.find_by(name: GARDEN3D_NAME))&.id
+  end
+
   def is_index?
     name == INDEX_SPACE_NAME
+  end
+
+  def is_garden3d?
+    name == GARDEN3D_NAME
   end
 
   # Per-enterprise daily automation, dispatched by stacks:daily_enterprise_tasks.
   # Add new per-enterprise behaviors here rather than as new rake steps.
   def daily_tasks
     Stacks::Optix.deactivate_inactive_members! if is_index?
+    return unless is_garden3d?
+
+    # Each step on its own: one that raises is reported and the rest still
+    # run. Nothing here pays anyone or writes to QuickBooks.
+
+    # Database only: garden3d's invoice pass and trackers for each month it
+    # has none. Nothing here may write to QuickBooks; an admin makes the
+    # invoices by hand.
+    garden3d_nightly_step("invoice_passes") { InvoicePass.make_intercompany_passes! }
+    # Database only: a monthly report for each month that has none.
+    garden3d_nightly_step("monthly_reports") { PeriodicReport.ensure_monthly_reports_exist! }
+    # QuickBooks READS, then database: for each unsettled month, re-read
+    # garden3d's invoices and, once all are paid, sync its MSO true-ups.
+    # Each still needs its executive's acceptance; no bill is created.
+    garden3d_nightly_step("mso_sync") do
+      failures = PeriodicReport.sync_collected_mso_months!
+      if failures.any?
+        raise "MSO sync failed for " +
+              failures.map { |id, error| "PeriodicReport #{id} (#{error})" }.join("; ").truncate(2000)
+      end
+    end
+    # Do each month's stored true-ups still match what the month computes to
+    # now? Stored for the monthly report's banner. Writes the database only; at
+    # most a QuickBooks READ of garden3d's P&L when it is not stored yet.
+    garden3d_nightly_step("mso_out_of_sync") do
+      failures = PeriodicReport.record_mso_out_of_sync!
+      if failures.any?
+        raise "MSO out-of-sync check failed for " +
+              failures.map { |id, error| "PeriodicReport #{id} (#{error})" }.join("; ").truncate(2000)
+      end
+    end
   end
+
+  # As stacks:daily_enterprise_tasks reports its own steps: the log and Sentry.
+  def garden3d_nightly_step(name)
+    yield
+  rescue StandardError => e
+    Rails.logger.error("[mso] nightly garden3d step #{name} failed: #{e.class}: #{e.message}")
+    Sentry.capture_exception(e) if defined?(Sentry)
+    nil
+  end
+  private :garden3d_nightly_step
 
   def discover_verticals
     qbo_account.qbo_profit_and_loss_reports.reduce([]) do |acc, qbo_profit_and_loss_report|

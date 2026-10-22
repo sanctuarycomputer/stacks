@@ -14,6 +14,12 @@ module Mcp
     # cap so a truncated listing still reports the true unpaid sum.
     MAX_BILLS_PER_ENTITY = 500
 
+    # MSO executive compensation is never listed here. This tool has no notion
+    # of who is asking, and a bill carries the executive's vendor name and the
+    # amount. Recognised two ways: a bill an MsoTrueup points at, and the "MT"
+    # doc-number code SyncsAsQboBill gives every MsoTrueup bill.
+    MSO_DOC_NUMBER = /\AStacks_\d+_MT\z/
+
     input_schema(
       properties: {
         entity: { type: 'string', description: 'Optional: one Enterprise name to scope to. Default: all entities.' },
@@ -51,7 +57,9 @@ module Mcp
     # has_one) covers enterprises with more than one connected QBO account.
     def self.entity_block(ent, include_paid:)
       skipped = 0
+      mso_bill_ids = mso_trueup_bill_ids(ent)
       records = QboBill.joins(:qbo_account).where(qbo_accounts: { enterprise_id: ent.id }).to_a
+        .reject { |bill| mso_compensation_bill?(bill, mso_bill_ids) }
       vendors = vendors_for(records)
 
       bills = records.filter_map do |bill|
@@ -86,6 +94,23 @@ module Mcp
         skipped_count: skipped,
         truncated: bills.length > MAX_BILLS_PER_ENTITY,
       }
+    end
+
+    # Bill ids every MsoTrueup on this entity's ledgers points at, deleted
+    # true-ups included: a deleted row's bill can outlive it.
+    def self.mso_trueup_bill_ids(ent)
+      return Set.new unless MsoTrueup.schema_ready?
+
+      MsoTrueup.with_deleted.joins(:ledger)
+        .where(ledgers: { enterprise_id: ent.id })
+        .where.not(qbo_bill_id: nil)
+        .pluck(:qbo_bill_id).map(&:to_s).to_set
+    end
+
+    def self.mso_compensation_bill?(bill, mso_bill_ids)
+      return true if mso_bill_ids.include?(bill.qbo_id.to_s)
+
+      (bill.data || {})["doc_number"].to_s.match?(MSO_DOC_NUMBER)
     end
 
     # One batched, realm-scoped vendor lookup per entity (the composite

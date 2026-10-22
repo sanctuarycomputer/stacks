@@ -4,7 +4,8 @@ module Mcp
     description 'Overdue (unpaid or partially-paid) QBO invoices with days overdue, sorted ' \
                 'most-overdue first, from already-synced rows. Never calls QBO live. Late fees ' \
                 'are a per-client human decision — this tool exposes the data only. project_trackers: the ' \
-                'project trackers each invoice bills (via its invoice tracker); empty for ad hoc invoices.'
+                'project trackers each invoice bills (via its invoice tracker); empty for ad hoc invoices. ' \
+                'garden3d\'s intercompany management fee invoices are left out.'
     input_schema(
       properties: {
         enterprise: { type: 'string', description: 'Optional enterprise name filter, e.g. "Sanctuary Computer Inc"' },

@@ -9,6 +9,16 @@ ActiveAdmin.register MsoRolePeriod do
     def scoped_collection
       super.includes(contributor: :forecast_person)
     end
+
+    # A role period covering a month with an accepted true-up refuses to be
+    # destroyed. Say why.
+    def destroy
+      destroy! do |_success, failure|
+        failure.html do
+          redirect_to admin_mso_role_periods_path, alert: resource.errors.full_messages.to_sentence
+        end
+      end
+    end
   end
 
   index download_links: false, title: "MSO Roles" do

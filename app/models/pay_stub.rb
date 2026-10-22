@@ -22,9 +22,13 @@ class PayStub < ApplicationRecord
 
   # Same pattern as ContributorPayout#toggle_acceptance! but tracks accepted_by_id.
   # Caller must pass the AdminUser doing the toggle (controllers pass current_admin_user).
+  #
+  # Unlike payouts, the unaccept lock is cycle approval, not :all_accepted —
+  # nothing is payable until the cycle is approved (see #payable?), and an
+  # :all_accepted lock would make a single-stub cycle impossible to correct.
   def toggle_acceptance!(by:)
     if accepted?
-      raise "Cannot unaccept a pay stub once all stubs in the cycle are accepted." if pay_cycle.stubs_status == :all_accepted
+      raise "Cannot unaccept a pay stub once its cycle is approved. Unapprove the cycle first." if pay_cycle.approved?
       update!(accepted_at: nil, accepted_by_id: nil)
     else
       update!(accepted_at: DateTime.now, accepted_by_id: by.id)

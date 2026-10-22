@@ -1,0 +1,56 @@
+<%
+  report = resource.periodic_report
+  qbo_bill = resource.qbo_bill
+  qbo_vendor = resource.qbo_vendor
+%>
+
+<p class="pill nag <%= resource.accepted? ? "accepted" : "pending" %>" style="margin-right: 6px">
+  <%= resource.accepted? ? "Accepted" : "Pending" %>
+</p>
+
+<p class="pill nag <%= report.all_mso_trueups_accepted? ? "accepted" : "pending" %>" style="margin-right: 6px">
+  <%= report.all_mso_trueups_accepted? ? "All Accepted" : "Some Pending" %>
+</p>
+
+<p class="pill nag <%= report.management_fee_collected? ? "accepted" : "pending" %>" style="margin-right: 6px">
+  <%= report.management_fee_collected? ? "Fee Invoices Paid" : "Fee Invoices Unpaid" %>
+</p>
+
+<% if authorized?(:read, report) %>
+  <%= link_to report.period_label, admin_periodic_report_path(report), class: "nag", style: "margin-right: 6px;" %>
+<% end %>
+
+<%= link_to resource.contributor.forecast_person.email, admin_contributor_path(resource.contributor, ledger: resource.ledger_id), class: "nag", style: "margin-right: 6px;" %>
+
+<% if qbo_bill.present? %>
+  <a href="<%= qbo_bill.qbo_url %>" target="_blank" rel="noopener">
+    <p class="nag" style="margin-bottom: 0px;margin-right: 6px;">QBO Bill ↗</p>
+  </a>
+<% end %>
+<% if qbo_vendor.present? %>
+  <a href="<%= qbo_vendor.qbo_url %>" target="_blank" rel="noopener">
+    <p class="nag" style="margin-bottom: 0px;margin-right: 6px;">QBO Vendor ↗</p>
+  </a>
+<% elsif resource.qbo_account_for_bill %>
+  <p class="pill nag pending" style="margin-right: 6px">No QBO Vendor</p>
+<% end %>
+
+<div class="dashboard-modules table index_table index" style="margin-top:20px;">
+  <div class="dashboard-module">
+    <div class="module-header">
+      <p>MSO true-up, <%= resource.payment_date.strftime("%B %Y") %>: <%= number_to_currency(resource.amount) %></p>
+    </div>
+    <div class="module-body markdown-body">
+      <%= sanitize RDiscount.new(resource.description || "").to_html %>
+      <% reasons = resource.not_ready_to_pay_reasons %>
+      <% if reasons.any? %>
+        <p><strong>Not ready to pay yet:</strong></p>
+        <ul>
+          <% reasons.each do |reason| %>
+            <li><%= reason %></li>
+          <% end %>
+        </ul>
+      <% end %>
+    </div>
+  </div>
+</div>

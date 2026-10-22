@@ -213,6 +213,30 @@ class Mcp::InvoicePassesToolTest < ActiveSupport::TestCase
     assert_equal({ 'voided' => 1 }, sanct['status_mix'])
   end
 
+  test "garden3d's management fee invoices are intercompany and stay out of the totals" do
+    seed_july!
+    garden3d = enterprises(:garden3d)
+    garden3d_qa = QboAccount.create!(enterprise: garden3d, client_id: 'c', client_secret: 's',
+                                     realm_id: "g-#{SecureRandom.hex(4)}")
+    fee_pass = InvoicePass.create!(start_of_month: Date.new(2026, 7, 1), enterprise: garden3d)
+    invoice!('fee-july', { 'total' => 170000.0, 'balance' => 170000.0, 'email_status' => 'EmailSent',
+                           'due_date' => '2026-08-15' }, account: garden3d_qa)
+    tracker!(fee_pass, @client, qbo_invoice_id: 'fee-july', account: garden3d_qa)
+
+    payload = mcp_payload(Mcp::GetInvoicePassesTool.call(server_context: {}))
+
+    fee_row = payload['passes'].find { |p| p['enterprise'] == 'garden3d, LLC' }
+    assert_equal '2026-07-01', fee_row['month']
+    assert_equal [], fee_row['entities']
+    assert_equal 0.0, fee_row['total_invoiced']
+
+    july = payload['mom'].find { |m| m['month'] == '2026-07-01' }
+    assert_equal 1750.0, july['total_invoiced'], 'the fee must not be added to the month'
+  ensure
+    Thread.current[:sanctuary_enterprise] = nil
+    Thread.current[:garden3d_enterprise] = nil
+  end
+
   test "each pass row names its issuing enterprise" do
     payload = mcp_payload(Mcp::GetInvoicePassesTool.call(server_context: {}))
     assert_equal 'Sanctuary Computer Inc', payload['passes'].first['enterprise']

@@ -6,6 +6,14 @@ ActiveAdmin.register Trueup do
 
   belongs_to :ledger
 
+  controller do
+    # Deleting a true-up now deletes its QuickBooks bill. A bill with a
+    # payment refuses; show why instead of an error page.
+    rescue_from SyncsAsQboBill::PaidQboBillError do |e|
+      redirect_back fallback_location: admin_root_path, alert: e.message
+    end
+  end
+
   index download_links: false do
     column :contributor
     column :amount

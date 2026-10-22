@@ -61,13 +61,6 @@ class PayStubTest < ActiveSupport::TestCase
   end
 
   test "toggle_acceptance! flips accepted_at and tracks accepted_by" do
-    # Create a second stub so the cycle won't be :all_accepted after accepting just this one,
-    # which would otherwise prevent un-acceptance (tested separately below).
-    fp2 = ForecastPerson.create!(forecast_id: 999_002, email: "stubtest2@example.com", data: {})
-    contributor2 = Contributor.create!(forecast_person: fp2)
-    ledger2 = Ledger.find_or_create_for(enterprise: @enterprise, contributor: contributor2)
-    PayStub.create!(pay_cycle: @cycle, ledger: ledger2, amount: 1000, blueprint: @blueprint)
-
     stub = PayStub.create!(pay_cycle: @cycle, ledger: @ledger, amount: 1000, blueprint: @blueprint)
     stub.toggle_acceptance!(by: @admin)
     assert stub.accepted?
@@ -77,12 +70,25 @@ class PayStubTest < ActiveSupport::TestCase
     assert_nil stub.accepted_by_id
   end
 
-  test "toggle_acceptance! refuses unaccept when cycle is all_accepted" do
+  # A single-stub cycle is :all_accepted the moment its only stub is accepted.
+  # Unaccept must still work there, or the stub can never be corrected.
+  test "toggle_acceptance! allows unaccept when cycle is all_accepted but not yet approved" do
     stub = PayStub.create!(pay_cycle: @cycle, ledger: @ledger, amount: 1000, blueprint: @blueprint, accepted_at: DateTime.now, accepted_by: @admin)
     assert_equal :all_accepted, @cycle.reload.stubs_status
-    assert_raises(RuntimeError, /Cannot unaccept/) do
-      stub.toggle_acceptance!(by: @admin)
+    stub.toggle_acceptance!(by: @admin)
+    refute stub.reload.accepted?
+    assert_nil stub.accepted_by_id
+  end
+
+  test "toggle_acceptance! refuses unaccept once the cycle is approved" do
+    stub = PayStub.create!(pay_cycle: @cycle, ledger: @ledger, amount: 1000, blueprint: @blueprint, accepted_at: DateTime.now, accepted_by: @admin)
+    @enterprise.admin_users << @admin
+    @cycle.toggle_approval!(by: @admin)
+    error = assert_raises(RuntimeError) do
+      stub.reload.toggle_acceptance!(by: @admin)
     end
+    assert_match(/Cannot unaccept/, error.message)
+    assert stub.reload.accepted?
   end
 
   test "effective_on_for_display is the cycle's ends_at" do

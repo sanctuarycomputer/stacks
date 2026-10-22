@@ -213,7 +213,8 @@
   <div id="titlebar_left">
     <h2 id="page_title">🏓 Payouts</h2>
   </div>
-  <% if invoice_tracker.invoice_pass.allows_payment_splits? && current_admin_user.is_admin? %>
+  <%# A management fee invoice has no contributor payouts, and the model refuses one. %>
+  <% if invoice_tracker.invoice_pass.allows_payment_splits? && current_admin_user.is_admin? && !invoice_tracker.garden3d? %>
     <div id="titlebar_right">
       <div class="action_items">
         <%= link_to "All Payouts ↗", admin_invoice_tracker_contributor_payouts_path(invoice_tracker) %>
@@ -323,13 +324,13 @@
   </div>
 </div>
 
-<% surplus_chunks = invoice_tracker.surplus_chunks.select{|c| c[:surplus] > 0 } %>
+<% surplus_rows = invoice_tracker.surplus_rows %>
 <%
   ceilings = invoice_tracker.project_trackers.map { |pt| pt.billing_rules.ic_ceiling }.uniq
   ceiling_pct = ((ceilings.max || Stacks::BillingModel.for(Stacks::BillingModel::DEFAULT).ic_ceiling) * 100).round(2)
   ceiling_label = ceilings.size > 1 ? "#{ceiling_pct}% (highest across trackers)" : "#{ceiling_pct}%"
 %>
-<% surplus = invoice_tracker.surplus(surplus_chunks) %>
+<% surplus = surplus_rows.sum { |r| r[:surplus] } %>
 
 <div class="dashboard-modules table index_table index">
   <div class="dashboard-module">
@@ -367,10 +368,10 @@
       </tr>
     </thead>
     <tbody>
-      <% surplus_chunks.each_with_index do |c, index| %>
+      <% surplus_rows.each_with_index do |c, index| %>
         <tr class="<%= index.even? ? "even" : "odd" %>">
           <td class="col">
-            <%= c.dig(:qbo_line_item, "description") %>
+            <%= safe_join(c[:descriptions], tag.br) %>
           </td>
           <td class="col">
             <%= link_to c.dig(:contributor)&.forecast_person&.email, admin_contributor_path(c.dig(:contributor)) %>

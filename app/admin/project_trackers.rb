@@ -20,6 +20,21 @@ ActiveAdmin.register ProjectTracker do
       .select { |pt| pt.project_capsule&.complete_but_for_admin_sign_off? }.map(&:id)
     scope.where(id: ids)
   end
+  # The trackers that have a Flags pill on this index: the ids come
+  # from the same count the pill prints (Stacks::ProjectLog.flag_counts), so
+  # the two cannot disagree. show_count: false for the reason above: it is read
+  # only when this tab is opened, never on a load of another tab. Empty,
+  # never an error, before the first sync or when the log's rows cannot be read.
+  scope "Has Flags", :has_flags, show_count: false do |scope|
+    ids =
+      begin
+        Stacks::ProjectLog.flagged_tracker_ids
+      rescue StandardError => e
+        Rails.logger.error("[project log] flagged trackers could not be read: #{e.class}: #{e.message}")
+        []
+      end
+    scope.where(id: ids)
+  end
 
   permit_params :name,
     :billing_model,
@@ -116,6 +131,14 @@ ActiveAdmin.register ProjectTracker do
       @notion_project_pages_by_notion_id || {}
     end
 
+    # How many flags each rendered tracker's log shows (Stacks::ProjectLog),
+    # by tracker id, counted once for the whole table. A tracker with none is
+    # absent, and so is every tracker when the log's rows cannot be read.
+    helper_method :log_flag_counts_by_tracker_id
+    def log_flag_counts_by_tracker_id
+      @log_flag_counts_by_tracker_id || {}
+    end
+
     def collection
       c = super
       if action_name == "index" && !@_preloaded_for_render
@@ -125,6 +148,15 @@ ActiveAdmin.register ProjectTracker do
         notion_ids = arr.flat_map { |pt| Array(pt.notion_project_ids) }.uniq
         @notion_project_pages_by_notion_id =
           notion_ids.empty? ? {} : NotionPage.projects.where(notion_id: notion_ids).index_by(&:notion_id)
+        # The index is worth more than its newest column: when the log's rows
+        # cannot be read (the sync's columns are missing, say) it shows dashes.
+        @log_flag_counts_by_tracker_id =
+          begin
+            Stacks::ProjectLog.flag_counts(arr)
+          rescue StandardError => e
+            Rails.logger.error("[project log] flag counts could not be read: #{e.class}: #{e.message}")
+            {}
+          end
         @_preloaded_for_render = true
         # Group by account lead on the Active and Dormant tabs (and on the
         # default unfiltered view). Within each lead, fall back to the
@@ -265,6 +297,20 @@ ActiveAdmin.register ProjectTracker do
           end
         end
       end
+    end
+
+    # How many flags the project's log shows right now, linking to it. What
+    # is a flag is Notion's call (Stacks::ProjectLog). A muted dash, as Last
+    # Ship's, when there are none or the log could not be read.
+    column "Flags" do |pt|
+      count = log_flag_counts_by_tracker_id[pt.id].to_i
+      if count.zero?
+        span "—", style: "opacity: 0.4;"
+        next
+      end
+      label = "#{count} #{count == 1 ? 'Flag' : 'Flags'}"
+      a(label, href: admin_project_tracker_log_path(pt), class: "pill error log-flag-count", style: "text-decoration: none; white-space: nowrap;",
+        title: "#{label} in the project log")
     end
 
     column :forecast_projects do |resource|
@@ -554,6 +600,20 @@ ActiveAdmin.register ProjectTracker do
       burnup_data: burnup_data
     })
 
+    # What Stacksbot has filed under this project's Notion projects: the flag
+    # and win counts, the first flags, and the way into the log (app/admin/log.rb). Anyone who
+    # can open this page can read the tracker, which is the log's own rule.
+    # The module must never take this page down with it: when its rows cannot
+    # be read (the sync's columns are missing, say) it says so in one line.
+    log_summary =
+      begin
+        Stacks::ProjectLog.summary(resource)
+      rescue StandardError => e
+        Rails.logger.error("[project log] tracker #{resource.id} could not be read: #{e.class}: #{e.message}")
+        nil
+      end
+    render(partial: "admin/log/module", locals: { tracker: resource, summary: log_summary })
+
     panel "Weekly Ships" do
       ships = resource.weekly_ships.includes(:document).order(sent_at: :desc).limit(20)
       if ships.any?
@@ -640,9 +700,13 @@ ActiveAdmin.register ProjectTracker do
       end
 
       f.has_many :adhoc_invoice_trackers, heading: false, allow_destroy: true, new_record: 'Connect an Adhoc Invoice' do |a|
+        # garden3d's management fee invoices are intercompany and belong on a
+        # management fee tracker only, so they are never offered here. Not
+        # narrowed to one QuickBooks account: a tracker's projects can span
+        # clients, and a new tracker has none yet.
         a.input :qbo_invoice,
           as: :select,
-          collection: QboInvoice.orphans
+          collection: QboInvoice.orphans.without_intercompany
       end
 
       f.has_many :project_tracker_forecast_projects, heading: false, allow_destroy: true, new_record: 'Connect a Forecast Project' do |a|

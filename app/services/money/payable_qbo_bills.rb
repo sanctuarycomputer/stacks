@@ -13,12 +13,20 @@ module Money
       Trueup,
       PayStub,
       Reimbursement,
+      MsoTrueup,
     ].freeze
+
+    # HOST_KLASSES, less any class whose table is not on this database yet.
+    # Migrations are run by hand after the deploy; iterate THIS, not the
+    # constant, or the Money page raises until then.
+    def self.host_klasses
+      HOST_KLASSES.select { |klass| !klass.respond_to?(:schema_ready?) || klass.schema_ready? }
+    end
 
     Row = Struct.new(:host, :ledger, :contributor, :qbo_bill, :amount, keyword_init: true)
 
     def self.call(qbo_account:)
-      rows = HOST_KLASSES.flat_map do |klass|
+      rows = host_klasses.flat_map do |klass|
         klass
           .joins(ledger: { enterprise: :qbo_account })
           .where(qbo_accounts: { id: qbo_account.id })

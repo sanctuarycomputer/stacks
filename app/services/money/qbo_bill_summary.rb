@@ -17,6 +17,7 @@ module Money
       ProfitShare       => { periodic_report: :profit_shares },
       PayStub           => { pay_cycle: :pay_stubs },
       Reimbursement     => :accepted_by,
+      MsoTrueup         => { periodic_report: :mso_trueups },
       # NOTE: do NOT preload ContributorAdjustment.qbo_invoice. The belongs_to
       # uses primary_key: "qbo_id" without scoping by qbo_account_id, and AR's
       # preloader can match a same-qbo_id QboInvoice from a DIFFERENT account
@@ -31,7 +32,7 @@ module Money
       unsettled_total = 0.0
       unsettled_count = 0
 
-      Money::PayableQboBills::HOST_KLASSES.each do |klass|
+      Money::PayableQboBills.host_klasses.each do |klass|
         relation = klass
           .joins(ledger: { enterprise: :qbo_account })
           .where(qbo_accounts: { id: qbo_account.id })

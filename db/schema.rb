@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_10_13_120000) do
+ActiveRecord::Schema.define(version: 2026_10_17_000001) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -424,6 +424,8 @@ ActiveRecord::Schema.define(version: 2026_10_13_120000) do
     t.datetime "updated_at", precision: 6, null: false
     t.string "deel_legal_entity_id"
     t.string "pay_cycle_cadence"
+    t.string "g3d_qbo_customer_id"
+    t.string "g3d_qbo_vendor_id"
     t.index ["deel_legal_entity_id"], name: "index_enterprises_on_deel_legal_entity_id", unique: true, where: "(deel_legal_entity_id IS NOT NULL)"
   end
 
@@ -588,6 +590,7 @@ ActiveRecord::Schema.define(version: 2026_10_13_120000) do
     t.text "payout_cap_override_reason"
     t.decimal "payout_cap_override_payout_percentage"
     t.decimal "payout_cap_override_cap_percentage"
+    t.string "payer_qbo_bill_id"
     t.index ["admin_user_id"], name: "index_invoice_trackers_on_admin_user_id"
     t.index ["forecast_client_id", "invoice_pass_id"], name: "idx_invoice_trackers_on_forecast_client_id_and_invoice_pass_id", unique: true
     t.index ["forecast_client_id"], name: "index_invoice_trackers_on_forecast_client_id"
@@ -768,6 +771,23 @@ ActiveRecord::Schema.define(version: 2026_10_13_120000) do
     t.index ["contributor_id"], name: "index_mso_role_periods_on_contributor_id"
   end
 
+  create_table "mso_trueups", force: :cascade do |t|
+    t.bigint "periodic_report_id", null: false
+    t.bigint "ledger_id", null: false
+    t.decimal "amount", precision: 12, scale: 2, null: false
+    t.jsonb "blueprint", default: {}, null: false
+    t.text "description", null: false
+    t.string "qbo_bill_id"
+    t.datetime "accepted_at"
+    t.datetime "deleted_at"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["deleted_at"], name: "index_mso_trueups_on_deleted_at"
+    t.index ["ledger_id"], name: "index_mso_trueups_on_ledger_id"
+    t.index ["periodic_report_id", "ledger_id"], name: "index_mso_trueups_on_periodic_report_id_and_ledger_id", unique: true
+    t.index ["periodic_report_id"], name: "index_mso_trueups_on_periodic_report_id"
+  end
+
   create_table "notifications", force: :cascade do |t|
     t.string "recipient_type", null: false
     t.bigint "recipient_id", null: false
@@ -787,8 +807,13 @@ ActiveRecord::Schema.define(version: 2026_10_13_120000) do
     t.jsonb "data", default: {}, null: false
     t.string "page_title", default: "", null: false
     t.datetime "deleted_at"
+    t.string "project_ids", default: [], null: false, array: true
+    t.datetime "occurred_at"
+    t.datetime "synced_at"
     t.index ["deleted_at"], name: "index_notion_pages_on_deleted_at"
     t.index ["notion_id"], name: "index_notion_pages_on_notion_id", unique: true
+    t.index ["notion_parent_id", "occurred_at"], name: "index_notion_pages_on_parent_and_occurred_at"
+    t.index ["project_ids"], name: "index_notion_pages_on_project_ids", using: :gin
   end
 
   create_table "okr_period_studios", force: :cascade do |t|
@@ -1821,6 +1846,8 @@ ActiveRecord::Schema.define(version: 2026_10_13_120000) do
   add_foreign_key "module_completions", "learning_modules"
   add_foreign_key "module_steps", "learning_modules"
   add_foreign_key "mso_role_periods", "contributors"
+  add_foreign_key "mso_trueups", "ledgers"
+  add_foreign_key "mso_trueups", "periodic_reports"
   add_foreign_key "okr_period_studios", "okr_periods"
   add_foreign_key "okr_period_studios", "studios"
   add_foreign_key "okr_periods", "okrs"

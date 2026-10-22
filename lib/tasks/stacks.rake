@@ -439,8 +439,20 @@ namespace :stacks do
     rescue => e
       Rails.logger.error("[sync_notion] task cache clear failed: #{e.class}: #{e.message}")
     end
-    # Rides on this daily task so no scheduler entry is needed.
+    # Both ride on this daily task so no scheduler entry is needed. Each
+    # records its own SystemTask and rescues its own errors.
     Rake::Task["stacks:sync_twist_channel_access"].invoke
+    # The project log's sync joins the ride only once a first run has been
+    # made by hand (rake stacks:sync_notion_log, after reading the preview),
+    # so the first run is never a surprise at night. Every night's run is a
+    # full one: see the task below.
+    log_sync_started = begin
+      Stacks::Notion::FilteredSync.marks.any?
+    rescue => e
+      Rails.logger.error("[sync_notion] could not read the log sync's mark: #{e.class}: #{e.message}")
+      false
+    end
+    Rake::Task["stacks:sync_notion_log"].invoke if log_sync_started
   end
 
   desc "Record which project Twist channels the Stacksbot account can see"
@@ -453,6 +465,48 @@ namespace :stacks do
     rescue => e
       system_task.mark_as_error(e)
     end
+  end
+
+  # Stacksbot's Observations and Problems, for the project log
+  # (/admin/project_trackers/:id/log). Upserts into notion_pages and never
+  # deletes a row it did not see. NOT the whole-database sync above, which
+  # must never be pointed at these two databases.
+  #
+  #   rake stacks:sync_notion_log                  every Problem, and 90 days of Observations
+  #   rake "stacks:sync_notion_log[full]"          the same, said out loud
+  #   rake "stacks:sync_notion_log[incremental]"   only the rows edited since the last run
+  #
+  # The nightly run is the full one, on purpose. Notion's Flag formula depends
+  # on today's date, and a formula's new result does not count as an edit of
+  # the page, so a run that asks for pages edited since the last one never
+  # sees a flag lapse (or a formula that was rewritten). A full run is about
+  # 8 Notion requests. [incremental] is for a quick look after an edit.
+  desc "Sync Stacksbot's Observations and Problems from Notion for the project log (everything; [incremental] for edits since the last run)"
+  task :sync_notion_log, [:mode] => :environment do |_t, args|
+    mode = args[:mode].presence
+    raise ArgumentError, "mode must be full, incremental, or left out" unless [nil, "full", "incremental"].include?(mode)
+    system_task = SystemTask.create!(name: "stacks:sync_notion_log")
+    begin
+      stats = Stacks::Notion::FilteredSync.run!(mode: mode == "incremental" ? :incremental : :backfill)
+      Rails.logger.info("[sync_notion_log] #{stats.to_json}")
+      system_task.mark_as_success
+    rescue => e
+      system_task.mark_as_error(e)
+    end
+  end
+
+  # Runs the same queries and prints what a real run would create, update and
+  # recheck, and for each database the type Notion holds for every property
+  # the log reads ("missing" when it is not there). Writes nothing and records
+  # no SystemTask.
+  #   rake stacks:preview_notion_log_sync                  the nightly, full run
+  #   rake "stacks:preview_notion_log_sync[incremental]"   the incremental run's query
+  desc "Count what stacks:sync_notion_log would pull, without writing ([incremental] for that run's shape)"
+  task :preview_notion_log_sync, [:mode] => :environment do |_t, args|
+    mode = args[:mode].presence
+    raise ArgumentError, "mode must be backfill or incremental" unless [nil, "backfill", "incremental"].include?(mode)
+    stats = Stacks::Notion::FilteredSync.run!(dry_run: true, mode: mode&.to_sym)
+    puts JSON.pretty_generate(stats)
   end
 
   # One-off, for the deploy that moved a tracker from one Notion project to a
@@ -568,6 +622,9 @@ namespace :stacks do
       end
       Trueup.find_each(&sync_record)
       PayStub.where.not(accepted_at: nil).find_each(&sync_record)
+      # As a profit share: billed once payable (everyone has accepted, and
+      # garden3d's management fee for the month is collected).
+      MsoTrueup.find_each { |trueup| sync_record.call(trueup) if trueup.payable? } if MsoTrueup.schema_ready?
     rescue => e
       system_task.mark_as_error(e)
       next
@@ -586,16 +643,6 @@ namespace :stacks do
       system_task.mark_as_error(RuntimeError.new(message))
     else
       system_task.mark_as_success
-    end
-  end
-
-  desc "Sync Founder Trueups"
-  task :sync_founder_trueups => :environment do
-    system_task = SystemTask.create!(name: "stacks:sync_founder_trueups")
-    begin
-      Stacks::System.sync_founder_trueups!
-    rescue => e
-      system_task.mark_as_error(e)
     end
   end
 

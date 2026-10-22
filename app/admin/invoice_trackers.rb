@@ -11,11 +11,62 @@ ActiveAdmin.register InvoiceTracker do
   end
 
   action_item :attempt_generate, only: :show, if: proc { current_admin_user.is_admin? } do
+    options = { method: :post }
+    if resource.garden3d?
+      # On an intercompany invoice this writes to QuickBooks.
+      options[:data] = {
+        confirm: "Create a $0.00 draft invoice in garden3d's QuickBooks for " \
+                 "#{resource.invoice_pass.invoice_month}? If Finance already invoiced this month by hand, " \
+                 "Stacks will find that invoice, create nothing, and list it under Edit for you to attach.",
+      }
+    end
     link_to(
       "Regenerate",
       attempt_generate_admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource),
-      method: :post
+      options
     )
+  end
+
+  # garden3d's invoice, mirrored as a bill in the paying company's QuickBooks.
+  # Writes to that QuickBooks, so an admin's click only.
+  action_item :sync_payer_bill, only: :show, if: proc {
+    current_admin_user.is_admin? && resource.has_attribute?(:payer_qbo_bill_id) &&
+      resource.garden3d? && resource.qbo_invoice_id.present? &&
+      resource.invoice_pass.start_of_month >= InvoicePass::INTERCOMPANY_START
+  } do
+    payer = resource.forecast_client.enterprise&.name || "the paying company"
+    verb = resource.payer_qbo_bill_id.present? ? "Update" : "Create"
+    link_to(
+      "#{verb} bill in #{payer}'s QuickBooks",
+      sync_payer_bill_admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource),
+      method: :post,
+      data: {
+        confirm: "#{verb} the bill for this invoice in #{payer}'s QuickBooks, to match the invoice as it is " \
+                 "now? Stacks never marks it paid.",
+      }
+    )
+  end
+
+  member_action :sync_payer_bill, method: :post do
+    tracker_page = admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource)
+    unless current_admin_user.is_admin?
+      return redirect_to(tracker_page, alert: "Bills are written by an admin.")
+    end
+
+    begin
+      bill = Mso::IntercompanyBills.sync_bill!(invoice_tracker: resource)
+    rescue Mso::IntercompanyBills::Error, Mso::IntercompanyInvoices::Error => e
+      return redirect_to(tracker_page, alert: e.message)
+    rescue StandardError => e
+      # The bill may or may not have been written.
+      return redirect_to(
+        tracker_page,
+        alert: "QuickBooks did not confirm the bill (#{e.class}: #{e.message}). Check the paying company's " \
+               "QuickBooks before trying again: Stacks finds a bill with the invoice's number and attaches it " \
+               "rather than create a second."
+      )
+    end
+    redirect_to tracker_page, notice: "Bill #{bill.doc_number} is up to date in the paying company's QuickBooks."
   end
 
   action_item :resync_qbo_line_item_services, only: :show, if: proc { current_admin_user.is_admin? } do
@@ -207,6 +258,30 @@ ActiveAdmin.register InvoiceTracker do
   end
 
   member_action :attempt_generate, method: :post do
+    # An intercompany tracker's make_invoice! returns a QboInvoice or
+    # raises; the checks below are for the Forecast path.
+    if resource.garden3d?
+      tracker_page = admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource)
+      begin
+        resource.make_invoice!
+      rescue Mso::IntercompanyInvoices::Error => e
+        return redirect_to(tracker_page, alert: e.message)
+      rescue StandardError => e
+        # QuickBooks timed out, refused, or answered something unexpected. The
+        # invoice may or may not exist there.
+        return redirect_to(
+          tracker_page,
+          alert: "QuickBooks did not confirm the draft (#{e.class}: #{e.message}). Check garden3d's " \
+                 "QuickBooks for a new invoice. If one is there, Regenerate again: Stacks will find it, " \
+                 "refuse to create a second, and list it under Edit for you to attach."
+        )
+      end
+      return redirect_to(
+        tracker_page,
+        notice: "Draft created in garden3d's QuickBooks. Set the amount there and send it."
+      )
+    end
+
     if resource.qbo_invoice_id.present?
       return redirect_to(
         admin_invoice_pass_invoice_tracker_path(resource.invoice_pass, resource),
@@ -309,6 +384,8 @@ ActiveAdmin.register InvoiceTracker do
   end
 
   controller do
+    before_action :authorize_garden3d_pass!
+
     # Only re-sync the QBO invoice once per 5 minutes per dyno. The previous
     # always-sync fired an OAuth refresh + a QBO API call + an UPDATE on
     # every show. QboInvoice has no timestamp column, so we gate the sync
@@ -332,21 +409,49 @@ ActiveAdmin.register InvoiceTracker do
       if params[:invoice_tracker][:allow_early_contributor_payouts_on].present?
         raise "Only admins can schedule early contributor payouts" unless current_admin_user.is_admin?
       end
+      strip_invoice_binding_for_non_admins!(params[:invoice_tracker])
       split_packed_qbo_invoice_value!(params[:invoice_tracker])
       super
     end
 
     def create
+      strip_invoice_binding_for_non_admins!(params[:invoice_tracker])
       split_packed_qbo_invoice_value!(params[:invoice_tracker])
       super
     end
 
     private
 
+    # garden3d's passes are admin-only, their trackers included: the rule is
+    # AdminAuthorization's. It is asked here of the parent pass, before
+    # anything else runs, because ActiveAdmin authorizes the index against
+    # the InvoiceTracker class alone and does not authorize a member action
+    # that never loads its tracker (toggle_contributor_payout_acceptance).
+    # Only for garden3d's passes: a contributor accepting their own payout on
+    # a Sanctuary tracker has no read on that pass and needs none.
+    def authorize_garden3d_pass!
+      authorize!(:read, parent) if parent.garden3d?
+    end
+
+    # Only an admin may change which QuickBooks invoice a tracker points at.
+    # The form disables the select for everyone else, but a disabled input
+    # enforces nothing: both columns are permitted params, so they are dropped
+    # here, before mass-assignment, whatever was sent.
+    def strip_invoice_binding_for_non_admins!(p)
+      return if p.nil? || current_admin_user.is_admin?
+      p.delete(:qbo_invoice_id)
+      p.delete(:qbo_account_id)
+    end
+
+    # Touches the invoice columns ONLY when the form actually submitted the
+    # select. A save that leaves it out (a notes-only save, or a non-admin's
+    # stripped field) keeps the attached invoice; a submitted blank is the
+    # explicit "None" and detaches it.
     def split_packed_qbo_invoice_value!(p)
-      val = p&.dig(:qbo_invoice_id)
+      return unless p&.key?(:qbo_invoice_id)
+      val = p[:qbo_invoice_id]
       if val.blank?
-        p[:qbo_invoice_id] = nil if p
+        p[:qbo_invoice_id] = nil
         return
       end
       return unless val.to_s.include?(":")
@@ -359,16 +464,36 @@ ActiveAdmin.register InvoiceTracker do
   form do |f|
     f.inputs(class: "admin_inputs") do
       f.input :forecast_client, input_html: { disabled: true }
-      # Single select across every realm's orphan invoices. Value packs
-      # "qa_id:qbo_id" so the controller can set both columns in one shot;
-      # composite FK on the DB blocks any (qa, qbo_id) pair that doesn't
-      # reference a real row.
+      # Unattached invoices from THIS tracker's QuickBooks account only. A
+      # tracker lives on the pass of its account's enterprise, so an invoice
+      # from another company's books is never the right one -- and because the
+      # value packs "qa_id:qbo_id", picking one would silently re-point the
+      # tracker at that company's account.
+      #
+      # A non-admin cannot change this field (it is disabled below), so they
+      # are given no list: other invoices' customers and totals, garden3d's
+      # management fee invoices among them, are not theirs to browse.
+      orphan_invoices =
+        if current_admin_user.is_admin?
+          QboInvoice.orphans.where(qbo_account_id: f.object.qbo_account_id).includes(qbo_account: :enterprise)
+        else
+          QboInvoice.none
+        end
+      # The invoice already attached is by definition not an orphan. It goes
+      # first (and is selected below), so the select shows what the tracker
+      # points at and re-saving the form submits it back instead of "None".
+      # It is the tracker's own invoice, so everyone who can open this page
+      # sees it. A mirror row with no stored data is labelled by its id:
+      # QboInvoice#display_name would fetch it from QuickBooks.
+      attached_invoice = f.object.qbo_invoice
+      invoice_options = [attached_invoice, *orphan_invoices].compact.map { |inv|
+        ent_name = inv.qbo_account&.enterprise&.name || "?"
+        label = inv.read_attribute(:data).present? ? inv.display_name : "QuickBooks invoice #{inv.qbo_id}"
+        ["[#{ent_name}] #{label}", "#{inv.qbo_account_id}:#{inv.qbo_id}"]
+      }
       f.input :qbo_invoice,
         as: :select,
-        collection: QboInvoice.orphans.includes(qbo_account: :enterprise).map { |inv|
-          ent_name = inv.qbo_account&.enterprise&.name || "?"
-          ["[#{ent_name}] #{inv.display_name}", "#{inv.qbo_account_id}:#{inv.qbo_id}"]
-        },
+        collection: invoice_options,
         selected: (f.object.qbo_invoice_id.present? && f.object.qbo_account_id.present? ?
           "#{f.object.qbo_account_id}:#{f.object.qbo_invoice_id}" : nil),
         include_blank: "None",

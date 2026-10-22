@@ -47,10 +47,12 @@ module Mcp
       # count-only query so a silent mass-drop can't read as "nothing
       # outstanding".
       warn_excluded(
-        QboInvoice
-          .malformed_sent_receivables
-          .joins(:qbo_account)
-          .where(qbo_accounts: { enterprise_id: enterprises.map(&:id) }),
+        without_management_fee_invoices(
+          QboInvoice
+            .malformed_sent_receivables
+            .joins(:qbo_account)
+            .where(qbo_accounts: { enterprise_id: enterprises.map(&:id) })
+        ),
         'invoice(s) excluded as malformed (missing due_date/balance or non-numeric balance)'
       )
 
@@ -61,20 +63,34 @@ module Mcp
       # malformed. Surface them separately so a mass-unsynced state (e.g. a
       # broken sync job) doesn't silently read as "nothing outstanding".
       warn_excluded(
-        QboInvoice
-          .joins(:qbo_account)
-          .where(qbo_accounts: { enterprise_id: enterprises.map(&:id) })
-          .where("qbo_invoices.data IS NULL OR qbo_invoices.data = '{}'::jsonb"),
+        without_management_fee_invoices(
+          QboInvoice
+            .joins(:qbo_account)
+            .where(qbo_accounts: { enterprise_id: enterprises.map(&:id) })
+            .where("qbo_invoices.data IS NULL OR qbo_invoices.data = '{}'::jsonb")
+        ),
         'invoice row(s) have no synced data and are excluded (cannot evaluate)'
       )
 
-      QboInvoice
-        .open_receivables
-        .joins(:qbo_account)
-        .where(qbo_accounts: { enterprise_id: enterprises.map(&:id) })
+      without_management_fee_invoices(
+        QboInvoice
+          .open_receivables
+          .joins(:qbo_account)
+          .where(qbo_accounts: { enterprise_id: enterprises.map(&:id) })
+      )
         .select('qbo_invoices.*, qbo_accounts.enterprise_id AS enterprise_id')
         .filter_map { |inv| build_receivable(inv, as_of, details: details, min_days_overdue: min_days_overdue) }
     end
+
+    # garden3d's management fee invoices bill its own operating companies.
+    # They are intercompany, not receivables: left in, the fee would age in
+    # get_ar_aging and list_overdue_invoices next to real client debt. The rule
+    # for recognising one is QboInvoice.without_intercompany, shared with
+    # the admin selects; it excludes nothing until the migration has run.
+    def self.without_management_fee_invoices(scope)
+      scope.merge(QboInvoice.without_intercompany)
+    end
+    private_class_method :without_management_fee_invoices
 
     # Warns with a count plus at most the first 20 id/qbo_id pairs. Both the
     # fetch and the log line are bounded — a bad sync leaving thousands of

@@ -13,6 +13,14 @@ class TwistChannelAccessRakeTest < ActiveSupport::TestCase
     Rake::Task['stacks:sync_twist_channel_access'].reenable
     Rake::Task['stacks:sync_notion'].reenable
     Stacks::Notion.stubs(:new).returns(stub(sync_database: nil))
+    # The project log's sync rides on sync_notion too. It is covered in
+    # sync_notion_log_rake_test.rb; here it never starts.
+    Rake::Task['stacks:sync_notion_log'].reenable
+    Stacks::Notion::FilteredSync.stubs(:marks).returns({})
+    Stacks::Notion::FilteredSync.stubs(:run!).returns({})
+    # The test environment holds a real Twist token and a failed SystemTask
+    # posts to a real thread. A test that expects a report says so itself.
+    Stacks::Notifications.stubs(:report_exception).raises("unstubbed")
   end
 
   def last_task(name)

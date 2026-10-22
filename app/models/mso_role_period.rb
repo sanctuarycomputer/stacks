@@ -24,6 +24,11 @@ class MsoRolePeriod < ApplicationRecord
   validates :started_at, presence: true
   validates :title, presence: true
   validate :full_months_only
+  # Only when the start date is being set: a period already on file with an
+  # earlier start can still be ended.
+  validate :not_before_mso_compensation_began, if: -> { new_record? || started_at_changed? }
+  validate :months_with_trueups_are_not_changed, on: :update
+  before_destroy :refuse_destroy_once_paid_from
 
   # CALLERS: one period per contributor per month is enforced by a model
   # validation only (no database constraint), so two can exist after a
@@ -60,6 +65,67 @@ class MsoRolePeriod < ApplicationRecord
     # Fresh query: loading the association here would cache a stale list on
     # the shared Contributor instance.
     MsoRolePeriod.where(contributor_id: contributor.id)
+  end
+
+  # The first day of every month this role period covers (as saved) in which
+  # somebody has ACCEPTED an MSO true-up. Any executive's: the cap ties the
+  # month's lines together, and a founder owed nothing has no row of their
+  # own. Until someone accepts, a month is recomputed on every sync, so a
+  # mistyped tier is corrected by editing the period and syncing again.
+  def months_with_trueups
+    return [] if new_record? || !MsoTrueup.schema_ready?
+
+    from = started_at_in_database
+    through = ended_at_in_database
+    reports = PeriodicReport.month.where("period_starts_at >= ?", from)
+    reports = reports.where("period_starts_at <= ?", through) if through
+    reports.where(id: MsoTrueup.where.not(accepted_at: nil).select(:periodic_report_id))
+      .order(:period_starts_at).pluck(:period_starts_at)
+  end
+
+  # Once someone has accepted a true-up from this period, what the period
+  # says about that month stays: they agreed to a figure built on it, and
+  # removing the month would let the nightly founder true-up come back for a
+  # month paid through the MSO. Ending the period going forward
+  # stays possible; a promotion is "end this period and start a new one".
+  def months_with_trueups_are_not_changed
+    months = months_with_trueups
+    return if months.empty?
+
+    span = "#{months.first.strftime('%B %Y')} to #{months.last.strftime('%B %Y')}"
+    advice = "Accepted MSO true-ups exist in this role period's months (#{span}). To change someone's tier, " \
+             "end this period and start a new one."
+    errors.add(:tier, advice) if tier_changed?
+    errors.add(:contributor, advice) if contributor_id_changed?
+    if started_at_changed? && started_at && started_at > months.first
+      errors.add(:started_at, "cannot move past #{months.first.strftime('%B %Y')}, which has a true-up. #{advice}")
+    end
+    if ended_at_changed? && ended_at && ended_at < months.last.end_of_month
+      errors.add(:ended_at, "cannot be before the end of #{months.last.strftime('%B %Y')}, which has a " \
+                            "true-up. #{advice}")
+    end
+  end
+
+  def refuse_destroy_once_paid_from
+    months = months_with_trueups
+    return if months.empty?
+
+    errors.add(:base, "Accepted MSO true-ups exist in this role period's months " \
+                      "(#{months.map { |month| month.strftime('%B %Y') }.join(', ')}), so it cannot be deleted. " \
+                      "Give it an end date instead.")
+    throw :abort
+  end
+
+  # No month before this is ever computed, so an earlier start pays nothing more.
+  # What it does do is silent: Stacks stops writing the founder true-up for
+  # every month from the start date on, and Mso::Benchmark drops the person
+  # from the pool for those months. A mistyped year would do both.
+  def not_before_mso_compensation_began
+    start = InvoicePass::INTERCOMPANY_START
+    return if started_at.nil? || started_at >= start
+
+    errors.add(:started_at, "cannot be before #{start.strftime('%B %Y')}, the first month MSO compensation " \
+                            "is run for")
   end
 
   def full_months_only

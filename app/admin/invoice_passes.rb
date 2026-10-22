@@ -6,6 +6,15 @@ ActiveAdmin.register InvoicePass do
   config.per_page = 12
   actions :index, :show
 
+  # One list per enterprise that issues invoices. garden3d's passes are
+  # admin-only (AdminAuthorization), so its tab is too.
+  scope("Sanctuary", default: true) do |passes|
+    passes.where(enterprise_id: Enterprise.where(name: Enterprise::SANCTUARY_NAME).select(:id))
+  end
+  scope("garden3d", if: proc { current_admin_user.is_admin? }) do |passes|
+    passes.where(enterprise_id: Enterprise.where(name: Enterprise::GARDEN3D_NAME).select(:id))
+  end
+
   controller do
     def scoped_collection
       # surplus_chunks → calculate_surplus walks every contributor_payout's
@@ -35,6 +44,41 @@ ActiveAdmin.register InvoicePass do
       end
       collection
     end
+
+    private
+
+    # garden3d's month: a tracker for each enterprise it bills, then a $0.00
+    # draft in garden3d's QuickBooks for each tracker that has no invoice.
+    # WRITES TO QUICKBOOKS, and only ever from this click. One enterprise
+    # failing is reported and does not stop the others. An enterprise Finance
+    # already invoiced by hand is one such failure: Stacks finds that invoice,
+    # makes no second, and lists it on the tracker's edit page to attach.
+    def make_intercompany_invoices!
+      unless current_admin_user.is_admin?
+        return redirect_to admin_invoice_pass_path(resource), alert: "garden3d's invoices are made by an admin."
+      end
+
+      resource.make_trackers!
+
+      made = 0
+      failed = []
+      InvoiceTracker.where(invoice_pass_id: resource.id, qbo_invoice_id: [nil, ""])
+                    .order(:id).each do |tracker|
+        tracker.make_invoice!
+        made += 1
+      rescue StandardError => e
+        failed << "#{tracker.forecast_client.name}: #{e.message}"
+      end
+
+      summary = "Created #{made} draft(s) in QuickBooks."
+      if failed.any?
+        redirect_to admin_invoice_pass_path(resource), alert: "#{summary} Failed: #{failed.join(' | ')}".truncate(1500)
+      else
+        redirect_to admin_invoice_pass_path(resource), notice: summary
+      end
+    rescue StandardError => e
+      redirect_to admin_invoice_pass_path(resource), alert: e.message
+    end
   end
 
   action_item :rerun_invoice_pass, only: :show,
@@ -43,19 +87,33 @@ ActiveAdmin.register InvoicePass do
       rerun_invoice_pass_admin_invoice_pass_path(resource), method: :post
   end
 
+  # Every pass generates its own invoices; what that means depends on the
+  # enterprise. Sanctuary's come from Forecast. garden3d's are a $0.00 draft
+  # per enterprise it bills, for Finance to fill in.
   action_item :rerun_invoice_pass_without_reminders, only: :show,
-    if: proc { resource.enterprise == Enterprise.sanctuary } do
-    link_to 'Generate Invoices',
-      rerun_invoice_pass_without_reminders_admin_invoice_pass_path(resource), method: :post
+    if: proc { [Enterprise::SANCTUARY_NAME, Enterprise::GARDEN3D_NAME].include?(resource.enterprise.name) } do
+    options = { method: :post }
+    if resource.garden3d?
+      options[:data] = {
+        confirm: "Create a $0.00 draft invoice in garden3d's QuickBooks for each company that does not have one " \
+                 "for #{resource.invoice_month}? Stacks first checks QuickBooks and skips any company that " \
+                 "already has an invoice dated in this month.",
+      }
+    end
+    link_to 'Generate Invoices', rerun_invoice_pass_without_reminders_admin_invoice_pass_path(resource), options
   end
 
   member_action :rerun_invoice_pass_without_reminders, method: :post do
-    unless resource.enterprise == Enterprise.sanctuary
-      return redirect_to admin_invoice_pass_path(resource),
-        alert: "Forecast invoicing only runs on #{Enterprise::SANCTUARY_NAME}'s passes."
+    case resource.enterprise.name
+    when Enterprise::SANCTUARY_NAME
+      Stacks::Automator.attempt_invoicing_for_invoice_pass(resource, false)
+      redirect_to admin_invoice_pass_path(resource), notice: "Done!"
+    when Enterprise::GARDEN3D_NAME
+      make_intercompany_invoices!
+    else
+      redirect_to admin_invoice_pass_path(resource),
+        alert: "#{resource.enterprise.name} makes no invoices through Stacks."
     end
-    Stacks::Automator.attempt_invoicing_for_invoice_pass(resource, false)
-    redirect_to admin_invoice_pass_path(resource), notice: "Done!"
   end
 
   member_action :rerun_invoice_pass, method: :post do
@@ -65,6 +123,35 @@ ActiveAdmin.register InvoicePass do
     end
     Stacks::Automator.attempt_invoicing_for_invoice_pass(resource)
     redirect_to admin_invoice_pass_path(resource), notice: "Done!"
+  end
+
+  action_item :refresh_intercompany_invoices, only: :show, if: proc { resource.garden3d? } do
+    link_to "Refresh from QuickBooks", refresh_intercompany_invoices_admin_invoice_pass_path(resource), method: :post
+  end
+
+  member_action :refresh_intercompany_invoices, method: :post do
+    unless current_admin_user.is_admin?
+      return redirect_to admin_invoice_pass_path(resource), alert: "garden3d's invoices are refreshed by an admin."
+    end
+
+    begin
+      run = Mso::IntercompanyInvoices.refresh!(invoice_pass: resource)
+    rescue Mso::IntercompanyInvoices::Error => e
+      return redirect_to admin_invoice_pass_path(resource), alert: e.message
+    end
+
+    summary = "Refreshed #{run.succeeded} of #{run.attempted} invoice(s) from QuickBooks."
+    if run.detached.positive?
+      summary += " #{run.detached} no longer exist(s) in QuickBooks and was detached."
+    end
+    if run.failed.any?
+      # Never a green notice when some of what is on screen is stale.
+      redirect_to admin_invoice_pass_path(resource),
+        alert: "#{summary} Could not read the invoice on InvoiceTracker #{run.failed.map(&:id).join(', ')}; " \
+               "what Stacks shows for it may be out of date. Try again."
+    else
+      redirect_to admin_invoice_pass_path(resource), notice: summary
+    end
   end
 
   index download_links: false, title: "Monthly Invoicing" do
@@ -116,25 +203,30 @@ ActiveAdmin.register InvoicePass do
   end
 
   show title: :invoice_month do
-
-    # Same company-wide exposure concern as the index aggregates: the
-    # missing-hours report lists every contributor's name + missing
-    # allocation, not just those tied to the viewer's scoped projects.
-    # Scoped grantees get an empty report — the partial no-ops on empty.
-    hours_report = if current_admin_user.is_admin? || current_admin_user.can_act_as_lead?
-      Stacks::Automator.discover_people_missing_hours_for_month(
-        [],
-        resource.start_of_month,
-      ).map do |d|
-        {
-          forecast_person: d[:forecast_data],
-          missing_allocation: d[:missing_allocation]
-        }
-      end
+    if resource.garden3d?
+      # No Forecast hours, no generator errors: this pass holds garden3d's
+      # invoices to the enterprises it bills.
+      render 'intercompany_pass', { invoice_pass: invoice_pass }
     else
-      []
-    end
+      # Same company-wide exposure concern as the index aggregates: the
+      # missing-hours report lists every contributor's name + missing
+      # allocation, not just those tied to the viewer's scoped projects.
+      # Scoped grantees get an empty report — the partial no-ops on empty.
+      hours_report = if current_admin_user.is_admin? || current_admin_user.can_act_as_lead?
+        Stacks::Automator.discover_people_missing_hours_for_month(
+          [],
+          resource.start_of_month,
+        ).map do |d|
+          {
+            forecast_person: d[:forecast_data],
+            missing_allocation: d[:missing_allocation]
+          }
+        end
+      else
+        []
+      end
 
-    render 'invoice_pass', { invoice_pass: invoice_pass, hours_report: hours_report }
+      render 'invoice_pass', { invoice_pass: invoice_pass, hours_report: hours_report }
+    end
   end
 end

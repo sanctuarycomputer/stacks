@@ -495,6 +495,25 @@ class ProjectTracker < ApplicationRecord
     notion_projects.any?
   end
 
+  # What Stacksbot filed under any of this tracker's Notion projects, as
+  # relations of NotionPage (wrap a row with as_observation / as_problem).
+  # The rows are synced by Stacks::Notion::FilteredSync and found through the
+  # GIN index on notion_pages.project_ids. This is the only way an observation
+  # reaches a tracker.
+  def observations
+    notion_log_rows(NotionPage.observations)
+  end
+
+  def problems
+    notion_log_rows(NotionPage.problems)
+  end
+
+  private def notion_log_rows(scope)
+    ids = Array(notion_project_ids).select(&:present?)
+    return NotionPage.none if ids.empty?
+    scope.where("notion_pages.project_ids && ARRAY[?]::varchar[]", ids)
+  end
+
   private def added_notion_projects_are_synced_pages
     added = Array(notion_project_ids) - Array(notion_project_ids_in_database)
     return if added.empty?

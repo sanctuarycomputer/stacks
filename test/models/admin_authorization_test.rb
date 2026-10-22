@@ -1,6 +1,12 @@
 require 'test_helper'
 
 class AdminAuthorizationTest < ActiveSupport::TestCase
+  include ManagementFeeFixtures
+
+  def teardown
+    clear_enterprise_memos
+  end
+
   def auth_for(user)
     AdminAuthorization.new(nil, user)
   end
@@ -208,5 +214,153 @@ class AdminAuthorizationTest < ActiveSupport::TestCase
       refute auth_for(nobody).authorized?(action, MsoRolePeriod), "non-lead must not #{action}"
       refute auth_for(nobody).authorized?(action, MsoRolePeriod.new), "non-lead must not #{action} a record"
     end
+  end
+
+  # --- garden3d's passes are admin-only ---------------------------------------
+  # They hold what the operating companies pay garden3d. The owner's decision
+  # covers every garden3d pass, the seven legacy 2025 ones included, and every
+  # tracker on one, for every action.
+
+  PASS_ACTIONS = %i[read refresh_intercompany_invoices rerun_invoice_pass
+                    rerun_invoice_pass_without_reminders].freeze
+  TRACKER_ACTIONS = %i[read update toggle_ownership attempt_generate notify_reviewers resync_qbo_line_item_services
+                       toggle_contributor_payout_acceptance].freeze
+
+  def garden3d_world
+    garden3d_qbo_account
+    fee_pass = garden3d_pass(Date.new(2094, 3, 1))
+    fee = fee_tracker(fee_pass, make_payer("Auth Fee #{SecureRandom.hex(3)}"))
+    legacy_pass = garden3d_pass(Date.new(2094, 4, 1))
+    legacy = fee_tracker(legacy_pass, make_payer("Auth Legacy #{SecureRandom.hex(3)}"))
+    legacy.update!(blueprint: { "lines" => {} })
+
+    sanctuary_qa = Enterprise.find(enterprises(:sanctuary).id).qbo_account
+    sanctuary_pass = InvoicePass.create!(start_of_month: Date.new(2094, 3, 1), enterprise: enterprises(:sanctuary), data: {})
+    client = ForecastClient.create!(forecast_id: 971_010, name: "External Co")
+    sanctuary = InvoiceTracker.create!(invoice_pass: sanctuary_pass, forecast_client_id: client.forecast_id,
+                                       qbo_account: sanctuary_qa, blueprint: { "lines" => {} })
+    { fee_pass: fee_pass, fee: fee, legacy_pass: legacy_pass, legacy: InvoiceTracker.find(legacy.id),
+      sanctuary_pass: sanctuary_pass, sanctuary: sanctuary }
+  end
+
+  def non_admins
+    lead = make_user("g3d-lead@sanctuary.computer")
+    PermissionGrant.create!(admin_user: lead, permission: "lead")
+    past_lead = make_user("g3d-past-lead@sanctuary.computer")
+    ProjectLeadPeriod.create!(admin_user: past_lead, project_tracker: make_project_tracker("Led"),
+                              started_at: Date.today.beginning_of_month)
+    scoped = make_user("g3d-scoped@sanctuary.computer")
+    PermissionGrant.create!(admin_user: scoped, permission: "lead", subject: make_project_tracker("Scoped"))
+    contributor = make_user("g3d-contributor@sanctuary.computer")
+    ForecastPerson.create!(forecast_id: 971_020, email: contributor.email, data: {}).ensure_contributor_exists!
+    { "a lead" => lead, "a past project lead" => past_lead, "a scoped grantee" => scoped,
+      "a contributor" => AdminUser.find(contributor.id), "a plain user" => make_user("g3d-nobody@sanctuary.computer") }
+  end
+
+  test "nobody but an admin may do anything with a garden3d pass, reading included" do
+    world = garden3d_world
+    admin = AdminUser.create!(email: "g3d-admin@sanctuary.computer", password: "password12345", roles: ["admin"])
+    users = non_admins
+
+    [world[:fee_pass], world[:legacy_pass]].each do |pass|
+      PASS_ACTIONS.each do |action|
+        assert auth_for(admin).authorized?(action, pass), "admin should #{action} garden3d's #{pass.invoice_month} pass"
+        users.each do |who, user|
+          refute auth_for(user).authorized?(action, pass), "#{who} must not #{action} garden3d's #{pass.invoice_month} pass"
+        end
+      end
+    end
+  end
+
+  test "nobody but an admin may do anything with a tracker on a garden3d pass, legacy ones included" do
+    world = garden3d_world
+    admin = AdminUser.create!(email: "g3d-admin@sanctuary.computer", password: "password12345", roles: ["admin"])
+    users = non_admins
+    assert users["a contributor"].forecast_person&.contributor.present?, "sanity: a contributor"
+
+    [world[:fee], world[:legacy]].each do |tracker|
+      TRACKER_ACTIONS.each do |action|
+        assert auth_for(admin).authorized?(action, tracker), "admin should #{action}"
+        users.each do |who, user|
+          refute auth_for(user).authorized?(action, tracker), "#{who} must not #{action} a garden3d tracker"
+        end
+      end
+    end
+  end
+
+  test "Sanctuary's passes and trackers are as they were for a lead, a grantee and a contributor" do
+    world = garden3d_world
+    users = non_admins
+
+    ["a lead", "a past project lead"].each do |who|
+      auth = auth_for(users[who])
+      assert auth.authorized?(:read, world[:sanctuary_pass]), who
+      TRACKER_ACTIONS.each { |action| assert auth.authorized?(action, world[:sanctuary]), "#{who} #{action}" }
+      # The menu and the index page are class-level reads.
+      assert auth.authorized?(:read, InvoicePass), who
+      assert auth.authorized?(:read, InvoiceTracker), who
+    end
+
+    scoped = auth_for(users["a scoped grantee"])
+    assert scoped.authorized?(:read, InvoicePass)
+    assert scoped.authorized?(:read, world[:sanctuary_pass]), "a pass is the container a grantee navigates through"
+
+    # A contributor accepts their own payout through the tracker.
+    assert auth_for(users["a contributor"]).authorized?(:toggle_contributor_payout_acceptance, world[:sanctuary])
+  end
+
+  test "scope_collection hides garden3d's passes and trackers from everyone but an admin" do
+    world = garden3d_world
+    admin = AdminUser.create!(email: "g3d-admin@sanctuary.computer", password: "password12345", roles: ["admin"])
+    garden3d_pass_ids = [world[:fee_pass].id, world[:legacy_pass].id]
+    garden3d_tracker_ids = [world[:fee].id, world[:legacy].id]
+
+    assert_equal InvoicePass.count, auth_for(admin).scope_collection(InvoicePass.all).count
+    assert_equal InvoiceTracker.count, auth_for(admin).scope_collection(InvoiceTracker.all).count
+
+    non_admins.slice("a lead", "a past project lead", "a contributor", "a plain user").each do |who, user|
+      passes = auth_for(user).scope_collection(InvoicePass.all).pluck(:id)
+      assert_empty passes & garden3d_pass_ids, "#{who} must not list a garden3d pass"
+      assert_includes passes, world[:sanctuary_pass].id, "#{who}: Sanctuary's pass is still listed"
+
+      trackers = auth_for(user).scope_collection(InvoiceTracker.all).pluck(:id)
+      assert_empty trackers & garden3d_tracker_ids, "#{who} must not list a garden3d tracker"
+      assert_includes trackers, world[:sanctuary].id, "#{who}: Sanctuary's tracker is still listed"
+
+      # The nested trackers index hands over the parent pass's own association.
+      assert_empty auth_for(user).scope_collection(world[:fee_pass].invoice_trackers).pluck(:id), who
+      # ActiveAdmin can hand over the bare model class.
+      assert_empty auth_for(user).scope_collection(InvoicePass).pluck(:id) & garden3d_pass_ids, who
+      assert_empty auth_for(user).scope_collection(InvoiceTracker).pluck(:id) & garden3d_tracker_ids, who
+    end
+  end
+
+  test "scope_collection hides garden3d's passes and trackers from a scoped grantee too" do
+    world = garden3d_world
+    scoped = non_admins["a scoped grantee"]
+
+    passes = auth_for(scoped).scope_collection(InvoicePass.all).pluck(:id)
+    assert_empty passes & [world[:fee_pass].id, world[:legacy_pass].id]
+    assert_includes passes, world[:sanctuary_pass].id
+    assert_empty auth_for(scoped).scope_collection(InvoiceTracker.all).pluck(:id) & [world[:fee].id, world[:legacy].id]
+  end
+
+  test "a project-scoped grantee passes the Log page's gate, and no other page's" do
+    namespace = ActiveAdmin.application.namespace(:admin)
+    log_page = ActiveAdmin::Page.new(namespace, "Log", {})
+    other_page = ActiveAdmin::Page.new(namespace, "Project Cost Explorer", {})
+
+    scoped = make_user("scoped-log@sanctuary.computer")
+    PermissionGrant.create!(admin_user: scoped, permission: "lead", subject: make_project_tracker("Granted"))
+    assert auth_for(scoped).authorized?(:read, log_page)
+    refute auth_for(scoped).authorized?(:update, log_page)
+    refute auth_for(scoped).authorized?(:read, other_page)
+
+    nobody = make_user("nobody-log@sanctuary.computer")
+    refute auth_for(nobody).authorized?(:read, log_page)
+
+    lead = make_user("lead-log@sanctuary.computer")
+    PermissionGrant.create!(admin_user: lead, permission: "lead")
+    assert auth_for(lead).authorized?(:read, log_page)
   end
 end

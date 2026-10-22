@@ -59,55 +59,5 @@ class Stacks::System
 
       assignments.map{|a| a.forecast_project.forecast_client}.compact.uniq
     end
-
-    # Every completed month from the New Deal start up to (but not
-    # including) the current, still-in-progress month.
-    def founder_trueup_months
-      months = []
-      working_date = NEW_DEAL_START_AT.clone
-      loop do
-        break if working_date >= Date.today.beginning_of_month
-
-        months << working_date
-        working_date = working_date.advance(months: 1)
-      end
-      months
-    end
-
-    def sync_founder_trueups!
-      founder_trueup_months.each do |working_date|
-        invoice_pass = InvoicePass
-          .includes(invoice_trackers: :contributor_payouts)
-          .where(start_of_month: working_date, enterprise: Enterprise.sanctuary)
-          .first
-        raise "No invoice pass found for #{working_date}" unless invoice_pass.present?
-
-        contributor_payouts_by_contributor = invoice_pass.invoice_trackers.reduce({}) do |acc, invoice_tracker|
-          invoice_tracker.contributor_payouts.each do |contributor_payout|
-            acc[contributor_payout.contributor] ||= { payouts: [], amount: 0 }
-            acc[contributor_payout.contributor][:payouts] << contributor_payout
-            acc[contributor_payout.contributor][:amount] += contributor_payout.amount
-          end
-          acc
-        end
-
-        highest_contributor, highest_contributor_data = contributor_payouts_by_contributor.max_by{|k, v| v[:amount]}
-
-        hugh = ForecastPerson.find_by(email: "hugh@sanctuary.computer").contributor
-        hugh_ledger = Ledger.find_or_create_for(enterprise: Enterprise.sanctuary, contributor: hugh)
-        trueup = Trueup.find_or_initialize_by(invoice_pass: invoice_pass, ledger: hugh_ledger)
-        founder_trueup_amount = highest_contributor_data[:amount] - contributor_payouts_by_contributor[hugh][:amount]
-
-        trueup.update!(
-          amount: founder_trueup_amount,
-          description: <<~HEREDOC
-          # Trueup for #{working_date.strftime("%B %Y")}
-          - **Highest Paid Contributor:** #{highest_contributor.forecast_person.email}
-          - **Amount:** #{ActionController::Base.helpers.number_to_currency(highest_contributor_data[:amount])}
-          - **Trueup Amount:** #{ActionController::Base.helpers.number_to_currency(founder_trueup_amount)}
-          HEREDOC
-        )
-      end
-    end
   end
 end

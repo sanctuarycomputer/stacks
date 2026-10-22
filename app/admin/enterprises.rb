@@ -2,19 +2,35 @@ ActiveAdmin.register Enterprise do
   config.filters = false
   config.paginate = false
   actions :index, :show, :new, :create, :edit, :update
-  permit_params :name,
-    :deel_legal_entity_id,
-    :pay_cycle_cadence,
-    enterprise_forecast_clients_attributes: [:id, :forecast_client_id, :_destroy],
-    enterprise_admins_attributes: [:id, :admin_user_id, :_destroy],
-    qbo_account_attributes: [
-      :id,
-      :_edit,
-      :_destroy,
-      :client_id,
-      :client_secret,
-      :realm_id,
+  permit_params do
+    permitted = [
+      :name,
+      :deel_legal_entity_id,
+      :pay_cycle_cadence,
+      enterprise_forecast_clients_attributes: [:id, :forecast_client_id, :_destroy],
+      enterprise_admins_attributes: [:id, :admin_user_id, :_destroy],
+      qbo_account_attributes: [
+        :id,
+        :_edit,
+        :_destroy,
+        :client_id,
+        :client_secret,
+        :realm_id,
+      ],
     ]
+    # Storing this id is what makes garden3d invoice the enterprise each
+    # month. Admins only, and only once the column exists (migrations are run
+    # by hand after the deploy).
+    if current_admin_user.is_admin? && Enterprise.column_names.include?("g3d_qbo_customer_id")
+      permitted.unshift(:g3d_qbo_customer_id)
+    end
+    # The vendor garden3d's mirrored bills come from, in this enterprise's own
+    # QuickBooks.
+    if current_admin_user.is_admin? && Enterprise.column_names.include?("g3d_qbo_vendor_id")
+      permitted.unshift(:g3d_qbo_vendor_id)
+    end
+    permitted
+  end
 
   action_item :trigger_generate_snapshot, only: :show do
     link_to "Regenerate Data", trigger_generate_snapshot_admin_enterprise_path(resource), method: :post
@@ -95,6 +111,71 @@ ActiveAdmin.register Enterprise do
       else
         f.input :deel_legal_entity_id,
           hint: "Deel API unreachable — paste the legal_entity.id manually."
+      end
+
+      if current_admin_user.is_admin? && f.object.has_attribute?(:g3d_qbo_customer_id) && !f.object.is_garden3d?
+        # Fetched live from garden3d's QuickBooks, like the Deel entities
+        # above. Falls back to a plain text input if QuickBooks is unreachable.
+        customer_options = begin
+          garden3d_qbo = QboAccount.where(enterprise: Enterprise.where(name: Enterprise::GARDEN3D_NAME)).order(:id).first
+          garden3d_qbo&.fetch_all_customers&.map { |c| ["#{c.display_name} (#{c.id})", c.id.to_s] }&.sort
+        rescue StandardError => e
+          Rails.logger.warn("[Admin::Enterprises#form] couldn't fetch garden3d's QuickBooks customers: #{e.message}")
+          nil
+        end
+        billing_hint = "When set, garden3d invoices this enterprise every month (its management fee). " \
+                       "Leave blank for an enterprise garden3d does not bill. Stacks never creates the customer."
+
+        if customer_options
+          # Keep a stored id that QuickBooks no longer lists, so saving the
+          # form for something else does not silently clear it.
+          stored_id = f.object.g3d_qbo_customer_id.to_s
+          if stored_id.present? && customer_options.none? { |_, id| id == stored_id }
+            customer_options.unshift(["Not an active customer (#{stored_id})", stored_id])
+          end
+          f.input :g3d_qbo_customer_id,
+            as: :select,
+            collection: customer_options,
+            include_blank: "(not billed by garden3d)",
+            label: "Customer in garden3d's QuickBooks",
+            hint: "#{billing_hint} Pulled live from garden3d's QuickBooks."
+        else
+          f.input :g3d_qbo_customer_id,
+            label: "Customer id in garden3d's QuickBooks",
+            hint: "#{billing_hint} QuickBooks unreachable — paste the customer id manually."
+        end
+      end
+
+      if current_admin_user.is_admin? && f.object.has_attribute?(:g3d_qbo_vendor_id) && !f.object.is_garden3d? &&
+         f.object.qbo_account.present?
+        # Fetched live from THIS enterprise's QuickBooks, as the customer above
+        # is from garden3d's. Falls back to a plain text input if unreachable.
+        vendor_options = begin
+          f.object.qbo_account.fetch_all_vendors.select(&:active?)
+            .map { |v| ["#{v.display_name} (#{v.id})", v.id.to_s] }.sort
+        rescue StandardError => e
+          Rails.logger.warn("[Admin::Enterprises#form] couldn't fetch #{f.object.name}'s QuickBooks vendors: #{e.message}")
+          nil
+        end
+        vendor_hint = "garden3d's invoices to this enterprise are mirrored as bills from this vendor in its " \
+                      "QuickBooks. Stacks never creates the vendor."
+
+        if vendor_options
+          stored_id = f.object.g3d_qbo_vendor_id.to_s
+          if stored_id.present? && vendor_options.none? { |_, id| id == stored_id }
+            vendor_options.unshift(["Not an active vendor (#{stored_id})", stored_id])
+          end
+          f.input :g3d_qbo_vendor_id,
+            as: :select,
+            collection: vendor_options,
+            include_blank: "(none)",
+            label: "garden3d's vendor in this enterprise's QuickBooks",
+            hint: "#{vendor_hint} Pulled live from this enterprise's QuickBooks."
+        else
+          f.input :g3d_qbo_vendor_id,
+            label: "garden3d's vendor id in this enterprise's QuickBooks",
+            hint: "#{vendor_hint} QuickBooks unreachable — paste the vendor id manually."
+        end
       end
 
       f.has_many :enterprise_forecast_clients,

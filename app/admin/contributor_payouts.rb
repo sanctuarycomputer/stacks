@@ -32,7 +32,11 @@ ActiveAdmin.register ContributorPayout do
   end
 
   action_item :toggle_acceptance, only: :show do
-    if current_admin_user == resource.contributor.forecast_person.admin_user || current_admin_user.is_admin?
+    # The button posts to the payout's invoice tracker, so it is offered only
+    # to someone that tracker would let through (never a non-admin on one of
+    # garden3d's trackers).
+    if (current_admin_user == resource.contributor.forecast_person.admin_user || current_admin_user.is_admin?) &&
+       authorized?(:toggle_contributor_payout_acceptance, resource.invoice_tracker)
       link_to resource.accepted? ? "Unaccept" : "Accept", toggle_contributor_payout_acceptance_admin_invoice_pass_invoice_tracker_path(resource.invoice_tracker.invoice_pass.id, resource.invoice_tracker, {contributor_payout_id: resource.id}),
         method: :post
     end
@@ -130,6 +134,9 @@ ActiveAdmin.register ContributorPayout do
     invoice_tracker = InvoiceTracker.find(params["invoice_tracker_id"])
     index_path = admin_invoice_tracker_contributor_payouts_path(invoice_tracker)
     return redirect_to(index_path, alert: "Admins only.") unless current_admin_user.is_admin?
+    if invoice_tracker.garden3d?
+      return redirect_to(index_path, alert: "garden3d's intercompany invoices have no contributor payouts.")
+    end
 
     begin
       if invoice_tracker.qbo_invoice.nil?
@@ -194,8 +201,33 @@ ActiveAdmin.register ContributorPayout do
   end
 
   controller do
+    before_action :authorize_garden3d_tracker!
+
     def scoped_collection
       super.with_deleted.includes(ledger: { contributor: :forecast_person })
+    end
+
+    # A tracker on garden3d's pass is admin-only, and so are the payouts
+    # pages under it: the rule is AdminAuthorization's. It is asked here of
+    # the tracker, before anything else runs, because ActiveAdmin authorizes
+    # the index and the collection actions against the ContributorPayout
+    # class alone, and does not authorize a member action that never loads
+    # its payout (toggle_acceptance, sync_qbo_bill).
+    #
+    # The tracker is taken from the payout as well as from the URL: the
+    # index's own Accept link passes the payout's id where the tracker's
+    # belongs.
+    #
+    # `show` is left to the usual per-payout check, which lets a contributor
+    # read their own payout and nobody else's.
+    def authorize_garden3d_tracker!
+      payout = ContributorPayout.with_deleted.find_by(id: params[:id]) if params[:id].present?
+      tracker = [payout&.invoice_tracker, InvoiceTracker.find_by(id: params[:invoice_tracker_id])]
+        .compact.find(&:garden3d?)
+      return if tracker.nil?
+      return if action_name == "show" && payout.present?
+
+      authorize!(:read, tracker)
     end
 
     def build_new_resource

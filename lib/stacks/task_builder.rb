@@ -15,6 +15,7 @@ require_relative "task_builder/discoveries/auto_paused_recurring_ledger_adjustme
 require_relative "task_builder/discoveries/runn_mirror"
 require_relative "task_builder/discoveries/unaccepted_payouts"
 require_relative "task_builder/discoveries/course_assignments"
+require_relative "task_builder/discoveries/unaccepted_mso_trueups"
 
 module Stacks
   # Single source of truth for "what needs attention right now" across the system.
@@ -61,6 +62,7 @@ module Stacks
       Discoveries::RunnMirror,
       Discoveries::UnacceptedPayouts,
       Discoveries::CourseAssignments,
+      Discoveries::UnacceptedMsoTrueups,
     ].freeze
 
     # Returns Array<StacksTask> — every open task system-wide.

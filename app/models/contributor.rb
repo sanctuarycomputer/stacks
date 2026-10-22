@@ -77,6 +77,7 @@ class Contributor < ApplicationRecord
   has_many :contributor_adjustments, through: :ledgers
   has_many :deel_invoice_adjustments, through: :ledgers
   has_many :pay_stubs, through: :ledgers
+  has_many :mso_trueups, through: :ledgers
   has_many :recurring_ledger_adjustments, through: :ledgers
 
   # Each *_with_deleted method below is memoized per-instance. The first call
@@ -134,6 +135,19 @@ class Contributor < ApplicationRecord
         .joins(:ledger)
         .includes(pay_cycle: :pay_stubs)
         .where(ledgers: { contributor_id: id }).to_a
+  end
+
+  # The report and its true-ups are what MsoTrueup#payable? reads.
+  def mso_trueups_with_deleted
+    @_mso_trueups_with_deleted ||=
+      if MsoTrueup.schema_ready?
+        MsoTrueup.with_deleted
+          .joins(:ledger)
+          .includes(periodic_report: :mso_trueups)
+          .where(ledgers: { contributor_id: id }).to_a
+      else
+        []
+      end
   end
 
   private
@@ -200,6 +214,13 @@ class Contributor < ApplicationRecord
     @_pay_stubs_with_deleted =
       PayStub.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
         .includes(:ledger, :pay_cycle).to_a
+    @_mso_trueups_with_deleted =
+      if MsoTrueup.schema_ready?
+        MsoTrueup.with_deleted.joins(:ledger).where(ledgers: { contributor_id: id })
+          .includes(:ledger, periodic_report: :mso_trueups).to_a
+      else
+        []
+      end
 
     # Short-circuit `item.contributor` (and any downstream delegate hop) to
     # this Contributor. All preloaded items belong to ledgers whose contributor
@@ -212,6 +233,7 @@ class Contributor < ApplicationRecord
       @_profit_shares_with_deleted,
       @_deel_invoice_adjustments_with_deleted,
       @_pay_stubs_with_deleted,
+      @_mso_trueups_with_deleted,
     ].each do |items|
       items.each do |item|
         item.ledger.association(:contributor).target = self
@@ -276,6 +298,7 @@ class Contributor < ApplicationRecord
     contributor_payouts.each { |cp| cp.sync_qbo_bill!(accounts_cache: cache) }
     contributor_adjustments.each { |adj| adj.sync_qbo_bill!(accounts_cache: cache) }
     profit_shares.each { |ps| ps.sync_qbo_bill!(accounts_cache: cache) }
+    mso_trueups.each { |trueup| trueup.sync_qbo_bill!(accounts_cache: cache) if trueup.payable? } if MsoTrueup.schema_ready?
     # Reimbursement is a SyncsAsQboBill host too — without this it would be
     # silently skipped by any caller that expects "sync everything for this
     # contributor" (admin button, daily cron rake task). Filter to accepted
@@ -377,7 +400,8 @@ class Contributor < ApplicationRecord
   # concept — a contributor's total contribution across the company that month — so it
   # lives here, not on Ledger. Per-enterprise views should use Ledger#items_grouped_by_month
   # instead, which omits elevated_service / total_hours / partial_salary / fulltime.
-  def all_items_grouped_by_month(include_salary = true, override_ledger_starts_at = nil, override_ledger_ends_at = nil, min_ends_at: nil)
+  def all_items_grouped_by_month(include_salary = true, override_ledger_starts_at = nil, override_ledger_ends_at = nil,
+                                 min_ends_at: nil)
     preloaded_contributor_payouts = contributor_payouts_with_deleted
     preloaded_reimbursements = reimbursements_with_deleted
     preloaded_trueups = trueups_with_deleted
@@ -385,6 +409,7 @@ class Contributor < ApplicationRecord
     preloaded_adjustments = contributor_adjustments_with_deleted
     preloaded_deel_invoice_adjustments = deel_invoice_adjustments_with_deleted
     preloaded_pay_stubs = pay_stubs_with_deleted
+    preloaded_mso_trueups = mso_trueups_with_deleted
 
     if override_ledger_ends_at.present?
       ledger_ends_at = override_ledger_ends_at
@@ -395,12 +420,13 @@ class Contributor < ApplicationRecord
         *preloaded_adjustments,
         *preloaded_deel_invoice_adjustments,
         *preloaded_pay_stubs,
+        *preloaded_mso_trueups,
       ].reduce(Date.today) do |acc, li|
         if li.is_a?(ContributorPayout)
           acc = li.invoice_tracker.invoice_pass.start_of_month if li.invoice_tracker.invoice_pass.start_of_month > acc
         elsif li.is_a?(Reimbursement)
           acc = li.created_at if li.created_at > acc
-        elsif li.is_a?(Trueup)
+        elsif li.is_a?(Trueup) || li.is_a?(MsoTrueup)
           acc = li.payment_date if li.payment_date > acc
         elsif li.is_a?(ProfitShare)
           acc = li.applied_at if li.applied_at > acc
@@ -480,6 +506,11 @@ class Contributor < ApplicationRecord
         ps.effective_on_for_display <= period.ends_at
       end
 
+      mso_trueups_in_period = preloaded_mso_trueups.select do |mt|
+        mt.payment_date >= period.starts_at &&
+        mt.payment_date <= period.ends_at
+      end
+
       sorted =
         [
           *contributor_payouts_in_period,
@@ -489,9 +520,10 @@ class Contributor < ApplicationRecord
           *adjustments_in_period,
           *deel_invoice_in_period,
           *pay_stubs_in_period,
+          *mso_trueups_in_period,
         ].sort do |a, b|
         date_a = nil
-        if a.is_a?(Trueup)
+        if a.is_a?(Trueup) || a.is_a?(MsoTrueup)
           date_a = a.payment_date
         elsif a.is_a?(Reimbursement)
           date_a = a.created_at
@@ -508,7 +540,7 @@ class Contributor < ApplicationRecord
         end
 
         date_b = nil
-        if b.is_a?(Trueup)
+        if b.is_a?(Trueup) || b.is_a?(MsoTrueup)
           date_b = b.payment_date
         elsif b.is_a?(Reimbursement)
           date_b = b.created_at
@@ -536,7 +568,8 @@ class Contributor < ApplicationRecord
           period.ends_at,
         )
       total_income = (sorted.reduce(0) do |acc, item|
-        if item.is_a?(Trueup)
+        # Known, and as for every class here: `sorted` holds soft-deleted rows too, so a removed MsoTrueup still counts.
+        if item.is_a?(Trueup) || item.is_a?(MsoTrueup)
           next acc += item.amount
         elsif item.is_a?(ContributorPayout)
           next acc += item.amount
@@ -612,7 +645,7 @@ class Contributor < ApplicationRecord
 
     # Income per [forecast_person_id, month-start-date]
     income = Hash.new(0)
-    [
+    grouped_income = [
       ContributorPayout.joins(:ledger).joins(invoice_tracker: :invoice_pass)
         .where(ledgers: { contributor_id: contributor_ids })
         .where("invoice_passes.start_of_month BETWEEN ? AND ?", span_start, span_end)
@@ -621,7 +654,14 @@ class Contributor < ApplicationRecord
         .where(ledgers: { contributor_id: contributor_ids })
         .where("invoice_passes.start_of_month BETWEEN ? AND ?", span_start, span_end)
         .group("ledgers.contributor_id", "invoice_passes.start_of_month").sum(:amount),
-    ].each do |grouped|
+    ]
+    if MsoTrueup.schema_ready?
+      grouped_income << MsoTrueup.joins(:ledger).joins(:periodic_report)
+        .where(ledgers: { contributor_id: contributor_ids })
+        .where("periodic_reports.period_starts_at BETWEEN ? AND ?", span_start, span_end)
+        .group("ledgers.contributor_id", "periodic_reports.period_starts_at").sum(:amount)
+    end
+    grouped_income.each do |grouped|
       grouped.each do |(contributor_id, month), amt|
         fp_id = fp_id_by_contributor_id[contributor_id]
         next unless fp_id
