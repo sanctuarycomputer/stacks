@@ -29,6 +29,8 @@ class AdminContributorCostOfLivingTest < ActionDispatch::IntegrationTest
   test "a non-admin lead cannot set the cost-of-living country" do
     sign_in @lead
     put admin_contributor_path(@contributor), params: { contributor: { cost_of_living_country: "Canada" } }
+    # The update went through (not refused), so the strip is what kept it out.
+    assert_redirected_to admin_contributor_path(@contributor)
     assert_nil @contributor.reload.cost_of_living_country
   end
 
