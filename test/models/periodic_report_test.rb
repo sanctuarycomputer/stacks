@@ -99,8 +99,9 @@ class PeriodicReportTest < ActiveSupport::TestCase
   end
 
   test "tentative profit shares exclude non-company emails and out-of-scope work" do
-    # conan@ is on the US cost-of-living override list, so no DeelPerson is needed.
+    # A cost-of-living override, so no DeelPerson is needed.
     eligible = make_contributor!("conan@sanctuary.computer")
+    eligible.update!(cost_of_living_country: "United States")
     wrong_email = make_contributor!("freelance@gmail.com")
     wrong_enterprise = make_contributor!("elsewhere@sanctuary.computer")
 
@@ -122,5 +123,55 @@ class PeriodicReportTest < ActiveSupport::TestCase
 
     eligible_data = result.values.find { |data| data[:email] == "conan@sanctuary.computer" }
     assert_equal 3, eligible_data[:elevated_service_months]
+  end
+
+  def link_deel_person!(contributor, country_code)
+    deel = DeelPerson.create!(deel_id: SecureRandom.uuid, data: { "addresses" => [{ "country" => country_code }] })
+    contributor.update!(deel_person_id: deel.deel_id)
+    deel
+  end
+
+  def work_full_quarter!(contributor)
+    project = make_project_billed_through!(@sanctuary, "Client #{rand(10_000)}")
+    [4, 5, 6].each do |month|
+      assign_hours!(contributor, project, Date.new(2026, month, 1), Date.new(2026, month, 28))
+    end
+  end
+
+  test "cost of living comes from the Deel address when there is no override" do
+    contributor = make_contributor!("estonia@sanctuary.computer")
+    link_deel_person!(contributor, "EE")
+
+    assert_equal "Estonia", @report.cost_of_living_data_for(contributor)[:country]
+  end
+
+  test "the cost-of-living override takes precedence over the Deel address" do
+    contributor = make_contributor!("moved@sanctuary.computer")
+    link_deel_person!(contributor, "EE")
+    contributor.update!(cost_of_living_country: "Portugal")
+
+    assert_equal "Portugal", @report.cost_of_living_data_for(contributor)[:country]
+  end
+
+  test "the override works for a contributor with no Deel person" do
+    contributor = make_contributor!("nodeel@sanctuary.computer")
+    contributor.update!(cost_of_living_country: "Canada")
+    work_full_quarter!(contributor)
+
+    data = @report.tentative_profit_shares_by_contributor.values.find { |d| d[:email] == "nodeel@sanctuary.computer" }
+    assert_equal "Canada", data[:cost_of_living_data][:country]
+  end
+
+  test "every eligible contributor without a cost-of-living country is named in one error" do
+    first = make_contributor!("first@sanctuary.computer")
+    second = make_contributor!("second@sanctuary.computer")
+    fine = make_contributor!("fine@sanctuary.computer")
+    fine.update!(cost_of_living_country: "United States")
+    [first, second, fine].each { |c| work_full_quarter!(c) }
+
+    error = assert_raises(Stacks::Errors::Base) { @report.tentative_profit_shares_by_contributor }
+    assert_includes error.message, "first@sanctuary.computer"
+    assert_includes error.message, "second@sanctuary.computer"
+    refute_includes error.message, "fine@sanctuary.computer"
   end
 end

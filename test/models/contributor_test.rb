@@ -489,4 +489,17 @@ class ContributorGroupingFloorTest < ActiveSupport::TestCase
     months = @contributor.all_items_grouped_by_month(false, nil, cap)[:by_month].keys
     assert months.first.starts_at < Date.today.beginning_of_month
   end
+
+  test "cost_of_living_country must be a Numbeo country name, and blank clears it" do
+    contributor = ForecastPerson.create!(forecast_id: rand(1..2_000_000_000), email: "col@sanctuary.computer", data: {}).contributor
+
+    contributor.cost_of_living_country = "USA"
+    refute contributor.valid?
+
+    contributor.cost_of_living_country = "United States"
+    assert contributor.valid?
+
+    contributor.update!(cost_of_living_country: "")
+    assert_nil contributor.reload.cost_of_living_country
+  end
 end

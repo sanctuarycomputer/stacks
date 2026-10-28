@@ -276,58 +276,73 @@ class PeriodicReport < ApplicationRecord
     end
   end
 
+  # The contributor's Numbeo row: their cost_of_living_country override if
+  # set, otherwise the country on their Deel address. nil when neither gives
+  # a row.
+  def cost_of_living_data_for(contributor)
+    indices = PeriodicReport.parsed_numbeo_cost_of_living_indices_by_country
+    return indices[contributor.cost_of_living_country] if contributor.cost_of_living_country.present?
+
+    country_code = contributor.deel_person&.country
+    return us_cost_of_living_data if country_code == "US"
+    country = country_code.present? && ISO3166::Country[country_code]
+    return nil unless country
+
+    _, data = indices.find { |k, _| country.iso_long_name.include?(k) || country.iso_short_name.include?(k) }
+    data
+  end
+
   def tentative_profit_shares_by_contributor
-    @_tentative_profit_shares_by_contributor ||= contributors.reduce({}) do |acc, contributor|
-      next acc unless PeriodicReport.eligible_profit_share_email?(contributor.forecast_person.email)
+    @_tentative_profit_shares_by_contributor ||= begin
+      missing_cost_of_living = []
+      shares = contributors.reduce({}) do |acc, contributor|
+        next acc unless PeriodicReport.eligible_profit_share_email?(contributor.forecast_person.email)
 
-      ledger = contributor.all_items_grouped_by_month(false, nil, period.ends_at + 1.day)
-      scoped_elevated = profit_share_elevated_service_by_month(contributor, ledger[:by_month])
+        ledger = contributor.all_items_grouped_by_month(false, nil, period.ends_at + 1.day)
+        scoped_elevated = profit_share_elevated_service_by_month(contributor, ledger[:by_month])
 
-      attendance = ledger[:by_month].select{|p| p.starts_at >= period.starts_at && p.ends_at <= period.ends_at }.reduce({}) do |agg, tuple|
-        month, metadata = tuple
-        m = metadata.dup
-        m.delete(:items)
-        m[:elevated_service] = scoped_elevated[month]
-        agg[month.label] = m
-        agg
-      end
-      elevated_service_months = attendance.values.select{|v| v[:elevated_service]}.count
-      next acc if elevated_service_months == 0
-
-      cost_of_living_data = nil
-      begin
-        # Overrides
-        if ["hugh@sanctuary.computer", "sohee@sanctuary.computer", "conan@sanctuary.computer"].include?(contributor.forecast_person.email.downcase)
-          cost_of_living_data = us_cost_of_living_data
-        else
-          country_code = contributor.deel_person.data["addresses"].first.dig("country")
-          if country_code == "US"
-            cost_of_living_data = us_cost_of_living_data
-          else
-            country = ISO3166::Country[country_code]
-            _, cost_of_living_data = PeriodicReport.parsed_numbeo_cost_of_living_indices_by_country.find{|k, v| country.iso_long_name.include?(k) || country.iso_short_name.include?(k) }
-          end
+        attendance = ledger[:by_month].select{|p| p.starts_at >= period.starts_at && p.ends_at <= period.ends_at }.reduce({}) do |agg, tuple|
+          month, metadata = tuple
+          m = metadata.dup
+          m.delete(:items)
+          m[:elevated_service] = scoped_elevated[month]
+          agg[month.label] = m
+          agg
         end
-      rescue => e
-        raise Stacks::Errors::Base.new("Could not find COL data for #{contributor.forecast_person.email}: #{e.message}")
+        elevated_service_months = attendance.values.select{|v| v[:elevated_service]}.count
+        next acc if elevated_service_months == 0
+
+        cost_of_living_data = cost_of_living_data_for(contributor)
+        if cost_of_living_data.nil?
+          missing_cost_of_living << contributor.forecast_person.email
+          next acc
+        end
+
+        psu = ledger[:by_month].values.select{|l| l[:elevated_service]}.count
+        effective_cost_of_living_index = cost_of_living_data[:cost_of_living_plus_rent_index].to_f.clamp(0, us_cost_of_living_data[:cost_of_living_plus_rent_index].to_f)
+        tenure_multiplier = ((psu / 12) * yearly_tenure_multiplier) + 1
+        acc[contributor] = {
+          contributor_id: contributor.id,
+          email: contributor.forecast_person.email,
+          cost_of_living_data: cost_of_living_data,
+          effective_cost_of_living_index: effective_cost_of_living_index,
+          psu: psu,
+          tenure_multiplier: tenure_multiplier,
+          attendance: attendance,
+          elevated_service_months: elevated_service_months,
+          shares: tenure_multiplier * effective_cost_of_living_index * elevated_service_months
+        }
+
+        acc
       end
 
-      psu = ledger[:by_month].values.select{|l| l[:elevated_service]}.count
-      effective_cost_of_living_index = cost_of_living_data[:cost_of_living_plus_rent_index].to_f.clamp(0, us_cost_of_living_data[:cost_of_living_plus_rent_index].to_f)
-      tenure_multiplier = ((psu / 12) * yearly_tenure_multiplier) + 1
-      acc[contributor] = {
-        contributor_id: contributor.id,
-        email: contributor.forecast_person.email,
-        cost_of_living_data: cost_of_living_data,
-        effective_cost_of_living_index: effective_cost_of_living_index,
-        psu: psu,
-        tenure_multiplier: tenure_multiplier,
-        attendance: attendance,
-        elevated_service_months: elevated_service_months,
-        shares: tenure_multiplier * effective_cost_of_living_index * elevated_service_months
-      }
-
-      acc
+      if missing_cost_of_living.any?
+        raise Stacks::Errors::Base.new(
+          "No cost-of-living country for #{missing_cost_of_living.join(", ")}. " \
+          "Set one on each contributor, or link their Deel person."
+        )
+      end
+      shares
     end
   end
 

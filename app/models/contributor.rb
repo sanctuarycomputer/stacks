@@ -15,6 +15,12 @@ class Contributor < ApplicationRecord
   belongs_to :forecast_person, class_name: "ForecastPerson", foreign_key: "forecast_person_id", primary_key: "forecast_id"
   belongs_to :deel_person, class_name: "DeelPerson", foreign_key: "deel_person_id", primary_key: "deel_id", optional: true
 
+  # Profit-share cost-of-living override for contributors who aren't on Deel:
+  # a Numbeo country name, which PeriodicReport prefers over the Deel address.
+  validates :cost_of_living_country, allow_blank: true,
+    inclusion: { in: ->(_) { PeriodicReport.parsed_numbeo_cost_of_living_indices_by_country.keys } }
+  before_validation { self.cost_of_living_country = nil if cost_of_living_country.blank? }
+
   has_many :contributor_qbo_vendors, dependent: :destroy
   has_many :qbo_vendors, through: :contributor_qbo_vendors
   accepts_nested_attributes_for :contributor_qbo_vendors, allow_destroy: true,
