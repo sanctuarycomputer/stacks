@@ -38,9 +38,17 @@ ActiveAdmin.register Contributor do
     def manual_deel_invoice_visible?(contributor)
       contributor.deel_invoice_actions_visible_to?(current_admin_user)
     end
+
+    # The cost-of-living country sets a contributor's profit share, so only
+    # admins may change it. Hiding the input is not enough: AdminAuthorization
+    # lets anyone who can act as a lead update any Contributor.
+    def update
+      params[:contributor]&.delete(:cost_of_living_country) unless current_admin_user.is_admin?
+      super
+    end
   end
 
-  permit_params :deel_person_id,
+  permit_params :deel_person_id, :cost_of_living_country,
     contributor_qbo_vendors_attributes: [:id, :qbo_vendor_id, :_destroy]
 
   # Action items below are scoped to the ledger tab the user is viewing.
@@ -190,6 +198,13 @@ ActiveAdmin.register Contributor do
     f.inputs do
       f.input :forecast_person, input_html: { disabled: true }
       f.input :deel_person
+      if current_admin_user.is_admin?
+        f.input :cost_of_living_country,
+          as: :select,
+          collection: PeriodicReport.parsed_numbeo_cost_of_living_indices_by_country.keys.sort,
+          include_blank: "Use Deel address",
+          hint: "For contributors who aren't on Deel. Overrides the Deel address in profit share."
+      end
     end
 
     # One row per (enterprise, qbo_vendor) mapping. Per-enterprise scoping is
