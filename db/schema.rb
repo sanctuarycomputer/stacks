@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_10_28_000001) do
+ActiveRecord::Schema.define(version: 2026_10_30_000001) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -262,6 +262,7 @@ ActiveRecord::Schema.define(version: 2026_10_28_000001) do
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
     t.string "cost_of_living_country"
+    t.boolean "counts_garden3d_work_for_profit_share", default: false, null: false
     t.index ["forecast_person_id"], name: "index_contributors_on_forecast_person_id"
   end
 

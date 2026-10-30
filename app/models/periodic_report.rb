@@ -24,12 +24,15 @@ class PeriodicReport < ApplicationRecord
   # Query param + `scope_studio_from_param` keys for quarterly report studio tabs (single source of truth).
   STUDIO_TAB_KEYS = %w[g3d xxix sanctu].freeze
 
-  # Profit share eligibility ruleset (Q2 2026 onward): elevated service is
-  # derived only from work attributed to these enterprises (hours on their
-  # billed clients, income on their ledgers), and only contributors with a
-  # company email address participate. Historical tenure (psu) intentionally
-  # stays network-wide — past quarters were earned under the old rules.
-  PROFIT_SHARE_ENTERPRISE_NAMES = [Enterprise::SANCTUARY_NAME, Enterprise::GARDEN3D_NAME].freeze
+  # Profit share eligibility ruleset: the pool is Sanctuary's surplus, so
+  # elevated service is derived only from Sanctuary work (hours on its billed
+  # clients, income on its ledgers), and only contributors with a company
+  # email address participate. A contributor with
+  # counts_garden3d_work_for_profit_share also has their garden3d work
+  # counted. (Q2 2026 counted garden3d work for everyone.) Historical tenure
+  # (psu) intentionally stays network-wide — past quarters were earned under
+  # the old rules.
+  PROFIT_SHARE_ENTERPRISE_NAMES = [Enterprise::SANCTUARY_NAME].freeze
   PROFIT_SHARE_EMAIL_DOMAINS = %w[sanctuary.computer xxix.co].freeze
 
   def self.create_for_period(period = Stacks::Period.new("Q4, 2025", Date.today.last_quarter.beginning_of_quarter, Date.today.last_quarter.end_of_quarter, :quarter))
@@ -238,6 +241,12 @@ class PeriodicReport < ApplicationRecord
     @_profit_share_enterprise_ids ||= Enterprise.where(name: PROFIT_SHARE_ENTERPRISE_NAMES).pluck(:id)
   end
 
+  def profit_share_enterprise_ids_for(contributor)
+    return profit_share_enterprise_ids unless contributor.counts_garden3d_work_for_profit_share?
+
+    profit_share_enterprise_ids | Enterprise.where(name: Enterprise::GARDEN3D_NAME).pluck(:id)
+  end
+
   # Per-month elevated service derived ONLY from profit-share enterprises, in
   # contrast to Contributor#all_items_grouped_by_month's network-wide flag:
   # hours count when the assignment's client bills through an in-scope
@@ -245,7 +254,7 @@ class PeriodicReport < ApplicationRecord
   # `by_month` is the contributor's ledger walk (so items aren't re-queried);
   # returns { Stacks::Period(month) => Boolean } for this report's quarter.
   def profit_share_elevated_service_by_month(contributor, by_month)
-    scope_ids = profit_share_enterprise_ids
+    scope_ids = profit_share_enterprise_ids_for(contributor)
     scoped_assignments = contributor.forecast_person.forecast_assignments
       .includes(forecast_project: :forecast_client)
       .where("end_date >= ? AND start_date <= ?", period.starts_at, period.ends_at)

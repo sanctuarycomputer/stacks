@@ -63,14 +63,13 @@ class PeriodicReportTest < ActiveSupport::TestCase
     refute PeriodicReport.eligible_profit_share_email?("")
   end
 
-  test "elevated service counts hours only on clients billed through Sanctuary or garden3d" do
+  test "elevated service counts hours only on clients billed through Sanctuary" do
     contributor = make_contributor!("worker@sanctuary.computer")
     sanctuary_project = make_project_billed_through!(@sanctuary, "Sanctuary Client")
     garden3d_project = make_project_billed_through!(@garden3d, "Garden3d Client")
     other_project = make_project_billed_through!(@other, "Other Enterprise Client")
 
-    # ~240 recorded hours in each month — far past the 120hr elevated-service bar,
-    # but April's hours bill through an out-of-scope enterprise.
+    # ~240 recorded hours in each month — far past the 120hr elevated-service bar.
     assign_hours!(contributor, other_project, Date.new(2026, 4, 1), Date.new(2026, 4, 30))
     assign_hours!(contributor, sanctuary_project, Date.new(2026, 5, 1), Date.new(2026, 5, 31))
     assign_hours!(contributor, garden3d_project, Date.new(2026, 6, 1), Date.new(2026, 6, 30))
@@ -80,10 +79,17 @@ class PeriodicReportTest < ActiveSupport::TestCase
 
     refute by_label["April, 2026"], "hours billed through an out-of-scope enterprise must not count"
     assert by_label["May, 2026"], "Sanctuary-billed hours count"
-    assert by_label["June, 2026"], "garden3d-billed hours count"
+    refute by_label["June, 2026"], "garden3d-billed hours don't count by default"
+
+    contributor.update!(counts_garden3d_work_for_profit_share: true)
+    flags = PeriodicReport.find(@report.id).profit_share_elevated_service_by_month(contributor, quarter_by_month(contributor))
+    by_label = flags.transform_keys(&:label)
+
+    assert by_label["June, 2026"], "garden3d-billed hours count when the contributor's flag is set"
+    refute by_label["April, 2026"], "the flag adds garden3d only"
   end
 
-  test "elevated service counts income only on Sanctuary or garden3d ledgers" do
+  test "elevated service counts income only on Sanctuary ledgers" do
     contributor = make_contributor!("worker@sanctuary.computer")
 
     pay_trueup!(contributor, @other, Date.new(2026, 4, 1), 20_000)
@@ -95,7 +101,11 @@ class PeriodicReportTest < ActiveSupport::TestCase
 
     refute by_label["April, 2026"], "income on an out-of-scope enterprise ledger must not count"
     assert by_label["May, 2026"], "Sanctuary ledger income counts"
-    assert by_label["June, 2026"], "garden3d ledger income counts"
+    refute by_label["June, 2026"], "garden3d ledger income doesn't count by default"
+
+    contributor.update!(counts_garden3d_work_for_profit_share: true)
+    flags = PeriodicReport.find(@report.id).profit_share_elevated_service_by_month(contributor, quarter_by_month(contributor))
+    assert flags.transform_keys(&:label)["June, 2026"], "garden3d ledger income counts when the flag is set"
   end
 
   test "tentative profit shares exclude non-company emails and out-of-scope work" do
