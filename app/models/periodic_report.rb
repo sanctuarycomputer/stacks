@@ -24,12 +24,14 @@ class PeriodicReport < ApplicationRecord
   # Query param + `scope_studio_from_param` keys for quarterly report studio tabs (single source of truth).
   STUDIO_TAB_KEYS = %w[g3d xxix sanctu].freeze
 
-  # Profit share eligibility ruleset (Q2 2026 onward): elevated service is
-  # derived only from work attributed to these enterprises (hours on their
-  # billed clients, income on their ledgers), and only contributors with a
-  # company email address participate. Historical tenure (psu) intentionally
-  # stays network-wide — past quarters were earned under the old rules.
-  PROFIT_SHARE_ENTERPRISE_NAMES = [Enterprise::SANCTUARY_NAME, Enterprise::GARDEN3D_NAME].freeze
+  # Profit share eligibility ruleset: the pool is Sanctuary's surplus, so
+  # elevated service is derived only from Sanctuary work (hours on its billed
+  # clients, internal ones included; income on its ledgers), and only
+  # contributors with a company email address participate. (Q2 2026 also
+  # counted garden3d work.) A ProfitShareManualInclusionPeriod adds people on
+  # top. Historical tenure (psu) intentionally stays network-wide — past
+  # quarters were earned under the old rules.
+  PROFIT_SHARE_ENTERPRISE_NAMES = [Enterprise::SANCTUARY_NAME].freeze
   PROFIT_SHARE_EMAIL_DOMAINS = %w[sanctuary.computer xxix.co].freeze
 
   def self.create_for_period(period = Stacks::Period.new("Q4, 2025", Date.today.last_quarter.beginning_of_quarter, Date.today.last_quarter.end_of_quarter, :quarter))
@@ -238,34 +240,49 @@ class PeriodicReport < ApplicationRecord
     @_profit_share_enterprise_ids ||= Enterprise.where(name: PROFIT_SHARE_ENTERPRISE_NAMES).pluck(:id)
   end
 
+  # The contributor's manual inclusion periods overlapping this quarter.
+  def manual_profit_share_inclusions_for(contributor)
+    @_manual_profit_share_inclusions ||= ProfitShareManualInclusionPeriod
+      .where("started_at <= ?", period.ends_at)
+      .where("ended_at IS NULL OR ended_at >= ?", period.starts_at)
+      .group_by(&:contributor_id)
+    @_manual_profit_share_inclusions.fetch(contributor.id, [])
+  end
+
   # Per-month elevated service derived ONLY from profit-share enterprises, in
   # contrast to Contributor#all_items_grouped_by_month's network-wide flag:
   # hours count when the assignment's client bills through an in-scope
-  # enterprise, income when the payout/trueup sits on an in-scope ledger.
+  # enterprise, income when the payout/trueup sits on an in-scope ledger. In
+  # a month a manual inclusion covers, every enterprise is in scope.
   # `by_month` is the contributor's ledger walk (so items aren't re-queried);
   # returns { Stacks::Period(month) => Boolean } for this report's quarter.
   def profit_share_elevated_service_by_month(contributor, by_month)
-    scope_ids = profit_share_enterprise_ids
-    scoped_assignments = contributor.forecast_person.forecast_assignments
+    inclusions = manual_profit_share_inclusions_for(contributor)
+    # [assignment, billing enterprise id] for every assignment that's work.
+    worked = contributor.forecast_person.forecast_assignments
       .includes(forecast_project: :forecast_client)
       .where("end_date >= ? AND start_date <= ?", period.starts_at, period.ends_at)
-      .select do |fa|
+      .reject(&:is_time_off?) # Service is hours worked: Time Off never counts.
+      .map do |fa|
         forecast_client = fa.forecast_project&.forecast_client
-        # Clientless projects (e.g. Time Off) follow ForecastClient#billing_enterprise's
+        # Other clientless projects follow ForecastClient#billing_enterprise's
         # unmapped-client default of Sanctuary.
         enterprise = forecast_client ? forecast_client.billing_enterprise : Enterprise.sanctuary
-        scope_ids.include?(enterprise.id)
+        [fa, enterprise.id]
       end
 
     by_month.reduce({}) do |acc, (month, metadata)|
       next acc unless month.starts_at >= period.starts_at && month.ends_at <= period.ends_at
 
+      included = inclusions.any? { |inclusion| inclusion.covers?(month.starts_at) }
+      in_scope = ->(enterprise_id) { included || profit_share_enterprise_ids.include?(enterprise_id) }
+
       hours = contributor.forecast_person.recorded_allocation_during_range_in_hours_from_assignments(
-        scoped_assignments, month.starts_at, month.ends_at
+        worked.select { |_, enterprise_id| in_scope.(enterprise_id) }.map(&:first), month.starts_at, month.ends_at
       )
       income = metadata[:items].reduce(0) do |sum, item|
         counts = item.is_a?(ContributorPayout) || item.is_a?(Trueup) || item.is_a?(MsoTrueup)
-        if counts && scope_ids.include?(item.ledger.enterprise_id)
+        if counts && in_scope.(item.ledger.enterprise_id)
           sum + item.amount
         else
           sum
@@ -292,11 +309,25 @@ class PeriodicReport < ApplicationRecord
     data
   end
 
+  # Anyone holding an MSO role at any point in the quarter takes no profit
+  # share for it: their compensation is pegged to the MSO benchmark instead.
+  def mso_executive_contributor_ids
+    @_mso_executive_contributor_ids ||= MsoRolePeriod
+      .where("started_at <= ?", period.ends_at)
+      .where("ended_at IS NULL OR ended_at >= ?", period.starts_at)
+      .pluck(:contributor_id).to_set
+  end
+
   def tentative_profit_shares_by_contributor
     @_tentative_profit_shares_by_contributor ||= begin
       missing_cost_of_living = []
       shares = contributors.reduce({}) do |acc, contributor|
-        next acc unless PeriodicReport.eligible_profit_share_email?(contributor.forecast_person.email)
+        # A manual inclusion anywhere in the quarter waives the company-email
+        # rule for the whole quarter: months it doesn't cover still earn
+        # service from Sanctuary work under the automatic rule.
+        next acc unless PeriodicReport.eligible_profit_share_email?(contributor.forecast_person.email) ||
+          manual_profit_share_inclusions_for(contributor).any?
+        next acc if mso_executive_contributor_ids.include?(contributor.id)
 
         ledger = contributor.all_items_grouped_by_month(false, nil, period.ends_at + 1.day)
         scoped_elevated = profit_share_elevated_service_by_month(contributor, ledger[:by_month])

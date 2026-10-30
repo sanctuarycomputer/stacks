@@ -68,7 +68,8 @@ class AdminMsoCompensationTest < ActionDispatch::IntegrationTest
       assert_match(/1,234\.56/, response.body)
       assert_match(/6,543\.21/, response.body)
       assert_includes response.body, admin_ledger_mso_trueup_path(@ledger, @mine)
-      assert_no_match(/Profit Share/, response.body)
+      # The page itself, not the admin menu (which links "Profit Share Inclusions").
+      assert_no_match(/Profit Share/, response.body.split('id="main_content"').last)
       sign_out viewer
     end
   end

@@ -168,7 +168,7 @@ class Mso::BenchmarkTest < ActiveSupport::TestCase
     assert_equal BigDecimal("20000"), result.average
   end
 
-  test "a profit share counts as earnings" do
+  test "a profit share does not count towards the benchmark" do
     sharer = earner("sharer", 10_000)
     report = PeriodicReport.create!(period_gradation: :quarter, period_starts_at: Date.new(2091, 1, 1),
                                     period_label: "Q1, 2091")
@@ -177,7 +177,7 @@ class Mso::BenchmarkTest < ActiveSupport::TestCase
 
     result = Mso::Benchmark.for_month(@month, top_n: 1)
 
-    assert_equal BigDecimal("10500"), result.average
+    assert_equal BigDecimal("10000"), result.average
   end
 
   test "true-ups are not earnings and do not count" do

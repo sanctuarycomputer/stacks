@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2026_10_28_000001) do
+ActiveRecord::Schema.define(version: 2026_10_30_000001) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
@@ -990,6 +990,16 @@ ActiveRecord::Schema.define(version: 2026_10_28_000001) do
     t.index ["admin_user_id"], name: "index_pre_profit_share_purchases_on_admin_user_id"
   end
 
+  create_table "profit_share_manual_inclusion_periods", force: :cascade do |t|
+    t.bigint "contributor_id", null: false
+    t.date "started_at", null: false
+    t.date "ended_at"
+    t.string "note", null: false
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["contributor_id"], name: "index_profit_share_manual_inclusion_periods_on_contributor_id"
+  end
+
   create_table "profit_share_passes", force: :cascade do |t|
     t.datetime "created_at", precision: 6, null: false
     t.datetime "updated_at", precision: 6, null: false
@@ -1710,6 +1720,7 @@ ActiveRecord::Schema.define(version: 2026_10_28_000001) do
   add_foreign_key "permission_grants", "admin_users", column: "granted_by_id"
   add_foreign_key "periodic_reports", "notifications"
   add_foreign_key "pre_profit_share_purchases", "admin_users"
+  add_foreign_key "profit_share_manual_inclusion_periods", "contributors"
   add_foreign_key "profit_share_payments", "admin_users"
   add_foreign_key "profit_share_payments", "profit_share_passes"
   add_foreign_key "profit_shares", "ledgers"

@@ -29,8 +29,9 @@ module Ledger::QualifyingIncome
   }.freeze
 
   # Mso::Benchmark deliberately narrows this (its own KLASSES leaves out
-  # true-ups): a true-up is a top-up, not earnings. True-ups stay in here
-  # because they are money a person has already received.
+  # true-ups and profit shares): a true-up is a top-up, not earnings, and a
+  # quarter's profit share would lift one month. Both stay in here because
+  # they are money a person has already received.
   KLASSES = SOURCES.keys.freeze
 
   # Classes whose negative rows are payment records rather than income.
