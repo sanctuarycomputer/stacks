@@ -31,6 +31,10 @@ class PeriodicReport < ApplicationRecord
   # stays network-wide — past quarters were earned under the old rules.
   PROFIT_SHARE_ENTERPRISE_NAMES = [Enterprise::SANCTUARY_NAME, Enterprise::GARDEN3D_NAME].freeze
   PROFIT_SHARE_EMAIL_DOMAINS = %w[sanctuary.computer xxix.co].freeze
+  # A single Time Off entry longer than this many working days is leave, not
+  # service: it doesn't count towards a month's elevated-service hours.
+  # Ordinary holidays stay well under it.
+  PROFIT_SHARE_LEAVE_WORKING_DAYS = 10
 
   def self.create_for_period(period = Stacks::Period.new("Q4, 2025", Date.today.last_quarter.beginning_of_quarter, Date.today.last_quarter.end_of_quarter, :quarter))
     create!(
@@ -254,7 +258,7 @@ class PeriodicReport < ApplicationRecord
         # Clientless projects (e.g. Time Off) follow ForecastClient#billing_enterprise's
         # unmapped-client default of Sanctuary.
         enterprise = forecast_client ? forecast_client.billing_enterprise : Enterprise.sanctuary
-        scope_ids.include?(enterprise.id)
+        scope_ids.include?(enterprise.id) && !profit_share_leave?(fa)
       end
 
     by_month.reduce({}) do |acc, (month, metadata)|
@@ -292,11 +296,26 @@ class PeriodicReport < ApplicationRecord
     data
   end
 
+  def profit_share_leave?(assignment)
+    assignment.is_time_off? &&
+      (assignment.start_date..assignment.end_date).count { |d| (1..5).cover?(d.wday) } > PROFIT_SHARE_LEAVE_WORKING_DAYS
+  end
+
+  # Anyone holding an MSO role at any point in the quarter takes no profit
+  # share for it: their compensation is pegged to the MSO benchmark instead.
+  def mso_executive_contributor_ids
+    @_mso_executive_contributor_ids ||= MsoRolePeriod
+      .where("started_at <= ?", period.ends_at)
+      .where("ended_at IS NULL OR ended_at >= ?", period.starts_at)
+      .pluck(:contributor_id).to_set
+  end
+
   def tentative_profit_shares_by_contributor
     @_tentative_profit_shares_by_contributor ||= begin
       missing_cost_of_living = []
       shares = contributors.reduce({}) do |acc, contributor|
         next acc unless PeriodicReport.eligible_profit_share_email?(contributor.forecast_person.email)
+        next acc if mso_executive_contributor_ids.include?(contributor.id)
 
         ledger = contributor.all_items_grouped_by_month(false, nil, period.ends_at + 1.day)
         scoped_elevated = profit_share_elevated_service_by_month(contributor, ledger[:by_month])

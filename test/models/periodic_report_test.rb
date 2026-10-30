@@ -174,4 +174,71 @@ class PeriodicReportTest < ActiveSupport::TestCase
     assert_includes error.message, "second@sanctuary.computer"
     refute_includes error.message, "fine@sanctuary.computer"
   end
+
+  # Forecast's Time Off project has no client, which the model's belongs_to
+  # would refuse; production rows come in from the sync the same way.
+  def time_off_project!
+    project = ForecastProject.new(forecast_id: rand(1..2_000_000_000), name: "Time Off", code: "TO-#{rand(10_000)}")
+    project.save!(validate: false)
+    project
+  end
+
+  def quarter_report!(starts_at, label)
+    PeriodicReport.create!(period_gradation: :quarter, period_starts_at: starts_at, period_label: label)
+  end
+
+  test "a long Time Off entry is leave and doesn't count towards elevated service" do
+    contributor = make_contributor!("leave@sanctuary.computer")
+    assign_hours!(contributor, make_project_billed_through!(@sanctuary, "Client L"), Date.new(2026, 4, 1), Date.new(2026, 4, 30))
+    # One entry from May 1 to June 30: well past the leave threshold.
+    assign_hours!(contributor, time_off_project!, Date.new(2026, 5, 1), Date.new(2026, 6, 30))
+
+    by_label = @report.profit_share_elevated_service_by_month(contributor, quarter_by_month(contributor)).transform_keys(&:label)
+
+    assert by_label["April, 2026"]
+    refute by_label["May, 2026"], "a month of leave is not service"
+    refute by_label["June, 2026"], "a month of leave is not service"
+  end
+
+  test "a short Time Off entry still counts towards elevated service" do
+    contributor = make_contributor!("holiday@sanctuary.computer")
+    # 10 working days of work (80h) plus a 6-working-day holiday (48h) = 128h.
+    assign_hours!(contributor, make_project_billed_through!(@sanctuary, "Client H"), Date.new(2026, 6, 1), Date.new(2026, 6, 12))
+    assign_hours!(contributor, time_off_project!, Date.new(2026, 6, 15), Date.new(2026, 6, 22))
+
+    by_label = @report.profit_share_elevated_service_by_month(contributor, quarter_by_month(contributor)).transform_keys(&:label)
+
+    assert by_label["June, 2026"], "an ordinary holiday must not knock someone out of a month"
+  end
+
+  test "an MSO executive takes no profit share, even when their role starts mid-quarter" do
+    q3 = quarter_report!(Date.new(2026, 7, 1), "Q3, 2026")
+    project = make_project_billed_through!(@sanctuary, "Client M")
+    executive = make_contributor!("exec@sanctuary.computer")
+    colleague = make_contributor!("colleague@sanctuary.computer")
+    [executive, colleague].each do |c|
+      c.update!(cost_of_living_country: "United States")
+      [7, 8, 9].each { |m| assign_hours!(c, project, Date.new(2026, m, 1), Date.new(2026, m, 28)) }
+    end
+    MsoRolePeriod.create!(contributor: executive, tier: :svp, title: "Controller", started_at: Date.new(2026, 8, 1))
+
+    emails = q3.tentative_profit_shares_by_contributor.values.map { |d| d[:email] }
+
+    refute_includes emails, "exec@sanctuary.computer"
+    assert_includes emails, "colleague@sanctuary.computer"
+  end
+
+  test "a role that ended before the quarter doesn't exclude anyone from it" do
+    q4 = quarter_report!(Date.new(2026, 10, 1), "Q4, 2026")
+    former = make_contributor!("former@sanctuary.computer")
+    former.update!(cost_of_living_country: "United States")
+    project = make_project_billed_through!(@sanctuary, "Client F")
+    [10, 11, 12].each { |m| assign_hours!(former, project, Date.new(2026, m, 1), Date.new(2026, m, 28)) }
+    MsoRolePeriod.create!(contributor: former, tier: :svp, title: "Controller",
+                          started_at: Date.new(2026, 8, 1), ended_at: Date.new(2026, 9, 30))
+
+    emails = q4.tentative_profit_shares_by_contributor.values.map { |d| d[:email] }
+
+    assert_includes emails, "former@sanctuary.computer"
+  end
 end
