@@ -202,13 +202,30 @@ class PeriodicReportTest < ActiveSupport::TestCase
 
   test "a short Time Off entry still counts towards elevated service" do
     contributor = make_contributor!("holiday@sanctuary.computer")
-    # 10 working days of work (80h) plus a 6-working-day holiday (48h) = 128h.
+    # An 8h/day allocation counts every calendar day: 12 days of work (96h,
+    # under the 120h bar on its own) plus an 8-day holiday (64h) = 160h.
     assign_hours!(contributor, make_project_billed_through!(@sanctuary, "Client H"), Date.new(2026, 6, 1), Date.new(2026, 6, 12))
     assign_hours!(contributor, time_off_project!, Date.new(2026, 6, 15), Date.new(2026, 6, 22))
 
     by_label = @report.profit_share_elevated_service_by_month(contributor, quarter_by_month(contributor)).transform_keys(&:label)
 
     assert by_label["June, 2026"], "an ordinary holiday must not knock someone out of a month"
+  end
+
+  test "leave is detected on Time Off with no allocation, as Forecast syncs it" do
+    contributor = make_contributor!("nilleave@sanctuary.computer")
+    # No allocation: Forecast's full-day Time Off, counted on weekdays only.
+    assign_hours!(contributor, time_off_project!, Date.new(2026, 5, 1), Date.new(2026, 6, 30), nil)
+    short = make_contributor!("nilholiday@sanctuary.computer")
+    assign_hours!(short, make_project_billed_through!(@sanctuary, "Client N"), Date.new(2026, 6, 1), Date.new(2026, 6, 12))
+    assign_hours!(short, time_off_project!, Date.new(2026, 6, 15), Date.new(2026, 6, 22), nil)
+
+    long_flags = @report.profit_share_elevated_service_by_month(contributor, quarter_by_month(contributor)).transform_keys(&:label)
+    short_flags = @report.profit_share_elevated_service_by_month(short, quarter_by_month(short)).transform_keys(&:label)
+
+    refute long_flags["May, 2026"], "a month of leave is not service"
+    # 96h of work plus 6 weekdays of holiday (48h) = 144h.
+    assert short_flags["June, 2026"], "an ordinary holiday must not knock someone out of a month"
   end
 
   test "an MSO executive takes no profit share, even when their role starts mid-quarter" do
