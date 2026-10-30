@@ -31,10 +31,6 @@ class PeriodicReport < ApplicationRecord
   # stays network-wide — past quarters were earned under the old rules.
   PROFIT_SHARE_ENTERPRISE_NAMES = [Enterprise::SANCTUARY_NAME, Enterprise::GARDEN3D_NAME].freeze
   PROFIT_SHARE_EMAIL_DOMAINS = %w[sanctuary.computer xxix.co].freeze
-  # A single Time Off entry longer than this many working days is leave, not
-  # service: it doesn't count towards a month's elevated-service hours.
-  # Ordinary holidays stay well under it.
-  PROFIT_SHARE_LEAVE_WORKING_DAYS = 10
 
   def self.create_for_period(period = Stacks::Period.new("Q4, 2025", Date.today.last_quarter.beginning_of_quarter, Date.today.last_quarter.end_of_quarter, :quarter))
     create!(
@@ -254,11 +250,14 @@ class PeriodicReport < ApplicationRecord
       .includes(forecast_project: :forecast_client)
       .where("end_date >= ? AND start_date <= ?", period.starts_at, period.ends_at)
       .select do |fa|
+        # Service is hours worked: Time Off, holiday or leave, never counts.
+        next false if fa.is_time_off?
+
         forecast_client = fa.forecast_project&.forecast_client
-        # Clientless projects (e.g. Time Off) follow ForecastClient#billing_enterprise's
+        # Other clientless projects follow ForecastClient#billing_enterprise's
         # unmapped-client default of Sanctuary.
         enterprise = forecast_client ? forecast_client.billing_enterprise : Enterprise.sanctuary
-        scope_ids.include?(enterprise.id) && !profit_share_leave?(fa)
+        scope_ids.include?(enterprise.id)
       end
 
     by_month.reduce({}) do |acc, (month, metadata)|
@@ -294,11 +293,6 @@ class PeriodicReport < ApplicationRecord
 
     _, data = indices.find { |k, _| country.iso_long_name.include?(k) || country.iso_short_name.include?(k) }
     data
-  end
-
-  def profit_share_leave?(assignment)
-    assignment.is_time_off? &&
-      (assignment.start_date..assignment.end_date).count { |d| (1..5).cover?(d.wday) } > PROFIT_SHARE_LEAVE_WORKING_DAYS
   end
 
   # Anyone holding an MSO role at any point in the quarter takes no profit
