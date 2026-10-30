@@ -83,16 +83,16 @@ class ContributorMsoTrueupTest < ActiveSupport::TestCase
     assert_not_includes ids, login.id
   end
 
-  test "profit-share elevated service counts an MSO true-up only where garden3d work counts" do
+  test "profit-share elevated service counts an MSO true-up only in a manually included month" do
     trueup = mso_trueup(@report, @role, @ledger, amount: "9500")
     report = PeriodicReport.new
     report.stubs(:period).returns(Stacks::Period.new("Q2 2090", Date.new(2090, 4, 1), Date.new(2090, 6, 30), :quarter))
 
-    # The true-up sits on a garden3d ledger, which profit share leaves out by default.
+    # The true-up sits on a garden3d ledger, which the automatic rule leaves out.
     result = report.profit_share_elevated_service_by_month(fresh, { @period => { items: [trueup] } })
     assert_equal({ @period => false }, result)
 
-    @exec.update!(counts_garden3d_work_for_profit_share: true)
+    ProfitShareManualInclusionPeriod.create!(contributor: @exec, started_at: @period.starts_at.beginning_of_month, note: "test")
     result = report.profit_share_elevated_service_by_month(fresh, { @period => { items: [trueup] } })
     assert_equal({ @period => true }, result)
   end

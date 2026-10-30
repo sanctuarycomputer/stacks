@@ -39,19 +39,16 @@ ActiveAdmin.register Contributor do
       contributor.deel_invoice_actions_visible_to?(current_admin_user)
     end
 
-    # The cost-of-living country and the garden3d-work flag set a
-    # contributor's profit share, so only admins may change them. Hiding the
-    # inputs is not enough: AdminAuthorization lets anyone who can act as a
-    # lead update any Contributor.
+    # The cost-of-living country sets a contributor's profit share, so only
+    # admins may change it. Hiding the input is not enough: AdminAuthorization
+    # lets anyone who can act as a lead update any Contributor.
     def update
-      unless current_admin_user.is_admin?
-        %i[cost_of_living_country counts_garden3d_work_for_profit_share].each { |attr| params[:contributor]&.delete(attr) }
-      end
+      params[:contributor]&.delete(:cost_of_living_country) unless current_admin_user.is_admin?
       super
     end
   end
 
-  permit_params :deel_person_id, :cost_of_living_country, :counts_garden3d_work_for_profit_share,
+  permit_params :deel_person_id, :cost_of_living_country,
     contributor_qbo_vendors_attributes: [:id, :qbo_vendor_id, :_destroy]
 
   # Action items below are scoped to the ledger tab the user is viewing.
@@ -207,9 +204,6 @@ ActiveAdmin.register Contributor do
           collection: PeriodicReport.parsed_numbeo_cost_of_living_indices_by_country.keys.sort,
           include_blank: "Use Deel address",
           hint: "For contributors who aren't on Deel. Overrides the Deel address in profit share."
-        f.input :counts_garden3d_work_for_profit_share,
-          label: "Count garden3d work towards profit share",
-          hint: "Profit share counts only Sanctuary-billed work. Tick for someone whose garden3d work is Sanctuary service."
       end
     end
 

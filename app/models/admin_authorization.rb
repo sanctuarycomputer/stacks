@@ -93,6 +93,12 @@ class AdminAuthorization < ActiveAdmin::AuthorizationAdapter
     # for every action including read. Must stay above the blanket lead grant.
     return user.is_admin? if subject.is_a?(MsoRolePeriod) || subject == MsoRolePeriod
 
+    # Manual profit share inclusions decide who shares the pool: admins only,
+    # for every action including read. Must stay above the blanket lead grant.
+    if subject.is_a?(ProfitShareManualInclusionPeriod) || subject == ProfitShareManualInclusionPeriod
+      return user.is_admin?
+    end
+
     # A true-up is READ like any other ledger item (whoever can read ledgers,
     # and the executive it pays); everything else on it is admin-only. Must
     # stay above the blanket lead grant.

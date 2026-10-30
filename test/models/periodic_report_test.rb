@@ -79,14 +79,53 @@ class PeriodicReportTest < ActiveSupport::TestCase
 
     refute by_label["April, 2026"], "hours billed through an out-of-scope enterprise must not count"
     assert by_label["May, 2026"], "Sanctuary-billed hours count"
-    refute by_label["June, 2026"], "garden3d-billed hours don't count by default"
+    refute by_label["June, 2026"], "garden3d-billed hours don't count without a manual inclusion"
+  end
 
-    contributor.update!(counts_garden3d_work_for_profit_share: true)
-    flags = PeriodicReport.find(@report.id).profit_share_elevated_service_by_month(contributor, quarter_by_month(contributor))
-    by_label = flags.transform_keys(&:label)
+  test "a manual inclusion counts every enterprise's work, only in the months it covers" do
+    contributor = make_contributor!("ops@sanctuary.computer")
+    garden3d_project = make_project_billed_through!(@garden3d, "Garden3d Ops")
+    other_project = make_project_billed_through!(@other, "Index Client")
+    assign_hours!(contributor, garden3d_project, Date.new(2026, 4, 1), Date.new(2026, 4, 30))
+    assign_hours!(contributor, other_project, Date.new(2026, 5, 1), Date.new(2026, 5, 31))
+    assign_hours!(contributor, garden3d_project, Date.new(2026, 6, 1), Date.new(2026, 6, 30))
+    ProfitShareManualInclusionPeriod.create!(contributor: contributor, started_at: Date.new(2026, 5, 1), note: "ops")
 
-    assert by_label["June, 2026"], "garden3d-billed hours count when the contributor's flag is set"
-    refute by_label["April, 2026"], "the flag adds garden3d only"
+    by_label = @report.profit_share_elevated_service_by_month(contributor, quarter_by_month(contributor)).transform_keys(&:label)
+
+    refute by_label["April, 2026"], "before the inclusion starts, the automatic rule applies"
+    assert by_label["May, 2026"], "an included month counts work at any enterprise"
+    assert by_label["June, 2026"], "an included month counts garden3d work"
+  end
+
+  test "an included month still doesn't count Time Off" do
+    contributor = make_contributor!("ops-leave@sanctuary.computer")
+    assign_hours!(contributor, time_off_project!, Date.new(2026, 4, 1), Date.new(2026, 6, 30))
+    ProfitShareManualInclusionPeriod.create!(contributor: contributor, started_at: Date.new(2026, 4, 1), note: "ops")
+
+    flags = @report.profit_share_elevated_service_by_month(contributor, quarter_by_month(contributor))
+
+    assert flags.values.none?
+  end
+
+  test "a manual inclusion waives the company-email rule, but not the MSO exclusion" do
+    q3 = quarter_report!(Date.new(2026, 7, 1), "Q3, 2026")
+    project = make_project_billed_through!(@other, "USB Club Client")
+    member = make_contributor!("member@usb.club")
+    executive = make_contributor!("exec-included@sanctuary.computer")
+    [member, executive].each do |c|
+      c.update!(cost_of_living_country: "United States")
+      [7, 8, 9].each { |m| assign_hours!(c, project, Date.new(2026, m, 1), Date.new(2026, m, 28)) }
+      ProfitShareManualInclusionPeriod.create!(contributor: c, started_at: Date.new(2026, 7, 1), note: "test")
+    end
+    MsoRolePeriod.create!(contributor: executive, tier: :svp, title: "Controller", started_at: Date.new(2026, 8, 1))
+
+    result = q3.tentative_profit_shares_by_contributor.values
+    emails = result.map { |d| d[:email] }
+
+    assert_includes emails, "member@usb.club"
+    assert_equal 3, result.find { |d| d[:email] == "member@usb.club" }[:elevated_service_months]
+    refute_includes emails, "exec-included@sanctuary.computer"
   end
 
   test "elevated service counts income only on Sanctuary ledgers" do
@@ -101,11 +140,11 @@ class PeriodicReportTest < ActiveSupport::TestCase
 
     refute by_label["April, 2026"], "income on an out-of-scope enterprise ledger must not count"
     assert by_label["May, 2026"], "Sanctuary ledger income counts"
-    refute by_label["June, 2026"], "garden3d ledger income doesn't count by default"
+    refute by_label["June, 2026"], "garden3d ledger income doesn't count without a manual inclusion"
 
-    contributor.update!(counts_garden3d_work_for_profit_share: true)
+    ProfitShareManualInclusionPeriod.create!(contributor: contributor, started_at: Date.new(2026, 6, 1), note: "ops")
     flags = PeriodicReport.find(@report.id).profit_share_elevated_service_by_month(contributor, quarter_by_month(contributor))
-    assert flags.transform_keys(&:label)["June, 2026"], "garden3d ledger income counts when the flag is set"
+    assert flags.transform_keys(&:label)["June, 2026"], "garden3d ledger income counts in an included month"
   end
 
   test "tentative profit shares exclude non-company emails and out-of-scope work" do

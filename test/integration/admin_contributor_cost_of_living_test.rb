@@ -39,25 +39,11 @@ class AdminContributorCostOfLivingTest < ActionDispatch::IntegrationTest
     get edit_admin_contributor_path(@contributor)
     assert_response :success
     assert_includes response.body, "contributor[cost_of_living_country]"
-    assert_includes response.body, "contributor[counts_garden3d_work_for_profit_share]"
 
     sign_out @admin
     sign_in @lead
     get edit_admin_contributor_path(@contributor)
     assert_response :success
     refute_includes response.body, "contributor[cost_of_living_country]"
-    refute_includes response.body, "contributor[counts_garden3d_work_for_profit_share]"
-  end
-
-  test "only an admin can set the garden3d-work flag" do
-    sign_in @lead
-    put admin_contributor_path(@contributor), params: { contributor: { counts_garden3d_work_for_profit_share: "1" } }
-    assert_redirected_to admin_contributor_path(@contributor)
-    refute @contributor.reload.counts_garden3d_work_for_profit_share
-
-    sign_out @lead
-    sign_in @admin
-    put admin_contributor_path(@contributor), params: { contributor: { counts_garden3d_work_for_profit_share: "1" } }
-    assert @contributor.reload.counts_garden3d_work_for_profit_share
   end
 end
