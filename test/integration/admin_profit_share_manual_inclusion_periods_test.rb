@@ -48,4 +48,17 @@ class AdminProfitShareManualInclusionPeriodsTest < ActionDispatch::IntegrationTe
       } }
     end
   end
+
+  test "a lead can't edit or delete an existing inclusion" do
+    inclusion = ProfitShareManualInclusionPeriod.create!(contributor: @contributor, started_at: Date.new(2026, 7, 1), note: "ops")
+    sign_in @lead
+
+    put admin_profit_share_manual_inclusion_period_path(inclusion),
+      params: { profit_share_manual_inclusion_period: { ended_at: "2026-07-31" } }
+    assert_nil inclusion.reload.ended_at
+
+    assert_no_difference -> { ProfitShareManualInclusionPeriod.count } do
+      delete admin_profit_share_manual_inclusion_period_path(inclusion)
+    end
+  end
 end

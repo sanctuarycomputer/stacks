@@ -15,13 +15,6 @@ class ProfitShareManualInclusionPeriod < ApplicationRecord
   validates :note, presence: true
   validate :full_months_only
 
-  # Periods that overlap the calendar month containing `date`.
-  scope :active_during, ->(date) {
-    where("profit_share_manual_inclusion_periods.started_at <= ?", date.end_of_month)
-      .where("profit_share_manual_inclusion_periods.ended_at IS NULL OR " \
-             "profit_share_manual_inclusion_periods.ended_at >= ?", date.beginning_of_month)
-  }
-
   def period_ended_at
     ended_at || OPEN_ENDED
   end

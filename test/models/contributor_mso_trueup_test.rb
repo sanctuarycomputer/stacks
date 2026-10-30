@@ -93,6 +93,9 @@ class ContributorMsoTrueupTest < ActiveSupport::TestCase
     assert_equal({ @period => false }, result)
 
     ProfitShareManualInclusionPeriod.create!(contributor: @exec, started_at: @period.starts_at.beginning_of_month, note: "test")
+    # A fresh report: a report loads its quarter's inclusions once.
+    report = PeriodicReport.new
+    report.stubs(:period).returns(Stacks::Period.new("Q2 2090", Date.new(2090, 4, 1), Date.new(2090, 6, 30), :quarter))
     result = report.profit_share_elevated_service_by_month(fresh, { @period => { items: [trueup] } })
     assert_equal({ @period => true }, result)
   end

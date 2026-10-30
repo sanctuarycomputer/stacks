@@ -29,7 +29,9 @@ ActiveAdmin.register ProfitShareManualInclusionPeriod do
       f.input :started_at, as: :datepicker, hint: "Must be the first day of a month"
       f.input :ended_at, as: :datepicker,
         hint: "Leave blank while they're included. Otherwise the last day of a month."
-      f.input :note, hint: "Why they're included, e.g. \"garden3d ops, does Sanctuary client work\""
+      f.input :note, hint: "Why they're included, e.g. \"garden3d ops, does Sanctuary client work\". " \
+        "If they're not on Deel, set their cost-of-living country on their contributor page first, " \
+        "or the profit share sync will stop and name them."
     end
     f.actions
   end

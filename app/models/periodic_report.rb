@@ -242,9 +242,11 @@ class PeriodicReport < ApplicationRecord
 
   # The contributor's manual inclusion periods overlapping this quarter.
   def manual_profit_share_inclusions_for(contributor)
-    ProfitShareManualInclusionPeriod.where(contributor_id: contributor.id)
+    @_manual_profit_share_inclusions ||= ProfitShareManualInclusionPeriod
       .where("started_at <= ?", period.ends_at)
-      .where("ended_at IS NULL OR ended_at >= ?", period.starts_at).to_a
+      .where("ended_at IS NULL OR ended_at >= ?", period.starts_at)
+      .group_by(&:contributor_id)
+    @_manual_profit_share_inclusions.fetch(contributor.id, [])
   end
 
   # Per-month elevated service derived ONLY from profit-share enterprises, in
@@ -320,7 +322,9 @@ class PeriodicReport < ApplicationRecord
     @_tentative_profit_shares_by_contributor ||= begin
       missing_cost_of_living = []
       shares = contributors.reduce({}) do |acc, contributor|
-        # A manual inclusion waives the company-email rule.
+        # A manual inclusion anywhere in the quarter waives the company-email
+        # rule for the whole quarter: months it doesn't cover still earn
+        # service from Sanctuary work under the automatic rule.
         next acc unless PeriodicReport.eligible_profit_share_email?(contributor.forecast_person.email) ||
           manual_profit_share_inclusions_for(contributor).any?
         next acc if mso_executive_contributor_ids.include?(contributor.id)
